@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 
 type Variant = 'symptom' | 'accent' | 'muted';
 
@@ -11,9 +12,9 @@ interface Props {
 export function Badge({ label, variant = 'muted' }: Props) {
   return (
     <View style={[styles.badge, styles[variant]]}>
-      <Text style={[styles.label, styles[`${variant}Text` as `${Variant}Text`]]}>
+      <ThemedText style={[styles.label, styles[`${variant}Text` as `${Variant}Text`]]}>
         {label}
-      </Text>
+      </ThemedText>
     </View>
   );
 }

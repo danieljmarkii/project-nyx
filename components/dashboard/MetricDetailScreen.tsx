@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { theme } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
 import { deltaToneColor } from './cardTokens';
@@ -14,6 +14,7 @@ import { ArrowUp, ArrowDown } from 'lucide-react-native';
 // The per-window data contract lives in the pure lib layer (lib → component); re-exported
 // here so existing importers (this component's test, the detail route) keep their import.
 import type { MetricDetailWindowData } from '../../lib/metricDetail';
+import { ThemedText } from '../ui/ThemedText';
 export type { MetricDetailWindowData } from '../../lib/metricDetail';
 
 // MetricDetailScreen — a card's "doorway" destination (§4.2 / §8). One metric across a
@@ -69,7 +70,7 @@ export function MetricDetailScreen({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
+      <ThemedText style={styles.title}>{title}</ThemedText>
 
       <View style={styles.segmentedControl} accessibilityRole="tablist">
         {WINDOW_ORDER.map((w) => {
@@ -84,33 +85,33 @@ export function MetricDetailScreen({
               accessibilityLabel={WINDOW_UI_LABEL[w]}
               style={[styles.segment, isActive && styles.segmentActive]}
             >
-              <Text style={[styles.segmentLabel, isActive && styles.segmentLabelActive]}>
+              <ThemedText style={[styles.segmentLabel, isActive && styles.segmentLabelActive]}>
                 {WINDOW_UI_LABEL[w]}
-              </Text>
+              </ThemedText>
             </Pressable>
           );
         })}
       </View>
 
       {state.kind === 'calibrating' ? (
-        <Text style={styles.calibration}>
+        <ThemedText style={styles.calibration}>
           {calibrationLine(state.remaining, calibrationUnit, petName)}
-        </Text>
+        </ThemedText>
       ) : state.kind === 'empty' ? (
         // Zero events this window — a warm "none logged", never styled as an all-clear.
-        <Text style={styles.calibration}>{data.emptyMessage ?? 'Nothing logged for this range yet.'}</Text>
+        <ThemedText style={styles.calibration}>{data.emptyMessage ?? 'Nothing logged for this range yet.'}</ThemedText>
       ) : (
         <>
           {/* The "vs your baseline" read leads — the editorial centerpiece (§7). */}
-          <Text style={styles.baselineRead}>{data.baselineRead}</Text>
+          <ThemedText style={styles.baselineRead}>{data.baselineRead}</ThemedText>
 
           <View style={styles.numberRow}>
-            <Text style={styles.value}>{data.value}</Text>
+            <ThemedText style={styles.value}>{data.value}</ThemedText>
             {data.delta !== undefined && data.deltaLabel != null && (
               <View style={styles.deltaRow}>
                 {dir === 'up' && <ArrowUp size={16} color={toneColor} />}
                 {dir === 'down' && <ArrowDown size={16} color={toneColor} />}
-                <Text style={[styles.deltaText, { color: toneColor }]}>{data.deltaLabel}</Text>
+                <ThemedText style={[styles.deltaText, { color: toneColor }]}>{data.deltaLabel}</ThemedText>
               </View>
             )}
           </View>
@@ -120,7 +121,7 @@ export function MetricDetailScreen({
               <Sparkline data={data.series} tone={tone} width={chartWidth} height={CHART_HEIGHT} />
             </View>
           ) : (
-            <Text style={styles.thinData}>Not enough points yet to draw the shape.</Text>
+            <ThemedText style={styles.thinData}>Not enough points yet to draw the shape.</ThemedText>
           )}
         </>
       )}

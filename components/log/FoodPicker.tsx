@@ -716,6 +716,9 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
   search: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorNeutralLight,

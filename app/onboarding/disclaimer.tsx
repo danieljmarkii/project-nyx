@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
@@ -7,6 +7,7 @@ import { recordDisclaimerAcceptance } from '../../lib/legal';
 import { DISCLAIMER_URL } from '../../constants/links';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The veterinary-disclaimer acknowledgment (B-270) — the first stop after account
 // creation, before any pet data is entered. Body + button copy are VERBATIM from
@@ -66,14 +67,14 @@ export default function DisclaimerScreen() {
       <View style={styles.body}>
         <View style={styles.grow} />
 
-        <Text style={styles.title}>Before you start</Text>
+        <ThemedText style={styles.title}>Before you start</ThemedText>
         {/* Verbatim appendix copy — edit docs/legal/veterinary-disclaimer.md
             first if this ever needs to change, then mirror it here. */}
-        <Text style={styles.copy}>
+        <ThemedText style={styles.copy}>
           Culprit helps you notice and record — it can&apos;t examine your pet, and it never
           gives the all-clear. For diagnosis, treatment, or anything urgent, your vet is the
           call.
-        </Text>
+        </ThemedText>
 
         <TouchableOpacity
           onPress={handleOpenFullDisclaimer}
@@ -83,7 +84,7 @@ export default function DisclaimerScreen() {
           accessibilityLabel="Read the full disclaimer"
           testID="disclaimer-full-link"
         >
-          <Text style={styles.fullLinkText}>Read the full disclaimer</Text>
+          <ThemedText style={styles.fullLinkText}>Read the full disclaimer</ThemedText>
         </TouchableOpacity>
 
         <View style={styles.grow} />

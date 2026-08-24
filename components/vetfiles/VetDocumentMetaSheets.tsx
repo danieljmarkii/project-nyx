@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -10,6 +10,7 @@ import { SheetShell } from './SheetShell';
 import { VET_DOCUMENT_KINDS, type VetDocumentKind } from '../../lib/vetDocuments';
 import { VET_DOCUMENT_KIND_LABELS } from '../../lib/vetDocumentLibrary';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
+import { ThemedText } from '../ui/ThemedText';
 
 // The two D11 recovery surfaces, reached from a library row rather than from
 // capture. Both are sheets rather than screens on purpose: the mock calls the Name
@@ -81,10 +82,10 @@ export function NameDocumentSheet({
           filename last. */}
       {fileLabel ? (
         <View style={styles.nameFileTag} accessible accessibilityLabel={`File name, ${fileLabel}`}>
-          <Text style={styles.nameFileTagLabel}>File name</Text>
-          <Text style={styles.nameFileTagValue} numberOfLines={1} ellipsizeMode="middle">
+          <ThemedText style={styles.nameFileTagLabel}>File name</ThemedText>
+          <ThemedText style={styles.nameFileTagValue} numberOfLines={1} ellipsizeMode="middle">
             {fileLabel}
-          </Text>
+          </ThemedText>
         </View>
       ) : null}
       <TextField
@@ -306,12 +307,12 @@ export function DocumentVisitSheet({
             accessibilityRole="button"
             accessibilityState={{ selected: visit.id === current }}
           >
-            <Text
+            <ThemedText
               style={[styles.visitLabel, visit.id === current && styles.visitLabelOn]}
               numberOfLines={2}
             >
               {visit.label}
-            </Text>
+            </ThemedText>
             {visit.id === current && <Check size={17} color={theme.colorAccentInk} strokeWidth={2.5} />}
           </TouchableOpacity>
         ))}
@@ -324,7 +325,7 @@ export function DocumentVisitSheet({
             accessibilityRole="button"
             accessibilityLabel="Remove the visit link"
           >
-            <Text style={styles.visitClear}>Remove the link</Text>
+            <ThemedText style={styles.visitClear}>Remove the link</ThemedText>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -377,6 +378,9 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusSmall,
     backgroundColor: theme.colorSurface,
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     lineHeight: theme.lineHeightBody,
     color: theme.colorTextPrimary,

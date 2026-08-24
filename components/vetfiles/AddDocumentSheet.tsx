@@ -1,4 +1,4 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Camera, FileText, Images } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SheetShell } from './SheetShell';
@@ -9,6 +9,7 @@ import {
   addSheetTitle,
 } from '../../lib/vetDocumentCapture';
 import type { VetDocumentSource } from '../../lib/vetDocuments';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   visible: boolean;
@@ -73,8 +74,8 @@ export function AddDocumentSheet({ visible, petName, filesAvailable = true, onCa
                 <Icon size={17} color={theme.colorAccentInk} strokeWidth={1.9} />
               </View>
               <View style={styles.text}>
-                <Text style={styles.rowTitle}>{row.title}</Text>
-                <Text style={styles.rowSub}>{subtitle}</Text>
+                <ThemedText style={styles.rowTitle}>{row.title}</ThemedText>
+                <ThemedText style={styles.rowSub}>{subtitle}</ThemedText>
               </View>
             </TouchableOpacity>
           );
@@ -87,7 +88,7 @@ export function AddDocumentSheet({ visible, petName, filesAvailable = true, onCa
         activeOpacity={0.7}
         accessibilityRole="button"
       >
-        <Text style={styles.cancelText}>Cancel</Text>
+        <ThemedText style={styles.cancelText}>Cancel</ThemedText>
       </TouchableOpacity>
     </SheetShell>
   );

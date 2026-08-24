@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Pressable, View, Text, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { pluralize } from '../../lib/dashboardCards';
 import type { MealTreatComposition } from '../../lib/analytics';
+import { ThemedText } from '../ui/ThemedText';
 
 // CompositionCard — the month's split of logged meals vs treats (§5 #6 / §6), as a
 // single proportion bar + counts. DESCRIPTIVE ONLY: what was logged, never a verdict
@@ -77,7 +78,7 @@ export function CompositionCard({
       style={({ pressed }) => [styles.card, pressed && onPress != null && styles.pressed]}
     >
       <View style={styles.headerRow}>
-        <Text style={styles.title}>{title}</Text>
+        <ThemedText style={styles.title}>{title}</ThemedText>
         <View style={styles.headerActions}>
           {definition != null && (
             <MetricInfoButton
@@ -91,9 +92,9 @@ export function CompositionCard({
       </View>
 
       {isEmpty ? (
-        <Text style={styles.stateText}>
+        <ThemedText style={styles.stateText}>
           {emptyMessage ?? "No meals or treats logged yet — they'll show up here as you log."}
-        </Text>
+        </ThemedText>
       ) : (
         <View style={styles.body}>
           {/* Soft, separated capsules on a faint track (B-098) — reads as a calm
@@ -108,17 +109,17 @@ export function CompositionCard({
             ))}
           </View>
           {/* Coverage framing: anchor the bar as "here's what was logged", never a verdict. */}
-          <Text style={styles.caption}>
+          <ThemedText style={styles.caption}>
             {total} {pluralize(total, 'feeding')} logged
-          </Text>
+          </ThemedText>
           <View style={styles.legend}>
             {segments.map((s) => (
               <View key={s.key} style={styles.legendRow}>
                 <View style={[styles.swatch, { backgroundColor: SEGMENT_COLOR[s.key] }]} />
-                <Text style={styles.legendLabel}>{s.label}</Text>
-                <Text style={styles.legendValue}>
+                <ThemedText style={styles.legendLabel}>{s.label}</ThemedText>
+                <ThemedText style={styles.legendValue}>
                   {s.count} {pluralize(s.count, 'log')} · {pct(s.count, total)}%
-                </Text>
+                </ThemedText>
               </View>
             ))}
           </View>

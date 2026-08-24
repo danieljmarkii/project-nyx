@@ -44,6 +44,7 @@ import {
   TRIAL_EXPOSURES_UNREADABLE,
   type TrialExposureRow,
 } from '../lib/trialExposuresScreen';
+import { ThemedText } from '../components/ui/ThemedText';
 
 export default function TrialExposuresScreen() {
   const activePet = usePetStore((s) => s.activePet);
@@ -65,13 +66,13 @@ export default function TrialExposuresScreen() {
       {model === null ? (
         <View style={styles.centered}>
           {state.status === 'no_trial' ? (
-            <Text testID="trial-exposures-no-trial" style={styles.quiet}>
+            <ThemedText testID="trial-exposures-no-trial" style={styles.quiet}>
               {noTrialExposuresLine(petName)}
-            </Text>
+            </ThemedText>
           ) : unreadable ? (
-            <Text testID="trial-exposures-unreadable" style={styles.quiet}>
+            <ThemedText testID="trial-exposures-unreadable" style={styles.quiet}>
               {TRIAL_EXPOSURES_UNREADABLE}
-            </Text>
+            </ThemedText>
           ) : (
             // The ONLY spinner state: still reading, which resolves on its own.
             <WhorlSpinner size="md" ground="day" />
@@ -82,15 +83,15 @@ export default function TrialExposuresScreen() {
           {/* The nav header carries the title (it is the words the owner tapped),
               so the body opens on the fact rather than repeating it. */}
           {model.subtitle !== null && (
-            <Text testID="trial-exposures-subtitle" style={styles.subtitle}>
+            <ThemedText testID="trial-exposures-subtitle" style={styles.subtitle}>
               {model.subtitle}
-            </Text>
+            </ThemedText>
           )}
 
           {model.empty !== null && (
-            <Text testID="trial-exposures-empty" style={styles.emptyState}>
+            <ThemedText testID="trial-exposures-empty" style={styles.emptyState}>
               {model.empty}
-            </Text>
+            </ThemedText>
           )}
 
           {model.groups.map((group, i) => (
@@ -115,9 +116,13 @@ export default function TrialExposuresScreen() {
                   }
                 >
                   <View style={styles.rowText}>
-                    <Text style={styles.rowLabel}>{row.label}</Text>
-                    <Text style={styles.rowMeta}>{row.meta}</Text>
+                    <ThemedText style={styles.rowLabel}>{row.label}</ThemedText>
+                    <ThemedText style={styles.rowMeta}>{row.meta}</ThemedText>
                   </View>
+                  {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
+                      These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and Geist
+                      carries no ✓ / ✕ / ＋ in any loaded weight, so sweeping one buys OS fallback for
+                      nothing. CUL-364 §7. */}
                   {row.reason !== null && <Text style={styles.chevron}>›</Text>}
                 </TouchableOpacity>
               ))}
@@ -127,14 +132,14 @@ export default function TrialExposuresScreen() {
           {/* The blind spots, above the footer that calls the count a floor —
               they are what make that line a description rather than a hedge. */}
           {model.notes.map((note) => (
-            <Text key={note} testID="trial-exposures-note" style={styles.note}>
+            <ThemedText key={note} testID="trial-exposures-note" style={styles.note}>
               {note}
-            </Text>
+            </ThemedText>
           ))}
 
-          <Text testID="trial-exposures-footer" style={styles.footer}>
+          <ThemedText testID="trial-exposures-footer" style={styles.footer}>
             {model.footer}
-          </Text>
+          </ThemedText>
         </ScrollView>
       )}
 

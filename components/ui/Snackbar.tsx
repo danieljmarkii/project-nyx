@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { theme, shadows } from '../../constants/theme';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -10,6 +10,7 @@ import { useReducedMotion } from '../../hooks/useReducedMotion';
 // since grown. The card must clear the bar so it is not occluded when the owner
 // lands back on a tabs screen after a log.
 import { TAB_HEIGHT } from '../nav/NyxTabBar';
+import { ThemedText } from './ThemedText';
 
 // Root-mounted snackbar overlay (B-005 PR 2). Store-driven (snackbarStore) so it
 // survives the dismissal of whatever modal armed it — the food-detail "Remove
@@ -61,9 +62,9 @@ export function Snackbar() {
       style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
     >
       <View style={styles.card}>
-        <Text style={styles.message} numberOfLines={2}>
+        <ThemedText style={styles.message} numberOfLines={2}>
           {payload.message}
-        </Text>
+        </ThemedText>
         {hasAction && (
           <TouchableOpacity
             onPress={runAction}
@@ -72,7 +73,7 @@ export function Snackbar() {
             accessibilityRole="button"
             accessibilityLabel={payload.actionLabel}
           >
-            <Text style={styles.action}>{payload.actionLabel}</Text>
+            <ThemedText style={styles.action}>{payload.actionLabel}</ThemedText>
           </TouchableOpacity>
         )}
       </View>

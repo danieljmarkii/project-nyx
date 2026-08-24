@@ -177,9 +177,11 @@ const styles = StyleSheet.create({
     gap: theme.space1,
   },
   prompt: {
-    fontFamily: theme.fontBody,
+    // The family carries the weight — a `fontWeight` beside it is inert (RN does not
+    // synthesize custom-font weights), so the pair used to declare semibold and render
+    // regular. CUL-652.
+    fontFamily: theme.fontBodySemibold,
     fontSize: theme.textXL,
-    fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     lineHeight: theme.lineHeightSignal,
   },

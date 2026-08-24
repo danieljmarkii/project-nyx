@@ -26,6 +26,7 @@ import { Divider } from '../../components/ui/Divider';
 import { emailError, passwordError, requiredNameError } from '../../lib/authValidation';
 import { authErrorCopy } from '../../lib/authErrors';
 import { confirmRedirectUrl } from '../../lib/emailConfirm';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Account creation — the first screen that captures OWNER identity (B-251 PR 6,
 // spec §3.1 / §1a, mockup 04–05). Reached from the Landing's "Create account".
@@ -220,7 +221,7 @@ export default function SignupScreen() {
           <View style={styles.verifyIcon}>
             <Mail size={44} color={theme.colorAccent} strokeWidth={1.5} />
           </View>
-          <Text style={styles.title}>Check your inbox</Text>
+          <ThemedText style={styles.title}>Check your inbox</ThemedText>
           {/* B-401 wrote this line to promise only the manual return trip the app
               could actually deliver ("come back here and sign in"), because nothing
               converted a confirmation link into a session. B-432 built that half,
@@ -228,10 +229,10 @@ export default function SignupScreen() {
               and signs them in. The caveat is real and stays in the copy —
               `emailRedirectTo` is a PKCE link, so the verifier only exists on the
               phone that signed up, and opening it on a laptop lands nowhere useful. */}
-          <Text style={styles.verifySub}>
+          <ThemedText style={styles.verifySub}>
             We sent a link to {verifyEmail}. Open it on this phone and we'll bring you straight
             back in.
-          </Text>
+          </ThemedText>
           <View style={styles.grow} />
 
           <View style={styles.verifyCta}>
@@ -252,7 +253,7 @@ export default function SignupScreen() {
               {resending ? (
                 <WhorlSpinner size="md" ground="day" />
               ) : (
-                <Text style={styles.resendText}>Resend link</Text>
+                <ThemedText style={styles.resendText}>Resend link</ThemedText>
               )}
             </TouchableOpacity>
           </View>
@@ -272,7 +273,7 @@ export default function SignupScreen() {
             accessibilityLabel="Close and confirm your email later"
             testID="verify-continue"
           >
-            <Text style={styles.continueLaterText}>I'll do this later</Text>
+            <ThemedText style={styles.continueLaterText}>I'll do this later</ThemedText>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -308,8 +309,8 @@ export default function SignupScreen() {
             <AuthBrandMark />
           </View>
 
-          <Text style={styles.title}>Create your account</Text>
-          <Text style={styles.subtitle}>This is you — we'll set up your pet next.</Text>
+          <ThemedText style={styles.title}>Create your account</ThemedText>
+          <ThemedText style={styles.subtitle}>This is you — we'll set up your pet next.</ThemedText>
 
           <View style={styles.nameRow}>
             <TextField
@@ -373,7 +374,7 @@ export default function SignupScreen() {
             <View testID="signup-social">
               <View style={styles.orRow}>
                 <Divider style={styles.orLine} />
-                <Text style={styles.orText}>or</Text>
+                <ThemedText style={styles.orText}>or</ThemedText>
                 <Divider style={styles.orLine} />
               </View>
               <PrimaryButton
@@ -402,8 +403,12 @@ export default function SignupScreen() {
             testID="signup-submit"
           />
 
-          <Text style={styles.tos}>
+          <ThemedText style={styles.tos}>
             By continuing you agree to Culprit's{' '}
+            {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+                raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+                own family and breaks RN's native text cascade, shipping a face change mid-sentence
+                (CUL-607). */}
             <Text
               style={styles.tosLink}
               onPress={() => openLegal(TERMS_URL, 'terms of service')}
@@ -412,6 +417,10 @@ export default function SignupScreen() {
               Terms
             </Text>{' '}
             and{' '}
+            {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+                raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+                own family and breaks RN's native text cascade, shipping a face change mid-sentence
+                (CUL-607). */}
             <Text
               style={styles.tosLink}
               onPress={() => openLegal(PRIVACY_POLICY_URL, 'privacy policy')}
@@ -420,7 +429,7 @@ export default function SignupScreen() {
               Privacy Policy
             </Text>
             .
-          </Text>
+          </ThemedText>
 
           <TouchableOpacity
             onPress={() => router.replace('/(auth)/login')}
@@ -429,10 +438,10 @@ export default function SignupScreen() {
             accessibilityRole="button"
             accessibilityLabel="Log in to an existing account"
           >
-            <Text style={styles.loginText}>
+            <ThemedText style={styles.loginText}>
               Already have an account?{' '}
-              <Text style={styles.loginTextAccent}>Log in</Text>
-            </Text>
+              <ThemedText style={styles.loginTextAccent}>Log in</ThemedText>
+            </ThemedText>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

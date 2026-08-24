@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { calibrationLine, type CardDisplayState } from '../../lib/dashboardCards';
+import { ThemedText } from '../ui/ThemedText';
 
 // RankingCard — "Top food", "Top protein" (§5 #3 / §6). A ranked BAR LIST: each row pairs
 // the (wrapping) label with an inline bar = its SHARE OF THE DIET (normalized so #1 fills
@@ -51,17 +52,17 @@ interface Props {
 
 function RightMeta({ entry }: { entry: RankingEntry }) {
   if (entry.isTreat) {
-    return <Text style={styles.treat}>treat</Text>;
+    return <ThemedText style={styles.treat}>treat</ThemedText>;
   }
   if (entry.finishedRate != null) {
     return (
-      <Text style={styles.finished}>
-        {Math.round(entry.finishedRate * 100)}% <Text style={styles.finishedSub}>finished</Text>
-      </Text>
+      <ThemedText style={styles.finished}>
+        {Math.round(entry.finishedRate * 100)}% <ThemedText style={styles.finishedSub}>finished</ThemedText>
+      </ThemedText>
     );
   }
   // Below the floor — honest "not enough rated meals yet", never a rate off 1–2 meals.
-  return <Text style={styles.hint}>a few more meals</Text>;
+  return <ThemedText style={styles.hint}>a few more meals</ThemedText>;
 }
 
 export function RankingCard({
@@ -90,7 +91,7 @@ export function RankingCard({
       style={({ pressed }) => [styles.card, pressed && onPress != null && styles.pressed]}
     >
       <View style={styles.headerRow}>
-        <Text style={styles.title}>{title}</Text>
+        <ThemedText style={styles.title}>{title}</ThemedText>
         <View style={styles.headerActions}>
           {definition != null && (
             <MetricInfoButton
@@ -104,11 +105,11 @@ export function RankingCard({
       </View>
 
       {state.kind === 'calibrating' ? (
-        <Text style={styles.stateText}>
+        <ThemedText style={styles.stateText}>
           {calibrationLine(state.remaining, calibrationUnit, petName)}
-        </Text>
+        </ThemedText>
       ) : state.kind === 'empty' || entries.length === 0 ? (
-        <Text style={styles.stateText}>{emptyMessage ?? 'Nothing logged yet.'}</Text>
+        <ThemedText style={styles.stateText}>{emptyMessage ?? 'Nothing logged yet.'}</ThemedText>
       ) : (
         <View style={styles.list}>
           {entries.map((entry) => {
@@ -117,9 +118,9 @@ export function RankingCard({
               <View key={entry.key} style={styles.entry}>
                 <View style={styles.entryHead}>
                   {/* Let a long food name BREATHE — wrap to a second line, never truncate. */}
-                  <Text style={styles.entryLabel} numberOfLines={2}>
+                  <ThemedText style={styles.entryLabel} numberOfLines={2}>
                     {entry.label}
-                  </Text>
+                  </ThemedText>
                   <RightMeta entry={entry} />
                 </View>
                 <View style={styles.barRow}>
@@ -127,7 +128,7 @@ export function RankingCard({
                     <View style={[styles.barFill, { flex: fraction }]} />
                     <View style={{ flex: 1 - fraction }} />
                   </View>
-                  <Text style={styles.share}>{entry.shareLabel}</Text>
+                  <ThemedText style={styles.share}>{entry.shareLabel}</ThemedText>
                 </View>
               </View>
             );

@@ -1,5 +1,6 @@
-import { Text, TextStyle, StyleProp, StyleSheet } from 'react-native';
+import { TextStyle, StyleProp, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 
 interface Props {
   label: string;
@@ -20,9 +21,9 @@ interface Props {
 
 export function SectionLabel({ label, style, header = false }: Props) {
   return (
-    <Text accessibilityRole={header ? 'header' : undefined} style={[styles.label, style]}>
+    <ThemedText accessibilityRole={header ? 'header' : undefined} style={[styles.label, style]}>
       {label}
-    </Text>
+    </ThemedText>
   );
 }
 

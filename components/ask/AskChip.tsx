@@ -49,9 +49,11 @@ const styles = StyleSheet.create({
     borderColor: theme.colorAccent,
   },
   label: {
-    fontFamily: theme.fontBody,
+    // The family carries the weight — a `fontWeight` beside it is inert (RN does not
+    // synthesize custom-font weights), so the pair used to declare medium and render
+    // regular. CUL-652.
+    fontFamily: theme.fontBodyMedium,
     fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
   },
   blockLabel: {

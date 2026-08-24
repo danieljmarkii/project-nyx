@@ -1,6 +1,7 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useSyncStore } from '../../store/syncStore';
 import { theme } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
@@ -53,7 +54,7 @@ export function SyncBanner() {
 
   return (
     <View style={styles.banner}>
-      <Text style={styles.text}>{text}</Text>
+      <ThemedText style={styles.text}>{text}</ThemedText>
     </View>
   );
 }

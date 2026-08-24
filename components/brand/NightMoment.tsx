@@ -4,6 +4,7 @@ import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { NightGround } from './NightGround';
 import { WhorlSpinner } from './WhorlSpinner';
+import { ThemedText } from '../ui/ThemedText';
 
 // The night moment (B-284 §6): when a full-screen wait has nothing else to show yet
 // — cold-start hydration, vet-report generation, a photo read — the wait itself
@@ -130,7 +131,7 @@ export function NightMoment({ visible, title, subtitle }: NightMomentProps) {
         <Text style={styles.title} accessibilityRole="text">
           {title}
         </Text>
-        <Text style={styles.subtitle}>{subtitle}</Text>
+        <ThemedText style={styles.subtitle}>{subtitle}</ThemedText>
       </View>
     </Animated.View>
   );

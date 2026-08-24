@@ -1,5 +1,6 @@
-import { TouchableOpacity, Text, StyleSheet, AccessibilityRole } from 'react-native';
+import { TouchableOpacity, StyleSheet, AccessibilityRole } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 
 type Variant =
   | 'default'   // active: teal outline + tinted background (date presets)
@@ -50,7 +51,7 @@ export function FilterChip({
       // adjacent chips in a horizontal row never share a tap zone.
       hitSlop={{ top: 6, bottom: 6 }}
     >
-      <Text style={[set.label, active && set.activeLabel]}>{label}</Text>
+      <ThemedText style={[set.label, active && set.activeLabel]}>{label}</ThemedText>
     </TouchableOpacity>
   );
 }

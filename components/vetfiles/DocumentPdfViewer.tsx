@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   visible: boolean;
@@ -73,9 +74,9 @@ export function DocumentPdfViewer({ visible, uri, title, onClose }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
-            <Text style={styles.close}>Done</Text>
+            <ThemedText style={styles.close}>Done</ThemedText>
           </TouchableOpacity>
-          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          <ThemedText style={styles.title} numberOfLines={1}>{title}</ThemedText>
           {/* Balances the Done button so the title sits centred. */}
           <View style={styles.barSpacer} />
         </View>
@@ -85,14 +86,14 @@ export function DocumentPdfViewer({ visible, uri, title, onClose }: Props) {
           // copy, because to the owner in an exam room the two are the same
           // problem and neither is fixed by waiting.
           <View style={styles.centre}>
-            <Text style={styles.emptyTitle}>
+            <ThemedText style={styles.emptyTitle}>
               {openUri == null ? 'This PDF needs a connection' : 'That PDF wouldn’t open'}
-            </Text>
-            <Text style={styles.emptyBody}>
+            </ThemedText>
+            <ThemedText style={styles.emptyBody}>
               {openUri == null
                 ? 'It’s saved to your account — open it once with a signal and it stays on this phone.'
                 : 'The file is still saved. Try opening it again in a moment.'}
-            </Text>
+            </ThemedText>
           </View>
         ) : (
           <View style={styles.body}>

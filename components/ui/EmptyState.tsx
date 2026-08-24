@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, StyleProp, ViewStyle, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, StyleProp, ViewStyle, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 
 export interface EmptyStateAction {
   label: string;
@@ -40,8 +41,8 @@ interface Props {
 export function EmptyState({ title, body, action, align = 'inset', style, testID }: Props) {
   return (
     <View style={[align === 'fill' ? styles.fill : styles.inset, style]} testID={testID}>
-      <Text style={styles.title}>{title}</Text>
-      {body ? <Text style={styles.body}>{body}</Text> : null}
+      <ThemedText style={styles.title}>{title}</ThemedText>
+      {body ? <ThemedText style={styles.body}>{body}</ThemedText> : null}
       {action ? (
         <TouchableOpacity
           style={styles.action}
@@ -50,7 +51,7 @@ export function EmptyState({ title, body, action, align = 'inset', style, testID
           accessibilityRole="button"
           accessibilityLabel={action.label}
         >
-          <Text style={styles.actionText}>{action.label}</Text>
+          <ThemedText style={styles.actionText}>{action.label}</ThemedText>
         </TouchableOpacity>
       ) : null}
     </View>

@@ -1,8 +1,9 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ProgressBar } from './ProgressBar';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   // 1-based index of the pet-setup step this screen is (type = 1, name = 2, …).
@@ -81,7 +82,7 @@ export function OnboardingHeader({
             style={styles.skip}
             testID="onboarding-skip"
           >
-            <Text style={[styles.skipText, skipDisabled && styles.skipTextDisabled]}>{skipLabel}</Text>
+            <ThemedText style={[styles.skipText, skipDisabled && styles.skipTextDisabled]}>{skipLabel}</ThemedText>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -91,9 +92,9 @@ export function OnboardingHeader({
       {/* Visible progress text. The ProgressBar already announces "Step N of M"
           via its progressbar role, so this copy is hidden from assistive tech to
           avoid a duplicate announcement — it's a visual echo only. */}
-      <Text style={styles.stepLabel} importantForAccessibility="no" accessibilityElementsHidden>
+      <ThemedText style={styles.stepLabel} importantForAccessibility="no" accessibilityElementsHidden>
         {`Step ${step} of ${totalSteps}`}
-      </Text>
+      </ThemedText>
     </View>
   );
 }

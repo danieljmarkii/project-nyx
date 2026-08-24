@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
@@ -18,6 +18,7 @@ import {
   resolveConfirmLink,
   stateAfterFailedExchange,
 } from '../../lib/emailConfirm';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Where the emailed "Confirm email" link lands (B-432 / B-483).
 //
@@ -144,7 +145,7 @@ export default function ConfirmScreen() {
         <View style={styles.body} testID="confirm-working">
           <View style={styles.grow} />
           <WhorlSpinner size="md" ground="day" />
-          <Text style={styles.workingText}>Confirming your email</Text>
+          <ThemedText style={styles.workingText}>Confirming your email</ThemedText>
           <View style={styles.grow} />
         </View>
       </SafeAreaView>
@@ -164,8 +165,8 @@ export default function ConfirmScreen() {
             <MailCheck size={44} color={theme.colorAccent} strokeWidth={1.5} />
           )}
         </View>
-        <Text style={styles.title}>{content.title}</Text>
-        <Text style={styles.sub}>{content.body}</Text>
+        <ThemedText style={styles.title}>{content.title}</ThemedText>
+        <ThemedText style={styles.sub}>{content.body}</ThemedText>
         <View style={styles.grow} />
 
         <View style={styles.cta}>
@@ -194,7 +195,7 @@ export default function ConfirmScreen() {
               {signingOut ? (
                 <WhorlSpinner size="sm" ground="day" />
               ) : (
-                <Text style={styles.tertiaryText}>Sign out to use another account</Text>
+                <ThemedText style={styles.tertiaryText}>Sign out to use another account</ThemedText>
               )}
             </TouchableOpacity>
           ) : null}
