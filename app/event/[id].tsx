@@ -1,8 +1,5 @@
 import { useState, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Image, Alert,
-} from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
@@ -34,7 +31,7 @@ import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
-import { usePetStore } from '../../store/petStore';
+import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceChipRow';
@@ -48,6 +45,7 @@ import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSectio
 import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSection';
 import { destructiveConfirm } from '../../lib/haptics';
 import { EmptyState, Header, PhotoViewer } from '../../components/ui';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The two owner-classified stool event types share the analyze-stool read (D1 keeps
 // the stool_normal/diarrhea split). One predicate so the render + photo-retrigger
@@ -128,7 +126,7 @@ function ComboLinkRow({
       accessibilityRole="link"
       accessibilityLabel={label}
     >
-      <Text style={styles.comboLinkText} numberOfLines={1}>{label}</Text>
+      <ThemedText style={styles.comboLinkText} numberOfLines={1}>{label}</ThemedText>
       <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
     </TouchableOpacity>
   );
@@ -137,7 +135,7 @@ function ComboLinkRow({
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { removeFromToday } = useEventStore();
-  const { activePet } = usePetStore();
+  const { pets } = usePetStore();
 
   const [event, setEvent] = useState<TimelineRow | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -172,6 +170,15 @@ export default function EventDetailScreen() {
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // The name of the pet this EVENT belongs to, not whichever pet is active
+  // (CUL-574). This screen is reached BY ID — the multi-pet day-summary spine
+  // pushes /event/[id] for every pet's rows, and a notification or a deep link
+  // does the same — so the active pet is simply not an answer to "whose vomit is
+  // this?". Tapping Juniper's row while Pixel is active used to caption Juniper's
+  // AI read with Pixel's name, on the highest-stakes copy in the app.
+  // `resolveRecordPetName` carries the no-activePet-rung rule; see its comment.
+  const eventPetName = resolveRecordPetName(pets, event?.pet_id);
 
   const loadAll = useCallback(async () => {
     if (!id) return;
@@ -636,11 +643,11 @@ export default function EventDetailScreen() {
                 {/* B-062 — Lucide Camera (was a 📷 emoji) for a consistent vector
                     glyph set across the photo-affordance empty states. */}
                 <Camera size={32} color={theme.colorTextTertiary} strokeWidth={1.5} />
-                <Text style={styles.heroEmptyText}>{addPhotoCopy.action}</Text>
+                <ThemedText style={styles.heroEmptyText}>{addPhotoCopy.action}</ThemedText>
                 {/* B-371 — on an event whose photo feeds a read, teach what the
                     photo is for. Null (bare action label) on every other type. */}
                 {addPhotoCopy.hint ? (
-                  <Text style={styles.heroEmptyHint}>{addPhotoCopy.hint}</Text>
+                  <ThemedText style={styles.heroEmptyHint}>{addPhotoCopy.hint}</ThemedText>
                 ) : null}
               </>
             )}
@@ -649,58 +656,58 @@ export default function EventDetailScreen() {
 
         {/* Body */}
         <View style={styles.body}>
-          <Text style={styles.typeLabel}>{label.toUpperCase()}</Text>
-          <Text style={styles.dateBig}>{formatDate(event.occurred_at)}</Text>
-          <Text style={styles.timeRow}>
+          <ThemedText style={styles.typeLabel}>{label.toUpperCase()}</ThemedText>
+          <ThemedText style={styles.dateBig}>{formatDate(event.occurred_at)}</ThemedText>
+          <ThemedText style={styles.timeRow}>
             {timeDisplay.primary}
             {timeDisplay.isExact ? ` · ${formatRelative(event.occurred_at)}` : ''}
-          </Text>
+          </ThemedText>
           {/* B-010 — when the time wasn't witnessed, say so plainly. Honest, not
               alarming (Designer / Dr. Chen): the report must never present a
               found time as a clinically-exact one. */}
           {timeDisplay.tag ? (
-            <Text style={styles.confidenceNote}>
+            <ThemedText style={styles.confidenceNote}>
               {timeDisplay.tag === 'estimated'
                 ? 'Estimated — not witnessed'
                 : 'Found, not witnessed'}
-            </Text>
+            </ThemedText>
           ) : null}
           {/* EXIF attribution only when the time is exact: a found event's photo
               is stamped at discovery, not occurrence, so the window/estimate
               already carries the meaning here. */}
           {occurredAtSource === 'exif' && timeDisplay.isExact ? (
-            <Text style={styles.exifAttribution}>
+            <ThemedText style={styles.exifAttribution}>
               {formatExifAttribution(event.occurred_at)}
-            </Text>
+            </ThemedText>
           ) : null}
 
           {event.event_type === 'vomit' ? (
-            <VomitAnalysisSection eventId={event.id} petName={activePet?.name} hasPhoto={!!attachment} />
+            <VomitAnalysisSection eventId={event.id} petName={eventPetName} hasPhoto={!!attachment} />
           ) : null}
 
           {isStoolEvent(event.event_type) ? (
-            <StoolAnalysisSection eventId={event.id} petName={activePet?.name} hasPhoto={!!attachment} />
+            <StoolAnalysisSection eventId={event.id} petName={eventPetName} hasPhoto={!!attachment} />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>FOOD</Text>
-              {foodLabel.product ? <Text style={styles.foodProduct}>{foodLabel.product}</Text> : null}
+              <ThemedText style={styles.sectionLabel}>FOOD</ThemedText>
+              {foodLabel.product ? <ThemedText style={styles.foodProduct}>{foodLabel.product}</ThemedText> : null}
               {/* B-568 — BRAND · FORMAT, the same meta shape the Foods tab and the
                   picker tile use, so the detail screen names a food the way the library
                   does. Without the format this section could not distinguish two rows
                   of one prescription line stocked in both wet and dry. */}
               {foodLabel.brand || foodLabel.format ? (
-                <Text style={styles.foodBrand}>
+                <ThemedText style={styles.foodBrand}>
                   {[foodLabel.brand, foodFormatTag(foodLabel.format)].filter(Boolean).join(' · ')}
-                </Text>
+                </ThemedText>
               ) : null}
             </View>
           ) : null}
 
           {isMeal ? (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>INTAKE</Text>
+              <ThemedText style={styles.sectionLabel}>INTAKE</ThemedText>
               <IntakeChipRow
                 value={intakeRating}
                 onChange={handleIntakeChange}
@@ -736,14 +743,14 @@ export default function EventDetailScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Add a medication given with this ${foodType === 'treat' ? 'treat' : 'meal'}`}
             >
-              <Text style={styles.addMedText}>+ Add a med given with this</Text>
+              <ThemedText style={styles.addMedText}>+ Add a med given with this</ThemedText>
             </TouchableOpacity>
           ) : null}
 
           {isMedication && dose ? (
             <>
               <View style={styles.section}>
-                <Text style={styles.sectionLabel}>MEDICATION</Text>
+                <ThemedText style={styles.sectionLabel}>MEDICATION</ThemedText>
                 {/* The drug name/strength links to the drug-library screen where a
                     correction (fixing a mis-extracted strength) fixes every dose of
                     that drug at once — the only path to that edit from History. Only
@@ -758,15 +765,15 @@ export default function EventDetailScreen() {
                     accessibilityLabel={`View drug details for ${drugPrimary}`}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.foodProduct}>{drugPrimary}</Text>
-                      {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                      <ThemedText style={styles.foodProduct}>{drugPrimary}</ThemedText>
+                      {drugSecondary ? <ThemedText style={styles.foodBrand}>{drugSecondary}</ThemedText> : null}
                     </View>
                     <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
                   </TouchableOpacity>
                 ) : (
                   <>
-                    <Text style={styles.foodProduct}>{drugPrimary}</Text>
-                    {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                    <ThemedText style={styles.foodProduct}>{drugPrimary}</ThemedText>
+                    {drugSecondary ? <ThemedText style={styles.foodBrand}>{drugSecondary}</ThemedText> : null}
                   </>
                 )}
                 {/* B-156 PR B4 — dose → vehicle cross-link. On a dose given inside a
@@ -778,7 +785,7 @@ export default function EventDetailScreen() {
                 />
               </View>
               <View style={styles.section}>
-                <Text style={styles.sectionLabel}>ADHERENCE</Text>
+                <ThemedText style={styles.sectionLabel}>ADHERENCE</ThemedText>
                 <AdherenceChipRow
                   value={adherence}
                   onChange={handleAdherenceChange}
@@ -796,12 +803,12 @@ export default function EventDetailScreen() {
                   adherence,
                 }) ? (
                   <View style={styles.inDoubtNote}>
-                    <Text style={styles.inDoubtNoteText}>
+                    <ThemedText style={styles.inDoubtNoteText}>
                       {doseInDoubtNote({
-                        petName: activePet?.name ?? 'your pet',
+                        petName: eventPetName,
                         foodName: event.paired_food_name,
                       })}
-                    </Text>
+                    </ThemedText>
                   </View>
                 ) : null}
               </View>
@@ -809,7 +816,7 @@ export default function EventDetailScreen() {
                   the chips start empty when nothing was recorded, and the owner can
                   set or clear it any time. Descriptive, never a safety verdict. */}
               <View style={styles.section}>
-                <Text style={styles.sectionLabel}>HOW GIVEN</Text>
+                <ThemedText style={styles.sectionLabel}>HOW GIVEN</ThemedText>
                 <VehicleChipRow
                   value={howGiven}
                   onChange={handleVehicleChange}
@@ -821,9 +828,9 @@ export default function EventDetailScreen() {
                   below are how they fix a mistaken log. */}
               {doubleDose?.conflict ? (
                 <View style={styles.doubleDoseNote}>
-                  <Text style={styles.doubleDoseText}>
+                  <ThemedText style={styles.doubleDoseText}>
                     {doubleDoseNote({ drugName: dose.genericName, gapMinutes: doubleDose.gapMinutes ?? 0 })}
-                  </Text>
+                  </ThemedText>
                 </View>
               ) : null}
             </>
@@ -831,8 +838,8 @@ export default function EventDetailScreen() {
 
           {event.notes ? (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>NOTES</Text>
-              <Text style={styles.notes}>{event.notes}</Text>
+              <ThemedText style={styles.sectionLabel}>NOTES</ThemedText>
+              <ThemedText style={styles.notes}>{event.notes}</ThemedText>
             </View>
           ) : null}
         </View>
@@ -844,7 +851,7 @@ export default function EventDetailScreen() {
           destructive action from reading as a peer of Edit. */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.editButton} onPress={handleEdit} activeOpacity={0.85}>
-          <Text style={styles.editButtonText}>Edit</Text>
+          <ThemedText style={styles.editButtonText}>Edit</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.removeButton}
@@ -852,7 +859,7 @@ export default function EventDetailScreen() {
           activeOpacity={0.7}
           hitSlop={8}
         >
-          <Text style={styles.removeButtonText}>Remove</Text>
+          <ThemedText style={styles.removeButtonText}>Remove</ThemedText>
         </TouchableOpacity>
       </View>
 

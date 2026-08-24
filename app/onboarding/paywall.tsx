@@ -8,6 +8,7 @@ import { usePetStore } from '../../store/petStore';
 import { theme } from '../../constants/theme';
 import { useAppConfig } from '../../hooks/useAppConfig';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Paywall — the mocked upgrade screen (B-251 PR 10, spec §3.7, mockup 11). It sits
 // AFTER value is delivered (Pawfolio's delayed-paywall pattern) and BEFORE the warm
@@ -114,7 +115,7 @@ export default function PaywallScreen() {
           style={styles.skip}
           testID="paywall-maybe-later"
         >
-          <Text style={styles.skipText}>Maybe later</Text>
+          <ThemedText style={styles.skipText}>Maybe later</ThemedText>
         </TouchableOpacity>
       </View>
 
@@ -122,29 +123,29 @@ export default function PaywallScreen() {
         contentContainerStyle={styles.body}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Culprit Premium</Text>
-        <Text style={styles.subtitle}>
+        <ThemedText style={styles.title}>Culprit Premium</ThemedText>
+        <ThemedText style={styles.subtitle}>
           {`Everything that keeps ${activePet.name} healthy is free. Premium just adds convenience.`}
-        </Text>
+        </ThemedText>
 
         {/* Static, non-interactive pricing display — no selection, no purchase. */}
         <View style={styles.priceRow}>
           <View style={[styles.priceTile, styles.priceTileFeatured]}>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>Best value</Text>
+              <ThemedText style={styles.badgeText}>Best value</ThemedText>
             </View>
-            <Text style={styles.priceLabel}>Yearly</Text>
-            <Text style={styles.priceAmount}>
+            <ThemedText style={styles.priceLabel}>Yearly</ThemedText>
+            <ThemedText style={styles.priceAmount}>
               £29.99
-              <Text style={styles.priceUnit}> /yr</Text>
-            </Text>
+              <ThemedText style={styles.priceUnit}> /yr</ThemedText>
+            </ThemedText>
           </View>
           <View style={styles.priceTile}>
-            <Text style={styles.priceLabel}>Monthly</Text>
-            <Text style={styles.priceAmount}>
+            <ThemedText style={styles.priceLabel}>Monthly</ThemedText>
+            <ThemedText style={styles.priceAmount}>
               £3.99
-              <Text style={styles.priceUnit}> /mo</Text>
-            </Text>
+              <ThemedText style={styles.priceUnit}> /mo</ThemedText>
+            </ThemedText>
           </View>
         </View>
 
@@ -152,7 +153,7 @@ export default function PaywallScreen() {
           {PREMIUM_FEATURES.map((feature) => (
             <View key={feature} style={styles.featureRow}>
               <Check size={18} color={theme.colorAccent} strokeWidth={2.5} />
-              <Text style={styles.featureText}>{feature}</Text>
+              <ThemedText style={styles.featureText}>{feature}</ThemedText>
             </View>
           ))}
         </View>
@@ -168,10 +169,10 @@ export default function PaywallScreen() {
           testID="paywall-start-trial"
         />
         {/* Principle 7 — the explicit, load-bearing free-tier line. */}
-        <Text style={styles.freeLine}>
-          <Text style={styles.freeLineEmphasis}>Always free:</Text>
+        <ThemedText style={styles.freeLine}>
+          <ThemedText style={styles.freeLineEmphasis}>Always free:</ThemedText>
           {' logging, health alerts, trends & vet reports.'}
-        </Text>
+        </ThemedText>
       </ScrollView>
     </SafeAreaView>
   );

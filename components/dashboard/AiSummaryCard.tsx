@@ -1,7 +1,8 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { summaryBuildingCopy, summaryGroundingLabel, type CachedSummary } from '../../lib/summaryCopy';
+import { ThemedText } from '../ui/ThemedText';
 
 // AiSummaryCard — the "Patterns" dashboard's AI-forward centerpiece (requirements §7).
 //
@@ -31,12 +32,12 @@ export function AiSummaryCard({ summary, petName, onJumpToCards }: Props) {
     // `elevated` = borderless + shadow, matching the seeded dashboard cards (B-098 depth).
     <Card elevated>
       <View style={styles.headerRow}>
-        <Text style={styles.eyebrow}>Summary</Text>
+        <ThemedText style={styles.eyebrow}>Summary</ThemedText>
       </View>
 
       {summary ? (
         <>
-          <Text style={styles.body}>{summary.text}</Text>
+          <ThemedText style={styles.body}>{summary.text}</ThemedText>
           {onJumpToCards ? (
             <Pressable
               onPress={onJumpToCards}
@@ -45,14 +46,14 @@ export function AiSummaryCard({ summary, petName, onJumpToCards }: Props) {
               accessibilityLabel={`${summaryGroundingLabel(summary.evidence)} for ${who}`}
               style={styles.grounding}
             >
-              <Text style={styles.groundingText}>{summaryGroundingLabel(summary.evidence)} ↓</Text>
+              <ThemedText style={styles.groundingText}>{summaryGroundingLabel(summary.evidence)} ↓</ThemedText>
             </Pressable>
           ) : null}
         </>
       ) : (
         // Cold start / pre-deploy / a pet without enough to summarise yet (§10 calibration
         // voice) — warm, forward-looking, never an all-clear.
-        <Text style={styles.buildingBody}>{summaryBuildingCopy(who)}</Text>
+        <ThemedText style={styles.buildingBody}>{summaryBuildingCopy(who)}</ThemedText>
       )}
     </Card>
   );

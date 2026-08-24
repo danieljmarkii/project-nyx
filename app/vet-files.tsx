@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { Plus } from 'lucide-react-native';
@@ -52,6 +52,7 @@ import {
   type PickedVetFile,
 } from '../lib/vetDocumentCapture';
 import { pickVetImages, pickVetPdfs } from '../lib/vetDocumentPickers';
+import { ThemedText } from '../components/ui/ThemedText';
 
 // Vet Files — the library (B-478 VF-2) and its capture flow (VF-3).
 // §4.1 / §4.2 + mock L-real / E1-r2 / D1-r2 / D2-r2.
@@ -506,12 +507,12 @@ export default function VetFilesScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.titleBlock}>
-            <Text style={styles.pageTitle}>Vet Files</Text>
+            <ThemedText style={styles.pageTitle}>Vet Files</ThemedText>
             {/* The pet's name is the only filing cue a multi-pet household gets on
                 this screen (round-2 review). */}
-            <Text style={styles.pageSub}>
+            <ThemedText style={styles.pageSub}>
               {petName} · {rows.length} {rows.length === 1 ? 'document' : 'documents'}
-            </Text>
+            </ThemedText>
           </View>
 
           {/* A growable 10-value set behind a pill, per the house lens rule — and
@@ -569,9 +570,9 @@ export default function VetFilesScreen() {
           accessibilityRole="button"
           accessibilityLabel={`Recently deleted, ${deleted.length} ${deleted.length === 1 ? 'document' : 'documents'}`}
         >
-          <Text style={styles.deletedLinkText}>
+          <ThemedText style={styles.deletedLinkText}>
             Recently deleted ({deleted.length})
-          </Text>
+          </ThemedText>
         </TouchableOpacity>
       )}
       </>

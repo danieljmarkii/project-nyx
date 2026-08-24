@@ -21,7 +21,7 @@ export function FreeFeedingStrip({ arrangements }: { arrangements: ActiveArrange
               <View style={styles.dot} />
               <ThemedText style={styles.itemText} numberOfLines={1}>
                 {a.brand} {a.product_name}
-                {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-607). Every
+                {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-607). Every
                     ThemedText injects an explicit fontFamily, which breaks RN's native
                     text-style cascade — so a nested one would need its own family
                     spelled out. This span differs from its parent only in COLOUR, so

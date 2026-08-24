@@ -65,6 +65,7 @@ import {
 import { loadMedicationCourses } from '../../lib/medicationHistoryFacts';
 import { buildPastCourseFacts, EVIDENCE_LINK_LABEL } from '../../lib/medicationHistoryDetail';
 import type { MedicationCourse } from '../../lib/medicationHistory';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 interface MedicationItemRow {
   id: string;
@@ -370,7 +371,7 @@ export default function MedicationDetailScreen() {
       <SafeAreaView style={styles.container}>
         <Header leading="back" title="Medication" onLeadingPress={() => router.back()} />
         <View style={styles.centerMessage}>
-          <Text style={styles.errorText}>{loadError}</Text>
+          <ThemedText style={styles.errorText}>{loadError}</ThemedText>
         </View>
       </SafeAreaView>
     );
@@ -411,11 +412,11 @@ export default function MedicationDetailScreen() {
               <Image source={{ uri: photoUrl }} style={styles.heroImage} resizeMode="cover" />
             ) : (
               <View style={styles.heroEmpty}>
-                <Text style={styles.heroEmptyText}>
+                <ThemedText style={styles.heroEmptyText}>
                   {photoPath
                     ? 'Photo unavailable'
                     : isOwner ? 'Tap to add the label photo' : 'No label photo'}
-                </Text>
+                </ThemedText>
               </View>
             )}
           </TouchableOpacity>
@@ -430,7 +431,7 @@ export default function MedicationDetailScreen() {
             >
               {replacingPhoto
                 ? <WhorlSpinner size="sm" ground="day" />
-                : <Text style={styles.photoActionText}>{photoPath ? 'Replace label photo' : 'Add label photo'}</Text>}
+                : <ThemedText style={styles.photoActionText}>{photoPath ? 'Replace label photo' : 'Add label photo'}</ThemedText>}
             </TouchableOpacity>
           )}
 
@@ -450,8 +451,8 @@ export default function MedicationDetailScreen() {
                         key={f.label}
                         style={[styles.factRow, i === facts.length - 1 && styles.factRowLast]}
                       >
-                        <Text style={styles.factLabel}>{f.label}</Text>
-                        <Text style={styles.factValue}>{f.value}</Text>
+                        <ThemedText style={styles.factLabel}>{f.label}</ThemedText>
+                        <ThemedText style={styles.factValue}>{f.value}</ThemedText>
                       </View>
                     ))}
                     {hasEvidence && (
@@ -463,7 +464,11 @@ export default function MedicationDetailScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={EVIDENCE_LINK_LABEL}
                       >
-                        <Text style={styles.linkText}>{EVIDENCE_LINK_LABEL}</Text>
+                        <ThemedText style={styles.linkText}>{EVIDENCE_LINK_LABEL}</ThemedText>
+                        {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
+                            These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and Geist
+                            carries no ✓ / ✕ / ＋ in any loaded weight, so sweeping one buys OS fallback for
+                            nothing. CUL-364 §7. */}
                         <Text style={styles.linkChevron}>›</Text>
                       </TouchableOpacity>
                     )}
@@ -477,9 +482,9 @@ export default function MedicationDetailScreen() {
               per-control branching); the banner explains why it's not tappable. */}
           {!isOwner && (
             <View style={styles.readOnlyBanner}>
-              <Text style={styles.readOnlyText}>
+              <ThemedText style={styles.readOnlyText}>
                 This medication was added by another account, so it's read-only here.
-              </Text>
+              </ThemedText>
             </View>
           )}
 
@@ -550,7 +555,7 @@ export default function MedicationDetailScreen() {
             >
               {saving
                 ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
-                : <Text style={styles.saveBtnText}>Save</Text>}
+                : <ThemedText style={styles.saveBtnText}>Save</ThemedText>}
             </TouchableOpacity>
           </View>
         )}
@@ -697,6 +702,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   textInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     borderWidth: 1,

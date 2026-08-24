@@ -67,6 +67,7 @@ import {
   trialFoodsTitle,
 } from '../lib/trialFoodsScreen';
 import type { PickerFood } from '../lib/db';
+import { ThemedText } from '../components/ui/ThemedText';
 
 export default function TrialFoodsScreen() {
   const activePet = usePetStore((s) => s.activePet);
@@ -279,9 +280,9 @@ export default function TrialFoodsScreen() {
           }}
         />
         {note !== null && (
-          <Text testID="trial-foods-picker-note" style={styles.pickerNote}>
+          <ThemedText testID="trial-foods-picker-note" style={styles.pickerNote}>
             {note}
-          </Text>
+          </ThemedText>
         )}
         <FoodPicker
           petId={activePet?.id ?? ''}
@@ -312,9 +313,9 @@ export default function TrialFoodsScreen() {
       {model === null ? (
         <View style={styles.centered}>
           {set.status === 'no_trial' ? (
-            <Text testID="trial-foods-no-trial" style={styles.quiet}>
+            <ThemedText testID="trial-foods-no-trial" style={styles.quiet}>
               {noTrialLine(petName)}
-            </Text>
+            </ThemedText>
           ) : (
             // R2: not an empty list. See the header note.
             <WhorlSpinner size="md" ground="day" />
@@ -327,9 +328,9 @@ export default function TrialFoodsScreen() {
               it — the same pattern as the exposures screen (B-616 consistency pass:
               "Diet trial" no longer appears in both the nav bar and the subtitle). */}
           {model.subtitle !== null && (
-            <Text testID="trial-foods-subtitle" style={styles.subtitle}>
+            <ThemedText testID="trial-foods-subtitle" style={styles.subtitle}>
               {model.subtitle}
-            </Text>
+            </ThemedText>
           )}
 
           {/* B-704 §7.3 — the "Trial protein" row sits ABOVE the food list and is
@@ -346,15 +347,19 @@ export default function TrialFoodsScreen() {
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <View style={styles.proteinRowText}>
-              <Text style={styles.proteinRowLabel}>{TRIAL_PROTEIN_ROW_LABEL}</Text>
-              <Text
+              <ThemedText style={styles.proteinRowLabel}>{TRIAL_PROTEIN_ROW_LABEL}</ThemedText>
+              <ThemedText
                 testID="trial-protein-row-value"
                 style={[styles.proteinRowValue, !proteinRow.valueIsSet && styles.proteinRowValueEmpty]}
               >
                 {proteinRow.value}
-              </Text>
-              <Text style={styles.proteinRowSub}>{proteinRow.subLine}</Text>
+              </ThemedText>
+              <ThemedText style={styles.proteinRowSub}>{proteinRow.subLine}</ThemedText>
             </View>
+            {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
+                These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and Geist
+                carries no ✓ / ✕ / ＋ in any loaded weight, so sweeping one buys OS fallback for
+                nothing. CUL-364 §7. */}
             <Text style={styles.proteinRowChevron}>›</Text>
           </TouchableOpacity>
 
@@ -364,14 +369,14 @@ export default function TrialFoodsScreen() {
               <View key={group.title} style={styles.group}>
                 <SectionLabel label={group.title} header style={styles.groupLabel} />
                 {group.rows.length === 0 ? (
-                  <Text testID="trial-foods-empty-extras" style={styles.emptyState}>
+                  <ThemedText testID="trial-foods-empty-extras" style={styles.emptyState}>
                     {group.emptyState}
-                  </Text>
+                  </ThemedText>
                 ) : (
                   group.rows.map((row) => (
                     <View key={row.key} style={styles.row} testID="trial-foods-row">
-                      <Text style={styles.rowLabel}>{row.label}</Text>
-                      <Text style={styles.rowFact}>{row.fact}</Text>
+                      <ThemedText style={styles.rowLabel}>{row.label}</ThemedText>
+                      <ThemedText style={styles.rowFact}>{row.fact}</ThemedText>
                     </View>
                   ))
                 )}
@@ -406,9 +411,9 @@ export default function TrialFoodsScreen() {
           {/* C6, LOCKED, this screen only. It sits under the action because it
               explains what the whole list is FOR — the itemisation the vet reads —
               rather than qualifying any one row. */}
-          <Text testID="trial-foods-disclosure" style={styles.disclosure}>
+          <ThemedText testID="trial-foods-disclosure" style={styles.disclosure}>
             {model.disclosure}
-          </Text>
+          </ThemedText>
 
           {/* B-636 (PM-ruled 2026-08-04): the second door. The trial card only
               links the exposures list once an exposure has FIRED (offDiet > 0),
@@ -426,7 +431,7 @@ export default function TrialFoodsScreen() {
             accessibilityRole="button"
             accessibilityLabel="Outside the trial diet — the list your vet will want at the recheck"
           >
-            <Text style={styles.exposuresDoorText}>{TRIAL_EXPOSURES_TITLE} ›</Text>
+            <ThemedText style={styles.exposuresDoorText}>{TRIAL_EXPOSURES_TITLE} ›</ThemedText>
           </TouchableOpacity>
         </ScrollView>
       )}

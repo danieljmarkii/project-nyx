@@ -68,6 +68,14 @@ interface EventState {
   setTodayEvents: (events: NyxEvent[]) => void;
   prependEvent: (event: NyxEvent) => void;
   removeFromToday: (eventId: string) => void;
+  // The undo half of removeFromToday (CUL-575). An optimistic delete removes the
+  // event from Today before the write lands; when the write FAILS, History puts the
+  // row back — and Home has to get it back too, or the app keeps hiding an event
+  // that is still in the record until the next hydration tick (Home reloads on mount
+  // and on tick, not on focus, so "next tick" can be a long time). Re-inserts in
+  // occurred_at-desc order rather than prepending, so a restored event lands where it
+  // was rather than jumping to the top of Today.
+  restoreToToday: (event: NyxEvent) => void;
   patchInToday: (eventId: string, patch: Partial<NyxEvent>) => void;
 }
 
@@ -80,6 +88,18 @@ export const useEventStore = create<EventState>((set) => ({
     set((state) => ({
       todayEvents: state.todayEvents.filter((e) => e.id !== eventId),
     })),
+  restoreToToday: (event) =>
+    set((state) => {
+      // Idempotent: a double-restore (a retry, a re-render) must not duplicate the row.
+      if (state.todayEvents.some((e) => e.id === event.id)) return state;
+      const at = new Date(event.occurred_at).getTime();
+      const idx = state.todayEvents.findIndex(
+        (e) => new Date(e.occurred_at).getTime() < at,
+      );
+      const next = [...state.todayEvents];
+      next.splice(idx === -1 ? next.length : idx, 0, event);
+      return { todayEvents: next };
+    }),
   patchInToday: (eventId, patch) =>
     set((state) => ({
       todayEvents: state.todayEvents.map((e) =>

@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   petName: string;
@@ -29,21 +30,21 @@ export function VetFilesEmptyState({ petName, onAdd }: Props) {
         <View style={[styles.sheet, styles.sheetFront]} />
       </View>
 
-      <Text style={styles.headline}>A home for {petName}’s paperwork</Text>
-      <Text style={styles.body}>
+      <ThemedText style={styles.headline}>A home for {petName}’s paperwork</ThemedText>
+      <ThemedText style={styles.body}>
         Lab results, vaccine certificates, discharge notes, the email thread with your
         clinic — whatever you save here is ready when a vet asks for it.
-      </Text>
+      </ThemedText>
 
       <View style={styles.example}>
-        <Text style={styles.exampleText}>
-          <Text style={styles.exampleLead}>A good first one: </Text>
+        <ThemedText style={styles.exampleText}>
+          <ThemedText style={styles.exampleLead}>A good first one: </ThemedText>
           the rabies certificate. Boarding and groomers ask for it more than anyone.
-        </Text>
+        </ThemedText>
       </View>
 
       <PrimaryButton label="Add documents" onPress={onAdd} style={styles.cta} />
-      <Text style={styles.foot}>Photos, screenshots and PDFs — several at once is fine</Text>
+      <ThemedText style={styles.foot}>Photos, screenshots and PDFs — several at once is fine</ThemedText>
     </View>
   );
 }

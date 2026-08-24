@@ -1,7 +1,8 @@
 import { ReactNode } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ChevronLeft, X } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from './ThemedText';
 
 // Shared navigation header (B-075) — one bar for every full screen: a leading
 // slot (back ‹ / close ✕ / none), a centered title, and an optional trailing
@@ -69,9 +70,9 @@ export function Header({ title, leading = 'none', onLeadingPress, left, right, n
       {/* Equal-width sides (below) guarantee the flex title sits truly centered
           regardless of which slots are filled. */}
       {title ? (
-        <Text style={[styles.title, night && styles.titleNight]} numberOfLines={1}>
+        <ThemedText style={[styles.title, night && styles.titleNight]} numberOfLines={1}>
           {title}
-        </Text>
+        </ThemedText>
       ) : (
         <View style={styles.title} />
       )}

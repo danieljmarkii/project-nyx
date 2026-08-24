@@ -767,6 +767,9 @@ const styles = StyleSheet.create({
   },
   noteInput: {
     flex: 1,
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
     paddingVertical: theme.space0_5,

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect } from 'expo-router';
 import { theme, shadows } from '../../constants/theme';
@@ -19,6 +19,7 @@ import {
   trialTreatShareValue,
   type TrialSoFarModel,
 } from '../../lib/patternsTrial';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The "trial so far" metric-detail view (Signals v2 / B-755 PR 9, CUL-11; spec §4.5).
 // The Patterns "The trial so far" card's doorway: the per-phenotype vomit-timing rows
@@ -71,7 +72,7 @@ export default function TrialDetailRoute() {
 
       {!activePet ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>No pet selected.</Text>
+          <ThemedText style={styles.stateText}>No pet selected.</ThemedText>
         </View>
       ) : status === 'loading' ? (
         <View style={styles.centered}>
@@ -79,26 +80,26 @@ export default function TrialDetailRoute() {
         </View>
       ) : status === 'error' ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>I couldn't pull {petName}'s trial just now.</Text>
+          <ThemedText style={styles.stateText}>I couldn't pull {petName}'s trial just now.</ThemedText>
           <Pressable onPress={() => load(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Try again" style={styles.retryBtn}>
-            <Text style={styles.retryText}>Try again</Text>
+            <ThemedText style={styles.retryText}>Try again</ThemedText>
           </Pressable>
         </View>
       ) : model == null ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>{petName} isn't on a diet trial right now.</Text>
+          <ThemedText style={styles.stateText}>{petName} isn't on a diet trial right now.</ThemedText>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.card}>
-            <Text style={styles.title}>The trial so far</Text>
-            <Text style={styles.context}>{trialContextLine(model)}</Text>
+            <ThemedText style={styles.title}>The trial so far</ThemedText>
+            <ThemedText style={styles.context}>{trialContextLine(model)}</ThemedText>
 
             {/* Dropped when no vomiting was logged in-window (never a zero-wall all-clear);
                 an episodes-but-untimeable record discloses the episodes instead. */}
             {phenotypeState !== 'empty' && (
               <>
-                <Text style={styles.sectionLabel}>Vomiting timing</Text>
+                <ThemedText style={styles.sectionLabel}>Vomiting timing</ThemedText>
                 {phenotypeState === 'rows' ? (
                   <>
                     <View style={styles.rows}>
@@ -107,36 +108,36 @@ export default function TrialDetailRoute() {
                         return (
                           <View key={row.band} style={styles.row}>
                             <View style={styles.rowLabelCol}>
-                              <Text style={styles.rowLabel}>{timingBandLabel(row.band, model.config)}</Text>
-                              {row.count > 0 && median != null && <Text style={styles.rowSub}>{median}</Text>}
+                              <ThemedText style={styles.rowLabel}>{timingBandLabel(row.band, model.config)}</ThemedText>
+                              {row.count > 0 && median != null && <ThemedText style={styles.rowSub}>{median}</ThemedText>}
                             </View>
-                            <Text style={styles.rowValue}>{row.count}</Text>
+                            <ThemedText style={styles.rowValue}>{row.count}</ThemedText>
                           </View>
                         );
                       })}
                     </View>
-                    <Text style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</Text>
-                    {untimed != null && <Text style={styles.sample}>{untimed}</Text>}
+                    <ThemedText style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</ThemedText>
+                    {untimed != null && <ThemedText style={styles.sample}>{untimed}</ThemedText>}
                   </>
                 ) : (
-                  <Text style={styles.sample}>{trialNoneTimeableLine(model.phenotype)}</Text>
+                  <ThemedText style={styles.sample}>{trialNoneTimeableLine(model.phenotype)}</ThemedText>
                 )}
               </>
             )}
 
-            <Text style={styles.sectionLabel}>Diet during the trial</Text>
+            <ThemedText style={styles.sectionLabel}>Diet during the trial</ThemedText>
             <View style={styles.rows}>
               <View style={styles.row}>
-                <Text style={styles.rowLabel}>Treats</Text>
-                <Text style={styles.rowValueText}>{trialTreatShareValue(model.structure)}</Text>
+                <ThemedText style={styles.rowLabel}>Treats</ThemedText>
+                <ThemedText style={styles.rowValueText}>{trialTreatShareValue(model.structure)}</ThemedText>
               </View>
               <View style={styles.row}>
-                <Text style={styles.rowLabel}>Meals</Text>
-                <Text style={styles.rowValueText}>{trialMealsPerDayValue(model.structure)}</Text>
+                <ThemedText style={styles.rowLabel}>Meals</ThemedText>
+                <ThemedText style={styles.rowValueText}>{trialMealsPerDayValue(model.structure)}</ThemedText>
               </View>
             </View>
 
-            <Text style={styles.honesty}>{trialHonestyLine()}</Text>
+            <ThemedText style={styles.honesty}>{trialHonestyLine()}</ThemedText>
           </View>
         </ScrollView>
       )}

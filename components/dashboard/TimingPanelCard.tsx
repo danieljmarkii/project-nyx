@@ -1,4 +1,4 @@
-import { Pressable, View, Text, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { TimingDistribution } from './TimingDistribution';
@@ -11,6 +11,7 @@ import {
   timingNoneTimeableLine,
   type TimingPanelModel,
 } from '../../lib/patternsTiming';
+import { ThemedText } from '../ui/ThemedText';
 
 // TimingPanelCard — the Patterns dashboard's "Timing" panel face (Signals v2 / B-755
 // PR 9, CUL-11; spec §4.5). The full-record distribution: the dot lane, the three-row
@@ -49,20 +50,20 @@ export function TimingPanelCard({ model, petName, onPress }: Props) {
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
       <View style={styles.headerRow}>
-        <Text style={styles.title}>{timingPanelTitle()}</Text>
+        <ThemedText style={styles.title}>{timingPanelTitle()}</ThemedText>
         <ChevronRight size={18} color={theme.colorTextDisabled} />
       </View>
 
       {hasTimeable ? (
         <>
           {/* The lead explains the dots, so it only shows when there are dots. */}
-          <Text style={styles.lead}>{timingPanelLead(petName)}</Text>
+          <ThemedText style={styles.lead}>{timingPanelLead(petName)}</ThemedText>
           <TimingDistribution model={model} />
           <View style={styles.bandRows}>
             {model.bandRows.map((row) => (
               <View key={row.band} style={styles.bandRow}>
-                <Text style={styles.bandLabel}>{timingBandLabel(row.band, model.config)}</Text>
-                <Text style={styles.bandCount}>{row.count}</Text>
+                <ThemedText style={styles.bandLabel}>{timingBandLabel(row.band, model.config)}</ThemedText>
+                <ThemedText style={styles.bandCount}>{row.count}</ThemedText>
               </View>
             ))}
           </View>
@@ -70,12 +71,12 @@ export function TimingPanelCard({ model, petName, onPress }: Props) {
               dots can't be over-read), so they are legible body text — not fine-print.
               This is what keeps a mostly-untimed record (a grazing cat's "2 timed of 40")
               from being under-read at a glance. */}
-          <Text style={styles.sample}>{timingSampleLine(model)}</Text>
-          {untimed != null && <Text style={styles.untimed}>{untimed}</Text>}
+          <ThemedText style={styles.sample}>{timingSampleLine(model)}</ThemedText>
+          {untimed != null && <ThemedText style={styles.untimed}>{untimed}</ThemedText>}
         </>
       ) : (
         // Episodes exist but none could be timed — an honest state, never an all-clear.
-        <Text style={styles.noneTimeable}>{timingNoneTimeableLine(petName, model.totalCount)}</Text>
+        <ThemedText style={styles.noneTimeable}>{timingNoneTimeableLine(petName, model.totalCount)}</ThemedText>
       )}
     </Pressable>
   );

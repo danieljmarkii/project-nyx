@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -51,6 +51,7 @@ import { getTimingPanel, type TimingPanelModel } from '../../lib/patternsTiming'
 import { getTrialPanel, type TrialSoFarModel } from '../../lib/patternsTrial';
 import { TimingPanelCard } from '../../components/dashboard/TimingPanelCard';
 import { TrialSoFarCard } from '../../components/dashboard/TrialSoFarCard';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The "Patterns" dashboard (B-023 PR 3/4) — tier 2 of the intelligence ladder (§2): the
 // full story on demand. Summary-led layout (§7): the AI summary (AiSummaryCard, cache-only,
@@ -246,7 +247,7 @@ export default function PatternsScreen() {
 
       {!activePet ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>No pet selected.</Text>
+          <ThemedText style={styles.stateText}>No pet selected.</ThemedText>
         </View>
       ) : status === 'loading' ? (
         // Tier-1 (§5): content-shaped skeletons for the local-SQLite read (<~1s) —
@@ -259,7 +260,7 @@ export default function PatternsScreen() {
         </View>
       ) : status === 'error' ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>I couldn't pull {petName}'s patterns just now.</Text>
+          <ThemedText style={styles.stateText}>I couldn't pull {petName}'s patterns just now.</ThemedText>
           <Pressable
             onPress={() => load(true)}
             hitSlop={8}
@@ -267,7 +268,7 @@ export default function PatternsScreen() {
             accessibilityLabel="Try again"
             style={styles.retryBtn}
           >
-            <Text style={styles.retryText}>Try again</Text>
+            <ThemedText style={styles.retryText}>Try again</ThemedText>
           </Pressable>
         </View>
       ) : (

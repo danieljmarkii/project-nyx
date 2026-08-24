@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect } from 'expo-router';
 import { theme, shadows } from '../../constants/theme';
@@ -16,6 +16,7 @@ import {
   timingNoneTimeableLine,
   type TimingPanelModel,
 } from '../../lib/patternsTiming';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The Timing metric-detail view (Signals v2 / B-755 PR 9, CUL-11; spec §4.5). The
 // Patterns "Timing" card's doorway: the full-record vomit-timing distribution with
@@ -68,7 +69,7 @@ export default function TimingDetailRoute() {
 
       {!activePet ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>No pet selected.</Text>
+          <ThemedText style={styles.stateText}>No pet selected.</ThemedText>
         </View>
       ) : status === 'loading' ? (
         <View style={styles.centered}>
@@ -76,26 +77,26 @@ export default function TimingDetailRoute() {
         </View>
       ) : status === 'error' ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>I couldn't pull {petName}'s timing just now.</Text>
+          <ThemedText style={styles.stateText}>I couldn't pull {petName}'s timing just now.</ThemedText>
           <Pressable onPress={() => load(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Try again" style={styles.retryBtn}>
-            <Text style={styles.retryText}>Try again</Text>
+            <ThemedText style={styles.retryText}>Try again</ThemedText>
           </Pressable>
         </View>
       ) : model == null ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>
+          <ThemedText style={styles.stateText}>
             No vomiting has been logged for {petName} yet — this fills in as episodes are logged.
-          </Text>
+          </ThemedText>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.card}>
-            <Text style={styles.title}>Vomiting, timed from meals</Text>
+            <ThemedText style={styles.title}>Vomiting, timed from meals</ThemedText>
 
             {model.eligibleCount > 0 ? (
               <>
                 {/* The lead explains the dots — only shown when there are dots. */}
-                <Text style={styles.lead}>{timingPanelLead(petName)}</Text>
+                <ThemedText style={styles.lead}>{timingPanelLead(petName)}</ThemedText>
                 <TimingDistribution model={model} />
                 <View style={styles.bandRows}>
                   {model.bandRows.map((row) => {
@@ -103,25 +104,25 @@ export default function TimingDetailRoute() {
                     return (
                       <View key={row.band} style={styles.bandRow}>
                         <View style={styles.bandLabelCol}>
-                          <Text style={styles.bandLabel}>{timingBandLabel(row.band, model.config)}</Text>
-                          {row.count > 0 && median != null && <Text style={styles.bandMedian}>{median}</Text>}
+                          <ThemedText style={styles.bandLabel}>{timingBandLabel(row.band, model.config)}</ThemedText>
+                          {row.count > 0 && median != null && <ThemedText style={styles.bandMedian}>{median}</ThemedText>}
                         </View>
-                        <Text style={styles.bandCount}>{row.count}</Text>
+                        <ThemedText style={styles.bandCount}>{row.count}</ThemedText>
                       </View>
                     );
                   })}
                 </View>
-                <Text style={styles.sample}>{timingSampleLine(model)}</Text>
-                {untimedBreakdown != null && <Text style={styles.note}>{untimedBreakdown}</Text>}
+                <ThemedText style={styles.sample}>{timingSampleLine(model)}</ThemedText>
+                {untimedBreakdown != null && <ThemedText style={styles.note}>{untimedBreakdown}</ThemedText>}
               </>
             ) : (
-              <Text style={styles.stateText}>{timingNoneTimeableLine(petName, model.totalCount)}</Text>
+              <ThemedText style={styles.stateText}>{timingNoneTimeableLine(petName, model.totalCount)}</ThemedText>
             )}
 
-            <Text style={styles.footer}>
+            <ThemedText style={styles.footer}>
               This shows when vomiting happened relative to eating — a timing pattern in the log, not a
               cause or a diagnosis. Your vet reads what it means.
-            </Text>
+            </ThemedText>
           </View>
         </ScrollView>
       )}

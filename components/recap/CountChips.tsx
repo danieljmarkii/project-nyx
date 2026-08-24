@@ -8,6 +8,7 @@ import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import type { DayCountChip } from '../../lib/daySummary';
+import { ThemedText } from '../ui/ThemedText';
 
 function CountChipsImpl({ chips }: { chips: DayCountChip[] }) {
   if (chips.length === 0) return null;
@@ -30,10 +31,14 @@ function Chip({ chip }: { chip: DayCountChip }) {
   const tail = spaceAt === -1 ? '' : chip.label.slice(spaceAt);
   return (
     <View style={[styles.chip, isSymptom && styles.chipSymptom]}>
-      <Text style={styles.label}>
-        <Text style={[styles.count, isSymptom && styles.countSymptom]}>{head}</Text>
+      <ThemedText style={styles.label}>
+        <ThemedText style={[styles.count, isSymptom && styles.countSymptom]}>{head}</ThemedText>
+        {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+            raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+            own family and breaks RN's native text cascade, shipping a face change mid-sentence
+            (CUL-607). */}
         <Text style={isSymptom && styles.labelSymptom}>{tail}</Text>
-      </Text>
+      </ThemedText>
     </View>
   );
 }

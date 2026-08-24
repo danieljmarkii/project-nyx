@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
@@ -54,6 +54,7 @@ import {
 } from '../../lib/vetDocumentCapture';
 import { destructiveConfirm } from '../../lib/haptics';
 import { pickVetImages } from '../../lib/vetDocumentPickers';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Vet Files — document detail (B-478 VF-4).
 // §4.3 + mock E-img-r2 / E-pdf-r2.
@@ -619,15 +620,15 @@ export default function VetDocumentDetailScreen() {
         // hydrated in while this screen was open. Said plainly rather than shown as
         // an error: nothing went wrong, the document just isn't here any more.
         <View style={styles.centre}>
-          <Text style={styles.goneTitle}>This document isn’t here any more</Text>
-          <Text style={styles.goneBody}>
+          <ThemedText style={styles.goneTitle}>This document isn’t here any more</ThemedText>
+          <ThemedText style={styles.goneBody}>
             It may have been deleted. Deleted documents stay in Recently deleted for 30 days.
-          </Text>
+          </ThemedText>
           <TouchableOpacity
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/vet-files'))}
             accessibilityRole="button"
           >
-            <Text style={styles.goneLink}>Back to Vet Files</Text>
+            <ThemedText style={styles.goneLink}>Back to Vet Files</ThemedText>
           </TouchableOpacity>
         </View>
       ) : (
@@ -643,9 +644,9 @@ export default function VetDocumentDetailScreen() {
             />
 
             <View style={styles.titleBlock}>
-              <Text style={[styles.title, detail.untitled && styles.titleUntitled]}>
+              <ThemedText style={[styles.title, detail.untitled && styles.titleUntitled]}>
                 {detail.title}
-              </Text>
+              </ThemedText>
               {/* B-546 — the name the file arrived with. Shown here whatever the
                   title is (the library row drops it once a name exists; this screen
                   does not — see VetDocumentDetail.sourceFilename), and shown as
@@ -653,9 +654,9 @@ export default function VetDocumentDetailScreen() {
                   the right PDF" in the seconds before Send. Middle-truncated so the
                   extension and the distinguishing stem both survive. */}
               {detail.sourceFilename ? (
-                <Text style={styles.file} numberOfLines={1} ellipsizeMode="middle">
+                <ThemedText style={styles.file} numberOfLines={1} ellipsizeMode="middle">
                   {detail.sourceFilename}
-                </Text>
+                </ThemedText>
               ) : null}
             </View>
 

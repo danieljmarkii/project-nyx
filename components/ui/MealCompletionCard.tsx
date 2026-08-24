@@ -12,7 +12,7 @@ import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
-import { usePetStore } from '../../store/petStore';
+import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { updateEvent, updateMealIntake } from '../../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
@@ -126,7 +126,7 @@ export function MealCompletionCard() {
     pauseDwell, resumeDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
-  const { activePet, pets } = usePetStore();
+  const { pets } = usePetStore();
 
   const translateY = useRef(new Animated.Value(80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -301,15 +301,18 @@ export function MealCompletionCard() {
   // 2026-05-23) because treat refusal is itself a clinical signal. Default stays
   // null; never pre-stamped. 'other' and unclassified foods stay opted out.
   const showIntake = payload.foodType === 'meal' || payload.foodType === 'treat';
-  const petName = activePet?.name ?? 'your pet';
   // Name the MEAL's pet, not the active one. The flag is already targeted
   // correctly either way (evaluateMealLogTimeFlag runs against payload.petId, the
   // pet captured at log time), but a queue-then-switch would otherwise print
   // another pet's name in a sentence about this pet's trial — and a clinical
-  // heads-up naming the wrong animal is worse than no name at all. Falls back to
-  // the active pet, then to the generic form.
-  const mealPetName =
-    pets.find((p) => p.id === payload.petId)?.name ?? petName;
+  // heads-up naming the wrong animal is worse than no name at all.
+  //
+  // Re-based onto `resolveRecordPetName` (CUL-574), which drops the `?? activePet`
+  // rung this line used to carry: on the archived-pet miss that fallback named the
+  // wrong animal, which is the failure the rest of this comment describes. There is
+  // one name on this card now — the sites below used to read the ACTIVE pet's while
+  // the flag copy two lines up read the meal's, so one card could name two cats.
+  const mealPetName = resolveRecordPetName(pets, payload.petId);
   const trialFlag = payload.trialFlag ?? null;
   // The removal line names the MEAL's pet for the same reason the flag copy does.
   const notice = removed ? removedNoticeCopy(mealPetName) : null;
@@ -482,7 +485,7 @@ export function MealCompletionCard() {
           </View>
           {showIntake && (
             <View style={styles.intakeWrap}>
-              <ThemedText style={styles.intakeLabel}>How much did {petName} eat?</ThemedText>
+              <ThemedText style={styles.intakeLabel}>How much did {mealPetName} eat?</ThemedText>
               <IntakeChipRow
                 value={payload.intakeRating ?? null}
                 onChange={handleIntakeChange}
@@ -552,7 +555,7 @@ export function MealCompletionCard() {
               onPress={handleAddMed}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={`Add a medication given with ${petName}'s ${foodName || 'food'}`}
+              accessibilityLabel={`Add a medication given with ${mealPetName}'s ${foodName || 'food'}`}
             >
               {/* Copy: "+ Add … given with this" — the "+ Add" frames it as logging an
                   existing fact and "given with this" pins the PAST tense to the meal, so

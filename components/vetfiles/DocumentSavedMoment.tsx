@@ -1,10 +1,11 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { VetDocumentThumb } from './VetDocumentThumb';
 import type { SavedMomentCopy, AlsoAddTarget } from '../../lib/vetDocumentCapture';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   copy: SavedMomentCopy;
@@ -49,18 +50,18 @@ export function DocumentSavedMoment({
         </View>
 
         <View style={styles.headings}>
-          <Text style={styles.headline} accessibilityRole="header">{copy.headline}</Text>
+          <ThemedText style={styles.headline} accessibilityRole="header">{copy.headline}</ThemedText>
           {/* The offline promise. The save above completed against SQLite with no
               network involved, so this is a statement of fact, not reassurance —
               and without it an owner in a clinic basement has no way to know. */}
-          <Text style={styles.offline}>{copy.offlineLine}</Text>
+          <ThemedText style={styles.offline}>{copy.offlineLine}</ThemedText>
         </View>
 
         <View style={styles.card}>
           <VetDocumentThumb uri={thumbUri} isPdf={isPdf} />
           <View style={styles.cardMeta}>
-            <Text style={styles.cardTitle} numberOfLines={1}>{copy.cardTitle}</Text>
-            {copy.cardSub ? <Text style={styles.cardSub}>{copy.cardSub}</Text> : null}
+            <ThemedText style={styles.cardTitle} numberOfLines={1}>{copy.cardTitle}</ThemedText>
+            {copy.cardSub ? <ThemedText style={styles.cardSub}>{copy.cardSub}</ThemedText> : null}
           </View>
         </View>
 
@@ -74,7 +75,7 @@ export function DocumentSavedMoment({
             accessibilityRole="button"
             accessibilityLabel="Add another page to this document"
           >
-            <Text style={styles.quietActionText}>Add another page</Text>
+            <ThemedText style={styles.quietActionText}>Add another page</ThemedText>
           </TouchableOpacity>
         ) : null}
 
@@ -93,9 +94,9 @@ export function DocumentSavedMoment({
             accessibilityState={{ disabled: target.done }}
             accessibilityLabel={target.label}
           >
-            <Text style={[styles.quietActionText, target.done && styles.quietActionDone]}>
+            <ThemedText style={[styles.quietActionText, target.done && styles.quietActionDone]}>
               {target.done ? `✓  ${target.label}` : target.label}
-            </Text>
+            </ThemedText>
           </TouchableOpacity>
         ))}
 
@@ -116,7 +117,7 @@ export function DocumentSavedMoment({
             name things later" promise. The owner lands on a library whose untitled
             rows each carry a Name pill, so the cue and the affordance agree. */}
         {copy.multiDocument ? (
-          <Text style={styles.nameLater}>You can name each one later.</Text>
+          <ThemedText style={styles.nameLater}>You can name each one later.</ThemedText>
         ) : null}
         <View style={styles.actions}>
           {copy.multiDocument ? null : (
