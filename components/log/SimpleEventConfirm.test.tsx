@@ -9,6 +9,9 @@
 //              at History parity.
 
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+// Foreground state drives the CUL-576 re-derive, so drive it explicitly rather
+// than through a real AppState event (the components/ui/TextField.test.tsx shape).
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true) }));
 jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
   requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
@@ -24,9 +27,13 @@ jest.mock('../../lib/simpleEvent', () => ({
 }));
 
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Alert } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { SimpleEventConfirm } from './SimpleEventConfirm';
+import { useAppActive } from '../../hooks/useAppActive';
 import { formatTime } from '../../lib/utils';
+
+const mockedAppActive = useAppActive as jest.Mock;
 
 function renderConfirm(type: any = 'vomit') {
   const onBack = jest.fn();
@@ -46,7 +53,10 @@ function latestDraft(onDraftChange: jest.Mock) {
   return onDraftChange.mock.calls[onDraftChange.mock.calls.length - 1][0];
 }
 
-beforeEach(() => { jest.clearAllMocks(); });
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockedAppActive.mockReturnValue(true);
+});
 
 describe('SimpleEventConfirm — header + default (witnessed) state', () => {
   it('names the record "{Type} — {Pet}" and defaults to a witnessed pill', () => {
@@ -240,5 +250,180 @@ describe('SimpleEventConfirm — the draft it reports up', () => {
     expect(latestDraft(onDraftChange).timeTouched).toBe(true);
     fireEvent.press(getByText('Saw it'));
     expect(latestDraft(onDraftChange).timeTouched).toBe(false);
+  });
+});
+
+// ── CUL-576 — the clock default: whose claim is it, and when is it re-derived ──
+//
+// Two defects with one root: `occurred_at` starts as the app's assumption at mount
+// and was then (a) labelled as the OWNER's manual choice and (b) never revisited,
+// however long the sheet stayed open. Both reach the vet report — (a) as a
+// provenance the record does not hold, (b) as a timestamp on the correlation
+// engine's key. The fix re-derives on re-entry rather than re-stamping at save,
+// because this surface SHOWS the value (§0: the summary pill IS the save).
+describe('SimpleEventConfirm — the clock default (CUL-576)', () => {
+  // Local components, not UTC literals: the pill renders in the device zone, so a
+  // UTC literal would make these assertions a statement about the runner (B-514).
+  const opened = new Date(2026, 7, 24, 17, 33);
+  const returned = new Date(2026, 7, 24, 18, 5);
+
+  function renderAt(when: Date) {
+    jest.useFakeTimers({ doNotFake: ['nextTick'] });
+    jest.setSystemTime(when);
+    const onDraftChange = jest.fn();
+    // A FRESH element each render: React bails out of re-rendering a subtree it is
+    // handed a referentially identical element for, which would mean the mocked
+    // useAppActive never gets re-read and this helper silently tests nothing.
+    const el = () => (
+      <SimpleEventConfirm
+        type="vomit" petId="p1" petName="Nyx"
+        onBack={jest.fn()} onLogged={jest.fn()} onDraftChange={onDraftChange}
+      />
+    );
+    const utils = render(el());
+    /** Background the app, move the clock, bring it back — the restored sheet. */
+    const reenter = (at: Date) => {
+      mockedAppActive.mockReturnValue(false);
+      utils.rerender(el());
+      jest.setSystemTime(at);
+      mockedAppActive.mockReturnValue(true);
+      utils.rerender(el());
+    };
+    return { ...utils, reenter, onDraftChange };
+  }
+
+  afterEach(() => { jest.useRealTimers(); });
+
+  it('writes source "now" when untouched — the app’s clock, not the owner’s claim', async () => {
+    // The mislabel this replaces: every symptom logged on the default clock wrote
+    // 'manual', which is the app asserting a human picked that timestamp.
+    const { getByText } = renderAt(opened);
+    fireEvent.press(getByText('Log it'));
+    await waitFor(() => expect(mockInsert).toHaveBeenCalled());
+    expect(mockInsert.mock.calls[0][0].source).toBe('now');
+  });
+
+  it('writes source "manual" once the owner moves the picker', async () => {
+    const view = renderAt(opened);
+    fireEvent.press(view.getByTestId('confirm-time-main'));
+    fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 7, 24, 14, 0));
+    fireEvent.press(view.getByText('Log it'));
+    await waitFor(() => expect(mockInsert).toHaveBeenCalled());
+    expect(mockInsert.mock.calls[0][0].source).toBe('manual');
+  });
+
+  it('re-derives the untouched time when the sheet is re-entered', () => {
+    // The pill is the assertion on purpose: it is what the owner reads, and §0
+    // makes it the save. A pill still reading 5:33 PM at 6:05 is the whole defect.
+    const { reenter, getByText } = renderAt(opened);
+    expect(getByText(`Vomit · today at ${formatTime(opened)}`)).toBeTruthy();
+    reenter(returned);
+    expect(getByText(`Vomit · today at ${formatTime(returned)}`)).toBeTruthy();
+  });
+
+  it('leaves an owner-set time alone across a re-entry', () => {
+    // The asymmetry that makes the re-derive safe: the clock may replace the app's
+    // own assumption and nothing else. Backgrounding must never silently re-date a
+    // time the owner deliberately backfilled.
+    const chosen = new Date(2026, 7, 24, 14, 0);
+    const view = renderAt(opened);
+    fireEvent.press(view.getByTestId('confirm-time-main'));
+    fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, chosen);
+    expect(view.getByText(`Vomit · today at ${formatTime(chosen)}`)).toBeTruthy();
+    view.reenter(returned);
+    expect(view.getByText(`Vomit · today at ${formatTime(chosen)}`)).toBeTruthy();
+  });
+
+  it('a re-derive while in "Found it" moves neither the window nor the draft', () => {
+    // The found path derives occurred_at from the window's LATEST edge, not from
+    // the point — so a re-derive of the point must be invisible here. If it leaked
+    // into the window it would widen a discovery bound the owner already asserted,
+    // which is a stronger claim than the record holds (the B-448 direction).
+    const { reenter, getByText, onDraftChange } = renderAt(opened);
+    fireEvent.press(getByText('Found it'));
+    const before = getByText(/^Vomit · found by /).props.children;
+    const dirtyBefore = latestDraft(onDraftChange).timeTouched;
+    reenter(returned);
+    expect(getByText(/^Vomit · found by /).props.children).toEqual(before);
+    expect(latestDraft(onDraftChange).timeTouched).toBe(dirtyBefore);
+  });
+
+  it('a re-derive does not make the sheet dirty — the discard guard stays quiet', () => {
+    // CUL-612's guard reads `timeTouched`. If the app moving its own assumption
+    // counted as the owner's work, a backdrop tap on a sheet nobody edited would
+    // put a discard dialog in front of them.
+    const { reenter, onDraftChange } = renderAt(opened);
+    expect(latestDraft(onDraftChange).timeTouched).toBe(false);
+    reenter(returned);
+    expect(latestDraft(onDraftChange).timeTouched).toBe(false);
+  });
+});
+
+// ── CUL-577 — the sheet is actually wired to the per-source chooser ───────────
+//
+// The RULE (which permission is asked for, what a denial says) is owned and pinned
+// by lib/photoSource.test.ts. What these three add is that this surface reaches it
+// — the half a shared module cannot prove about its callers, and the half that was
+// wrong here for the whole life of the feature.
+describe('SimpleEventConfirm — photo permissions (CUL-577)', () => {
+  /** Press a button on the most recent Alert.alert by its label. */
+  function pressAlert(label: string) {
+    const spy = Alert.alert as unknown as jest.Mock;
+    const buttons = spy.mock.calls[spy.mock.calls.length - 1][2] as { text: string; onPress?: () => void }[];
+    const btn = buttons.find((b) => b.text === label);
+    if (!btn) throw new Error(`no "${label}" button on the alert`);
+    btn.onPress?.();
+  }
+
+  const askCamera = ImagePicker.requestCameraPermissionsAsync as jest.Mock;
+  const askLibrary = ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock;
+  const launchCamera = ImagePicker.launchCameraAsync as jest.Mock;
+  const launchLibrary = ImagePicker.launchImageLibraryAsync as jest.Mock;
+
+  beforeEach(() => {
+    jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    // clearAllMocks wipes call data but NOT implementations, so a per-test denial
+    // would leak into the next test as a granted-looking mock that quietly denies.
+    askCamera.mockResolvedValue({ status: 'granted' });
+    askLibrary.mockResolvedValue({ status: 'granted' });
+    launchCamera.mockResolvedValue({ canceled: true });
+    launchLibrary.mockResolvedValue({ canceled: true });
+  });
+  afterEach(() => { (Alert.alert as unknown as jest.Mock).mockRestore?.(); });
+
+  it('Take photo asks only for camera — a library denial no longer blocks it', async () => {
+    // The defect: the library grant gated the chooser itself, so an owner who had
+    // said no to Photos could never take a camera shot — on a vomit/stool confirm
+    // that is the payload the per-incident AI read runs on.
+    askLibrary.mockResolvedValue({ status: 'denied' });
+    const { getByText } = renderConfirm('vomit');
+    fireEvent.press(getByText('Add a photo'));
+    pressAlert('Take photo');
+    await waitFor(() => expect(launchCamera).toHaveBeenCalled());
+    expect(askCamera).toHaveBeenCalled();
+    expect(askLibrary).not.toHaveBeenCalled();
+  });
+
+  it('Choose from library asks only for the library', async () => {
+    const { getByText } = renderConfirm('vomit');
+    fireEvent.press(getByText('Add a photo'));
+    pressAlert('Choose from library');
+    await waitFor(() => expect(launchLibrary).toHaveBeenCalled());
+    expect(askLibrary).toHaveBeenCalled();
+    expect(askCamera).not.toHaveBeenCalled();
+  });
+
+  it('a denial points at the other source, which now actually works', async () => {
+    askCamera.mockResolvedValue({ status: 'denied' });
+    const { getByText } = renderConfirm('vomit');
+    fireEvent.press(getByText('Add a photo'));
+    pressAlert('Take photo');
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        'Camera access needed',
+        'Allow camera access in Settings, or choose a photo from your library instead.',
+      );
+    });
+    expect(launchCamera).not.toHaveBeenCalled();
   });
 });
