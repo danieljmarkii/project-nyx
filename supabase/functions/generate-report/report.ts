@@ -1100,6 +1100,29 @@ export type SafetyFlag =
       symptomDays: number
       daysSinceLastEpisode: number
       firstOnsetIso: string
+      /**
+       * The LAST episode's local day key — the render's closing anchor (B-612 / CUL-319).
+       *
+       * WHAT `episodeSetMatches` ACTUALLY GATES, because the first version of this comment got
+       * it wrong and an adversarial pass caught it: it is NOT "the window doesn't cover the
+       * detector's episode set". That is impossible — `buildDetectionInput` builds the
+       * detector's input FROM `windowEvents`, so the detector's onsets are always a subset of
+       * the report's `episodes`. What actually makes the counts differ is that the two layers
+       * collapse at different grains: the engine collapses a 3-HOUR bout to one onset, the
+       * report de-duplicates at 60 SECONDS. So a single same-day re-vomit two hours after
+       * another — anywhere in an eight-week course — makes the counts disagree and nulls this
+       * anchor for the whole course. Measured over simulated chronic vomiters: ~57% of records
+       * null at a 10% bout rate, ~92% at 20%.
+       *
+       * The guard is kept anyway, and deliberately: it is what keeps this anchor and the
+       * `daysSinceLastEpisode` printed in the SAME SENTENCE derived from the same
+       * `lastLocalDay`. Letting the anchor go unconditional while recency stayed guarded would
+       * reopen the flag-vs-tile contradiction the recount block was added to close. Null ⇒ the
+       * render states the opening anchor only ("logged since X") and asserts no closing one,
+       * which is honest but loses the closing date — the cost of that trade is real and is
+       * tracked separately rather than hidden here.
+       */
+      lastOnsetDayKey: string | null
       tier: SymptomChronicityFinding['tier']
       windowDays: number
     }
@@ -3441,9 +3464,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // safety line — vet-report-cold-read, PR 7). The report is the local-day surface, so BOTH
     // symptomDays AND daysSinceLastEpisode are recounted over the SAME episode set (deduped window
     // events of this type from the detector's first onset) in the owner's timezone, so the flag
-    // agrees with the tile it sits beside. If the report window doesn't cover the detector's full
-    // episode set (episode counts differ — the 56d-detector-vs-90d-report gap, B-246), keep the
-    // engine's numbers rather than derive from a partial set. The WORSENING flag's sibling UTC
+    // agrees with the tile it sits beside. When the two counts DISAGREE, keep the engine's
+    // numbers rather than derive from a set the report and the engine are describing differently
+    // (see `lastOnsetDayKey`'s docstring for what actually makes them disagree — it is the 60s-vs-3h
+    // collapse grain, NOT the window coverage this comment used to claim). The WORSENING flag's sibling UTC
     // counts are still NOT patched here — that reconciliation stays the deferred B-219 decision.
     const firstOnsetMs = Date.parse(f.firstOnsetIso)
     const episodes = windowEvents.filter(
@@ -3458,8 +3482,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         if (lastLocalDay === null || dn > lastLocalDay) lastLocalDay = dn
       }
     }
-    // Only trust the local recount when the report window covers the detector's full episode set
-    // (mirrors the symptomDays guard); else the engine's UTC number is the honest fallback.
+    // Only trust the local recount when the report and the engine agree on the episode COUNT;
+    // else the engine's UTC number is the honest fallback. (Not a window-coverage test — the
+    // detector's input is built FROM windowEvents, so its onsets are always a subset. What makes
+    // the counts differ is the collapse grain: 3h in the engine, 60s here.)
     const episodeSetMatches = episodes.length === f.episodeCount
     const localSymptomDays = episodeSetMatches ? localDayNums.size : f.symptomDays
     const localDaysSince =
@@ -3473,6 +3499,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       symptomDays: localSymptomDays,
       daysSinceLastEpisode: localDaysSince,
       firstOnsetIso: f.firstOnsetIso,
+      // Reuses `lastLocalDay` from the recount above — no second traversal, and therefore no
+      // second notion of "the last episode" that could drift from `daysSinceLastEpisode`.
+      lastOnsetDayKey: episodeSetMatches && lastLocalDay !== null ? dayKeyFromNumber(lastLocalDay) : null,
       tier: f.tier,
       windowDays: f.windowDays,
     })

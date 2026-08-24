@@ -1403,16 +1403,103 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // edge — the same vocabulary the exposure counts use, for the same reason. Not
       // suppressed and not softened: the flag still fires, still leads, and still says the
       // pattern is sustained. It simply stops asserting a start date it cannot know.
+      //
+      // TWO different edges can truncate this interval, and they need DIFFERENT sentences
+      // (B-612 / CUL-319, adversarial findings 7 then CE-1/CE-4). The clause originally
+      // measured only the gap to the report window's start, which is structurally unreachable
+      // on the 90-day fallback: the detector reads a 56-day lookback, so its first onset sits
+      // ~34 days INSIDE a window that opened earlier. Thirty vomits logged Apr 4 – Jun 30
+      // rendered "logged from May 7 to Jun 30: 19 episodes" beside this page's own
+      // "(30 logged)" and an appendix A opening Apr 4, with no disclosure at all.
+      //
+      // THE FIRST FIX FOR THAT WAS ALSO WRONG, and in the more dangerous direction. It asked
+      // "is the onset near the lookback edge?" — arithmetic — and then asserted a fact about
+      // this report's own evidence appendix. On a course that genuinely STARTS a day or two
+      // inside the lookback (the modal shape for the wedge user, whose logging begins when the
+      // problem does) it printed "earlier episodes in this window are listed in appendix A"
+      // over an appendix whose first row IS the onset: ~20% of fired pointers false, inflating
+      // the course's duration on the line a vet scans first. It also left a dead band — windows
+      // of lookback+1..7 days rendered nothing at all — so a 60-day recheck window, the
+      // commonest `since_visit` shape there is, still showed "7 episodes from May 12" beside
+      // "(9 logged)" over an appendix opening May 5.
+      //
+      // So the question is EVIDENTIARY, not arithmetic: does the appendix actually hold an
+      // earlier entry of THIS symptom? `snap.provenance.symptomLog` is the whole window,
+      // uncapped, and is what appendix A renders — so the pointer is checked against the very
+      // rows it points at, and cannot be false. It is also robust to WHY the flag's view starts
+      // late (a lookback, an episode floor, anything later), because it only ever claims what
+      // it has just verified. Filtering by `type` matters: earlier rows of a DIFFERENT symptom
+      // are not evidence about this one, and pointing at them would let a vet read an April
+      // diarrhoea entry as the start of a vomiting course.
+      //
+      // THE TWO FACTS ARE INDEPENDENT, AND BOTH CAN BE TRUE AT ONCE. An earlier version of
+      // this comment claimed they were mutually exclusive by construction; a third adversarial
+      // pass disproved it in the modal band. A `since_visit` window opening May 4 whose
+      // detector lookback opens May 7 retains its first episode on May 8 — so the onset is 4
+      // days inside the window (edge condition true) AND rows exist on May 5–6 (pointer
+      // condition true). Rendering them through a ternary silently dropped the edge sentence,
+      // which is the STRONGER claim: it says appendix A's own first row sits at the window's
+      // boundary, so that row is a floor rather than a start. So both render, in the order the
+      // reader needs them — where the flag's view begins relative to the record, then where the
+      // record itself begins relative to the window.
+      //
+      // AND THE EDGE CONDITION KEYS ON THE RECORD, NOT THE ONSET. Keying it on the onset was
+      // the v1 defect surviving in place: on the 90-day fallback the detector's 56-day lookback
+      // pushes the onset ~34 days inside the window, so the gap could never be small and the
+      // disclosure was structurally unreachable on the DEFAULT scope. The fact being disclosed
+      // was never about the onset — it is about whether the earliest row a vet can find in
+      // appendix A sits at the window's own edge.
+      const onsetDayKey = localDayKeyOf(f.firstOnsetIso, tz)
       const onsetDay = fmtLocalDay(f.firstOnsetIso, tz)
-      const leftCensored = daysBetweenDayKeys(snap.scope.startDate, localDayKeyOf(f.firstOnsetIso, tz)) <= CHRONICITY_LEFT_CENSOR_DAYS
-      const censorBit = leftCensored
-        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
+      const sameSymptomRows = snap.provenance.symptomLog.filter((e) => e.type === f.symptomType)
+      const earlierInWindow = sameSymptomRows.filter((e) => localDayKeyOf(e.occurredAt, tz) < onsetDayKey)
+      // Same LOCAL DAY as the onset is not "earlier": the onset instant is itself one of these
+      // rows, so a time-of-day comparison would make the flag point at its own day.
+      const earliestRowDayKey =
+        sameSymptomRows.reduce<string | null>((min, e) => {
+          const k = localDayKeyOf(e.occurredAt, tz)
+          return min === null || k < min ? k : min
+        }, null) ?? onsetDayKey
+      const recordAtWindowEdge =
+        daysBetweenDayKeys(snap.scope.startDate, earliestRowDayKey) <= CHRONICITY_LEFT_CENSOR_DAYS
+      const label = symptomLabel(f.symptomType).toLowerCase()
+      // COUNTS INCIDENTS, NOT RAW LOGS: `symptomLog` is already de-duplicated, so this is
+      // exactly the number of appendix A ROWS the vet will find, which is what makes the claim
+      // checkable. Summing `dupCount` here would overstate it against the page it points at.
+      const pointerBit =
+        earlierInWindow.length > 0
+          ? ` This flag's own view opens ${h(onsetDay)}, but this report's record starts earlier &mdash; ${num(
+              earlierInWindow.length,
+            )} earlier ${h(label)} entr${
+              earlierInWindow.length === 1 ? 'y is' : 'ies are'
+            } listed in appendix&nbsp;A.`
+          : ''
+      const edgeBit = recordAtWindowEdge
+        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record begins at its own edge &mdash; it cannot show how long the sign predates it.`
         : ''
+      const censorBit = `${pointerBit}${edgeBit}`
+      // ANCHORS, NOT A DERIVED DURATION (B-612 / CUL-319, cold-read blocker; PM ruled option B).
+      // This printed "has been ongoing 25 days (first logged Jun 5)" on a page also stamped
+      // "Generated Jul 2" and beside a tile reading "28 d" — three figures for one quantity, and
+      // the reader can derive two of them. The 25 came from `spanDays`, a FLOORED INSTANT DELTA
+      // (`Math.floor((last - first) / MS_PER_DAY)` in detection.ts), so it is clock-dependent
+      // rather than calendar-dependent: moving the last episode one hour later takes it to 26
+      // with no change to any date on the page. It also understates, inside a safety flag.
+      //
+      // The fix is to stop printing a number nothing on the page can check and print the two
+      // dates it is derived from instead — chronicity still reads at a glance from the span of
+      // dates, and every figure now traces to appendix A, which is this report's whole doctrine.
+      // `spanDays` is deliberately LEFT ALONE in detection.ts: it gates `minSpanDays` /
+      // `firmSpanDays`, so changing it would move when this safety lane fires and at what tier,
+      // across the rolling Signal too — a threshold change, not a rendering fix, and it needs its
+      // own adversarial pass. Nothing here re-derives a rival span; the number simply stops being
+      // rendered, so no second definition is created.
+      const spanPhrase = f.lastOnsetDayKey
+        ? `logged from ${h(onsetDay)} to ${h(fmtDay(f.lastOnsetDayKey))}`
+        : `logged since ${h(onsetDay)}`
       return flagRow(
         'Chronicity',
-        `<b>${h(symptomLabel(f.symptomType))} has been ongoing ${num(f.spanDays)} day${
-          f.spanDays === 1 ? '' : 's'
-        }</b> (first logged ${h(onsetDay)}): ${num(f.episodeCount)} episode${
+        `<b>${h(symptomLabel(f.symptomType))} has been ${spanPhrase}</b>: ${num(f.episodeCount)} episode${
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
@@ -4327,20 +4414,58 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
 
 function symptomLogRow(e: SymptomLogEntry, tz: string | null): string {
   const dateCell = fmtLocalDay(e.occurredAt, tz)
+  const rowDay = localDayKeyOf(e.occurredAt, tz)
   const occCell = occurredCell(e, tz)
-  const loggedCell = fmtLocalTime(e.loggedAt, tz)
-  const dup = e.dupCount > 1 ? ` <span class="conf">${e.dupCount} logs</span>` : ''
+  // DATE THE LOG TIME WHEN IT IS NOT THE ROW'S DAY (B-612 / CUL-319, cold-read blocker).
+  // The row's Date column is the OCCURRENCE day, so a bare "08:10" in the Logged column is
+  // read against it — and an event that occurred at 23:30 and was logged the next morning
+  // then states, on its face, that it was recorded fifteen hours before it could have
+  // happened. That is the occurred-vs-logged column pair, the report's best provenance
+  // feature, contradicting itself precisely on the found-later events it exists to serve.
+  const loggedDay = localDayKeyOf(e.loggedAt, tz)
+  const loggedCell =
+    loggedDay === rowDay
+      ? h(fmtLocalTime(e.loggedAt, tz))
+      : `${h(fmtLocalTime(e.loggedAt, tz))}<span class="daynote">${h(fmtDay(loggedDay))}</span>`
+  // NOT a `.conf` chip. `.conf` is the time-confidence vocabulary (seen/est/range/
+  // unspecified); the duplicate tag is a statement about the RECORD, not about how well the
+  // time is known, and rendering it in the same uppercase bordered chip inside the same
+  // column made a vet read "2 logs" as a fifth confidence value — or as two episodes, which
+  // collides with the page-1 count. It also carries its own gloss now: the legend that
+  // defines it is on the last page, which nobody reaches in a 60-second scan.
+  const dup =
+    e.dupCount > 1
+      ? ` <span class="dup">${e.dupCount} logs &middot; same incident, counted once</span>`
+      : ''
   let noteCell = e.notes ? h(e.notes) : ''
   if (e.phenotype) {
     noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype)}</span>`
   }
-  return `<tr><td class="num">${h(dateCell)}</td><td>${h(symptomLabel(e.type))}</td><td>${occCell}${dup}</td><td class="num">${h(
-    loggedCell,
-  )}</td><td>${noteCell || '&mdash;'}</td></tr>`
+  return `<tr><td class="num">${h(dateCell)}</td><td>${h(symptomLabel(e.type))}</td><td>${occCell}${dup}</td><td class="num">${loggedCell}</td><td>${noteCell || '&mdash;'}</td></tr>`
+}
+
+/**
+ * A bound's local time, carrying its DAY when that day is not the row's own (B-612 /
+ * CUL-319, cold-read blocker). The occurred cell renders clock times only, which is
+ * correct while a window sits inside one local day and silently false as soon as it does
+ * not: an overnight find is the single most common windowed event there is, and
+ * "~23:00–07:20" on a row dated Jun 14 reads backwards — the 23:00 belongs to Jun 13.
+ * The first artifact to contain an overnight window is the one that exposed this; five
+ * earlier artifacts had every event witnessed to the minute, so the bug could not render.
+ *
+ * Clinically this is not cosmetic. The Jun 14 incident reads yellow/bile/watery — bilious
+ * vomiting syndrome, whose diagnostic hallmark IS the overnight, empty-stomach, long
+ * post-prandial interval. Anchored to the wrong evening it becomes a ~4h post-prandial
+ * event and drops off the differential.
+ */
+function boundTime(iso: string, rowDayKey: string, tz: string | null): string {
+  const t = fmtLocalTime(iso, tz)
+  return localDayKeyOf(iso, tz) === rowDayKey ? t : `${fmtDay(localDayKeyOf(iso, tz))} ${t}`
 }
 
 /** B-010 occurred cell — witnessed=exact+seen, estimated=~time+est, window=range+range. */
 function occurredCell(e: SymptomLogEntry, tz: string | null): string {
+  const rowDay = localDayKeyOf(e.occurredAt, tz)
   const conf = e.occurredAtConfidence
   if (conf === 'window' && !(e.occurredAtEarliest && e.occurredAtLatest)) {
     // One-sided window — the "Sometime before/after" capture mode records a single bound
@@ -4349,15 +4474,17 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
     // windowed — the exact false precision §4/B-010 forbids. Render the bound the owner
     // actually asserted; a boundless window (shouldn't exist) degrades to an estimate mark.
     if (e.occurredAtLatest) {
-      return `${num(`before ${fmtLocalTime(e.occurredAtLatest, tz)}`)} <span class="conf">range</span>`
+      return `${num(`before ${boundTime(e.occurredAtLatest, rowDay, tz)}`)} <span class="conf">range</span>`
     }
     if (e.occurredAtEarliest) {
-      return `${num(`after ${fmtLocalTime(e.occurredAtEarliest, tz)}`)} <span class="conf">range</span>`
+      return `${num(`after ${boundTime(e.occurredAtEarliest, rowDay, tz)}`)} <span class="conf">range</span>`
     }
     return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">est</span>`
   }
   if (conf === 'window' && e.occurredAtEarliest && e.occurredAtLatest) {
-    return `${num(`~${fmtLocalTime(e.occurredAtEarliest, tz)}–${fmtLocalTime(e.occurredAtLatest, tz)}`)} <span class="conf">range</span>`
+    return `${num(
+      `~${boundTime(e.occurredAtEarliest, rowDay, tz)}–${boundTime(e.occurredAtLatest, rowDay, tz)}`,
+    )} <span class="conf">range</span>`
   }
   if (conf === 'estimated') {
     return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">est</span>`
@@ -5498,7 +5625,8 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Range</dt><dd>Scoped to ${h(scopeBasisLabel(snap.scope).toLowerCase())} (${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}). A custom (hand-picked) window discloses the count of symptom events that fall outside it, so nothing is cropped to a good week.</dd>
     <dt>Denominators</dt><dd>Counts are shown over their window and the days logged, so a count is never read without knowing how long and how completely it was tracked.</dd>
     <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed — a one-sided account renders as &ldquo;before/after&rdquo; that bound &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>
-    <dt>Duplicate logs</dt><dd>A <span class="conf">N logs</span> tag marks the same incident logged more than once (a re-log or sync retry). It is counted once everywhere in this report; the duplicate count is disclosed rather than hidden.</dd>
+    <dt>Dates on times</dt><dd>Appendix&nbsp;A&rsquo;s date column is the day the event <em>occurred</em>. Where a time belongs to a different day &mdash; the earlier edge of an overnight window, or a log made the next morning &mdash; that day is printed beside the time. A time with no day belongs to the row&rsquo;s own date.</dd>
+    <dt>Duplicate logs</dt><dd>A <span class="dup">N logs &middot; same incident, counted once</span> tag marks the same incident logged more than once (a re-log or sync retry). It is counted once everywhere in this report; the duplicate count is disclosed rather than hidden.</dd>
     <dt>Photo analysis</dt><dd>For photographed incidents, structured fields (colour, contents, blood, foreign material) are read automatically from the photo the owner took. These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
     ${photoDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
@@ -5743,6 +5871,11 @@ const STYLE = `
   td.c,th.c{text-align:center;}
   td.omit{text-align:center;font-size:10.5px;font-style:italic;color:var(--faint);background:#fafbfc;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .conf{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:0 4px;white-space:nowrap;}
+  /* Deliberately NOT the .conf chip: lower-case, italic, unboxed, so the duplicate-record
+     tag cannot be mistaken for a member of the time-confidence vocabulary beside it. */
+  .dup{font-size:9.5px;font-style:italic;color:var(--muted);white-space:nowrap;}
+  /* The day a Logged time belongs to, when it is not the row's occurrence day. */
+  .daynote{display:block;font-size:9px;color:var(--muted);white-space:nowrap;}
   .fields{display:block;color:var(--muted);font-size:10.5px;margin-top:2px;}
   .fields b{color:#25272d;font-weight:600;}
   .legend{font-size:11.5px;}

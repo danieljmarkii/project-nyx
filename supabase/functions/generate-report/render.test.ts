@@ -353,13 +353,17 @@ Deno.test('chronicity flag → safety band leads, mono-prominent, escalates on p
     symptomDays: 8,
     daysSinceLastEpisode: 2,
     firstOnsetIso: '2026-05-20T14:00:00Z',
+    lastOnsetDayKey: '2026-06-28',
     tier: 'standard',
     windowDays: 56,
   }
   const html = renderReport(base({ safetyFlags: [flag] }))
   assert.ok(html.includes('class="safetyband"'), 'safety band present')
-  assert.ok(/ongoing/i.test(html), 'chronicity reads as ongoing')
-  assert.ok(html.includes('Vomiting has been ongoing'))
+  // B-612 / CUL-319: the row states its two ANCHORS instead of a derived "ongoing N days"
+  // the reader cannot check. Chronicity still has to read as sustained, from the dates.
+  assert.ok(/logged from May 20 to Jun 28/.test(html), 'chronicity states its span as dates')
+  assert.ok(!/ongoing \d+ day/i.test(html), 'no underivable duration')
+  assert.ok(html.includes('Vomiting has been logged from'), 'the flag still names its symptom')
 })
 
 Deno.test('present_blood flag → "Possible blood" leads the safety band', () => {
@@ -1419,6 +1423,347 @@ Deno.test('legend defines the "N logs" duplicate tag', () => {
   assert.ok(/counted once/i.test(html))
 })
 
+// ── B-612 / CUL-319 — the three cold-read blockers on the first artifact to render
+// these paths at all. Five earlier artifacts had every event witnessed to the minute
+// and nothing photographed, so none of this could go wrong in front of a reviewer.
+
+Deno.test('B-612 — a window straddling local midnight dates the bound that is not the row’s day', () => {
+  // 23:00 on Jun 13 local → 07:20 on Jun 14 local. The row is dated Jun 14, so a bare
+  // "~23:00–07:20" reads backwards. The overnight find is the commonest windowed event
+  // there is, and this one is a bile vomit — where the overnight timing IS the finding.
+  const overnight = logEntry({
+    type: 'vomit',
+    occurredAt: '2026-06-14T07:10:00Z',
+    occurredAtConfidence: 'window',
+    occurredAtEarliest: '2026-06-14T03:00:00Z',
+    occurredAtLatest: '2026-06-14T11:20:00Z',
+  })
+  const html = renderReport(
+    base({
+      provenance: { ...base().provenance, symptomLog: [overnight], totalSymptomIncidents: 1, estimatedOrWindowCount: 1 },
+    }),
+  )
+  assert.ok(/Jun 13 23:00–07:20/.test(html), 'the earlier bound carries its own day')
+  assert.ok(!/~23:00–07:20/.test(html), 'the dateless form is gone')
+})
+
+Deno.test('B-612 — a window inside one local day gains no redundant date', () => {
+  // The other half of the rule: dating every bound unconditionally would put noise on
+  // every ordinary row, which is how a disclosure stops being read.
+  const sameDay = logEntry({
+    type: 'vomit',
+    occurredAt: '2026-06-14T18:00:00Z',
+    occurredAtConfidence: 'window',
+    occurredAtEarliest: '2026-06-14T16:00:00Z',
+    occurredAtLatest: '2026-06-14T20:00:00Z',
+  })
+  const html = renderReport(
+    base({
+      provenance: { ...base().provenance, symptomLog: [sameDay], totalSymptomIncidents: 1, estimatedOrWindowCount: 1 },
+    }),
+  )
+  assert.ok(/~12:00–16:00/.test(html), 'a within-day window stays bare times')
+  assert.ok(!/Jun 14 12:00/.test(html), 'no redundant day on a within-day bound')
+})
+
+Deno.test('B-612 — a log time on a later local day carries its date, so the row cannot read as logged before it happened', () => {
+  // Occurred 23:30 local Jun 22, logged 08:10 local Jun 23. The Date column is the
+  // OCCURRENCE day, so a bare "08:10" states a log fifteen hours before the event's own
+  // earliest possible time — the occurred-vs-logged pair contradicting itself.
+  const foundNextMorning = logEntry({
+    type: 'vomit',
+    occurredAt: '2026-06-23T03:30:00Z',
+    occurredAtConfidence: 'window',
+    occurredAtEarliest: '2026-06-23T03:30:00Z',
+    loggedAt: '2026-06-23T12:10:00Z',
+  })
+  const html = renderReport(
+    base({
+      provenance: { ...base().provenance, symptomLog: [foundNextMorning], totalSymptomIncidents: 1, estimatedOrWindowCount: 1 },
+    }),
+  )
+  assert.ok(/<span class="daynote">Jun 23<\/span>/.test(html), 'the log time is dated when it is not the row’s day')
+  assert.ok(/after 23:30/.test(html), 'the occurrence bound still renders')
+})
+
+Deno.test('B-612 — a same-day log time stays undated', () => {
+  const sameDay = logEntry({ type: 'vomit', occurredAt: '2026-06-14T18:00:00Z', loggedAt: '2026-06-14T19:00:00Z' })
+  const html = renderReport(
+    base({ provenance: { ...base().provenance, symptomLog: [sameDay], totalSymptomIncidents: 1 } }),
+  )
+  // Match the SPAN, not the bare word: `.daynote` is also a stylesheet rule, which is in
+  // every artifact whether or not any row uses it.
+  assert.ok(!/<span class="daynote">/.test(html), 'no day note when the log lands on the row’s own day')
+})
+
+Deno.test('B-612 — a null closing anchor degrades to "logged since", never to a fabricated end', () => {
+  // THE MAJORITY PATH FOR REAL CHRONIC VOMITERS, and it had no test — on a branch named
+  // `b612-unexercised-paths`, which is the joke an adversarial pass made at my expense.
+  // `lastOnsetDayKey` is null whenever the engine's 3h bout collapse and the report's 60s
+  // dedupe disagree on the episode count, which one same-day re-vomit is enough to cause.
+  const flag: SafetyFlag = {
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 14,
+    spanDays: 40,
+    activeWeeks: 5,
+    symptomDays: 14,
+    daysSinceLastEpisode: 2,
+    firstOnsetIso: '2026-05-20T14:00:00Z',
+    lastOnsetDayKey: null,
+    tier: 'standard',
+    windowDays: 56,
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(/has been logged since May 20/.test(html), 'states the opening anchor only')
+  assert.ok(!/logged from May 20 to/.test(html), 'never invents a closing anchor')
+  assert.ok(/sustained pattern/.test(html), 'still reads as sustained, not as a one-off')
+})
+
+const chronFlag = (over: Partial<Extract<SafetyFlag, { kind: 'chronicity' }>> = {}): SafetyFlag => ({
+  kind: 'chronicity',
+  symptomType: 'vomit',
+  episodeCount: 19,
+  spanDays: 54,
+  activeWeeks: 8,
+  symptomDays: 19,
+  daysSinceLastEpisode: 2,
+  firstOnsetIso: '2026-05-07T14:00:00Z',
+  lastOnsetDayKey: '2026-06-30',
+  tier: 'standard',
+  windowDays: 56,
+  ...over,
+})
+
+Deno.test('B-612 — the truncation clause points at appendix A only when appendix A HOLDS an earlier row', () => {
+  // The predicate is EVIDENTIARY, not arithmetic. An earlier version asked "is the onset near
+  // the detector's lookback edge?" and then asserted a fact about the report's own evidence
+  // appendix — which is false for any course that genuinely starts just inside the lookback,
+  // the modal shape for an owner whose logging begins when the problem does.
+  const withEarlier = renderReport(
+    base({
+      scope: { ...base().scope, startDate: '2026-04-04' },
+      safetyFlags: [chronFlag()],
+      provenance: {
+        ...base().provenance,
+        symptomLog: [
+          logEntry({ eventId: 'e-early-1', type: 'vomit', occurredAt: '2026-04-08T18:00:00Z' }),
+          logEntry({ eventId: 'e-early-2', type: 'vomit', occurredAt: '2026-04-20T18:00:00Z' }),
+          logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+        ],
+      },
+    }),
+  )
+  assert.ok(/view opens May 7, but this report's record starts earlier/.test(withEarlier), 'says the flag starts later than the record')
+  assert.ok(/2<\/span> earlier vomiting entries/.test(withEarlier), 'counts them, so the claim is checkable')
+  assert.ok(/appendix/.test(withEarlier), 'sends the reader to them')
+
+  // CE-1 — same flag, same window, but the record genuinely starts at the onset.
+  const noEarlier = renderReport(
+    base({
+      scope: { ...base().scope, startDate: '2026-04-04' },
+      safetyFlags: [chronFlag()],
+      provenance: {
+        ...base().provenance,
+        symptomLog: [logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' })],
+      },
+    }),
+  )
+  assert.ok(!/starts earlier/.test(noEarlier), 'no pointer when there is nothing earlier to point at')
+  assert.ok(!/earlier vomiting entr/.test(noEarlier), 'and no count of rows that do not exist')
+})
+
+Deno.test('B-612 — earlier rows of a DIFFERENT symptom are not evidence about this one', () => {
+  // CE-2. Pointing at them would let a vet read an April diarrhoea entry as the start of a
+  // vomiting course — the same conflation the flag exists to prevent.
+  const html = renderReport(
+    base({
+      scope: { ...base().scope, startDate: '2026-04-04' },
+      safetyFlags: [chronFlag()],
+      provenance: {
+        ...base().provenance,
+        symptomLog: [
+          logEntry({ eventId: 'e-d1', type: 'diarrhea', occurredAt: '2026-04-08T18:00:00Z' }),
+          logEntry({ eventId: 'e-d2', type: 'diarrhea', occurredAt: '2026-04-19T18:00:00Z' }),
+          logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+        ],
+      },
+    }),
+  )
+  assert.ok(!/starts earlier/.test(html), 'a different symptom does not trigger the pointer')
+})
+
+Deno.test('B-612 — the clause fires on a 60-day recheck window (no dead band)', () => {
+  // CE-4. The arithmetic version suppressed itself whenever the window ran lookback+1..7 days,
+  // which is the commonest `since_visit` recheck shape — so the very defect this clause exists
+  // for rendered silently there. The evidentiary predicate has no window-length term at all.
+  const html = renderReport(
+    base({
+      scope: { ...base().scope, startDate: '2026-05-04' },
+      safetyFlags: [chronFlag({ firstOnsetIso: '2026-05-12T14:00:00Z', episodeCount: 7, symptomDays: 7 })],
+      provenance: {
+        ...base().provenance,
+        symptomLog: [
+          logEntry({ eventId: 'e-a', type: 'vomit', occurredAt: '2026-05-05T18:00:00Z' }),
+          logEntry({ eventId: 'e-b', type: 'vomit', occurredAt: '2026-05-06T18:00:00Z' }),
+          logEntry({ eventId: 'e-c', type: 'vomit', occurredAt: '2026-05-12T14:00:00Z' }),
+        ],
+      },
+    }),
+  )
+  assert.ok(/view opens May 12, but this report's record starts earlier/.test(html), 'the 57–63d dead band is gone')
+  assert.ok(/2<\/span> earlier vomiting entries/.test(html))
+})
+
+Deno.test('B-612 — both truncation facts render when both are true, and the edge keys on the RECORD', () => {
+  // CE-A. A `since_visit` window opening May 4 whose detector lookback opens May 7 retains its
+  // first episode May 8: the onset is 4 days inside the window AND rows exist on May 5–6. An
+  // earlier version rendered these through a ternary and silently dropped the edge sentence —
+  // the stronger of the two claims, since it says appendix A's own first row is a floor.
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-05-04' },
+        safetyFlags: [chronFlag({ firstOnsetIso: '2026-05-08T14:00:00Z', episodeCount: 8, symptomDays: 8 })],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-1', type: 'vomit', occurredAt: '2026-05-05T18:00:00Z' }),
+            logEntry({ eventId: 'e-2', type: 'vomit', occurredAt: '2026-05-06T18:00:00Z' }),
+            logEntry({ eventId: 'e-3', type: 'vomit', occurredAt: '2026-05-08T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/this report's record starts earlier/.test(html), 'the pointer renders')
+  assert.ok(/record begins at its own edge/.test(html), 'AND the window-edge sentence renders')
+})
+
+Deno.test('B-612 — the edge disclosure is reachable on the default 90-day scope', () => {
+  // CE-B / the v1 defect surviving in place. Keyed on the ONSET it was structurally unreachable
+  // here: the 56-day lookback pushes the onset ~34 days inside a 90-day window, so the gap could
+  // never be small. Keyed on the record's earliest row, it fires — which is the whole point,
+  // because that row sitting on the window's opening day makes it a floor, not a start.
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-04-03' },
+        safetyFlags: [chronFlag()],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-first', type: 'vomit', occurredAt: '2026-04-03T18:00:00Z' }),
+            logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/record begins at its own edge/.test(html), 'the edge sentence is reachable on the fallback scope')
+})
+
+Deno.test('B-612 — the edge sentence keys on startDate and respects its tolerance', () => {
+  // Pins two mutations that survived an earlier suite: keying the gap off `endDate`, and
+  // widening CHRONICITY_LEFT_CENSOR_DAYS. The record here opens 20 days into the window, so it
+  // is not at the edge and must say nothing.
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-04-03' },
+        safetyFlags: [chronFlag({ firstOnsetIso: '2026-05-07T14:00:00Z' })],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-first', type: 'vomit', occurredAt: '2026-04-23T18:00:00Z' }),
+            logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(!/record begins at its own edge/.test(html), 'a record starting 20 days in is not at the edge')
+  assert.ok(/this report's record starts earlier/.test(html), 'the pointer still fires on its own merits')
+})
+
+Deno.test('B-612 — the count is appendix-A ROWS, and same-day-earlier is not earlier', () => {
+  // Two more surviving mutations. `symptomLog` is already de-duplicated, so summing `dupCount`
+  // would overstate the count against the very page it points at; and the onset instant is
+  // itself one of these rows, so a time-of-day comparison would make the flag point at its own
+  // day. One earlier row carrying 3 collapsed logs, plus a row earlier IN TIME on the onset's
+  // own local day: the honest answer is "1 earlier entry".
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-04-03' },
+        safetyFlags: [chronFlag({ firstOnsetIso: '2026-05-07T14:00:00Z' })],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-dup', type: 'vomit', occurredAt: '2026-04-25T18:00:00Z', dupCount: 3 }),
+            logEntry({ eventId: 'e-sameday', type: 'vomit', occurredAt: '2026-05-07T10:00:00Z' }),
+            logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/1 earlier vomiting entry is listed/.test(html), 'counts rows, not collapsed logs, and not same-day')
+  assert.ok(!/3 earlier/.test(html), 'dupCount is not summed')
+  assert.ok(!/2 earlier/.test(html), 'the same-day-earlier row is not counted')
+})
+
+Deno.test('B-612 — the pointer names appendix A specifically', () => {
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-04-03' },
+        safetyFlags: [chronFlag()],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [
+            logEntry({ eventId: 'e-1', type: 'vomit', occurredAt: '2026-04-25T18:00:00Z' }),
+            logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-05-07T14:00:00Z' }),
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/listed in appendix A/.test(html), 'names the appendix the rows are actually in')
+})
+
+Deno.test('B-612 — a window-edge truncation with nothing earlier renders the edge sentence alone', () => {
+  // Mutually exclusive by construction: an earlier in-window row means the onset is not at the
+  // window's edge, and an onset at the edge means anything earlier is outside the window and so
+  // is not in this log. Getting it backwards would send a vet to an appendix holding nothing.
+  const html = plain(
+    renderReport(
+      base({
+        scope: { ...base().scope, startDate: '2026-06-02' },
+        safetyFlags: [chronFlag({ firstOnsetIso: '2026-06-05T14:00:00Z', lastOnsetDayKey: '2026-07-01' })],
+        provenance: {
+          ...base().provenance,
+          symptomLog: [logEntry({ eventId: 'e-onset', type: 'vomit', occurredAt: '2026-06-05T14:00:00Z' })],
+        },
+      }),
+    ),
+  )
+  assert.ok(/record begins at its own edge/.test(html), 'the window-edge sentence stands')
+  assert.ok(!/starts earlier/.test(html), 'and the pointer does not fire with nothing earlier to point at')
+})
+
+Deno.test('B-612 — the duplicate tag is not a time-confidence chip and glosses itself in place', () => {
+  // It sat in the Occurred column in the same uppercase bordered `.conf` chip as
+  // seen/est/range, so it read as a fifth confidence value — or as two episodes, which
+  // collides with the page-1 count. Its only definition was on the last page.
+  const dup = logEntry({ type: 'vomit', occurredAt: '2026-06-26T23:55:00Z', dupCount: 2 })
+  const html = renderReport(
+    base({ provenance: { ...base().provenance, symptomLog: [dup], totalSymptomIncidents: 1 } }),
+  )
+  assert.ok(/<span class="dup">2 logs &middot; same incident, counted once<\/span>/.test(html), 'gloss rides the tag')
+  assert.ok(!/<span class="conf">2 logs<\/span>/.test(html), 'no longer a confidence chip')
+})
+
 Deno.test('chronicity flag copy — no engine "across N weeks"; episodes-on-days phrasing traces to appendix A', () => {
   const flag: SafetyFlag = {
     kind: 'chronicity',
@@ -1429,6 +1774,7 @@ Deno.test('chronicity flag copy — no engine "across N weeks"; episodes-on-days
     symptomDays: 19,
     daysSinceLastEpisode: 4,
     firstOnsetIso: '2026-05-14T14:00:00Z',
+    lastOnsetDayKey: '2026-06-29',
     tier: 'standard',
     windowDays: 56,
   }
@@ -3442,6 +3788,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             symptomDays: 16,
             daysSinceLastEpisode: 7,
             firstOnsetIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
+            lastOnsetDayKey: '2026-05-11',
             tier: 'standard',
             windowDays: 91,
           },
@@ -3449,9 +3796,17 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
       }),
     ),
   )
-  assert.ok(/first logged Apr 6/.test(censored), 'the date is stated as a LOG event, not as an onset')
+  // B-612 / CUL-319 rephrased this row to its two anchors, but B-532's three intents are
+  // unchanged and still asserted: the date attributes to LOGGING (not to the animal's onset),
+  // never reads as "first noted", and the left-censor disclosure still fires when the first
+  // episode sits at the window's edge. Only the underivable "35 days" is gone.
+  assert.ok(/logged from Apr 6/.test(censored), 'the date is stated as a LOG event, not as an onset')
   assert.ok(!/first noted/.test(censored), 'and never as "first noted", which is a claim about the animal')
-  assert.ok(/35 days is a floor/.test(censored), 'the span is a floor when the window truncates it')
+  assert.ok(
+    /cannot show how long the sign predates it/.test(censored),
+    'the window-edge truncation is still disclosed',
+  )
+  assert.ok(!/\d+ days is a floor/.test(censored), 'the floor is no longer stated as an underivable count')
 
   const observed = plain(
     renderReport(
@@ -3466,6 +3821,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             symptomDays: 16,
             daysSinceLastEpisode: 7,
             firstOnsetIso: '2026-05-20T14:00:00Z', // seven weeks into the window — genuinely observed
+            lastOnsetDayKey: '2026-06-24',
             tier: 'standard',
             windowDays: 91,
           },
