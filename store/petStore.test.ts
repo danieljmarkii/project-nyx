@@ -3,6 +3,8 @@ import {
   usePetStore,
   resolveActivePet,
   orderPetsActiveFirst,
+  resolveRecordPetName,
+  ANONYMOUS_PET_NAME,
   loadPersistedActivePetId,
   clearPersistedActivePetId,
   Pet,
@@ -54,6 +56,50 @@ describe('resolveActivePet', () => {
 
   it('falls back to the oldest pet when there is no preference', () => {
     expect(resolveActivePet([pixel, juniper], null)).toBe(pixel);
+  });
+});
+
+describe('resolveRecordPetName', () => {
+  it('names the pet the record belongs to', () => {
+    expect(resolveRecordPetName([pixel, juniper], 'pet-2')).toBe('Juniper');
+  });
+
+  // The bug this helper exists for (CUL-574): the store points at Pixel while the
+  // screen renders Juniper's event. The answer must come from the record's id.
+  it('does not name whichever pet is active', () => {
+    expect(resolveRecordPetName([pixel, juniper], 'pet-1')).toBe('Pixel');
+    expect(resolveRecordPetName([pixel, juniper], 'pet-2')).toBe('Juniper');
+  });
+
+  // `pets` holds only non-archived pets, so an archived pet's record misses. It must
+  // fall to the anonymous form, NOT to the first/active pet — a confidently wrong
+  // name on a clinical sentence is worse than no name.
+  it('falls through to the anonymous form when the pet is not in the list', () => {
+    expect(resolveRecordPetName([pixel, juniper], 'pet-archived')).toBe(ANONYMOUS_PET_NAME);
+    expect(resolveRecordPetName([pixel], 'pet-2')).toBe(ANONYMOUS_PET_NAME);
+  });
+
+  it('falls through to the anonymous form on a missing id or an empty list', () => {
+    expect(resolveRecordPetName([pixel, juniper], null)).toBe(ANONYMOUS_PET_NAME);
+    expect(resolveRecordPetName([pixel, juniper], undefined)).toBe(ANONYMOUS_PET_NAME);
+    expect(resolveRecordPetName([], 'pet-1')).toBe(ANONYMOUS_PET_NAME);
+  });
+
+  // Callers interpolate this into a sentence, so a blank name would render
+  // "How much did  eat?" — a hole, not a name.
+  it('treats a blank or whitespace name as a miss', () => {
+    const nameless = { ...pixel, name: '' };
+    const spaces = { ...juniper, name: '   ' };
+    expect(resolveRecordPetName([nameless, spaces], 'pet-1')).toBe(ANONYMOUS_PET_NAME);
+    expect(resolveRecordPetName([nameless, spaces], 'pet-2')).toBe(ANONYMOUS_PET_NAME);
+  });
+
+  it('trims an accidentally padded name rather than rendering the padding', () => {
+    expect(resolveRecordPetName([{ ...pixel, name: ' Pixel ' }], 'pet-1')).toBe('Pixel');
+  });
+
+  it('never returns an empty string', () => {
+    expect(resolveRecordPetName([], null)).toBe('your pet');
   });
 });
 

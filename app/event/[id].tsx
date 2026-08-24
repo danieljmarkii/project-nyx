@@ -34,7 +34,7 @@ import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
-import { usePetStore } from '../../store/petStore';
+import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceChipRow';
@@ -137,7 +137,7 @@ function ComboLinkRow({
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { removeFromToday } = useEventStore();
-  const { activePet } = usePetStore();
+  const { pets } = usePetStore();
 
   const [event, setEvent] = useState<TimelineRow | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -172,6 +172,15 @@ export default function EventDetailScreen() {
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // The name of the pet this EVENT belongs to, not whichever pet is active
+  // (CUL-574). This screen is reached BY ID — the multi-pet day-summary spine
+  // pushes /event/[id] for every pet's rows, and a notification or a deep link
+  // does the same — so the active pet is simply not an answer to "whose vomit is
+  // this?". Tapping Juniper's row while Pixel is active used to caption Juniper's
+  // AI read with Pixel's name, on the highest-stakes copy in the app.
+  // `resolveRecordPetName` carries the no-activePet-rung rule; see its comment.
+  const eventPetName = resolveRecordPetName(pets, event?.pet_id);
 
   const loadAll = useCallback(async () => {
     if (!id) return;
@@ -675,11 +684,11 @@ export default function EventDetailScreen() {
           ) : null}
 
           {event.event_type === 'vomit' ? (
-            <VomitAnalysisSection eventId={event.id} petName={activePet?.name} hasPhoto={!!attachment} />
+            <VomitAnalysisSection eventId={event.id} petName={eventPetName} hasPhoto={!!attachment} />
           ) : null}
 
           {isStoolEvent(event.event_type) ? (
-            <StoolAnalysisSection eventId={event.id} petName={activePet?.name} hasPhoto={!!attachment} />
+            <StoolAnalysisSection eventId={event.id} petName={eventPetName} hasPhoto={!!attachment} />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (
@@ -798,7 +807,7 @@ export default function EventDetailScreen() {
                   <View style={styles.inDoubtNote}>
                     <Text style={styles.inDoubtNoteText}>
                       {doseInDoubtNote({
-                        petName: activePet?.name ?? 'your pet',
+                        petName: eventPetName,
                         foodName: event.paired_food_name,
                       })}
                     </Text>
