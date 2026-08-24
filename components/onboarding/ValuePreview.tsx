@@ -4,6 +4,7 @@ import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { EventIcon } from '../event/EventIcon';
 import type { EventTypeKey } from '../../constants/eventTypes';
+import { ThemedText } from '../ui/ThemedText';
 
 // The three Landing value previews (B-251 PR 5, spec §3.0 / §5, mockup 01–03).
 // Each is a tangible Culprit UI — a Signal insight, the quick-log, a vet summary —
@@ -77,7 +78,7 @@ export function ValuePreview({ variant }: { variant: ValuePreviewVariant }) {
 
       <View style={styles.copy}>
         <Text style={styles.headline}>{copy.headline}</Text>
-        <Text style={styles.body}>{copy.body}</Text>
+        <ThemedText style={styles.body}>{copy.body}</ThemedText>
       </View>
     </View>
   );
@@ -90,7 +91,7 @@ export function ValuePreview({ variant }: { variant: ValuePreviewVariant }) {
 function SignalMock() {
   return (
     <>
-      <Text style={styles.label}>Signal</Text>
+      <ThemedText style={styles.label}>Signal</ThemedText>
       <Text style={styles.signalHeadline}>Vomiting is down 60% over the last two weeks.</Text>
       <Svg width="100%" height={40} viewBox="0 0 220 40" style={styles.spark}>
         <Path
@@ -105,7 +106,7 @@ function SignalMock() {
       </Svg>
       {/* Depicts the real card's expand affordance without commanding a tap — the
           mock is non-interactive, so an imperative "Tap…" would dead-end (pm-review). */}
-      <Text style={styles.tapHint}>See why →</Text>
+      <ThemedText style={styles.tapHint}>See why →</ThemedText>
     </>
   );
 }
@@ -115,7 +116,7 @@ function LogMock() {
   const rows = [LOG_TILES.slice(0, 2), LOG_TILES.slice(2, 4)];
   return (
     <>
-      <Text style={styles.label}>Quick-log</Text>
+      <ThemedText style={styles.label}>Quick-log</ThemedText>
       <View style={styles.qgrid}>
         {rows.map((row, i) => (
           <View key={i} style={styles.qrow}>
@@ -128,7 +129,7 @@ function LogMock() {
                     color={t.symptom ? theme.colorEventSymptom : theme.colorAccent}
                   />
                 </View>
-                <Text style={styles.qLabel}>{t.label}</Text>
+                <ThemedText style={styles.qLabel}>{t.label}</ThemedText>
               </View>
             ))}
           </View>
@@ -138,7 +139,7 @@ function LogMock() {
         <View style={styles.toastCheck}>
           <Check size={11} color={theme.colorTextOnDark} strokeWidth={3} />
         </View>
-        <Text style={styles.toastText}>Logged · Vomit · 2:14 PM</Text>
+        <ThemedText style={styles.toastText}>Logged · Vomit · 2:14 PM</ThemedText>
       </View>
     </>
   );
@@ -150,15 +151,15 @@ function LogMock() {
 function ReportMock() {
   return (
     <>
-      <Text style={styles.label}>Vet summary</Text>
-      <Text style={styles.vMeta}>Mochi · French Bulldog · Apr 6 – Jul 5</Text>
+      <ThemedText style={styles.label}>Vet summary</ThemedText>
+      <ThemedText style={styles.vMeta}>Mochi · French Bulldog · Apr 6 – Jul 5</ThemedText>
       {REPORT_ROWS.map((r) => (
         <View key={r.k} style={styles.vRow}>
-          <Text style={styles.vKey}>{r.k}</Text>
-          <Text style={styles.vVal}>
+          <ThemedText style={styles.vKey}>{r.k}</ThemedText>
+          <ThemedText style={styles.vVal}>
             {r.v}
             {r.down ? <Text style={styles.vDown}> ↓</Text> : null}
-          </Text>
+          </ThemedText>
         </View>
       ))}
     </>
@@ -298,7 +299,12 @@ const styles = StyleSheet.create({
   },
   vDown: {
     color: theme.colorAccent,
-    fontWeight: theme.weightSemibold,
+    // Spells its own family rather than a weight. This span sits INSIDE a ThemedText,
+    // whose explicit family the native cascade hands down — under which a bare
+    // `fontWeight` is inert, so the emphasis this arrow is drawn for would silently
+    // flatten to the parent's face. It stays a raw <Text> (a glyph is not copy) and
+    // names the face it needs. CUL-364 §7.
+    fontFamily: theme.fontBodySemibold,
   },
 
   // Copy block beneath the mock — the display-face headline + a calm subline.

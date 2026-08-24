@@ -8,7 +8,7 @@
 // pending → completed transition lands without a manual refresh.
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
+  View, StyleSheet, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -49,6 +49,7 @@ import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { addToTrialListLabel, trialMembershipLine } from '../../lib/trialLibraryChrome';
 import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
 import { addTrialFood, foodLabel } from '../../lib/dietTrialSetup';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 const FOOD_FORMATS = [
   { value: 'dry_kibble', label: 'Dry kibble' },
@@ -615,7 +616,7 @@ export default function FoodDetailScreen() {
       <SafeAreaView style={styles.container}>
         <Header leading="back" title="Food" onLeadingPress={() => router.back()} />
         <View style={styles.centerMessage}>
-          <Text style={styles.errorText}>{loadError}</Text>
+          <ThemedText style={styles.errorText}>{loadError}</ThemedText>
         </View>
       </SafeAreaView>
     );
@@ -682,15 +683,15 @@ export default function FoodDetailScreen() {
           {addingPhoto && (
             <View style={styles.photoUploadingRow}>
               <WhorlSpinner size="sm" ground="day" />
-              <Text style={styles.photoUploadingText}>Adding photo…</Text>
+              <ThemedText style={styles.photoUploadingText}>Adding photo…</ThemedText>
             </View>
           )}
 
           <View style={styles.body}>
             {isFailed && row.ai_extraction_error && (
               <View style={styles.failedBanner}>
-                <Text style={styles.failedTitle}>Extraction failed</Text>
-                <Text style={styles.failedDetail}>{row.ai_extraction_error}</Text>
+                <ThemedText style={styles.failedTitle}>Extraction failed</ThemedText>
+                <ThemedText style={styles.failedDetail}>{row.ai_extraction_error}</ThemedText>
                 <TouchableOpacity
                   style={[styles.retryBtn, retrying && styles.retryBtnDisabled]}
                   onPress={handleRetry}
@@ -700,7 +701,7 @@ export default function FoodDetailScreen() {
                 >
                   {retrying
                     ? <WhorlSpinner size="sm" tint="#fff" />
-                    : <Text style={styles.retryBtnText}>Try extraction again</Text>}
+                    : <ThemedText style={styles.retryBtnText}>Try extraction again</ThemedText>}
                 </TouchableOpacity>
               </View>
             )}
@@ -795,7 +796,7 @@ export default function FoodDetailScreen() {
             {isPending ? (
               <View style={styles.pendingBox}>
                 <WhorlSpinner size="sm" ground="day" />
-                <Text style={styles.pendingText}>Reading the label…</Text>
+                <ThemedText style={styles.pendingText}>Reading the label…</ThemedText>
               </View>
             ) : (
               <TextInput
@@ -840,7 +841,7 @@ export default function FoodDetailScreen() {
               >
                 {retrying
                   ? <WhorlSpinner size="sm" ground="day" />
-                  : <Text style={styles.secondaryActionText}>Re-run AI extraction</Text>}
+                  : <ThemedText style={styles.secondaryActionText}>Re-run AI extraction</ThemedText>}
               </TouchableOpacity>
             )}
 
@@ -858,7 +859,7 @@ export default function FoodDetailScreen() {
             >
               {removing
                 ? <WhorlSpinner size="sm" ground="day" />
-                : <Text style={styles.removeActionText}>Remove from library</Text>}
+                : <ThemedText style={styles.removeActionText}>Remove from library</ThemedText>}
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -872,7 +873,7 @@ export default function FoodDetailScreen() {
           >
             {saving
               ? <WhorlSpinner size="sm" tint="#fff" />
-              : <Text style={styles.saveBtnText}>Save</Text>}
+              : <ThemedText style={styles.saveBtnText}>Save</ThemedText>}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -926,6 +927,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   textInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     borderWidth: 1,

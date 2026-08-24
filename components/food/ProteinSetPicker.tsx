@@ -28,7 +28,7 @@
 // host screens can treat "onChange fired" as the owner having touched the field
 // and leave an AI-hydrated set alone otherwise.
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, TextInput, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ChipGroupOption } from '../ui/ChipGroup';
@@ -45,6 +45,7 @@ import {
   normalizeExtractedProtein,
   type PickerProteins,
 } from '../../lib/protein';
+import { ThemedText } from '../ui/ThemedText';
 
 // Sentinel for the secondaries' typed escape. Not a protein, never stored.
 const OTHER = '__other__';
@@ -221,7 +222,7 @@ export const ProteinSetPicker = forwardRef<ProteinSetPickerHandle, Props>(
       />
 
       <SectionLabel label="Also contains" style={styles.secondaryLabel} />
-      <Text style={styles.hint}>Any other proteins on the ingredient list.</Text>
+      <ThemedText style={styles.hint}>Any other proteins on the ingredient list.</ThemedText>
       <MultiChipGroup
         options={options}
         // The "Other" sentinel rides in the same wrapping row so the whole set
@@ -265,6 +266,9 @@ const styles = StyleSheet.create({
     marginTop: -theme.space1,
   },
   otherInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     borderWidth: 1,

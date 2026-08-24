@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
+  View, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ChipGroup } from '../ui/ChipGroup';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
@@ -409,15 +410,15 @@ export function FoodPicker({
               // states are features): the top CTA is hidden in results mode, and
               // the food the owner just failed to find is exactly the one to snap.
               <>
-                <Text style={styles.empty}>No matches.</Text>
+                <ThemedText style={styles.empty}>No matches.</ThemedText>
                 <AddFoodCta onPress={onAddNew} />
               </>
             ) : (
-              <Text style={styles.empty}>
+              <ThemedText style={styles.empty}>
                 {library.length === 0
                   ? 'No foods yet. Snap one above.'
                   : 'No matches.'}
-              </Text>
+              </ThemedText>
             )
           ) : (
             <View style={styles.groups}>
@@ -453,13 +454,13 @@ export function FoodPicker({
           <View style={styles.zone}>
             <SectionLabel label="Always available" header />
             {arrangements.length === 0 ? (
-              <Text style={styles.alwaysEmpty}>
+              <ThemedText style={styles.alwaysEmpty}>
                 Nothing always-out yet. If {multiPet
                   ? petNameList(householdPets.map((p) => p.name), 'or')
                   : petName ?? 'your pet'} grazes a bowl that's
                 down all day, open a food and turn on “Always available” — we'll note it
                 as free-choice for the vet.
-              </Text>
+              </ThemedText>
             ) : (
               <View style={styles.alwaysList}>
                 {arrangements.map((g) => {
@@ -494,10 +495,10 @@ export function FoodPicker({
                         >
                           <View style={styles.alwaysDot} />
                           <View style={styles.alwaysRowText}>
-                            <Text style={styles.alwaysRowTitle} numberOfLines={1}>
+                            <ThemedText style={styles.alwaysRowTitle} numberOfLines={1}>
                               {g.brand} {g.product_name}
-                            </Text>
-                            <Text style={styles.alwaysRowMeta}>{metaLine}</Text>
+                            </ThemedText>
+                            <ThemedText style={styles.alwaysRowMeta}>{metaLine}</ThemedText>
                           </View>
                         </TouchableOpacity>
                         {/* §6a passive freshness — a NUDGE, not a persistent link: the
@@ -505,7 +506,7 @@ export function FoodPicker({
                             bowl stays quiet. Tapping it opens a two-way answer (below)
                             rather than silently auto-confirming "yes"; never a push. */}
                         {justConfirmedId === g.food_item_id ? (
-                          <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
+                          <ThemedText style={styles.alwaysConfirmed}>Confirmed ✓</ThemedText>
                         ) : staleEntries.length > 0 && choosingId !== g.food_item_id ? (
                           <TouchableOpacity
                             onPress={() => setChoosingId(g.food_item_id)}
@@ -513,16 +514,16 @@ export function FoodPicker({
                             activeOpacity={0.7}
                             style={styles.alwaysConfirm}
                           >
-                            <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
+                            <ThemedText style={styles.alwaysConfirmText}>Still accurate?</ThemedText>
                           </TouchableOpacity>
                         ) : null}
                       </View>
   
                       {choosingId === g.food_item_id && staleEntries.map((entry) => (
                         <View key={entry.pet_id} style={styles.freshnessChoices}>
-                          <Text style={styles.freshnessPrompt}>
+                          <ThemedText style={styles.freshnessPrompt}>
                             Still always out for {multiPet ? entry.petName : petName ?? 'your pet'}?
-                          </Text>
+                          </ThemedText>
                           <View style={styles.freshnessChoiceBtns}>
                             <TouchableOpacity
                               onPress={() => handleConfirmYes(entry.pet_id, g.food_item_id)}
@@ -530,7 +531,7 @@ export function FoodPicker({
                               activeOpacity={0.7}
                               style={styles.freshnessChoiceBtn}
                             >
-                              <Text style={styles.choiceYes}>Yes, still out</Text>
+                              <ThemedText style={styles.choiceYes}>Yes, still out</ThemedText>
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => handleStopped(entry.pet_id, g.food_item_id)}
@@ -538,7 +539,7 @@ export function FoodPicker({
                               activeOpacity={0.7}
                               style={styles.freshnessChoiceBtn}
                             >
-                              <Text style={styles.choiceNo}>No, it's stopped</Text>
+                              <ThemedText style={styles.choiceNo}>No, it's stopped</ThemedText>
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -574,8 +575,8 @@ function AddFoodCta({ onPress }: { onPress: () => void }) {
         <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
       </View>
       <View style={styles.addCtaText}>
-        <Text style={styles.addCtaTitle}>Snap a new food</Text>
-        <Text style={styles.addCtaHint}>Or choose from your photos</Text>
+        <ThemedText style={styles.addCtaTitle}>Snap a new food</ThemedText>
+        <ThemedText style={styles.addCtaHint}>Or choose from your photos</ThemedText>
       </View>
     </TouchableOpacity>
   );
@@ -617,8 +618,8 @@ function LibraryGroup({
   return (
     <View style={styles.group}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{label}</Text>
-        {hint ? <Text style={styles.groupHint}>{hint}</Text> : null}
+        <ThemedText style={styles.sectionTitle}>{label}</ThemedText>
+        {hint ? <ThemedText style={styles.groupHint}>{hint}</ThemedText> : null}
       </View>
       <View style={styles.brandGroups}>
         {brandGroups.map((bg) => (
@@ -626,9 +627,9 @@ function LibraryGroup({
             {/* A brand can be blank in the catalog (rare); skip the header rather
                 than render an empty label, but still show its tiles. */}
             {bg.brand.trim() ? (
-              <Text style={styles.brandLabel} numberOfLines={1} accessibilityRole="header">
+              <ThemedText style={styles.brandLabel} numberOfLines={1} accessibilityRole="header">
                 {bg.brand}
-              </Text>
+              </ThemedText>
             ) : null}
             <TileGrid foods={bg.foods} hideBrand onPickFood={onPickFood} onOpenDetail={onOpenDetail}
               selectedFoodIds={selectedFoodIds} />
@@ -715,6 +716,9 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
   search: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorNeutralLight,

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, View, Text, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { ChevronRight, ArrowUp, ArrowDown } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
@@ -12,6 +12,7 @@ import {
   type Polarity,
   type CardDisplayState,
 } from '../../lib/dashboardCards';
+import { ThemedText } from '../ui/ThemedText';
 
 // MetricCard — the four-layer KPI card (§4.1 / §5 #1), the dashboard's workhorse:
 //   1. label        — what it is, plain, muted, subordinate.
@@ -120,7 +121,7 @@ export function MetricCard({
       style={({ pressed }) => [styles.card, pressed && onPress != null && styles.pressed]}
     >
       <View style={styles.headerRow}>
-        <Text style={styles.label}>{label}</Text>
+        <ThemedText style={styles.label}>{label}</ThemedText>
         <View style={styles.headerActions}>
           {definition != null && (
             <MetricInfoButton
@@ -133,18 +134,18 @@ export function MetricCard({
         </View>
       </View>
 
-      {caption != null && <Text style={styles.caption}>{caption}</Text>}
+      {caption != null && <ThemedText style={styles.caption}>{caption}</ThemedText>}
 
       {state.kind === 'calibrating' ? (
-        <Text style={styles.stateText}>
+        <ThemedText style={styles.stateText}>
           {calibrationLine(state.remaining, calibrationUnit, petName)}
-        </Text>
+        </ThemedText>
       ) : state.kind === 'empty' ? (
-        <Text style={styles.stateText}>{emptyMessage ?? 'Nothing logged yet.'}</Text>
+        <ThemedText style={styles.stateText}>{emptyMessage ?? 'Nothing logged yet.'}</ThemedText>
       ) : (
         <>
           <View style={styles.valueRow}>
-            <Text style={styles.value}>{value}</Text>
+            <ThemedText style={styles.value}>{value}</ThemedText>
             {sparkData != null && sparkData.length >= 2 && (
               <Sparkline data={sparkData} tone={tone} />
             )}
@@ -164,13 +165,13 @@ export function MetricCard({
             <View style={styles.deltaRow}>
               {dir === 'up' && <ArrowUp size={14} color={toneColor} />}
               {dir === 'down' && <ArrowDown size={14} color={toneColor} />}
-              <Text style={[styles.deltaText, { color: toneColor }]}>{deltaLabel}</Text>
+              <ThemedText style={[styles.deltaText, { color: toneColor }]}>{deltaLabel}</ThemedText>
             </View>
           )}
         </>
       )}
 
-      {note != null && <Text style={styles.note}>{note}</Text>}
+      {note != null && <ThemedText style={styles.note}>{note}</ThemedText>}
 
       {/* The B-100 definition reveal — calm footer callout, shown only on tap, in any
           data state (it explains the metric whether or not there's a number yet). */}

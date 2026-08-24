@@ -8,6 +8,7 @@ import { usePetStore } from '../../store/petStore';
 import { markOnboardingComplete } from '../../lib/profile';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // "All set" — the warm completion that closes onboarding (B-251 PR 10, spec §3.8,
 // mockup 12). Two jobs: (1) write the durable onboarding_completed_at flag (§6 /
@@ -77,9 +78,9 @@ export default function DoneScreen() {
         </View>
 
         <Text style={styles.title}>You&apos;re all set.</Text>
-        <Text style={styles.subtitle}>
+        <ThemedText style={styles.subtitle}>
           {`Say hi to ${activePet.name} — their home is ready.`}
-        </Text>
+        </ThemedText>
 
         <View style={styles.grow} />
 
@@ -90,9 +91,9 @@ export default function DoneScreen() {
         />
         {/* §7.4 (D-M8): "another" is true forever for every free household (pets
             1–3 free) without promising unbounded capacity the future 4+ gate breaks. */}
-        <Text style={styles.closing}>
+        <ThemedText style={styles.closing}>
           Got another pet? You can add them anytime from your profile.
-        </Text>
+        </ThemedText>
       </View>
     </SafeAreaView>
   );

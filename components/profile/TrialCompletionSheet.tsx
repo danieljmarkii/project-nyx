@@ -28,12 +28,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  StyleSheet, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { Divider } from '../ui/Divider';
 import { PrimaryButton } from '../ui/PrimaryButton';
+import { ThemedText } from '../ui/ThemedText';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import {
   buildOutcomeSheet, milestoneNote, stopReasonNote, trialDecisionChoices,
@@ -191,7 +192,7 @@ export function TrialCompletionSheet({
           hitSlop={4}
         >
           <View style={[styles.radio, outcome === o.value && styles.radioOn]} />
-          <Text style={styles.optionLabel}>{o.label}</Text>
+          <ThemedText style={styles.optionLabel}>{o.label}</ThemedText>
         </TouchableOpacity>
       ))}
     </>
@@ -207,9 +208,9 @@ export function TrialCompletionSheet({
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={handleClose} hitSlop={8}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Diet trial</Text>
+          <ThemedText style={styles.headerTitle}>Diet trial</ThemedText>
           <View style={styles.headerSpacer} />
         </View>
 
@@ -222,18 +223,18 @@ export function TrialCompletionSheet({
             {/* ── The decision, for the overrun entry point ── */}
             {step === 'decision' && (
               <>
-                <Text style={styles.sheetTitle}>Day {dayCounter} — what’s next?</Text>
+                <ThemedText style={styles.sheetTitle}>Day {dayCounter} — what’s next?</ThemedText>
                 {/* The decline outranks the decision here too. This is the one
                     screen that offers the PRIMARY action on a pet that has stopped
                     eating, and it was the only one in the flow not carrying the
                     sentence — the card before it does, the outcome step after it
                     does. */}
                 {intakeDeclineHeadline && (
-                  <Text testID="trial-decision-decline" style={styles.declineLead}>
+                  <ThemedText testID="trial-decision-decline" style={styles.declineLead}>
                     {intakeDeclineHeadline}
-                  </Text>
+                  </ThemedText>
                 )}
-                <Text style={styles.sheetSub}>{milestoneNote(trial.indication)}</Text>
+                <ThemedText style={styles.sheetSub}>{milestoneNote(trial.indication)}</ThemedText>
                 <View style={styles.decisionRow}>
                   {trialDecisionChoices(trial.indication).map((c) => (
                     <PrimaryButton
@@ -263,7 +264,7 @@ export function TrialCompletionSheet({
 
                 {sheet && (
                   <>
-                    <Text style={styles.sheetTitle}>{sheet.title}</Text>
+                    <ThemedText style={styles.sheetTitle}>{sheet.title}</ThemedText>
 
                     {/* §5.2's composition, on a terminal surface. A pet that has
                         stopped eating outranks a symptom tally about the last
@@ -271,26 +272,26 @@ export function TrialCompletionSheet({
                         REPLACES the counts rather than sitting beside them. */}
                     {sheet.declineLead ? (
                       <>
-                        <Text testID="trial-outcome-decline" style={styles.declineLead}>
+                        <ThemedText testID="trial-outcome-decline" style={styles.declineLead}>
                           {sheet.declineLead}
-                        </Text>
-                        <Text testID="trial-outcome-decline-note" style={styles.sheetSub}>
+                        </ThemedText>
+                        <ThemedText testID="trial-outcome-decline-note" style={styles.sheetSub}>
                           {sheet.declineNote}
-                        </Text>
+                        </ThemedText>
                       </>
                     ) : (
                       <>
-                        <Text style={styles.sheetSub}>{sheet.comparisonLine}</Text>
+                        <ThemedText style={styles.sheetSub}>{sheet.comparisonLine}</ThemedText>
                         <Divider style={styles.divider} />
                         {sheet.factLines.map((line, i) => (
-                          <Text key={i} testID="trial-outcome-fact" style={styles.fact}>
+                          <ThemedText key={i} testID="trial-outcome-fact" style={styles.fact}>
                             {line}
-                          </Text>
+                          </ThemedText>
                         ))}
                         {/* C5 — mandatory on this sheet. Two ratios, no verdict. */}
-                        <Text testID="trial-outcome-density" style={styles.density}>
+                        <ThemedText testID="trial-outcome-density" style={styles.density}>
                           {sheet.densityLine}
-                        </Text>
+                        </ThemedText>
                       </>
                     )}
 
@@ -298,11 +299,11 @@ export function TrialCompletionSheet({
                     {/* §4.3 is a property of the FLOW: the continuation sentence
                         travels with the owner onto the screen that actually ends
                         the trial, not only onto the card that offered to. */}
-                    <Text testID="trial-outcome-continuation" style={styles.continuation}>
+                    <ThemedText testID="trial-outcome-continuation" style={styles.continuation}>
                       {sheet.continuationNote}
-                    </Text>
-                    <Text style={styles.question}>{sheet.question}</Text>
-                    <Text style={styles.sheetSub}>{sheet.questionNote}</Text>
+                    </ThemedText>
+                    <ThemedText style={styles.question}>{sheet.question}</ThemedText>
+                    <ThemedText style={styles.sheetSub}>{sheet.questionNote}</ThemedText>
                     {outcomeOptions}
 
                     <TextInput
@@ -334,12 +335,12 @@ export function TrialCompletionSheet({
                     having none. Same options, from the same constant. */}
                 {!sheet && !factsLoading && (
                   <>
-                    <Text style={styles.sheetTitle}>How did it go?</Text>
-                    <Text style={styles.sheetSub}>
+                    <ThemedText style={styles.sheetTitle}>How did it go?</ThemedText>
+                    <ThemedText style={styles.sheetSub}>
                       Culprit couldn’t pull the counts for this stretch just now. Your read
                       still goes on the report in your name. Answering is optional — the
                       record goes on the report either way.
-                    </Text>
+                    </ThemedText>
                     {outcomeOptions}
                     <TextInput
                       style={styles.notesInput}
@@ -363,8 +364,8 @@ export function TrialCompletionSheet({
             {/* ── "Stopped early" — the structured reason ── */}
             {step === 'stopped' && (
               <>
-                <Text style={styles.sheetTitle}>{STOPPED_SHEET_TITLE}</Text>
-                <Text style={styles.sheetSub}>{STOPPED_SHEET_INTRO}</Text>
+                <ThemedText style={styles.sheetTitle}>{STOPPED_SHEET_TITLE}</ThemedText>
+                <ThemedText style={styles.sheetSub}>{STOPPED_SHEET_INTRO}</ThemedText>
 
                 {trialStopReasons(petName, pronouns).map((r) => {
                   const note = stopReason === r.value ? stopReasonNote(r.value, petName) : null;
@@ -380,16 +381,16 @@ export function TrialCompletionSheet({
                         hitSlop={4}
                       >
                         <View style={[styles.radio, stopReason === r.value && styles.radioOn]} />
-                        <Text style={styles.optionLabel}>{r.label}</Text>
+                        <ThemedText style={styles.optionLabel}>{r.label}</ThemedText>
                       </TouchableOpacity>
                       {/* The health-lane line for a refusal, and the
                           never-permission-to-stop line for "symptoms cleared up".
                           Rendered under the selected reason, where it answers the
                           choice the owner just made. */}
                       {note && (
-                        <Text testID={`trial-stop-note-${r.value}`} style={styles.reasonNote}>
+                        <ThemedText testID={`trial-stop-note-${r.value}`} style={styles.reasonNote}>
                           {note}
-                        </Text>
+                        </ThemedText>
                       )}
                     </View>
                   );
@@ -512,6 +513,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusSmall,
     padding: theme.space2,
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     textAlignVertical: 'top',

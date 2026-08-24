@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, Image, Alert, Platform, ScrollView,
+  View, StyleSheet, TouchableOpacity, TextInput, Image, Alert, Platform, ScrollView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { ChevronLeft, Clock, Camera, Pencil } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { EventIcon } from '../event/EventIcon';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
@@ -314,9 +315,9 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
           <View style={[styles.headerCircle, rose ? styles.circleRose : styles.circleNeutral]}>
             <EventIcon type={type} size={16} color={rose ? theme.colorEventSymptom : theme.colorTextSecondary} />
           </View>
-          <Text style={styles.headerText} numberOfLines={1}>
+          <ThemedText style={styles.headerText} numberOfLines={1}>
             {typeLabel} — {petName}
-          </Text>
+          </ThemedText>
         </View>
         <TouchableOpacity onPress={onBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back to event types">
           <ChevronLeft size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
@@ -338,10 +339,10 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
               <Clock size={15} color={theme.colorTextSecondary} strokeWidth={1.75} />
             </View>
             <View style={styles.timeLabels}>
-              <Text style={styles.rowLabel} numberOfLines={2}>{rowLabel}</Text>
-              <Text style={styles.rowSub}>{timeMode === 'saw' ? 'Change time' : 'Adjust window'}</Text>
+              <ThemedText style={styles.rowLabel} numberOfLines={2}>{rowLabel}</ThemedText>
+              <ThemedText style={styles.rowSub}>{timeMode === 'saw' ? 'Change time' : 'Adjust window'}</ThemedText>
               {occurredAtSource === 'exif' && timeMode === 'saw' && (
-                <Text style={styles.exif}>{formatExifAttribution(occurredAt.toISOString())}</Text>
+                <ThemedText style={styles.exif}>{formatExifAttribution(occurredAt.toISOString())}</ThemedText>
               )}
             </View>
           </TouchableOpacity>
@@ -376,13 +377,13 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
               <View style={[styles.radio, foundMode === 'before' && styles.radioOn]}>
                 {foundMode === 'before' && <View style={styles.radioDot} />}
               </View>
-              <Text style={styles.radioLabel}>Sometime before</Text>
+              <ThemedText style={styles.radioLabel}>Sometime before</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity style={styles.radioRow} onPress={() => handleFoundModeChange('between')} hitSlop={8} accessibilityRole="radio" accessibilityState={{ selected: foundMode === 'between' }}>
               <View style={[styles.radio, foundMode === 'between' && styles.radioOn]}>
                 {foundMode === 'between' && <View style={styles.radioDot} />}
               </View>
-              <Text style={styles.radioLabel}>Between two times</Text>
+              <ThemedText style={styles.radioLabel}>Between two times</ThemedText>
             </TouchableOpacity>
 
             {foundMode === 'before' && (
@@ -393,8 +394,8 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
                   accessibilityRole="button"
                   accessibilityLabel={`Found it by ${formatTime(foundLatest)} — change`}
                 >
-                  <Text style={styles.fieldLabel}>Found it by</Text>
-                  <Text style={styles.fieldValue}>{formatTime(foundLatest)}</Text>
+                  <ThemedText style={styles.fieldLabel}>Found it by</ThemedText>
+                  <ThemedText style={styles.fieldValue}>{formatTime(foundLatest)}</ThemedText>
                 </TouchableOpacity>
                 {openPicker === 'latest' && (
                   <DateTimePicker
@@ -414,8 +415,8 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
                   accessibilityRole="button"
                   accessibilityLabel={`From ${earliest ? formatTime(earliest) : 'set time'} — change`}
                 >
-                  <Text style={styles.fieldLabel}>From</Text>
-                  <Text style={styles.fieldValue}>{earliest ? formatTime(earliest) : 'Set time'}</Text>
+                  <ThemedText style={styles.fieldLabel}>From</ThemedText>
+                  <ThemedText style={styles.fieldValue}>{earliest ? formatTime(earliest) : 'Set time'}</ThemedText>
                 </TouchableOpacity>
                 {openPicker === 'earliest' && (
                   <DateTimePicker
@@ -430,8 +431,8 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
                   accessibilityRole="button"
                   accessibilityLabel={`To ${formatTime(foundLatest)} — change`}
                 >
-                  <Text style={styles.fieldLabel}>To</Text>
-                  <Text style={styles.fieldValue}>{formatTime(foundLatest)}</Text>
+                  <ThemedText style={styles.fieldLabel}>To</ThemedText>
+                  <ThemedText style={styles.fieldValue}>{formatTime(foundLatest)}</ThemedText>
                 </TouchableOpacity>
                 {openPicker === 'latest' && (
                   <DateTimePicker
@@ -451,7 +452,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
         {photo ? (
           <TouchableOpacity style={styles.rowPill} onPress={pickPhoto} activeOpacity={0.8}>
             <Image source={{ uri: photo.uri }} style={styles.photoThumb} resizeMode="cover" />
-            <Text style={styles.rowLabel}>Photo attached · tap to replace</Text>
+            <ThemedText style={styles.rowLabel}>Photo attached · tap to replace</ThemedText>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={[styles.rowPill, styles.rowPillDashed]} onPress={pickPhoto} activeOpacity={0.8}>
@@ -459,11 +460,11 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
               <Camera size={15} color={theme.colorTextSecondary} strokeWidth={1.75} />
             </View>
             <View style={styles.timeLabels}>
-              <Text style={styles.rowLabel}>Add a photo</Text>
+              <ThemedText style={styles.rowLabel}>Add a photo</ThemedText>
               {/* The "read it for signs" promise only appears for the types whose photo
                   actually gets an AI read (vomit / stool). Everywhere else the photo is
                   just an attachment, so the sub-line stays a plain "Optional". */}
-              <Text style={styles.rowSub}>{readsPhoto ? 'Optional — I can read it for signs' : 'Optional'}</Text>
+              <ThemedText style={styles.rowSub}>{readsPhoto ? 'Optional — I can read it for signs' : 'Optional'}</ThemedText>
             </View>
           </TouchableOpacity>
         )}
@@ -495,12 +496,12 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
           accessibilityRole="button"
           accessibilityLabel={`Log it — ${pillText}`}
         >
-          <Text style={styles.summaryText} numberOfLines={2}>{pillText}</Text>
+          <ThemedText style={styles.summaryText} numberOfLines={2}>{pillText}</ThemedText>
           <View style={styles.logItPill}>
             {submitting ? (
               <WhorlSpinner size="sm" ground="day" tint={theme.colorTextOnDark} />
             ) : (
-              <Text style={styles.logItText}>Log it</Text>
+              <ThemedText style={styles.logItText}>Log it</ThemedText>
             )}
           </View>
         </TouchableOpacity>
@@ -526,9 +527,9 @@ function SawFoundChip({ label, active, onPress, testID }: { label: string; activ
       accessibilityRole="radio"
       accessibilityState={{ selected: active }}
     >
-      <Text style={[styles.chipLabel, active && styles.chipLabelActive]} numberOfLines={1}>
+      <ThemedText style={[styles.chipLabel, active && styles.chipLabelActive]} numberOfLines={1}>
         {label}
-      </Text>
+      </ThemedText>
     </TouchableOpacity>
   );
 }
@@ -711,6 +712,9 @@ const styles = StyleSheet.create({
   },
   noteInput: {
     flex: 1,
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
     paddingVertical: theme.space0_5,

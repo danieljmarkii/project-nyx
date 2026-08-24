@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform,
-  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ScrollView, StyleSheet, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -31,6 +31,7 @@ import {
 } from '../../lib/medications';
 import { MedicationNameChips } from '../medication/MedicationNameChips';
 import { ChipGroup } from '../ui/ChipGroup';
+import { ThemedText } from '../ui/ThemedText';
 import { usePetStore } from '../../store/petStore';
 import { surfaceOfferForValueMoment } from '../../lib/dailyRecapOffer';
 
@@ -314,15 +315,15 @@ export function AddMedicationModal({
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{isEditing ? 'Edit medication' : 'Add medication'}</Text>
+          <ThemedText style={styles.headerTitle}>{isEditing ? 'Edit medication' : 'Add medication'}</ThemedText>
           <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
             {saving
               ? <WhorlSpinner size="sm" ground="day" />
-              : <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
+              : <ThemedText style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
                   {isEditing ? 'Save' : 'Add'}
-                </Text>}
+                </ThemedText>}
           </TouchableOpacity>
         </View>
 
@@ -332,7 +333,7 @@ export function AddMedicationModal({
             {/* Drug — link a library drug (keeps the medication_item_id) or type one. */}
             {!isEditing && library.length > 0 && (
               <>
-                <Text style={styles.label}>Your medications</Text>
+                <ThemedText style={styles.label}>Your medications</ThemedText>
                 {/* allowDeselect off: re-tapping the linked drug re-picks it (idempotent)
                     rather than dropping the medication_item_id while its name stays in
                     the field — unlinking is what editing the name is for, and only that
@@ -350,7 +351,7 @@ export function AddMedicationModal({
               </>
             )}
 
-            <Text style={styles.label}>Medication</Text>
+            <ThemedText style={styles.label}>Medication</ThemedText>
             <TextInput
               style={styles.input}
               value={drugName}
@@ -368,7 +369,7 @@ export function AddMedicationModal({
               <MedicationNameChips species={species} onPick={onChangeDrugName} />
             )}
 
-            <Text style={styles.label}>Dose</Text>
+            <ThemedText style={styles.label}>Dose</ThemedText>
             <TextInput
               style={styles.input}
               value={doseAmount}
@@ -379,7 +380,7 @@ export function AddMedicationModal({
               returnKeyType="done"
             />
 
-            <Text style={styles.label}>Frequency</Text>
+            <ThemedText style={styles.label}>Frequency</ThemedText>
             {/* allowDeselect off: every regimen has a frequency, and "no frequency" is
                 already spelled "As needed" — a second tap must not clear it to an
                 unlabelled null the owner can't see or re-enter. */}
@@ -394,7 +395,7 @@ export function AddMedicationModal({
               accessibilityLabel="Frequency"
             />
 
-            <Text style={styles.label}>Route (optional)</Text>
+            <ThemedText style={styles.label}>Route (optional)</ThemedText>
             {/* Optional field — a second tap clears it (ChipGroup's default), so an
                 owner who guessed can take it back rather than being stuck with a route
                 the label never stated. */}
@@ -405,16 +406,16 @@ export function AddMedicationModal({
               accessibilityLabel="Route"
             />
 
-            <Text style={styles.label}>Started</Text>
+            <ThemedText style={styles.label}>Started</ThemedText>
             <TouchableOpacity
               style={styles.fieldBtn}
               onPress={() => setShowDatePicker(!showDatePicker)}
               activeOpacity={0.7}
             >
-              <Text style={styles.fieldBtnText}>
+              <ThemedText style={styles.fieldBtnText}>
                 {startedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })}
-              </Text>
-              <Text style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</Text>
+              </ThemedText>
+              <ThemedText style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</ThemedText>
             </TouchableOpacity>
             {showDatePicker && (
               <DateTimePicker
@@ -429,7 +430,7 @@ export function AddMedicationModal({
               />
             )}
 
-            <Text style={styles.label}>Course length</Text>
+            <ThemedText style={styles.label}>Course length</ThemedText>
             {/* allowDeselect off: one of the two is always true of a course. */}
             <ChipGroup
               options={DURATION_MODE_OPTIONS}
@@ -479,12 +480,12 @@ export function AddMedicationModal({
                   />
                   {/* The unit word after the field (nyx-voice: the plain unit, days /
                       doses), tracking the selected chip. */}
-                  <Text style={styles.durationUnit}>{durationUnit === 'doses' ? 'doses' : 'days'}</Text>
+                  <ThemedText style={styles.durationUnit}>{durationUnit === 'doses' ? 'doses' : 'days'}</ThemedText>
                 </View>
               </>
             )}
 
-            <Text style={styles.label}>Schedule notes (optional)</Text>
+            <ThemedText style={styles.label}>Schedule notes (optional)</ThemedText>
             <TextInput
               style={styles.input}
               value={scheduleNotes}
@@ -495,7 +496,7 @@ export function AddMedicationModal({
               returnKeyType="done"
             />
 
-            <Text style={styles.label}>What it's for (optional)</Text>
+            <ThemedText style={styles.label}>What it's for (optional)</ThemedText>
             <TextInput
               style={styles.input}
               value={indication}
@@ -506,7 +507,7 @@ export function AddMedicationModal({
               returnKeyType="done"
             />
 
-            <Text style={styles.label}>Prescribed by (optional)</Text>
+            <ThemedText style={styles.label}>Prescribed by (optional)</ThemedText>
             <TextInput
               style={styles.input}
               value={prescribedBy}
@@ -575,6 +576,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
+    fontFamily: theme.fontBody,
     fontSize: 16,
     color: theme.colorTextPrimary,
     backgroundColor: theme.colorNeutralLight,

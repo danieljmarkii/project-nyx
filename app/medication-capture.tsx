@@ -21,7 +21,7 @@
 //    from the authed uid — the per-user RLS prefix is never hand-rolled here.
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
+  View, StyleSheet, TouchableOpacity, TextInput, ScrollView,
   Animated, Image, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +29,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Check, Camera, Images } from 'lucide-react-native';
 import { theme } from '../constants/theme';
+import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { MedicationNameChips } from '../components/medication/MedicationNameChips';
@@ -469,7 +470,7 @@ export default function MedicationCaptureScreen() {
     return (
       <View style={styles.completeContainer}>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <Text style={styles.checkMark}>✓</Text>
+          <ThemedText style={styles.checkMark}>✓</ThemedText>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
           Added
@@ -484,26 +485,26 @@ export default function MedicationCaptureScreen() {
       <SafeAreaView style={styles.container}>
         <Header title="Add a medication" onClose={() => router.back()} />
         <ScrollView contentContainerStyle={styles.introScroll}>
-          <Text style={styles.introHeading}>Snap the medication label</Text>
-          <Text style={styles.introBody}>
+          <ThemedText style={styles.introHeading}>Snap the medication label</ThemedText>
+          <ThemedText style={styles.introBody}>
             A clear photo of the label lets us read the name and strength, so you
             can confirm them instead of typing. You can also enter it by hand.
-          </Text>
+          </ThemedText>
           {/* D-M6 early-access label (§7.2) — quiet, small, no badge. Same line as
               the food surface. Retired in T3-E when the gate flips. */}
-          <Text style={styles.earlyAccessLabel}>{EARLY_ACCESS_LABEL}</Text>
+          <ThemedText style={styles.earlyAccessLabel}>{EARLY_ACCESS_LABEL}</ThemedText>
           {/* B-062 — Lucide Camera/Images (were 📷/🖼 emoji), matching the food-capture
               twin so both glyphs on the screen are vector. */}
           <TouchableOpacity style={styles.primaryBtn} onPress={() => handleSnap('camera')} activeOpacity={0.85}>
             <Camera size={20} color={theme.colorTextOnDark} strokeWidth={2} />
-            <Text style={styles.primaryBtnText}>Take a photo</Text>
+            <ThemedText style={styles.primaryBtnText}>Take a photo</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity style={styles.outlineBtn} onPress={() => handleSnap('library')} activeOpacity={0.85}>
             <Images size={20} color={theme.colorTextPrimary} strokeWidth={2} />
-            <Text style={styles.outlineBtnText}>Choose from library</Text>
+            <ThemedText style={styles.outlineBtnText}>Choose from library</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} hitSlop={8}>
-            <Text style={styles.linkBtnText}>Enter manually</Text>
+            <ThemedText style={styles.linkBtnText}>Enter manually</ThemedText>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
@@ -520,8 +521,8 @@ export default function MedicationCaptureScreen() {
           {!extracting && (
             <View style={styles.loadingContainer}>
               <WhorlSpinner size="md" ground="day" />
-              <Text style={styles.loadingText}>Uploading…</Text>
-              <Text style={styles.loadingHint}>This usually takes a few seconds.</Text>
+              <ThemedText style={styles.loadingText}>Uploading…</ThemedText>
+              <ThemedText style={styles.loadingHint}>This usually takes a few seconds.</ThemedText>
             </View>
           )}
           {/* The AI drug-label read is the qualifying photo-extraction wait (§6). KEPT
@@ -545,12 +546,12 @@ export default function MedicationCaptureScreen() {
               <View style={styles.confirmHero}>
                 <Image source={{ uri: labelPhoto.localUri }} style={styles.confirmPhoto} resizeMode="cover" />
                 <View style={styles.confirmOverlay}>
-                  <Text style={styles.confirmName} numberOfLines={2}>{genericName || 'Medication'}</Text>
-                  {brandName ? <Text style={styles.confirmBrand} numberOfLines={1}>{brandName}</Text> : null}
+                  <ThemedText style={styles.confirmName} numberOfLines={2}>{genericName || 'Medication'}</ThemedText>
+                  {brandName ? <ThemedText style={styles.confirmBrand} numberOfLines={1}>{brandName}</ThemedText> : null}
                 </View>
               </View>
             )}
-            <Text style={styles.confirmCaption}>Check this against the label</Text>
+            <ThemedText style={styles.confirmCaption}>Check this against the label</ThemedText>
 
             <SectionLabel label="Medication name" />
             <TextInput
@@ -580,9 +581,9 @@ export default function MedicationCaptureScreen() {
             {/* FORMAT guidance, always shown — copy the printed value with its unit.
                 Distinct from the §6.5 confirm gate below (which appears only once a
                 value is present): never a value chip, never a strength suggestion. */}
-            <Text style={styles.strengthFormatHint}>
+            <ThemedText style={styles.strengthFormatHint}>
               Copy the strength exactly as printed — include the unit, like 5 mg or 16 mg/mL.
-            </Text>
+            </ThemedText>
             <StrengthGate
               strength={strength}
               confirmed={strengthConfirmed}
@@ -601,10 +602,10 @@ export default function MedicationCaptureScreen() {
               disabled={!canSave}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryBtnText}>{logFirstDose ? 'Looks right — log dose' : 'Looks right'}</Text>
+              <ThemedText style={styles.primaryBtnText}>{logFirstDose ? 'Looks right — log dose' : 'Looks right'}</ThemedText>
             </TouchableOpacity>
             {strengthNeedsConfirm && (
-              <Text style={styles.gateHint}>Check the strength against the label to continue.</Text>
+              <ThemedText style={styles.gateHint}>Check the strength against the label to continue.</ThemedText>
             )}
           </ScrollView>
         </KeyboardAvoidingView>
@@ -630,15 +631,15 @@ export default function MedicationCaptureScreen() {
                 failure banner below. */}
             {capReached ? (
               <View style={styles.capBand}>
-                <Text style={styles.capBandText}>{medicationCapCopy(capReached.cap)}</Text>
-                <Text style={styles.careLine}>{careFirstLine(activePet?.name)}</Text>
+                <ThemedText style={styles.capBandText}>{medicationCapCopy(capReached.cap)}</ThemedText>
+                <ThemedText style={styles.careLine}>{careFirstLine(activePet?.name)}</ThemedText>
               </View>
             ) : extractionFailed ? (
               <View style={styles.failedBanner}>
-                <Text style={styles.failedBannerText}>
+                <ThemedText style={styles.failedBannerText}>
                   Couldn't read the label automatically. You can fill it in below —
                   the label photo is saved either way.
-                </Text>
+                </ThemedText>
               </View>
             ) : null}
             <SectionLabel label="Medication name" />
@@ -676,9 +677,9 @@ export default function MedicationCaptureScreen() {
             {/* FORMAT guidance, always shown — copy the printed value with its unit
                 (never a value chip / strength suggestion, §3). Sits alongside the
                 §6.5 confirm gate below, which appears only once a value is present. */}
-            <Text style={styles.strengthFormatHint}>
+            <ThemedText style={styles.strengthFormatHint}>
               Copy the strength exactly as printed — include the unit, like 5 mg or 16 mg/mL.
-            </Text>
+            </ThemedText>
             {/* The gate follows the strength wherever it can be saved, so the edit
                 screen can never save an unverified strength either — a hand-typed
                 dose is gated exactly like an AI-extracted one (§6.5). */}
@@ -697,10 +698,10 @@ export default function MedicationCaptureScreen() {
               disabled={!canSave}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryBtnText}>{logFirstDose ? 'Save and log dose' : 'Save'}</Text>
+              <ThemedText style={styles.primaryBtnText}>{logFirstDose ? 'Save and log dose' : 'Save'}</ThemedText>
             </TouchableOpacity>
             {strengthNeedsConfirm && (
-              <Text style={styles.gateHint}>Confirm the strength to continue.</Text>
+              <ThemedText style={styles.gateHint}>Confirm the strength to continue.</ThemedText>
             )}
           </ScrollView>
         </KeyboardAvoidingView>
@@ -718,15 +719,15 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
     <View style={styles.header}>
       {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.headerSide} hitSlop={10}>
-          <Text style={styles.headerBack}>←</Text>
+          <ThemedText style={styles.headerBack}>←</ThemedText>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSide} />
       )}
-      <Text style={styles.headerTitle}>{title}</Text>
+      <ThemedText style={styles.headerTitle}>{title}</ThemedText>
       {onClose ? (
         <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-          <Text style={styles.headerClose}>✕</Text>
+          <ThemedText style={styles.headerClose}>✕</ThemedText>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSide} />
@@ -762,11 +763,11 @@ function StrengthGate({
         <View style={[styles.checkbox, confirmed && styles.checkboxChecked]}>
           {confirmed && <Check size={16} color={theme.colorTextOnDark} strokeWidth={3} />}
         </View>
-        <Text style={styles.confirmCheckText}>The strength matches the label</Text>
+        <ThemedText style={styles.confirmCheckText}>The strength matches the label</ThemedText>
       </TouchableOpacity>
-      <Text style={styles.strengthHint}>
+      <ThemedText style={styles.strengthHint}>
         Worth a quick check — the strength is the one thing worth getting exactly right.
-      </Text>
+      </ThemedText>
     </>
   );
 }
@@ -935,6 +936,9 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space1,
   },
   textInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     borderWidth: 1,
@@ -1056,9 +1060,12 @@ const styles = StyleSheet.create({
     fontSize: 36,
     color: theme.colorTextOnDark,
   },
+  // `Animated.Text` can't be a ThemedText (no Animated variant — §7), so this one
+  // resolves its face through the primitive's mapper instead of the wrapper. Same one
+  // fact, same path; see components/log/SheetLogBeat.tsx for the full note.
   loggedText: {
     fontSize: 20,
-    fontWeight: theme.weightMedium,
+    fontFamily: fontFamilyForWeight(theme.weightMedium),
     color: theme.colorNeutralDark,
   },
 });

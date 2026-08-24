@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { NyxEvent } from '../../store/eventStore';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { IntakeRating } from '../log/IntakeChipRow';
 import { IntakeBadge } from '../log/IntakeBadge';
@@ -40,7 +41,7 @@ function ComboCrossLink({
       accessibilityRole="link"
       accessibilityLabel={label}
     >
-      <Text style={styles.crossLinkText} numberOfLines={1}>{label}</Text>
+      <ThemedText style={styles.crossLinkText} numberOfLines={1}>{label}</ThemedText>
       <ChevronRight size={14} color={theme.colorAccent} strokeWidth={2} />
     </TouchableOpacity>
   );
@@ -148,25 +149,25 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
       </View>
       <View style={styles.content}>
         <View style={styles.topLine}>
-          <Text style={styles.label}>{rowLabel}</Text>
+          <ThemedText style={styles.label}>{rowLabel}</ThemedText>
           <View style={styles.timeCol}>
-            <Text style={styles.time}>
+            <ThemedText style={styles.time}>
               {formatDatePart(event.occurred_at)}, {timeDisplay.compact}
-            </Text>
+            </ThemedText>
             {timeDisplay.tag ? (
-              <Text style={styles.timeTag}>{timeDisplay.tag}</Text>
+              <ThemedText style={styles.timeTag}>{timeDisplay.tag}</ThemedText>
             ) : null}
           </View>
         </View>
 
         {foodLabel ? (
           <View style={styles.foodLine}>
-            <Text style={styles.foodName} numberOfLines={1}>{foodLabel}</Text>
+            <ThemedText style={styles.foodName} numberOfLines={1}>{foodLabel}</ThemedText>
             {/* B-568 — the variant tag, between the truncating name and the intake
                 badge. Quiet tertiary caps: it names a FACT about the food, so it must
                 not compete with the intake badge, which carries the safety read. */}
             {formatTag ? (
-              <Text style={styles.formatTag} numberOfLines={1}>{formatTag}</Text>
+              <ThemedText style={styles.formatTag} numberOfLines={1}>{formatTag}</ThemedText>
             ) : null}
             {/* Read-only intake badge (B-035) — a non-chip, two-tier tag: a finished meal
                 reads calm, reduced/declined intake carries the calm attention register.
@@ -176,7 +177,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
         ) : null}
 
         {weightLabel ? (
-          <Text style={styles.weightValue} numberOfLines={1}>{weightLabel}</Text>
+          <ThemedText style={styles.weightValue} numberOfLines={1}>{weightLabel}</ThemedText>
         ) : null}
 
         {/* B-156 PR B4 — vehicle → dose cross-link. On a meal/treat that carried a
@@ -192,7 +193,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
 
         {drugLabel ? (
           <View style={styles.foodLine}>
-            <Text style={styles.foodName} numberOfLines={1}>{drugLabel}</Text>
+            <ThemedText style={styles.foodName} numberOfLines={1}>{drugLabel}</ThemedText>
             {/* Read-only adherence badge — concern states (partial/missed/refused)
                 light rose, 'given' lights accent; NULL renders nothing. An in-doubt
                 combo dose (null adherence) shows the rose "Unconfirmed" tag instead. */}
@@ -200,7 +201,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
               // pointerEvents none so a tap falls through to the row's toggle/long-press
               // gesture, exactly like the read-only adherence/intake badges.
               <View style={styles.inDoubtTag} pointerEvents="none">
-                <Text style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</Text>
+                <ThemedText style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</ThemedText>
               </View>
             ) : (
               <AdherenceChipRow value={(event.adherence ?? null) as DoseAdherence | null} />
@@ -210,7 +211,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
 
         {/* Vehicle ("In a treat") — a quiet secondary line under the drug, only when
             recorded. Reads as a plain note, not a badge: it's descriptive context. */}
-        {vehicle ? <Text style={styles.vehicleNote}>{vehicle}</Text> : null}
+        {vehicle ? <ThemedText style={styles.vehicleNote}>{vehicle}</ThemedText> : null}
 
         {/* B-156 PR B4 — dose → vehicle cross-link. On a dose given inside a meal/treat,
             a tap jumps to that vehicle. Null (no link) on a standalone dose, and drops
@@ -223,17 +224,17 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
         {isExpanded ? (
           <View style={styles.expandedContent}>
             {event.notes ? (
-              <Text style={styles.notes}>{event.notes}</Text>
+              <ThemedText style={styles.notes}>{event.notes}</ThemedText>
             ) : null}
             <View style={styles.actions}>
               <TouchableOpacity onPress={onOpen} hitSlop={8} style={styles.editBtn}>
-                <Text style={styles.editBtnText}>View</Text>
+                <ThemedText style={styles.editBtnText}>View</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity onPress={onEdit} hitSlop={8} style={styles.editBtn}>
-                <Text style={styles.editBtnText}>Edit</Text>
+                <ThemedText style={styles.editBtnText}>Edit</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity onPress={onDelete} hitSlop={8} style={styles.deleteBtn}>
-                <Text style={styles.deleteBtnText}>Remove</Text>
+                <ThemedText style={styles.deleteBtnText}>Remove</ThemedText>
               </TouchableOpacity>
             </View>
           </View>

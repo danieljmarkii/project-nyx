@@ -17,9 +17,10 @@
 // signal that this card is a live offer rather than a record fact — the same
 // alpha-on-accent idiom RecapStrip uses for its glyph wash (`tint + '26'`).
 import { memo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { DAILY_RECAP_OFFER_COPY } from '../../lib/dailyRecapOffer';
+import { ThemedText } from '../ui/ThemedText';
 
 // The teal hairline at ~45% alpha — the night sibling of the mock's
 // `color-mix(in srgb, #00C2A8 45%, transparent)`. `0x73` ≈ 0.45 × 255. Follows
@@ -36,7 +37,7 @@ interface Props {
 function DailyRecapOfferImpl({ onTurnOn, onNotNow }: Props) {
   return (
     <View style={styles.card}>
-      <Text style={styles.body}>{DAILY_RECAP_OFFER_COPY.body}</Text>
+      <ThemedText style={styles.body}>{DAILY_RECAP_OFFER_COPY.body}</ThemedText>
       <View style={styles.actions}>
         <Pressable
           onPress={onTurnOn}
@@ -48,7 +49,7 @@ function DailyRecapOfferImpl({ onTurnOn, onNotNow }: Props) {
           hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
           style={styles.actionWrap}
         >
-          <Text style={styles.turnOn}>{DAILY_RECAP_OFFER_COPY.turnOn}</Text>
+          <ThemedText style={styles.turnOn}>{DAILY_RECAP_OFFER_COPY.turnOn}</ThemedText>
         </Pressable>
         <Pressable
           onPress={onNotNow}
@@ -57,7 +58,7 @@ function DailyRecapOfferImpl({ onTurnOn, onNotNow }: Props) {
           hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
           style={styles.actionWrap}
         >
-          <Text style={styles.notNow}>{DAILY_RECAP_OFFER_COPY.notNow}</Text>
+          <ThemedText style={styles.notNow}>{DAILY_RECAP_OFFER_COPY.notNow}</ThemedText>
         </Pressable>
       </View>
     </View>

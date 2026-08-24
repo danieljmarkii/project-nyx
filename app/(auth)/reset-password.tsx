@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -25,6 +24,7 @@ import { useSnackbarStore } from '../../store/snackbarStore';
 import { usePetStore } from '../../store/petStore';
 import { parseRecoveryLink } from '../../lib/passwordRecovery';
 import { retryRecoveryExchange } from '../../lib/recoveryDeepLink';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The set-new-password screen and every terminal state the exchange can produce
 // (B-280 FR-4/5/8/16/18, spec §5.4/§5.5/§5.5b). It renders PURELY from store state
@@ -230,12 +230,12 @@ export default function ResetPasswordScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.grow} />
-            <Text style={styles.title}>Set a new password</Text>
-            <Text style={styles.sub}>
+            <ThemedText style={styles.title}>Set a new password</ThemedText>
+            <ThemedText style={styles.sub}>
               {petName
                 ? `Almost there — choose a password and we'll take you back to ${petName}.`
                 : "Almost there — choose a password and we'll take you back in."}
-            </Text>
+            </ThemedText>
 
             <TextField
               label="New password"
@@ -278,7 +278,7 @@ export default function ResetPasswordScreen() {
                 // "Cancel", not "Not now": this abandons the reset and signs the owner
                 // out to the Landing — there is no "later" to return to. The label must
                 // name the action, not imply a deferral (nyx-voice + pm-feature-review).
-                <Text style={styles.escapeText}>Cancel</Text>
+                <ThemedText style={styles.escapeText}>Cancel</ThemedText>
               )}
             </TouchableOpacity>
             <View style={styles.grow} />
@@ -294,7 +294,7 @@ export default function ResetPasswordScreen() {
       <View style={styles.stateBody} testID="reset-working">
         <View style={styles.grow} />
         <WhorlSpinner size="md" ground="day" />
-        <Text style={styles.workingText}>Checking your link</Text>
+        <ThemedText style={styles.workingText}>Checking your link</ThemedText>
         <View style={styles.grow} />
       </View>
     </SafeAreaView>
@@ -327,8 +327,8 @@ function StateScreen({
       <View style={styles.stateBody} testID={testID}>
         <View style={styles.grow} />
         <View style={styles.icon}>{icon}</View>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subCentered}>{body}</Text>
+        <ThemedText style={styles.title}>{title}</ThemedText>
+        <ThemedText style={styles.subCentered}>{body}</ThemedText>
         <View style={styles.grow} />
         <View style={styles.cta}>
           <PrimaryButton
@@ -345,7 +345,7 @@ function StateScreen({
             accessibilityLabel="Back to log in"
             testID={`${testID}-back`}
           >
-            <Text style={styles.escapeText}>Back to log in</Text>
+            <ThemedText style={styles.escapeText}>Back to log in</ThemedText>
           </TouchableOpacity>
         </View>
       </View>

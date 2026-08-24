@@ -202,8 +202,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -336,8 +336,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -452,8 +452,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -630,8 +630,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -832,8 +832,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -984,8 +984,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -1202,8 +1202,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -1382,8 +1382,8 @@ exports[`EventTypePicker — flag-off (flat grid, byte-identical) renders the sh
         style={
           {
             "color": "#0A0A0A",
+            "fontFamily": "Geist-Medium",
             "fontSize": 15,
-            "fontWeight": "500",
           }
         }
       >
@@ -1418,18 +1418,14 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
         <Text
           accessibilityRole="header"
           style={
-            [
-              {
-                "color": "#525252",
-                "fontSize": 11,
-                "fontWeight": "500",
-                "letterSpacing": 0.8,
-                "textTransform": "uppercase",
-              },
-              {
-                "marginBottom": 2,
-              },
-            ]
+            {
+              "color": "#525252",
+              "fontFamily": "Geist-Medium",
+              "fontSize": 11,
+              "letterSpacing": 0.8,
+              "marginBottom": 2,
+              "textTransform": "uppercase",
+            }
           }
         >
           Symptoms
@@ -1594,8 +1590,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -1796,8 +1792,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -1911,8 +1907,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -1978,8 +1974,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                   style={
                     {
                       "color": "#0A0A0A",
+                      "fontFamily": "Geist-Medium",
                       "fontSize": 13,
-                      "fontWeight": "500",
                     }
                   }
                 >
@@ -2038,8 +2034,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                   style={
                     {
                       "color": "#0A0A0A",
+                      "fontFamily": "Geist-Medium",
                       "fontSize": 13,
-                      "fontWeight": "500",
                     }
                   }
                 >
@@ -2266,8 +2262,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -2287,18 +2283,14 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
         <Text
           accessibilityRole="header"
           style={
-            [
-              {
-                "color": "#525252",
-                "fontSize": 11,
-                "fontWeight": "500",
-                "letterSpacing": 0.8,
-                "textTransform": "uppercase",
-              },
-              {
-                "marginBottom": 2,
-              },
-            ]
+            {
+              "color": "#525252",
+              "fontFamily": "Geist-Medium",
+              "fontSize": 11,
+              "letterSpacing": 0.8,
+              "marginBottom": 2,
+              "textTransform": "uppercase",
+            }
           }
         >
           Food & care
@@ -2525,8 +2517,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -2701,8 +2693,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -2722,18 +2714,14 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
         <Text
           accessibilityRole="header"
           style={
-            [
-              {
-                "color": "#525252",
-                "fontSize": 11,
-                "fontWeight": "500",
-                "letterSpacing": 0.8,
-                "textTransform": "uppercase",
-              },
-              {
-                "marginBottom": 2,
-              },
-            ]
+            {
+              "color": "#525252",
+              "fontFamily": "Geist-Medium",
+              "fontSize": 11,
+              "letterSpacing": 0.8,
+              "marginBottom": 2,
+              "textTransform": "uppercase",
+            }
           }
         >
           Body & more
@@ -2982,8 +2970,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >
@@ -3186,8 +3174,8 @@ exports[`EventTypePicker — flag-on (grouped grid) renders the grouped grid 1`]
                 {
                   "color": "#0A0A0A",
                   "flex": 1,
+                  "fontFamily": "Geist-Medium",
                   "fontSize": 15,
-                  "fontWeight": "500",
                 }
               }
             >

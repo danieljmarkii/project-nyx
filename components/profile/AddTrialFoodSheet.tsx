@@ -18,10 +18,11 @@
 // the reading they already have`. Without it the add reads as an amnesty, and the
 // write path's whole safety property (`allowed_from` = today, never `started_at`)
 // becomes invisible to the person it protects.
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
+import { ThemedText } from '../ui/ThemedText';
 import type { AddTrialFoodSheetModel } from '../../lib/trialFoodsScreen';
 
 interface Props {
@@ -65,26 +66,26 @@ export function AddTrialFoodSheet({
       <SafeAreaView edges={['bottom']} style={styles.sheetWrap}>
         <View style={styles.sheet} testID="add-trial-food-sheet">
           <View style={styles.grabber} />
-          <Text style={styles.title}>{model.title}</Text>
+          <ThemedText style={styles.title}>{model.title}</ThemedText>
 
           {model.rows.map((row) => (
             <View key={row.label} style={styles.kvRow}>
-              <Text style={styles.kvLabel}>{row.label}</Text>
-              <Text style={styles.kvValue}>{row.value}</Text>
+              <ThemedText style={styles.kvLabel}>{row.label}</ThemedText>
+              <ThemedText style={styles.kvValue}>{row.value}</ThemedText>
             </View>
           ))}
 
           {/* B-628 — the legitimacy line, the last thing read before deciding. It
               names whose call an extra is (the vet's) without a wisdom-check, and
               is deliberately quiet: framing, not a fact. */}
-          <Text style={styles.caption} testID="add-trial-food-caption">
+          <ThemedText style={styles.caption} testID="add-trial-food-caption">
             {model.caption}
-          </Text>
+          </ThemedText>
 
           {error !== null && (
-            <Text testID="add-trial-food-error" style={styles.error}>
+            <ThemedText testID="add-trial-food-error" style={styles.error}>
               {error}
-            </Text>
+            </ThemedText>
           )}
 
           <PrimaryButton

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  View, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Animated, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
+import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { getDb } from '../lib/db';
@@ -183,7 +184,7 @@ export default function VetVisitModal() {
     return (
       <View style={styles.completeContainer}>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <Text style={styles.checkMark}>✓</Text>
+          <ThemedText style={styles.checkMark}>✓</ThemedText>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>Vet visit logged</Animated.Text>
       </View>
@@ -196,30 +197,30 @@ export default function VetVisitModal() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Vet visit</Text>
+          <ThemedText style={styles.headerTitle}>Vet visit</ThemedText>
           <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} hitSlop={8}>
-            <Text style={styles.closeBtnText}>✕</Text>
+            <ThemedText style={styles.closeBtnText}>✕</ThemedText>
           </TouchableOpacity>
         </View>
 
         <View style={styles.photoStepBody}>
-          <Text style={styles.photoStepHeading}>Any docs from the visit?</Text>
-          <Text style={styles.photoStepSub}>
+          <ThemedText style={styles.photoStepHeading}>Any docs from the visit?</ThemedText>
+          <ThemedText style={styles.photoStepSub}>
             Attach a photo of the visit summary, prescription, or any paperwork.
-          </Text>
+          </ThemedText>
 
           {photoUri ? (
             <View style={styles.photoPreviewWrap}>
               <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
               <TouchableOpacity style={styles.replacePhotoBtn} onPress={showPhotoOptions}>
-                <Text style={styles.replacePhotoBtnText}>Replace photo</Text>
+                <ThemedText style={styles.replacePhotoBtnText}>Replace photo</ThemedText>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity style={styles.addPhotoArea} onPress={showPhotoOptions} activeOpacity={0.7}>
-              <Text style={styles.addPhotoIcon}>📄</Text>
-              <Text style={styles.addPhotoLabel}>Tap to add a photo</Text>
-              <Text style={styles.addPhotoSub}>Camera or photo library</Text>
+              <ThemedText style={styles.addPhotoIcon}>📄</ThemedText>
+              <ThemedText style={styles.addPhotoLabel}>Tap to add a photo</ThemedText>
+              <ThemedText style={styles.addPhotoSub}>Camera or photo library</ThemedText>
             </TouchableOpacity>
           )}
         </View>
@@ -229,9 +230,9 @@ export default function VetVisitModal() {
             style={styles.continueBtn}
             onPress={() => setStep('details')}
           >
-            <Text style={styles.continueBtnText}>
+            <ThemedText style={styles.continueBtnText}>
               {photoUri ? 'Continue' : 'Skip for now'}
-            </Text>
+            </ThemedText>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -244,9 +245,9 @@ export default function VetVisitModal() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setStep('photo')} style={styles.backBtn} hitSlop={8}>
-          <Text style={styles.backBtnText}>←</Text>
+          <ThemedText style={styles.backBtnText}>←</ThemedText>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Vet visit details</Text>
+        <ThemedText style={styles.headerTitle}>Vet visit details</ThemedText>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -256,16 +257,16 @@ export default function VetVisitModal() {
           {photoUri && (
             <View style={styles.photoThumbRow}>
               <Image source={{ uri: photoUri }} style={styles.photoThumb} resizeMode="cover" />
-              <Text style={styles.photoThumbLabel}>Photo attached</Text>
+              <ThemedText style={styles.photoThumbLabel}>Photo attached</ThemedText>
             </View>
           )}
 
-          <Text style={styles.fieldLabel}>Visit date</Text>
+          <ThemedText style={styles.fieldLabel}>Visit date</ThemedText>
           <TouchableOpacity style={styles.dateField} onPress={() => setShowDatePicker(!showDatePicker)}>
-            <Text style={styles.dateFieldText}>
+            <ThemedText style={styles.dateFieldText}>
               {visitedAt.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}
-            </Text>
-            <Text style={styles.dateChangeText}>Change</Text>
+            </ThemedText>
+            <ThemedText style={styles.dateChangeText}>Change</ThemedText>
           </TouchableOpacity>
           {showDatePicker && (
             <DateTimePicker
@@ -280,7 +281,7 @@ export default function VetVisitModal() {
             />
           )}
 
-          <Text style={styles.fieldLabel}>Clinic</Text>
+          <ThemedText style={styles.fieldLabel}>Clinic</ThemedText>
           <TextInput
             style={styles.textInput}
             placeholder="e.g. Riverside Animal Hospital"
@@ -291,7 +292,7 @@ export default function VetVisitModal() {
             returnKeyType="next"
           />
 
-          <Text style={styles.fieldLabel}>Vet</Text>
+          <ThemedText style={styles.fieldLabel}>Vet</ThemedText>
           <TextInput
             style={styles.textInput}
             placeholder="e.g. Dr. Alex Chen"
@@ -302,7 +303,7 @@ export default function VetVisitModal() {
             returnKeyType="next"
           />
 
-          <Text style={styles.fieldLabel}>Reason for visit</Text>
+          <ThemedText style={styles.fieldLabel}>Reason for visit</ThemedText>
           <TextInput
             style={styles.textInput}
             placeholder="e.g. GI follow-up, annual check-up"
@@ -313,7 +314,7 @@ export default function VetVisitModal() {
             returnKeyType="next"
           />
 
-          <Text style={styles.fieldLabel}>Notes</Text>
+          <ThemedText style={styles.fieldLabel}>Notes</ThemedText>
           <TextInput
             style={[styles.textInput, styles.notesInput]}
             placeholder="Diagnosis, medications, instructions..."
@@ -325,17 +326,17 @@ export default function VetVisitModal() {
             returnKeyType="done"
           />
 
-          <Text style={styles.fieldLabel}>Next visit (optional)</Text>
+          <ThemedText style={styles.fieldLabel}>Next visit (optional)</ThemedText>
           <TouchableOpacity
             style={styles.dateField}
             onPress={() => setShowNextDatePicker(!showNextDatePicker)}
           >
-            <Text style={[styles.dateFieldText, !nextVisitAt && { color: theme.colorTextSecondary }]}>
+            <ThemedText style={[styles.dateFieldText, !nextVisitAt && { color: theme.colorTextSecondary }]}>
               {nextVisitAt
                 ? nextVisitAt.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })
                 : 'Not set'}
-            </Text>
-            <Text style={styles.dateChangeText}>{nextVisitAt ? 'Change' : 'Set date'}</Text>
+            </ThemedText>
+            <ThemedText style={styles.dateChangeText}>{nextVisitAt ? 'Change' : 'Set date'}</ThemedText>
           </TouchableOpacity>
           {showNextDatePicker && (
             <DateTimePicker
@@ -351,7 +352,7 @@ export default function VetVisitModal() {
           )}
 
           <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>Log {petName}'s visit</Text>
+            <ThemedText style={styles.saveBtnText}>Log {petName}'s visit</ThemedText>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -489,6 +490,9 @@ const styles = StyleSheet.create({
     marginBottom: -theme.space1,
   },
   textInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: 16,
     color: theme.colorTextPrimary,
     borderWidth: 1,
@@ -550,9 +554,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkMark: { fontSize: 36, color: theme.colorTextOnDark },
+  // `Animated.Text` can't be a ThemedText (no Animated variant — §7), so this one
+  // resolves its face through the primitive's mapper instead of the wrapper. Same one
+  // fact, same path; see components/log/SheetLogBeat.tsx for the full note.
   loggedText: {
     fontSize: 20,
-    fontWeight: theme.fontWeightMedium,
+    fontFamily: fontFamilyForWeight(theme.fontWeightMedium),
     color: theme.colorNeutralDark,
   },
 });

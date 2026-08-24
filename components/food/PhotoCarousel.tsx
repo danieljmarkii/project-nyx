@@ -9,6 +9,7 @@ import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { getSignedUrl } from '../../lib/storage';
 import { PhotoViewer } from '../ui';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   // Storage paths into the nyx-food-photos bucket. Bucket is private so we
@@ -56,9 +57,9 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
             vector glyphs. The trailing "＋ Add another" slide stays a plain glyph —
             it's a plus, not a camera, and never renders alongside this empty state. */}
         <Camera size={36} color={theme.colorTextTertiary} strokeWidth={1.5} />
-        <Text style={styles.emptyText}>
+        <ThemedText style={styles.emptyText}>
           {onAddPhoto ? 'Tap to add a photo' : 'No photos yet'}
-        </Text>
+        </ThemedText>
       </TouchableOpacity>
     );
   }
@@ -101,7 +102,7 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
               </TouchableOpacity>
             ) : (
               <View style={[styles.image, styles.imageMissing]}>
-                <Text style={styles.emptyText}>Photo unavailable</Text>
+                <ThemedText style={styles.emptyText}>Photo unavailable</ThemedText>
               </View>
             )}
           </View>
@@ -113,8 +114,11 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
               onPress={onAddPhoto}
               activeOpacity={0.7}
             >
+              {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face. Geist's
+                  cmap has no U+FF0B at all, so sweeping this one would buy nothing and
+                  hand the render to OS fallback (CUL-364 §7). */}
               <Text style={styles.emptyIcon}>＋</Text>
-              <Text style={styles.emptyText}>Add another photo</Text>
+              <ThemedText style={styles.emptyText}>Add another photo</ThemedText>
             </TouchableOpacity>
           </View>
         )}

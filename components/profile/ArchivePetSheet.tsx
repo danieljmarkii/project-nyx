@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import {
-  Alert, Modal, Pressable, StyleSheet, Text,
+  Alert, Modal, Pressable, StyleSheet,
   TouchableOpacity, View,
 } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
@@ -69,8 +70,8 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
       <View style={styles.backdrop}>
         <Pressable style={styles.scrim} onPress={archiving ? undefined : onClose} />
         <View style={[styles.card, { marginBottom: insets.bottom + 18 }]}>
-          <Text style={styles.title}>Archive {pet.name}?</Text>
-          <Text style={styles.body}>{archiveConfirmBody(pet)}</Text>
+          <ThemedText style={styles.title}>Archive {pet.name}?</ThemedText>
+          <ThemedText style={styles.body}>{archiveConfirmBody(pet)}</ThemedText>
           <TouchableOpacity
             style={styles.archiveBtn}
             onPress={handleArchive}
@@ -80,7 +81,7 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
           >
             {archiving
               ? <WhorlSpinner size="sm" tint={theme.colorSurface} />
-              : <Text style={styles.archiveBtnText}>Archive</Text>}
+              : <ThemedText style={styles.archiveBtnText}>Archive</ThemedText>}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.cancelBtn}
@@ -89,7 +90,7 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
             activeOpacity={0.7}
             accessibilityRole="button"
           >
-            <Text style={styles.cancelText}>Cancel</Text>
+            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
           </TouchableOpacity>
         </View>
       </View>

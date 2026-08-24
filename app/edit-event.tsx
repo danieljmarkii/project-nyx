@@ -9,6 +9,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, ChevronRight } from 'lucide-react-native';
 import { theme } from '../constants/theme';
+import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
@@ -562,7 +563,7 @@ export default function EditEventModal() {
         title={`Edit ${config.label}`}
         left={
           <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn} hitSlop={8}>
-            <Text style={styles.cancelBtnText}>Cancel</Text>
+            <ThemedText style={styles.cancelBtnText}>Cancel</ThemedText>
           </TouchableOpacity>
         }
         right={
@@ -572,7 +573,7 @@ export default function EditEventModal() {
             disabled={saving}
             hitSlop={8}
           >
-            <Text style={styles.saveBtnText}>Save</Text>
+            <ThemedText style={styles.saveBtnText}>Save</ThemedText>
           </TouchableOpacity>
         }
       />
@@ -607,17 +608,21 @@ export default function EditEventModal() {
                 onPress={() => setShowTimePicker(!showTimePicker)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.timeValue}>
+                <ThemedText style={styles.timeValue}>
                   {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
                   {'  '}
                   {formatTime(occurredAt)}
+                  {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
+                      nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
+                      native text-style cascade; this EXIF span differs from its parent only in size and
+                      colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
                   {occurredAtSource === 'exif' && (
                     <Text style={styles.exifAttribution}>
                       {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
                     </Text>
                   )}
-                </Text>
-                <Text style={styles.changeLabel}>Change</Text>
+                </ThemedText>
+                <ThemedText style={styles.changeLabel}>Change</ThemedText>
               </TouchableOpacity>
               {showTimePicker && (
                 <DateTimePicker
@@ -641,14 +646,14 @@ export default function EditEventModal() {
             <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
               <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
               <View style={styles.photoAttachedMeta}>
-                <Text style={styles.photoAttachedText}>Photo attached</Text>
-                <Text style={styles.photoChangeText}>Tap to view</Text>
+                <ThemedText style={styles.photoAttachedText}>Photo attached</ThemedText>
+                <ThemedText style={styles.photoChangeText}>Tap to view</ThemedText>
               </View>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.7}>
               <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
-              <Text style={styles.photoRowText}>Attach a photo</Text>
+              <ThemedText style={styles.photoRowText}>Attach a photo</ThemedText>
             </TouchableOpacity>
           )}
 
@@ -664,27 +669,27 @@ export default function EditEventModal() {
                 <View style={{ flex: 1 }}>
                   {currentFoodProduct ? (
                     <>
-                      <Text style={styles.foodProduct}>{currentFoodProduct}</Text>
+                      <ThemedText style={styles.foodProduct}>{currentFoodProduct}</ThemedText>
                       {/* BRAND · FORMAT — the same meta shape the picker tiles below
                           use, so the current selection is named the way the options are. */}
                       {currentFoodBrand || currentFoodFormat ? (
-                        <Text style={styles.foodBrand}>
+                        <ThemedText style={styles.foodBrand}>
                           {[currentFoodBrand, foodFormatTag(currentFoodFormat)]
                             .filter(Boolean).join(' · ')}
-                        </Text>
+                        </ThemedText>
                       ) : null}
                     </>
                   ) : (
-                    <Text style={styles.foodPlaceholder}>No food selected</Text>
+                    <ThemedText style={styles.foodPlaceholder}>No food selected</ThemedText>
                   )}
                 </View>
-                <Text style={styles.changeLabel}>{showFoodPicker ? 'Done' : 'Change'}</Text>
+                <ThemedText style={styles.changeLabel}>{showFoodPicker ? 'Done' : 'Change'}</ThemedText>
               </TouchableOpacity>
 
               {showFoodPicker ? (
                 <View style={styles.foodList}>
                   {foods.length === 0 ? (
-                    <Text style={styles.foodEmpty}>No foods yet — they'll show up here as you log food.</Text>
+                    <ThemedText style={styles.foodEmpty}>No foods yet — they'll show up here as you log food.</ThemedText>
                   ) : null}
                   {foods.map((item: CachedFood) => {
                     const isSelected = item.id === currentFoodId;
@@ -701,13 +706,13 @@ export default function EditEventModal() {
                         }}
                         activeOpacity={0.7}
                       >
-                        <Text style={[styles.foodItemName, isSelected && styles.foodItemNameSelected]}>
+                        <ThemedText style={[styles.foodItemName, isSelected && styles.foodItemNameSelected]}>
                           {item.product_name}
-                        </Text>
-                        <Text style={[styles.foodItemBrand, isSelected && styles.foodItemBrandSelected]}>
+                        </ThemedText>
+                        <ThemedText style={[styles.foodItemBrand, isSelected && styles.foodItemBrandSelected]}>
                           {item.brand}
-                        </Text>
-                        {isSelected ? <Text style={styles.foodItemCheck}>✓</Text> : null}
+                        </ThemedText>
+                        {isSelected ? <ThemedText style={styles.foodItemCheck}>✓</ThemedText> : null}
                       </TouchableOpacity>
                     );
                   })}
@@ -745,11 +750,11 @@ export default function EditEventModal() {
                   accessibilityLabel={`View drug details for ${dose.genericName ?? config.label}`}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.foodProduct}>{dose.genericName ?? config.label}</Text>
+                    <ThemedText style={styles.foodProduct}>{dose.genericName ?? config.label}</ThemedText>
                     {[dose.brandName, dose.strength].filter(Boolean).length > 0 ? (
-                      <Text style={styles.foodBrand}>
+                      <ThemedText style={styles.foodBrand}>
                         {[dose.brandName, dose.strength].filter(Boolean).join(' · ')}
-                      </Text>
+                      </ThemedText>
                     ) : null}
                   </View>
                   <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
@@ -757,11 +762,11 @@ export default function EditEventModal() {
               ) : (
                 <View style={styles.foodRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.foodProduct}>{dose.genericName ?? config.label}</Text>
+                    <ThemedText style={styles.foodProduct}>{dose.genericName ?? config.label}</ThemedText>
                     {[dose.brandName, dose.strength].filter(Boolean).length > 0 ? (
-                      <Text style={styles.foodBrand}>
+                      <ThemedText style={styles.foodBrand}>
                         {[dose.brandName, dose.strength].filter(Boolean).join(' · ')}
-                      </Text>
+                      </ThemedText>
                     ) : null}
                   </View>
                 </View>
@@ -789,7 +794,7 @@ export default function EditEventModal() {
                   keyboardType="decimal-pad"
                   returnKeyType="done"
                 />
-                <Text style={styles.weightUnitText}>lbs</Text>
+                <ThemedText style={styles.weightUnitText}>lbs</ThemedText>
               </View>
             </>
           ) : null}
@@ -982,6 +987,9 @@ const styles = StyleSheet.create({
     color: theme.colorTextOnDark,
   },
   notesInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: 15,
     color: theme.colorTextPrimary,
     borderWidth: 1,
@@ -1005,6 +1013,9 @@ const styles = StyleSheet.create({
   },
   weightInput: {
     flex: 1,
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: 15,
     color: theme.colorTextPrimary,
     paddingVertical: theme.space2,

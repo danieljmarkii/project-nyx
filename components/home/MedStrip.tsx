@@ -32,6 +32,7 @@ import { theme } from '../../constants/theme';
 // any concern state. See the CONFIRMED_LINE note below.
 import { commitRoutine } from '../../lib/haptics';
 import { Card } from '../ui/Card';
+import { ThemedText } from '../ui/ThemedText';
 import { insertMedicationDose } from '../../lib/medicationDose';
 import { useSyncStore } from '../../store/syncStore';
 import type { MedStripModel } from '../../lib/medStrip';
@@ -195,7 +196,10 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
         testID="med-strip"
       >
         <View style={styles.headerRow}>
-          <Text style={styles.header}>{model.header}</Text>
+          <ThemedText style={styles.header}>{model.header}</ThemedText>
+          {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+              (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+              than taking the body family a sweep would give them. CUL-364 §7. */}
           <Text style={styles.chevron}>›</Text>
         </View>
 
@@ -234,7 +238,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
                 importantForAccessibility="no"
               />
             )}
-            <Text
+            <ThemedText
               style={[
                 styles.line,
                 styles.lineText,
@@ -242,7 +246,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
               ]}
             >
               {displayedLine}
-            </Text>
+            </ThemedText>
           </View>
         )}
       </Pressable>
@@ -261,7 +265,7 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
           testID="med-strip-confirm"
           style={styles.confirm}
         >
-          <Text style={styles.confirmLabel}>Log dose</Text>
+          <ThemedText style={styles.confirmLabel}>Log dose</ThemedText>
         </Pressable>
       )}
     </Card>

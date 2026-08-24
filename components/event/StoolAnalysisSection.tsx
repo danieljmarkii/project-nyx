@@ -46,6 +46,7 @@ import {
   COLOUR_OPTIONS,
   CONTENT_OPTIONS,
 } from './stoolFields';
+import { ThemedText } from '../ui/ThemedText';
 
 // 'capped' / 'read_disabled' are the two states the analyze-stool function writes
 // into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
@@ -223,7 +224,7 @@ export function StoolAnalysisSection(
   if (hasPhoto && row === undefined && !working) {
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>AI READ</Text>
+        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
         <View style={styles.pendingBox}>
           <WhorlSpinner size="sm" ground="day" />
         </View>
@@ -238,10 +239,10 @@ export function StoolAnalysisSection(
   if (hasPhoto && (working || status === 'pending')) {
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>AI READ</Text>
+        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
         <View style={styles.pendingBox}>
           <WhorlSpinner size="sm" ground="day" />
-          <Text style={styles.pendingText}>Reading this one…</Text>
+          <ThemedText style={styles.pendingText}>Reading this one…</ThemedText>
         </View>
       </View>
     );
@@ -251,9 +252,9 @@ export function StoolAnalysisSection(
   if (status === 'failed') {
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>AI READ</Text>
+        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
         <View style={styles.failedBox}>
-          <Text style={styles.failedText}>Couldn't finish reading this one.</Text>
+          <ThemedText style={styles.failedText}>Couldn't finish reading this one.</ThemedText>
           <TouchableOpacity
             style={styles.retryBtn}
             onPress={handleRetry}
@@ -263,7 +264,7 @@ export function StoolAnalysisSection(
           >
             {retrying
               ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
-              : <Text style={styles.retryBtnText}>Try again</Text>}
+              : <ThemedText style={styles.retryBtnText}>Try again</ThemedText>}
           </TouchableOpacity>
         </View>
       </View>
@@ -286,9 +287,9 @@ export function StoolAnalysisSection(
   if (status === 'capped') {
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>AI READ</Text>
+        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
         <View style={styles.capBox}>
-          <Text style={styles.capText}>{stoolCapCopy(petName, 'daily')}</Text>
+          <ThemedText style={styles.capText}>{stoolCapCopy(petName, 'daily')}</ThemedText>
         </View>
       </View>
     );
@@ -317,14 +318,14 @@ export function StoolAnalysisSection(
   if (!row || !row.recommendation) {
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>AI READ</Text>
+        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
         <View style={styles.neutralCard}>
-          <Text style={styles.readText}>Not enough to say about this one yet.</Text>
+          <ThemedText style={styles.readText}>Not enough to say about this one yet.</ThemedText>
           <TouchableOpacity onPress={handleRetry} hitSlop={16} disabled={retrying}>
-            <Text style={styles.linkText}>{retrying ? 'Working…' : 'Try analysis'}</Text>
+            <ThemedText style={styles.linkText}>{retrying ? 'Working…' : 'Try analysis'}</ThemedText>
           </TouchableOpacity>
         </View>
-        <Text style={styles.disclaimer}>This is a quick read of a single moment, not a diagnosis.</Text>
+        <ThemedText style={styles.disclaimer}>This is a quick read of a single moment, not a diagnosis.</ThemedText>
       </View>
     );
   }
@@ -348,38 +349,42 @@ export function StoolAnalysisSection(
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionLabel}>AI READ</Text>
+      <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
 
       {dismissed ? (
         <View style={styles.dismissedRow}>
-          <Text style={styles.dismissedText}>AI note hidden</Text>
+          <ThemedText style={styles.dismissedText}>AI note hidden</ThemedText>
           <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
-            <Text style={styles.linkText}>Show</Text>
+            <ThemedText style={styles.linkText}>Show</ThemedText>
           </TouchableOpacity>
         </View>
       ) : (
         <View style={[styles.readCard, tone]}>
           <View style={styles.readHeader}>
-            <Text style={[styles.recLabel, labelTone]}>{REC_LABEL[rec]}</Text>
+            <ThemedText style={[styles.recLabel, labelTone]}>{REC_LABEL[rec]}</ThemedText>
             <TouchableOpacity
               onPress={() => setDismissed(true)}
               hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
               style={styles.dismissBtn}
             >
+              {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
+                  These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and Geist
+                  carries no ✓ / ✕ / ＋ in any loaded weight, so sweeping one buys OS fallback for
+                  nothing. CUL-364 §7. */}
               <Text style={styles.dismissX}>✕</Text>
             </TouchableOpacity>
           </View>
-          {row.read_text ? <Text style={styles.readText}>{row.read_text}</Text> : null}
+          {row.read_text ? <ThemedText style={styles.readText}>{row.read_text}</ThemedText> : null}
         </View>
       )}
 
       {!dismissed && (observations.length > 0 || canEdit) ? (
         <View style={styles.obsBlock}>
           <View style={styles.obsHeaderRow}>
-            <Text style={styles.obsHeading}>What's visible</Text>
+            <ThemedText style={styles.obsHeading}>What's visible</ThemedText>
             {!editing && canEdit ? (
               <TouchableOpacity onPress={() => setEditing(true)} hitSlop={16}>
-                <Text style={styles.editLink}>{observations.length > 0 ? 'Edit' : 'Add details'}</Text>
+                <ThemedText style={styles.editLink}>{observations.length > 0 ? 'Edit' : 'Add details'}</ThemedText>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -395,26 +400,26 @@ export function StoolAnalysisSection(
             <>
               {observations.map((o) => (
                 <View key={o.label} style={styles.obsRow}>
-                  <Text style={styles.obsKey}>{o.label}</Text>
+                  <ThemedText style={styles.obsKey}>{o.label}</ThemedText>
                   <View style={styles.obsValWrap}>
-                    <Text style={styles.obsVal}>{o.value}</Text>
-                    {o.secondary ? <Text style={styles.obsSecondary}>{o.secondary}</Text> : null}
+                    <ThemedText style={styles.obsVal}>{o.value}</ThemedText>
+                    {o.secondary ? <ThemedText style={styles.obsSecondary}>{o.secondary}</ThemedText> : null}
                     {isObsRowEdited(editedSet, o.field) ? (
-                      <Text style={styles.editedTag}>Edited</Text>
+                      <ThemedText style={styles.editedTag}>Edited</ThemedText>
                     ) : null}
                   </View>
                 </View>
               ))}
               {row.description ? (
                 <View style={styles.descWrap}>
-                  <Text style={styles.obsDescription}>{row.description}</Text>
-                  {editedSet.has('description') ? <Text style={styles.editedTag}>Edited</Text> : null}
+                  <ThemedText style={styles.obsDescription}>{row.description}</ThemedText>
+                  {editedSet.has('description') ? <ThemedText style={styles.editedTag}>Edited</ThemedText> : null}
                 </View>
               ) : null}
               {/* One calm provenance line — never alarming (nyx-voice). The
                   per-field markers say WHAT changed; this says WHEN. */}
               {row.edited_at ? (
-                <Text style={styles.editedLine}>Edited {formatEditedDate(row.edited_at)}</Text>
+                <ThemedText style={styles.editedLine}>Edited {formatEditedDate(row.edited_at)}</ThemedText>
               ) : null}
             </>
           )}
@@ -428,11 +433,11 @@ export function StoolAnalysisSection(
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.rerunRow}
         >
-          <Text style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</Text>
+          <ThemedText style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</ThemedText>
         </TouchableOpacity>
       ) : null}
 
-      <Text style={styles.disclaimer}>This is a quick read of a single moment, not a diagnosis.</Text>
+      <ThemedText style={styles.disclaimer}>This is a quick read of a single moment, not a diagnosis.</ThemedText>
     </View>
   );
 }

@@ -1,5 +1,6 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   onAdd: () => void;
@@ -18,10 +19,10 @@ interface Props {
 export function VetFilesLowCountNote({ onAdd }: Props) {
   return (
     <View style={styles.wrap}>
-      <Text style={styles.line}>
+      <ThemedText style={styles.line}>
         Vaccine certificates, lab results and clinic emails all live here too —
         whatever a future vet might ask for.
-      </Text>
+      </ThemedText>
       <TouchableOpacity
         onPress={onAdd}
         activeOpacity={0.7}
@@ -30,7 +31,7 @@ export function VetFilesLowCountNote({ onAdd }: Props) {
         accessibilityRole="button"
         accessibilityLabel="Add another document"
       >
-        <Text style={styles.add}>Add another document</Text>
+        <ThemedText style={styles.add}>Add another document</ThemedText>
       </TouchableOpacity>
     </View>
   );

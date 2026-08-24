@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { ActiveArrangementView, formatCalendarDate } from '../../lib/feedingArrangements';
 
@@ -11,17 +12,22 @@ export function FreeFeedingStrip({ arrangements }: { arrangements: ActiveArrange
   if (arrangements.length === 0) return null;
   return (
     <View style={styles.strip}>
-      <Text style={styles.label}>Always available</Text>
+      <ThemedText style={styles.label}>Always available</ThemedText>
       <View style={styles.items}>
         {arrangements.map((a) => {
           const since = formatCalendarDate(a.active_from);
           return (
             <View key={a.id} style={styles.itemRow}>
               <View style={styles.dot} />
-              <Text style={styles.itemText} numberOfLines={1}>
+              <ThemedText style={styles.itemText} numberOfLines={1}>
                 {a.brand} {a.product_name}
+                {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-607). Every
+                    ThemedText injects an explicit fontFamily, which breaks RN's native
+                    text-style cascade — so a nested one would need its own family
+                    spelled out. This span differs from its parent only in COLOUR, so
+                    inheriting the parent's resolved Geist face is exactly right. */}
                 {since ? <Text style={styles.since}>{`  ·  since ${since}`}</Text> : null}
-              </Text>
+              </ThemedText>
             </View>
           );
         })}

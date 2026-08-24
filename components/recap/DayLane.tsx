@@ -12,10 +12,11 @@
 // line beside it, so the whole lane is hidden from the screen reader — the count line and
 // the rows carry the meaning.
 import { memo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import type { LaneDot } from '../../lib/todayLane';
 import { NODE_TINT_DAY, NODE_DOT_SIZE, NODE_DOT_RING } from './nodeTints';
+import { ThemedText } from '../ui/ThemedText';
 
 // Keep the extreme-position dots (6am / midnight) fully on-card: the plot is inset by
 // half a dot on each side, and each dot is centred on its point via a negative margin.
@@ -49,9 +50,9 @@ function DayLaneImpl({ dots }: { dots: LaneDot[] }) {
       </View>
       <View style={styles.times}>
         {TIME_LABELS.map((t) => (
-          <Text key={t} style={styles.timeLabel}>
+          <ThemedText key={t} style={styles.timeLabel}>
             {t}
-          </Text>
+          </ThemedText>
         ))}
       </View>
     </View>

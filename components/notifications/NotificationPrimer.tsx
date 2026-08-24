@@ -126,6 +126,10 @@ export function NotificationPrimer({
                     </View>
                     <Text style={styles.nodeTitle} numberOfLines={1}>
                       {node.title}
+                      {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+                          raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+                          own family and breaks RN's native text cascade, shipping a face change mid-sentence
+                          (CUL-607). */}
                       {node.detail ? (
                         <Text style={styles.nodeDetail}> · {node.detail}</Text>
                       ) : null}

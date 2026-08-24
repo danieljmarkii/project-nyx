@@ -1,4 +1,5 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { getPublicUrl } from '../../lib/storage';
 
@@ -35,9 +36,9 @@ export function PetAvatar({ name, photoPath, size }: PetAvatarProps) {
           a broken-looking disc where the pet's identity should be. Newly
           load-bearing now that this disc is the Pet tab's anchor on every screen
           (CUL-599). */}
-      <Text style={[styles.initial, { fontSize: Math.round(size * 0.4) }]}>
+      <ThemedText style={[styles.initial, { fontSize: Math.round(size * 0.4) }]}>
         {[...name][0]?.toUpperCase() ?? ''}
-      </Text>
+      </ThemedText>
     </View>
   );
 }

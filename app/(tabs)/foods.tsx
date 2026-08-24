@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { SkeletonRows } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui';
 import { FoodRow } from '../../components/foods/FoodRow';
 import { ArchivedFoodRow } from '../../components/foods/ArchivedFoodRow';
@@ -26,6 +27,7 @@ import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { usePetStore } from '../../store/petStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 /** Decode the cache's raw ai_extraction_confidence JSON text. Anything malformed
  *  reads as null, which the D10 gate treats as "panel unread" — the safe
@@ -338,6 +340,11 @@ export default function FoodsScreen() {
   // so it gets its own warm line AND the Archived section opens by default, so the
   // one thing the owner can do (restore) is right there (pm-feature-review, P5).
   const onlyArchived = loaded && !loadError && library.length === 0 && archived.length > 0;
+  // The first read hasn't answered yet (CUL-575). Every other state on this tab is
+  // gated on `loaded`, which left this one rendering an empty ScrollView: a blank
+  // page, then a reflow as the library lands. Tier-1 loading (§5) — a local read, so
+  // the shape of the rows, not a spinner.
+  const showSkeleton = !loaded && !loadError && library.length === 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -360,11 +367,11 @@ export default function FoodsScreen() {
             account too, and a subtitle that appeared only with a second pet would
             make the header's context flicker as the household grows. */}
         <View style={styles.titleBlock}>
-          <Text style={styles.title}>Foods</Text>
+          <ThemedText style={styles.title}>Foods</ThemedText>
           {activePetName ? (
-            <Text style={styles.subtitle} numberOfLines={1}>
+            <ThemedText style={styles.subtitle} numberOfLines={1}>
               {`${activePetName}’s library`}
-            </Text>
+            </ThemedText>
           ) : null}
         </View>
         {/* Add-food entry point (B-110). The FAB → Meal → "Snap a new food"
@@ -381,7 +388,7 @@ export default function FoodsScreen() {
           hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
         >
           <Plus size={18} color={theme.colorAccent} strokeWidth={2} />
-          <Text style={styles.addBtnText}>Add food</Text>
+          <ThemedText style={styles.addBtnText}>Add food</ThemedText>
         </TouchableOpacity>
       </View>
 
@@ -393,13 +400,24 @@ export default function FoodsScreen() {
           it, so withholding it would be the one state where this feature goes
           missing exactly when it matters. Rendered above the state message rather
           than inside it: the message is about the library, the strip is not. */}
-      {(showError || isEmpty) && trialStrip !== null ? (
+      {!showSkeleton && (showError || isEmpty) && trialStrip !== null ? (
         <View style={styles.stripOnly}>
           <FoodsTrialStrip model={trialStrip} onPress={() => router.push('/trial-foods')} />
         </View>
       ) : null}
 
-      {showError ? (
+      {showSkeleton ? (
+        <View style={styles.skeleton}>
+          <SkeletonRows
+            count={6}
+            leadingSize={44}
+            leadingRadius={theme.radiusSmall}
+            paddingHorizontal={theme.space2}
+            separator={false}
+            testID="foods-skeleton"
+          />
+        </View>
+      ) : showError ? (
         <EmptyState
           title="Couldn't load your foods"
           body="Something went wrong loading your library."
@@ -494,10 +512,10 @@ function FavoritesShelf({
   return (
     <View style={styles.group}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Reliable favorites</Text>
-        <Text style={styles.groupHint}>
+        <ThemedText style={styles.sectionTitle}>Reliable favorites</ThemedText>
+        <ThemedText style={styles.groupHint}>
           {petName ? `Foods ${petName} finishes most of the time.` : 'Foods your pet finishes most of the time.'}
-        </Text>
+        </ThemedText>
       </View>
       <View style={styles.card}>
         {rows.map(({ fav, food }, i) => (
@@ -555,8 +573,8 @@ function FoodGroup({
   return (
     <View style={styles.group}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{label}</Text>
-        {hint ? <Text style={styles.groupHint}>{hint}</Text> : null}
+        <ThemedText style={styles.sectionTitle}>{label}</ThemedText>
+        {hint ? <ThemedText style={styles.groupHint}>{hint}</ThemedText> : null}
       </View>
       <View style={styles.brandGroups}>
         {brandGroups.map((bg) => (
@@ -564,9 +582,9 @@ function FoodGroup({
             {/* A brand can be blank in the catalog (rare); skip the header
                 rather than render an empty label, but still show the card. */}
             {bg.brand.trim() ? (
-              <Text style={styles.brandLabel} numberOfLines={1} accessibilityRole="header">
+              <ThemedText style={styles.brandLabel} numberOfLines={1} accessibilityRole="header">
                 {bg.brand}
-              </Text>
+              </ThemedText>
             ) : null}
             <View style={styles.card}>
               {bg.foods.map((f, i) => (
@@ -621,15 +639,15 @@ function ArchivedSection({
         hitSlop={{ top: 8, bottom: 8, left: 0, right: 0 }}
       >
         <Chevron size={18} color={theme.colorTextTertiary} strokeWidth={2} />
-        <Text style={styles.sectionTitle}>Archived</Text>
-        <Text style={styles.archivedCount}>{`· ${foods.length}`}</Text>
+        <ThemedText style={styles.sectionTitle}>Archived</ThemedText>
+        <ThemedText style={styles.archivedCount}>{`· ${foods.length}`}</ThemedText>
       </TouchableOpacity>
       {expanded ? (
         <>
-          <Text style={styles.groupHint}>
+          <ThemedText style={styles.groupHint}>
             Foods you've removed from your library. Your logged meals and reports still show them —
             restore one anytime to log it again.
-          </Text>
+          </ThemedText>
           <View style={styles.card}>
             {foods.map((f, i) => (
               <View key={f.id} style={i > 0 ? styles.rowDivider : undefined}>
@@ -760,6 +778,10 @@ const styles = StyleSheet.create({
   // tighter in-list spacing, not the top-of-screen inset.
   onlyArchivedNote: {
     paddingHorizontal: theme.space2,
+    paddingTop: theme.space2,
+  },
+  // Sits where the library's first rows will, so the swap-in doesn't jump the page.
+  skeleton: {
     paddingTop: theme.space2,
   },
   groupHint: {

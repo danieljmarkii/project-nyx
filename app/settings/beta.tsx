@@ -13,6 +13,7 @@ import {
   type BetaFeature,
 } from '../../lib/betaFeatures';
 import type { AllowlistFlagKey } from '../../lib/appConfig';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Beta features — the self-serve shelf (B-712 PR 3, spec §5 / §2). A cohort-gated
 // page where an eligible owner opts into unfinished features, one at a time. The
@@ -91,7 +92,7 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
                 positive tint), not a tappable chip. Sets expectations without
                 over-promising: unfinished, may change. */}
             <View style={styles.pill} pointerEvents="none">
-              <Text style={styles.pillText}>Beta</Text>
+              <ThemedText style={styles.pillText}>Beta</ThemedText>
             </View>
           </View>
         </View>

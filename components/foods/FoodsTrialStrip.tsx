@@ -18,6 +18,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import type { FoodsTrialStripModel } from '../../lib/trialLibraryChrome';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   /** Null renders nothing — the FR-4 disappearance and R2's "render nothing"
@@ -48,13 +49,16 @@ export function FoodsTrialStrip({ model, onPress }: Props) {
             grew to three or four lines would stop reading as context and start
             reading as content, and B-627 accepted truncation as the cost of
             naming. The full list is one tap away on §2.2. */}
-        <Text style={styles.header} numberOfLines={1} testID="foods-trial-strip-header">
+        <ThemedText style={styles.header} numberOfLines={1} testID="foods-trial-strip-header">
           {model.header}
-        </Text>
-        <Text style={styles.line} numberOfLines={1} testID="foods-trial-strip-line">
+        </ThemedText>
+        <ThemedText style={styles.line} numberOfLines={1} testID="foods-trial-strip-line">
           {model.line}
-        </Text>
+        </ThemedText>
       </View>
+      {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+          (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+          than taking the body family a sweep would give them. CUL-364 §7. */}
       <Text style={styles.chevron}>›</Text>
     </Pressable>
   );

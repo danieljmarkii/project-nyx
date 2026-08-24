@@ -1,6 +1,7 @@
-import { Text, View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 import { FORMAT_LABEL } from '../../lib/food';
 
 interface Props {
@@ -82,17 +83,17 @@ export function FoodTile({
       {/* Guarded so a hideBrand tile with an unlabeled format ('other') doesn't
           render an empty eyebrow line above the product name. */}
       {metaLine ? (
-        <Text style={styles.meta} numberOfLines={1}>
+        <ThemedText style={styles.meta} numberOfLines={1}>
           {metaLine}
-        </Text>
+        </ThemedText>
       ) : null}
       {/* Two lines on both variants: the flavor in the product name is what tells a
           same-brand cluster apart, so compact tiles must not clip it (see the prop
           comment). The compactness comes from the shorter min-height + padding, not
           from truncating the disambiguating text. */}
-      <Text style={styles.product} numberOfLines={2}>
+      <ThemedText style={styles.product} numberOfLines={2}>
         {productName}
-      </Text>
+      </ThemedText>
       {/* A glyph, not just the tint — selection must not be signalled by colour
           alone. The screen-reader path is covered separately by the checkbox role
           + checked state above. */}

@@ -41,6 +41,7 @@ import {
   type DaySummaryModel,
   type DaySummarySection,
 } from '../lib/daySummary';
+import { ThemedText } from '../components/ui/ThemedText';
 
 function dayLabel(anchorMs: number): string {
   // "Saturday, August 15" — names the RENDERED day (B-672). The screen anchors to the
@@ -128,7 +129,7 @@ export default function DaySummaryScreen() {
         />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <Text style={styles.dateLabel}>{dayLabel(state.anchorMs)}</Text>
+          <ThemedText style={styles.dateLabel}>{dayLabel(state.anchorMs)}</ThemedText>
           {state.model.petCount === 1 ? (
             <SinglePetRecap model={state.model} onOpenTrial={openProfile} onOpenMed={openProfile} />
           ) : (
@@ -206,7 +207,7 @@ function SinglePetRecap({
         />
       ))}
 
-      {model.forward ? <Text style={styles.forward}>{model.forward}</Text> : null}
+      {model.forward ? <ThemedText style={styles.forward}>{model.forward}</ThemedText> : null}
     </View>
   );
 }
@@ -216,9 +217,9 @@ function SinglePetRecap({
 function PetSpineSection({ section }: { section: DaySummarySection }) {
   return (
     <View style={styles.petSection}>
-      <Text style={styles.petHeading}>{section.petName}</Text>
+      <ThemedText style={styles.petHeading}>{section.petName}</ThemedText>
       {section.isZeroLog ? (
-        <Text style={styles.petZeroLog}>{petZeroLogLine(section.petName)}</Text>
+        <ThemedText style={styles.petZeroLog}>{petZeroLogLine(section.petName)}</ThemedText>
       ) : (
         <DaySpine rows={section.rows} />
       )}
@@ -232,9 +233,9 @@ function NightEmpty({ title, onLog }: { title: string; onLog: () => void }) {
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyBody}>{DAY_SUMMARY_ZERO_LOG.body}</Text>
+      <ThemedText style={styles.emptyBody}>{DAY_SUMMARY_ZERO_LOG.body}</ThemedText>
       <Pressable onPress={onLog} accessibilityRole="button" hitSlop={8} style={styles.emptyCtaWrap}>
-        <Text style={styles.emptyCta}>{DAY_SUMMARY_ZERO_LOG.cta}</Text>
+        <ThemedText style={styles.emptyCta}>{DAY_SUMMARY_ZERO_LOG.cta}</ThemedText>
       </Pressable>
     </View>
   );
@@ -244,10 +245,10 @@ function NightEmpty({ title, onLog }: { title: string; onLog: () => void }) {
 function NightError({ onRetry }: { onRetry: () => void }) {
   return (
     <View style={styles.errorBox}>
-      <Text style={styles.errorTitle}>Couldn’t load today’s record</Text>
-      <Text style={styles.errorBody}>Check your connection and try again.</Text>
+      <ThemedText style={styles.errorTitle}>Couldn’t load today’s record</ThemedText>
+      <ThemedText style={styles.errorBody}>Check your connection and try again.</ThemedText>
       <Pressable onPress={onRetry} accessibilityRole="button" hitSlop={8} style={styles.retryWrap}>
-        <Text style={styles.retry}>Try again</Text>
+        <ThemedText style={styles.retry}>Try again</ThemedText>
       </Pressable>
     </View>
   );

@@ -33,11 +33,20 @@
 // about: there is no longer a flex:1 image anywhere to collapse.
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Image, Text, StyleSheet, Modal, TouchableOpacity, ScrollView,
-  PixelRatio, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent,
+  View,
+  Image,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  ScrollView,
+  PixelRatio,
+  LayoutChangeEvent,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { theme } from '../../constants/theme';
 import { resolveMaxZoomScale } from '../../lib/photoZoom';
+import { ThemedText } from './ThemedText';
 
 interface Props {
   visible: boolean;
@@ -130,7 +139,7 @@ export function PhotoViewer({
     if (!uri) {
       return (
         <View key={key} style={[styles.unavailable, { width: b.w, height: b.h }]}>
-          <Text style={styles.unavailableText}>{unavailableLabel}</Text>
+          <ThemedText style={styles.unavailableText}>{unavailableLabel}</ThemedText>
         </View>
       );
     }
@@ -175,24 +184,24 @@ export function PhotoViewer({
 
         <View style={styles.actions}>
           <TouchableOpacity style={styles.closeBtn} onPress={onClose} hitSlop={12}>
-            <Text style={styles.closeText}>✕  Close</Text>
+            <ThemedText style={styles.closeText}>✕  Close</ThemedText>
           </TouchableOpacity>
           {/* The lightbox's label — quieter than Close so it reads as a caption,
               not a second button. flex:1 lets it centre in the strip and truncate;
               only Vet Files passes it, and that caller has no Replace/Remove, so it
               never fights the right-hand actions for room. */}
           {caption ? (
-            <Text style={styles.caption} numberOfLines={1}>{caption}</Text>
+            <ThemedText style={styles.caption} numberOfLines={1}>{caption}</ThemedText>
           ) : null}
           <View style={styles.rightActions}>
             {onReplace && (
               <TouchableOpacity style={styles.secondary} onPress={onReplace} hitSlop={12}>
-                <Text style={styles.secondaryText}>Replace</Text>
+                <ThemedText style={styles.secondaryText}>Replace</ThemedText>
               </TouchableOpacity>
             )}
             {onRemove && (
               <TouchableOpacity style={styles.destructive} onPress={onRemove} hitSlop={12}>
-                <Text style={styles.destructiveText}>Remove</Text>
+                <ThemedText style={styles.destructiveText}>Remove</ThemedText>
               </TouchableOpacity>
             )}
           </View>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { FileText } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   /** Resolved cover URI — a local file:// path or a signed URL. */
@@ -82,7 +83,7 @@ export function DocumentHero({
         // this openable-looking tile and never reaches the honest line below.
         <View style={styles.centre}>
           <FileText size={38} color={theme.colorTextTertiary} strokeWidth={1.5} />
-          <Text style={styles.pdfBadge}>PDF</Text>
+          <ThemedText style={styles.pdfBadge}>PDF</ThemedText>
         </View>
       ) : unreachable || failed ? (
         <View style={styles.centre}>
@@ -90,9 +91,9 @@ export function DocumentHero({
           {/* The sentence names what the owner cannot do: a PDF is opened, never
               previewed (there is no page to "show"), so the two arms of AC 12 read
               differently even though they share this branch. */}
-          <Text style={styles.offline}>
+          <ThemedText style={styles.offline}>
             {isPdf ? 'Needs a connection to open this PDF' : 'Needs a connection to show this page'}
-          </Text>
+          </ThemedText>
         </View>
       ) : (
         // Loading: the surface itself is the pending state. Deliberately empty —
@@ -113,7 +114,7 @@ export function DocumentHero({
           style={[styles.openPill, !isPdf && styles.openPillOverlay]}
           pointerEvents="none"
         >
-          <Text style={styles.openText}>Open</Text>
+          <ThemedText style={styles.openText}>Open</ThemedText>
         </View>
       )}
     </TouchableOpacity>

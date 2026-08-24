@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import { ThemedText } from '../ui/ThemedText';
 import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
@@ -27,13 +28,14 @@ export function CrossPetSafetyBanner() {
       style={styles.banner}
     >
       <PetAvatar name={banner.petName} photoPath={banner.photoPath} size={26} />
-      <Text style={styles.text}>
+      <ThemedText style={styles.text}>
         {/* The pet name renders bold (mock A3); the rest is the calm sentence.
-            System body font here (not a Geist face), so bare fontWeight is fine —
-            same as InsightCard's body copy. text === petName + rest by construction. */}
-        <Text style={styles.petName}>{banner.petName}</Text>
+            The span keeps its bare fontWeight: ThemedText maps it to Geist-SemiBold,
+            and only the family is injected — size and colour still cascade from the
+            sentence above it. text === petName + rest by construction. */}
+        <ThemedText style={styles.petName}>{banner.petName}</ThemedText>
         {banner.rest}
-      </Text>
+      </ThemedText>
       <ChevronRight size={16} color={theme.colorTextTertiary} strokeWidth={2} />
     </Pressable>
   );

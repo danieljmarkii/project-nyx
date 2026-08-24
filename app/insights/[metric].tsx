@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -18,6 +18,7 @@ import {
   type MetricDetailWindowData,
 } from '../../lib/metricDetail';
 import { MetricDetailScreen } from '../../components/dashboard/MetricDetailScreen';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The metric DETAIL screen — a Patterns card's "doorway" destination (§4.2 / §5 #2 / §8;
 // B-093). Reached by tapping a symptom COUNT card on the dashboard; `metric` is the symptom
@@ -105,7 +106,7 @@ export default function MetricDetailRoute() {
 
       {!activePet ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>No pet selected.</Text>
+          <ThemedText style={styles.stateText}>No pet selected.</ThemedText>
         </View>
       ) : status === 'loading' ? (
         <View style={styles.centered}>
@@ -113,9 +114,9 @@ export default function MetricDetailRoute() {
         </View>
       ) : status === 'error' || !windows ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>
+          <ThemedText style={styles.stateText}>
             I couldn't pull {petName}'s {title.toLowerCase()} trend just now.
-          </Text>
+          </ThemedText>
           <Pressable
             onPress={() => load(true)}
             hitSlop={8}
@@ -123,7 +124,7 @@ export default function MetricDetailRoute() {
             accessibilityLabel="Try again"
             style={styles.retryBtn}
           >
-            <Text style={styles.retryText}>Try again</Text>
+            <ThemedText style={styles.retryText}>Try again</ThemedText>
           </Pressable>
         </View>
       ) : (

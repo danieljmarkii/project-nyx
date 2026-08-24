@@ -1,7 +1,8 @@
 import { Fragment } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 export interface MetaRow {
   key: string;
@@ -45,24 +46,24 @@ export function DocumentMetaCard({ rows }: { rows: MetaRow[] }) {
             accessibilityLabel={`${row.label}: ${row.value ?? row.placeholder}`}
             accessibilityHint="Opens an editor"
           >
-            <Text style={styles.label}>{row.label}</Text>
+            <ThemedText style={styles.label}>{row.label}</ThemedText>
 
             <View style={styles.valueWrap}>
               {row.value == null ? (
-                <Text style={styles.placeholder} numberOfLines={1}>
+                <ThemedText style={styles.placeholder} numberOfLines={1}>
                   {row.placeholder}
-                </Text>
+                </ThemedText>
               ) : row.chip ? (
                 <View style={styles.chip}>
-                  <Text style={styles.chipText}>{row.value}</Text>
+                  <ThemedText style={styles.chipText}>{row.value}</ThemedText>
                 </View>
               ) : (
-                <Text
+                <ThemedText
                   style={[styles.value, row.link && styles.valueLink]}
                   numberOfLines={2}
                 >
                   {row.value}
-                </Text>
+                </ThemedText>
               )}
             </View>
 
