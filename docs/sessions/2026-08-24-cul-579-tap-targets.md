@@ -169,3 +169,20 @@ enough to name it. It did not reproduce across 15 subsequent runs of that subset
 full-suite run (263 suites / 5803 tests green). Recorded rather than dismissed, because the
 house rule is that a failing test is never an infra flake — but with no name and no
 reproduction there was nothing to chase, and CI is the independent check.
+
+## CLAUDE.md
+
+Two conventions added, both extending the existing CUL-612 entry rather than starting a new one
+(no version bump — same treatment the CUL-612/613/614 conventions got):
+
+- **Pick the tool by the geometry, not by habit.** `hitSlop` spends gap, so it is only correct
+  where there is gap to spend. On **flush** controls it manufactures the very overlap CUL-612
+  forbids; on a control **already at the floor** it buys no reach and only reaches into its
+  neighbour's. There the fix is the opposite — grow the box, or delete the slop. A wrapping row
+  needs both gaps considered separately. And **pin whatever geometry the floor depends on**,
+  because a floor resting on a metric no test can compute is a floor nobody is holding.
+- **`fireEvent.press` cannot prove a region is tappable.** It does not merely bubble — it can
+  reach a handler by descending from an enclosing composite element, so a test that presses an
+  inert label passes over the exact defect it exists for. Assert **node identity** from the text
+  up to its nearest responder host instead. Recorded because this one cost real time to find and
+  will otherwise be re-learned by the next person writing a tap-target test.
