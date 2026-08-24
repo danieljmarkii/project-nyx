@@ -1,4 +1,5 @@
 import { render, fireEvent } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import {
   AdherenceChipRow,
   CHIP_HITSLOP,
@@ -44,6 +45,25 @@ describe('AdherenceChipRow', () => {
   // medication completion card, so both halves matter: enough reach to hit, and
   // no shared reach that lands the tap on the neighbour.
   describe('tap targets', () => {
+    // The two assertions below reason about the CONSTANTS. That is only worth
+    // anything if the component actually applies them, so this closes the loop
+    // on the rendered node: a correct constant sitting unused is the same
+    // 32pt chip with extra confidence attached.
+    it('applies the pinned height and the split gaps to what it renders', () => {
+      const { getByText } = render(<AdherenceChipRow value="given" onChange={() => {}} />);
+      const chip = StyleSheet.flatten(chipHost(getByText, 'Given').props.style);
+      expect(chip.minHeight).toBe(CHIP_MIN_HEIGHT);
+
+      // The wrapping row: the nearest HOST ancestor above the chip (the chip's
+      // immediate parents are composite elements, which carry no style).
+      let n: any = chipHost(getByText, 'Given').parent;
+      while (n && typeof n.type !== 'string') n = n.parent;
+      const row = StyleSheet.flatten(n.props.style);
+      expect(row.columnGap).toBe(CHIP_COLUMN_GAP);
+      expect(row.rowGap).toBe(CHIP_ROW_GAP);
+      expect(row.gap).toBeUndefined(); // a single `gap` would re-couple the two
+    });
+
     it('every editable chip carries the vertical slop', () => {
       const { getByText } = render(<AdherenceChipRow value="given" onChange={() => {}} />);
       for (const label of ['Given', 'Partial', 'Missed', 'Refused']) {
