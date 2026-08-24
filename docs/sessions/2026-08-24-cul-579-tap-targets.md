@@ -131,3 +131,41 @@ exactly the defect it guards and only that one.
 `components/log/AdherenceChipRow.test.tsx` (new, 6) and
 `components/log/TimeConfidenceField.test.tsx` (new, 5). Full suite green: 263 suites / 5802
 tests; `tsc --noEmit` clean.
+
+## Review
+
+`code-reviewer` (isolated pass over the diff): **no behaviour regressions**, ship-ready. It
+confirmed the three things worth confirming — all four `FieldRow` call sites preserve their
+`open === X ? null : X` toggles exactly, `minHeight: 32` is visually inert today on both the
+editable and read-only chip paths, and the `columnGap`/`rowGap` split is horizontally identical
+to the old `gap: 6`. It independently reached the segmented-control finding and agreed with
+declining to fold it in.
+
+Two follow-ups from it, both actioned:
+
+- **The tap-target assertions reasoned about the exported constants alone**, not about whether
+  the component applies them. A correct constant sitting unused is the same 32pt chip with extra
+  confidence attached, so the rendered node is checked now too: the chip's flattened style must
+  carry the pinned `minHeight`, and the row's must carry the split gaps with no single `gap`
+  re-coupling them. Falsified both ways.
+- **The FAB menu-height claim is arithmetic, not a measurement** — the menu has no `maxHeight`
+  or scroll container, so "still fits on an SE" now has its own explicit QA step naming the worst
+  case (multi-pet chip + 3 recent foods with two-line names).
+
+## Filed
+
+- **CUL-657** (High) — the `Saw it happen` / `Found it` segmented-control overlap.
+- **CUL-658** (Low) — a shared home for tap-target geometry. Worth recording *why* this is not
+  the obvious extract: `FilterChip` and `AdherenceChipRow` share `{top:6,bottom:6}` because their
+  geometry happens to be identical, **not** because they must agree. A shared *constant* would
+  assert an invariant that does not exist and would silently keep them equal after one of them
+  legitimately changed. What the codebase wants is a shared *helper* that each site calls with
+  its own pinned box, so the arithmetic is computed rather than copied.
+
+## One thing left unresolved
+
+A single test failed once locally, mid-session, and the run's output was not captured closely
+enough to name it. It did not reproduce across 15 subsequent runs of that subset, nor in a
+full-suite run (263 suites / 5803 tests green). Recorded rather than dismissed, because the
+house rule is that a failing test is never an infra flake — but with no name and no
+reproduction there was nothing to chase, and CI is the independent check.
