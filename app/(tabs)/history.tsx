@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { EmptyState, ThemedText } from '../../components/ui';
+import { SkeletonRows } from '../../components/ui/Skeleton';
 import { DateScopeControl } from '../../components/history/DateScopeControl';
 import { TypeScopeControl } from '../../components/history/TypeScopeControl';
 import { DAY_KEY_RE, effectiveRange, coerceDatePreset } from '../../lib/historyDateFilter';
@@ -18,6 +19,7 @@ import { usePetStore } from '../../store/petStore';
 import { useWidgetPetLink } from '../../hooks/useWidgetPetLink';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
+import { useSnackbarStore } from '../../store/snackbarStore';
 import { getTimeline, softDeleteEvent, TimelineRow } from '../../lib/db';
 import { syncPendingEvents, syncNow } from '../../lib/sync';
 import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
@@ -28,6 +30,14 @@ import {
 } from '../../lib/feedingArrangements';
 
 const PAGE_SIZE = 50;
+
+type LoadEvents = (
+  currentOffset: number,
+  type: EventTypeKey | null,
+  preset: DatePreset,
+  day: string | null,
+  replace: boolean,
+) => Promise<void>;
 
 // History renders two kinds of timeline row: discrete events, and the quiet
 // free-feeding lifecycle boundary markers (§6a). They're merged into one desc
@@ -121,7 +131,7 @@ export default function HistoryScreen() {
     : params.date === 'today' ? 'today' : null;
   const initialDay: string | null =
     !hasFilterLink && params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
-  const { removeFromToday, todayEvents } = useEventStore();
+  const { removeFromToday, restoreToToday, todayEvents } = useEventStore();
   // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
   // cycle finishes while this tab is open, so another device's writes appear
   // without a manual pull-to-refresh.
@@ -135,6 +145,17 @@ export default function HistoryScreen() {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  // CUL-575 — a failed timeline read is a STATE, not a console line. Without it the
+  // screen falls through to "Nothing logged yet", i.e. the app asserts an empty record
+  // over a read it never completed. The day-summary screen refuses to do this
+  // (day-summary.tsx: "A failed read is NEVER rendered as 'nothing logged'"); History
+  // holds the same line.
+  const [loadError, setLoadError] = useState(false);
+  // Whether a read has ever ANSWERED for this screen. `loading` alone can't carry the
+  // first paint: it starts false and only flips inside the focus effect, so the very
+  // first frame had merged=[] + loading=false and rendered "Nothing logged yet" for a
+  // beat before the rows landed. (Foods gates its empty state on the same flag.)
+  const [loaded, setLoaded] = useState(false);
   const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(initialTypeFilter);
   const [datePreset, setDatePreset] = useState<DatePreset>(initialDatePreset);
   // A single-day filter from the Calendar v3 drill-in (B-308). Mutually exclusive with
@@ -156,7 +177,12 @@ export default function HistoryScreen() {
   datePresetRef.current = datePreset;
   dayFilterRef.current = dayFilter;
 
-  const loadEvents = useCallback(async (
+  // The "Try again" on a failed APPEND re-runs the same call, so the catch below has
+  // to reach loadEvents from inside its own definition. A ref keeps that legal and
+  // always points at the current closure (a captured binding would go stale).
+  const loadEventsRef = useRef<LoadEvents | null>(null);
+
+  const loadEvents = useCallback<LoadEvents>(async (
     currentOffset: number,
     type: EventTypeKey | null,
     preset: DatePreset,
@@ -166,6 +192,9 @@ export default function HistoryScreen() {
     if (!activePet || loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    // Cleared per attempt, not per mount: a retry that succeeds must take the error
+    // state down, and a retry that fails must leave it up.
+    setLoadError(false);
     try {
       const { after, before } = effectiveRange(preset, day);
       const rows = await getTimeline(
@@ -193,11 +222,25 @@ export default function HistoryScreen() {
       setOffset(currentOffset + rows.length);
     } catch (e) {
       console.error('[history] load failed:', e);
+      setLoadError(true);
+      // An APPEND failure can't use the error state below — there are rows on screen,
+      // so the list isn't empty and the owner would just see "Load more" do nothing.
+      // (`replace` is false only after a first page already landed.) Same defect, the
+      // other half: no silent failures.
+      if (!replace) {
+        useSnackbarStore.getState().show({
+          message: "Couldn't load more history.",
+          actionLabel: 'Try again',
+          onAction: () => { void loadEventsRef.current?.(currentOffset, type, preset, day, false); },
+        });
+      }
     } finally {
       loadingRef.current = false;
       setLoading(false);
+      setLoaded(true);
     }
   }, [activePet]);
+  loadEventsRef.current = loadEvents;
 
   // Free-feeding standing facts (§6a): the active arrangements for the pinned
   // strip + the lifecycle boundary markers for the stream. Cheap reads (few
@@ -382,6 +425,13 @@ export default function HistoryScreen() {
             // alert: a haptic beside a live Cancel would say something was destroyed
             // while the owner can still back out.
             destructiveConfirm();
+            // Whether Today was carrying this event BEFORE the optimistic removal —
+            // captured here because the rollback below must put it back only if it
+            // was there. Restoring unconditionally would inject a three-week-old
+            // event into Home's Today list (CUL-575).
+            const wasInToday = useEventStore
+              .getState()
+              .todayEvents.some((e: NyxEvent) => e.id === event.id);
             setEvents((prev: NyxEvent[]) => prev.filter((e: NyxEvent) => e.id !== event.id));
             setExpandedId(null);
             removeFromToday(event.id);
@@ -397,6 +447,24 @@ export default function HistoryScreen() {
                 const next = [...prev];
                 next.splice(idx === -1 ? prev.length : idx, 0, event);
                 return next;
+              });
+              // Home reloads Today on mount and on a hydration tick, not on focus — so
+              // without this the app goes on hiding an event that is still in the
+              // record, on the one surface the owner checks most (CUL-575).
+              //
+              // Read the active pet FRESH rather than from this closure: the write can
+              // fail after the owner has switched pets, and Today is one global list
+              // scoped to whoever was active when it loaded (hooks/useEvents). Putting
+              // pet A's meal back into pet B's Today is the wrong-pet class, so the
+              // rollback is skipped in that window — the next load restores it anyway,
+              // for the right pet.
+              const stillActive = usePetStore.getState().activePet?.id === event.pet_id;
+              if (wasInToday && stillActive) restoreToToday(event);
+              // ...and SAY so. The row reappearing under the owner's finger, with no
+              // message, is the app looking broken at the exact moment it is being
+              // careful. No provider string here — the copy guard's B-399 rule.
+              useSnackbarStore.getState().show({
+                message: "Couldn't remove that log. It's still in history.",
               });
             }
           },
@@ -436,7 +504,28 @@ export default function HistoryScreen() {
     return [...eventItems, ...markerItems].sort((a, b) => itemSortMs(b) - itemSortMs(a));
   }, [events, markers, typeFilter, datePreset, dayFilter, hasMore]);
 
-  const isEmpty = merged.length === 0 && !loading;
+  // The three "nothing on screen" states, kept mutually exclusive and in priority
+  // order (CUL-575). Before this, the screen had ONE of them: an empty list, which a
+  // failed read and an unfinished read both fell into.
+  const nothingToShow = merged.length === 0;
+  // Tier-1 loading (§5): a local SQLite read, so skeleton rows — never a spinner, and
+  // never a blank screen that reflows once the rows land. Only while there is nothing
+  // to show: a filter change keeps the previous rows up until the new ones replace
+  // them, so it must not flash skeletons over a list that is already populated.
+  // `!loaded` covers the first frame, before the focus effect has even started the
+  // read. Gated on activePet: with no pet there is no read to wait for, so the screen
+  // must not skeleton forever — it falls through to the designed empty state.
+  const showSkeleton = nothingToShow && !loadError && !!activePet && (loading || !loaded);
+  const showError = nothingToShow && loadError;
+  const isEmpty = nothingToShow && !showSkeleton && !loadError;
+
+  // The error state's retry, and the same reset the filter handlers do.
+  const handleRetry = useCallback(() => {
+    setOffset(0);
+    setHasMore(true);
+    loadEvents(0, typeFilter, datePreset, dayFilter, true);
+    loadFreeFeeding();
+  }, [loadEvents, loadFreeFeeding, typeFilter, datePreset, dayFilter]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -501,7 +590,22 @@ export default function HistoryScreen() {
             />
           }
           ListEmptyComponent={
-            isEmpty ? (
+            showSkeleton ? (
+              <SkeletonRows count={7} testID="history-skeleton" />
+            ) : showError ? (
+              // NOT "Nothing logged yet". A read that failed says so and offers a way
+              // back; it never renders as a record fact about the pet.
+              <EmptyState
+                title="Couldn't load history"
+                body={
+                  activePet
+                    ? `Something went wrong loading ${activePet.name}'s history.`
+                    : 'Something went wrong loading your history.'
+                }
+                action={{ label: 'Try again', onPress: handleRetry }}
+                testID="history-error"
+              />
+            ) : isEmpty ? (
               typeFilter || datePreset || dayFilter ? (
                 <EmptyState
                   title="Nothing matches that filter"
