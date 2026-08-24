@@ -1,4 +1,4 @@
-import { Pressable, View, Text, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import {
@@ -14,6 +14,7 @@ import {
   timingBandLabel,
   type TrialSoFarModel,
 } from '../../lib/patternsTrial';
+import { ThemedText } from '../ui/ThemedText';
 
 // TrialSoFarCard — the Patterns dashboard's "The trial so far" panel face (Signals v2 /
 // B-755 PR 9, CUL-11; spec §4.5): the per-phenotype vomit-timing rows + the
@@ -61,10 +62,10 @@ export function TrialSoFarCard({ model, onPress }: Props) {
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
       <View style={styles.headerRow}>
-        <Text style={styles.title}>{trialPanelTitle()}</Text>
+        <ThemedText style={styles.title}>{trialPanelTitle()}</ThemedText>
         <ChevronRight size={18} color={theme.colorTextDisabled} />
       </View>
-      <Text style={styles.context}>{trialContextLine(model)}</Text>
+      <ThemedText style={styles.context}>{trialContextLine(model)}</ThemedText>
 
       {/* Phenotype — vomit timing during the trial (context counts, no verdict). The
           section is DROPPED when no vomiting was logged in-window (`empty`), never a
@@ -72,40 +73,40 @@ export function TrialSoFarCard({ model, onPress }: Props) {
           record gets an honest disclosure line instead of zero rows. */}
       {phenotypeState !== 'empty' && (
         <>
-          <Text style={styles.sectionLabel}>Vomiting timing</Text>
+          <ThemedText style={styles.sectionLabel}>Vomiting timing</ThemedText>
           {phenotypeState === 'rows' ? (
             <>
               <View style={styles.rows}>
                 {model.phenotype.bandRows.map((row) => (
                   <View key={row.band} style={styles.row}>
-                    <Text style={styles.rowLabel}>{timingBandLabel(row.band, model.config)}</Text>
-                    <Text style={styles.rowValue}>{row.count}</Text>
+                    <ThemedText style={styles.rowLabel}>{timingBandLabel(row.band, model.config)}</ThemedText>
+                    <ThemedText style={styles.rowValue}>{row.count}</ThemedText>
                   </View>
                 ))}
               </View>
-              <Text style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</Text>
-              {untimed != null && <Text style={styles.sample}>{untimed}</Text>}
+              <ThemedText style={styles.sample}>{trialPhenotypeSampleLine(model.phenotype)}</ThemedText>
+              {untimed != null && <ThemedText style={styles.sample}>{untimed}</ThemedText>}
             </>
           ) : (
-            <Text style={styles.noneTimeable}>{trialNoneTimeableLine(model.phenotype)}</Text>
+            <ThemedText style={styles.noneTimeable}>{trialNoneTimeableLine(model.phenotype)}</ThemedText>
           )}
         </>
       )}
 
       {/* Diet-structure rows — the observable half of the confound (treat share, meals/day). */}
-      <Text style={styles.sectionLabel}>Diet during the trial</Text>
+      <ThemedText style={styles.sectionLabel}>Diet during the trial</ThemedText>
       <View style={styles.rows}>
         <View style={styles.row}>
-          <Text style={styles.rowLabel}>Treats</Text>
-          <Text style={styles.rowValueText}>{trialTreatShareValue(model.structure)}</Text>
+          <ThemedText style={styles.rowLabel}>Treats</ThemedText>
+          <ThemedText style={styles.rowValueText}>{trialTreatShareValue(model.structure)}</ThemedText>
         </View>
         <View style={styles.row}>
-          <Text style={styles.rowLabel}>Meals</Text>
-          <Text style={styles.rowValueText}>{trialMealsPerDayValue(model.structure)}</Text>
+          <ThemedText style={styles.rowLabel}>Meals</ThemedText>
+          <ThemedText style={styles.rowValueText}>{trialMealsPerDayValue(model.structure)}</ThemedText>
         </View>
       </View>
 
-      <Text style={styles.honesty}>{trialHonestyLine()}</Text>
+      <ThemedText style={styles.honesty}>{trialHonestyLine()}</ThemedText>
     </Pressable>
   );
 }

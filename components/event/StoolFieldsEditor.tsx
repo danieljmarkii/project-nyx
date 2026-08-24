@@ -5,7 +5,7 @@
 // note. Emits the full draft on Save; the parent decides whether anything
 // actually changed and owns the write + provenance.
 import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FilterChip } from '../ui/FilterChip';
@@ -20,6 +20,7 @@ import {
   MUCUS_OPTIONS,
   TRISTATE_OPTIONS,
 } from './stoolFields';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   initial: StoolEditableFields;
@@ -59,7 +60,7 @@ export function StoolFieldsEditor({ initial, saving, onSave, onCancel }: Props) 
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.intro}>Correct anything that doesn't look right.</Text>
+      <ThemedText style={styles.intro}>Correct anything that doesn't look right.</ThemedText>
 
       <EnumRow
         label="Consistency"
@@ -75,7 +76,7 @@ export function StoolFieldsEditor({ initial, saving, onSave, onCancel }: Props) 
       />
 
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Contents</Text>
+        <ThemedText style={styles.fieldLabel}>Contents</ThemedText>
         <View style={styles.chipRow}>
           {CONTENT_OPTIONS.map((o) => (
             <FilterChip
@@ -121,7 +122,7 @@ export function StoolFieldsEditor({ initial, saving, onSave, onCancel }: Props) 
       {/* The note is only meaningful when foreign material is present. */}
       {draft.foreign_material_present === 'yes' ? (
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>What was it?</Text>
+          <ThemedText style={styles.fieldLabel}>What was it?</ThemedText>
           <TextInput
             style={styles.textInput}
             placeholder="e.g. a piece of string"
@@ -134,7 +135,7 @@ export function StoolFieldsEditor({ initial, saving, onSave, onCancel }: Props) 
       ) : null}
 
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Description</Text>
+        <ThemedText style={styles.fieldLabel}>Description</ThemedText>
         <TextInput
           style={[styles.textInput, styles.textArea]}
           placeholder="What it looked like (optional)"
@@ -149,7 +150,7 @@ export function StoolFieldsEditor({ initial, saving, onSave, onCancel }: Props) 
 
       <View style={styles.actions}>
         <TouchableOpacity onPress={onCancel} hitSlop={12} disabled={saving} style={styles.cancelBtn}>
-          <Text style={styles.cancelText}>Cancel</Text>
+          <ThemedText style={styles.cancelText}>Cancel</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => onSave(draft)}
@@ -160,7 +161,7 @@ export function StoolFieldsEditor({ initial, saving, onSave, onCancel }: Props) 
           {saving ? (
             <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
           ) : (
-            <Text style={styles.saveText}>Save</Text>
+            <ThemedText style={styles.saveText}>Save</ThemedText>
           )}
         </TouchableOpacity>
       </View>
@@ -181,7 +182,7 @@ function EnumRow({
 }) {
   return (
     <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <ThemedText style={styles.fieldLabel}>{label}</ThemedText>
       <View style={styles.chipRow}>
         {options.map((o) => (
           <FilterChip
@@ -221,6 +222,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   textInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     borderWidth: 1,

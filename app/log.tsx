@@ -987,7 +987,7 @@ export default function LogModal() {
           {occurredAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
           {' · '}
           {formatTime(occurredAt)}
-          {/* Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the same rule
+          {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the same rule
               CUL-607 hit in FreeFeedingStrip, now a CLAUDE.md convention). Every ThemedText
               injects an explicit fontFamily, and an explicit family on a child is exactly what
               breaks RN's native text-style cascade. This EXIF span differs from its parent only
@@ -1328,6 +1328,9 @@ const styles = StyleSheet.create({
 
   // ── Notes input ──
   notesInput: {
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBody,
     fontSize: 15,
     color: theme.colorTextPrimary,
     borderWidth: 1,
@@ -1443,7 +1446,9 @@ const styles = StyleSheet.create({
     // text2XL is the type-scale's documented "hero number" token — the right size
     // for a single-value entry where the number is the screen (no new magic size).
     fontSize: theme.text2XL,
-    fontWeight: theme.fontWeightMedium,
+    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
+    // field names its face directly — otherwise a swept screen keeps SF inputs.
+    fontFamily: theme.fontBodyMedium,
     color: theme.colorNeutralDark,
     // A layout floor so the number doesn't collapse when the field is empty — a
     // dimension like the other width literals in this file (severityCircle 52,

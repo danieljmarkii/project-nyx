@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/authStore';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { CulpritMark } from '../../components/brand/CulpritMark';
 import { NightHeroGround } from '../../components/onboarding/NightHeroGround';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // The Culprit Landing hero (B-284 PR N2b, spec §4; hero recomposed 2026-07-26) —
 // the unauthenticated entry point. A full-bleed night ground (aurora + whorl
@@ -105,9 +106,9 @@ export default function LandingScreen() {
           </View>
           {showAuthActions && (
             <>
-              <Text style={styles.sub}>
+              <ThemedText style={styles.sub}>
                 Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.
-              </Text>
+              </ThemedText>
               {/* Tertiary affordance, deliberately NOT a filled button — keeps "Create
                   account" the single obvious action while the value previews stay one
                   tap away. */}
@@ -119,7 +120,7 @@ export default function LandingScreen() {
                 accessibilityLabel="See how it works"
                 testID="landing-how-it-works"
               >
-                <Text style={styles.learnMoreText}>See how it works ›</Text>
+                <ThemedText style={styles.learnMoreText}>See how it works ›</ThemedText>
               </TouchableOpacity>
             </>
           )}
@@ -144,7 +145,7 @@ export default function LandingScreen() {
               accessibilityLabel="Log in"
               testID="landing-log-in"
             >
-              <Text style={styles.loginText}>Log in</Text>
+              <ThemedText style={styles.loginText}>Log in</ThemedText>
             </TouchableOpacity>
           </View>
         )}

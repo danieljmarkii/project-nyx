@@ -10,6 +10,7 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   glyph: LucideIcon;
@@ -38,15 +39,19 @@ function RecapStripImpl({ glyph: Glyph, tint, title, fact, isConcern, onPress, a
         <Glyph size={14} color={tint} strokeWidth={1.9} />
       </View>
       <View style={styles.body}>
-        <Text style={styles.title} numberOfLines={1}>
+        <ThemedText style={styles.title} numberOfLines={1}>
           {title}
-        </Text>
+        </ThemedText>
         {fact ? (
-          <Text style={[styles.fact, isConcern && styles.factConcern]} numberOfLines={2}>
+          <ThemedText style={[styles.fact, isConcern && styles.factConcern]} numberOfLines={2}>
             {fact}
-          </Text>
+          </ThemedText>
         ) : null}
       </View>
+      {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
+          These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and Geist
+          carries no ✓ / ✕ / ＋ in any loaded weight, so sweeping one buys OS fallback for
+          nothing. CUL-364 §7. */}
       <Text style={styles.chevron}>›</Text>
     </Pressable>
   );

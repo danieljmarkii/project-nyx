@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
 import type { TimingPanelModel } from '../../lib/patternsTiming';
+import { ThemedText } from '../ui/ThemedText';
 
 // TimingDistribution — the shared-band dot lane for the Patterns "Timing" panel
 // (Signals v2 / B-755 PR 9, CUL-11; spec §4.5). Every TIMEABLE vomit episode is one
@@ -75,9 +76,9 @@ export function TimingDistribution({ model }: Props) {
       </View>
       <View style={styles.axisRow}>
         {model.axis.map((t) => (
-          <Text key={t.label} style={styles.axisLabel}>
+          <ThemedText key={t.label} style={styles.axisLabel}>
             {t.label}
-          </Text>
+          </ThemedText>
         ))}
       </View>
     </View>

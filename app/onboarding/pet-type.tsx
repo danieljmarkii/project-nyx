@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Cat, Dog, Check, type LucideIcon } from 'lucide-react-native';
@@ -6,6 +6,7 @@ import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
 import { useOnboardingDraftStore, type OnboardingSpecies } from '../../store/onboardingDraftStore';
+import { ThemedText } from '../../components/ui/ThemedText';
 
 // Onboarding captures only Cat/Dog — the pets enum's third value ('other') stays
 // for the in-app add-pet path but is intentionally dropped here (spec §2 / D5).
@@ -35,12 +36,12 @@ export default function PetTypeScreen() {
       <OnboardingHeader step={1} />
 
       <View style={styles.body}>
-        <Text style={styles.title}>Who are we tracking?</Text>
+        <ThemedText style={styles.title}>Who are we tracking?</ThemedText>
         {/* Multi-pet reassurance (Sam's ask, spec §5) — capture is one pet, the
             rest are added in-app, so a multi-pet owner isn't stalled here. */}
-        <Text style={styles.subtitle}>
+        <ThemedText style={styles.subtitle}>
           Built for every pet in your home — you can add the rest anytime.
-        </Text>
+        </ThemedText>
 
         <View style={styles.tiles} accessibilityRole="radiogroup">
           {TYPES.map(({ value, label, subtitle, Icon }) => {
@@ -60,8 +61,8 @@ export default function PetTypeScreen() {
                   <Icon size={30} color={theme.colorAccent} strokeWidth={1.75} />
                 </View>
                 <View style={styles.tileText}>
-                  <Text style={styles.tileTitle}>{label}</Text>
-                  <Text style={styles.tileSubtitle}>{subtitle}</Text>
+                  <ThemedText style={styles.tileTitle}>{label}</ThemedText>
+                  <ThemedText style={styles.tileSubtitle}>{subtitle}</ThemedText>
                 </View>
                 <View style={[styles.radio, isSelected && styles.radioSelected]}>
                   {isSelected ? (

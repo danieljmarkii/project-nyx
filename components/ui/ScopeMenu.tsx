@@ -1,11 +1,10 @@
 import { ComponentType, useState } from 'react';
-import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
-} from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from './SectionLabel';
+import { ThemedText } from './ThemedText';
 
 // Any identity glyph the sheet can render before a label — a Lucide icon OR a
 // custom family glyph (B-745). Both take the icon kit's size/color/strokeWidth, so
@@ -83,12 +82,12 @@ export function ScopeMenu({
         accessibilityRole="button"
         accessibilityLabel={`${accessibilityPrefix}: ${pillLabel}`}
       >
-        <Text
+        <ThemedText
           style={[styles.pillLabel, filtered && styles.pillLabelActive]}
           numberOfLines={1}
         >
           {pillLabel}
-        </Text>
+        </ThemedText>
         <ChevronDown
           size={15}
           color={filtered ? theme.colorAccent : theme.colorTextTertiary}
@@ -132,9 +131,9 @@ export function ScopeMenu({
                           ) : null}
                         </View>
                       ) : null}
-                      <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]}>
+                      <ThemedText style={[styles.optionLabel, selected && styles.optionLabelSelected]}>
                         {o.label}
-                      </Text>
+                      </ThemedText>
                     </View>
                     {selected ? <Check size={18} color={theme.colorAccent} strokeWidth={2.5} /> : null}
                   </TouchableOpacity>

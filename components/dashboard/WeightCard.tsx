@@ -5,6 +5,7 @@ import { theme, shadows } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
 import { describeWeightDelta, formatWeightDate, WeightTrend } from '../../lib/weight';
 import { petNameOrYours } from '../../lib/dashboardCards';
+import { ThemedText } from '../ui/ThemedText';
 
 // WeightCard — the descriptive weight surface on the Patterns dashboard (B-186
 // fast-follow). The dashboard sibling of components/profile/WeightTrendCard: it
@@ -41,7 +42,7 @@ export function WeightCard({ trend, petName }: Props) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.label}>Weight</Text>
+      <ThemedText style={styles.label}>Weight</ThemedText>
 
       {!hasReadings ? (
         // Designed empty state (Principle 5) — a calm, forward-looking nudge for the
@@ -52,10 +53,10 @@ export function WeightCard({ trend, petName }: Props) {
         // dashboard is a TREND surface with no "Weight" chip beside it, so a static
         // profile number would read as a tracked reading it isn't. Never reassures — it
         // invites a reading, it doesn't say anything is fine.
-        <Text style={styles.emptyText}>
+        <ThemedText style={styles.emptyText}>
           No weigh-ins logged yet. Weighing {name} now and then is the simplest way to
           keep an eye on changes over time.
-        </Text>
+        </ThemedText>
       ) : trend.readingCount === 1 ? (
         // One reading is a point, not a trend (n=1 says nothing about movement). The date
         // anchor keeps a lone number from reading as "today's weight" when it may be a
@@ -63,11 +64,11 @@ export function WeightCard({ trend, petName }: Props) {
         <View style={styles.body}>
           <BigNumber lbs={trend.latestLbs!} />
           {trend.latestOccurredAt && (
-            <Text style={styles.note}>Last weighed {formatWeightDate(trend.latestOccurredAt)}</Text>
+            <ThemedText style={styles.note}>Last weighed {formatWeightDate(trend.latestOccurredAt)}</ThemedText>
           )}
-          <Text style={styles.note}>
+          <ThemedText style={styles.note}>
             One reading so far. Log another after {name}'s next weigh-in to see the trend.
-          </Text>
+          </ThemedText>
         </View>
       ) : (
         <View style={styles.body}>
@@ -80,10 +81,10 @@ export function WeightCard({ trend, petName }: Props) {
           <DeltaLine trend={trend} />
 
           {trend.latestOccurredAt && (
-            <Text style={styles.note}>
+            <ThemedText style={styles.note}>
               Last weighed {formatWeightDate(trend.latestOccurredAt)}
               {trend.readingCount > 1 ? ` · ${trend.readingCount} readings` : ''}
-            </Text>
+            </ThemedText>
           )}
         </View>
       )}
@@ -98,7 +99,7 @@ export function WeightCard({ trend, petName }: Props) {
         accessibilityRole="button"
         accessibilityLabel={`Log a weigh-in for ${name}`}
       >
-        <Text style={styles.actionText}>Log a weigh-in</Text>
+        <ThemedText style={styles.actionText}>Log a weigh-in</ThemedText>
       </Pressable>
     </View>
   );
@@ -106,10 +107,10 @@ export function WeightCard({ trend, petName }: Props) {
 
 function BigNumber({ lbs }: { lbs: number }) {
   return (
-    <Text style={styles.value}>
+    <ThemedText style={styles.value}>
       {lbs}
-      <Text style={styles.unit}> lbs</Text>
-    </Text>
+      <ThemedText style={styles.unit}> lbs</ThemedText>
+    </ThemedText>
   );
 }
 
@@ -128,7 +129,7 @@ function DeltaLine({ trend }: { trend: WeightTrend }) {
   return (
     <View style={styles.deltaRow}>
       {icon}
-      <Text style={styles.deltaText}>{text}</Text>
+      <ThemedText style={styles.deltaText}>{text}</ThemedText>
     </View>
   );
 }
