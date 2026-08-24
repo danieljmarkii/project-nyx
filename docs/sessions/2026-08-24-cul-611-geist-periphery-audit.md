@@ -122,3 +122,19 @@ Also tightened the marker pairing to **nearest marker, sites in line order**. `s
 Four fixture tests added (28 total). And the lesson repeats one level up from where this session already applied it: I ran the guard against known-bad trees for the failure modes **I** anticipated, and it passed all four. The two it missed were the modes I hadn't thought of — which is the whole argument for an isolated reviewer that never saw the build conversation, and the reason "I tested it against a bad tree" is a weaker claim than it sounds.
 
 The nit was worth taking too: four `geist-ok` markers on `·` separators and one `—` placeholder had inherited the icon-glyph boilerplate, which claims B-745's `GlyphSvg` migration owns them. It doesn't — there is no vector to replace a middle dot with. The carve-out still applies (neither is copy); the reason now says what is true, which matters more once a marker is machine-read.
+
+## Postscript 2 — base drift, and a conflict that was two supersets
+
+`main` moved during the wrap: **#715 (CUL-579, tap targets on the capture hot paths)**. Two files overlapped. `components/log/TimeConfidenceField.tsx` auto-merged — CUL-579 changed its `hitSlop`, this PR changed its text tags, and the two never touched the same lines.
+
+`CLAUDE.md` conflicted, and it is worth recording *why* the resolution was mechanical rather than a judgement call: **each side had extended a different bullet of the same list, and neither had touched the other's.** My side extended the `ThemedText` bullet (the guard, the marker, the inert-weight rule); CUL-579's side extended the adjacent-hit-area bullet (its "pick the tool by the geometry" addendum) and added a third bullet about `fireEvent.press`. So the resolution is one superset per bullet plus the new one — and that was *verified* before being written, not eyeballed:
+
+```
+assert ours[0].startswith(theirs[0])   # ThemedText: main's is a prefix of mine
+assert theirs[1].startswith(ours[1])   # hitSlop:    mine is a prefix of main's
+assert len(theirs) == 3 and len(ours) == 2
+```
+
+The first attempt at this asserted the hitSlop bullet was *identical* on both sides and **failed** — which is the only reason I looked at it instead of keeping my copy and silently dropping CUL-579's addendum. That is the failure mode the 2026-07-25 retro was written about: the damage from a conflict happens in the resolution, not the conflict. A resolution that asserts its own assumptions fails loudly when one is wrong, instead of shipping a plausible-looking merge that quietly loses a paragraph.
+
+Full suite green on the merged head (264 suites / 5831 tests — CUL-579's two new suites included).
