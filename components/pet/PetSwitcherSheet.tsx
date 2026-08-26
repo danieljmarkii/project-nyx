@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View,
+  Animated, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View,
+  type StyleProp, type ViewStyle,
 } from 'react-native';
 import { ThemedText } from '../ui/ThemedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Check, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { supabase } from '../../lib/supabase';
 import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
@@ -19,20 +21,70 @@ interface PetSwitcherSheetProps {
   onClose: () => void;
 }
 
-const ROW_AVATAR = 36;
+interface PetSwitcherPanelProps extends PetSwitcherSheetProps {
+  // Fired alongside onClose when a row LEAVES this surface (Add a pet / Archived
+  // pets). A host that is itself a Modal must use this to dismiss too: an RN
+  // Modal renders above the whole app window, so a pushed screen would otherwise
+  // land invisibly behind it — the owner taps "Add a pet" and nothing happens.
+  onNavigateAway?: () => void;
+  // Animate the panel in. Off for the Modal wrapper below (the Modal already
+  // slides); on for an in-Modal layer, which has no presentation of its own.
+  animated?: boolean;
+  style?: StyleProp<ViewStyle>;
+}
 
-// The switcher bottom sheet (multi-pet spec §3.1, mock A2): "Your pets" with
-// one row per active pet (tap switches + dismisses — selection is device-local,
-// spec §2), then "Add a pet", then a quiet "Archived pets" link that renders
-// only when at least one archived pet exists. Controlled (visible/onClose) so
-// the home header owns it now and the FAB "Logging for {pet}" chip can reuse
-// the same sheet in build PR 4.
-export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
+const ROW_AVATAR = 36;
+// A layer arriving ON TOP of an already-open sheet, not from the screen edge, so
+// it rises a short distance rather than its own height — which also means it never
+// needs a measured height it does not have at first paint.
+const RISE_PX = 24;
+
+// The switcher's CONTENT — scrim + sheet, with no Modal of its own.
+//
+// Split out from PetSwitcherSheet by CUL-662. EventTypeSheet is ITSELF a <Modal>,
+// and presenting a second RN Modal from inside a presented one is the classic
+// unreliable iOS case: the inner Modal fails to present (or presents detached),
+// its `visible` state sticks true with nothing on screen, and the wedged invisible
+// layer leaves the sheet untappable until the app is killed. That is the reported
+// defect — the pet switcher froze the beta log sheet for every multi-pet account.
+// HomeHeader and the FAB present from the root with nothing already up, so they
+// keep the Modal wrapper below unchanged; EventTypeSheet renders this panel as a
+// layer inside its own Modal instead. One Modal, no sibling presentation.
+//
+// The surface itself is the multi-pet spec §3.1 / mock A2: "Your pets" with one
+// row per active pet (tap switches + dismisses — selection is device-local, spec
+// §2), then "Add a pet", then a quiet "Archived pets" link that renders only when
+// at least one archived pet exists.
+export function PetSwitcherPanel({
+  visible, onClose, onNavigateAway, animated = false, style,
+}: PetSwitcherPanelProps) {
   const { pets, activePet, selectPet } = usePetStore();
   const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
 
   const [hasArchived, setHasArchived] = useState(false);
+
+  const reducedMotion = useReducedMotion();
+  const anim = useRef(new Animated.Value(animated ? 0 : 1)).current;
+
+  // ENTRY only, and only when this panel has no Modal to animate it. Dismissal is
+  // deliberately instant: the panel unmounts on the same tick as the tap, so "the
+  // switcher closed" stays a synchronous fact rather than one waiting on a frame
+  // callback, and the thing the selection just changed — the title underneath, now
+  // naming the new pet — is revealed immediately instead of behind a fade.
+  //
+  // The SCRIM does not animate. It stands in for the host's own scrim (which the
+  // host drops while this is up, so the dim never doubles); fading it would dip the
+  // dim to zero and flash the undimmed screen at the moment of transfer.
+  useEffect(() => {
+    if (!animated || !visible) return;
+    anim.setValue(0);
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: reducedMotion ? 0 : 200, // reduced motion → straight to the static frame
+      useNativeDriver: true,
+    }).start();
+  }, [animated, visible, reducedMotion, anim]);
 
   // The store only holds ACTIVE pets, so the archived-pets link needs its own
   // (cheap, head-only) count. Fetched per open; any failure just hides the
@@ -68,77 +120,104 @@ export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
 
   function handleAddPet() {
     onClose();
+    onNavigateAway?.();
     router.push('/add-pet');
   }
 
   function handleArchived() {
     onClose();
+    onNavigateAway?.();
     router.push('/archived-pets');
   }
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
-          <View style={styles.grabber} />
-          <ThemedText style={styles.header}>Your pets</ThemedText>
+    // accessibilityViewIsModal: as a Modal this was implicit — iOS makes a presented
+    // modal's siblings inert for VoiceOver. As a LAYER it is not, so it is declared,
+    // or a screen reader would still walk the event grid sitting behind the scrim.
+    // Its Android counterpart is the host hiding its own content while this is up
+    // (EventTypeSheet does), because that side has to be done from outside.
+    <View style={[styles.backdrop, style]} accessibilityViewIsModal>
+      <View style={styles.scrim}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+      </View>
+      <Animated.View
+        style={[
+          styles.sheet,
+          { paddingBottom: insets.bottom + theme.space2 },
+          { opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [RISE_PX, 0] }) }] },
+        ]}
+      >
+        <View style={styles.grabber} />
+        <ThemedText style={styles.header}>Your pets</ThemedText>
 
-          <ScrollView style={styles.list} bounces={false}>
-            {pets.map((pet) => {
-              const selected = pet.id === activePet?.id;
-              const line = petIdentityLine(pet);
-              return (
-                <TouchableOpacity
-                  key={pet.id}
-                  style={[styles.petRow, selected && styles.petRowSelected]}
-                  onPress={() => handleSelect(pet.id)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={`Switch to ${pet.name}`}
-                >
-                  <PetAvatar name={pet.name} photoPath={pet.photo_path} size={ROW_AVATAR} />
-                  <View style={styles.petText}>
-                    <ThemedText style={styles.petName} numberOfLines={1}>{pet.name}</ThemedText>
-                    {line ? (
-                      <ThemedText style={styles.petLine} numberOfLines={1}>{line}</ThemedText>
-                    ) : null}
-                  </View>
-                  {selected && (
-                    <Check size={18} color={theme.colorAccent} strokeWidth={2.5} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+        <ScrollView style={styles.list} bounces={false}>
+          {pets.map((pet) => {
+            const selected = pet.id === activePet?.id;
+            const line = petIdentityLine(pet);
+            return (
+              <TouchableOpacity
+                key={pet.id}
+                style={[styles.petRow, selected && styles.petRowSelected]}
+                onPress={() => handleSelect(pet.id)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`Switch to ${pet.name}`}
+              >
+                <PetAvatar name={pet.name} photoPath={pet.photo_path} size={ROW_AVATAR} />
+                <View style={styles.petText}>
+                  <ThemedText style={styles.petName} numberOfLines={1}>{pet.name}</ThemedText>
+                  {line ? (
+                    <ThemedText style={styles.petLine} numberOfLines={1}>{line}</ThemedText>
+                  ) : null}
+                </View>
+                {selected && (
+                  <Check size={18} color={theme.colorAccent} strokeWidth={2.5} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
+        <TouchableOpacity
+          style={styles.addRow}
+          onPress={handleAddPet}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+        >
+          <View style={styles.addDisc}>
+            <Plus size={16} color={theme.colorTextTertiary} strokeWidth={1.75} />
+          </View>
+          <ThemedText style={styles.addLabel}>Add a pet</ThemedText>
+        </TouchableOpacity>
+
+        {hasArchived && (
           <TouchableOpacity
-            style={styles.addRow}
-            onPress={handleAddPet}
+            onPress={handleArchived}
             activeOpacity={0.7}
             accessibilityRole="button"
+            // The link is deliberately quiet (textXS); the padding keeps the
+            // tap target at the 44pt floor anyway.
+            style={styles.archivedLinkWrap}
           >
-            <View style={styles.addDisc}>
-              <Plus size={16} color={theme.colorTextTertiary} strokeWidth={1.75} />
-            </View>
-            <ThemedText style={styles.addLabel}>Add a pet</ThemedText>
+            <ThemedText style={styles.archivedLink}>Archived pets</ThemedText>
           </TouchableOpacity>
+        )}
+      </Animated.View>
+    </View>
+  );
+}
 
-          {hasArchived && (
-            <TouchableOpacity
-              onPress={handleArchived}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              // The link is deliberately quiet (textXS); the padding keeps the
-              // tap target at the 44pt floor anyway.
-              style={styles.archivedLinkWrap}
-            >
-              <ThemedText style={styles.archivedLink}>Archived pets</ThemedText>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+// The switcher as its own presentation, for hosts that are NOT already inside a
+// Modal — the home header and the FAB menu (an in-tree overlay, not a Modal). This
+// is the shipped surface and its behaviour is unchanged; the split above only moved
+// the content out so EventTypeSheet can render it without a second presentation.
+export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <PetSwitcherPanel visible={visible} onClose={onClose} />
     </Modal>
   );
 }
