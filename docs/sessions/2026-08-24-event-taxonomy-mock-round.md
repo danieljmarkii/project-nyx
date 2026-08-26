@@ -26,8 +26,20 @@
 - **Dr. Chen + clinical-guardrails**: all escalation copy escalates on presence only, states marked counts/times + a general clinical fact, never diagnoses this pet, never reassures (the 26-count frame is the never-reassure case made visible). `nyx-voice` pass on every frame string (no `!`, pet named, app first person, no jargon — "Straining in the litter box," never "stranguria").
 - **Glyph debt made visible on purpose**: the full-spine grids repeat stand-ins (two paws, two swirls) — the §13 prediction that B-746 is load-bearing by W3, now a frame anyone can point at.
 
+## Round 2 — the reaction round (same session, same PR, same artifact URL)
+
+The PM reacted in full. Rulings recorded, spec bumped to **v1.1**, round 2 republished over round 1:
+
+- **D4 RULED = A** (capture-time band + Signal card): "err on the side of safety… surface it immediately" — the deciding scenario is log-then-pocket-the-phone. Frames 3b/4d are the W2 design authority; Designer's dissent recorded in the spec's D4 row; the PM's rider (a safety-Signal push is a valid *additional* channel, a notification-foundation consumer, never a substitute) recorded there too.
+- **R3 adopted → D10** (per-leaf Saw it / Found it; witnessed-by-construction leaves write `witnessed`). **Q4 confirmed → D11** ("we're not going to license"). **Q1/Q4 closed** in §16.
+- **Other regrouped**: its own "More" group at every density (round 1 had it under Food & care in the W1–W3 grids — PM caught it; applied to all four grids + §6 rule added).
+- **Full-spine "too much?" → Q7** (new §16 row): configurable **tracked events** (per-pet, hide ≠ delete, "Show more types" reveal, safety default-on) vs the frequent row. Round 2 renders both (§06: settings frame + the trimmed 6-hidden grid + the parked row) with **Jordan/Sam persona verdicts** on density (PM asked for them at R2: both say it scales — Jordan on stability, Sam on vocabulary-never-checklist). Live briefs this round: **R2 revised** (rule-able with persona input) + **R6** (mechanism; rec = tracked events, built at the wave that needs it, per-pet).
+- **Breath counter priority → routed to the real vets**: §15 Q4 marked the priority question (PM: "can we have the vets weigh in?"); W2 may ship strain + labored first; §17 fact-check gates the <30 threshold regardless. Frames stay.
+- **D12 (new): the host gate.** The track rides the `log_picker_v2` beta, which the PM has held back because it isn't smooth. Filed: **CUL-662** (the pet-switcher wedge — code-read hypothesis: `PetSwitcherSheet` presented as a *sibling Modal* while the sheet's Modal is up, `EventTypeSheet.tsx:155/:220`, scrim dropped at `:160`; iOS second-modal presentation fails and the state wedges; fix directions in the issue) and **CUL-663** (the thorough 12-point pre-GA on-device QA pass the PM asked for). Chain: CUL-662 → CUL-663 → `log_picker_v2` GA → `event_types_v2` GA. W1 may build/beta dark; it cannot GA past its host.
+- CLAUDE.md's Read-These row updated (Tier 1) to v1.1 with the rulings.
+
 ## Next
 
-- PM reads the artifact, rules **R1/D4** (gates W2 design), confirms R2/R3/R4/R5, vetoes labels.
-- If frames change on reaction: republish to the same artifact URL, same session-file discipline.
-- W1 (cough + sneeze) remains its own greenlight (Q2); its PR chain is written in §13a.
+- PM reads round 2, rules **R2** (grid scale, personas now in) and **R6** (Q7 mechanism), vetoes labels.
+- CUL-662 fix + CUL-663 QA pass are ready-to-run build work, independent of any wave greenlight.
+- W1 (cough + sneeze) remains its own greenlight (Q2); its PR chain is written in §13a; the §15 vet answers fold in when they arrive (Q4 = the priority question).

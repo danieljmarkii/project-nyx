@@ -88,6 +88,7 @@
   .opt .k{font-weight:600;font-size:13px;letter-spacing:.4px;}
   .tag{font-size:10px;letter-spacing:.7px;text-transform:uppercase;border-radius:999px;padding:3px 8px;font-weight:600;}
   .tag.rec{color:var(--rec);background:var(--rec-bg);}
+  .tag.ruled{color:var(--rec);background:var(--rec-bg);}
   .tag.open{color:var(--ink-3);border:1px solid var(--border-strong);}
   .tag.rose{color:var(--rose-ink);background:var(--rose-light);}
   .cap{font-size:13px;color:var(--ink-2);margin-top:10px;line-height:1.5;}
@@ -232,6 +233,26 @@
   .d-remove{margin:20px 14px 16px;text-align:center;font-size:13px;font-weight:500;color:#B4123B;padding:11px;
             border:1px solid #F3D5DA;border-radius:15px;background:#FFFFFF;}
 
+  /* tracked-events settings frames (Q7 exploration) */
+  .set-head{background:#FFFFFF;border-bottom:1px solid #EAEAEA;padding:13px 14px;font-size:15px;font-weight:600;color:#0A0A0A;display:flex;align-items:center;gap:8px;}
+  .segp{display:flex;background:#F0F0F0;border-radius:999px;padding:3px;margin:12px 14px 2px;}
+  .segp span{flex:1;text-align:center;font-size:12px;font-weight:600;color:#737373;padding:6px 0;border-radius:999px;}
+  .segp span.on{background:#FFFFFF;color:#0A0A0A;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+  .set-note{font-size:11.5px;color:#737373;margin:10px 16px 2px;line-height:1.45;}
+  .set-grp{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:#737373;font-weight:600;margin:12px 16px 4px;}
+  .set-row{display:flex;align-items:center;gap:10px;background:#FFFFFF;border-radius:13px;margin:0 12px 6px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  .set-row .sl{font-size:13px;font-weight:500;color:#0A0A0A;flex:1;}
+  .set-row .sl .ss{font-size:10.5px;color:#737373;font-weight:400;margin-top:1px;}
+  .tgl{width:36px;height:22px;border-radius:11px;background:#00C2A8;position:relative;flex-shrink:0;}
+  .tgl::after{content:"";position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:9px;background:#FFF;box-shadow:0 1px 2px rgba(0,0,0,.15);}
+  .tgl.off{background:#D4D4D4;}
+  .tgl.off::after{right:auto;left:2px;}
+  .more-row{display:flex;align-items:center;justify-content:center;gap:6px;border:1px dashed #D4D4D4;border-radius:14px;padding:11px;font-size:12.5px;font-weight:500;color:#525252;grid-column:span 2;}
+  .persona{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 18px;margin-top:18px;max-width:860px;}
+  .persona .pn{font-weight:600;color:var(--ink);font-size:13px;}
+  .persona p{margin:6px 0 0;color:var(--ink-2);font-size:13.5px;line-height:1.55;}
+  .persona p b{color:var(--ink);}
+
   /* frequent row */
   .freq{display:flex;gap:8px;}
   .ftile{flex:1;background:#FFFFFF;border:1px solid #EAEAEA;border-radius:13px;padding:9px 6px;display:flex;
@@ -309,23 +330,25 @@
   <header>
     <div class="mast">
       <span class="wordmark">Culprit</span>
-      <span class="roundtag">B-756 / CUL-509 · Mock round 1 · 2026-08-24</span>
+      <span class="roundtag">B-756 / CUL-509 · Mock round 2 · 2026-08-24</span>
     </div>
     <h1>Event taxonomy — the capture surfaces</h1>
     <p class="lede">
-      The §14 mock round for the ratified spec (v1.0, D8/D9): <b>the grouped picker at both densities</b>
-      (near-term W1–W3 and the full-spine stress test, cat and dog), <b>the cough and sneeze confirm</b>
-      (pure B-745 register inheritance), <b>the D4 decision frames</b> — the straining-cluster escalation
-      rendered both ways, side by side, because D4 gets ruled at this round — <b>the breath-counter
-      measurement flow</b>, <b>the §7 detail-screen redesign</b> for one photo leaf and one non-photo leaf,
-      and the Designer's optional <b>"frequent for this pet"</b> row.
+      <b>Round 2 — the reaction round; supersedes round 1 at this URL</b> (round 1 lives in git).
+      Recorded from the PM's round-1 pass: <b>D4 is RULED — option A</b>, capture-time band + Signal card
+      ("err on the side of safety"); <b>R3 adopted</b> (per-leaf Saw it / Found it — now D10); <b>Q4
+      confirmed</b> (no licensing — D11); <b>Other gets its own group</b> at every density (applied in
+      §01). New this round: <b>§06 explores Q7</b> — the full-spine navigability mechanism, configurable
+      tracked events vs the frequent row, with Jordan's and Sam's reads on the density question — and
+      <b>§07's gate section</b> records that the host picker must leave beta first (D12: the switcher bug
+      → the thorough QA pass → <code>log_picker_v2</code> GA).
     </p>
     <p class="meta">
       Design session only — no build is committed by this page (D5 stands; each wave is its own greenlight).
       Every frame inherits the design-locked B-745 sheet and confirm register; frame values are the shipped
-      tokens. The Q4 licensing fence governs throughout: no licensed instrument wording, and no numeric itch
-      scale renders anywhere on this page. Labels follow §5's owner-language rule and stand under the D8
-      silence convention — veto any that read wrong. Pets in frames: Juniper (cat, male) and Banjo (dog, female).
+      tokens. The Q4 fence is confirmed (D11): no licensed instrument wording, no numeric itch scale
+      anywhere. Labels stand under the D8 silence convention — veto any that read wrong. Pets in frames:
+      Juniper (cat, male) and Banjo (dog, female).
     </p>
   </header>
 
@@ -350,6 +373,12 @@
       arrives at W3. Which enum value that tile writes (<code>itch</code> today, the dormant
       <code>scratch</code> carries the engine membership) is a W3 build decision, deliberately not made here:
       to an owner they are one observable, so it stays one tile either way.
+    </p>
+    <p>
+      <b>Applied from the round-1 reaction:</b> <b>Other now sits in its own "More" group</b> at every
+      density — round 1 had it folded under Food &amp; care, which mis-stated what it is. As the spine
+      grows, Other shrinks in importance but stays the permanent catch-all (D3), so it closes the grid
+      alone: the last door, never a sibling of Meal.
     </p>
 
     <div class="row">
@@ -403,6 +432,9 @@
               <div class="g2">
                 <div class="tile"><span class="circ teal" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-meal"/></svg></span><div class="lbl">Meal</div></div>
                 <div class="tile"><span class="circ slate" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-pill"/></svg></span><div class="lbl">Medication</div></div>
+              </div>
+              <div class="grp">More</div>
+              <div class="g2">
                 <div class="tile w2"><span class="circ neutral" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-other"/></svg></span><div class="lbl">Other</div></div>
               </div>
             </div>
@@ -464,6 +496,9 @@
               <div class="g2">
                 <div class="tile"><span class="circ teal" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-meal"/></svg></span><div class="lbl">Meal</div></div>
                 <div class="tile"><span class="circ slate" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-pill"/></svg></span><div class="lbl">Medication</div></div>
+              </div>
+              <div class="grp">More</div>
+              <div class="g2">
                 <div class="tile w2"><span class="circ neutral" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-other"/></svg></span><div class="lbl">Other</div></div>
               </div>
             </div>
@@ -550,6 +585,9 @@
               <div class="g2">
                 <div class="tile"><span class="circ teal" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-meal"/></svg></span><div class="lbl">Meal</div></div>
                 <div class="tile"><span class="circ slate" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-pill"/></svg></span><div class="lbl">Medication</div></div>
+              </div>
+              <div class="grp">More</div>
+              <div class="g2">
                 <div class="tile w2"><span class="circ neutral" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-other"/></svg></span><div class="lbl">Other</div></div>
               </div>
             </div>
@@ -633,6 +671,9 @@
               <div class="g2">
                 <div class="tile"><span class="circ teal" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-meal"/></svg></span><div class="lbl">Meal</div></div>
                 <div class="tile"><span class="circ slate" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-pill"/></svg></span><div class="lbl">Medication</div></div>
+              </div>
+              <div class="grp">More</div>
+              <div class="g2">
                 <div class="tile w2"><span class="circ neutral" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-other"/></svg></span><div class="lbl">Other</div></div>
               </div>
             </div>
@@ -671,8 +712,10 @@
       can be found on the rug at 5 PM; a cough cannot be found — it is heard or it is nothing, so the row
       writes <code>witnessed</code> by construction and one chip pair disappears rather than asking a
       question with only one honest answer. That is the CUL-606 lesson applied forward: withholding an
-      affordance is cheap; one that stamps a claim the record cannot hold is not. Decision brief R3 below
-      generalizes the split.
+      affordance is cheap; one that stamps a claim the record cannot hold is not. <b>Ruled at round 1
+      (now D10):</b> the split is adopted — artifact leaves keep Saw&nbsp;it&nbsp;/&nbsp;Found&nbsp;it,
+      witnessed-by-construction leaves drop it, and each leaf's contract row carries its
+      <code>confidenceModel</code>.
     </p>
 
     <div class="row">
@@ -765,8 +808,16 @@
 
   <!-- ============================================================ -->
   <section class="sec">
-    <p class="eyebrow">03 · The D4 decision — ruled at this round</p>
-    <h2>The straining cluster, rendered both ways</h2>
+    <p class="eyebrow">03 · D4 — RULED: option A, capture-time + Signal card</p>
+    <h2>The straining cluster — capture speaks, and Home backs it up</h2>
+    <p style="max-width:68ch;">
+      <b>Ruled at round 1 (PM):</b> "err on the side of safety — surface it immediately." The deciding
+      scenario was the one option B cannot answer: an owner logs, closes the app, and never sees the new
+      Signal. Frame 3b is now the W2 design authority; 3c stays on the page as the considered
+      alternative and the record of the Designer's dissent. The PM's rider is recorded in the spec (D4):
+      a push notification on a new safety Signal is a valid <i>additional</i> channel — it queues as a
+      notification-foundation consumer — but never a substitute for the capture-time band.
+    </p>
     <p>
       The setup, common to both options: Juniper (male cat) has three <code>urine_strain</code> rows since
       2 PM, each with the optional "Did any pee come out?" chip marked <b>No</b>. The cluster rule is
@@ -827,7 +878,7 @@
 
       <!-- OPTION A — CAPTURE-TIME -->
       <figure class="fig" style="margin:0;">
-        <div class="opt"><span class="k">D4 option A — capture-time line + Signal card</span> <span class="tag rec">Team + Dr. Chen recommend</span></div>
+        <div class="opt"><span class="k">D4 option A — capture-time line + Signal card</span> <span class="tag ruled">Ruled — the W2 design authority</span></div>
         <div class="frame">
           <div class="sheet-bg">
             <div class="zone" style="height:44px;">Home — signal</div>
@@ -868,7 +919,7 @@
 
       <!-- OPTION B — SIGNAL ONLY -->
       <figure class="fig" style="margin:0;">
-        <div class="opt"><span class="k">D4 option B — Signal card only</span> <span class="tag open">Designer's position</span></div>
+        <div class="opt"><span class="k">D4 option B — Signal card only</span> <span class="tag open">Considered — not adopted; dissent recorded</span></div>
         <div class="frame">
           <div class="h-top">
             <span class="petav">J</span>
@@ -914,6 +965,17 @@
       moment is designed calm — Sam counting a sleeping cat's breaths is a quiet ritual, not an emergency
       drill. The app does the arithmetic; the owner only taps. Canceling discards cleanly — no partial
       rows.
+    </p>
+    <p>
+      <b>Priority flag from round 1 (PM):</b> is this counter worth its W2 slot? <b>Routed to the real
+      vets</b> — the §15 question sheet's Q4 is exactly this ("do you teach sleeping-breath-rate counting;
+      would owner-logged counts be something you'd trust and use?") and is now marked the priority
+      question for the next visit or message. The evidence pack's interim answer, for what it's worth:
+      the sleeping rate is the single most-validated owner-collected measurement in the pack (four primary
+      studies, the &lt;30 threshold in both species, an existing tap-counter precedent in cardiology
+      practice) — but validated ≠ prioritized, and the trio can ship as strain + labored first with the
+      counter following the vet answer. The §17 fact-check pass gates the &lt;30 threshold copy
+      regardless. Frames stay on the page so the eventual build has its design.
     </p>
 
     <div class="row">
@@ -999,7 +1061,7 @@
 
       <!-- LANDED 36 -->
       <figure class="fig" style="margin:0;width:250px;">
-        <div class="opt"><span class="k">The number lands — 36</span> <span class="tag open">Threshold copy rides D4</span></div>
+        <div class="opt"><span class="k">The number lands — 36</span> <span class="tag ruled">Stands — D4 ruled A</span></div>
         <div class="frame">
           <div class="sheet" style="margin-top:0;border-radius:0;box-shadow:none;border:0;">
             <div class="grab"></div>
@@ -1023,9 +1085,9 @@
         uncertainty: name the number, name the reference, ask for the one thing that reduces the
         uncertainty (a recount — the standard owner instruction), and give the forward instruction. One
         high count never fires the safety lane — §9's rule is <i>sustained</i> over 2–3 counts, and that
-        series is what reaches the Signal card and the report's safety band. If D4 rules Signal-only, this
-        rose-railed line collapses to 4c's neutral copy at every value and the over-30 story speaks only
-        from Home — the reach of the D4 call, made concrete.</figcaption>
+        series is what reaches the Signal card and the report's safety band. With D4 ruled A, this
+        rose-railed line stands as drawn — the capture surface may speak when the number it just measured
+        is over the reference.</figcaption>
       </figure>
 
     </div>
@@ -1134,19 +1196,136 @@
 
   <!-- ============================================================ -->
   <section class="sec">
-    <p class="eyebrow">06 · The Designer's exploration — "frequent for this pet"</p>
-    <h2>One bounded row, and the grid below it never moves</h2>
+    <p class="eyebrow">06 · Q7 — keeping the full spine navigable</p>
+    <h2>Two mechanisms: tracked-events settings, or the frequent row</h2>
     <p>
-      §6 bounded the C2 study's personal-frequency idea to at most a row, because a grid that reorders
-      itself fights 3am muscle memory. This is that row, drawn so it can be judged: three compact tiles
-      from the pet's own recent logging, <b>above</b> the groups, additive only — every tile keeps its
-      permanent home in the grid below, in the same place it always is. The row appears only once the pet
-      has enough history to earn it and never contains a tile the grid doesn't.
+      The PM's round-1 question, taken seriously: <b>is the full spine too much?</b> And the follow-on —
+      could a user configure which events they track, and would that do the frequent row's job better?
+      Both mechanisms render here so the choice is visual. Ground rules any mechanism must obey, agreed
+      across the team before drawing: <b>hide ≠ delete</b> (a hidden leaf changes the picker only — rows,
+      detection, History, the report and §8's degradation contract never change, and hidden types stay
+      reachable through a reveal row so a choice made in month one isn't a trap in month four);
+      <b>everything defaults on</b> (the spine arrives a wave at a time, so nobody meets 28 tiles cold);
+      and the grid below any mechanism <b>never reorders itself</b> (§6's stable-layout rule stands).
     </p>
 
     <div class="row">
+
+      <!-- TRACKED EVENTS SETTINGS -->
       <figure class="fig" style="margin:0;">
-        <div class="opt"><span class="k">The frequent row, on the full-spine grid</span> <span class="tag open">Exploration — not committed</span></div>
+        <div class="opt"><span class="k">Mechanism A — Settings › Tracked events</span> <span class="tag rec">Team lean, at full-spine density</span></div>
+        <div class="frame">
+          <div class="set-head"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-back"/></svg> Tracked events</div>
+          <div class="segp"><span class="on">Juniper</span><span>Banjo</span></div>
+          <div class="set-note">Choose what shows in Juniper's log grid. Anything you hide stays available
+          under "Show more types" — and everything already logged stays in his record.</div>
+          <div class="set-grp">Breathing</div>
+          <div class="set-row"><div class="sl">Cough</div><span class="tgl"></span></div>
+          <div class="set-row"><div class="sl">Labored breathing<div class="ss">Part of Juniper's safety checks</div></div><span class="tgl"></span></div>
+          <div class="set-grp">Litter box</div>
+          <div class="set-row"><div class="sl">Straining<div class="ss">Part of Juniper's safety checks</div></div><span class="tgl"></span></div>
+          <div class="set-row"><div class="sl">Pooped outside the box</div><span class="tgl off"></span></div>
+          <div class="set-grp">Skin &amp; coat</div>
+          <div class="set-row"><div class="sl">Overgrooming</div><span class="tgl off"></span></div>
+          <div class="set-row"><div class="sl">Wound</div><span class="tgl off"></span></div>
+          <div class="set-grp">Energy &amp; behavior</div>
+          <div class="set-row"><div class="sl">Hiding</div><span class="tgl off"></span></div>
+          <div class="set-row" style="margin-bottom:14px;"><div class="sl">Vocal change</div><span class="tgl off"></span></div>
+        </div>
+        <figcaption class="cap"><b>6a · Per-pet, not per-account.</b> The grid is already per-pet (species
+        does that); the toggle composes with it — a household's chronic cat and healthy dog need different
+        vocabularies, which an account-level switch can't express. Safety leaves stay toggleable (the
+        owner's record, the owner's call) but carry the quiet sub-line and default on; whether they may be
+        hidden at all is Dr. Chen's open note in R6. Copy says what's true: hiding changes the grid,
+        never the record.</figcaption>
+      </figure>
+
+      <!-- TRIMMED GRID -->
+      <figure class="fig" style="margin:0;">
+        <div class="opt"><span class="k">Mechanism A — the grid it produces</span></div>
+        <div class="frame">
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="s-head">
+              <div class="s-title">Log for Juniper <span class="dn">▾</span></div>
+            </div>
+            <div class="gC">
+              <div class="grp">Tummy</div>
+              <div class="g2">
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-splat"/></svg></span><div class="lbl">Vomit</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div></div>
+              </div>
+              <div class="grp">Breathing</div>
+              <div class="g2">
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-cough"/></svg></span><div class="lbl">Cough</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-sneeze"/></svg></span><div class="lbl">Sneeze</div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-waves"/></svg></span><div class="lbl">Labored breathing</div></div>
+              </div>
+              <div class="grp">Litter box</div>
+              <div class="g2">
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drops"/></svg></span><div class="lbl">Peed outside the box</div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drop"/></svg></span><div class="lbl">Pee changes</div></div>
+              </div>
+              <div class="grp">Skin &amp; coat</div>
+              <div class="g2">
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-paw"/></svg></span><div class="lbl">Scratching</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-rash"/></svg></span><div class="lbl">Skin reaction</div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-lump"/></svg></span><div class="lbl">Found a lump</div></div>
+              </div>
+              <div class="grp">Movement</div>
+              <div class="g2">
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-foot"/></svg></span><div class="lbl">Limping</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-jump"/></svg></span><div class="lbl">Stiffness</div></div>
+              </div>
+              <div class="grp">Ears &amp; eyes</div>
+              <div class="g2">
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-ear"/></svg></span><div class="lbl">Ear trouble</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-eye"/></svg></span><div class="lbl">Eye trouble</div></div>
+              </div>
+              <div class="grp">Energy &amp; behavior</div>
+              <div class="g2">
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-battery"/></svg></span><div class="lbl">Lethargy</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-seiz"/></svg></span><div class="lbl">Seizure</div></div>
+              </div>
+              <div class="grp">Measurements</div>
+              <div class="g2">
+                <div class="tile"><span class="circ neutral" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-scale"/></svg></span><div class="lbl">Weight</div></div>
+                <div class="tile"><span class="circ neutral" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-timer"/></svg></span><div class="lbl">Breathing rate</div></div>
+              </div>
+              <div class="grp">Food &amp; care</div>
+              <div class="g2">
+                <div class="tile"><span class="circ teal" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-meal"/></svg></span><div class="lbl">Meal</div></div>
+                <div class="tile"><span class="circ slate" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-pill"/></svg></span><div class="lbl">Medication</div></div>
+              </div>
+              <div class="grp">More</div>
+              <div class="g2">
+                <div class="tile w2"><span class="circ neutral" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-other"/></svg></span><div class="lbl">Other</div></div>
+                <div class="more-row">Show 6 more types</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="cap"><b>6b · The same cat, six leaves hidden.</b> Compare with 1c: Mouth
+        trouble, Overgrooming, Wound, Hiding, Vocal change and Pooped-outside are gone, and the grid drops
+        from 12 groups to a comfortable scroll. The dashed <b>"Show 6 more types"</b> row at the end is
+        the load-bearing piece: a hidden leaf is one tap away forever, so hiding is a preference, not a
+        commitment — and logging a hidden type from there un-hides nothing (the choice stays the
+        owner's).</figcaption>
+      </figure>
+
+    </div>
+
+    <p style="margin-top:26px;"><b>The alternative, kept for comparison — the frequent row</b> (round 1's
+    §06, the Designer's exploration). The PM's read, which the team shares: the tracked-events setting
+    accomplishes the row's job at the root — it shrinks the grid itself rather than adding a shortcut
+    above an unshrunk one — and it does it without spending a permanent row of vertical space on every
+    open. The row stays parked, not killed: if real-use shows owners curating badly (hiding things they
+    then need), the row is the gentler fallback.</p>
+
+    <div class="row">
+      <figure class="fig" style="margin:0;">
+        <div class="opt"><span class="k">Mechanism B — the frequent row</span> <span class="tag open">Parked — the fallback if curation fails</span></div>
         <div class="frame">
           <div class="sheet-bg">
             <div class="zone" style="height:44px;">Home — signal</div>
@@ -1184,93 +1363,121 @@
         At W1–W3 density everything already sits above the fold, so the row would buy nothing there.</figcaption>
       </figure>
     </div>
+
+    <div class="persona">
+      <div class="pn">The owner personas on the density question (asked for at round 1)</div>
+      <p><b>Jordan (diet-trial dog, the 10-second test):</b> at 3am with a vomiting dog she needs Vomit,
+      Stool, or Cough — all inside the first two groups, in the same place they were yesterday, because
+      the grid never reorders. The tiles below the fold cost her nothing she can feel; her risk was never
+      the grid's length, it's anything that moves. <b>Verdict: the full spine scales for her as drawn</b>
+      — symptoms-first order and spatial stability are the load-bearing parts, and both are rules, not
+      hopes.</p>
+      <p><b>Sam (grazing cat, fussy-vs-sick):</b> the long tail is where the app proves it speaks cat —
+      Overgrooming and Hiding as first-class types is vocabulary she didn't have, and she would never have
+      typed either into Other. The richness reads as competence… <i>until</i> it reads as homework: 28
+      tiles could feel like 28 obligations if anything ever frames the grid as a checklist. <b>Verdict:
+      scales, with one condition</b> — the spine must always present as available vocabulary ("log what
+      you notice"), never as coverage to complete. The tracked-events setting helps her twice: her
+      chronic cat's grid stays rich while the healthy dog's stays short.</p>
+      <p><b>Where they land together:</b> neither persona asks for a shorter default. Both ask for
+      stability and framing — which is why the team's R6 recommendation is the toggle at full-spine
+      density rather than trimming the spine itself.</p>
+    </div>
   </section>
 
   <!-- ============================================================ -->
   <section class="sec">
-    <p class="eyebrow">07 · React — the decisions this round carries</p>
-    <h2>Five briefs; D4 is the one that gates a wave</h2>
+    <p class="eyebrow">07 · The host gate — log_picker_v2 must leave beta (D12)</p>
+    <h2>This track ships inside a sheet that isn't smooth yet</h2>
+    <p>
+      Two round-1 reactions land here. First: everything on this page renders inside the B-745 sheet,
+      which is live only as the <code>log_picker_v2</code> beta — so going forward with the taxonomy means
+      that feature <b>graduates out of beta and turns on for everyone</b> before any wave GAs. Second: the
+      PM has held it in beta deliberately, because the experience isn't smooth — and named the first
+      defect. Both are now specced as a gate chain in the requirements doc (D12) and filed:
+    </p>
+    <div class="ledger">
+      <div class="lr"><span class="ln">CUL-662 · the switcher wedge</span><span class="ld">Tapping
+      "Log for {pet} ▾" makes the sheet lose focus with no way back in. Code-read hypothesis:
+      <code>PetSwitcherSheet</code> is a <b>sibling Modal</b> presented while the sheet's own Modal is
+      still up (<code>EventTypeSheet.tsx:155/:220</code>), and the sheet drops its scrim while the
+      switcher is "open" (<code>:160</code>) — on iOS the second Modal fails to present, the state wedges,
+      and nothing is tappable. The FAB precedent works because its menu isn't a Modal. Fix directions in
+      the issue; the clean one is an in-Modal switcher layer (the AC-FOUND in-sheet precedent). Component
+      tests can't see native modal presentation — which is why the fix's guard is the QA pass, not a
+      snapshot.</span></div>
+      <div class="lr"><span class="ln">CUL-663 · the pre-GA QA pass</span><span class="ld">The thorough
+      on-device sweep the PM asked for, written as a 12-point script in the issue: sheet lifecycle ·
+      switcher + write-time identity · the 10-second test · AC-CHIP at 320pt/max font · AC-FOUND's three
+      wordings · photo + AI-read trigger · keyboard + draft-discard · the completion beat's haptic and
+      naming · meal/med/weight routing · flag-off byte-identical · offline queue-and-flush ·
+      queue-then-switch · interruption recovery. Exit: all pass on iOS, spot-check on Android → the GA
+      call is unblocked (GA stays a PM call, FL-4).</span></div>
+      <div class="lr"><span class="ln">The chain</span><span class="ld">CUL-662 → CUL-663 →
+      <code>log_picker_v2</code> GA → <code>event_types_v2</code> GA. Wave 1 can still build and beta dark
+      behind both flags; it cannot GA past its host.</span></div>
+    </div>
+  </section>
 
-    <div class="brief">
-      <div class="bh"><span class="bid">R1 · D4</span><span class="bt">Where does a deterministic safety escalation speak?</span></div>
-      <p><b>Deciding:</b> whether the time-critical safety leaves (the unproductive-strain cluster, a cat's
-      open-mouth mark) speak at capture the moment the rule trips (§03 frame 3b), or only from the Signal
-      safety card on Home (frame 3c). Gates wave 2's design, not wave 1. The breath counter's over-30
-      threshold line (frame 4d) rides the same ruling.</p>
-      <p><b>Options:</b> <b>A — capture-time band + Signal card</b> <span class="tag rec">Recommended — team + Dr. Chen</span>:
-      the rule is deterministic and runs client-side over local rows, so it can speak in the seconds the
-      owner is already looking, with the write committed first, no haptic (silence on safety,
-      guard-enforced), never blocking, and the register structurally reserved for this one class — a
-      cough or a limp can never acquire it. The Signal card still renders as the durable backstop.
-      <b>B — Signal-only</b> <span class="dis">Designer's dissent, recorded</span>: capture is the surface
-      the whole app protects; a sheet that can turn urgent teaches owners to brace before logging, and the
-      safety card is where the app already teaches them to look.</p>
-      <p><b>Consequence:</b> A adds the §6 escalation-band contract to the W2 spec (band spec, call-script
-      surface, the sex-conditioned copy with its <code>unknown</code> fallback) and both renders in this
-      page become the design authority. B deletes 3b and 4d's callout — and adds a new W2 requirement in
-      their place: the safety card must land within minutes of the third log, which the engine's current
-      refresh cadence does not promise, so B is not free — it buys the calmer sheet with new
-      freshness work. A blocked cat is the case where the difference is measured in hours.</p>
+  <!-- ============================================================ -->
+  <section class="sec">
+    <p class="eyebrow">08 · React — round 2</p>
+    <h2>Ruled last round; two calls live this round</h2>
+    <div class="ledger">
+      <div class="lr"><span class="ln">Ruled at round 1</span><span class="ld"><b>D4 = A</b> —
+      capture-time band + Signal card ("err on the side of safety"), frames 3b/4d now the W2 design
+      authority; the safety-Signal push noted as a future additional channel, never a substitute ·
+      <b>R3 adopted (now D10)</b> — per-leaf Saw it / Found it · <b>Q4 confirmed (now D11)</b> — no
+      licensing, no numeric itch scale ever · <b>Other into its own group</b> — applied in §01 ·
+      <b>frequent row parked</b> — superseded as the primary mechanism by Q7's tracked-events
+      exploration (§06) · grouping, species split, per-leaf photo, and the labored-breathing chips all
+      confirmed by reaction.</span></div>
     </div>
 
     <div class="brief">
-      <div class="bh"><span class="bid">R2</span><span class="bt">Does the grid scale — and the regroup that makes it</span></div>
-      <p><b>Deciding:</b> confirmation of the §01 answer to "does the grid scale?" — grouped scrolling
-      sheet, headers as wayfinding, frequency-honest group order, all symptom families in the one rose
-      tint — plus the two visible regroups: "Symptoms" becomes <b>Tummy</b>, Lethargy moves to
-      <b>Energy &amp; behavior</b>, and Itch/Scratch relocates to Skin &amp; coat as <b>Scratching</b> at
-      W3 (which enum value that tile writes is W3's build call, flagged not made).</p>
-      <p><b>Options:</b> <b>A — confirm as drawn</b> <span class="tag rec">Recommended</span>: headers +
-      stable order carry 28 tiles, and the spine arrives a family at a time anyway. <b>B — per-family
-      tints</b>: more scannable at full spine, but it dilutes rose-means-symptom across History/Today and
-      spends the tint channel on wayfinding the headers already do; would need its own exploration round.
-      <b>C — rework the density approach</b> (collapsed families, search) — the escape hatch if A reads
-      as too long on device.</p>
-      <p><b>Consequence:</b> A locks the picker shape for every wave's PR-2; the stool tile's segments
-      dropping at full-spine density rides the same call.</p>
+      <div class="bh"><span class="bid">R2 · revised</span><span class="bt">Does the grid scale — now with the persona reads you asked for</span></div>
+      <p><b>Deciding:</b> confirmation of the full-spine grid as drawn — your round-1 read ("it's a lot,
+      it's dense, but it shows off the richness") sent it to the personas, and their verdicts are in
+      §06's persona block: <b>Jordan — scales</b>, because symptoms-first order and spatial stability are
+      rules, and length below the fold is invisible to a 3am log; <b>Sam — scales with one condition</b>,
+      that the spine always presents as available vocabulary ("log what you notice"), never as coverage to
+      complete. Neither asked for a shorter default. The call also carries the visible regroups (Tummy ·
+      Energy &amp; behavior · Itch→Skin &amp; coat at W3) and the stool tile's segments dropping at
+      full-spine density.</p>
+      <p><b>Options:</b> <b>A — confirm as drawn</b> <span class="tag rec">Recommended — team + both personas</span>:
+      headers + stable order + wave-at-a-time arrival carry 28 tiles, and Q7's mechanism (R6) handles the
+      per-pet trim. <b>B — per-family tints</b>: more scannable, but dilutes rose-means-symptom across
+      History/Today; its own exploration round if wanted. <b>C — rework density</b> (collapse/search) —
+      the escape hatch if A reads long on a real device.</p>
+      <p><b>Consequence:</b> A locks the picker shape for every wave's PR-2, and Sam's condition becomes a
+      §6 framing rule at the next spec touch (the grid is vocabulary, never a checklist — no copy may
+      imply completeness).</p>
     </div>
 
     <div class="brief">
-      <div class="bh"><span class="bid">R3</span><span class="bt">Saw it / Found it is per-leaf: artifact leaves keep it, witnessed-by-construction leaves drop it</span></div>
-      <p><b>Deciding:</b> the confidence affordance joins the per-leaf contract. <b>Artifact leaves</b> —
-      things discoverable after the fact (vomit, stool, pee outside the box, a lump, a wound, a skin
-      reaction) — keep the full Saw it / Found it window model. <b>Witnessed-by-construction leaves</b> —
-      sounds and behaviors with nothing to find (cough, sneeze, labored breathing, straining, limping,
-      stiffness, hiding, vocal change, seizure, the breath count) — drop the chip pair and write
-      <code>witnessed</code>, with "Change time" covering late logging.</p>
-      <p><b>Options:</b> <b>A — adopt the split</b> <span class="tag rec">Recommended</span>: a "Found it"
-      on a cough would stamp a window claim the record cannot hold — the B-448 leak class, avoided by
-      construction. <b>B — keep the chips on every leaf</b> for uniformity: one less rule, but it renders a
-      question with one honest answer.</p>
-      <p><b>Consequence:</b> A puts a <code>confidenceModel</code> field in each leaf's §7 contract row and
-      W1 ships cough/sneeze with the two-row confirm in frame 2a.</p>
+      <div class="bh"><span class="bid">R6 · Q7</span><span class="bt">The navigability mechanism — tracked events, the frequent row, or neither yet</span></div>
+      <p><b>Deciding:</b> which mechanism keeps a full-spine grid navigable per pet — your round-1
+      instinct was that configurable tracking might do the frequent row's job. §06 renders both.</p>
+      <p><b>Options:</b> <b>A — tracked-events settings, adopted as the full-spine mechanism, built at the
+      wave that needs it (W3–W4)</b> <span class="tag rec">Recommended — team + the PM's own lean</span>:
+      it shrinks the grid itself rather than adding a shortcut above an unshrunk one, and §06's ground
+      rules keep it safe (hide ≠ delete; the "Show more types" reveal so a hidden leaf is never a trap;
+      everything defaults on; capture-side only — rows, detection, History and the report never change).
+      Scoped <b>per-pet, not per-account</b>: the grid is already per-pet via species, and a household's
+      chronic cat and healthy dog need different vocabularies — the frames show why. <b>B — the frequent
+      row</b>: stays parked as the fallback if real use shows owners curating badly. <b>C — neither yet</b>:
+      defer the whole call to the W3 greenlight; W1–W3 density needs no mechanism at all.</p>
+      <p><b>Consequence:</b> A writes the mechanism into §6 and queues the settings surface with the wave
+      that first pushes a species grid past the fold — nothing builds now. One sub-question stays open for
+      Dr. Chen at that build, flagged in Q7: may safety leaves be hidden at all? The frames' position is
+      yes-with-the-sub-line (the owner's record, the owner's call; hiding a tile never disables detection
+      over what is logged) — but that ruling belongs with the W2 escalation copy review, not here.</p>
     </div>
 
-    <div class="brief">
-      <div class="bh"><span class="bid">R4</span><span class="bt">The "frequent for this pet" row</span></div>
-      <p><b>Deciding:</b> whether §06's bounded row ships, and when.</p>
-      <p><b>Options:</b> <b>A — park until the grid earns it</b> <span class="tag rec">Recommended — including by its proposer</span>:
-      at W1–W3 density the whole grid is above the fold, so the row spends a permanent row of space to
-      save nothing; revisit at the wave where a pet's grid actually scrolls (W3+), with the row
-      appearing only for pets whose grid exceeds the fold. <b>B — ship it at W1</b>: earliest value for
-      the one real user, whose cough logging is exactly the case. <b>C — drop it</b>: the stable grid is
-      the feature; the row is a second place for the same tile.</p>
-      <p><b>Consequence:</b> A keeps wave-1 scope at two tiles + confirm; the row gets its own later
-      mock beat only if promoted.</p>
-    </div>
-
-    <div class="brief">
-      <div class="bh"><span class="bid">R5 · Q4</span><span class="bt">The licensing fence — the outstanding one-line confirmation</span></div>
-      <p><b>Deciding:</b> the D8-provisional Q4 posture, confirmed explicitly: derived indices are
-      reported as "computed from logged events using the item definitions," never as the validated
-      instrument; no licensed instrument wording (CBPI/LOAD/FMPI/VetMetrica) reproduced in-app; and
-      <b>no numeric itch scale UI, ever</b> (the PVAS numbers-break-the-scale finding). This page complies
-      by construction — the itch context flags (at night · woke him from sleep · kept going despite
-      distraction) will render as word chips when they ship, never as a 0–10.</p>
-      <p><b>Options:</b> <b>A — confirm</b> <span class="tag rec">Recommended — team + T&amp;S position</span> ·
-      <b>B — amend</b> (name the change).</p>
-      <p><b>Consequence:</b> A closes Q4 and the fence governs all waves without another pass.</p>
-    </div>
+    <p style="margin-top:18px;max-width:68ch;color:var(--ink-2);font-size:13.5px;"><b>Not a decision this
+    round:</b> the breath counter's priority. It waits on the §15 Q4 real-vet answer (the question sheet's
+    priority question as of this round) — the W2 trio can ship strain + labored first either way, and the
+    §17 fact-check pass gates the &lt;30 threshold copy regardless.</p>
 
     <div class="ledger">
       <div class="lr"><span class="ln">Labels rendered this round</span><span class="ld">All stand under the
@@ -1286,7 +1493,7 @@
       <div class="lr"><span class="ln">Not rendered, on purpose</span><span class="ld">The GI deepen
       attributes (the retch flag, stool consistency at the CIBDAI anchors, the itch context flags) ride a
       later wave and get frames when their wave is greenlit — consistency will be word chips, not numbers
-      (R5). The report's dated problem line is a Tier-2 vet-report edit riding the CUL-19 redeploy chain,
+      (D11). The report's dated problem line is a Tier-2 vet-report edit riding the CUL-19 redeploy chain,
       out of this round's scope. The <code>event_types_v2</code> beta-shelf card reuses the B-712 shape
       unchanged.</span></div>
       <div class="lr"><span class="ln">Glyph debt, made visible</span><span class="ld">The full-spine grids
@@ -1296,12 +1503,13 @@
   </section>
 
   <footer>
-    Source of truth: <code>docs/culprit-event-taxonomy-mockups.html</code>, round 1 (2026-08-24) — the §14
-    mock round for <code>docs/nyx-event-taxonomy-requirements.md</code> v1.0 (ratified, D8/D9). Later
-    rounds re-publish to this same artifact URL; the round is named in the page, never the title. Frame
-    values are the shipped tokens from <code>constants/theme.ts</code>; the picker, sheet, and confirm
-    language inherit the design-locked B-745 round 4. Scoping only — no build wave is committed by this
-    page (D5); D4 is the decision this round exists to rule.
+    Source of truth: <code>docs/culprit-event-taxonomy-mockups.html</code>, round 2 (2026-08-24) — the
+    reaction round; supersedes round 1 at this URL (round 1 lives in git history). Spec:
+    <code>docs/nyx-event-taxonomy-requirements.md</code> v1.1 (D4 ruled A · D10 per-leaf confidence ·
+    D11 licensing fence confirmed · D12 host gate, CUL-662 → CUL-663). Frame values are the shipped
+    tokens from <code>constants/theme.ts</code>; the picker, sheet, and confirm language inherit the
+    design-locked B-745 round 4. Scoping only — no build wave is committed by this page (D5). Live this
+    round: R2 (grid scale, with the persona reads) and R6 (the Q7 navigability mechanism).
   </footer>
 
 </div>
