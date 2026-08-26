@@ -14,4 +14,4 @@ Headlines: W1-PR-3 is unshippable as scoped (one engine type list drives fetch +
 
 **§17 debt discharged this session:** the W2-anchor fact-check slice (sources in the review record §2 HR-29/§3) and the fresh own-record query — PM's Nyx at 926 events / 34 `other` (+11 in 13 days; the cough course ongoing through 2026-08-26, ~9 weeks) — plus a new rule the run itself surfaced: the re-query must be **account-scoped** (the service-role path sees the QA-mirror and demo accounts; an unscoped run pooled 1,697 events and two phantom pets — the G6 class).
 
-**Shipped via #<n>** (draft; docs + CLAUDE.md only — no app code, no schema, no build-phase change).
+**Shipped via #722** (draft; docs + CLAUDE.md only — no app code, no schema, no build-phase change).
