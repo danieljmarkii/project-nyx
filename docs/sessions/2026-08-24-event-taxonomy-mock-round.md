@@ -38,8 +38,43 @@ The PM reacted in full. Rulings recorded, spec bumped to **v1.1**, round 2 repub
 - **D12 (new): the host gate.** The track rides the `log_picker_v2` beta, which the PM has held back because it isn't smooth. Filed: **CUL-662** (the pet-switcher wedge — code-read hypothesis: `PetSwitcherSheet` presented as a *sibling Modal* while the sheet's Modal is up, `EventTypeSheet.tsx:155/:220`, scrim dropped at `:160`; iOS second-modal presentation fails and the state wedges; fix directions in the issue) and **CUL-663** (the thorough 12-point pre-GA on-device QA pass the PM asked for). Chain: CUL-662 → CUL-663 → `log_picker_v2` GA → `event_types_v2` GA. W1 may build/beta dark; it cannot GA past its host.
 - CLAUDE.md's Read-These row updated (Tier 1) to v1.1 with the rulings.
 
+## The team review pass (2026-08-26, PM ask: "review this w/ the product team and get their sentiment")
+
+Two **isolated** subagent reviews + the in-context lens convening; full record committed as
+`docs/event-taxonomy-design-review-2026-08.md` (the diet-trial-preship precedent). Headlines:
+
+- **Sentiment: unanimous GO on the landing's direction.** The product walk (as Jordan + Sam) called it
+  "the strongest scoping work on this project" — spine structure, D10, the D4 strain copy, and the §05
+  detail redesign SHIP-SHAPED — with NEEDS-WORK on *coverage*: the W1-only grid is undrawn (the grid an
+  owner lives in for months, ratifying by silence — the review's #1 item), labored breathing has no
+  rendered escalation, and the wedge's read-surface payoff is undrawn. All now the §14 round-3 list.
+- **The adversarial pass found 13 rule-level holes in the escalation design — none reversing D4** —
+  now closed as **spec §9a** (binding on W2): the band suspends the sheet's 1.8s auto-close (CE-21, the
+  highest-severity find — verified against `SheetLogBeat.BEAT_MS`); strain counts are TRIPS with a dedup
+  gap, never the 3h episode collapse (CE-1: the shipped predicate would have silenced the rule
+  permanently, guard green) and never raw rows (CE-7); once-per-cluster cooldown (CE-8: the chronic-FIC
+  cat is the leaf's modal user); ask-not-silence on the unanswered chip (CE-2); n=1 male-cat gets a
+  lower-register line — the floor tiers the response, never gates its existence (CE-4); female/unknown/dog
+  copy branches written, male qualifier as intensifier never exemption (CE-12/13/14); labored breathing
+  escalates on its own, chips only sharpen (CE-20); the RRR ask terminates + "sustained" defined
+  (CE-6/15/16/17); client detection carries soft-delete + pet scoping (CE-9/5); one derived time phrase
+  (CE-10); the no-haptic claim is wired, not wished (CE-22). Plus the fixture condition: the W2 gate's
+  set must carry a real slow-course *positive* beside the noise test (the B-182 lesson).
+- **Round 2.1** (same URL) applied the frame-level catches: stool split restored full-width at every
+  density (round 2 had silently re-added the sub-step B-745 deleted), Seizure back in Episodes,
+  "Straining to pee" both species + "Peed indoors" (softening catch), the tint-predicate claim corrected
+  (two predicates ship by design — `CATEGORY_TINT` + `SYMPTOM_TYPES`; a new symptom leaf joins both;
+  `stool_normal` is the one documented divergence — now a §6 rule), the reveal row separated from Other,
+  the 6a copy naming hiding's real cost. Spec → **v1.2**; CLAUDE.md row updated.
+- **Q7 hardened:** never at onboarding, never as a prompt, Profile (per-pet) not Settings, per-family
+  reveal direction, safety-leaves-not-hideable-in-v1 upgraded to a team rec (both reviews concur),
+  sequenced after the §9a cooldown.
+
 ## Next
 
-- PM reads round 2, rules **R2** (grid scale, personas now in) and **R6** (Q7 mechanism), vetoes labels.
-- CUL-662 fix + CUL-663 QA pass are ready-to-run build work, independent of any wave greenlight.
-- W1 (cough + sneeze) remains its own greenlight (Q2); its PR chain is written in §13a; the §15 vet answers fold in when they arrive (Q4 = the priority question).
+- PM reads round 2.1: rules **R2** (grid scale, personas in), **R6** (Q7 mechanism), and the **R7
+  batch** (P1 stool split · P2 safety-leaf hideability · P3 the "Tummy" label + Lethargy move, out loud ·
+  P4 W1 cough attribute chips · P5 the Pets > $ line · P6 the 2.1 label changes) — then round 3 draws
+  the §14 list (W1-only grid first).
+- CUL-662 fix + CUL-663 QA pass remain ready-to-run, independent of any wave greenlight.
+- W1 stays its own greenlight (Q2); §15 vet answers fold in when they arrive (Q4 = priority question).

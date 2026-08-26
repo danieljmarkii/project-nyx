@@ -330,7 +330,7 @@
   <header>
     <div class="mast">
       <span class="wordmark">Culprit</span>
-      <span class="roundtag">B-756 / CUL-509 · Mock round 2 · 2026-08-24</span>
+      <span class="roundtag">B-756 / CUL-509 · Mock round 2.1 · 2026-08-26</span>
     </div>
     <h1>Event taxonomy — the capture surfaces</h1>
     <p class="lede">
@@ -350,6 +350,16 @@
       anywhere. Labels stand under the D8 silence convention — veto any that read wrong. Pets in frames:
       Juniper (cat, male) and Banjo (dog, female).
     </p>
+    <p class="meta">
+      <b>Round 2.1 (2026-08-26)</b> applies the team design review's corrections (two isolated reviews +
+      the lens convening — record: <code>docs/event-taxonomy-design-review-2026-08.md</code>; the 13
+      escalation-rule closures are spec §9a): the stool split restored to the shipped full-width shape at
+      every density, Seizure back in Episodes, "Straining to pee" on both species and "Peed indoors"
+      replacing "Pee accident," the tint-predicate and guard-enforced claims corrected, and the reveal row
+      separated from Other. The frames the review demanded (the W1-only grid, the labored-breathing band,
+      the ask-band, the female-cat copy, the RRR sustained state, a read-surface frame) are round 3's
+      list, in the spec's §14.
+    </p>
   </header>
 
   <!-- ============================================================ -->
@@ -360,8 +370,12 @@
       Families land exactly as §3 says: <b>new groups in the B-745 grid, not a redesign.</b> Group names are
       owner language, not spec taxonomy — "Breathing," never "Respiratory"; the urinary family splits its
       <i>group label</i> by species ("Litter box" for a cat, "Peeing" for a dog) exactly as §3's
-      copy-level conditionality allows. Symptom families keep the <b>rose tint everywhere</b> — §6 makes
-      <code>SYMPTOM_TYPES</code> the one tint predicate, and tints are identity, never verdict. A
+      copy-level conditionality allows. Symptom families keep the <b>rose tint everywhere</b> — tints are
+      identity, never verdict. (Round 2.1 correction, from the review's code check: two tint predicates
+      ship today <i>by design</i> — the picker's per-type <code>CATEGORY_TINT</code> map, which
+      rose-tints <code>stool_normal</code>, and <code>SYMPTOM_TYPES</code>, which deliberately excludes
+      it so a normal stool never takes the symptom haptic. A new symptom leaf joins <b>both</b> in the
+      same PR; spec §6 now states the pairing rule.) A
       per-family rainbow was considered and rejected: it would dilute the rose-means-symptom signal History
       and Today already teach, and the group headers carry the wayfinding instead.
     </p>
@@ -400,7 +414,7 @@
               <div class="grp">Tummy</div>
               <div class="g2">
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-splat"/></svg></span><div class="lbl">Vomit</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div><div class="seg"><span>Normal</span><span>Loose</span></div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div><div class="seg"><span>Normal</span><span>Loose</span></div></div>
               </div>
               <div class="grp">Breathing</div>
               <div class="g2">
@@ -410,7 +424,7 @@
               </div>
               <div class="grp">Litter box</div>
               <div class="g2">
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining to pee</div></div>
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drops"/></svg></span><div class="lbl">Peed outside the box</div></div>
                 <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drop"/></svg></span><div class="lbl">Pee changes</div></div>
               </div>
@@ -464,7 +478,7 @@
               <div class="grp">Tummy</div>
               <div class="g2">
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-splat"/></svg></span><div class="lbl">Vomit</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div><div class="seg"><span>Normal</span><span>Loose</span></div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div><div class="seg"><span>Normal</span><span>Loose</span></div></div>
               </div>
               <div class="grp">Breathing</div>
               <div class="g2">
@@ -475,7 +489,7 @@
               <div class="grp">Peeing</div>
               <div class="g2">
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining to pee</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drops"/></svg></span><div class="lbl">Pee accident</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drops"/></svg></span><div class="lbl">Peed indoors</div></div>
                 <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drop"/></svg></span><div class="lbl">Pee changes</div></div>
               </div>
               <div class="grp">Skin &amp; coat</div>
@@ -504,11 +518,14 @@
             </div>
           </div>
         </div>
-        <figcaption class="cap"><b>1b · W1–W3, dog.</b> Same grid, three renders differ — all
-        copy-level, none key-level: the group is <b>"Peeing"</b> not "Litter box," the strain tile reads
-        <b>"Straining to pee,"</b> and outside-the-box becomes <b>"Pee accident."</b> Banjo never sees
-        litter wording; Juniper never sees "accident" (the litter box is not a rule a cat broke). One
-        leaf set, species-conditional labels per §3.</figcaption>
+        <figcaption class="cap"><b>1b · W1–W3, dog.</b> Same grid, the renders that differ are all
+        copy-level, none key-level: the group is <b>"Peeing"</b> not "Litter box," and outside-the-box
+        becomes <b>"Peed indoors"</b> — round 2.1 retired "Pee accident" on the review's catch that
+        "accident" frames a health signal as housetraining (the same softening "picky" is banned for; a
+        senior dog peeing indoors is the CKD/diabetes gateway, not a rule broken). "Straining to pee" now
+        reads identically on both species — the cat's bare "Straining" was ambiguous inside a group that
+        also holds poop leaves, exactly where ambiguity feeds the cluster rule wrong data. One leaf set,
+        species-conditional labels per §3.</figcaption>
       </figure>
 
     </div>
@@ -528,7 +545,7 @@
               <div class="grp">Tummy</div>
               <div class="g2">
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-splat"/></svg></span><div class="lbl">Vomit</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div><div class="seg"><span>Normal</span><span>Loose</span></div></div>
               </div>
               <div class="grp">Breathing</div>
               <div class="g2">
@@ -538,7 +555,7 @@
               </div>
               <div class="grp">Litter box</div>
               <div class="g2">
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining to pee</div></div>
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drops"/></svg></span><div class="lbl">Peed outside the box</div></div>
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drop"/></svg></span><div class="lbl">Pee changes</div></div>
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Pooped outside the box</div></div>
@@ -595,9 +612,12 @@
         </div>
         <figcaption class="cap"><b>1c · Full spine, cat — 28 tiles across 12 groups.</b> Unrolled here so
         the whole spine is judgeable; on device this is one sheet that scrolls, groups in fixed order,
-        nothing reordering (§6 stable-layout rule). The stool tile drops its Normal/Loose segments at this
-        density and routes through the same in-sheet confirm as everything else — a split control inside a
-        long grid reads as two different interaction grammars. Note the honest problem this density
+        nothing reordering (§6 stable-layout rule). The stool tile keeps its Normal/Loose split at every
+        density — round 2.1 reversed round 2's segment drop after the review caught it re-adding the
+        sub-step B-745 deliberately deleted: <code>stool_normal</code> and <code>diarrhea</code> are two
+        enum leaves, so a plain "Stool" tile cannot write a row without asking, and the split is the
+        wedge's most-repeated act staying one tap. Full-width per the shipped component, so both segments
+        stay real tap targets. Note the honest problem this density
         surfaces: <b>the glyph family runs out.</b> Scratching and Overgrooming share a paw; Stool and
         Pooped-outside share the swirl. That is the B-746 commission becoming load-bearing (§13 checklist
         item 4), visible exactly where the spec predicted — by W3.</figcaption>
@@ -616,7 +636,7 @@
               <div class="grp">Tummy</div>
               <div class="g2">
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-splat"/></svg></span><div class="lbl">Vomit</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div><div class="seg"><span>Normal</span><span>Loose</span></div></div>
               </div>
               <div class="grp">Breathing</div>
               <div class="g2">
@@ -627,7 +647,7 @@
               <div class="grp">Peeing</div>
               <div class="g2">
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining to pee</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drops"/></svg></span><div class="lbl">Pee accident</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drops"/></svg></span><div class="lbl">Peed indoors</div></div>
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drop"/></svg></span><div class="lbl">Pee changes</div></div>
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-glass"/></svg></span><div class="lbl">Drinking change</div></div>
               </div>
@@ -818,6 +838,21 @@
       a push notification on a new safety Signal is a valid <i>additional</i> channel — it queues as a
       notification-foundation consumer — but never a substitute for the capture-time band.
     </p>
+    <p style="max-width:68ch;">
+      <b>Then the design review stress-tested the ruling (2026-08-26)</b> — and found it right but
+      under-specified: 13 rule-level closures now bind the W2 build (spec §9a; full record in
+      <code>docs/event-taxonomy-design-review-2026-08.md</code>). The ones that reshape these frames:
+      the band <b>suspends the sheet's auto-close</b> (the beat's 1.8s dwell would have flashed an
+      emergency and closed it — the exact scenario D4 exists to prevent, one layer down); strain counts
+      are <b>trips with a dedup gap</b>, never the 3h episode collapse (which would have silenced the rule
+      permanently) and never raw rows (which double-count a two-device household); the band fires
+      <b>once per cluster with a cooldown</b> (the chronic-FIC cat — this leaf's modal user — must not
+      get the emergency register eight times a day); an <b>unanswered chip earns an ask, not silence</b>;
+      a single marked-unproductive strain in a male cat gets a <b>lower-register line at n=1</b> (the
+      floor tiers the response, never gates its existence); and the <b>female, unknown-sex, and dog
+      branches are written</b> — the male qualifier becomes an intensifier, never an exemption. Round 3
+      draws the new states.
+    </p>
     <p>
       The setup, common to both options: Juniper (male cat) has three <code>urine_strain</code> rows since
       2 PM, each with the optional "Did any pee come out?" chip marked <b>No</b>. The cluster rule is
@@ -845,7 +880,7 @@
           <div class="sheet">
             <div class="grab"></div>
             <div class="s-head">
-              <div class="s-title"><span class="circ rose" style="width:30px;height:30px;"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span>Straining — Juniper</div>
+              <div class="s-title"><span class="circ rose" style="width:30px;height:30px;"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span>Straining to pee — Juniper</div>
               <div class="s-x"><svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-back"/></svg></div>
             </div>
             <div class="rowsC">
@@ -864,7 +899,7 @@
                 <div class="rl quiet">Add a note (optional)</div>
               </div>
               <div class="sum-pill">
-                <span class="pp">Straining · nothing passed · today at 5:33 PM</span>
+                <span class="pp">Straining to pee · nothing passed · today at 5:33 PM</span>
                 <span class="go">Log it</span>
               </div>
             </div>
@@ -888,12 +923,12 @@
           <div class="sheet">
             <div class="grab"></div>
             <div class="s-head">
-              <div class="s-title"><span class="circ rose" style="width:30px;height:30px;"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span>Straining — Juniper</div>
+              <div class="s-title"><span class="circ rose" style="width:30px;height:30px;"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span>Straining to pee — Juniper</div>
             </div>
             <div class="rowsC">
               <div class="beat">
                 <div class="bt"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#g-check"/></svg> Saved to Juniper's record</div>
-                <div class="bs">Straining · nothing passed · today at 5:33 PM</div>
+                <div class="bs">Straining to pee · nothing passed · today at 5:33 PM</div>
               </div>
               <div class="sband">
                 <div class="st">Three strains since 2 PM, nothing passed</div>
@@ -907,11 +942,13 @@
         </div>
         <figcaption class="cap"><b>3b · Capture speaks.</b> The write commits first — the beat is the
         normal confirmation, untouched — then the band renders <i>below</i> it: plain white card, rose
-        rail, no glyph, no wash, <b>no haptic</b> (silence on safety, guard-enforced). It states only what
-        was marked ("you've marked three trips"), the general clinical fact, and the action. "What to tell
-        the vet" opens the call script — counts and times, ready to read out. The rule runs client-side
-        over local rows, so it fires the moment the third log lands — no server round trip, no waiting for
-        the engine.</figcaption>
+        rail, no glyph, no wash, <b>no haptic</b> (silence on safety — a claim the review priced: the
+        beat's own commit haptic gets suppressed and the guard's marker set extended, per §9a rule 13,
+        so the silence is wired, not wished). It states only what was marked ("you've marked three
+        trips"), the general clinical fact, and the action. "What to tell the vet" opens the call script —
+        the band's own counts and phrasing, one predicate. The rule runs client-side over local rows
+        (soft-delete-filtered, pet-scoped), so it fires the moment the third log lands — and per §9a
+        rule 1, while this band is up <b>the sheet does not auto-close</b>; it stays until dismissed.</figcaption>
         <p class="capnote">Never generalized: this register is reserved for the deterministic, time-critical
         class — the unproductive-strain cluster and a cat's open-mouth mark. A cough, a limp, a lump never
         speak at capture; they go through the engine like everything else.</p>
@@ -1221,9 +1258,9 @@
           under "Show more types" — and everything already logged stays in his record.</div>
           <div class="set-grp">Breathing</div>
           <div class="set-row"><div class="sl">Cough</div><span class="tgl"></span></div>
-          <div class="set-row"><div class="sl">Labored breathing<div class="ss">Part of Juniper's safety checks</div></div><span class="tgl"></span></div>
+          <div class="set-row"><div class="sl">Labored breathing<div class="ss">The safety band can only watch what's logged</div></div><span class="tgl"></span></div>
           <div class="set-grp">Litter box</div>
-          <div class="set-row"><div class="sl">Straining<div class="ss">Part of Juniper's safety checks</div></div><span class="tgl"></span></div>
+          <div class="set-row"><div class="sl">Straining to pee<div class="ss">The safety band can only watch what's logged</div></div><span class="tgl"></span></div>
           <div class="set-row"><div class="sl">Pooped outside the box</div><span class="tgl off"></span></div>
           <div class="set-grp">Skin &amp; coat</div>
           <div class="set-row"><div class="sl">Overgrooming</div><span class="tgl off"></span></div>
@@ -1234,10 +1271,14 @@
         </div>
         <figcaption class="cap"><b>6a · Per-pet, not per-account.</b> The grid is already per-pet (species
         does that); the toggle composes with it — a household's chronic cat and healthy dog need different
-        vocabularies, which an account-level switch can't express. Safety leaves stay toggleable (the
-        owner's record, the owner's call) but carry the quiet sub-line and default on; whether they may be
-        hidden at all is Dr. Chen's open note in R6. Copy says what's true: hiding changes the grid,
-        never the record.</figcaption>
+        vocabularies, which an account-level switch can't express. <b>Team rec upgraded by the review
+        (both passes concur): safety leaves are not hideable in v1</b> — three tiles, and it removes the
+        only version of this that can hurt someone; the frame still renders them toggleable so the
+        alternative is judgeable, with Dr. Chen's formal ruling sequenced after §9a's cooldown (which
+        removes the hide-to-silence-the-band motive). The sub-line now names the real cost — the review's
+        catch: the old copy reassured about the database when the true price of hiding is that
+        <i>you will not log the thing you hid</i>. The frame's home also moves for round 3: this is a
+        per-pet surface, so it belongs on the pet's Profile, not account Settings.</figcaption>
       </figure>
 
       <!-- TRIMMED GRID -->
@@ -1253,7 +1294,7 @@
               <div class="grp">Tummy</div>
               <div class="g2">
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-splat"/></svg></span><div class="lbl">Vomit</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div><div class="seg"><span>Normal</span><span>Loose</span></div></div>
               </div>
               <div class="grp">Breathing</div>
               <div class="g2">
@@ -1263,7 +1304,7 @@
               </div>
               <div class="grp">Litter box</div>
               <div class="g2">
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining</div></div>
+                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-dropslash"/></svg></span><div class="lbl">Straining to pee</div></div>
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drops"/></svg></span><div class="lbl">Peed outside the box</div></div>
                 <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-drop"/></svg></span><div class="lbl">Pee changes</div></div>
               </div>
@@ -1285,8 +1326,11 @@
               </div>
               <div class="grp">Energy &amp; behavior</div>
               <div class="g2">
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-battery"/></svg></span><div class="lbl">Lethargy</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-seiz"/></svg></span><div class="lbl">Seizure</div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-battery"/></svg></span><div class="lbl">Lethargy</div></div>
+              </div>
+              <div class="grp">Episodes</div>
+              <div class="g2">
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-seiz"/></svg></span><div class="lbl">Seizure</div></div>
               </div>
               <div class="grp">Measurements</div>
               <div class="g2">
@@ -1301,17 +1345,19 @@
               <div class="grp">More</div>
               <div class="g2">
                 <div class="tile w2"><span class="circ neutral" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-other"/></svg></span><div class="lbl">Other</div></div>
-                <div class="more-row">Show 6 more types</div>
               </div>
+              <div class="more-row" style="margin-top:10px;">Show 6 more types</div>
             </div>
           </div>
         </div>
         <figcaption class="cap"><b>6b · The same cat, six leaves hidden.</b> Compare with 1c: Mouth
         trouble, Overgrooming, Wound, Hiding, Vocal change and Pooped-outside are gone, and the grid drops
-        from 12 groups to a comfortable scroll. The dashed <b>"Show 6 more types"</b> row at the end is
-        the load-bearing piece: a hidden leaf is one tap away forever, so hiding is a preference, not a
-        commitment — and logging a hidden type from there un-hides nothing (the choice stays the
-        owner's).</figcaption>
+        from 12 groups to a comfortable scroll. Round 2.1 separated the reveal from Other — they are
+        opposite actions (write an untyped event vs bring a typed one back) and rendering them as siblings
+        invited the 3am owner to type a hidden type into a note. The review's sharper point stands for
+        round 3: a bottom-of-scroll reveal is a footnote, not a defense — the per-family variant
+        ("Skin &amp; coat · 2 more" under each header with hidden members) puts the hidden thing where
+        the owner is already looking, and is now Q7's stated direction.</figcaption>
       </figure>
 
     </div>
@@ -1346,7 +1392,7 @@
               <div class="grp">Tummy</div>
               <div class="g2">
                 <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-splat"/></svg></span><div class="lbl">Vomit</div></div>
-                <div class="tile"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div></div>
+                <div class="tile w2"><span class="circ rose" style="width:34px;height:34px;"><svg class="i" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#g-swirl"/></svg></span><div class="lbl">Stool</div><div class="seg"><span>Normal</span><span>Loose</span></div></div>
               </div>
               <div class="grp">Breathing</div>
               <div class="g2">
@@ -1432,6 +1478,40 @@
       <b>frequent row parked</b> — superseded as the primary mechanism by Q7's tracked-events
       exploration (§06) · grouping, species split, per-leaf photo, and the labored-breathing chips all
       confirmed by reaction.</span></div>
+      <div class="lr"><span class="ln">Design review · 2026-08-26</span><span class="ld">Two isolated
+      passes + the lens convening at the PM's ask (record:
+      <code>docs/event-taxonomy-design-review-2026-08.md</code>). <b>Product walk (as Jordan + Sam):</b>
+      "landing in the right place… the strongest scoping work on this project" — spine structure,
+      per-leaf confidence, the D4 strain copy and the detail redesign SHIP-SHAPED; coverage gaps became
+      the §14 round-3 list (the W1-only grid first — the grid an owner lives in for months is undrawn and
+      ratifying by silence). <b>Adversarial pass:</b> 13 rule-level holes in the escalation design, none
+      reversing D4, all closed as spec §9a. <b>Lenses:</b> unanimous GO. Round 2.1's corrections on this
+      page are the review's frame-level catches applied.</span></div>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R7</span><span class="bt">The review's decision batch — six calls only you can make</span></div>
+      <p><b>P1 — the stool split stays at every density</b> <span class="tag rec">Team rec — restored in 2.1</span>:
+      round 2 had quietly dropped the segments at full spine, re-adding the sub-step B-745 deleted; 2.1
+      restored the shipped full-width split. Confirm, or argue for the drop knowing it costs a tap on the
+      wedge's most-repeated act.</p>
+      <p><b>P2 — safety leaves are not hideable in v1</b> <span class="tag rec">Team rec, both reviews concur</span>:
+      three tiles; removes the only harmful version of tracked events. Dr. Chen's formal ruling waits for
+      §9a's cooldown either way (the cooldown removes the hide-to-silence motive).</p>
+      <p><b>P3 — say the group names out loud:</b> "Tummy" (the product walk flags it as the one
+      baby-talk-risk label against the Calm/Linear/Oura bar; "Digestion" or keeping "Symptoms" offered)
+      and the Lethargy → Energy &amp; behavior move. D8 silence would ratify both; the review asks you to
+      rule them explicitly.</p>
+      <p><b>P4 — wave-1 cough attributes:</b> ship cough bare (the note carries it — and frame 5b shows an
+      owner typing "dry, three in a row, stopped on his own" as free text the engine can't read), or add
+      two optional word chips (dry / wet-sounding + the retch-after flag) so the #1-ranked leaf produces
+      analyzable data from day one. <span class="tag rec">Team lean: the two chips</span> — same
+      confirm register, still zero required decisions.</p>
+      <p><b>P5 — write "free by construction" into §0:</b> nothing in this track is gated and nothing
+      should ever be (the taxonomy, the cluster rules, the counter, the report lines are all care) — one
+      line in the decision record stops B-263's eventual paywall reconciliation from quietly reaching it.</p>
+      <p><b>P6 — the 2.1 label changes</b> (Straining to pee both species · Peed indoors): standing under
+      the silence rule unless vetoed.</p>
     </div>
 
     <div class="brief">
@@ -1481,9 +1561,12 @@
 
     <div class="ledger">
       <div class="lr"><span class="ln">Labels rendered this round</span><span class="ld">All stand under the
-      D8 silence rule — veto any that read wrong. <b>Breathing:</b> Cough · Sneeze · Labored breathing.
-      <b>Litter box / Peeing:</b> Straining (cat) / Straining to pee (dog) · Peed outside the box (cat) /
-      Pee accident (dog) · Pee changes · Pooped outside the box (cat) · Drinking change.
+      D8 silence rule — veto any that read wrong. Two changed at round 2.1 on the review's catch:
+      <b>Straining to pee</b> (now both species — the cat's bare "Straining" was ambiguous beside poop
+      leaves) and <b>Peed indoors</b> (dog — "Pee accident" softened a health signal into housetraining).
+      <b>Breathing:</b> Cough · Sneeze · Labored breathing.
+      <b>Litter box / Peeing:</b> Straining to pee · Peed outside the box (cat) /
+      Peed indoors (dog) · Pee changes · Pooped outside the box (cat) · Drinking change.
       <b>Skin &amp; coat:</b> Scratching · Skin reaction · Found a lump · Overgrooming (cat) · Wound ·
       Scooting (dog). <b>Movement:</b> Limping · Stiffness. <b>Ears &amp; eyes:</b> Ear trouble · Eye
       trouble. <b>Energy &amp; behavior:</b> Hiding (cat) · Vocal change. <b>Mouth:</b> Mouth trouble.
@@ -1503,13 +1586,14 @@
   </section>
 
   <footer>
-    Source of truth: <code>docs/culprit-event-taxonomy-mockups.html</code>, round 2 (2026-08-24) — the
-    reaction round; supersedes round 1 at this URL (round 1 lives in git history). Spec:
-    <code>docs/nyx-event-taxonomy-requirements.md</code> v1.1 (D4 ruled A · D10 per-leaf confidence ·
-    D11 licensing fence confirmed · D12 host gate, CUL-662 → CUL-663). Frame values are the shipped
-    tokens from <code>constants/theme.ts</code>; the picker, sheet, and confirm language inherit the
-    design-locked B-745 round 4. Scoping only — no build wave is committed by this page (D5). Live this
-    round: R2 (grid scale, with the persona reads) and R6 (the Q7 navigability mechanism).
+    Source of truth: <code>docs/culprit-event-taxonomy-mockups.html</code>, round 2.1 (2026-08-26) — the
+    reaction round plus the design-review corrections; supersedes rounds 1–2 at this URL (both live in
+    git history). Spec: <code>docs/nyx-event-taxonomy-requirements.md</code> v1.2 (D4 ruled A · D10 ·
+    D11 · D12 host gate CUL-662 → CUL-663 · §9a the 13 escalation closures). Review record:
+    <code>docs/event-taxonomy-design-review-2026-08.md</code>. Frame values are the shipped tokens from
+    <code>constants/theme.ts</code>; the picker, sheet, and confirm language inherit the design-locked
+    B-745 round 4. Scoping only — no build wave is committed by this page (D5). Live this round: R2
+    (grid scale, persona reads in), R6 (the Q7 mechanism), and R7 (the review's decision batch).
   </footer>
 
 </div>
