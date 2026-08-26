@@ -40,6 +40,7 @@ The **Build Sequence** (`CLAUDE.md`) is done end to end: steps 1–8 complete; *
 | **The Daily Recap** | DR-0…DR-7 all shipped. Open: the §5.5 portfolio-slate reaction and the CUL-27 finish-pass briefs. |
 | **Backlog → Linear: operationalize the cutover** | The workflow rewiring. Remaining: CUL-522 (dual-source stragglers), CUL-530, CUL-563. |
 | **Aug. 2026 Design Polish** | New (2026-08-22). Nav identity, the arrival moment, the two-register completion system + haptics, Trend verbiage, Geist app-wide, plus the audit's defect fallout. 18 PRs, one per session; the project description carries the run order. |
+| **Event Taxonomy Expansion** | New (2026-08-26). Broadening event capture beyond the GI core — cough/sneeze first, the safety trio behind (B-756/CUL-509). Scoping ratified + hard-reviewed same day; the decision queue is cleared; **the project description carries the PR-by-PR run order**; every wave is its own PM greenlight (D5), and W1's GA queues behind the `log_picker_v2` host gate (CUL-662 → CUL-663). |
 | **Legacy Backlog** | The migrated `B-NNN` rows. Not a track — a holding project. |
 
 ### Two standing holds
