@@ -1,0 +1,38 @@
+# 2026-08-26 — Event-taxonomy spec v1.3: the approved 23-item edit list executed (CUL-664)
+
+**Outcome:** `docs/nyx-event-taxonomy-requirements.md` v1.2 → **v1.3**, folding in the 23-item edit list the PM approved from the 2026-08-26 hard review. Writing session — no app code, no schema, no build-phase change. **D5 stands: nothing here is a wave greenlight.** Shipped via #723 (draft).
+
+Stacked on the hard-review branch (#722, unmerged) because the edit list itself and the CLAUDE.md row both live there; basing on `main` would have guaranteed a conflict on the Read-These row.
+
+## What v1.3 changes
+
+Grouped by what a build session would get wrong if it read v1.2 instead:
+
+**The W1 chain would not have shipped clean (HR-1/2/3/30).** The engine has **one** type list driving the DB fetch *and* all five per-type lanes, so per-lane membership has to be **built** before cough joins ⑦ — adding it to the list as-is enrols it in ① (a card naming a protein as associated with coughing, which §9 forbids by name) and ⑤. §9 now says the fetch is the union, membership is per lane, and **a blank cell is an unfinished decision, not a default**. W1-PR-3 **splits 3a client-first / 3b engine**: the client symptom mirrors ship at App Store cadence while an Edge Function reaches every device in seconds, so shipping the engine first renders "recurring **undefined**" on the cross-pet safety banner. And `generate-report` imports the same detection module, so **a lane-membership change is report work** (§10.5) on the held CUL-19 function, manifest re-ack included.
+
+**Two §9a closures failed as written and are rewritten, not patched.**
+- **Rule 2 (the pass's highest-severity finding).** v1.2 re-parameterised the generic episode module for the strain trip count — but that module **chains**, so an obstructed cat straining every ~8 minutes for two hours collapses to **one trip** and never fires, while a less-sick cat every 25 minutes counts 5 and does. The predicate was anti-correlated with severity. v1.3 splits the two jobs into two mechanisms, **neither chaining**: fixed-window row de-dup (sized for caregiver latency), then a plain post-dedup count. The two constants are now calibrated against different things, which is why one constant could never carry both.
+- **Rule 13.** The haptic suppression had no evaluation point — the beat mounts synchronously while the band decision is an async post-save read — and the guard was structurally blind (it scanned the band, but the haptic is the *beat's*). v1.3 makes the band decision an **input to the stage transition**, so on a band path the beat is never mounted: silence becomes structural rather than suppressed, and it is pinned by a component test rather than the import guard.
+
+**Rules 3/4/5 now compose (HR-12).** They were three predicates over one window that never arbitrated, so a **mixed cluster — two trips marked "no pee", one "yes", one unanswered — rendered nothing at all**: silence on a cat that strained four times. v1.3 gives them one arbitration table over (unproductive / productive / unresolved), a window anchored at the most recent productive trip, a **monotone register** within a cluster, and a **durable flag recomputed from current chip state** (a late "yes" clears the Signal/report flag; the capture-time band is never un-said).
+
+**Two fact-check-mandated rule edits.** **Rule 11 is sleep-anchored** — 6–14% of verified non-decompensating animals cross 30 while awake at rest, so an unconfirmed-sleep count routes to recount and may never enter the sustained state; the numbers cite the Rishniw-group studies and **never ACVIM**, whose consensus is deliberately numberless (and is therefore the authority *behind* "use your vet's number for {pet}", not a source for "30"). **Rule 9's decline-for-dogs arm is deleted** — canine unproductive straining is the same 48–72h-fatal emergency, so the rule collapses to one arm: fire, with dog wording and a dog floor.
+
+**Also:** rule 1 closes the scrim and back-button exits (an emergency band was dismissible by a touch above the sheet, and rule 3's suppression meant it never came back) · rule 3's suppression becomes a **derived cluster identity** with a per-device marker on the wipe path, because "fails toward firing across restarts" plus foreground re-evaluation was alarm wallpaper for the chronic cat · rule 6 names presentation **per entry point** (two of the three have no capture moment at all) and records the device-A-silent-on-sync consequence · rule 11(c) adds an escalate-only monotone-rise lane, so a rising sub-threshold series is not reassurance-by-layout · **FL-1 is capture-surfaces-only and `EVENT_TYPES` is never flag-gated** (v1.2's blanket wording pointed the implementer at the exact bug §12 forbids) · membership is **~ten lists**, not three, with a set-equality test and a measurement-leaf sub-checklist · §11 gains a **device-build floor** and the correction that the `updated_at` trigger bump is **load-bearing propagation, not incidental** · §8 re-scoped onto silent **de-symptomization** (labels were already safe; the real defect is rose-to-neutral) · §10 rules **precise units** — "38 entries · 14 episodes", never a bare shared word.
+
+**Rulings recorded:** D13 (`scratch` stays dormant — one itch bucket) · D14 (chip answers = nullable per-family columns on `events`) · D15 (the R7 batch: P1 stool split · **P2 safety leaves not hideable in v1** · P3 "Digestion" · P5 the Pets > $ free-by-construction line · P6 labels stand · R2 grid scale) · **§16 Q7 closes** — tracked events adopted, per-pet, in Profile, W3–W4.
+
+## Judgment calls made in the writing
+
+- **Three edits applied beyond the approved 23**, each flagged in §0 for veto rather than slipped in: HR-8 (enum-migration mechanics on PR-1), HR-10 (the B-747 shelf bug is **live today**, not created by this track), HR-21 (the open-mouth "at rest" copy note carried to W2). All three were marked SPEC-EDIT-NOW/MINOR by the review and simply missed enumeration; leaving them would have shipped statements the review had already shown false.
+- **§5's family name aligned to P3.** The matrix said "Behavior & energy" while the ruling said "Energy & behavior" — one name, applied, noted in D15.
+- **§9's free-rider row rewritten.** It still claimed exposing `scratch`/`skin_reaction` was "zero engine work" — false twice over after D13 (scratch is not exposed) and HR-22 (the one list enrols a leaf in four more lanes).
+- **CLAUDE.md's row net out −1,576 chars** while carrying more current information: v1.2's "headlines that bind the build until v1.3 lands" were a stopgap, and they now live in the spec.
+
+## Review
+
+`adversarial-reviewer` run against §9a as rewritten — targeted at what the rewrite *introduced* rather than what it fixed, since the arbitration table's cell values, the window-anchoring rule and the monotonicity rule were written this session and are not in the review's prose. Findings and disposition are recorded on CUL-664 and in the PR.
+
+## Not done here
+
+D5 stands — no wave is greenlit. P4 (whether W1's cough chips ship) remains vet-deferred via §15 Q9; Q8 double-checks D13's one-bucket premise. The §17 residue is the FLUTD sign-list breadth and the competitor-claims re-verification.
