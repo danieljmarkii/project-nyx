@@ -14,4 +14,12 @@ Headlines: W1-PR-3 is unshippable as scoped (one engine type list drives fetch +
 
 **§17 debt discharged this session:** the W2-anchor fact-check slice (sources in the review record §2 HR-29/§3) and the fresh own-record query — PM's Nyx at 926 events / 34 `other` (+11 in 13 days; the cough course ongoing through 2026-08-26, ~9 weeks) — plus a new rule the run itself surfaced: the re-query must be **account-scoped** (the service-role path sees the QA-mirror and demo accounts; an unscoped run pooled 1,697 events and two phantom pets — the G6 class).
 
-**Shipped via #722** (draft; docs + CLAUDE.md only — no app code, no schema, no build-phase change).
+**Shipped via #722** (docs + CLAUDE.md only — no app code, no schema, no build-phase change).
+
+## Continuation (same session, post-review)
+
+- **TL;DR convention (PM directive — "sometimes your tasks are too technical for me to truly understand"):** every Linear issue now opens with a plain-English `TL;DR` section; applied retroactively to all 17 project issues and written into CLAUDE.md's Backlog Protocol issue shape as a standing rule.
+- **D13 RULED = A** (one itch bucket — `scratch` stays dormant; the tile's wording goes to the vet, new §15 Q8) and **D14 RULED = (a)** (chip answers as nullable per-family columns on `events`; **P4's ship-or-not is vet-deferred** via new §15 Q9 — W1 ships bare by default, never blocked on the visit).
+- **The batch ruling.** The PM asked for a full-team convening over the standing recommendation queue, pre-approving on agreement. The convening ran lens-by-lens against recorded positions; **no dissents**; three qualified notes recorded rather than smoothed (P2's not-hideable branch is cooldown-independent, so Dr. Chen ruled it outright; P6 carries Report 1's W4 label finding forward to that wave; R2's fold/wayfinding residues route to the device pass), and the edit list's two either/or items were resolved (keep the RRR series frame with an escalate-only rising-run rule; "entries" vs "episodes" always labeled, never one bare word). **Result: the v1.3 edit list APPROVED (now 23 items) and P1/P2/P3/P5/P6/R2/R6 all ruled as recommended.** `Waiting on PM` cleared from CUL-509 and CUL-664 — for the first time since the track opened, nothing waits on a decision, only on greenlights. P4 alone stays open by design.
+- **The run order:** a PR-by-PR execution plan written onto the Linear project description (two parallel start lanes — CUL-662→663 host gate ∥ CUL-664→665 paper — then W1's strict five-PR chain, then waves at their own greenlights), with the mechanical orderings wired as real Linear blocking relations (664→665→667; 673→674→675→676→677) so the board shows the sequence natively.
+- **#722 squash-merged to `main` at the PM's direction at wrap.**
