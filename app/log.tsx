@@ -78,6 +78,13 @@ export default function LogModal() {
   const pickerEligible = useAllowlistFlag('log_picker_v2');
   const pickerOptedIn = useBetaOptIn('log_picker_v2');
   const pickerV2 = pickerEligible && pickerOptedIn;
+  // W1 taxonomy expansion (event_types_v2, CUL-675) — same two-gate shape. Gates
+  // the grouped grid's TILE LIST only (the Breathing group + the ruled regroup);
+  // the flat grid never carries a v2 tile at any flag state, and EVENT_TYPES
+  // itself is never flag-gated (§12 FL-1 — reads stay ungated by design).
+  const taxonomyEligible = useAllowlistFlag('event_types_v2');
+  const taxonomyOptedIn = useBetaOptIn('event_types_v2');
+  const taxonomyV2 = taxonomyEligible && taxonomyOptedIn;
   const showNamedMoment = useMomentStore((s) => s.showNamed);
   const showMealMoment = useMomentStore((s) => s.showMeal);
   const patchTrialFlag = useMomentStore((s) => s.patchTrialFlag);
@@ -261,6 +268,16 @@ export default function LogModal() {
   function handleTypeSelect(type: EventTypeKey) {
     setSelectedType(type);
     const config = EVENT_TYPES[type];
+    // D10 — a witnessed-by-construction leaf (cough/sneeze) renders no Saw it /
+    // Found it, so its write must derive from a clean witnessed state. handleBack
+    // already resets these on every path back to the grid; this is the structural
+    // guarantee that no stale "Found it" state can ever reach a leaf whose record
+    // cannot hold a window (the B-448 leak class, closed at the selection seam).
+    if (config.confidenceModel === 'witnessed') {
+      setTimeMode('saw');
+      setFoundMode('before');
+      setEarliest(null);
+    }
     if (config.hasFood) setStep('food');
     else if (type === 'medication') setStep('medication');
     else if (type === 'weight_check') { seedWeightPrefill(); setStep('weight'); }
@@ -1084,7 +1101,12 @@ export default function LogModal() {
           leading="close"
           onLeadingPress={() => router.back()}
         />
-        <EventTypePicker grouped={pickerV2} onSelectType={handleTypeSelect} />
+        <EventTypePicker
+          grouped={pickerV2}
+          expanded={taxonomyV2}
+          species={activePet?.species}
+          onSelectType={handleTypeSelect}
+        />
       </SafeAreaView>
     );
   }
@@ -1331,28 +1353,55 @@ export default function LogModal() {
 
   if (step === 'simple') {
     const eventLabel = selectedType ? EVENT_TYPES[selectedType].label : '';
+    // Per-leaf capture contract (taxonomy §6/§7, D10 — CUL-675): a leaf without
+    // visual evidence never renders a photo zone, and a witnessed-by-construction
+    // leaf (cough/sneeze) drops the Saw it / Found it affordance entirely — it
+    // gets the plain witnessed time row, whose "Change" covers late logging.
+    // Every pre-W1 simple type keeps both affordances (their fields describe the
+    // shipped surfaces), so flag-off capture stays byte-identical (FL-1).
+    const simpleConfig = selectedType ? EVENT_TYPES[selectedType] : null;
+    const witnessedOnly = simpleConfig?.confidenceModel === 'witnessed';
+    const offersPhoto = simpleConfig ? simpleConfig.hasPhoto : true;
     return (
       <SafeAreaView style={styles.container}>
         <Header title={eventLabel} leading="back" onLeadingPress={handleBack} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
-            {renderPhotoAttachRow()}
+            {offersPhoto && renderPhotoAttachRow()}
             {renderNotesInput()}
-            <TimeConfidenceField
-              mode={timeMode}
-              onModeChange={handleTimeModeChange}
-              point={occurredAt}
-              pointSource={occurredAtSource}
-              onPointChange={handleTimePickerChange}
-              foundMode={foundMode}
-              onFoundModeChange={handleFoundModeChange}
-              estimatedAt={estimatedAt}
-              onEstimatedChange={setEstimatedAt}
-              earliest={earliest}
-              latest={foundLatest}
-              onEarliestChange={setEarliest}
-              onLatestChange={handleLatestChange}
-            />
+            {witnessedOnly ? (
+              <>
+                {renderTimeRow()}
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={occurredAt}
+                    mode="datetime"
+                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                    maximumDate={new Date()}
+                    onChange={(_e, date) => {
+                      if (Platform.OS === 'android') setShowTimePicker(false);
+                      handleTimePickerChange(date);
+                    }}
+                  />
+                )}
+              </>
+            ) : (
+              <TimeConfidenceField
+                mode={timeMode}
+                onModeChange={handleTimeModeChange}
+                point={occurredAt}
+                pointSource={occurredAtSource}
+                onPointChange={handleTimePickerChange}
+                foundMode={foundMode}
+                onFoundModeChange={handleFoundModeChange}
+                estimatedAt={estimatedAt}
+                onEstimatedChange={setEstimatedAt}
+                earliest={earliest}
+                latest={foundLatest}
+                onEarliestChange={setEarliest}
+                onLatestChange={handleLatestChange}
+              />
+            )}
           </ScrollView>
           <View style={styles.bottomAction}>
             <TouchableOpacity style={styles.confirmBtn} onPress={() => handleConfirm()}>

@@ -1,4 +1,4 @@
-import { UtensilsCrossed, BatteryLow, Scale, Ellipsis, PawPrint, Pill, CircleHelp } from 'lucide-react-native';
+import { UtensilsCrossed, BatteryLow, Scale, Ellipsis, PawPrint, Pill, CircleHelp, AudioLines, Wind } from 'lucide-react-native';
 import { iconForType } from './EventIcon';
 import { VomitGlyph, StoolFormedGlyph, StoolLooseGlyph } from './eventGlyphs';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
@@ -23,6 +23,10 @@ describe('iconForType', () => {
     expect(iconForType('other')).toBe(Ellipsis);
     // weight_check graduated from UI-unexposed to a real quick-log type (B-186).
     expect(iconForType('weight_check')).toBe(Scale);
+    // W1 respiratory pair (CUL-675) — the round-3-mock-drawn Lucide substitutes;
+    // B-746 commissions custom family marks later (checklist item 4).
+    expect(iconForType('cough')).toBe(AudioLines);
+    expect(iconForType('sneeze')).toBe(Wind);
   });
 
   it('resolves every EVENT_TYPES key to the ref declared on the type', () => {

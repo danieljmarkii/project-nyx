@@ -620,6 +620,10 @@ describe('C0 symptom-set coverage — the recap must not wash a clinical symptom
   // live bug: it fails the moment either type is exposed but not classified as a symptom.
   const CLINICAL_SYMPTOM_TYPES = [
     'vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'lethargy',
+    // W1 (CUL-675): cough + sneeze became loggable AND classified in the same PR
+    // (the §6 pairing rule) — listed here so removing either from SYMPTOM_TYPES
+    // later trips this wire exactly as it would for the GI core.
+    'cough', 'sneeze',
   ] as const;
 
   it('every clinical symptom that is loggable today is classified as a symptom', () => {
@@ -950,5 +954,22 @@ describe('buildDaySummary — the rich single-pet recap end-to-end (§2)', () =>
       // The Change-Contract grammar: no arrows, no percentages, no exclamation.
       expect(s).not.toMatch(/[↑↓→%!]/);
     }
+  });
+});
+
+// ── W1 interim-noun fallback (CUL-675 — verified until PR-3a lands the nouns) ──
+// SYMPTOM_NOUN / SYMPTOM_CHIP_ORDER gain cough/sneeze in W1-PR-3a (the membership
+// walk pins that). Meanwhile a beta cough must still COUNT and read sanely: the
+// noun falls back to the lowercased EVENT_TYPES label, un-pluralised (safer than a
+// naive +s on an unknown word). This is the §8 "degrade to a generic noun, never
+// silence" contract exercised on the one surface that speaks counts in prose.
+describe('W1 interim — a cough chip counts and reads through the noun fallback', () => {
+  it('renders a symptom-toned "1 cough" chip ahead of meals (symptoms lead)', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'c1', category: 'symptom', eventType: 'cough' }),
+    ];
+    const chips = buildCountChips(rows);
+    expect(chips[0]).toEqual({ key: 'cough', label: '1 cough', tone: 'symptom' });
   });
 });

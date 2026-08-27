@@ -10,6 +10,8 @@ import { ThemedText } from '../ui/ThemedText';
 import { usePetStore } from '../../store/petStore';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import type { MomentTone } from '../../store/momentStore';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../lib/betaFeatures';
 import { GroupedEventGrid } from './EventTypePicker';
 import { SimpleEventConfirm } from './SimpleEventConfirm';
 import { summarizeLoggedRecord, type LoggedRecord } from '../../lib/completionCard';
@@ -59,6 +61,16 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   const { pets, activePet } = usePetStore();
   const insets = useSafeAreaInsets();
   const [switcherVisible, setSwitcherVisible] = useState(false);
+
+  // W1 taxonomy expansion (event_types_v2, CUL-675) — the B-712 two-gate shape,
+  // exactly as the host sheet itself is gated: server allowlist × local opt-in,
+  // both hooks called unconditionally (Rules of Hooks) then combined. This gates
+  // the GRID'S TILE LIST only (the Breathing group's Cough/Sneeze tiles + the
+  // ruled regroup); EVENT_TYPES itself is never flag-gated (§12 FL-1), so a
+  // flag-off device still reads a beta device's cough rows fully labeled.
+  const taxonomyEligible = useAllowlistFlag('event_types_v2');
+  const taxonomyOptedIn = useBetaOptIn('event_types_v2');
+  const expanded = taxonomyEligible && taxonomyOptedIn;
 
   const [stage, setStage] = useState<Stage>('grid');
   // The event being confirmed + the pet it writes to, captured at grid→confirm.
@@ -210,7 +222,13 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                 )}
               </TouchableOpacity>
               <ScrollView style={styles.gridScroll} showsVerticalScrollIndicator={false}>
-                <GroupedEventGrid onSelectType={handleSelect} />
+                {/* species reads the store's active pet reactively, so a switch in
+                    the panel above re-filters the grid before the next tap (§3). */}
+                <GroupedEventGrid
+                  onSelectType={handleSelect}
+                  expanded={expanded}
+                  species={activePet?.species}
+                />
               </ScrollView>
             </>
           )}

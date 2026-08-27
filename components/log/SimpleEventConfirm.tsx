@@ -9,7 +9,7 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EventIcon } from '../event/EventIcon';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
-import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import {
   buildTimeFields, resolveTimeModeChange, resolveFoundModeChange,
   sourceAfterPointEdit, refreshedNowPoint, DEFAULT_WINDOW_SPAN_MS,
@@ -63,12 +63,15 @@ interface Props {
 
 type OpenPicker = 'point' | 'latest' | 'earliest' | null;
 
-// Header glyph tint — the GI/symptom family reads rose (identity, never a verdict —
-// §2), everything else neutral. Matches EventTypePicker's grid tinting so the tile
-// and its confirm agree.
-const ROSE_FAMILY: ReadonlySet<EventTypeKey> = new Set([
-  'vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch',
-]);
+// Header glyph tint — the symptom family reads rose (identity, never a verdict —
+// §2), everything else neutral. DERIVED from SYMPTOM_TYPES ∪ {stool_normal} rather
+// than kept as a third hand-list (§6's pairing rule allows exactly two tint/haptic
+// predicates — the picker's CATEGORY_TINT and SYMPTOM_TYPES — and this is the
+// picker's rose set by definition: stool_normal is the one documented divergence,
+// rose-tinted but never symptom-haptic'd). A new symptom leaf joins here for free.
+function isRoseType(type: EventTypeKey): boolean {
+  return SYMPTOM_TYPES.has(type) || type === 'stool_normal';
+}
 
 // The types whose attached photo actually gets an AI read (insertSimpleEvent fires
 // analyze-vomit / analyze-stool for exactly these). The photo sub-line only PROMISES
@@ -92,8 +95,17 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
   const photoInFlight = useRef(false);
 
   const typeLabel = EVENT_TYPES[type].label;
-  const rose = ROSE_FAMILY.has(type);
+  const rose = isRoseType(type);
   const readsPhoto = PHOTO_READ_TYPES.has(type);
+  // Per-leaf capture contract (taxonomy §6/§7, D10 — CUL-675). A witnessed-by-
+  // construction leaf (cough/sneeze) renders NO Saw it / Found it pair — there is
+  // nothing to "find", so a window claim is unwritable by construction (the B-448
+  // leak class); timeMode stays 'saw' and the row's "Change time" covers late
+  // logging. A leaf without visual evidence (hasPhoto false) renders no photo row
+  // at all. Every pre-W1 simple type keeps both affordances, so the sheet's
+  // existing confirms are byte-identical.
+  const witnessedOnly = EVENT_TYPES[type].confidenceModel === 'witnessed';
+  const offersPhoto = EVENT_TYPES[type].hasPhoto;
 
   // B-010 time state — the same machine app/log.tsx holds inline, reduced to the
   // two confidences AC-FOUND scopes this surface to: witnessed ('saw') and window
@@ -401,10 +413,14 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
               )}
             </View>
           </TouchableOpacity>
-          <View style={styles.chipPair} testID="confirm-chip-pair">
-            <SawFoundChip testID="chip-saw" label="Saw it" active={timeMode === 'saw'} onPress={() => handleModeChange('saw')} />
-            <SawFoundChip testID="chip-found" label="Found it" active={timeMode === 'found'} onPress={() => handleModeChange('found')} />
-          </View>
+          {/* D10 — witnessed-by-construction leaves render no chip pair at all:
+              withholding the affordance is cheap; a lying one is not. */}
+          {!witnessedOnly && (
+            <View style={styles.chipPair} testID="confirm-chip-pair">
+              <SawFoundChip testID="chip-saw" label="Saw it" active={timeMode === 'saw'} onPress={() => handleModeChange('saw')} />
+              <SawFoundChip testID="chip-found" label="Found it" active={timeMode === 'found'} onPress={() => handleModeChange('found')} />
+            </View>
+          )}
         </View>
 
         {/* Inline point picker (Saw it → Change time). */}
@@ -501,10 +517,12 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
           </View>
         )}
 
-        {/* Photo row (dashed = the additive treatment). The sub-line promises a READ,
-            never reassurance (clinical-guardrails / nyx-voice Pattern 8): "I can read
-            it for signs". Attaching a vomit/stool photo triggers the AI read, unchanged. */}
-        {photo ? (
+        {/* Photo row (dashed = the additive treatment) — only for leaves with visual
+            evidence (§6 hasPhoto: a sneeze confirm never renders a photo zone). The
+            sub-line promises a READ, never reassurance (clinical-guardrails /
+            nyx-voice Pattern 8): "I can read it for signs". Attaching a vomit/stool
+            photo triggers the AI read, unchanged. */}
+        {offersPhoto && (photo ? (
           <TouchableOpacity style={styles.rowPill} onPress={pickPhoto} activeOpacity={0.8}>
             <Image source={{ uri: photo.uri }} style={styles.photoThumb} resizeMode="cover" />
             <ThemedText style={styles.rowLabel}>Photo attached · tap to replace</ThemedText>
@@ -522,7 +540,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
               <ThemedText style={styles.rowSub}>{readsPhoto ? 'Optional — I can read it for signs' : 'Optional'}</ThemedText>
             </View>
           </TouchableOpacity>
-        )}
+        ))}
 
         {/* Note row — a quiet optional field in the same pill register. */}
         <View style={styles.rowPill}>

@@ -427,3 +427,52 @@ describe('SimpleEventConfirm — photo permissions (CUL-577)', () => {
     expect(launchCamera).not.toHaveBeenCalled();
   });
 });
+
+// ── Witnessed-by-construction leaves (D10, CUL-675 — cough / sneeze) ─────────
+// There is nothing to "find" about a cough, so the confirm renders no Saw it /
+// Found it pair — a window claim is unwritable by construction (the B-448 leak
+// class) — and no photo row (hasPhoto false: no visual evidence to photograph).
+// The witnessed time row's "Change time" covers late logging.
+describe('witnessed-by-construction leaves (D10 — cough / sneeze)', () => {
+  it('cough renders no Saw it / Found it pair, and keeps the Change-time affordance', () => {
+    const { queryByTestId, queryByText, getByText } = renderConfirm('cough');
+    expect(queryByTestId('confirm-chip-pair')).toBeNull();
+    expect(queryByText('Saw it')).toBeNull();
+    expect(queryByText('Found it')).toBeNull();
+    expect(getByText('Change time')).toBeTruthy();
+  });
+
+  it('cough renders no photo row at all', () => {
+    const { queryByText } = renderConfirm('cough');
+    expect(queryByText('Add a photo')).toBeNull();
+  });
+
+  it('the pill reads "Cough · today at …" and Log it writes witnessed with no bounds', async () => {
+    const { getByText, onLogged } = renderConfirm('cough');
+    expect(getByText(/^Cough · today at /)).toBeTruthy();
+    fireEvent.press(getByText('Log it'));
+    await waitFor(() => expect(mockInsert).toHaveBeenCalled());
+    expect(mockInsert.mock.calls[0][0]).toMatchObject({
+      eventType: 'cough', petId: 'p1', confidence: 'witnessed', earliest: null, latest: null,
+    });
+    // CUL-614 — the record the beat derives from says exactly what the row holds.
+    expect(onLogged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        record: { kind: 'event', typeLabel: 'Cough', confidence: 'witnessed', earliest: null, latest: null },
+      }),
+    );
+  });
+
+  it('sneeze carries the same contract', () => {
+    const { queryByTestId, queryByText, getByText } = renderConfirm('sneeze');
+    expect(queryByTestId('confirm-chip-pair')).toBeNull();
+    expect(queryByText('Add a photo')).toBeNull();
+    expect(getByText(/^Sneeze · today at /)).toBeTruthy();
+  });
+
+  it('an artifact leaf keeps both affordances — the pre-W1 confirms are untouched (FL-1)', () => {
+    const { getByTestId, getByText } = renderConfirm('lethargy');
+    expect(getByTestId('confirm-chip-pair')).toBeTruthy();
+    expect(getByText('Add a photo')).toBeTruthy();
+  });
+});

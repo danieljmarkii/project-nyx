@@ -14,8 +14,14 @@ export interface EventPhotoInput {
   remoteUrlFull: string | null;
   // The transform URL errored at fetch time (add-on unavailable) → prefer the raw URL.
   transformFailed: boolean;
-  // Meals' clinical artifact is the food name, not a photo — never beg for one.
-  isMeal: boolean;
+  // Does this leaf carry a photo affordance at all? (EVENT_TYPES hasPhoto — taxonomy
+  // §7, CUL-675.) false suppresses the empty Add-photo hero, never an existing
+  // photo: meals (their clinical artifact is the food name, not a photo — never beg
+  // for one) and the witnessed-by-construction leaves (cough/sneeze — no visual
+  // evidence to photograph). Callers pass `hasPhoto ?? true` so an UNKNOWN type (a
+  // future wave's leaf reaching this build) keeps today's generic offer — the §8
+  // degradation contract: degrade to the generic behaviour, never crash or invent.
+  offersPhoto: boolean;
   // An attachment row exists (a photo is present, even if its URL is still resolving).
   hasAttachment: boolean;
 }
@@ -65,14 +71,18 @@ export function addPhotoHeroCopy(eventType: string | null | undefined): AddPhoto
 }
 
 export function resolveEventPhotoDisplay(input: EventPhotoInput): EventPhotoDisplay {
-  const { localUri, remoteUrl, remoteUrlFull, transformFailed, isMeal, hasAttachment } = input;
+  const { localUri, remoteUrl, remoteUrlFull, transformFailed, offersPhoto, hasAttachment } = input;
   // Prefer the transform; fall back to the raw URL if it failed to load or hasn't
   // resolved yet. The local file always wins (fastest, offline-safe).
   const remoteBest = !transformFailed && remoteUrl ? remoteUrl : remoteUrlFull;
   const photoUri = localUri ?? remoteBest;
   // Only offer the add-photo empty state when there is genuinely NO photo — never
   // when an attachment exists but its URL is still resolving / mid-fallback, which
-  // would briefly render a live "Add photo" target over an existing photo (B-207).
-  const showEmptyHero = !photoUri && !isMeal && !hasAttachment;
+  // would briefly render a live "Add photo" target over an existing photo (B-207)
+  // — and only on a leaf that offers a photo at all (a sneeze detail never leads
+  // with an empty Add-photo zone; an EXISTING photo on such a row still renders,
+  // because photoUri wins this branch — e.g. an `other` row with a photo re-keyed
+  // to cough by the §11 swap keeps its evidence).
+  const showEmptyHero = !photoUri && offersPhoto && !hasAttachment;
   return { photoUri, showEmptyHero };
 }
