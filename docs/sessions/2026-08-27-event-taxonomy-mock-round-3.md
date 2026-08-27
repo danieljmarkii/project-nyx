@@ -1,5 +1,7 @@
 # 2026-08-27 — Event-taxonomy mock round 3, the coverage round (CUL-665)
 
+**Date:** 2026-08-27 · Shipped via #726
+
 **Outcome:** the §14 round-3 frame list drawn — seven of ten frames — and republished over round 2.1
 at the track's one artifact URL (`https://claude.ai/code/artifact/07e289b5-6b06-4627-b5fb-f96288477848`);
 committed HTML (`docs/culprit-event-taxonomy-mockups.html`) remains source of truth. Design session
