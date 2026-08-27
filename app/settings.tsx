@@ -24,8 +24,7 @@ import {
 import { flushForSignOut, unsentSignOutWarning } from '../lib/session';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
-import { useAllowlistFlag } from '../hooks/useAppConfig';
-import { useBetaOptIn } from '../lib/betaFeatures';
+import { useBetaShelf } from '../hooks/useBetaShelf';
 
 // "You" — the owner's account & settings home (B-283, spec §4). A doorway from
 // the Home-header avatar (§4.1), NOT a fifth tab: the user actions that used to
@@ -48,22 +47,18 @@ import { useBetaOptIn } from '../lib/betaFeatures';
 export default function SettingsScreen() {
   const email = useAuthStore((s) => s.user?.email);
   const pets = usePetStore((s) => s.pets);
-  // Beta features (B-712 PR 3) — Gate 1: the row exists only for an account eligible
-  // for ≥1 beta. Today that's an OR over one flag; when a second beta lands this
-  // becomes an OR over the registry's keys (spec §2 / §5). A non-eligible owner's
-  // Settings looks exactly as it does today — no row, no hint the program exists.
-  const betaEligible = useAllowlistFlag('widget_enabled');
-  // OPEN-2 (resolved PR 4) — the quiet "N on" count on the row: betas that are
-  // eligible (Gate 1) AND opted in (Gate 2). One beta in v1, so it reads directly
-  // alongside betaEligible above rather than looping the registry; when a second
-  // beta lands, both this and betaEligible fold into a count/OR over the registry
-  // keys (the same fold-point the betaEligible comment names) — and that fold reads
-  // each store in bulk ONCE, then reduces in plain JS: a per-entry hook call inside a
-  // BETA_REGISTRY.map() would violate rules-of-hooks, so don't reach for that shape.
-  // It never counts a beta opted-in-but-no-longer-eligible (a killed flag) — the
-  // widget path has already stopped publishing for that account, so it isn't "on".
-  const widgetOptedIn = useBetaOptIn('widget_enabled');
-  const activeBetaCount = betaEligible && widgetOptedIn ? 1 : 0;
+  // Beta features (B-712 PR 3; B-747 fix, W1-PR-0) — Gate 1: the row exists only
+  // for an account eligible for ≥1 beta, as an OR over the WHOLE registry via
+  // useBetaShelf. (It shipped gated on `widget_enabled` alone, which hid the shelf
+  // from an account allowlisted only for a later beta — the B-747 bug; the fold the
+  // old comment promised "when a second beta lands" is this hook.) A non-eligible
+  // owner's Settings looks exactly as before — no row, no hint the program exists.
+  // The "N on" count (OPEN-2) is the same derivation's activeCount: eligible
+  // (Gate 1) AND opted in (Gate 2), never counting an opted-in-but-no-longer-
+  // eligible beta (a killed flag) — that feature has already stopped rendering for
+  // this account, so it isn't "on".
+  const { eligible: eligibleBetas, activeCount: activeBetaCount } = useBetaShelf();
+  const betaEligible = eligibleBetas.length > 0;
   const [deleteVisible, setDeleteVisible] = useState(false);
   // B-430 — the pre-sign-out flush is a network round trip; disable the row while
   // it runs so a second tap can't start a parallel drain.

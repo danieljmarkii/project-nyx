@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ALLOWLIST_FLAG_KEYS, type AllowlistFlagKey } from './appConfig';
+import {
+  ALLOWLIST_FLAG_KEYS,
+  resolveAllowlistFlag,
+  type AllowlistFlagKey,
+  type AllowlistFlagValues,
+} from './appConfig';
 
 // The Beta-features program (B-712, docs/nyx-beta-features-requirements.md). Two
 // things live here, both deliberately UI-free so they unit-test in plain jest and
@@ -89,6 +94,33 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // spent per opt-in and no server gate is owed.
     serverCost: false,
   },
+  {
+    // Event-taxonomy expansion (B-756/CUL-509) — joins the shelf per the taxonomy
+    // spec's FL-2 (seed-first): W1-PR-0 registers the flag and the shelf card dark;
+    // W1-PR-2 renders the new capture tiles behind `live = eligible && optedIn`.
+    // The flag gates CAPTURE only — a flag-off device still renders every row it
+    // reads (`EVENT_TYPES` is never flag-gated, spec §12 FL-1).
+    key: 'event_types_v2',
+    title: 'More event types',
+    // nyx-voice: concrete about what the owner will notice (new kinds of events to
+    // log, named), warm, no exclamation, and it doesn't sell that it's "new-new" —
+    // it says what the record gains.
+    blurb:
+      'More kinds of events to log, starting with cough and sneeze, so what you notice has a place in the record.',
+    owner: 'Event taxonomy (B-756) / Eng',
+    addedDate: '2026-08-27',
+    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a
+    // timer. Note W1's GA additionally queues behind the log_picker_v2 host chain
+    // (D12), so the call on this row may legitimately be "extend" while that
+    // chain closes.
+    reviewBy: '2026-11-27',
+    // Capture has no server component (spec §12): the engine/report membership
+    // work (W1-PR-3b) ships separately and is account-agnostic — lane membership
+    // is a property of the deployed function, not of any cohort — so no server
+    // gate is owed and the B-712 "server-cost betas gate server-side" rule is
+    // checked and doesn't bite.
+    serverCost: false,
+  },
   // Two Signal betas graduated to GA and were retired from the shelf (CUL-546 Phase 1 /
   // CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design uplift, B-721) and
   // `signals_v2` (the "deeper signals" lanes, B-755). Removing the row removes the shelf
@@ -96,6 +128,41 @@ export const BETA_REGISTRY: BetaFeature[] = [
   // keys), so no storage migration is owed. `signals_v2`'s SERVER eligibility gate in
   // generate-signal (B-777) is retired separately at GA-3.
 ];
+
+// ── The shelf derivation (B-747 — the OR over the registry) ───────────────────
+// The one place "which betas can this account see, and how many are on" is
+// computed. app/settings.tsx's Beta row and app/settings/beta.tsx's shelf both
+// read this, so the row can never again gate on one hard-coded flag while the
+// registry holds more (the B-747 bug: `widget_enabled` alone hid the shelf from
+// an account allowlisted only for `log_picker_v2`).
+//
+// Pure — no I/O, no hooks — so it unit-tests in plain jest and the hook wrapper
+// (hooks/useBetaShelf.ts) can read each store in bulk ONCE and reduce here,
+// instead of a per-entry hook call inside a BETA_REGISTRY.map() (rules-of-hooks).
+//
+// `activeCount` counts a beta only when it is eligible AND opted in: an
+// opted-in-but-no-longer-eligible beta (a killed flag) is not "on" — its feature
+// has already stopped rendering for that account — and counting it would tell the
+// owner something the app isn't doing.
+export interface BetaShelfState {
+  /** Registry entries the caller is eligible for (Gate 1), in registry order. */
+  eligible: BetaFeature[];
+  /** Betas that are eligible (Gate 1) AND opted in (Gate 2) — the "N on" count. */
+  activeCount: number;
+}
+
+export function deriveBetaShelf(
+  allowlist: AllowlistFlagValues,
+  userId: string | null,
+  optIns: BetaOptInMap,
+  registry: readonly BetaFeature[] = BETA_REGISTRY,
+): BetaShelfState {
+  // fallback=false — the same fail-closed convention as every allowlist gate: an
+  // unset / unreachable / malformed value or a signed-out caller hides the beta.
+  const eligible = registry.filter((b) => resolveAllowlistFlag(allowlist[b.key], userId, false));
+  const activeCount = eligible.filter((b) => optIns[b.key] === true).length;
+  return { eligible, activeCount };
+}
 
 // ── The opt-in store (Gate 2 / D4) ────────────────────────────────────────────
 // A local, per-device preference, default OFF, one boolean per beta key. Local-

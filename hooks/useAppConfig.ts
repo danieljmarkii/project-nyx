@@ -79,6 +79,16 @@ export function useAppConfig(): AppConfigValues {
   return useSyncExternalStore(subscribe, () => currentConfig, () => currentConfig);
 }
 
+// Bulk subscription to the RAW allowlist map — one store read for a surface that
+// reduces over several flags at once (the beta shelf's B-747 OR-gate,
+// hooks/useBetaShelf.ts). Raw, un-resolved values: resolution needs the caller's
+// uid, which the consumer supplies through the same pure resolver as
+// useAllowlistFlag. The map reference is stable between setBundle calls, so
+// subscribers re-render only when a fetch actually lands new config.
+export function useAllowlistFlagsRaw(): AllowlistFlagValues {
+  return useSyncExternalStore(subscribe, () => currentAllowlist, () => currentAllowlist);
+}
+
 // Resolve an experimental allowlist flag (Ask §8) for the currently signed-in
 // caller. Combines the server-fetched raw value (this store) with the caller's uid
 // (the auth store) through the pure resolver. Fail-CLOSED: an unset / unreachable /

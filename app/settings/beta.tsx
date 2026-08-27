@@ -2,10 +2,11 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, Info, LayoutGrid, SquarePen } from 'lucide-react-native';
+import { FlaskConical, Info, LayoutGrid, Shapes, SquarePen } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaShelf } from '../../hooks/useBetaShelf';
 import {
   BETA_REGISTRY,
   useBetaOptIn,
@@ -63,6 +64,13 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // reaches it by tapping the FAB, nothing to place or do (unlike the widget). A
       // distinct "log an entry" glyph helps it read apart from the widget (grid) card.
       return { Icon: SquarePen };
+    case 'event_types_v2':
+      // No on-state hint either: once the capture PRs land, the new types simply
+      // appear in the log picker — nothing to place or do. A "kinds of things" glyph
+      // (Shapes), distinct from the widget grid and the picker pen; deliberately not
+      // a "+" mark, which reads as a tappable add-affordance on a non-interactive
+      // tile (the pm-feature-review finding on the hint glyph).
+      return { Icon: Shapes };
     default:
       return { Icon: FlaskConical };
   }
@@ -127,6 +135,13 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
 }
 
 export default function BetaFeaturesScreen() {
+  // B-729 — the same derivation the Settings row gates on (useBetaShelf), read here
+  // to pick between the card list and the designed zero-card state, so the two
+  // surfaces can never disagree. The per-card self-gates below stay (belt-and-braces
+  // for a deep link); they read the same stores, so they agree with this by
+  // construction.
+  const { eligible } = useBetaShelf();
+
   function handleBack() {
     if (router.canGoBack()) router.back();
     else router.replace('/settings');
@@ -137,30 +152,57 @@ export default function BetaFeaturesScreen() {
       <Header title="Beta features" leading="back" onLeadingPress={handleBack} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* State-independent framing (like the Notifications intro): names the deal
-            — unfinished, opt-in, reversible — without asserting a current count that
-            would read false the moment a beta is toggled. */}
-        <Text style={styles.intro}>
-          Features we’re still working on. Switch one on to try it early — you can switch it back
-          off whenever you like.
-        </Text>
+        {eligible.length === 0 ? (
+          /* B-729 — the designed zero-card state (Principle 5). Reachable when
+             eligibility is lost while the screen is open or on a stale back-nav /
+             deep link: every card self-gates away, and without this block the intro
+             would promise an action ("switch one on") with nothing to act on. Not a
+             loading state to skeleton over (CUL-575 doesn't bite on the row-gated
+             path: the Settings row that pushes this screen only renders once config
+             resolved eligibility, so zero-eligible here is an answered read). The
+             one soft spot is a cold-start deep link, where this can flash before the
+             cached config lands — a transient every allowlist-gated surface shares,
+             and useBetaShelf's subscription swaps the cards in the moment the read
+             answers (pinned by the revoked-while-mounted test). Honest and
+             forward-looking, promising nothing. */
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconTile}>
+              <FlaskConical size={22} color={theme.colorTextTertiary} strokeWidth={1.9} />
+            </View>
+            <ThemedText style={styles.emptyTitle}>Nothing to try right now</ThemedText>
+            <ThemedText style={styles.emptyBody}>
+              Beta features come and go while we build. When there’s one ready for your account,
+              you’ll find it here.
+            </ThemedText>
+          </View>
+        ) : (
+          <>
+            {/* State-independent framing (like the Notifications intro): names the deal
+                — unfinished, opt-in, reversible — without asserting a current count that
+                would read false the moment a beta is toggled. */}
+            <Text style={styles.intro}>
+              Features we’re still working on. Switch one on to try it early — you can switch it
+              back off whenever you like.
+            </Text>
 
-        {/* One card per registry entry; each self-gates on eligibility. The set of
-            children is stable (BETA_REGISTRY is a fixed module constant), so the
-            per-card hook calls keep a stable order across renders. */}
-        {BETA_REGISTRY.map((feature) => (
-          <BetaFeatureCard key={feature.key} feature={feature} />
-        ))}
+            {/* One card per registry entry; each self-gates on eligibility. The set of
+                children is stable (BETA_REGISTRY is a fixed module constant), so the
+                per-card hook calls keep a stable order across renders. */}
+            {BETA_REGISTRY.map((feature) => (
+              <BetaFeatureCard key={feature.key} feature={feature} />
+            ))}
 
-        {/* The honesty line (D8 — no telemetry, records untouched). Warm, plain,
-            reversible; the reason the opt-in is safe to try. "pulled" (the locked
-            round-1 mock's word), not "switched off" — the intro already owns "switch
-            it back off" for the owner's own control, so reusing it here for OUR
-            retraction would double-duty the same phrase (nyx-voice PR 4 pass). */}
-        <Text style={styles.note}>
-          Beta features may change or be pulled while we keep working on them. Turning one on won’t
-          affect your records.
-        </Text>
+            {/* The honesty line (D8 — no telemetry, records untouched). Warm, plain,
+                reversible; the reason the opt-in is safe to try. "pulled" (the locked
+                round-1 mock's word), not "switched off" — the intro already owns "switch
+                it back off" for the owner's own control, so reusing it here for OUR
+                retraction would double-duty the same phrase (nyx-voice PR 4 pass). */}
+            <Text style={styles.note}>
+              Beta features may change or be pulled while we keep working on them. Turning one on
+              won’t affect your records.
+            </Text>
+          </>
+        )}
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -265,6 +307,38 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
     paddingHorizontal: theme.space1,
     marginTop: theme.space1,
+  },
+
+  // ── B-729 zero-card state ──
+  // Centered, quiet block — the muted flask (this screen's own subject glyph) in a
+  // neutral tile, never the accent tile the live cards use: nothing here is on or
+  // actionable, so nothing should carry the active register.
+  emptyState: {
+    alignItems: 'center',
+    gap: theme.space1,
+    paddingVertical: theme.space4,
+    paddingHorizontal: theme.space2,
+  },
+  emptyIconTile: {
+    width: 40,
+    height: 40,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorSurfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.space1,
+  },
+  emptyTitle: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
+    textAlign: 'center',
+  },
+  emptyBody: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+    textAlign: 'center',
   },
 
   bottomPad: {

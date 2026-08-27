@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   BETA_REGISTRY,
   BETA_OPT_IN_STORAGE_KEY,
+  deriveBetaShelf,
   parseBetaOptIns,
   serializeBetaOptIns,
   useBetaOptInStore,
@@ -16,7 +17,11 @@ import {
   clearBetaOptIns,
   type BetaFeature,
 } from './betaFeatures';
-import { ALLOWLIST_FLAG_KEYS } from './appConfig';
+import {
+  ALLOWLIST_FLAG_KEYS,
+  ALLOWLIST_FLAGS_UNSET,
+  type AllowlistFlagValues,
+} from './appConfig';
 
 // ── The registry (D7 §4.3.1) ──────────────────────────────────────────────────
 
@@ -46,9 +51,9 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget + the log-picker redesign as the live betas, both client-only (no server cost)', () => {
+  it('ships the widget + log-picker + event-types betas, all client-only (no server cost)', () => {
     // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
-    // retired from the shelf (CUL-547 + CUL-548), so the registry is back to two rows.
+    // retired from the shelf (CUL-547 + CUL-548).
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
     expect(widget).toBeDefined();
     expect((widget as BetaFeature).serverCost).toBe(false);
@@ -60,10 +65,96 @@ describe('BETA_REGISTRY', () => {
     expect(logPicker).toBeDefined();
     expect((logPicker as BetaFeature).serverCost).toBe(false);
 
-    // The two graduated keys (signal_design_v2 / signals_v2) are no longer in the
+    // B-756 W1-PR-0 joined the shelf (taxonomy spec FL-2, seed-first). Capture has
+    // no server component — the engine/report membership work ships separately and
+    // is account-agnostic (§12) — so no server gate is owed here either.
+    const eventTypes = BETA_REGISTRY.find((b) => b.key === 'event_types_v2');
+    expect(eventTypes).toBeDefined();
+    expect((eventTypes as BetaFeature).serverCost).toBe(false);
+
+    // The graduated keys (signal_design_v2 / signals_v2) are no longer in the
     // AllowlistFlagKey union, so a `.key === '…'` check for them won't type-check — the
     // length assertion + the missing shelf cards are what pin their removal.
-    expect(BETA_REGISTRY).toHaveLength(2);
+    expect(BETA_REGISTRY).toHaveLength(3);
+  });
+});
+
+// ── deriveBetaShelf (B-747 — the OR over the registry) ────────────────────────
+// The pure derivation both app/settings.tsx (the Beta row + "N on" count) and
+// app/settings/beta.tsx (cards vs. the B-729 empty state) read through
+// hooks/useBetaShelf. The headline contract is the B-747 regression: eligibility
+// is an OR over EVERY registry key, never one hard-coded flag.
+
+describe('deriveBetaShelf (B-747)', () => {
+  const gatedTo = (uid: string) => ({ enabled: false, allowlist: [uid] });
+  const dark = { enabled: false, allowlist: [] };
+  const allow = (over: Partial<AllowlistFlagValues>): AllowlistFlagValues => ({
+    ...ALLOWLIST_FLAGS_UNSET,
+    ...over,
+  });
+
+  it('B-747: an account eligible ONLY for a non-widget beta still gets the shelf', () => {
+    // The shipped bug: the Settings row gated on widget_enabled alone, so this
+    // account — allowlisted for the log-picker beta, widget dark — had no way to
+    // reach the shelf and opt in.
+    const shelf = deriveBetaShelf(
+      allow({ widget_enabled: dark, log_picker_v2: gatedTo('uid-1') }),
+      'uid-1',
+      {},
+    );
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['log_picker_v2']);
+    expect(shelf.activeCount).toBe(0); // eligible turns nothing on (Gate 2 untouched)
+  });
+
+  it('the unset baseline and a signed-out caller both yield no eligible betas (fail closed)', () => {
+    expect(deriveBetaShelf(ALLOWLIST_FLAGS_UNSET, 'uid-1', {}).eligible).toEqual([]);
+    expect(
+      deriveBetaShelf(allow({ widget_enabled: gatedTo('uid-1') }), null, {}).eligible,
+    ).toEqual([]);
+  });
+
+  it('activeCount counts only betas that are eligible AND opted in', () => {
+    const allowlist = allow({
+      widget_enabled: gatedTo('uid-1'),
+      log_picker_v2: gatedTo('uid-1'),
+    });
+    expect(deriveBetaShelf(allowlist, 'uid-1', { log_picker_v2: true }).activeCount).toBe(1);
+    expect(
+      deriveBetaShelf(allowlist, 'uid-1', { widget_enabled: true, log_picker_v2: true })
+        .activeCount,
+    ).toBe(2);
+  });
+
+  it('an opted-in but no-longer-eligible beta (a killed flag) is not counted as on', () => {
+    // The widget path has already stopped rendering for this account, so telling
+    // the owner it's "on" would claim something the app isn't doing.
+    const shelf = deriveBetaShelf(
+      allow({ widget_enabled: dark, log_picker_v2: gatedTo('uid-1') }),
+      'uid-1',
+      { widget_enabled: true },
+    );
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['log_picker_v2']);
+    expect(shelf.activeCount).toBe(0);
+  });
+
+  it('enabled:true (a GA’d flag) is eligible for everyone, allowlist ignored', () => {
+    const shelf = deriveBetaShelf(
+      allow({ event_types_v2: { enabled: true, allowlist: [] } }),
+      'anyone',
+      {},
+    );
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['event_types_v2']);
+  });
+
+  it('eligible preserves registry order (the shelf renders in registry order)', () => {
+    const everything = allow({
+      widget_enabled: gatedTo('uid-1'),
+      log_picker_v2: gatedTo('uid-1'),
+      event_types_v2: gatedTo('uid-1'),
+    });
+    expect(deriveBetaShelf(everything, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(
+      BETA_REGISTRY.map((b) => b.key),
+    );
   });
 });
 
