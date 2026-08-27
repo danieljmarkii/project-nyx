@@ -240,6 +240,12 @@ export default function LogModal() {
     } else if (typeParam in EVENT_TYPES) {
       const t = typeParam as EventTypeKey;
       setSelectedType(t);
+      // Same D10 reset as handleTypeSelect: today this branch runs on a fresh
+      // mount whose defaults already equal the reset, but the guarantee must be
+      // enforced on every entry path into the simple step, not coincide with
+      // mount state (code-review finding on this PR) — a later param change or
+      // remount tweak must not be able to reopen the B-448 leak.
+      resetTimeStateForWitnessed(t);
       setStep(EVENT_TYPES[t].hasFood ? 'food' : 'simple');
     }
   }, [typeParam]);
@@ -265,19 +271,24 @@ export default function LogModal() {
     setOccurredAt((prev) => refreshedNowPoint(prev, occurredAtSource, new Date()));
   }, [appActive, occurredAtSource]);
 
+  // D10 — a witnessed-by-construction leaf (cough/sneeze) renders no Saw it /
+  // Found it, so its write must derive from a clean witnessed state. handleBack
+  // already resets these on every path back to the grid; calling this on BOTH
+  // entry paths into a step (the grid tap and the ?type= route param) is the
+  // structural guarantee that no stale "Found it" state can ever reach a leaf
+  // whose record cannot hold a window (the B-448 leak class, closed at the
+  // selection seam). No-op for artifact leaves.
+  function resetTimeStateForWitnessed(type: EventTypeKey) {
+    if (EVENT_TYPES[type].confidenceModel !== 'witnessed') return;
+    setTimeMode('saw');
+    setFoundMode('before');
+    setEarliest(null);
+  }
+
   function handleTypeSelect(type: EventTypeKey) {
     setSelectedType(type);
     const config = EVENT_TYPES[type];
-    // D10 — a witnessed-by-construction leaf (cough/sneeze) renders no Saw it /
-    // Found it, so its write must derive from a clean witnessed state. handleBack
-    // already resets these on every path back to the grid; this is the structural
-    // guarantee that no stale "Found it" state can ever reach a leaf whose record
-    // cannot hold a window (the B-448 leak class, closed at the selection seam).
-    if (config.confidenceModel === 'witnessed') {
-      setTimeMode('saw');
-      setFoundMode('before');
-      setEarliest(null);
-    }
+    resetTimeStateForWitnessed(type);
     if (config.hasFood) setStep('food');
     else if (type === 'medication') setStep('medication');
     else if (type === 'weight_check') { seedWeightPrefill(); setStep('weight'); }
@@ -1050,6 +1061,31 @@ export default function LogModal() {
     });
   }
 
+  // The witnessed time section — the plain "date · time / Change" row plus its
+  // inline point picker. ONE implementation for the three steps that render it
+  // (weight, symptom severity, and the witnessed-by-construction simple branch —
+  // code-review cleanup on this PR: the block had been copy-pasted per step, so
+  // the picker wiring could drift between copies).
+  function renderTimeRowWithPicker() {
+    return (
+      <>
+        {renderTimeRow()}
+        {showTimePicker && (
+          <DateTimePicker
+            value={occurredAt}
+            mode="datetime"
+            display={Platform.OS === 'ios' ? 'inline' : 'default'}
+            maximumDate={new Date()}
+            onChange={(_e, date) => {
+              if (Platform.OS === 'android') setShowTimePicker(false);
+              handleTimePickerChange(date);
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
   function renderTimeRow() {
     return (
       <View style={styles.timeRow}>
@@ -1254,19 +1290,7 @@ export default function LogModal() {
               <ThemedText style={styles.weightUnit}>lbs</ThemedText>
             </View>
             {renderNotesInput()}
-            {renderTimeRow()}
-            {showTimePicker && (
-              <DateTimePicker
-                value={occurredAt}
-                mode="datetime"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                maximumDate={new Date()}
-                onChange={(_e, date) => {
-                  if (Platform.OS === 'android') setShowTimePicker(false);
-                  handleTimePickerChange(date);
-                }}
-              />
-            )}
+            {renderTimeRowWithPicker()}
           </ScrollView>
           <View style={styles.bottomAction}>
             <TouchableOpacity
@@ -1321,19 +1345,7 @@ export default function LogModal() {
             </View>
             <View style={styles.divider} />
             {renderNotesInput()}
-            {renderTimeRow()}
-            {showTimePicker && (
-              <DateTimePicker
-                value={occurredAt}
-                mode="datetime"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                maximumDate={new Date()}
-                onChange={(_e, date) => {
-                  if (Platform.OS === 'android') setShowTimePicker(false);
-                  handleTimePickerChange(date);
-                }}
-              />
-            )}
+            {renderTimeRowWithPicker()}
           </ScrollView>
           <View style={styles.bottomAction}>
             <TouchableOpacity
@@ -1370,21 +1382,7 @@ export default function LogModal() {
             {offersPhoto && renderPhotoAttachRow()}
             {renderNotesInput()}
             {witnessedOnly ? (
-              <>
-                {renderTimeRow()}
-                {showTimePicker && (
-                  <DateTimePicker
-                    value={occurredAt}
-                    mode="datetime"
-                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                    maximumDate={new Date()}
-                    onChange={(_e, date) => {
-                      if (Platform.OS === 'android') setShowTimePicker(false);
-                      handleTimePickerChange(date);
-                    }}
-                  />
-                )}
-              </>
+              renderTimeRowWithPicker()
             ) : (
               <TimeConfidenceField
                 mode={timeMode}
