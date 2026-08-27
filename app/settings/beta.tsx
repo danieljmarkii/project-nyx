@@ -157,10 +157,14 @@ export default function BetaFeaturesScreen() {
              eligibility is lost while the screen is open or on a stale back-nav /
              deep link: every card self-gates away, and without this block the intro
              would promise an action ("switch one on") with nothing to act on. Not a
-             loading state to skeleton over (CUL-575 doesn't bite): eligibility is
-             config the app resolved to REACH this screen, so zero-eligible here is
-             an answered read — the cohort genuinely no longer includes this
-             account. Honest and forward-looking, promising nothing. */
+             loading state to skeleton over (CUL-575 doesn't bite on the row-gated
+             path: the Settings row that pushes this screen only renders once config
+             resolved eligibility, so zero-eligible here is an answered read). The
+             one soft spot is a cold-start deep link, where this can flash before the
+             cached config lands — a transient every allowlist-gated surface shares,
+             and useBetaShelf's subscription swaps the cards in the moment the read
+             answers (pinned by the revoked-while-mounted test). Honest and
+             forward-looking, promising nothing. */
           <View style={styles.emptyState}>
             <View style={styles.emptyIconTile}>
               <FlaskConical size={22} color={theme.colorTextTertiary} strokeWidth={1.9} />

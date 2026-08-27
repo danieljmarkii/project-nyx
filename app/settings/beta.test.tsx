@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react-native';
+import { act, render } from '@testing-library/react-native';
 import BetaFeaturesScreen from './beta';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
 import {
@@ -85,6 +85,23 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(getByText('More event types')).toBeTruthy();
     expect(getByText(/Switch one on to try it early/)).toBeTruthy();
     expect(queryByText('Nothing to try right now')).toBeNull();
+  });
+
+  it('swaps the cards for the empty state when eligibility is revoked while mounted', () => {
+    // The mid-session eligibility-loss race B-729 exists for — and the one
+    // behavior useAllowlistFlagsRaw exists to provide: a config fetch landing
+    // AFTER mount re-renders the subscribed shelf on its own, no remount, no
+    // manual rerender (code-review follow-up on W1-PR-0).
+    setAllowlist({ widget_enabled: gatedToPm });
+    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+    expect(getByText('Home screen widget')).toBeTruthy();
+    expect(queryByText('Nothing to try right now')).toBeNull();
+
+    act(() => setAllowlist({})); // the next fetch lands with the account removed
+
+    expect(getByText('Nothing to try right now')).toBeTruthy();
+    expect(queryByText('Home screen widget')).toBeNull();
+    expect(queryByText(/Switch one on to try it early/)).toBeNull();
   });
 
   it('a non-eligible beta’s card still self-gates away while others render', () => {
