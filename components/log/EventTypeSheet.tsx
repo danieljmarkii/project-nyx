@@ -14,7 +14,7 @@ import { GroupedEventGrid } from './EventTypePicker';
 import { SimpleEventConfirm } from './SimpleEventConfirm';
 import { summarizeLoggedRecord, type LoggedRecord } from '../../lib/completionCard';
 import { SheetLogBeat } from './SheetLogBeat';
-import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
+import { PetSwitcherPanel } from '../pet/PetSwitcherSheet';
 import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
 
 // The "More events" destination as a bottom sheet over the current tab (B-745). The
@@ -32,10 +32,14 @@ import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
 // the same path the full-screen flow uses, so no data semantics change.
 //
 // Chrome matches SheetShell / PetSwitcherSheet so every sheet dims, grabs and rounds
-// identically. The pet switcher lives on the grid title and reuses PetSwitcherSheet
-// as a SIBLING Modal (not nested). In the confirm/done stages there is no switcher —
-// the pet is fixed at grid→confirm (SimpleEventConfirm names it), which IS write-time
-// identity here since nothing can switch it mid-confirm (multi-pet §6).
+// identically. The pet switcher lives on the grid title and renders PetSwitcherPanel
+// as a LAYER INSIDE this Modal (CUL-662). It used to be a sibling <Modal>, which on
+// iOS is the classic unreliable case — a second Modal presented while one is already
+// up either fails to present or presents detached, leaving `switcherVisible` stuck
+// true with nothing on screen and the sheet untappable until the app was killed. In
+// the confirm/done stages there is no switcher — the pet is fixed at grid→confirm
+// (SimpleEventConfirm names it), which IS write-time identity here since nothing can
+// switch it mid-confirm (multi-pet §6).
 
 interface Props {
   visible: boolean;
@@ -83,7 +87,14 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // a stale confirm/beat.
   useEffect(() => {
     visibleRef.current = visible;
-    if (!visible) { setStage('grid'); setConfirm(null); setBeatSentence(null); setDraft(null); }
+    // switcherVisible resets with the rest: every path that closes the sheet today
+    // already lowers the switcher first, so this is symmetry rather than a live fix
+    // — but a stray `true` surviving here would reopen the switcher over the grid on
+    // the next open, and it belongs with the four resets it sits beside.
+    if (!visible) {
+      setStage('grid'); setConfirm(null); setBeatSentence(null); setDraft(null);
+      setSwitcherVisible(false);
+    }
   }, [visible]);
 
   // ── THE DISCARD GUARD (CUL-612, §5) ───────────────────────────────────────
@@ -111,6 +122,15 @@ export function EventTypeSheet({ visible, onClose }: Props) {
       { text: 'Keep editing', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: onClose },
     ]);
+  }
+
+  // Android back / the OS dismiss gesture. Now that the switcher is a layer inside
+  // THIS Modal rather than its own, the Modal's onRequestClose is the only one there
+  // is — so it has to peel the top layer first, or back would close the whole sheet
+  // out from under an open switcher.
+  function handleRequestClose() {
+    if (switcherVisible) { setSwitcherVisible(false); return; }
+    requestClose();
   }
 
   const petName = activePet?.name ?? 'your pet';
@@ -151,74 +171,95 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   }
 
   return (
-    <>
-      <Modal visible={visible} transparent animationType="slide" onRequestClose={requestClose}>
-        <View style={styles.backdrop}>
-          {/* Drop the scrim while the nested switcher is up (Android bleed-through
-              guard, matching the FAB). During the completion beat the scrim stays but
-              the beat auto-closes; an early dismiss tap is harmless (already written). */}
-          {!switcherVisible && (
-            <Pressable style={styles.scrim} onPress={requestClose} accessibilityLabel="Close" />
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleRequestClose}>
+      <View style={styles.backdrop}>
+        {/* Drop the scrim while the switcher layer is up: the panel brings its own,
+            identical and in the same place, so the dim transfers with no visible
+            change — and never doubles. During the completion beat the scrim stays but
+            the beat auto-closes; an early dismiss tap is harmless (already written). */}
+        {!switcherVisible && (
+          <Pressable style={styles.scrim} onPress={requestClose} accessibilityLabel="Close" />
+        )}
+        <View
+          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}
+          // Assistive-tech containment for the switcher layer. As a sibling Modal the
+          // switcher got this from the platform; as a layer it does not, so the sheet
+          // hides itself while the switcher is up — otherwise a screen reader walks
+          // the event grid behind the scrim and can log for the pet being switched
+          // away from. iOS is covered by the panel's own accessibilityViewIsModal;
+          // this is the Android half, which has to come from out here.
+          importantForAccessibility={switcherVisible ? 'no-hide-descendants' : 'auto'}
+        >
+          <View style={styles.grabber} />
+
+          {stage === 'grid' && (
+            <>
+              <TouchableOpacity
+                style={styles.titleRow}
+                onPress={() => setSwitcherVisible(true)}
+                disabled={!multiPet}
+                activeOpacity={0.7}
+                accessibilityRole={multiPet ? 'button' : undefined}
+                accessibilityLabel={multiPet ? `Log for ${petName} — switch pet` : undefined}
+              >
+                <ThemedText style={styles.title} numberOfLines={1}>
+                  Log for {petName}
+                </ThemedText>
+                {multiPet && (
+                  <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                )}
+              </TouchableOpacity>
+              <ScrollView style={styles.gridScroll} showsVerticalScrollIndicator={false}>
+                <GroupedEventGrid onSelectType={handleSelect} />
+              </ScrollView>
+            </>
           )}
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
-            <View style={styles.grabber} />
 
-            {stage === 'grid' && (
-              <>
-                <TouchableOpacity
-                  style={styles.titleRow}
-                  onPress={() => setSwitcherVisible(true)}
-                  disabled={!multiPet}
-                  activeOpacity={0.7}
-                  accessibilityRole={multiPet ? 'button' : undefined}
-                  accessibilityLabel={multiPet ? `Log for ${petName} — switch pet` : undefined}
-                >
-                  <ThemedText style={styles.title} numberOfLines={1}>
-                    Log for {petName}
-                  </ThemedText>
-                  {multiPet && (
-                    <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
-                  )}
-                </TouchableOpacity>
-                <ScrollView style={styles.gridScroll} showsVerticalScrollIndicator={false}>
-                  <GroupedEventGrid onSelectType={handleSelect} />
-                </ScrollView>
-              </>
-            )}
+          {stage === 'confirm' && confirm && (
+            <SimpleEventConfirm
+              type={confirm.type}
+              petId={confirm.petId}
+              petName={confirm.petName}
+              onBack={() => { setStage('grid'); setConfirm(null); setDraft(null); }}
+              onLogged={handleLogged}
+              onDraftChange={setDraft}
+            />
+          )}
 
-            {stage === 'confirm' && confirm && (
-              <SimpleEventConfirm
-                type={confirm.type}
-                petId={confirm.petId}
-                petName={confirm.petName}
-                onBack={() => { setStage('grid'); setConfirm(null); setDraft(null); }}
-                onLogged={handleLogged}
-                onDraftChange={setDraft}
-              />
-            )}
-
-            {/* `beatSentence` is set in the same handler that sets this stage, so the
-                pair cannot separate; gating on it keeps the beat's required title
-                honest without a fallback string that would re-open the bare-"Logged"
-                door this PR closes. */}
-            {stage === 'done' && beatSentence && confirm && (
-              <SheetLogBeat
-                tone={beatTone}
-                title={beatSentence}
-                // The pet captured at grid→confirm, NOT a re-read active pet: this
-                // names the pet the row was actually written for, and the store's
-                // active pet can have moved on by now (the multi-pet queue-then-switch
-                // guard the completion payloads carry for the same reason).
-                petName={confirm.petName}
-                onDone={onClose}
-              />
-            )}
-          </View>
+          {/* `beatSentence` is set in the same handler that sets this stage, so the
+              pair cannot separate; gating on it keeps the beat's required title
+              honest without a fallback string that would re-open the bare-"Logged"
+              door this PR closes. */}
+          {stage === 'done' && beatSentence && confirm && (
+            <SheetLogBeat
+              tone={beatTone}
+              title={beatSentence}
+              // The pet captured at grid→confirm, NOT a re-read active pet: this
+              // names the pet the row was actually written for, and the store's
+              // active pet can have moved on by now (the multi-pet queue-then-switch
+              // guard the completion payloads carry for the same reason).
+              petName={confirm.petName}
+              onDone={onClose}
+            />
+          )}
         </View>
-      </Modal>
 
-      <PetSwitcherSheet visible={switcherVisible} onClose={() => setSwitcherVisible(false)} />
-    </>
+        {/* The pet switcher, as the top LAYER of this Modal — never a second one.
+            onNavigateAway dismisses the whole sheet because "Add a pet" and
+            "Archived pets" push a screen, and a pushed screen renders BEHIND an RN
+            Modal: without this the owner taps Add a pet and nothing appears to
+            happen. It goes straight to onClose rather than requestClose — the
+            switcher is only reachable from the grid title, so there is never a
+            half-filled confirm to guard here. */}
+        <PetSwitcherPanel
+          visible={switcherVisible}
+          animated
+          style={StyleSheet.absoluteFill}
+          onClose={() => setSwitcherVisible(false)}
+          onNavigateAway={onClose}
+        />
+      </View>
+    </Modal>
   );
 }
 
