@@ -99,7 +99,17 @@ here — W1-PR-3a (client symptom mirrors) starts on its own kickoff.
   broken tree (cough flipped to `hasPhoto: true, confidenceModel: 'artifact',
   v2Only: false`) and went red — 7 failures across the membership, picker, and
   confirm suites — before being trusted green.
-- `code-reviewer` subagent run against the diff (general health + house rules).
+- `code-reviewer` subagent run against the diff — **verdict ship-ready, two
+  low-severity findings, both fixed and pushed in-session (4db2742):** (1) the
+  `/log?type=` deep-link branch skipped the D10 reset `handleTypeSelect`
+  enforces — safe only by coincidence of mount defaults; both entry paths now
+  route through one `resetTimeStateForWitnessed`; (2) the witnessed
+  time-row + inline-picker block had been copy-pasted per step (weight /
+  symptom / the new witnessed branch) — now one `renderTimeRowWithPicker`.
+  Everything else verified held: FL-1 structural isolation, the D10 write
+  payload pins (non-vacuous — asserted on the insert call, not the UI),
+  hasPhoto's existing-photo preservation, no new symptom predicate, write-time
+  pet identity untouched, all guards green.
 - Confirm copy took the nyx-voice pass: all new owner-facing strings are the
   ruled mock labels ("Cough", "Sneeze", "Breathing") or derive through the
   shipped `lib/logCopy` path (History parity); no exclamation marks, no jargon,
