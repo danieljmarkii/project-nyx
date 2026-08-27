@@ -1,7 +1,7 @@
 # Event taxonomy — W1-PR-2: capture — cough + sneeze behind the flag (CUL-675)
 
 **Date:** 2026-08-27
-**Shipped via #TBD.**
+**Shipped via #729.**
 
 ## What this was
 
