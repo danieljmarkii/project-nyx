@@ -39,6 +39,14 @@ Grouped by what a build session would get wrong if it read v1.2 instead:
 
 **Deliberately not done:** writing v1.4 fixes for the other fourteen. The pass's own meta-observation is that a closure written to satisfy a finding acquires load-bearing mechanism nobody then attacks — which is exactly how v1.2's rules 2 and 13 failed. Writing fifteen more unreviewed closures would repeat it. Decision briefs are on CUL-664.
 
+## Landing
+
+**#722 squash-merged to `main` mid-session**, which conflicted this branch — it carried #722's individual commits while `main` had the squashed equivalent. One conflict, the CLAUDE.md taxonomy row (v1.3 vs #722's v1.2). Resolved to v1.3 after a mechanical check that every distinctive marker in #722's row survives in it — then the row gained the **§9b W2 gate**, which it predated, so a session reading only CLAUDE.md learns that W2 is not buildable and gets the generalising rule. Diff against `main` is now exactly the three files above; the stack is gone.
+
+**CI green on the merge head** — `App (typecheck + jest)`, `App (jest, non-UTC timezones)`, `Edge Functions (deno test)`, `mergeable_state: clean`. Worth noting the earlier zero-check-runs reading was the conflict blocking CI from triggering at all, not a pass.
+
+**Linear, at the PM's direction:** CUL-684 sits on a new **M2.5** milestone between W1 and W2 — deliberately its own milestone rather than a task inside W2, so "ahead of W2" cannot become "W2 day one", which is the same close-it-so-the-build-can-proceed pressure that produced the defects. It formally blocks CUL-667; M3 now points at v1.4; the project run order carries it as step 10. A frame-list split was flagged on CUL-665: three of round 3's ten frames render rules §9b breaks, so drawing them now means drawing them twice — the W1-only grid and the rest are unaffected.
+
 ## Not done here
 
 D5 stands — no wave is greenlit. P4 (whether W1's cough chips ship) remains vet-deferred via §15 Q9; Q8 double-checks D13's one-bucket premise. The §17 residue is the FLUTD sign-list breadth and the competitor-claims re-verification.
