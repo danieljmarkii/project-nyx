@@ -380,3 +380,61 @@ describe('log_picker_v2 — log-picker redesign eligibility (B-745 PR 0)', () =>
     expect(coerceAllowlistFlags({ ask_enabled: true }).log_picker_v2).toBeUndefined();
   });
 });
+
+// ── event_types_v2 — the event-taxonomy expansion gate (B-756/CUL-509, W1-PR-0) ──
+// PR 0 is schema-only for consumption (migration 061 seeds it dark: {"enabled":
+// false, "allowlist": []}); nothing renders behind it until W1-PR-2 gates the
+// capture grid's tile list on it. The flag rides the SAME primitive as the Ask +
+// widget + log-picker keys. The contract pinned here is the same two properties
+// every later capture PR depends on: event_types_v2 is EXTRACTED off an
+// app_config SELECT and resolves FAIL-CLOSED (off) for both ship-dark cases —
+// the seed unreached (undefined ⇒ fallback) and a signed-out caller against the
+// dark seed. These back the taxonomy spec's FL-1 (flag-off capture surfaces
+// byte-identical — because the gate is simply off) and FL-2 (seed first).
+describe('event_types_v2 — event-taxonomy expansion eligibility (B-756 W1-PR-0)', () => {
+  it('is part of the unset baseline (undefined until the row is fetched)', () => {
+    expect(ALLOWLIST_FLAGS_UNSET.event_types_v2).toBeUndefined();
+  });
+
+  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
+    const rows = [
+      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
+      { key: 'log_picker_v2', value: { enabled: false, allowlist: ['lp-uid'] } },
+      { key: 'event_types_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
+    ];
+    const flags = extractAllowlistFlags(rows);
+    expect(flags.event_types_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    // The new key does not disturb the other allowlist keys in the same SELECT.
+    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
+    expect(flags.log_picker_v2).toEqual({ enabled: false, allowlist: ['lp-uid'] });
+  });
+
+  it('resolves fail-closed (off) when unset — seed unreached / row absent (FL-1)', () => {
+    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).event_types_v2;
+    expect(unset).toBeUndefined();
+    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
+  });
+
+  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
+    const darkSeed = { enabled: false, allowlist: [] };
+    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
+    // …and off signed-out, never leaking to the fallback.
+    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
+  });
+
+  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
+    const gated = { enabled: false, allowlist: ['pm-uid'] };
+    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
+    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
+    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
+  });
+
+  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
+    const stored = { event_types_v2: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).event_types_v2).toEqual({
+      enabled: false,
+      allowlist: ['pm-uid'],
+    });
+    expect(coerceAllowlistFlags({ ask_enabled: true }).event_types_v2).toBeUndefined();
+  });
+});

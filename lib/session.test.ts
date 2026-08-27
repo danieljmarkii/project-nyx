@@ -115,6 +115,8 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
         widget_enabled: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
         // log_picker_v2 (B-745) is the same allowlist shape — account UUIDs wiped too.
         log_picker_v2: { enabled: false, allowlist: ['bbbbbbbb-cccc-dddd-eeee-ffffffffffff'] },
+        // event_types_v2 (B-756 W1-PR-0) — same allowlist shape, account UUIDs wiped too.
+        event_types_v2: { enabled: false, allowlist: ['12121212-3434-5656-7878-909090909090'] },
       },
     });
     expect(await loadCachedAppConfig()).not.toBeNull();

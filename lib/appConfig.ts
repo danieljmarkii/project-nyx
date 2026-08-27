@@ -57,6 +57,14 @@ export type AppConfigKey = keyof AppConfigValues;
 // zero server component — spec §1/§2), so there is no server-side registration of this
 // key.
 //
+// `event_types_v2` is the event-taxonomy expansion rollout flag (B-756/CUL-509,
+// migration 061 — W1-PR-0) — same shape, same fail-closed resolution. It gates the
+// CAPTURE surfaces only (which tiles the grid offers): `EVENT_TYPES` — the shared
+// record vocabulary — is never flag-gated, so every device can render every row it
+// reads (taxonomy spec §12, FL-1 re-scoped). Client-render-only: the engine/report
+// membership work ships separately and is account-agnostic, so there is no
+// server-side registration of this key either. Nothing consumes it yet (PR 0).
+//
 // Two keys that once lived here have GRADUATED to GA and been retired client-side
 // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
 // uplift, migration 055) and `signals_v2` (the Signals-v2 lanes, migration 057). The
@@ -69,6 +77,7 @@ export const ALLOWLIST_FLAG_KEYS = [
   'ask_general_enabled',
   'widget_enabled',
   'log_picker_v2',
+  'event_types_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -85,6 +94,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_general_enabled: undefined,
   widget_enabled: undefined,
   log_picker_v2: undefined,
+  event_types_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

@@ -1,0 +1,89 @@
+-- ============================================================
+-- event_types_v2 — seed the event-taxonomy expansion rollout flag
+-- (Event Taxonomy Expansion / B-756/CUL-509, W1-PR-0 / CUL-673)
+-- See: docs/nyx-event-taxonomy-requirements.md §12 (the flag — the B-712
+--      two-gate shape) and §13a (the W1 PR chain; this is W1-PR-0).
+-- ============================================================
+-- The taxonomy expansion (new event types beyond the GI core — cough + sneeze
+-- first, W1) ships DARK behind one allowlist flag so every capture PR lands
+-- invisible and the new types can bake on a hand-picked cohort before they reach
+-- anyone else. This migration seeds that single eligibility flag. It is the PR-0
+-- gate the wave queues behind — FL-2 (seed-first): the seed + client registration
+-- + shelf row land BEFORE any consumer.
+--
+--   event_types_v2  Eligibility for the expanded event-type set on the CAPTURE
+--                   surfaces. Resolved client-side by resolveAllowlistFlag
+--                   (lib/appConfig.ts) against the caller's uid. Flag-off => the
+--                   capture grid's tile set and the confirm are byte-identical
+--                   to today (FL-1, §12 — deliberately re-scoped to the capture
+--                   surfaces ONLY); flag-on + opted-in => the new types appear
+--                   in the picker (W1-PR-2). The pre-expansion picker survives
+--                   until a GA call (FL-3/FL-4).
+--
+-- WRITES ARE GATED, READS ARE NOT (§12): `EVENT_TYPES` — the shared record
+-- vocabulary (labels, glyphs, tint) — is NEVER flag-gated, so a household's
+-- flag-off device renders a beta device's cough rows correctly via §8's
+-- degradation contract. The flag gates only which tiles the capture grid offers.
+-- That gate is W1-PR-2's design item; nothing consumes this flag yet (PR 0).
+--
+-- CLIENT-RENDER-ONLY (§12 — `serverCost: false`): like log_picker_v2 (056), this
+-- flag gates only what the CLIENT offers at capture time. The engine/report
+-- membership work (W1-PR-3b) ships separately and is account-agnostic — lane
+-- membership is a property of the deployed function, not of any account's
+-- cohort — so there is deliberately NO server-side registration of this key
+-- (supabase/functions/_shared/flags.ts is a generic resolver and needs no
+-- per-key entry), and the B-712 "server-cost betas must gate server-side" rule
+-- is checked and does not bite here.
+--
+-- THE ALLOWLIST SHAPE (§12, B-712): reuses the experimental-flag primitive
+-- seeded for Ask (037), the widget (054), the Signal uplift (055) and the
+-- log picker (056) verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- Resolution (already implemented, client-side): enabled=true => on for everyone;
+-- else on iff the caller's uid is in allowlist; malformed/absent => fail CLOSED
+-- (off). No new mechanism, no new table, no new column, no new policy — app_config
+-- already exists (030) with its read-only-to-authenticated RLS, which this row
+-- inherits unchanged.
+--
+-- SHIP-DARK (FL-2, default nobody): {"enabled": false, "allowlist": []} means the
+-- expansion is eligible for no one. Creating this row changes nothing an owner can
+-- see. Cohort enablement is a later, recorded config UPDATE (an app_config write,
+-- PM action — the same as the widget's / the log picker's), never a deploy side
+-- effect, and deliberately NOT baked into this seed — the 037/054/055/056 lesson:
+-- a re-applied seed must never reset a live allowlist. Retirement is a removal PR
+-- on an explicit PM GA call (FL-4), never silent. Note W1's GA additionally queues
+-- behind the log_picker_v2 host chain (D12: CUL-662 → CUL-663 → GA) — a gate on
+-- the GA CALL, not on this seed.
+--
+-- Scope: this PR seeds one app_config row (the schema half), isolated per the
+-- CLAUDE.md migration-isolation rule. Riding the SAME PR (the B-745 PR-0
+-- composition, which 056 records the rationale for): the client registration in
+-- lib/appConfig.ts (ALLOWLIST_FLAG_KEYS + ALLOWLIST_FLAGS_UNSET), the
+-- BETA_REGISTRY row + shelf card (lib/betaFeatures.ts, app/settings/beta.tsx),
+-- and the B-747 shelf-reachability fix + B-729 empty state (HR-10: PR-0 carries
+-- the full fix). Safe for the same reasons as 056: none of it is schema, the seed
+-- is inert without the registration, and the shelf card self-gates on an
+-- eligibility that is false for every account under the dark seed. Nothing
+-- CONSUMES the flag yet (§13a W1-PR-0).
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'event_types_v2';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'event_types_v2';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054/055/056 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('event_types_v2', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
