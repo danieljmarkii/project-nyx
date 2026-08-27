@@ -57,8 +57,28 @@ gate).
   empty states (the safety-leaf empty state never reassures and never claims detection that hasn't
   shipped).
 
+## The reaction (same session, same PR, same artifact URL)
+
+The PM read round 3 the same day and ruled all four asks; the page's §10 ledger, the frame notes
+(1·W1 tag, 3d, 6c, §00) and the footer record them, republished over the same URL:
+
+- **1·W1 CONFIRMED** ("works for me") — the W1-only grid as drawn is the design authority for
+  W1-PR-2.
+- **T1** — "I like that as a fallback option… re: 'what to tell the vet'", recorded as: **the script
+  stays the band's one action** (the drawn conservative default); the dial / find-an-emergency-clinic
+  affordance is not adopted now and stays available to W2's build gate. *(Reading stated explicitly on
+  CUL-665 so it is one comment to correct if misread.)*
+- **T2** — PM delegated to the **Product Designer**, who rules **per-open, as drawn**: a reveal that
+  sticks after use lets a picker act silently rewrite a deliberate curation; durable unhiding stays the
+  Tracked-events one-tap, and the reveal's copy may point the nightly re-revealer there.
+- **T3 CONFIRMED** — hold frames 3, 4, 10 (+ 8's RRR half) for CUL-684; they land as round 3b at the
+  same URL. No label or copy vetoes; D8 silence ratifies the rest.
+
+No spec edit still: 1·W1/T1/T2 are mock-level design authority (the mock is the authority per D4's
+precedent); CUL-684's v1.4 pass can pick up T1/T2 as one-liners if the W2 sections want them named.
+
 ## Next
 
-- PM reads round 3: confirms 1·W1, rules T1–T3, vetoes any label.
-- CUL-684 (the §9b rulings) unblocks round 3b — the held frames — and remains the W2 gate either way.
-- CUL-663 (pre-GA QA pass) is the host chain's live step; W1 greenlight (Q2) stays its own ask.
+- CUL-684 (the §9b rulings) is now the only gate on round 3b — and remains the W2 gate either way.
+- CUL-663 (pre-GA QA pass) is the host chain's live step; W1 greenlight (Q2) stays its own ask, with
+  its design authority now complete.
