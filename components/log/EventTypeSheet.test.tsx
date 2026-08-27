@@ -12,6 +12,18 @@ jest.mock('react-native-safe-area-context', () => ({
 // PetSwitcherPanel (the in-Modal switcher layer) reaches supabase + storage at its
 // edges; stub both.
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+// W1 taxonomy expansion (CUL-675) — the sheet reads the event_types_v2 two-gate
+// pair (server allowlist × local opt-in). Both default OFF so every pre-W1 case
+// below renders the unexpanded grid, byte-identical; the expansion describe flips
+// them. Key-checked so a future flag consumer in this tree can't ride these mocks.
+let mockTaxonomyEligible = false;
+let mockTaxonomyOptedIn = false;
+jest.mock('../../hooks/useAppConfig', () => ({
+  useAllowlistFlag: (key: string) => (key === 'event_types_v2' ? mockTaxonomyEligible : false),
+}));
+jest.mock('../../lib/betaFeatures', () => ({
+  useBetaOptIn: (key: string) => (key === 'event_types_v2' ? mockTaxonomyOptedIn : false),
+}));
 // The switcher layer animates in, so it reads the reduced-motion setting; mock the
 // hook rather than let its async AccessibilityInfo read settle outside act().
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
@@ -94,6 +106,8 @@ function seedPets(count: number) {
 describe('EventTypeSheet', () => {
   beforeEach(() => {
     (router.push as jest.Mock).mockClear();
+    mockTaxonomyEligible = false;
+    mockTaxonomyOptedIn = false;
     seedPets(1);
   });
 
@@ -415,3 +429,57 @@ describe('EventTypeSheet — the discard guard', () => {
   });
 });
 
+
+// ── The taxonomy expansion gate (event_types_v2, W1 — CUL-675) ───────────────
+// The sheet is the host surface for the taxonomy tiles (D12): they exist only on
+// the expanded grouped grid, behind the B-712 two-gate shape. Flag-off the grid
+// is byte-identical (FL-1) — pinned here at the HOST, since the picker's own
+// tests pin the grid variants in isolation.
+describe('EventTypeSheet — the event_types_v2 expansion gate', () => {
+  beforeEach(() => {
+    (router.push as jest.Mock).mockClear();
+    mockTaxonomyEligible = false;
+    mockTaxonomyOptedIn = false;
+    seedPets(1);
+  });
+
+  it('flag-off: no Breathing group, no Cough/Sneeze tile', () => {
+    const { queryByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(queryByText('Breathing')).toBeNull();
+    expect(queryByText('Cough')).toBeNull();
+    expect(queryByText('Sneeze')).toBeNull();
+  });
+
+  it('one gate alone is never enough (eligibility without opt-in, opt-in without eligibility)', () => {
+    mockTaxonomyEligible = true;
+    const a = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(a.queryByText('Cough')).toBeNull();
+    a.unmount();
+
+    mockTaxonomyEligible = false;
+    mockTaxonomyOptedIn = true;
+    const b = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(b.queryByText('Cough')).toBeNull();
+  });
+
+  it('both gates on: the Breathing tiles render and Cough confirms IN PLACE like any simple event', () => {
+    mockTaxonomyEligible = true;
+    mockTaxonomyOptedIn = true;
+    const onClose = jest.fn();
+    const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
+    expect(getByText('Breathing')).toBeTruthy();
+    fireEvent.press(getByText('Cough'));
+    expect(getByText('confirm:cough:Nyx')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('logging a cough plays the CALM beat — a symptom commit is acknowledged, never celebrated', () => {
+    mockTaxonomyEligible = true;
+    mockTaxonomyOptedIn = true;
+    const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    fireEvent.press(getByText('Cough'));
+    fireEvent.press(getByText('stub-logged'));
+    expect(getByText('beat:calm')).toBeTruthy();
+  });
+});

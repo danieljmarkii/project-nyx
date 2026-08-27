@@ -6,7 +6,7 @@ const base: EventPhotoInput = {
   remoteUrl: null,
   remoteUrlFull: null,
   transformFailed: false,
-  isMeal: false,
+  offersPhoto: true,
   hasAttachment: false,
 };
 
@@ -54,20 +54,20 @@ describe('resolveEventPhotoDisplay (B-207 — transform→raw fallback + empty-s
     });
   });
 
-  it('shows the add-photo empty state for a photo-less non-meal event (incl. after a photo is removed and all URLs are cleared)', () => {
-    expect(resolveEventPhotoDisplay({ ...base, hasAttachment: false, isMeal: false })).toEqual({
+  it('shows the add-photo empty state for a photo-less event that offers one (incl. after a photo is removed and all URLs are cleared)', () => {
+    expect(resolveEventPhotoDisplay({ ...base, hasAttachment: false, offersPhoto: true })).toEqual({
       photoUri: null,
       showEmptyHero: true,
     });
   });
 
-  it('never shows the empty hero for a meal (its artifact is the food name, not a photo)', () => {
-    expect(resolveEventPhotoDisplay({ ...base, isMeal: true }).showEmptyHero).toBe(false);
+  it('never shows the empty hero on a leaf without a photo affordance (meal — the artifact is the food name; cough/sneeze — no visual evidence, §7)', () => {
+    expect(resolveEventPhotoDisplay({ ...base, offersPhoto: false }).showEmptyHero).toBe(false);
   });
 
-  it('still renders a meal photo when one exists (isMeal suppresses only the empty state, not the photo)', () => {
+  it('still renders an existing photo on such a leaf (offersPhoto suppresses only the BEG, never the evidence — e.g. a swapped other→cough row keeps its photo)', () => {
     expect(
-      resolveEventPhotoDisplay({ ...base, isMeal: true, remoteUrl: 'https://transform', hasAttachment: true }),
+      resolveEventPhotoDisplay({ ...base, offersPhoto: false, remoteUrl: 'https://transform', hasAttachment: true }),
     ).toEqual({ photoUri: 'https://transform', showEmptyHero: false });
   });
 });
@@ -75,8 +75,10 @@ describe('resolveEventPhotoDisplay (B-207 — transform→raw fallback + empty-s
 describe('addPhotoHeroCopy (B-371 — the add-photo hero teaches what a photo is for)', () => {
   const READ_TYPES = ['vomit', 'diarrhea', 'stool_normal'];
   // Every type the quick-log can produce that has NO shipped photo read.
+  // (cough/sneeze never render the hero at all — hasPhoto false — but the copy
+  // fallback must still hold if one is ever reached with them.)
   const NO_READ_TYPES = [
-    'lethargy', 'itch', 'meal', 'medication', 'weight_check', 'other',
+    'lethargy', 'itch', 'meal', 'medication', 'weight_check', 'other', 'cough', 'sneeze',
   ];
 
   it('always keeps "Add photo" as the tap-target action label', () => {

@@ -1,6 +1,8 @@
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { EventIcon } from '../event/EventIcon';
-import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
+import {
+  EVENT_TYPES, EventTypeKey, expandedPickerGroups, type PickerGroup,
+} from '../../constants/eventTypes';
 import { SectionLabel } from '../ui/SectionLabel';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
@@ -12,6 +14,12 @@ import { ThemedText } from '../ui/ThemedText';
 //     snapshot-pinned in EventTypePicker.test.tsx). This is the flag-OFF path.
 //   • grouped=true   → the round-4 grouped grid: three category groups with tinted
 //     circles behind the glyph. Flag-ON (log_picker_v2, eligible && optedIn).
+//   • grouped + expanded → the taxonomy grid (event_types_v2, W1 — CUL-675): the
+//     seven family groups derived from constants (expandedPickerGroups), which is
+//     where the v2Only tiles (Cough, Sneeze) live. expanded=false keeps the
+//     three-group grid byte-identical — the regroup itself rides the flag (§12
+//     FL-1: flag-off capture surfaces are byte-identical; the flag gates the
+//     grid's TILE LIST, never EVENT_TYPES).
 //
 // PR 1 kept the flow: Stool was one tile that opened a Normal/Loose sub-step. PR 2
 // (the sheet) SPLITS that tile inline — a full-width Stool row with Normal / Loose
@@ -28,6 +36,13 @@ import { ThemedText } from '../ui/ThemedText';
 interface Props {
   // false = shipped flat grid (flag-off); true = grouped grid (flag-on).
   grouped: boolean;
+  // event_types_v2 (eligible && optedIn) — the taxonomy expansion. Only read when
+  // grouped: the flat grid never carries a v2 tile at any flag state (the
+  // pre-expansion picker survives until GA, FL-3).
+  expanded?: boolean;
+  // The active pet's `pets.species` — §3 species conditionality renders at the
+  // grid. Only the expanded grid filters (every pre-W1 leaf is 'all').
+  species?: string | null;
   onSelectType: (type: EventTypeKey) => void;
 }
 
@@ -39,10 +54,15 @@ function pickerLabel(key: EventTypeKey): string {
   return key === 'stool_normal' ? 'Stool' : EVENT_TYPES[key].label;
 }
 
-// The grouped grid's category structure (round-4 mock, §03 frame 1). `stool_normal`
-// is present as the SPLIT tile (rendered full-width with Normal/Loose segments);
-// `diarrhea` has no tile of its own — it is the split tile's "Loose" segment, never
-// a top-level tile (mirroring the flat grid, which filters it to the sub-step).
+// The PRE-EXPANSION grouped grid's category structure (round-4 mock, §03 frame 1)
+// — the expanded=false arrangement, kept verbatim so the log_picker_v2-only state
+// stays byte-identical (the taxonomy regroup rides event_types_v2; FL-3 keeps this
+// alive until GA retires it). `stool_normal` is present as the SPLIT tile (rendered
+// full-width with Normal/Loose segments); `diarrhea` has no tile of its own — it is
+// the split tile's "Loose" segment, never a top-level tile (mirroring the flat
+// grid, which filters it to the sub-step). The EXPANDED grid's family structure
+// lives in constants (EVENT_FAMILIES + expandedPickerGroups — §3/HR-4: the family
+// grouping moved out of this component when the entries gained family metadata).
 const PICKER_GROUPS: { label: string; keys: EventTypeKey[] }[] = [
   { label: 'Symptoms', keys: ['vomit', 'lethargy', 'stool_normal', 'itch'] },
   { label: 'Food & care', keys: ['meal', 'medication'] },
@@ -53,11 +73,16 @@ const PICKER_GROUPS: { label: string; keys: EventTypeKey[] }[] = [
 // the requirements). Symptoms rose, meal teal, medication slate, everything else a
 // neutral grey; each pairs the shipped *-Light wash with its event tint so the glyph
 // keeps contrast on the circle. Keyed per type (not per group) so a future regroup
-// can't silently mis-tint a glyph.
-const CATEGORY_TINT: Record<EventTypeKey, { bg: string; fg: string }> = {
+// can't silently mis-tint a glyph. §6 pairing rule (taxonomy spec): a new symptom
+// leaf joins this AND SYMPTOM_TYPES in the same PR — the membership test holds the
+// two to set-equality (± stool_normal, the one documented divergence). Exported for
+// exactly that test.
+export const CATEGORY_TINT: Record<EventTypeKey, { bg: string; fg: string }> = {
   vomit: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   diarrhea: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   stool_normal: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
+  cough: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
+  sneeze: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   lethargy: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   itch: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   meal: { bg: theme.colorEventMealLight, fg: theme.colorEventMeal },
@@ -144,14 +169,41 @@ function fullWidthRegularKeys(keys: EventTypeKey[]): Set<EventTypeKey> {
   return full;
 }
 
-// The grouped grid body — the three category groups, no ScrollView of its own so a
-// host can bound its own scroll (the full-screen picker in log.tsx and the bottom
-// sheet each wrap this in a ScrollView). Exported for EventTypeSheet.
-export function GroupedEventGrid({ onSelectType }: { onSelectType: (type: EventTypeKey) => void }) {
+// The EXPANDED grid's balancing — the confirmed round-3 W1 frame, drawn slightly
+// differently from the promotion rule above: in a group that contains the split
+// Stool tile, a regular tile is NEVER promoted (the frame draws Vomit half-width —
+// the full-width split row anchors the group, so promoting Vomit too would stack
+// Digestion as two heavy full rows). Single-tile groups without a split (Itch,
+// Lethargy, Weight, Other) still promote to full width, exactly as drawn. The
+// legacy grid keeps the plain promotion — its Symptoms group ships with Itch
+// promoted, and expanded=false is byte-identical by contract.
+function expandedFullWidthKeys(keys: EventTypeKey[]): Set<EventTypeKey> {
+  return keys.includes('stool_normal') ? new Set() : fullWidthRegularKeys(keys);
+}
+
+// The grouped grid body — no ScrollView of its own so a host can bound its own
+// scroll (the full-screen picker in log.tsx and the bottom sheet each wrap this in
+// a ScrollView). Exported for EventTypeSheet. expanded=false renders the
+// pre-expansion three-group arrangement verbatim; expanded=true derives the family
+// groups from constants (the only place a v2Only tile — Cough, Sneeze — can render).
+export function GroupedEventGrid({
+  onSelectType,
+  expanded = false,
+  species,
+}: {
+  onSelectType: (type: EventTypeKey) => void;
+  expanded?: boolean;
+  species?: string | null;
+}) {
+  const groups: PickerGroup[] = expanded
+    ? expandedPickerGroups(species, EVENT_TYPES)
+    : PICKER_GROUPS;
   return (
     <View style={styles.groupedContent}>
-      {PICKER_GROUPS.map((group) => {
-        const fullWidthKeys = fullWidthRegularKeys(group.keys);
+      {groups.map((group) => {
+        const fullWidthKeys = expanded
+          ? expandedFullWidthKeys(group.keys)
+          : fullWidthRegularKeys(group.keys);
         return (
           <View key={group.label} style={styles.group} testID={`event-group-${group.label}`}>
             <SectionLabel label={group.label} header style={styles.groupLabel} />
@@ -185,22 +237,26 @@ export function GroupedEventGrid({ onSelectType }: { onSelectType: (type: EventT
   );
 }
 
-export function EventTypePicker({ grouped, onSelectType }: Props) {
+export function EventTypePicker({ grouped, expanded = false, species, onSelectType }: Props) {
   if (grouped) {
     return (
       <ScrollView showsVerticalScrollIndicator={false}>
-        <GroupedEventGrid onSelectType={onSelectType} />
+        <GroupedEventGrid onSelectType={onSelectType} expanded={expanded} species={species} />
       </ScrollView>
     );
   }
 
   // Flag-off: the shipped flat grid, verbatim (order = EVENT_TYPES order, diarrhea
   // filtered to its sub-step, no photo tile). Kept byte-identical — snapshot-pinned.
+  // v2Only entries are filtered STRUCTURALLY, not by flag: the taxonomy tiles live
+  // only on the expanded grouped grid (their host surface, D12), so the flat grid
+  // never grows past its eight tiles at any flag state — which is what keeps
+  // EVENT_TYPES safely ungated (§12 FL-1) while the pin below stays honest.
   return (
     <ScrollView contentContainerStyle={styles.typeGrid} showsVerticalScrollIndicator={false}>
       {(Object.entries(EVENT_TYPES) as [EventTypeKey, (typeof EVENT_TYPES)[EventTypeKey]][])
         // diarrhea is accessible via the stool-type sub-step; hide it from the top-level grid
-        .filter(([key]) => key !== 'diarrhea')
+        .filter(([key, cfg]) => key !== 'diarrhea' && !cfg.v2Only)
         .map(([key]) => (
           <TouchableOpacity
             key={key}

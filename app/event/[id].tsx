@@ -577,6 +577,12 @@ export default function EventDetailScreen() {
   // Meals' clinical artifact is the food name, not a photo — never beg for one
   // (Dr. Chen + Jordan, on-device review). If a meal has a photo, the hero renders.
   const isMeal = event.event_type === 'meal';
+  // §7 per-leaf photo affordance (CUL-675): the empty Add-photo hero renders only
+  // on a leaf that carries one (EVENT_TYPES hasPhoto — meal false per the ruling
+  // above; cough/sneeze false, no visual evidence). An unknown type — a future
+  // wave's leaf reaching this build — degrades to the generic offer (?? true),
+  // per the §8 contract.
+  const offersPhoto = EVENT_TYPES[event.event_type as EventTypeKey]?.hasPhoto ?? true;
   // B-325 — show the retroactive "add a med given with this" entry only on a real vehicle:
   // a meal/treat food (never 'other'/unclassified), matching the completion card's showIntake
   // gate. A dose event's own screen never shows it — that's direction ② (held).
@@ -591,7 +597,7 @@ export default function EventDetailScreen() {
     remoteUrl,
     remoteUrlFull,
     transformFailed,
-    isMeal,
+    offersPhoto,
     hasAttachment: !!attachment,
   });
   // Medication dose display (B-117 PR 8). Generic name leads (the clinical
