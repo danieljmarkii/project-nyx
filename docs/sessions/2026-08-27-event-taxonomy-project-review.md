@@ -1,7 +1,7 @@
 # 2026-08-27 — Event Taxonomy Expansion: full product-team project review (CUL-509)
 
 **Mode:** DISCOVERY (PM-requested). *"I'm concerned about scope and fidelity of the project… review the project through the lens of the product team and personas, and ensure the plan and project is on the right track."*
-**Outcome:** review record shipped via #TBD (docs-only); findings routed to the Linear per-issue trail (CUL-509, CUL-684, CUL-676, CUL-677 comments; CUL-667 description corrected; CUL-673–677 added to the project board).
+**Outcome:** review record shipped via #725 (docs-only); findings routed to the Linear per-issue trail (CUL-509, CUL-684, CUL-676, CUL-677 comments; CUL-667 description corrected; CUL-673–677 added to the project board).
 
 ## Method
 
