@@ -1,0 +1,50 @@
+-- ============================================================
+-- event_type — add 'cough' + 'sneeze' (taxonomy wave 1)
+-- See: docs/nyx-event-taxonomy-requirements.md §3 (leaf = enum value),
+--      §13/§13a (wave plan; this is W1-PR-1), CUL-674 (this PR),
+--      CUL-666 (the W1 umbrella), docs/event-taxonomy-hard-review-2026-08.md
+--      HR-8 (the mechanics note restated below).
+-- ============================================================
+-- Wave 1 of the event-taxonomy expansion (B-756/CUL-509, D1): the first
+-- respiratory leaves. The wedge's own record demands cough — the PM's cat
+-- has a ~9-week cough course living as `other` rows that ⑦ chronicity
+-- could read if the type existed; sneeze ships alongside on family
+-- coherence (D1). Data stays leaf-grain on this one enum (D2 — families
+-- are presentation metadata, never schema), so a new leaf is exactly this:
+-- an additive ADD VALUE, nothing else.
+--
+-- Zero visible effect until later PRs consume the values: capture ships
+-- in W1-PR-2 (flag-gated), engine/report membership in W1-PR-3a/3b, and
+-- the reviewed `other`-row swap in W1-PR-4. `event_ai_analysis.incident_type`
+-- is typed event_type (013:159), so it extends automatically — no
+-- companion change. Local SQLite mirrors event_type as TEXT, so there is
+-- no local migration. No CHECK constraint, trigger, or policy enumerates
+-- event_type values (verified at the hard review and re-verified this PR).
+--
+-- Placement: appended at the end (after 'other'), deliberately without
+-- AFTER — unlike food_format (014), enum order is not a display order
+-- here; constants/eventTypes.ts owns picker presentation, and W1-PR-2's
+-- Respiratory group is presentation metadata (§3).
+--
+-- Mechanics, said out loud so nobody collapses the PRs (HR-8): a value
+-- added by ALTER TYPE ... ADD VALUE cannot be *used* in the transaction
+-- that adds it (the house-documented caveat — 014's header, restated at
+-- 038:72-75). The W1-PR-1 / W1-PR-4 split already guarantees safety — the
+-- swap script runs in a much later transaction — but that safety is a
+-- property of the split, so collapsing this migration into the swap PR
+-- to save a step reintroduces the failure.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (additive enum values only; no column/data change)
+--   Rollback:     none in place — Postgres cannot DROP an enum value,
+--                 which is the reason values are added only per shipping
+--                 wave, never pre-seeded (§3). Unused values are harmless;
+--                 a true reversal requires the full type-recreation dance
+--                 and is only worthwhile if rows already use them.
+--   Backfill:     N/A — no existing rows change. (The W1-PR-4 swap of
+--                 reviewed `other` rows is deliberately NOT a backfill of
+--                 this migration; it is its own PM-reviewed, per-row PR.)
+-- ============================================================
+
+ALTER TYPE event_type ADD VALUE IF NOT EXISTS 'cough';
+ALTER TYPE event_type ADD VALUE IF NOT EXISTS 'sneeze';
