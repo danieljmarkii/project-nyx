@@ -87,7 +87,14 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // a stale confirm/beat.
   useEffect(() => {
     visibleRef.current = visible;
-    if (!visible) { setStage('grid'); setConfirm(null); setBeatSentence(null); setDraft(null); }
+    // switcherVisible resets with the rest: every path that closes the sheet today
+    // already lowers the switcher first, so this is symmetry rather than a live fix
+    // — but a stray `true` surviving here would reopen the switcher over the grid on
+    // the next open, and it belongs with the four resets it sits beside.
+    if (!visible) {
+      setStage('grid'); setConfirm(null); setBeatSentence(null); setDraft(null);
+      setSwitcherVisible(false);
+    }
   }, [visible]);
 
   // ── THE DISCARD GUARD (CUL-612, §5) ───────────────────────────────────────

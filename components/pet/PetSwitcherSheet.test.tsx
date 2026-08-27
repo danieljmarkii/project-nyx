@@ -32,6 +32,7 @@ import { Modal } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { Animated } from 'react-native';
+import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { PetSwitcherPanel, PetSwitcherSheet } from './PetSwitcherSheet';
 import { usePetStore } from '../../store/petStore';
@@ -121,12 +122,37 @@ describe('PetSwitcherPanel — motion budget', () => {
   it('animates in when used as a layer, and not at all under the Modal wrapper', () => {
     const read = durations();
     render(<PetSwitcherPanel visible animated onClose={jest.fn()} />);
-    expect(read()).toEqual([200]);
+    expect(read()).toEqual([theme.durationFast]);
     jest.restoreAllMocks();
 
     const read2 = durations();
     render(<PetSwitcherPanel visible onClose={jest.fn()} />); // wrapper case: Modal slides
     expect(read2()).toEqual([]);
+    jest.restoreAllMocks();
+  });
+
+  // The panel stays MOUNTED between opens (the host gates on `visible`, it does not
+  // unmount), so the animated value survives a close still holding its END state. A
+  // passive effect runs after paint, so without a reset on the way out the second
+  // open paints one frame fully-open before snapping back to replay — a jump on
+  // every open after the first, and none on the first, which is what hid it. This
+  // asserts the mechanism (the value is returned to the entrance's start frame when
+  // the panel goes away), because the offending frame is one React commit wide and
+  // RTL flushes effects before a test can observe it.
+  it('returns to the entrance start frame on close, so a re-open does not flash', () => {
+    const setValue = jest.spyOn(Animated.Value.prototype, 'setValue');
+    const props = { animated: true as const, onClose: jest.fn() };
+    const view = render(<PetSwitcherPanel visible {...props} />);
+
+    setValue.mockClear();
+    view.rerender(<PetSwitcherPanel visible={false} {...props} />);
+    expect(setValue).toHaveBeenCalledWith(0);
+
+    // ...and the re-open still animates, rather than the reset being mistaken for
+    // "the entry was skipped".
+    const read = durations();
+    view.rerender(<PetSwitcherPanel visible {...props} />);
+    expect(read()).toEqual([theme.durationFast]);
     jest.restoreAllMocks();
   });
 

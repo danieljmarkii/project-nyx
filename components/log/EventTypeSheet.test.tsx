@@ -9,7 +9,8 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
-// PetSwitcherSheet (nested) reaches supabase + storage at its edges; stub both.
+// PetSwitcherPanel (the in-Modal switcher layer) reaches supabase + storage at its
+// edges; stub both.
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 // The switcher layer animates in, so it reads the reduced-motion setting; mock the
 // hook rather than let its async AccessibilityInfo read settle outside act().

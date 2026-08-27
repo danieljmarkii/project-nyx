@@ -34,10 +34,11 @@ interface PetSwitcherPanelProps extends PetSwitcherSheetProps {
 }
 
 const ROW_AVATAR = 36;
-// A layer arriving ON TOP of an already-open sheet, not from the screen edge, so
-// it rises a short distance rather than its own height — which also means it never
-// needs a measured height it does not have at first paint.
-const RISE_PX = 24;
+// A layer arriving ON TOP of an already-open sheet, not from the screen edge, so it
+// rises one spacing step rather than its own height — which also means it never needs
+// a measured height it does not have at first paint. Off the spacing scale rather
+// than a bare number so the rise keeps the app's rhythm if that scale ever moves.
+const RISE = theme.space3;
 
 // The switcher's CONTENT — scrim + sheet, with no Modal of its own.
 //
@@ -73,15 +74,25 @@ export function PetSwitcherPanel({
   // callback, and the thing the selection just changed — the title underneath, now
   // naming the new pet — is revealed immediately instead of behind a fade.
   //
+  // The reset on the way OUT is what makes a re-open look like the first one. The
+  // panel stays MOUNTED between opens — the host renders it unconditionally and gates
+  // on `visible` — so `anim` survives a close still holding 1. A passive effect runs
+  // AFTER paint, so without this the second open would paint one frame at the END
+  // state before the effect snapped it back to replay: a visible jump on every open
+  // after the first, and none on the first, which is what makes it easy to miss.
+  // `setValue` stops any animation in flight, so an interrupted entry lands here too.
+  //
   // The SCRIM does not animate. It stands in for the host's own scrim (which the
   // host drops while this is up, so the dim never doubles); fading it would dip the
   // dim to zero and flash the undimmed screen at the moment of transfer.
   useEffect(() => {
-    if (!animated || !visible) return;
+    if (!animated) return;
     anim.setValue(0);
+    if (!visible) return;
     Animated.timing(anim, {
       toValue: 1,
-      duration: reducedMotion ? 0 : 200, // reduced motion → straight to the static frame
+      // Matches SheetLogBeat, the other layer that arrives inside a sheet.
+      duration: reducedMotion ? 0 : theme.durationFast, // reduced motion → the static frame
       useNativeDriver: true,
     }).start();
   }, [animated, visible, reducedMotion, anim]);
@@ -146,7 +157,7 @@ export function PetSwitcherPanel({
         style={[
           styles.sheet,
           { paddingBottom: insets.bottom + theme.space2 },
-          { opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [RISE_PX, 0] }) }] },
+          { opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [RISE, 0] }) }] },
         ]}
       >
         <View style={styles.grabber} />

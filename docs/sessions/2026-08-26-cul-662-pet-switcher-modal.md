@@ -99,9 +99,57 @@ auth are seeded and the row actually exists.
 **The device sweep (CUL-663) remains the real proof that it presents.** This diff makes the bad
 structure impossible; it cannot make a claim about UIKit.
 
+## What the reviews caught
+
+Two subagent passes ran against the diff. Both found things the build conversation was too
+anchored to see, which is the point of running them in isolation.
+
+**`code-reviewer` — one real bug, and it was mine.** The entry animation had a **re-open flash**.
+`PetSwitcherPanel` stays *mounted* between opens (the host renders it unconditionally and gates on
+`visible`), so `anim` survived a close still holding `1`. A passive effect runs **after** paint, so
+the second open painted one frame at the *end* state before the effect snapped it back to replay —
+a visible jump on every open after the first, and **none on the first**, which is exactly what hid
+it. Fixed by resetting on the way out, so the value at rest while hidden is always the entrance's
+start frame. The regression test was run against the unfixed effect first and confirmed red
+(`Number of calls: 0`) — same rule that was applied to the Modal guard.
+
+Three house-rule finds, all applied: a bare `200` where the theme has `durationFast/Medium/Slow`
+(now `theme.durationFast`, matching `SheetLogBeat` — the other layer that arrives inside a sheet);
+a bare `24` rise (now `theme.space3`); and `switcherVisible` missing from the sheet's reset block,
+which is symmetry rather than a live fix but belongs beside the four resets it sits next to.
+
+The reviewer independently reproduced the Modal guard's red-before-fix result by checking the
+pre-fix commit into a worktree and running the new test file against it, rather than taking the
+claim on trust. Verdict: fix-before-merge on the flash; no adversarial pass owed (presentation
+structure, not correlation/detection/escalation logic).
+
+**`pm-feature-review` — SHIP-SHAPED on three of four flows**, and it confirmed the wrong-pet class
+is closed *at the mechanism*: the switch and the retitle land on the same tick, the pet is captured
+at grid→confirm and never re-read, the confirm header names it, and the beat names it from the
+captured value. It also ruled the instant dismissal **correct menu behaviour — keep it**, on the
+grounds that an exit animation would delay exactly the fact the owner needs.
+
+Flow 2 came back **NEEDS-WORK**, and it is the finding this fix *creates* rather than merely finds
+near: with the switcher working, "Add a pet" is reachable, and `app/add-pet.tsx` calls
+`addPet(data, { select: true })` — so one mis-tap inside a log flow loses the log intent **and**
+silently changes which pet the whole app is about. Both halves verified in the code. The structural
+half is handled here (`onNavigateAway`); whether those management rows belong in a capture surface
+at all is a product call with three defensible options, so it was filed with a decision brief rather
+than decided in this PR.
+
+Six issues filed, all into the **M0 — Host gate** milestone beside CUL-663 so the pre-GA sweep meets
+them: **CUL-678** (Add-a-pet in a capture surface — High, `Waiting on PM`), **CUL-679** (pet avatar
+in the title row — High; after a switch the only thing that changes is one word, ~300pt from the
+finger and under it, on the app's one pet-identity affordance without an avatar), **CUL-680**
+(scoped-vs-global switch semantics — Medium, `Waiting on PM`), **CUL-681** (zero-pet tile tap closes
+silently), **CUL-682** (three device-look nits), **CUL-683** (CUL-612's back-chevron exemption no
+longer covers all its traffic). Nothing was folded into this PR — CUL-679 in particular is a design
+change to a mock-locked surface and owes a mock round.
+
 ## Verification
 
-`tsc --noEmit` clean · `jest` 269 suites / 5897 tests green. The pre-existing `useReducedMotion`
+`tsc --noEmit` clean · `jest` 269 suites / 5898 tests green · CI green on all three jobs
+(including the non-UTC timezone suite). The pre-existing `useReducedMotion`
 act-warning noise in `TrialCompletionSheet` / `NamedCompletionCard` was checked against `main`
 (20 occurrences both ways) and is not from this change.
 
