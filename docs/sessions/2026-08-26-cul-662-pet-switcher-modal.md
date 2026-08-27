@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-26
 
-Shipped via #724 (draft). Fix + tests, no schema, no flag change.
+Shipped via #724. Fix + tests, no schema, no flag change.
 
 ## The defect
 
