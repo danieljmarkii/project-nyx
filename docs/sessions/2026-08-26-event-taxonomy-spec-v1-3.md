@@ -29,9 +29,15 @@ Grouped by what a build session would get wrong if it read v1.2 instead:
 - **§9's free-rider row rewritten.** It still claimed exposing `scratch`/`skin_reaction` was "zero engine work" — false twice over after D13 (scratch is not exposed) and HR-22 (the one list enrols a leaf in four more lanes).
 - **CLAUDE.md's row net out −1,576 chars** while carrying more current information: v1.2's "headlines that bind the build until v1.3 lands" were a stopgap, and they now live in the spec.
 
-## Review
+## Review — the adversarial pass returned FAIL, and it matters
 
-`adversarial-reviewer` run against §9a as rewritten — targeted at what the rewrite *introduced* rather than what it fixed, since the arbitration table's cell values, the window-anchoring rule and the monotonicity rule were written this session and are not in the review's prose. Findings and disposition are recorded on CUL-664 and in the PR.
+`adversarial-reviewer` run against §9a **as rewritten**, targeted at what the rewrite introduced rather than what it fixed. **Verdict FAIL: 15 defects, six of the silence-on-the-sick class.** Recorded in the spec as **§9b**, marked BLOCKING on W2, with inline ⚠ pointers on the six affected rules so nobody reads a rule without its finding. Its three load-bearing code claims were independently verified before recording (`DEDUP_WINDOW_MS = 60_000` and its anchor-to-first-member shape; `isStrictlyDecreasing` + `runLength` on the borrowed lane; **`logged_by` exists in no migration**).
+
+**The part that changes what happens next: five of the six top findings attack the APPROVED CLOSURES, not this session's drafting.** HR-12's "a marked Yes resets the window" and "a late Yes clears it", HR-15's "cluster = first qualifying row id", HR-19's monotone-rise shape and HR-11's dedup/count split were transcribed verbatim as approved — and each was broken. So they are not fixable by a writing session; reversing an approved closure is a PM call. Findings 4, 11, 13, 15 are v1.3's own gaps; **11 was fixed here** (the binding fixture asserted "a **high** trip count" — an adjective a wide-window build satisfies with 5 of 15 rows, i.e. a green test over the exact regression it exists to prevent).
+
+**The organising finding.** §9a rule 4 is already ratified — *the floor governs the TIER, never the EXISTENCE, of the response*. Three closures violate it by building an evidence-quality escape hatch (a marked "yes", a confirmed sleep, an answered chip) and letting it gate **whether the app speaks at all**; in each case the sickest animal is the one that cannot pass through the hatch. The partially-obstructed cat passing drops, the CHF dog who pants at rest and so can never yield a sleeping count, and the covered-box household that can never answer the chip are the same defect in three costumes. Generalised: **no evidence-quality guard may gate the existence of a response — only its wording and its tier.**
+
+**Deliberately not done:** writing v1.4 fixes for the other fourteen. The pass's own meta-observation is that a closure written to satisfy a finding acquires load-bearing mechanism nobody then attacks — which is exactly how v1.2's rules 2 and 13 failed. Writing fifteen more unreviewed closures would repeat it. Decision briefs are on CUL-664.
 
 ## Not done here
 
