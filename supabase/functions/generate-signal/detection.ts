@@ -2345,12 +2345,29 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     firmSpanDays: 42,
     // ── Per-type floors (B-755 contract; W1-PR-3b session 2, CUL-676) ──────────
     //
+    // ⚠️ PROVISIONAL — PENDING THE Dr. CHEN RULING (CUL-687). These numbers decide when the
+    // app tells an owner to contact a vet about a cough. They were set by a build session
+    // against a noise model and a sensitivity pair; the PM ruled (2026-08-28) that the
+    // calibration is the Dr. Chen lens's call, not the build's. Under the DoD that is not a
+    // sign-off — it is a falsification pass that must state the counterexample it tried and
+    // why the value held. Do not read the reasoning below as a ratified clinical position:
+    // it is the argument being PUT to that review. The `generate-signal` deploy gate names
+    // this alongside the client-build gate.
+    //
     // OWNED CALIBRATION, NOT GUIDELINE AUTHORITY. The 2026-08-14 verification pass
     // searched for a numeric veterinary chronic-cough threshold and found none: the
     // widely-quoted "≥4 weeks" is HUMAN PAEDIATRIC guidance, and the veterinary
     // chronic-bronchitis convention (~2 months) is a DIAGNOSTIC label, not an
-    // ask-the-owner-to-call-someone boundary. So these numbers are a product/Dr. Chen
-    // calibration, and the copy must never cite a guideline for them.
+    // ask-the-owner-to-call-someone boundary. So the copy must never cite a guideline.
+    //
+    // WHY 4 IS THE SAFE PLACE TO WAIT, rather than reverting to the global 6 until the
+    // ruling lands: the two error directions are not symmetric. At 4 the lane over-fires
+    // on a noise model (~9.2%, measured); at 6 it goes SILENT on the once-weekly and
+    // fortnightly courses chronic bronchitis and feline asthma actually present as (also
+    // measured — both fire only at 4). A safety lane that fails toward silence is the
+    // failure this codebase treats as unacceptable, so the provisional value errs toward
+    // speaking. That is a deliberate choice about which way to be wrong while waiting,
+    // not a claim that 4 is correct.
     //
     // Why cough differs from the globals at all: the global floors were calibrated
     // against a noise model for signs that have a real BENIGN BASE RATE — an occasional
