@@ -2120,6 +2120,116 @@ Deno.test('detectChronicity — property: an occasional vomiter (meals logged) f
   assert.ok(rate < 0.02, `occasional-vomiter fire rate ${(rate * 100).toFixed(3)}% must be ≪ small (< 2%)`)
 })
 
+// Fixture 14b — THE SAME GATE, SWEPT FOR COUGH (W1-PR-3b session 2, CUL-676).
+//
+// Why this exists: fixture 14 is the calibration gate that drove vomit's floor 4→6, and it
+// only ever sweeps `vomit`. So the per-type cough floor (minEpisodes 4) shipped with NO
+// property gate at all — the adversarial pass found the hole, not a test. A per-type floor
+// must be swept by the same instrument that set the global one, or "we calibrated it" is a
+// claim about a different symptom.
+//
+// THE TRADE, MEASURED (20,000 trials each, same null as fixture 14):
+//   minEpisodes 4 → 9.44% · 5 → 4.13% · 6 → 1.38%
+//   weekly×4/21d and q2wk×4/42d courses:  FIRE at 4 · SILENT at 5 AND 6.
+// The cliff is sharp and it cuts both ways: 4 is the ONLY setting that catches the
+// intermittent courses chronic bronchitis and feline asthma actually present as, and it is
+// the only one whose noise rate is near the ~9.9% the D2 ruling REJECTED for vomit.
+//
+// THE NUMBER IS ONLY AS GOOD AS THE NULL, AND THE NULL IS THE OPEN QUESTION. This model
+// assumes ~2 sporadic, meaningless cough logs per 56 days — which is precisely the premise
+// the floor's own rationale disputes ("a recurring cough has no benign base rate"). If that
+// rationale holds, most of the 9.44% are real findings and this is not a false-positive rate;
+// if the cough key instead collects reverse sneezing, one-off gags and misclassified
+// retching, the null holds and 4 is under-floored. That is a Dr. Chen question about owner
+// logging behaviour, not an arithmetic one — it is on CUL-676 as the live calibration gate.
+//
+// So this test pins BOTH SIDES at the shipped floor rather than asserting a bound nobody has
+// earned: the noise rate must not drift upward unnoticed, AND the sensitivity the lower floor
+// was chosen for must actually be there. Raising the floor fails the sensitivity half, which
+// is the point — the cost becomes visible in the same run as the benefit.
+Deno.test('detectChronicity — property: the COUGH floors, per species, both sides pinned', () => {
+  // RE-AIMED BY THE Dr. CHEN RULING (2026-08-28, CUL-687). The floor is no longer one
+  // number: dogs sit at 5 and cats at 4, because the cough BUTTON also collects reverse
+  // sneezing in dogs — paroxysmal, recurrent, owner-named "coughing", clinically nothing —
+  // and cats have no equivalent benign phenotype at this cadence. So the trade is measured
+  // PER SPECIES, and the accepted cost of the dog floor is visible in the same run as its
+  // benefit rather than argued for in a comment.
+  const noiseRate = (pet: PetContext): number => {
+    let seed = 0xc0ffee >>> 0
+    const rng = (): number => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 0x100000000
+    }
+    const TRIALS = 20000
+    let fires = 0
+    for (let t = 0; t < TRIALS; t++) {
+      const symptomEvents: SymptomEvent[] = []
+      const mealEvents: MealEvent[] = []
+      for (let d = 0; d < 56; d++) {
+        mealEvents.push(mealAgo(d))
+        if (rng() < 2 / 56) {
+          symptomEvents.push({
+            id: `c-${t}-${d}`,
+            type: 'cough',
+            occurredAt: new Date(Date.parse(NOW) - d * DAY_MS + Math.floor(rng() * 24) * 3_600_000).toISOString(),
+          })
+        }
+      }
+      if (detectChronicity(input({ pet, symptomEvents, mealEvents })).length > 0) fires++
+    }
+    return fires / TRIALS
+  }
+
+  const dogRate = noiseRate(dog)
+  const catRate = noiseRate(cat)
+  console.log(
+    `detectChronicity occasional-COUGH fire rate — dog: ${(dogRate * 100).toFixed(3)}% · cat: ${(catRate * 100).toFixed(3)}%`,
+  )
+
+  // PROVISIONAL bounds — drift alarms, not ratified targets. Each sits above its measured
+  // value with headroom, and the dog bound is TIGHTER on purpose: that gap IS the ruling, so
+  // an edit that quietly equalises the two species fails here rather than passing silently.
+  //
+  // MEASURED AT THE RULED FLOORS: dog ~4.7%, cat ~11.1%. The cat figure ROSE from ~9.4% and
+  // the reason is not drift — it is Q4's `ongoingRecencyDays` 14 → 28, which widens the
+  // window in which a course still counts as ongoing, so more of the null qualifies. That is
+  // the priced cost of refusing to read a fortnight's silence as resolution on a
+  // relapsing-remitting disease, and it was accepted with the ruling. Recorded here because
+  // the next reader will otherwise see a number climb and assume something slipped.
+  assert.ok(dogRate < 0.07, `dog cough fire rate ${(dogRate * 100).toFixed(3)}% drifted above its bound`)
+  assert.ok(catRate < 0.12, `cat cough fire rate ${(catRate * 100).toFixed(3)}% drifted above its bound`)
+  assert.ok(dogRate < catRate, 'the dog floor must remain the stricter of the two')
+
+  // The sensitivity half — the intermittent courses chronic bronchitis and feline asthma
+  // actually present as. They fire for a CAT and are SILENT for a DOG, and that asymmetry is
+  // the ruled, ACCEPTED cost of the reverse-sneezing confounder, not a defect.
+  const meals: MealEvent[] = []
+  for (let d = 0; d <= 56; d++) meals.push(mealAgo(d))
+  // The extra hour is load-bearing: the lookback is half-open [start, now), so a d=0 event
+  // lands exactly ON `now` and falls out of the window — the trap that ate two drafts.
+  const course = (days: readonly number[]): SymptomEvent[] =>
+    days.map((d, i) => ({
+      id: `k${i}`,
+      type: 'cough' as const,
+      occurredAt: new Date(Date.parse(NOW) - d * DAY_MS - 3_600_000).toISOString(),
+    }))
+  for (const [label, days] of [
+    ['once-weekly ×4 over 3 weeks', [0, 7, 14, 21]],
+    ['fortnightly ×4 over 6 weeks', [0, 14, 28, 42]],
+  ] as const) {
+    assert.equal(
+      detectChronicity(input({ pet: cat, symptomEvents: course(days), mealEvents: meals })).length,
+      1,
+      `cat: a ${label} cough course must fire`,
+    )
+    assert.equal(
+      detectChronicity(input({ pet: dog, symptomEvents: course(days), mealEvents: meals })).length,
+      0,
+      `dog: a ${label} cough course is the ACCEPTED cost of the reverse-sneezing floor`,
+    )
+  }
+})
+
 // ── Detector ⑦: composition & ranking (B-182 PR 2) ───────────────────────────
 //
 // The §7 composition/ranking fixtures (11–13) + the B-188 phase-stability regression. These

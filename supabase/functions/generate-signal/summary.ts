@@ -290,6 +290,21 @@ function topSymptomThisMonth(
   for (const s of symptomEvents) {
     const ms = Date.parse(s.occurredAt)
     if (!Number.isFinite(ms) || ms < startMs || ms >= endMs) continue
+    // NAMING GATE — an EXPLICIT session-2 decision, not an inherited one (CUL-676; the
+    // adversarial finding on #731). This keys on the LABEL MAP, not on a lane cell, so
+    // widening the fetch to cough silently made the month summary able to name a sign that
+    // enrols in no lane and passes through no §9 arbitration. Ruled: cough is IN, and the
+    // reason is the same "activity is activity" that put it in the logged-day denominators
+    // (R3). This clause is a descriptive count of the owner's OWN logs — no trend, no
+    // cause, no comparison — so naming the sign they logged most is simply true. Excluding
+    // it would be worse than including it: on the live record the summary would name the 3
+    // itches and stay silent about the 14 coughs, i.e. print a "most-logged" claim that is
+    // not the most-logged thing. A zone that advertises what it covers and then omits the
+    // biggest item in it is the B-494 class.
+    //
+    // `sneeze` is NOT reachable here despite having a label: it is not in the engine's
+    // fetch union, so no sneeze row is ever in `symptomEvents`. That is the fetch's
+    // decision, correctly made once, and this gate does not second-guess it.
     if (!(s.type in SYMPTOM_LABEL)) continue
     counts.set(s.type, (counts.get(s.type) ?? 0) + 1)
   }
@@ -307,9 +322,23 @@ function topSymptomThisMonth(
 function descriptiveSymptomClause(type: string, count: number, petName: string): string {
   // Descriptive count only — no prior, no trend (reflection ③ / worsening ④ own trends),
   // no reassurance, no cause. Honest absolute count from the card the owner can scroll.
+  //
+  // COUNTS LOGS, AND NOW SAYS SO (HR-7, CUL-676). This said "{n} episodes of {label}"
+  // while `topSymptomThisMonth` counts RAW ROWS — its own docstring says so ("never
+  // episode-collapsed"). That is the three-way unit collision §10.2a names: the same
+  // morning, this summary would say "14 episodes" off raw rows while the ⑦ card said
+  // "9 episodes across 5 of the last 8 weeks" off the 3-hour chain, and the vet report's
+  // frequency table said something third off minute-deduped entries. Cough maximises the
+  // gap, because a single coughing fit gets logged repeatedly and the chain collapses
+  // exactly that — so the wrong word arrived with the sign that most exposes it.
+  //
+  // The §10.2a ruling is precise units rather than one reconciled number, and this
+  // sentence has nowhere to put a qualifier — so it states a count of LOGS and drops the
+  // unit noun entirely. "Logged coughing 14 times" is true under any collapse rule; "14
+  // episodes" is a claim about bouts that this count cannot support.
   const label = SYMPTOM_LABEL[type as keyof typeof SYMPTOM_LABEL] ?? type
-  const noun = count === 1 ? 'episode' : 'episodes'
-  return `I've logged ${count} ${noun} of ${label} for ${petName} this month.`
+  const times = count === 1 ? 'once' : `${count} times`
+  return `I've logged ${label} ${times} for ${petName} this month.`
 }
 
 function proteinClause(protein: string, petName: string): string {

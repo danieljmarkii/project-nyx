@@ -218,6 +218,11 @@ export interface SymptomChronicityFinding {
   firstOnsetIso: string;
   tier: ChronicityTier;
   windowDays: number;
+  /** §9 cough↔vomit adjacency (CUL-676) — set by the engine's composition layer on the
+   *  LEADING chronicity finding when this pet has both a chronic cough and a chronic
+   *  vomiting course. Optional because every cached finding written before that engine
+   *  version lacks it, and because most findings will never carry it. */
+  coughVomitAdjacent?: true;
 }
 
 // Rapid post-prandial timing (⑤, B-078) — a descriptive count of timed vomiting
