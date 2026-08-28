@@ -1,7 +1,9 @@
 # Event taxonomy — W1-PR-3b session 2: cough joins the engine (CUL-676)
 
 **Date:** 2026-08-28
-**Branch:** `claude/w1-pr-3b-cul-676-cough-uj2rm0` (restarted fresh from `main`; #730 and #731 merged)
+**Shipped via #732.** _(Branch `claude/w1-pr-3b-cul-676-cough-uj2rm0`, restarted fresh from
+`main`; #730 and #731 merged. Five commits: the build, the adversarial fixes, the R3
+re-ruling, the provisional reframe, and the Dr. Chen ruling.)_
 
 ## What this was
 
