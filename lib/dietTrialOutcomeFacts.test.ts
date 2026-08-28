@@ -299,3 +299,30 @@ describe('degradation', () => {
     expect(facts!.meals.during.days).toBe(1);
   });
 });
+
+// ── W1 (CUL-676 PR-3a): the respiratory pair reaches the completion sheet ────
+// SYMPTOM_EVENT_TYPES gained cough/sneeze, and this loader's SYMPTOM_SET derives
+// from it — so a logged cough now yields its own per-type delta on the screen
+// that ends the intervention. That is a NAMED consequence (the walk table's
+// SYMPTOM_EVENT_TYPES row lists "diet-trial outcome deltas" in its governs line),
+// not an accident, and it stays safe by inheriting this surface's existing
+// discipline unchanged: record-form counts, untracked-never-zero, and the
+// beforeLoggedDays observability disclosure. Nothing here pools a respiratory
+// count into a diet verdict — that boundary (the logged-day DENOMINATORS) is a
+// different list, deliberately untouched at 3a (open PM brief on CUL-676).
+describe('W1 — cough/sneeze render as their own per-type deltas', () => {
+  it('a cough in each stretch yields a Cough delta with honest counts', async () => {
+    const facts = await load([
+      ev('cough', at(2026, 7, 3)),
+      ev('cough', at(2026, 7, 20)),
+      ev('cough', at(2026, 7, 21)),
+      ev('sneeze', at(2026, 7, 22)),
+    ]);
+    expect(facts!.symptoms).toEqual(
+      expect.arrayContaining([
+        { symptomType: 'cough', label: 'Cough', before: 1, during: 2 },
+        { symptomType: 'sneeze', label: 'Sneeze', before: 0, during: 1 },
+      ]),
+    );
+  });
+});

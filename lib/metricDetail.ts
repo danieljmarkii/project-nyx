@@ -77,6 +77,8 @@ const SYMPTOM_OCCURRENCE_LABELS: Record<string, string> = {
   diarrhea: 'Loose stools',
   itch: 'Itching',
   // lethargy already reads as an occurrence noun ("Lethargy on 5 days") — no entry.
+  cough: 'Coughing',
+  sneeze: 'Sneezing',
 };
 
 export function symptomOccurrenceLabel(type: string): string {

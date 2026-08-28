@@ -71,7 +71,21 @@ const SYMPTOM_LABEL: Record<SignalSymptomType, string> = {
   itch: 'itching',
   scratch: 'scratching',
   skin_reaction: 'skin irritation',
+  cough: 'coughing',
+  sneeze: 'sneezing',
 };
+
+/** Owner-facing word for a finding's symptom — ALWAYS through here, never a direct
+ *  `SYMPTOM_LABEL[...]` index. The union says the map is total, but a finding comes off the
+ *  SERVER payload (and the 24h `ai_signals` cache), so a build can receive a symptomType its
+ *  union has never heard of — a later wave's leaf on an installed app. Release order (client
+ *  mirrors before engine, HR-2) makes that rare; this makes it safe: the humanized token
+ *  ("labored_breathing" → "labored breathing") reads plainly instead of rendering literal
+ *  "recurring undefined" on the cross-pet safety banner. The incidentFlagPhrase cache-defense
+ *  below is the house precedent. */
+function symptomWord(symptomType: SignalSymptomType): string {
+  return SYMPTOM_LABEL[symptomType] ?? String(symptomType).replace(/_/g, ' ');
+}
 
 // Owner-facing noun for a per-incident red-flag card, by family (B-340 vomit / B-364 stool). NOT
 // SYMPTOM_LABEL: stool reads the NEUTRAL "stool", never "loose stool" — blood is a red flag in a
@@ -695,7 +709,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     );
   }
   if (finding.type === 'food_symptom_correlation') {
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     const window = Math.round(finding.correlationWindowHours);
     // A JOINT candidate (B-351 slice 6) earns one extra clause, and it is the honest
     // one: WHY the app can't say which protein it is. The card sentence already carries
@@ -724,7 +738,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     );
   }
   if (finding.type === 'reflection') {
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     const trend =
       finding.direction === 'improving'
         ? `down from ${count(finding.priorCount, 'episode', 'episodes')} the week before`
@@ -735,7 +749,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     );
   }
   if (finding.type === 'symptom_worsening') {
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     // B-727 (CUL-239 client half, GA Phase 0): a zero-prior worsening is a FIRST
     // APPEARANCE, not a trend — the retired "after none the week before" dressed 0 → N
     // as a comparison (fake trend precision, the same reason the §3.2 New chip replaced
@@ -804,7 +818,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // mechanism/severity verdict, never a diagnosis, never reassures (§4.7). The honest
     // denominator is the active weeks over the lookback; the recency clause carries the
     // "ongoing/unresolved" honesty (the engine only fired because the last episode is recent).
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     const weeks = Math.round(finding.windowDays / 7);
     const vetAsk = finding.tier === 'firm' ? 'booking a vet visit' : 'a word with your vet';
     return (
@@ -819,7 +833,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // since the window is a descriptive bucket, not a clinical threshold) + the honesty
     // context "of N total, M could be timed". Timing ONLY — no food/cause/mechanism (§9.1/
     // §9.2). The food forms live in the payload for the Step-9 vet report, not here.
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     return (
       `Of ${petName}'s ${count(finding.totalEpisodes, 'episode', 'episodes')} of ${symptom} in the last ` +
       `${finding.windowDays} days, ${finding.eligibleCount} could be timed against a recent feeding — and ` +
@@ -833,7 +847,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // long-gap timing (the median hours). TIMING ONLY — the band, never the syndrome ('empty
     // stomach'/'bilious' — MECHANISM_RE), never a food/cause, never a feeding-schedule
     // suggestion (G3). Never inverted: a below-floor result never reached here.
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     return (
       `Of ${petName}'s ${count(finding.totalEpisodes, 'episode', 'episodes')} of ${symptom} in the last ` +
       `${finding.windowDays} days, ${finding.eligibleCount} could be timed against a recent meal — and ` +
@@ -846,7 +860,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // Tap-to-expand evidence (the A2 combined card, CUL-12): both phenotypes count-anchored
     // over the ONE shared eligible denominator. TIMING ONLY, same guardrail class as its parts
     // — no syndrome, no food/cause, no management advice.
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     return (
       `Of ${petName}'s ${count(finding.totalEpisodes, 'episode', 'episodes')} of ${symptom} in the last ` +
       `${finding.windowDays} days, ${finding.eligibleCount} could be timed against a recent meal. ` +
@@ -859,7 +873,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // Tap-to-expand evidence (§4): the honest denominator ("of N total, M had a clear time")
     // + the clock band in plain words. Timing ONLY — no cause/mechanism (§4.5). The IANA zone
     // rides the payload for the Step-9 vet report, not this owner-facing copy.
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     const band = localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours);
     return (
       `Of ${petName}'s ${count(finding.totalEpisodes, 'episode', 'episodes')} of ${symptom} in the last ` +
@@ -1665,7 +1679,7 @@ function shortDateUTC(iso: string): string {
  *  the last recency row appears only when the payload carries a "most recent". */
 export function phoneScript(finding: SignalFinding, petName: string): PhoneScriptFact[] | null {
   if (finding.type === 'symptom_worsening') {
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     const thisWeek =
       finding.trigger === 'more_days'
         ? `${count(finding.currentDays, 'day', 'days')} with ${symptom}`
@@ -1684,7 +1698,7 @@ export function phoneScript(finding: SignalFinding, petName: string): PhoneScrip
   if (finding.type === 'symptom_chronicity') {
     const weeks = Math.round(finding.windowDays / 7);
     return [
-      { label: 'Sign', value: SYMPTOM_LABEL[finding.symptomType] },
+      { label: 'Sign', value: symptomWord(finding.symptomType) },
       { label: 'Ongoing since', value: onsetMonth(finding.firstOnsetIso) },
       {
         label: 'How often',
@@ -1894,13 +1908,13 @@ function bannerRest(finding: BannerSafetyFinding): string {
     // severity verdict, never a resolution/reassurance claim (validateBannerPhrasing
     // screens it as defense-in-depth). The tap-through lands on the full Signal where
     // the tiered vet ask ("booking a vet visit" / "a word with your vet") lives.
-    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const symptom = symptomWord(finding.symptomType);
     return ` has had recurring ${symptom} since ${onsetMonth(finding.firstOnsetIso)} — worth a look.`;
   }
   // symptom_worsening — name the symptom + the axis that actually rose, week over
   // week. Frequency only: "more ... this week than last", never "worse" (a severity
   // verdict) and never a cause.
-  const symptom = SYMPTOM_LABEL[finding.symptomType];
+  const symptom = symptomWord(finding.symptomType);
   if (finding.trigger === 'more_days') {
     return ` has had ${symptom} on more days this week than last — worth a look.`;
   }

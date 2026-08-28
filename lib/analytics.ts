@@ -62,6 +62,12 @@ export const SYMPTOM_EVENT_TYPES = [
   'scratch',
   'skin_reaction',
   'lethargy',
+  // W1 (CUL-676 PR-3a) — Patterns grid, frequency calendar, trial outcome deltas and the
+  // widget symptom tile all count the respiratory pair from this one list. Per-type
+  // surfaces only: the pooled logged-day denominators (patternsTiming / dietTrialFacts /
+  // the engine) are a SEPARATE membership decision, open on CUL-676.
+  'cough',
+  'sneeze',
 ] as const;
 export type SymptomEventType = (typeof SYMPTOM_EVENT_TYPES)[number];
 const SYMPTOM_SET: ReadonlySet<string> = new Set(SYMPTOM_EVENT_TYPES);

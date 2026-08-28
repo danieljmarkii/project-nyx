@@ -28,6 +28,13 @@ export const TREND_LOOKBACK_DAYS = 14;
  * symptom chart. Dropping a real symptom from a symptom chart to make two lists match
  * would lose more than it fixes. It sorts last so it can never displace a correlation
  * symptom on a tie.
+ *
+ * `cough` / `sneeze` follow the lethargy precedent (W1, CUL-676 PR-3a): real symptoms
+ * on the chart, appended AFTER the engine-ordered five because they are not (yet) in
+ * `CORRELATION_SYMPTOM_TYPES` — cough's engine membership is ⑦-only and lands with
+ * 3b's per-lane map, which never feeds this ordering. Appending keeps the tie-break
+ * property intact: a respiratory sign can never displace a correlation symptom on a
+ * tie, exactly as lethargy cannot.
  */
 export const TREND_SYMPTOM_TYPES = [
   'vomit',
@@ -36,6 +43,9 @@ export const TREND_SYMPTOM_TYPES = [
   'scratch',
   'skin_reaction',
   'lethargy',
+  // W1 (CUL-676 PR-3a): the Trend surface reads the respiratory pair the day capture ships.
+  'cough',
+  'sneeze',
 ] as const;
 
 const TREND_SYMPTOM_SET: ReadonlySet<string> = new Set(TREND_SYMPTOM_TYPES);

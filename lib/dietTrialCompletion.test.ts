@@ -563,3 +563,31 @@ describe('the stopped-early reason set', () => {
     expect(stopReasonNote('other', 'Biscuit')).toBeNull();
   });
 });
+
+// ── W1 (CUL-676 PR-3a): the exact cough line on the completion sheet ─────────
+// The render half of the outcome-facts pin: a respiratory delta composes through
+// the SAME template as every other symptom — record-form counts, no verdict —
+// and the untracked branch withholds the fabricated baseline for it exactly as
+// it does for GI signs.
+describe('W1 — the cough fact line renders record-form, both tracked states', () => {
+  it('tracked: "Cough: 1 before · 2 during." — a count pair, never a verdict', () => {
+    const sheet = buildOutcomeSheet({
+      facts: facts({
+        symptoms: [{ symptomType: 'cough', label: 'Cough', before: 1, during: 2 }],
+      }),
+      petName: 'Biscuit',
+    });
+    expect(sheet.factLines).toEqual(['Cough: 1 before · 2 during.']);
+  });
+
+  it('untracked before-stretch: the cough line drops its baseline, same as GI signs', () => {
+    const sheet = buildOutcomeSheet({
+      facts: facts({
+        beforeTracked: false,
+        symptoms: [{ symptomType: 'cough', label: 'Cough', before: 0, during: 3 }],
+      }),
+      petName: 'Biscuit',
+    });
+    expect(sheet.factLines).toEqual(['Cough: 3 during the trial.']);
+  });
+});
