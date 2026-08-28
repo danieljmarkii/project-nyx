@@ -2147,63 +2147,87 @@ Deno.test('detectChronicity — property: an occasional vomiter (meals logged) f
 // earned: the noise rate must not drift upward unnoticed, AND the sensitivity the lower floor
 // was chosen for must actually be there. Raising the floor fails the sensitivity half, which
 // is the point — the cost becomes visible in the same run as the benefit.
-Deno.test('detectChronicity — property: the COUGH floor, both sides of its trade pinned', () => {
-  let seed = 0xc0ffee >>> 0
-  const rng = (): number => {
-    seed = (seed * 1664525 + 1013904223) >>> 0
-    return seed / 0x100000000
-  }
-  const TRIALS = 20000
-  let fires = 0
-  for (let t = 0; t < TRIALS; t++) {
-    const symptomEvents: SymptomEvent[] = []
-    const mealEvents: MealEvent[] = []
-    for (let d = 0; d < 56; d++) {
-      mealEvents.push(mealAgo(d))
-      if (rng() < 2 / 56) {
-        symptomEvents.push({
-          id: `c-${t}-${d}`,
-          type: 'cough',
-          occurredAt: new Date(Date.parse(NOW) - d * DAY_MS + Math.floor(rng() * 24) * 3_600_000).toISOString(),
-        })
-      }
+Deno.test('detectChronicity — property: the COUGH floors, per species, both sides pinned', () => {
+  // RE-AIMED BY THE Dr. CHEN RULING (2026-08-28, CUL-687). The floor is no longer one
+  // number: dogs sit at 5 and cats at 4, because the cough BUTTON also collects reverse
+  // sneezing in dogs — paroxysmal, recurrent, owner-named "coughing", clinically nothing —
+  // and cats have no equivalent benign phenotype at this cadence. So the trade is measured
+  // PER SPECIES, and the accepted cost of the dog floor is visible in the same run as its
+  // benefit rather than argued for in a comment.
+  const noiseRate = (pet: PetContext): number => {
+    let seed = 0xc0ffee >>> 0
+    const rng = (): number => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 0x100000000
     }
-    if (detectChronicity(input({ symptomEvents, mealEvents })).length > 0) fires++
+    const TRIALS = 20000
+    let fires = 0
+    for (let t = 0; t < TRIALS; t++) {
+      const symptomEvents: SymptomEvent[] = []
+      const mealEvents: MealEvent[] = []
+      for (let d = 0; d < 56; d++) {
+        mealEvents.push(mealAgo(d))
+        if (rng() < 2 / 56) {
+          symptomEvents.push({
+            id: `c-${t}-${d}`,
+            type: 'cough',
+            occurredAt: new Date(Date.parse(NOW) - d * DAY_MS + Math.floor(rng() * 24) * 3_600_000).toISOString(),
+          })
+        }
+      }
+      if (detectChronicity(input({ pet, symptomEvents, mealEvents })).length > 0) fires++
+    }
+    return fires / TRIALS
   }
-  const rate = fires / TRIALS
-  console.log(`detectChronicity occasional-COUGH fire rate: ${(rate * 100).toFixed(3)}% (${fires}/${TRIALS})`)
-  // PROVISIONAL bound at the shipped floor — a drift alarm, NOT a ratified target. It sits
-  // above the measured 9.44% with headroom and deliberately below anything that would let the
-  // floor slide further without a decision.
-  assert.ok(
-    rate < 0.12,
-    `occasional-cough fire rate ${(rate * 100).toFixed(3)}% drifted above the provisional bound`,
+
+  const dogRate = noiseRate(dog)
+  const catRate = noiseRate(cat)
+  console.log(
+    `detectChronicity occasional-COUGH fire rate — dog: ${(dogRate * 100).toFixed(3)}% · cat: ${(catRate * 100).toFixed(3)}%`,
   )
 
-  // The sensitivity half — the courses the lowered floor exists for. These are SILENT at
-  // minEpisodes 5 and 6, so they are what a floor raise would cost.
+  // PROVISIONAL bounds — drift alarms, not ratified targets. Each sits above its measured
+  // value with headroom, and the dog bound is TIGHTER on purpose: that gap IS the ruling, so
+  // an edit that quietly equalises the two species fails here rather than passing silently.
+  //
+  // MEASURED AT THE RULED FLOORS: dog ~4.7%, cat ~11.1%. The cat figure ROSE from ~9.4% and
+  // the reason is not drift — it is Q4's `ongoingRecencyDays` 14 → 28, which widens the
+  // window in which a course still counts as ongoing, so more of the null qualifies. That is
+  // the priced cost of refusing to read a fortnight's silence as resolution on a
+  // relapsing-remitting disease, and it was accepted with the ruling. Recorded here because
+  // the next reader will otherwise see a number climb and assume something slipped.
+  assert.ok(dogRate < 0.07, `dog cough fire rate ${(dogRate * 100).toFixed(3)}% drifted above its bound`)
+  assert.ok(catRate < 0.12, `cat cough fire rate ${(catRate * 100).toFixed(3)}% drifted above its bound`)
+  assert.ok(dogRate < catRate, 'the dog floor must remain the stricter of the two')
+
+  // The sensitivity half — the intermittent courses chronic bronchitis and feline asthma
+  // actually present as. They fire for a CAT and are SILENT for a DOG, and that asymmetry is
+  // the ruled, ACCEPTED cost of the reverse-sneezing confounder, not a defect.
   const meals: MealEvent[] = []
   for (let d = 0; d <= 56; d++) meals.push(mealAgo(d))
-  // The extra hour is load-bearing, not cosmetic: the lookback is half-open [start, now), so
-  // a d=0 event lands exactly ON `now` and falls OUT of the window — the same trap that ate
-  // two fixture drafts in session 1. Without it these read as 3-episode courses and go silent
-  // for a reason that has nothing to do with the floor under test.
+  // The extra hour is load-bearing: the lookback is half-open [start, now), so a d=0 event
+  // lands exactly ON `now` and falls out of the window — the trap that ate two drafts.
   const course = (days: readonly number[]): SymptomEvent[] =>
     days.map((d, i) => ({
       id: `k${i}`,
       type: 'cough' as const,
       occurredAt: new Date(Date.parse(NOW) - d * DAY_MS - 3_600_000).toISOString(),
     }))
-  assert.equal(
-    detectChronicity(input({ symptomEvents: course([0, 7, 14, 21]), mealEvents: meals })).length,
-    1,
-    'a once-weekly ×4 cough course over 3 weeks must fire (silent at minEpisodes 5+)',
-  )
-  assert.equal(
-    detectChronicity(input({ symptomEvents: course([0, 14, 28, 42]), mealEvents: meals })).length,
-    1,
-    'a fortnightly ×4 cough course over 6 weeks must fire (silent at minEpisodes 5+)',
-  )
+  for (const [label, days] of [
+    ['once-weekly ×4 over 3 weeks', [0, 7, 14, 21]],
+    ['fortnightly ×4 over 6 weeks', [0, 14, 28, 42]],
+  ] as const) {
+    assert.equal(
+      detectChronicity(input({ pet: cat, symptomEvents: course(days), mealEvents: meals })).length,
+      1,
+      `cat: a ${label} cough course must fire`,
+    )
+    assert.equal(
+      detectChronicity(input({ pet: dog, symptomEvents: course(days), mealEvents: meals })).length,
+      0,
+      `dog: a ${label} cough course is the ACCEPTED cost of the reverse-sneezing floor`,
+    )
+  }
 })
 
 // ── Detector ⑦: composition & ranking (B-182 PR 2) ───────────────────────────

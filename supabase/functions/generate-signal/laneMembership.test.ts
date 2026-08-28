@@ -299,23 +299,69 @@ Deno.test('floor negative: three cough episodes never open the staple_washout do
 
 Deno.test('perType: a type with no entry resolves to the globals — identity, not a copy', () => {
   const cfg = DEFAULT_CONFIG.chronicity
-  assert.equal(chronicityFloorsFor('vomit', cfg), cfg)
-  assert.equal(chronicityFloorsFor('diarrhea', cfg), cfg)
+  assert.equal(chronicityFloorsFor('vomit', 'dog', cfg), cfg)
+  assert.equal(chronicityFloorsFor('diarrhea', 'dog', cfg), cfg)
 })
 
-Deno.test('perType: cough now carries the B-755 floors, and ONLY the two ruled ones move', () => {
+Deno.test('perType: the Dr. Chen ruling — cough floors, and the species split', () => {
   const cfg = DEFAULT_CONFIG.chronicity
-  const cough = chronicityFloorsFor('cough', cfg)
-  assert.equal(cough.minEpisodes, 4, 'lowered: no benign base rate to out-count')
-  assert.equal(cough.firmSpanDays, 28, 'lowered: the vet ask escalates earlier')
-  // The three DELIBERATELY unchanged floors — pinned so "calibrating cough" cannot quietly
-  // become "loosening cough". minSpanDays especially: it is what excludes the self-limiting
-  // course (kennel cough / post-viral), and lowering it would fire hardest on exactly the
-  // cough that was about to stop on its own.
-  assert.equal(cough.minSpanDays, cfg.minSpanDays)
-  assert.equal(cough.minActiveWeeks, cfg.minActiveWeeks)
-  assert.equal(cough.ongoingRecencyDays, cfg.ongoingRecencyDays)
-  assert.equal(cough.windowDays, cfg.windowDays, 'never per-type by construction')
+  const dog = chronicityFloorsFor('cough', 'dog', cfg)
+  const cat = chronicityFloorsFor('cough', 'cat', cfg)
+
+  // Q2 — the split. Dogs need 5 because the cough BUTTON also collects reverse sneezing,
+  // which is paroxysmal, recurrent, owner-named "coughing", and clinically nothing; cats
+  // have no equivalent benign phenotype at this cadence.
+  assert.equal(dog.minEpisodes, 5)
+  assert.equal(cat.minEpisodes, 4)
+  // Q4 — the reversal. A fortnight of silence answers nothing about a relapsing-remitting
+  // airway disease, so this is 28 for BOTH species (not a cat-only override).
+  assert.equal(dog.ongoingRecencyDays, 28)
+  assert.equal(cat.ongoingRecencyDays, 28)
+  assert.notEqual(cfg.ongoingRecencyDays, 28, 'and it genuinely diverges from the global')
+  // Q3 — kept, and 42 rejected for both species.
+  assert.equal(dog.firmSpanDays, 28)
+  assert.equal(cat.firmSpanDays, 28)
+
+  // Unchanged floors, pinned so "calibrating cough" cannot quietly become "loosening cough".
+  for (const f of [dog, cat]) {
+    assert.equal(f.minSpanDays, cfg.minSpanDays)
+    assert.equal(f.minActiveWeeks, cfg.minActiveWeeks)
+    assert.equal(f.windowDays, cfg.windowDays, 'never per-type by construction')
+  }
+
+  // The nested `cat` key must never leak through as a floor — spreading it would put an
+  // object where a number belongs and make every comparison against it false, silencing
+  // the lane exactly like the explicit-undefined defect the resolver already hardens against.
+  assert.equal((dog as Record<string, unknown>).cat, undefined)
+  assert.equal((cat as Record<string, unknown>).cat, undefined)
+})
+
+Deno.test('perType: a non-cat, non-dog species resolves to the base floors, never the cat ones', () => {
+  // `other` is a real Species value. It must land on the general value (5), not silently
+  // inherit the more sensitive feline one.
+  assert.equal(chronicityFloorsFor('cough', 'other', DEFAULT_CONFIG.chronicity).minEpisodes, 5)
+})
+
+Deno.test('the species split is REACHABLE end-to-end — the same course, two species', () => {
+  // The pin that matters: a resolver split nothing consumes is decoration. This is a
+  // 4-episode cough course over 24 days — above the cat floor, below the dog floor.
+  const course = [1, 9, 17, 24].map((d) => ago('cough', d))
+  // Meals across the window so ⑦'s span-halves logging guard is satisfied and the ONLY
+  // thing separating the two runs is the species floor (the fixture-discipline this file
+  // exists for — a silence that comes from the wrong floor proves nothing).
+  const meals: MealEvent[] = []
+  for (let d = 0; d <= 30; d++) meals.push(meal({ occurredAt: new Date(NOW_MS - d * DAY).toISOString() }))
+  const cat: PetContext = { name: 'Pixel', species: 'cat', dietTrialActive: false }
+  assert.equal(
+    detectChronicity(input({ pet: cat, symptomEvents: course, mealEvents: meals })).length,
+    1,
+    'cat: fires at 4',
+  )
+  assert.equal(
+    detectChronicity(input({ symptomEvents: course, mealEvents: meals })).length,
+    0,
+    'dog: silent below 5',
+  )
 })
 
 Deno.test('perType: an explicit-undefined floor resolves to the GLOBAL, never silences the lane (adversarial 2026-08-28)', () => {
@@ -324,7 +370,7 @@ Deno.test('perType: an explicit-undefined floor resolves to the GLOBAL, never si
   // SILENT is reassurance-by-absence on a safety lane, minted by exactly the config
   // shape a spread-from-partial assembly produces.
   const cfg = chronCfg({ perType: { vomit: { minEpisodes: undefined } } }).chronicity
-  assert.equal(chronicityFloorsFor('vomit', cfg).minEpisodes, DEFAULT_CONFIG.chronicity.minEpisodes)
+  assert.equal(chronicityFloorsFor('vomit', 'dog', cfg).minEpisodes, DEFAULT_CONFIG.chronicity.minEpisodes)
   const findings = detectChronicity(
     input({ symptomEvents: councilShape('vomit') }),
     chronCfg({ perType: { vomit: { minEpisodes: undefined, firmSpanDays: undefined } } }),
@@ -335,10 +381,10 @@ Deno.test('perType: an explicit-undefined floor resolves to the GLOBAL, never si
 
 Deno.test('perType: an override moves ONLY its own type', () => {
   const cfg = chronCfg({ perType: { vomit: { minEpisodes: 99 } } }).chronicity
-  assert.equal(chronicityFloorsFor('vomit', cfg).minEpisodes, 99)
-  assert.equal(chronicityFloorsFor('itch', cfg).minEpisodes, DEFAULT_CONFIG.chronicity.minEpisodes)
+  assert.equal(chronicityFloorsFor('vomit', 'dog', cfg).minEpisodes, 99)
+  assert.equal(chronicityFloorsFor('itch', 'dog', cfg).minEpisodes, DEFAULT_CONFIG.chronicity.minEpisodes)
   // Un-overridden floors ride along unchanged.
-  assert.equal(chronicityFloorsFor('vomit', cfg).minSpanDays, DEFAULT_CONFIG.chronicity.minSpanDays)
+  assert.equal(chronicityFloorsFor('vomit', 'dog', cfg).minSpanDays, DEFAULT_CONFIG.chronicity.minSpanDays)
 })
 
 Deno.test('perType: ⑦ respects a raised floor — the council case goes silent under minEpisodes 99', () => {

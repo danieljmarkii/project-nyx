@@ -280,3 +280,68 @@ question. It simply stops vouching for an observation it wasn't.
   committed one clears every other floor so the dark-half guard is the unique blocker. (The
   same staleness exists in `detection.test.ts` fixture 10's comment, which still says
   "episodes (5)" passes; noted, not touched.)
+
+
+## The Dr. Chen ruling on the cough floors — verdict: NOT DEFENSIBLE AS-IS
+
+The PM ruled the calibration the Dr. Chen lens's call rather than the build's, so it was
+run **in isolation** — the session that set the floors then argued for them is the wrong
+lens to grade them. The ruling reproduced the sweep independently, then attacked the set
+and reversed two of its values. Three changes were required; all three are applied.
+
+**The finding that reframes the whole calibration: this does not floor COUGH, it floors
+THE COUGH BUTTON.** In dogs that button also collects **reverse sneezing** — paroxysmal,
+recurrent by nature, called "coughing/honking/choking" by nearly every owner, clinically
+nothing — and it produces *exactly* the 4-episodes-across-3-weeks phenotype the floor was
+tuned to catch. There is no `reverse_sneeze` leaf for it to land in instead. So the "a
+recurring cough has no benign base rate" premise the whole lowered floor rested on is
+**sound for cats and false for dogs**. The dominant feline error runs the other way (a real
+cough logged as hairball retching), which makes the cough key *cleaner* than the truth.
+
+| Field | Build set | Ruled | Why |
+|---|---|---|---|
+| `minEpisodes` | 4 | **5, cat 4** | 4 fires on the commonest benign canine cough phenotype; 6 rejected as over-corrected (~13 points of recall at moderate density, in the species where cough is the presenting cardiac sign) |
+| `ongoingRecencyDays` | 14 | **28** both | The strongest finding, and a reversal |
+| `firmSpanDays` | 28 | **keep** | 42 rejected for both species |
+| `minSpanDays` | 21 | keep, **rationale corrected** | Credited with specificity it does not provide |
+
+**Q4 is the one that matters most.** A recency floor asks *"has this resolved?"*, and for a
+relapsing-remitting airway disease a fortnight of silence answers nothing — inter-flare
+intervals of weeks are the normal course of *untreated* feline asthma. On an 8-bout/39-day
+cat whose last bout was 16 days ago, clearing every other floor by a wide margin, the lane
+went **silent while withholding the strongest card it can produce**, at exactly the moment
+an owner concludes it went away. And because `isChronic` gates the ③ valve, day 15
+simultaneously stopped naming the cough *and* unblanked the reflection layer — two
+defensible pieces composing into a calm surface over documented airway disease. The ruling's
+phrase for it: *reassurance-by-absence wearing an honesty costume.*
+
+Extending it stays honest because the chronicity copy is already past-tense and **never uses
+the word "ongoing"** — verified, not assumed.
+
+**Species conditioning is now real in ⑦.** `chronicityFloorsFor` takes a species and
+resolves globals → per-type → per-type `cat`, mirroring the shipped intake-decline precedent
+(`cfg.cat.consecutiveDaysBelowBaseline`). `isChronic`, the tier resolver and the ③-valve all
+thread it, so the split cannot desync. A `cat` sub-key is explicitly skipped when spreading
+floors — putting an object where a number belongs would make every comparison false and
+silence the lane, the same shape as the explicit-`undefined` defect session 1 fixed.
+
+**One ruled item deliberately not taken.** The preferred fix for Q5's gap is a **density
+OR-arm** (≥10 symptom-days inside any 14-day stretch, ongoing), which the ruling priced at
+**0 / 200,000** on the null and which would rescue the acute cat from day 10 instead of day
+22. That is a **new fire path on a safety detector**, not a calibration — so the ruling's own
+sanctioned fallback is taken: ship, and carry it as a named defect (CUL-686, now upgraded
+from an open question to a priced, specified proposal). Smuggling a new predicate arm in
+under a floor ruling would be exactly the kind of scope drift the gates exist to catch.
+
+**Two corrections to the record the ruling forced:**
+- `minSpanDays: 21` was credited in-code with excluding the self-limiting course. Measured,
+  it moves the noise rate by **0.2 points** (9.44% → 9.63% at 14 or 10 days) — the null's
+  events are spread over 56 days, so span is almost always satisfied once there are enough.
+  Its only measurable effect is at the *top* end, excluding short dense recent courses. The
+  conclusion (don't lower it) survives; the stated reason did not.
+- **The floor decision is not about the dogfood cat.** At her logging density every candidate
+  floor behaves identically, so her record cannot be cited for any of these values.
+
+**The property gate is now per-species**, and the cat noise rate *rose* 9.4% → 11.1% — not
+drift, but Q4's priced cost surfacing, recorded in the fixture so the next reader does not
+mistake it for slippage.
