@@ -140,3 +140,97 @@ deploy ahead of the gate. To clear: cut an A-Native TestFlight build carrying #7
   sentence in the TestFlight release notes when the redeploy lands.
 - The `signalWatching` gap row stays OPEN (the W1-greenlight rider), unchanged here.
 - W2 remains blocked on §9b's six open defects (CUL-684); W1 touches no §9a rule.
+
+## Adversarial review — FAIL, and what it changed
+
+The mandatory pass built the pre-change engine beside the post-change one and attacked.
+**Verdict FAIL, three breaks.** Every claim was independently reproduced before acting.
+
+**What it CLEARED, and this is worth as much as the breaks:** a 6,000-case randomized
+differential on cough-free inputs found **622 OLD findings missing from NEW and all 622
+explained** — every one a ④ worsening card correctly absorbed by a same-symptom ⑦ with
+firm inheritance. **0 unexplained losses, 0 tier softenings.** It also confirmed R4 is a
+real fix rather than a theoretical one: on random chronic pets the old cap was deleting
+denser courses (one case emitted only `diarrhea 45d/7ep` where the fix emits diarrhea +
+`itch 43d/9ep` + skin_reaction + scratch). `isFetchedSymptom` is a genuine no-op
+hardening — both production callers already filter, so no denominator mass is lost. Lane
+isolation holds end to end; curation, ranking, React keying and the client stack carry N
+cards without dropping or colliding.
+
+**Fixed in this session (unambiguous defects):**
+
+- **The adjacency copy was out of contract.** It composed to **382 characters against
+  `validatePhrasing`'s 320 cap** — so the screen my own comment claimed applied to it
+  would have *rejected* it. It shipped only because chronicity is template-only and
+  `phraseFinding` returns before validating. Both halves fixed: the clause is short
+  enough to fit with headroom for a long pet name and 3-digit counts, and the test that
+  claims to scan "EVERY chronicity string" now actually does — it had enumerated only the
+  pre-taxonomy five and never set `coughVomitAdjacent`, so the one arm that failed its own
+  assertion was outside it. Red-checked both ways.
+- **It also named the wrong error model.** "May describe some of the same moments" asserts
+  DOUBLE-COUNTING — the benign reading, and on a safety card the deflationary one. The
+  failure §9 names is MISATTRIBUTION (cough logged as hairball retching, and the reverse),
+  which makes one count too LOW as readily as the other too high. Now "easily confused",
+  in both the card and the report, and pinned by test.
+- **The disclosure didn't survive the tap.** The card face carries the server sentence, but
+  the expand (`evidenceText`) and the vet phone script are composed client-side and carried
+  neither — so "raise both with your vet" was absent from the one text an owner reads aloud
+  in the consult. Client type + both paths now carry it.
+- **Two more HR-7 residuals**, both the exact defect this PR set out to fix: the page-1
+  tile said **"Episodes"** over the `trendHalves` ENTRIES count while the trend panel 250
+  lines below called the same numbers entries (the B-532 divergence class, on one page),
+  and the days-since tile borrowed the same noun.
+- **A genuine unit bug the pass found:** `report.ts`'s `episodeSetMatches` compared
+  minute-deduped ROWS to the engine's 3h-CHAINED count. For vomit they usually coincide,
+  which is why it survived; for cough they differ **by construction** — so the local-day
+  reconciliation would disable itself for *every* cough flag and fall back to UTC numbers
+  beside a local-day tile, reinstating the ±1-day disagreement the PR-7 cold read caught on
+  the lead safety line. Now chained with the shared `lib/symptomEpisodes` predicate and
+  compared like for like.
+- **The cough floor had no property gate at all** — the §7 #14 calibration sweep that drove
+  vomit's floor 4→6 only ever swept `vomit`, so a per-type floor shipped un-swept. Added,
+  with BOTH sides of the trade pinned, because the trade is sharp and cuts both ways
+  (reproduced: **9.22% noise rate at minEpisodes 4**, 4.13% at 5, 1.38% at 6 — and the
+  once-weekly ×4 and fortnightly ×4 courses fire **only** at 4). Red-checked: raising the
+  floor to 6 drops noise to 1.31% *and* fails the sensitivity half in the same run.
+
+## ESCALATED, NOT FIXED — two breaks that are the PM's to rule
+
+**1 · R3 defeats the density guards it named as its own mitigation.** Widening the
+logged-day denominator raises `currentLoggingDays` / `trialLoggedDays`, which pushes
+`densityComparable`, SR-4 and `trialLoggingFraction` over their gates — **publishing
+falling comparisons that were correctly being withheld.** Reproduced end to end: a
+60-day trial where the cat develops a cough goes from `"Vomiting: 8 in the trial's 60
+days."` (comparison withheld) to `"…8 in the trial's 60 days · 41 in the 49 days before."`
+— a published 5× apparent reduction on the wedge's always-visible strip; and the server
+lane flips from silent to `comparisonDirection: 'fewer_during_trial'`. On the reflection
+lane a withheld `"3 this week"` becomes `"3 this week, down from 5 last week"` on a pet
+whose only new signal is 120 cough logs the engine cannot speak about at all.
+
+The PM ruled R3 (b) with "drift toward reassurance on the trial lane" recorded as the
+**accepted cost**. The pass did not find a bigger version of that cost — it found a
+different one: the drift **disables `densityComparable`, which is the C5/§7 instrument the
+ruling named as the counterweight**. The mechanism is also sharper than "activity is
+activity" assumes: meal logging is pet-state-independent, but cough logging is
+pet-state-*dependent and anti-correlated with attention to the other sign* — the owner
+starts logging coughs exactly when watching for vomiting lapses.
+
+**Not reversed unilaterally.** It is a direct PM ruling, nothing is deployed
+(`generate-signal` pending, `generate-report` on hold), and the PR is a draft the PM merges
+by hand — so no user is exposed while it is re-ruled. The two client mirrors are the only
+ungated half, and they reach users only on a build the PM cuts.
+
+**2 · The cough floor value.** 9.22% vs the 2% the same gate enforces for vomit — but the
+number is only as good as its null, and **the null is the actual question**: the model
+assumes ~2 meaningless cough logs per 56 days, which is precisely what the floor's own
+rationale disputes. If a recurring cough has no benign base rate, most of that 9.22% are
+real findings; if the cough key instead collects reverse sneezing, one-off gags and
+misclassified retching, the null holds and 4 is under-floored. **That is a Dr. Chen
+question about owner logging behaviour, not arithmetic.**
+
+**Three further residuals routed, not fixed:** the cross-pet banner still single-slots
+chronicity by longest span (R4's defect surviving — but fixing it needs a cross-type
+severity comparator, and per-type floors make `tier` non-comparable, so inventing one is
+C5 territory); cough is structurally mute for its first 21 days on the only lane it has
+(a cat coughing 6×/day for 20 days is silent, while 4 coughs over 21 days fires); and
+`skin_reaction`'s W3 arrival will make three-cards-about-one-itch reachable.

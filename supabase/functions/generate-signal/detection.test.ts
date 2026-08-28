@@ -2120,6 +2120,92 @@ Deno.test('detectChronicity — property: an occasional vomiter (meals logged) f
   assert.ok(rate < 0.02, `occasional-vomiter fire rate ${(rate * 100).toFixed(3)}% must be ≪ small (< 2%)`)
 })
 
+// Fixture 14b — THE SAME GATE, SWEPT FOR COUGH (W1-PR-3b session 2, CUL-676).
+//
+// Why this exists: fixture 14 is the calibration gate that drove vomit's floor 4→6, and it
+// only ever sweeps `vomit`. So the per-type cough floor (minEpisodes 4) shipped with NO
+// property gate at all — the adversarial pass found the hole, not a test. A per-type floor
+// must be swept by the same instrument that set the global one, or "we calibrated it" is a
+// claim about a different symptom.
+//
+// THE TRADE, MEASURED (20,000 trials each, same null as fixture 14):
+//   minEpisodes 4 → 9.44% · 5 → 4.13% · 6 → 1.38%
+//   weekly×4/21d and q2wk×4/42d courses:  FIRE at 4 · SILENT at 5 AND 6.
+// The cliff is sharp and it cuts both ways: 4 is the ONLY setting that catches the
+// intermittent courses chronic bronchitis and feline asthma actually present as, and it is
+// the only one whose noise rate is near the ~9.9% the D2 ruling REJECTED for vomit.
+//
+// THE NUMBER IS ONLY AS GOOD AS THE NULL, AND THE NULL IS THE OPEN QUESTION. This model
+// assumes ~2 sporadic, meaningless cough logs per 56 days — which is precisely the premise
+// the floor's own rationale disputes ("a recurring cough has no benign base rate"). If that
+// rationale holds, most of the 9.44% are real findings and this is not a false-positive rate;
+// if the cough key instead collects reverse sneezing, one-off gags and misclassified
+// retching, the null holds and 4 is under-floored. That is a Dr. Chen question about owner
+// logging behaviour, not an arithmetic one — it is on CUL-676 as the live calibration gate.
+//
+// So this test pins BOTH SIDES at the shipped floor rather than asserting a bound nobody has
+// earned: the noise rate must not drift upward unnoticed, AND the sensitivity the lower floor
+// was chosen for must actually be there. Raising the floor fails the sensitivity half, which
+// is the point — the cost becomes visible in the same run as the benefit.
+Deno.test('detectChronicity — property: the COUGH floor, both sides of its trade pinned', () => {
+  let seed = 0xc0ffee >>> 0
+  const rng = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0
+    return seed / 0x100000000
+  }
+  const TRIALS = 20000
+  let fires = 0
+  for (let t = 0; t < TRIALS; t++) {
+    const symptomEvents: SymptomEvent[] = []
+    const mealEvents: MealEvent[] = []
+    for (let d = 0; d < 56; d++) {
+      mealEvents.push(mealAgo(d))
+      if (rng() < 2 / 56) {
+        symptomEvents.push({
+          id: `c-${t}-${d}`,
+          type: 'cough',
+          occurredAt: new Date(Date.parse(NOW) - d * DAY_MS + Math.floor(rng() * 24) * 3_600_000).toISOString(),
+        })
+      }
+    }
+    if (detectChronicity(input({ symptomEvents, mealEvents })).length > 0) fires++
+  }
+  const rate = fires / TRIALS
+  console.log(`detectChronicity occasional-COUGH fire rate: ${(rate * 100).toFixed(3)}% (${fires}/${TRIALS})`)
+  // PROVISIONAL bound at the shipped floor — a drift alarm, NOT a ratified target. It sits
+  // above the measured 9.44% with headroom and deliberately below anything that would let the
+  // floor slide further without a decision.
+  assert.ok(
+    rate < 0.12,
+    `occasional-cough fire rate ${(rate * 100).toFixed(3)}% drifted above the provisional bound`,
+  )
+
+  // The sensitivity half — the courses the lowered floor exists for. These are SILENT at
+  // minEpisodes 5 and 6, so they are what a floor raise would cost.
+  const meals: MealEvent[] = []
+  for (let d = 0; d <= 56; d++) meals.push(mealAgo(d))
+  // The extra hour is load-bearing, not cosmetic: the lookback is half-open [start, now), so
+  // a d=0 event lands exactly ON `now` and falls OUT of the window — the same trap that ate
+  // two fixture drafts in session 1. Without it these read as 3-episode courses and go silent
+  // for a reason that has nothing to do with the floor under test.
+  const course = (days: readonly number[]): SymptomEvent[] =>
+    days.map((d, i) => ({
+      id: `k${i}`,
+      type: 'cough' as const,
+      occurredAt: new Date(Date.parse(NOW) - d * DAY_MS - 3_600_000).toISOString(),
+    }))
+  assert.equal(
+    detectChronicity(input({ symptomEvents: course([0, 7, 14, 21]), mealEvents: meals })).length,
+    1,
+    'a once-weekly ×4 cough course over 3 weeks must fire (silent at minEpisodes 5+)',
+  )
+  assert.equal(
+    detectChronicity(input({ symptomEvents: course([0, 14, 28, 42]), mealEvents: meals })).length,
+    1,
+    'a fortnightly ×4 cough course over 6 weeks must fire (silent at minEpisodes 5+)',
+  )
+})
+
 // ── Detector ⑦: composition & ranking (B-182 PR 2) ───────────────────────────
 //
 // The §7 composition/ranking fixtures (11–13) + the B-188 phase-stability regression. These

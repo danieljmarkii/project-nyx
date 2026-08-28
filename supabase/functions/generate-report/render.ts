@@ -1425,7 +1425,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // reclassification: neither count is adjusted, and the report does not guess which
       // events belong to which sign.
       const adjacencyBit = f.coughVomitAdjacent
-        ? ` This pet also has a concurrent chronic course of the other sign (cough and vomiting both flagged): post-tussive vomiting and cough mistaken for hairball retching are common in both directions, so these two counts may not be independent &mdash; they are reported separately and un-reclassified.`
+        ? ` Cough and vomiting are both flagged chronic for this patient. Post-tussive vomiting, and cough mistaken for hairball retching, are common in both directions, so <b>either count may be understated as readily as overstated</b> &mdash; both are owner-classified, reported separately and un-reclassified.`
         : ''
       return flagRow(
         'Chronicity',
@@ -3101,7 +3101,11 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
         ? `early window sparsely logged (${num(ag.firstHalfLoggedDays)} of ${num(days)} d)`
         : `first ${num(days)}&nbsp;d &rarr; last ${num(days)}&nbsp;d`
     tiles.push(
-      tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Episodes, first &rarr; last half<br/>${sub}`),
+      // HR-7 (CUL-676): "Entries", not "Episodes". These are trendHalves counts, incremented
+      // per minute-deduped ROW in the same loop as the §3.5 aggregate — so this tile and the
+      // trend panel 250 lines below print the SAME numbers, and until this fix they disagreed
+      // about the noun on one page. B-532's whole point was that these two must not diverge.
+      tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Entries, first &rarr; last half<br/>${sub}`),
     )
   } else {
     tiles.push(weightTile(snap))
@@ -3125,7 +3129,11 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
         : dsl >= 14
           ? `a gap is not evidence the signs resolved`
           : `not a measure of recovery`
-    tiles.push(tile(`${dsl}`, `<small>&nbsp;d</small>`, `Since the most recent episode<br/>${guard}`))
+    // "entry" for the same HR-7 reason — `daysSinceLastEpisode` here is derived from the last
+    // deduped ROW's onset, not from a chained episode. The DAY is almost always identical, so
+    // this is a wording fix rather than a number fix; it is made anyway because the whole
+    // point of the ruling is that the two words stop being interchangeable.
+    tiles.push(tile(`${dsl}`, `<small>&nbsp;d</small>`, `Since the most recent entry<br/>${guard}`))
   } else {
     tiles.push(coverageTile(ag))
   }

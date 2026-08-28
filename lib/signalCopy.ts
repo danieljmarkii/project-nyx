@@ -825,7 +825,14 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       `Since ${onsetMonth(finding.firstOnsetIso)}, we've logged ${count(finding.episodeCount, 'episode', 'episodes')} of ` +
       `${symptom} for ${petName} across ${finding.activeWeeks} of the last ${weeks} weeks, the most recent ` +
       `${recencyPhrase(finding.daysSinceLastEpisode)}. A symptom that keeps recurring over weeks is worth ${vetAsk} — ` +
-      `a read of your logs, not a diagnosis.`
+      `a read of your logs, not a diagnosis.` +
+      // §9 adjacency (CUL-676). The card face carries the server-composed sentence, but the
+      // EXPAND is composed here — so without this the disclosure vanished exactly where an
+      // owner goes for more detail (adversarial pass, 2026-08-28). Names misattribution, not
+      // overlap: either count can be understated as readily as overstated.
+      (finding.coughVomitAdjacent
+        ? ` Coughing and vomiting are easily confused in both directions, so either count may be off — worth raising both together.`
+        : '')
     );
   }
   if (finding.type === 'postprandial_timing') {
@@ -1705,6 +1712,18 @@ export function phoneScript(finding: SignalFinding, petName: string): PhoneScrip
         value: `${count(finding.episodeCount, 'episode', 'episodes')} across ${finding.activeWeeks} of ${weeks} weeks`,
       },
       { label: 'Most recent', value: recencyPhrase(finding.daysSinceLastEpisode) },
+      // The relay the owner READS ALOUD is the one place this mattered most and the one
+      // place the first cut omitted it (adversarial pass, 2026-08-28): "mention both" is an
+      // instruction to the owner about the consult itself, so a script without it defeats
+      // the disclosure's whole purpose.
+      ...(finding.coughVomitAdjacent
+        ? [
+            {
+              label: 'Also mention',
+              value: 'coughing and vomiting are easily confused — both are being logged separately',
+            },
+          ]
+        : []),
     ];
   }
   if (finding.type === 'incident_red_flag') {

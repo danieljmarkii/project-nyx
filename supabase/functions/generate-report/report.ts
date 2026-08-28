@@ -99,6 +99,7 @@ import {
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
+import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 // CUL-226 — the SHARED vomit-contents presence leaves: the SAME food/hair/bile atoms L3's
 // photoComposition reads (same dependency-free, both-runtimes rationale as foodFormat above), so
 // the report's contents descriptor and the Signal card can't drift on a future token edit. Only the
@@ -3488,7 +3489,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     }
     // Only trust the local recount when the report window covers the detector's full episode set
     // (mirrors the symptomDays guard); else the engine's UTC number is the honest fallback.
-    const episodeSetMatches = episodes.length === f.episodeCount
+    // UNIT MISMATCH, FIXED (HR-7 / CUL-676; adversarial pass 2026-08-28). This compared
+    // `episodes.length` — minute-deduped ROWS — against `f.episodeCount`, which is the
+    // engine's 3-HOUR-CHAINED episode count. For vomiting the two usually coincide (one row
+    // per bout), which is why it survived; for COUGH they differ by construction, because a
+    // single coughing fit is logged repeatedly and the chain collapses exactly that. The
+    // consequence was silent and precisely inverted from its intent: the guard would read
+    // "counts differ ⇒ the window doesn't cover the episode set" for EVERY cough flag, so
+    // the local-day reconciliation below would disable itself and fall back to the engine's
+    // UTC numbers — reinstating the ±1-day disagreement with the At-a-glance tile that the
+    // PR-7 cold read caught on the lead safety line. Compare like for like: chain the
+    // report's rows with the SAME shared predicate the engine uses (lib/symptomEpisodes —
+    // never a second collapse, per §5.3) and compare episode counts to episode counts.
+    const reportEpisodeCount = collapseToEpisodeOnsets(
+      episodes.map((e) => Date.parse(e.occurredAt)),
+      DEFAULT_CONFIG.symptomEpisodeGapHours,
+    ).length
+    const episodeSetMatches = reportEpisodeCount === f.episodeCount
     const localSymptomDays = episodeSetMatches ? localDayNums.size : f.symptomDays
     const localDaysSince =
       episodeSetMatches && lastLocalDay !== null ? Math.max(0, endDayNum - lastLocalDay) : f.daysSinceLastEpisode

@@ -250,13 +250,29 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   const noun = f.episodeCount === 1 ? 'episode' : 'episodes'
   const vetAsk = f.tier === 'firm' ? 'worth booking a vet visit' : 'worth a word with your vet'
   // §9's cough↔vomit adjacency (CUL-676). Appended ONLY when both courses are chronic
-  // (the composition layer decides — see coughVomitAdjacent). It discloses that the two
-  // records may describe overlapping moments and asks for them to be raised TOGETHER; it
-  // deliberately does not net either count down, name a mechanism, or offer the hairball
-  // explanation the deep-dive names as the canonical diagnosis-delaying error. Screened by
-  // validatePhrasing's chronicity branch (causal / mechanism / food) like the rest of the line.
+  // (the composition layer decides — see coughVomitAdjacent). It deliberately does not net
+  // either count down, name a mechanism, or offer the hairball explanation the deep-dive
+  // names as the canonical diagnosis-delaying error.
+  //
+  // TWO THINGS THE ADVERSARIAL PASS CORRECTED HERE (2026-08-28), both worth keeping written
+  // down, because the first draft got each of them wrong in a way no test would have caught:
+  //
+  // 1. LENGTH. The first draft composed to 382 characters against validatePhrasing's 320-char
+  //    cap — so it would have been REJECTED by the screen this comment used to claim screened
+  //    it. It shipped anyway only because chronicity is template-only and phraseFinding
+  //    returns the template BEFORE validating (index.ts), i.e. the copy was out of contract
+  //    and the contract was not being applied. Both halves are now fixed: the clause is short
+  //    enough that the composed line fits with headroom for a long pet name and 3-digit
+  //    counts, and phrasing.test.ts asserts validatePhrasing accepts the adjacency arm on a
+  //    deliberately worst-case finding. Keep any future edit inside that test.
+  // 2. WHICH ERROR MODEL IT NAMES. The draft said the two counts "may describe some of the
+  //    same moments" — i.e. DOUBLE-COUNTING, which is the benign reading and, on a safety
+  //    card, the deflationary one. The failure §9 actually names is MISATTRIBUTION: a cough
+  //    logged as hairball retching, or post-tussive vomiting logged as a cough. That makes
+  //    one count too LOW as readily as the other too high, so the honest word is "confused",
+  //    not "overlapping", and the sentence must not suggest either number is inflated.
   const adjacency = f.coughVomitAdjacent
-    ? ` Coughing and vomiting can look alike and can happen together, so these counts may describe some of the same moments — raise both with your vet at once, not as separate problems.`
+    ? ` Coughing and vomiting are easily confused, so raise both with your vet together.`
     : ''
   return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
 }

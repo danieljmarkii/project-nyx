@@ -1647,7 +1647,9 @@ Deno.test('R2-2 — no-trial At-a-glance: since-onset + trajectory + treats tile
 
 Deno.test('R2-2 ADVERSARIAL — the days-since-last-episode tile never reads as recovery; the caveat scales with the gap', () => {
   const html = renderReport(monitoringSnap())
-  assert.ok(/Since the most recent episode/.test(html), 'days-since tile present')
+  // HR-7 (CUL-676): "entry" — this tile's day count comes from the last deduped ROW, not a
+  // chained episode, so it no longer borrows the chronicity flag's noun.
+  assert.ok(/Since the most recent entry/.test(html), 'days-since tile present')
   // 9 days since, only 2 of them logged → the coverage is disclosed AND framed "not recovery".
   assert.ok(/2 of the last <span class="num">9<\/span> days logged/.test(html) || /of the last .*9.* days logged/.test(html), 'sparse-gap coverage disclosed')
   assert.ok(/not recovery/i.test(html), 'a gap is never allowed to read as recovery')
