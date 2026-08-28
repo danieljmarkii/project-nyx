@@ -196,6 +196,51 @@ describe('petStore', () => {
     expect(s.pets.find((p) => p.id === 'pet-2')?.name).toBe('Juniper');
   });
 
+  // ── patchPetById (CUL-641) ───────────────────────────────────────────────────
+  // The by-id sibling exists because `updatePet` derives its target from `activePet`,
+  // which is the wrong question for anything acting on a RECORD: record screens are
+  // reached by id for any pet (CUL-574).
+  it('patchPetById patches a NON-active pet, which updatePet structurally cannot', () => {
+    usePetStore.setState({ ...INITIAL, pets: [pixel, juniper], activePet: juniper });
+    usePetStore.getState().patchPetById('pet-1', { name: 'Pixel II' });
+    const s = usePetStore.getState();
+    expect(s.pets.find((p) => p.id === 'pet-1')?.name).toBe('Pixel II');
+    expect(s.activePet?.id).toBe('pet-2');
+    expect(s.activePet?.name).toBe('Juniper');
+  });
+
+  it('patchPetById keeps activePet and its list row the SAME object when it is the target', () => {
+    // The invariant `updatePet` maintains and every consumer relies on: `activePet` is
+    // the array entry, not a copy of it. Two objects here means a later read of one sees
+    // a value the other does not have.
+    usePetStore.setState({ ...INITIAL, pets: [pixel, juniper], activePet: pixel });
+    usePetStore.getState().patchPetById('pet-1', { name: 'Pixel II' });
+    const s = usePetStore.getState();
+    expect(s.activePet?.name).toBe('Pixel II');
+    expect(s.activePet).toBe(s.pets.find((p) => p.id === 'pet-1'));
+  });
+
+  it('patchPetById leaves activePet REFERENTIALLY untouched when patching another pet', () => {
+    // Identity, not just value: `activePet` is a render dependency across the app, so
+    // handing back a new object for a patch that did not concern it churns every screen
+    // reading it.
+    usePetStore.setState({ ...INITIAL, pets: [pixel, juniper], activePet: juniper });
+    const before = usePetStore.getState().activePet;
+    usePetStore.getState().patchPetById('pet-1', { name: 'Pixel II' });
+    expect(usePetStore.getState().activePet).toBe(before);
+  });
+
+  it('patchPetById is a no-op for a pet not in the list — never a fallback to the active one', () => {
+    // `pets` holds only non-archived pets, so a miss means an archived record's pet.
+    // Falling back to the current selection is the wrong-pet class (CUL-574): a
+    // confidently-stated different answer, not a graceful degradation.
+    usePetStore.setState({ ...INITIAL, pets: [pixel, juniper], activePet: juniper });
+    usePetStore.getState().patchPetById('pet-archived', { name: 'Ghost' });
+    const s = usePetStore.getState();
+    expect(s.pets.map((p) => p.name)).toEqual(['Pixel', 'Juniper']);
+    expect(s.activePet?.name).toBe('Juniper');
+  });
+
   it('removePet drops the pet and keeps the current selection when it survives', () => {
     usePetStore.setState({ ...INITIAL, pets: [pixel, juniper], activePet: juniper });
     usePetStore.getState().removePet('pet-1');

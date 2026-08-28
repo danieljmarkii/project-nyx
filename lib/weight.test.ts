@@ -512,17 +512,59 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     expect(mockPetsUpdate).not.toHaveBeenCalled();
   });
 
-  it('does not patch the store when the reconciled pet is no longer active', async () => {
-    // `updatePet` patches whichever pet is ACTIVE, so a reversal that resolves after
-    // a pet switch would write this pet's weight onto another animal — the wrong-pet
-    // class (CUL-574). The server write still goes out; it is addressed by id.
+  it('patches the RECORD\'s pet even when another pet is active, and only that one', async () => {
+    // The cross-pet MAINLINE, not a race (code review, CUL-641). A record screen is
+    // reached by id for any pet — the day-summary spine pushes /event/[id] for every
+    // pet's rows (CUL-574) — so removing a non-active pet's weigh-in is an ordinary
+    // thing to do. `updatePet` can only patch the ACTIVE pet, so an is-it-active guard
+    // here left the record's pet holding the deleted reading; `selectPet` repoints into
+    // the already-loaded array without refetching, and switching to that pet re-showed
+    // the number the owner had just removed. This asserts the entry in `pets`, which is
+    // where that staleness lived and which an activePet-only assertion cannot see.
     const other = { ...PET, id: 'pet-2', name: 'Juniper', weight_kg: 3.1 } as Pet;
     usePetStore.setState({ pets: [PET, other], activePet: other, isOnboarded: true });
     localReads({ isWeightCheck: true, latestKg: 5.62 });
+
     await reconcileWeightSnapshotAfterDelete('ev-1');
     await flush();
+
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
+    expect(usePetStore.getState().pets.find((p) => p.id === 'pet-1')?.weight_kg).toBe(5.62);
+    // And the OTHER animal is untouched — a by-id patch cannot land on the wrong pet,
+    // which is the risk the discarded guard existed for.
+    expect(usePetStore.getState().pets.find((p) => p.id === 'pet-2')?.weight_kg).toBe(3.1);
     expect(usePetStore.getState().activePet?.weight_kg).toBe(3.1);
+  });
+
+  it('survives a later switch to that pet — the defect was only visible after one', async () => {
+    // The step that made the cross-pet gap invisible: nothing refetches on a switch, so
+    // a stale array entry becomes the active pet's own weight, and the chip, EditPetModal
+    // and the next weigh-in's pre-fill all read it.
+    const other = { ...PET, id: 'pet-2', name: 'Juniper', weight_kg: 3.1 } as Pet;
+    usePetStore.setState({ pets: [PET, other], activePet: other, isOnboarded: true });
+    localReads({ isWeightCheck: true, latestKg: 5.62 });
+
+    await reconcileWeightSnapshotAfterDelete('ev-1');
+    await flush();
+    usePetStore.getState().selectPet('pet-1');
+
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(5.62);
+  });
+
+  it('is a no-op for a record whose pet is not in the list at all', async () => {
+    // `pets` holds only non-archived pets, so a miss means an archived record's pet:
+    // nothing on screen to keep in step, and no fallback to "the pet currently selected"
+    // (the CUL-574 rule — that rung is a different, confidently-wrong answer). The server
+    // write still goes out; it is addressed by id.
+    usePetStore.setState({ pets: [], activePet: null, isOnboarded: true });
+    localReads({ isWeightCheck: true, latestKg: 5.62 });
+
+    await reconcileWeightSnapshotAfterDelete('ev-1');
+    await flush();
+
+    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
+    expect(usePetStore.getState().pets).toEqual([]);
+    expect(usePetStore.getState().activePet).toBeNull();
   });
 
   it('patches the store even when the server write fails — the device stays right offline', async () => {

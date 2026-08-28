@@ -325,20 +325,34 @@ export async function reconcileWeightSnapshotAfterDelete(
 
     // Patch the in-memory pet FIRST so the chip / pre-fill / EditPetModal are right
     // on this device immediately — including offline, where the server write below
-    // cannot land. `updatePet` patches the ACTIVE pet, so guard on the reconciled
-    // pet still being it: a queue-then-switch would otherwise write this pet's
-    // weight onto another animal (the wrong-pet class).
-    if (usePetStore.getState().activePet?.id === row.pet_id) {
-      usePetStore.getState().updatePet({ weight_kg: snapshotKg });
-    }
+    // cannot land.
+    //
+    // BY ID, not `updatePet` (code review). `updatePet` can only patch the ACTIVE
+    // pet, and a record screen is reached by id for ANY pet: the day-summary spine
+    // pushes `/event/[id]` for every pet's rows (the CUL-574 rule, stated on that
+    // screen). Removing a non-active pet's weigh-in therefore left that pet's entry
+    // in `pets` holding the deleted reading, and `selectPet` repoints into the
+    // already-loaded array without refetching — so switching to that pet re-showed
+    // the number the owner had just removed. That is this very defect, reproduced on
+    // the cross-pet path by the guard that was meant to prevent a wrong-pet write.
+    // Scoping the patch to the id gets both: it cannot land on another animal, and
+    // it cannot skip the animal it is for.
+    usePetStore.getState().patchPetById(row.pet_id, { weight_kg: snapshotKg });
 
     void supabase
       .from('pets')
       .update({ weight_kg: snapshotKg })
       .eq('id', row.pet_id)
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) console.warn('[weight] snapshot reconcile after delete failed:', error.message);
-      });
+      .then(
+        ({ error }: { error: { message: string } | null }) => {
+          if (error) console.warn('[weight] snapshot reconcile after delete failed:', error.message);
+        },
+        // A REJECTION, not a returned `{ error }` — a transport-layer throw. Handled
+        // rather than left to the platform because this function's contract is that it
+        // never throws, and an un-caught rejection from a fire-and-forget cosmetic
+        // write is exactly the kind of noise that gets a real one ignored.
+        (e: unknown) => console.warn('[weight] snapshot reconcile after delete threw:', e),
+      );
 
     return { petId: row.pet_id, snapshotKg };
   } catch (e) {
