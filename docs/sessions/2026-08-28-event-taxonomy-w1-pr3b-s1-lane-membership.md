@@ -73,16 +73,37 @@ the R4 both-stated mechanism + the report co-work + the redeploy.
   the layer's WORSENING gate — masking the chronicity valve it was measuring.
   The committed valve fixture uses a flat-cadence chronic course for exactly
   that reason.
-- `adversarial-reviewer` run on the diff (mandatory — detection change); verdict
-  and any findings recorded on CUL-676 and in the PR.
+- **`adversarial-reviewer` (mandatory — detection change): PASS with findings,
+  all addressed in-session.** It did not take the suites' word: it built the OLD
+  detection module beside the new one and ran a **6,000-case randomized
+  differential** (3,000 reachable inputs + 3,000 with cough/sneeze present) —
+  **0 output diffs**, so behaviour-neutral is proven, not asserted; it re-ran the
+  red-check independently by mutating each lane cell one at a time — every
+  negative fixture failed for exactly its own cell. Two latent defects found and
+  fixed before merge: **(1)** an explicit-`undefined` per-type floor spread over
+  the globals and silenced ⑦ on a 6-week q2-day vomiter (reassurance-by-absence;
+  `chronicityFloorsFor` now drops undefined values, pinned); **(2)** widening the
+  universe flipped server `SYMPTOM_LABEL`'s membership with no walk row, and
+  `summary.ts`'s month-summary naming gate keys on that map — the HR-1
+  auto-enrolment defect re-created one layer out (three engine lists now carry
+  walk rows; the header inventory gained the naming-gate category; summary
+  membership is named as session 2's explicit decision). Also adopted: the sweep
+  split per-shape (mixing shapes had destroyed the L4 run it claimed to cover), a
+  source-scan guard that no detector iterates the raw lists, and the named
+  Bonferroni-shrink lever on the ① cell. For session 2's displacement fixture it
+  contributed the exact adversarial shape: a longer-span MILD cough (52d/10
+  episodes, firm-by-span) deleting a denser, more urgent vomiting course
+  (24d/8) from the surface — the R4 acceptance test must be that shape.
 
 ## Decisions taken in-session (build-level)
 
 - `PRE_TAXONOMY_LANE_TYPES` is typed `readonly SymptomType[]` (wide element
   type) so lane-cell `indexOf` accepts the 7-wide stat type; the cells' contents
   are pinned by test, not by tuple types.
-- The one-line `deno.lock` workspace-mirror refresh the local toolchain produced
-  was reverted — B-434 owns lockfile drift; out of scope.
+- The one-line `deno.lock` workspace-mirror refresh (`expo-haptics`, already in
+  `package.json`) ships in this PR: the local Deno toolchain regenerates it on
+  every run, so reverting it is a losing fight — it is the truthful B-434 drift
+  class updating itself, and CI's plain `--lock` accepts it by design.
 
 ## Residuals / next
 

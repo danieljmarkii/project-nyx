@@ -279,6 +279,21 @@ Deno.test('perType: absent map resolves to the globals — byte-identical engine
   assert.equal(chronicityFloorsFor('cough', cfg), cfg)
 })
 
+Deno.test('perType: an explicit-undefined floor resolves to the GLOBAL, never silences the lane (adversarial 2026-08-28)', () => {
+  // Partial<{…}> admits { minEpisodes: undefined }; a bare spread would overwrite the
+  // global and `episodeCount >= undefined` is false — a 6-week q2-day course going
+  // SILENT is reassurance-by-absence on a safety lane, minted by exactly the config
+  // shape a spread-from-partial assembly produces.
+  const cfg = chronCfg({ perType: { vomit: { minEpisodes: undefined } } }).chronicity
+  assert.equal(chronicityFloorsFor('vomit', cfg).minEpisodes, DEFAULT_CONFIG.chronicity.minEpisodes)
+  const findings = detectChronicity(
+    input({ symptomEvents: councilShape('vomit') }),
+    chronCfg({ perType: { vomit: { minEpisodes: undefined, firmSpanDays: undefined } } }),
+  )
+  assert.equal(findings.length, 1, 'the safety lane must still fire')
+  assert.equal(findings[0].tier, 'firm', 'the tier resolver must also survive an undefined override')
+})
+
 Deno.test('perType: an override moves ONLY its own type', () => {
   const cfg = chronCfg({ perType: { vomit: { minEpisodes: 99 } } }).chronicity
   assert.equal(chronicityFloorsFor('vomit', cfg).minEpisodes, 99)
@@ -323,20 +338,55 @@ Deno.test('perType: the ③-valve shares the resolved floors by construction (on
 })
 
 // ── 8 · The sweep: nothing in the composed output ever names cough today ──────
+//
+// One potent shape per RUN — mixing them destroys the shapes (the adversarial pass
+// caught the first draft doing exactly that: councilShape + gapShape interleaved
+// breaks the L4 monotone run, so the sweep silently stopped exercising L4). Each
+// entry is the SAME shape its lane's positive control proves fires for vomit.
+// Cough logs DO count as logged days in the density denominators (R3 — ruled,
+// deliberate); the sweep asserts no LANE speaks cough's name before session 2.
 
-Deno.test('sweep: a cough-saturated record produces NO finding naming cough (fetch still guards prod; this guards the seams)', () => {
-  // Every potent shape at once, all as cough, over a real meal record. Cough logs DO
-  // count as logged days in the density denominators (R3 — ruled, deliberate); this
-  // sweep asserts no LANE ever speaks cough's name before session 2.
-  const findings = detectSignals(
-    input({
-      mealEvents: [...staple(1, 28, 'chicken', 9), pMeal(2, 'beef', 10), pMeal(4, 'beef', 10)],
-      symptomEvents: [...councilShape('cough'), ...gapShape('cough', [20, 12, 6, 3])],
-    }),
-  )
-  for (const { finding } of findings) {
-    const named = (finding as { symptomType?: string }).symptomType
-    assert.notEqual(named, 'cough', `lane ${finding.type} must not name cough`)
-    assert.notEqual(named, 'sneeze', `lane ${finding.type} must not name sneeze`)
+const SWEEP_INPUTS: Record<string, Partial<DetectionInput>> = {
+  'correlation shape (①)': { ...CORRELATION_SHAPE, symptomEvents: correlationSymptoms('cough') },
+  'worsening rise (④)': worseningShape('cough'),
+  'flat fortnight (③)': { symptomEvents: flatShape('cough') },
+  'council chronic course (⑦)': { symptomEvents: councilShape('cough') },
+  'monotone shortening run (L4)': { symptomEvents: gapShape('cough', [20, 12, 6, 3]) },
+}
+
+Deno.test('sweep: each potent cough shape produces NO finding naming cough through detectSignals', () => {
+  for (const [name, over] of Object.entries(SWEEP_INPUTS)) {
+    for (const { finding } of detectSignals(input(over))) {
+      const named = (finding as { symptomType?: string }).symptomType
+      assert.notEqual(named, 'cough', `${name}: lane ${finding.type} must not name cough`)
+      assert.notEqual(named, 'sneeze', `${name}: lane ${finding.type} must not name sneeze`)
+    }
   }
+})
+
+Deno.test('sweep: the staple-washout shape as cough mints no diagnostic naming the symptoms (floor half)', () => {
+  const diags = detectCoverage(input({ pet: dog, mealEvents: STAPLE_MEALS, symptomEvents: stapleSymptoms('cough') }))
+  assert.equal(findDiag(diags, 'staple_washout'), undefined)
+  assert.equal(findDiag(diags, 'diet_churn'), undefined)
+})
+
+// ── 9 · The structural guard: no detector may iterate the raw lists directly ──
+// The detectionSoftDelete.test.ts shape (source is the only place this contract
+// lives): a lane loop reaching past its cell for CORRELATION_SYMPTOM_TYPES or the
+// universe re-creates the HR-1 auto-enrolment this whole split removes. The fetch
+// (index.ts) and report set-membership reads are the sanctioned consumers.
+Deno.test('no detector loop iterates CORRELATION_SYMPTOM_TYPES or SYMPTOM_TYPE_UNIVERSE directly', () => {
+  const src = Deno.readTextFileSync(new URL('./detection.ts', import.meta.url))
+  // The loop form specifically — `typeof SYMPTOM_TYPE_UNIVERSE` (the type derivation)
+  // contains `of SYMPTOM_TYPE_UNIVERSE` as a substring and is sanctioned.
+  assert.equal(
+    src.match(/for \(const \w+ of CORRELATION_SYMPTOM_TYPES/g),
+    null,
+    'a lane loop must iterate its LANE_SYMPTOM_TYPES cell, never the fetch union',
+  )
+  assert.equal(
+    src.match(/for \(const \w+ of SYMPTOM_TYPE_UNIVERSE/g),
+    null,
+    'no lane may iterate the type universe — it exists so a leaf can be NAMED without being consumed',
+  )
 })

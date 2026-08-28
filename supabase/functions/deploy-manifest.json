@@ -46,17 +46,17 @@
     },
     "generate-report": {
       "status": "hold",
-      "fingerprint": "sha256:f86cc9f07dc60902b8bac6c83298b9480b095ce0de4d3f0b4ab181b6db6c8c89",
+      "fingerprint": "sha256:3374faeaa69c69151de241703c68fa306be2ed98c550c627ad6cc2bf65d5ccca",
       "reason": "B-494 HOLD: the report deliberately runs the pre-PR-7 off-diet heuristic until the refusal safety lane ships; the generate-report redeploy is gated on B-494 (see STATUS.md / Open Questions). Do NOT set `deployed` until B-494 clears. Carries CUL-564's REAL behavior change (the report's §3.8 timing line renders timing_story + empty_stomach_timing and drops L2 trial_response / L4 gap_shortening). Fingerprint re-bumped for CUL-372: report.ts inlines generate-signal/detection.ts, whose episode collapse was re-based onto lib/symptomEpisodes (a thin adapter over lib/mealTiming's collapseEpisodes). BEHAVIOR-NEUTRAL, verified by a COMMITTED, re-runnable test — lib/symptomEpisodes.differential.test.ts fuzzes 40,000 inputs against the pre-refactor toEpisodeOnsets/toConfidenceEpisodes bodies transcribed verbatim (asserting >5,000 of them carry duplicate instants and >5,000 split into multiple episodes, so the fuzz is evidence rather than decoration), plus the overnight-chained-bout case. The one divergence is non-finite instants, which no caller can produce (all 7 engine call sites pre-filter Number.isFinite) and which the test pins explicitly. 1369 deno tests green. Adds nothing to what this hold already owes. Also unified the episode-gap constant: SYMPTOM_EPISODE_GAP_HOURS now resolves to DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours (both were an independent literal 3), so the collapse and photoComposition's collapseComposition cannot drift apart. Same value, no behavior change. [2026-08-28, CUL-676 3b-s1: detection.ts's membership split rode into this closure while held — behavior-neutral (per-lane cells = the prior five; report imports/behavior unchanged, 1,390 Deno tests green). The hold and its CUL-19 gate are unchanged; 3b session 2's report co-work (REPORT_SYMPTOM_TYPES + render labels) re-acknowledges again.]",
       "ref": "B-494",
-      "updated": "2026-08-22"
+      "updated": "2026-08-28"
     },
     "generate-signal": {
       "status": "pending",
-      "fingerprint": "sha256:bd2505366825df8c16c4040780ab06d7560267bbaf7d8edcfecc0490353b5b1a",
+      "fingerprint": "sha256:327d39e4ac0850ea18117fbc008140b05293d21da3c0d9595cb999726357ce32",
       "reason": "Source drift, behavior-neutral, no redeploy owed for correctness: W1-PR-3b session 1 (CUL-676) split the one symptom list into SYMPTOM_TYPE_UNIVERSE / the fetch union / LANE_SYMPTOM_TYPES per-lane cells (all cells = the pre-taxonomy five; 1,390 Deno tests unchanged), added the empty perType chronicity floor slot + chronicityFloorsFor, phrasing gained unreachable cough/sneeze labels, and the stale PR-3 deploy-gate registry comment was deleted (HR-30). The redeploy rides 3b SESSION 2 (cough joins ⑦ + R3 denominators + the displacement mechanism), gated on a live build carrying PR-3a (#730). Prior drift notes (CUL-564 composeV2 cleanup etc.) remain folded in — still no behavior change deployed-vs-main other than the above.",
       "ref": "CUL-676",
-      "updated": "2026-08-22"
+      "updated": "2026-08-28"
     }
   }
 }

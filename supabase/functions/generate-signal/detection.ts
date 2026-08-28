@@ -117,7 +117,9 @@ import {
 //     fetch auto-enrolled it in ①③④⑦, L4 AND the diagnostics floor at once —
 //     including the food↔cough attribution §9 forbids by name (HR-1).
 //
-// Deliberately NOT cells in this map:
+// Deliberately NOT cells in this map — three categories, and a session-2 author
+// should treat this inventory as the complete map of what ELSE moves when the
+// fetch union widens:
 //   • ⑤/⑥/L1/L2-timing are structurally single-type (POSTPRANDIAL_SYMPTOM_TYPE /
 //     TIMEOFDAY_SYMPTOM_TYPE / EMPTY_STOMACH_SYMPTOM_TYPE / TRIAL_TIMING_SYMPTOM_TYPE
 //     constants below) — the corrected HR-1 inventory (2026-08-27 review, finding 1):
@@ -128,6 +130,20 @@ import {
 //     the RULED state, not an accident (R3, PM 2026-08-28: "a logged cough IS a
 //     logged day" — cough joins these denominators when it joins the fetch, with
 //     before/after fixtures and the client-mirror parity in the same PR).
+//   • NAMING gates that key on SYMPTOM_LABEL / the universe rather than a lane cell
+//     (adversarial finding, 2026-08-28): summary.ts's month summary keeps a symptom
+//     line only if `s.type in SYMPTOM_LABEL` — widening the universe widened that
+//     gate, so the moment the FETCH carries cough the month summary NAMES it (with
+//     the finished-meals clause alongside) through no lane cell and no §9
+//     arbitration. Latent until session 2 widens the fetch; session 2 decides
+//     summary membership EXPLICITLY (the §13a walk carries the row), never inherits it.
+//
+// One lever this split created, named so nobody pulls it casually: REMOVING a type
+// from the `correlation` cell shrinks ①'s Bonferroni family with none of the family
+// floors (the suppression floors guard suppression, not membership) — the remaining
+// candidates' bar loosens and an unrelated finding can promote Early→Established on
+// identical statistics. The cell pins in laneMembership.test.ts make any shrink a
+// visible, argued diff.
 
 export const SYMPTOM_TYPE_UNIVERSE = [
   'vomit',
@@ -1864,8 +1880,9 @@ export interface DetectionConfig {
      * Per-type floor overrides (W1-PR-3b session 1, CUL-676). The global floors above
      * were calibrated on GI/derm signs; a leaf joining the lane brings ITS OWN floors
      * (the B-755 contract — cough's numbers are Dr. Chen's to set when it joins in
-     * session 2). An absent type resolves to the global floors, so an empty/omitted
-     * map is byte-identical to the pre-slot engine. `windowDays` is deliberately NOT
+     * session 2). An absent type — or an absent OR UNDEFINED floor within an entry —
+     * resolves to the global floors, so an empty/omitted map is byte-identical to
+     * the pre-slot engine and a spread-from-partial config cannot silence the lane. `windowDays` is deliberately NOT
      * overridable: the card's "{N} weeks" denominator and the weekly distribution
      * buckets are one shared window — a per-type window would be a different lane,
      * not a different floor. Every consumer resolves through chronicityFloorsFor —
@@ -4041,13 +4058,26 @@ export function isChronic(s: ChronicityStat, cfg: DetectionConfig['chronicity'])
  * globals unchanged. Resolving INSIDE isChronic / resolveChronicityTier (rather than
  * at each call site) is what makes ⑦, its tier and the ③-valve share the per-type
  * floors by construction — a consumer cannot forget to resolve.
+ *
+ * UNDEFINED-HARDENED (adversarial finding, 2026-08-28): `Partial<{…}>` admits a
+ * present-but-undefined value, and a bare spread would overwrite a global floor with
+ * `undefined` — after which `episodeCount >= undefined` is false and the SAFETY lane
+ * goes silent on a 6-week q2-day course. That is reassurance-by-absence, minted by a
+ * config shape a programmatically-assembled override produces naturally. So an
+ * undefined floor is treated exactly like an absent one, and the pin lives in
+ * laneMembership.test.ts.
  */
 export function chronicityFloorsFor(
   symptomType: SymptomType,
   cfg: DetectionConfig['chronicity'],
 ): DetectionConfig['chronicity'] {
   const over = cfg.perType?.[symptomType]
-  return over ? { ...cfg, ...over } : cfg
+  if (!over) return cfg
+  const resolved = { ...cfg }
+  for (const [k, v] of Object.entries(over)) {
+    if (v !== undefined) (resolved as Record<string, unknown>)[k] = v
+  }
+  return resolved
 }
 
 /**
