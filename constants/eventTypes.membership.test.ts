@@ -65,8 +65,18 @@ function declBlock(relPath: string, marker: string, terminator: string): string 
   return src.slice(start, end + terminator.length);
 }
 
+/** Comments out, code in (the completionCard-guard lesson, re-learned here on 3b-s1:
+ *  the LANE_SYMPTOM_TYPES cell DOCSTRINGS say "cough: NEVER (§9)" — prose about the
+ *  membership, matched by the Record-key regex as the membership). Same-length
+ *  replacement so marker/terminator offsets stay honest. */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+}
+
 function scan(relPath: string, marker: string, terminator: string) {
-  const block = declBlock(relPath, marker, terminator);
+  const block = stripComments(declBlock(relPath, marker, terminator));
   // A leaf lives in a list as a quoted member ('cough') OR as a Record key (cough:) —
   // the label maps use the key form, and missing it read three joined rows as absent.
   const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(block);
@@ -89,7 +99,7 @@ const WALK: WalkRow[] = [
   },
   {
     list: 'CORRELATION_SYMPTOM_TYPES (generate-signal/detection.ts)',
-    governs: 'the engine fetch AND all five lanes, until §9’s per-lane map exists',
+    governs: 'the engine FETCH union + (by construction, R3) the logged-day denominators — the lanes now read LANE_SYMPTOM_TYPES (3b-s1, #731)',
     read: () => scan('supabase/functions/generate-signal/detection.ts',
       'export const CORRELATION_SYMPTOM_TYPES', '] as const'),
     cough: {
@@ -240,6 +250,46 @@ const WALK: WalkRow[] = [
     },
     sneeze: { now: false, decision: 'Follows the same ruling at 3b (a sneeze log is logging too); data-only for every per-type lane' },
   },
+  // ── Rows 16–18: the engine-side lists 3b session 1 created or flipped (#731).
+  // Registered here because the discovery guard is FILE-keyed — a second list added
+  // to an already-registered file is invisible to it (the adversarial pass caught
+  // phrasing's SYMPTOM_LABEL flipping with no row), so the walk is the only place
+  // these carry an explicit per-leaf decision.
+  {
+    list: 'SYMPTOM_TYPE_UNIVERSE (generate-signal/detection.ts)',
+    governs: 'what the engine can NAME (types + label map), deliberately ahead of the fetch — never consumed by a lane',
+    read: () => scan('supabase/functions/generate-signal/detection.ts',
+      'export const SYMPTOM_TYPE_UNIVERSE', '] as const'),
+    cough: { now: true, decision: 'YES — landed in 3b session 1 (#731): typed and nameable so fixtures and labels exist before any lane may speak' },
+    sneeze: { now: true, decision: 'YES — same landing' },
+  },
+  {
+    list: 'LANE_SYMPTOM_TYPES per-lane cells (generate-signal/detection.ts)',
+    governs: 'which fetched types each lane consumes — ① / ③④ / ⑦ / L4 / the diagnostics floor (the §9 ruled cells)',
+    read: () => scan('supabase/functions/generate-signal/detection.ts',
+      'export const LANE_SYMPTOM_TYPES', '} as const'),
+    cough: {
+      now: false,
+      decision: 'JOINS the chronicity cell ONLY, in 3b session 2 (⑦-only, the ruled row; R1 L4-no + R2 floor-exclude '
+        + 'are structural NEVER-cells with paired fixtures in laneMembership.test.ts). This row flips when the cell '
+        + 'gains its first cough literal.',
+    },
+    sneeze: { now: false, decision: 'NO cell at W1 — data-only (§9)' },
+  },
+  {
+    list: 'server SYMPTOM_LABEL (generate-signal/phrasing.ts)',
+    governs: 'the engine’s owner-facing symptom words — AND summary.ts’s month-summary naming gate keys on `in SYMPTOM_LABEL` (adversarial 2026-08-28)',
+    read: () => scan('supabase/functions/generate-signal/phrasing.ts',
+      'export const SYMPTOM_LABEL', '}'),
+    cough: {
+      now: true,
+      decision: 'YES — landed in 3b session 1 (#731), compile-forced by the universe; matches the client mirror. '
+        + 'UNREACHABLE through any lane today. The known consequence to rule at session 2: once the FETCH carries '
+        + 'cough, the month summary names it through this map with no lane cell — summary membership is session 2’s '
+        + 'explicit decision, never an inheritance.',
+    },
+    sneeze: { now: true, decision: 'YES — same landing, same session-2 rule' },
+  },
   {
     list: 'signalWatching gap row (lib/signalWatching.ts)',
     governs: 'the sub-floor "watching" register — vomit-anchored BY DESIGN (v1 scoped to the dominant symptom)',
@@ -268,11 +318,13 @@ describe('W1 membership walk (HR-6) — every list decided, current state == dec
     expect(row.sneeze.decision.length).toBeGreaterThan(0);
   });
 
-  it('the walk covers the ten §13a lists + the signal mirrors + the four review-discovered lists — a list added later must join the table', () => {
+  it('the walk covers the ten §13a lists + the signal mirrors + the review-discovered lists + the 3b-s1 engine lists — a list added later must join the table', () => {
     // 11 original rows + SYMPTOM_METRICS/HISTORY (ask) + SYMPTOM_OCCURRENCE_LABELS +
-    // TRIAL_RESPONSE_LOGGED_DAY_TYPES + the signalWatching gap row (2026-08-27 review).
-    // guards/symptomLists.test.ts is the discovery side: an UNREGISTERED list fails there.
-    expect(WALK).toHaveLength(15);
+    // TRIAL_RESPONSE_LOGGED_DAY_TYPES + the signalWatching gap row (2026-08-27 review)
+    // + SYMPTOM_TYPE_UNIVERSE + LANE_SYMPTOM_TYPES + server SYMPTOM_LABEL (3b-s1, #731 —
+    // the adversarial pass caught the label map flipping with no row; the discovery
+    // guard is file-keyed and cannot see a second list in a registered file).
+    expect(WALK).toHaveLength(18);
   });
 });
 

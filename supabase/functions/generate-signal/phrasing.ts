@@ -54,6 +54,11 @@ export const SYMPTOM_LABEL: Record<SymptomType, string> = {
   itch: 'itching',
   scratch: 'scratching',
   skin_reaction: 'skin irritation',
+  // W1 (CUL-676 3b-s1): compile-forced by the widened SYMPTOM_TYPE_UNIVERSE; matches the
+  // client mirror (lib/signalCopy.ts). Unreachable until a lane cell carries the type —
+  // no lane does in session 1 — but a label existing BEFORE a finding can is the point.
+  cough: 'coughing',
+  sneeze: 'sneezing',
 }
 
 function numWord(n: number): string {
