@@ -12,9 +12,16 @@
     "allowImportingTsExtensions": true
   },
   // `supabase/functions` is Deno-typed (its own `deno test` type-check is the gate,
-  // and it is the ONLY type check over that path). `scripts/*.deno.ts` is the same
+  // and it is the ONLY type check over that path). `scripts/**/*.deno.ts` is the same
   // graph living outside that directory — a Deno entry point that imports the Edge
   // Function modules — so it carries the suffix to stay out of the app's tsc run
   // rather than being excluded by name, which the next such script would forget.
-  "exclude": ["supabase/functions", "docs/design-system", "scripts/*.deno.ts"]
+  //
+  // The glob is RECURSIVE, and that is the fix for the exact forgetting the comment
+  // above predicts (CUL-677): it was `scripts/*.deno.ts`, one level only, so the
+  // first such script written inside a subdirectory
+  // (scripts/w1-other-row-swap/predictChronicity.deno.ts) landed back in the app's
+  // tsc run and failed on `Deno` being undefined. The suffix was carrying its half of
+  // the contract; the pattern was not.
+  "exclude": ["supabase/functions", "docs/design-system", "scripts/**/*.deno.ts"]
 }

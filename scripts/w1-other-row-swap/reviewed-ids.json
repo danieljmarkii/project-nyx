@@ -1,0 +1,50 @@
+{
+  "_README": "CUL-677 / W1-PR-4 — the PM-reviewed `other`-row id list (spec §11 step 1). IDS, TARGETS AND COUNTS ONLY — never note text (T&S review, CUL-677 comment 2026-08-27). The review itself was done on (id, occurred_at, note) in session; the notes stay out of the repo. A SNAPSHOT, not a standing truth: re-run candidates.sql on swap day and review the delta before emitting.",
+  "issue": "CUL-677",
+  "spec": "docs/nyx-event-taxonomy-requirements.md §11 (D3)",
+  "reviewedOn": "2026-08-28",
+  "reviewer": { "email": "danieljmarkii@gmail.com" },
+  "candidateReadAt": "2026-08-28",
+  "counts": { "candidates": 34, "cough": 22, "sneeze": 11, "hold": 1 },
+  "swap": [
+    { "id": "6c341820-e725-4dfe-a3ea-cbf74749687c", "to": "cough" },
+    { "id": "c2dce77f-10d1-4c02-b138-3fcd7794882a", "to": "cough" },
+    { "id": "1f1bf5ae-fe62-448a-aa00-2009762046fb", "to": "cough" },
+    { "id": "453366a9-c050-4adb-98dd-d70bcd3e6ee7", "to": "cough" },
+    { "id": "67850c2f-6ec0-4d3d-a43e-64d29b37acc8", "to": "cough" },
+    { "id": "f7ec0529-072b-4f21-a976-66a132958460", "to": "cough" },
+    { "id": "ff73e3de-82a8-4870-a369-f55c0df8ad73", "to": "cough" },
+    { "id": "f3dc0c54-3f63-4840-af42-2fc3625ac6ef", "to": "cough" },
+    { "id": "edec7a8e-6c71-4ace-be7e-32da3cb4ddfc", "to": "cough" },
+    { "id": "1191081e-b8c5-4082-b7fd-dd00a24c55db", "to": "cough" },
+    { "id": "3eb5a421-a1b0-4aec-80a2-df0f16366126", "to": "cough" },
+    { "id": "ef6d5bdf-006a-4a44-a579-8f06b01c6276", "to": "cough" },
+    { "id": "aea89870-8e5d-49c3-8c20-1e303d9827d4", "to": "cough" },
+    { "id": "30171b8c-24c0-46ec-8278-17e5fc1b2f45", "to": "cough" },
+    { "id": "930907ee-3fbb-4c66-885a-255c2d028c74", "to": "cough" },
+    { "id": "30421b5a-b6b2-4fd2-a2d2-fea9368601e6", "to": "cough" },
+    { "id": "3f7a8fd6-4639-4884-8ac5-547d91c39b21", "to": "cough" },
+    { "id": "31cfb1c3-7a60-41a9-a0a1-7682b2822305", "to": "cough" },
+    { "id": "5e1d3d53-691e-4874-8a94-b5244bcce46e", "to": "cough" },
+    { "id": "bca6666f-dc16-47c8-8bb2-37aee55d55cb", "to": "cough" },
+    { "id": "089e06e2-9e50-49ea-bd7d-72cc0b55e990", "to": "cough" },
+    { "id": "7fb93d3b-d16c-42cb-8c7a-b3489b712baf", "to": "cough" },
+    { "id": "8b697e65-aa75-4fb4-bd1f-d1cdf184bf42", "to": "sneeze" },
+    { "id": "5cfb190f-c1ff-4acf-8992-ea58e51f298e", "to": "sneeze" },
+    { "id": "88ce9c8a-9722-4021-99a2-65d0c9938b50", "to": "sneeze" },
+    { "id": "169d18e7-21b4-4f3f-bd44-ec72bc41e01d", "to": "sneeze" },
+    { "id": "23e146c7-cd6b-456d-9fb1-469cd5409411", "to": "sneeze" },
+    { "id": "5cd12ed8-52ac-4ded-8b2a-2d50d133950f", "to": "sneeze" },
+    { "id": "e36058d3-0394-418a-831e-c9944f6fb326", "to": "sneeze" },
+    { "id": "b426a301-798c-4e30-a726-4afd9cd416c4", "to": "sneeze" },
+    { "id": "c9e36329-8cfd-45e7-b409-7692f39034af", "to": "sneeze" },
+    { "id": "5ed22b76-e21c-4aa9-b391-dd1b91df4527", "to": "sneeze" },
+    { "id": "f1cf9b9f-94f9-4e7e-ad01-b8e2c9a34d77", "to": "sneeze" }
+  ],
+  "hold": [
+    {
+      "id": "89fd5330-6381-4dea-bb47-50856fb4cec1",
+      "reason": "The row's note names BOTH target leaves. An UPDATE re-keys a row; it cannot split one into two, so any swap here would assert one sign and drop the other. Ruled (A) by the PM on 2026-08-28: it stays 'other' — the permanent catch-all doing its job, with the note preserving both signs. Measurably costless: the row sits inside a 3h sneeze chain (so a sneeze re-key adds no episode) and a cough re-key would add one episode against a cat-cough floor of 4 that 21 in-window episodes already clear. Recorded rather than omitted so a run-day reviewer meets a decision, not a blank."
+    }
+  ]
+}
