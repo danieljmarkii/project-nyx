@@ -1027,19 +1027,22 @@ async function readStandingNote(
  * (adversarial-reviewer + code-reviewer, CUL-13). Kept in sync with detection.ts's
  * `CORRELATION_SYMPTOM_TYPES`; the vomit count itself is filtered from these rows.
  *
- * `cough` joined with the engine's fetch union (R3, PM 2026-08-28, CUL-676 — "activity is
- * activity"). The ACCEPTED COST, recorded rather than discovered later: this is a POOLED
- * density denominator, and the trial line's numerator is vomiting only. So a cough-heavy
- * stretch inside the trial era raises the era's logged-day count without raising its vomit
- * count, which moves the per-day rate DOWN — i.e. respiratory logging can nudge the trial
- * read toward "fewer during the trial". The drift is toward REASSURANCE on the wedge's own
- * lane, which is why it is disclosed here and not merely allowed: the counterweight is the
- * C5/§7 logging-density instruments, which state the coverage the reading rests on, and the
- * §11 swap-day verification, which must compute the denominator deltas before and after.
- * A parity fixture pins this set == the engine's; drifting them is the failure this
- * comment exists to make loud.
+ * `cough` is deliberately NOT here, and that is a ruling rather than an oversight (R3,
+ * PM 2026-08-28, re-ruled the same day; CUL-676). This set mirrors the engine's
+ * COMPARISON-GATE denominator (`countsTowardComparisonGate`), which is narrower than its
+ * fetch union.
+ *
+ * Why the two differ: this is a POOLED denominator whose numerator is vomiting only, and it
+ * gates `densityComparable` — whether the strip may publish a trial-vs-baseline comparison at
+ * all. Counting cough days here raises the trial era's logged-day count without raising its
+ * vomit count, which pushes the fraction OVER the gate: the adversarial pass reproduced a
+ * withheld comparison becoming a published 5× apparent reduction on the wedge's most-visible
+ * surface. A cough log is genuine coverage and counts as a logged day wherever coverage is
+ * the question — it simply cannot vouch for vomit observation, which is the only thing this
+ * denominator is for. `guards/loggedDayParity.test.ts` pins this set against the engine's
+ * gate set in both directions.
  */
-const TRIAL_RESPONSE_LOGGED_DAY_TYPES = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'meal'] as const;
+const TRIAL_RESPONSE_LOGGED_DAY_TYPES = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'meal'] as const;
 
 async function readTrialResponseCounts(
   petId: string,

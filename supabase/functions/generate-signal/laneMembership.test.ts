@@ -537,29 +537,62 @@ Deno.test('adjacency: two chronic GI courses are not marked (the rule is cough�
 // the old engine: identical vomit logs, once with cough days added and once without. The
 // delta IS the before/after, and it cannot rot the way a hard-coded prior number can.
 
-Deno.test('R3 BEFORE/AFTER: cough-only days raise the density denominator', () => {
-  // Six vomit days in the current week; the prior week has the same vomit record PLUS
-  // three days whose only event is a cough.
+Deno.test('R3 GATE: a cough-only day does NOT move the comparability denominator', () => {
+  // The re-ruling (2026-08-28, after the adversarial pass). R3's "activity is activity"
+  // stands for COVERAGE; this denominator is not coverage, it is the gate deciding whether a
+  // falling VOMITING comparison may be published — and `densityDisclosureLine` renders these
+  // very numbers to the owner as the evidence backing that comparison. A cough day cannot
+  // vouch for vomit observation, so it must not appear in the receipt for a vomit claim.
   const vomitOnly: SymptomEvent[] = []
   for (const d of [1, 2, 3, 8, 9, 10]) vomitOnly.push(ago('vomit', d))
   const withCough = [...vomitOnly, ago('cough', 11), ago('cough', 12), ago('cough', 13)]
 
   const before = computeReflectionDensity(input({ symptomEvents: vomitOnly }), DEFAULT_CONFIG)!
   const after = computeReflectionDensity(input({ symptomEvents: withCough }), DEFAULT_CONFIG)!
+  assert.equal(after.currentLoggingDays, before.currentLoggingDays)
+  assert.equal(after.priorLoggingDays, before.priorLoggingDays, 'cough-only days must not inflate the gate')
+})
 
-  assert.equal(before.currentLoggingDays, after.currentLoggingDays, 'the current week is unchanged — only the prior week gained cough days')
+Deno.test('R3 GATE: the published-reassurance break stays closed', () => {
+  // The adversarial pass's exact shape, as a regression test. Prior week well logged, current
+  // week sparse — so a falling comparison is correctly WITHHELD. Adding cough-only days to
+  // the current week must not buy back comparability: that is what published a "down from 5
+  // last week" over a pet whose only new signal was a cough the engine could not yet name.
+  const vomits: SymptomEvent[] = []
+  for (const d of [8, 9, 10, 11, 12, 13]) vomits.push(ago('vomit', d))
+  vomits.push(ago('vomit', 1))
+  const withCough = [...vomits, ago('cough', 2), ago('cough', 3), ago('cough', 4), ago('cough', 5)]
+
+  const withheld = computeReflectionDensity(input({ symptomEvents: vomits }), DEFAULT_CONFIG)!
+  assert.equal(withheld.comparable, false, 'the fixture must start from a correctly WITHHELD state')
+  const after = computeReflectionDensity(input({ symptomEvents: withCough }), DEFAULT_CONFIG)!
+  assert.equal(after.comparable, false, 'cough logs must not flip the gate open')
+})
+
+Deno.test('R3 COVERAGE: a cough day still counts where coverage is the question (⑦)', () => {
+  // The other half of the rule, and the half that keeps the PM ruling intact: nothing is
+  // excluded from the record. ⑦'s span-halves guard asks "was the owner logging at all?" —
+  // a genuine coverage question whose failure direction is ESCALATION — so cough days count
+  // there. This fixture would fail if the re-ruling had been implemented as a blanket
+  // exclusion instead of a gate-scoped one.
+  // A course that clears every OTHER floor — span 49, 7 episodes, 3 active weeks, recency 0 —
+  // so the dark first half is the unique blocker and this fixture measures only that.
+  const sparse = [49, 35, 4, 3, 2, 1, 0].map((d) => ago('vomit', d))
+  assert.deepEqual(
+    detectChronicity(input({ symptomEvents: sparse })),
+    [],
+    'a dark first half fails ⑦ logging-eligibility (the unique blocker here)',
+  )
+  const lit = [...sparse]
+  for (let d = 26; d <= 48; d += 2) lit.push(ago('cough', d))
   assert.equal(
-    after.priorLoggingDays,
-    before.priorLoggingDays + 3,
-    'each cough-only day is a logged day (R3 (b)) — the whole point of the ruling',
+    detectChronicity(input({ symptomEvents: lit })).some((f) => f.symptomType === 'vomit'),
+    true,
+    'cough logs in the dark half ARE coverage — the vomiting course becomes eligible',
   )
 })
 
-Deno.test('R3: sneeze days do NOT count — the denominator is the FETCH, not the universe', () => {
-  // The discriminating half of R3, and the reason "the denominator == the fetch union" is
-  // a real invariant rather than a restatement: sneeze is a NAMED type with a label, so a
-  // denominator keyed on the universe (or on SYMPTOM_LABEL, the shape that bit summary.ts)
-  // would count it. It must not, because sneeze is not fetched at W1.
+Deno.test('R3: sneeze counts nowhere — it is not fetched at W1', () => {
   const vomitOnly: SymptomEvent[] = []
   for (const d of [1, 2, 3, 8, 9, 10]) vomitOnly.push(ago('vomit', d))
   const withSneeze = [...vomitOnly, ago('sneeze', 11), ago('sneeze', 12), ago('sneeze', 13)]
@@ -568,15 +601,20 @@ Deno.test('R3: sneeze days do NOT count — the denominator is the FETCH, not th
   assert.equal(after.priorLoggingDays, before.priorLoggingDays)
 })
 
-Deno.test('R3 INVARIANT: every fetched type counts as a logged day, uniformly', () => {
-  // The generalisation, so a W2 leaf joining the fetch inherits the ruling instead of
-  // re-deriving it: each fetched type, alone on its own day, moves the denominator by one.
-  for (const type of CORRELATION_SYMPTOM_TYPES) {
+Deno.test('R3 GATE INVARIANT: exactly the ③/④ lane cell moves the comparability denominator', () => {
+  // The generalisation, so a W2 leaf inherits the rule instead of re-deriving it: a type moves
+  // this denominator iff it is in the symptomDelta cell — NOT iff it is fetched.
+  for (const type of SYMPTOM_TYPE_UNIVERSE) {
     const base = computeReflectionDensity(input({ symptomEvents: [ago('vomit', 1)] }), DEFAULT_CONFIG)!
     const plus = computeReflectionDensity(
       input({ symptomEvents: [ago('vomit', 1), symptom(type, new Date(NOW_MS - 3 * DAY).toISOString())] }),
       DEFAULT_CONFIG,
     )!
-    assert.equal(plus.currentLoggingDays, base.currentLoggingDays + 1, `${type} must count as a logged day`)
+    const shouldCount = (LANE_SYMPTOM_TYPES.symptomDelta as readonly SymptomType[]).includes(type)
+    assert.equal(
+      plus.currentLoggingDays,
+      base.currentLoggingDays + (shouldCount ? 1 : 0),
+      `${type} must ${shouldCount ? '' : 'NOT '}count toward the comparability gate`,
+    )
   }
 })

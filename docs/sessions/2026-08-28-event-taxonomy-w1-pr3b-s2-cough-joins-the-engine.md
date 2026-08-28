@@ -194,7 +194,7 @@ cards without dropping or colliding.
   once-weekly ×4 and fortnightly ×4 courses fire **only** at 4). Red-checked: raising the
   floor to 6 drops noise to 1.31% *and* fails the sensitivity half in the same run.
 
-## ESCALATED, NOT FIXED — two breaks that are the PM's to rule
+## R3 — RE-RULED AND CLOSED (was escalated; PM delegated to the team same session)
 
 **1 · R3 defeats the density guards it named as its own mitigation.** Widening the
 logged-day denominator raises `currentLoggingDays` / `trialLoggedDays`, which pushes
@@ -234,3 +234,49 @@ severity comparator, and per-type floors make `tier` non-comparable, so inventin
 C5 territory); cough is structurally mute for its first 21 days on the only lane it has
 (a cat coughing 6×/day for 20 days is silent, while 4 coughs over 21 days fires); and
 `skin_reaction`'s W3 arrival will make three-cards-about-one-itch reachable.
+
+
+## The R3 re-ruling, and why it is not a reversal
+
+The PM's reaction to the brief was *"logging is logging — I'm not sure why we'd exclude
+logged data from a denominator"*, and then delegated. That instinct is right, and checking
+it is what produced the better answer.
+
+`densityDisclosureLine` (`lib/signalCopy.ts:963`) renders these counts to the owner — and
+**only when the comparison is published**, as the evidence backing it. So the number is not
+a coverage stat; it is the receipt for a specific claim about vomiting. That reframes the
+question from *"should logged data count?"* to *"may a cough log be offered as evidence
+about vomiting?"* — and the code already knew this failure mode: the docstring above
+`DENSITY_WITHHELD` flags days-with-any-log as over-claiming when meals prop the count up
+while symptom logging lapses (the B-733 residual). Cough makes it systematic rather than
+incidental, because owners start logging coughs precisely when attention to the other sign
+slips.
+
+**The rule that came out of it, stated once in the code so no future leaf re-derives it:**
+*a gate whose failure direction is REASSURANCE reads its lane's cell; a gate whose failure
+direction is ESCALATION keeps full coverage.* So ⑦'s span-halves eligibility still counts
+cough days (inflating it makes the safety lane speak, never silences it), while SR-4, ③/④
+eligibility and the trial gate read `LANE_SYMPTOM_TYPES.symptomDelta`.
+
+**Nothing is excluded from the record.** A cough day counts wherever coverage is the
+question. It simply stops vouching for an observation it wasn't.
+
+**Verified, not argued:**
+- The 6,000-case differential re-run on the fixed engine: **622 losses, all explained, 0
+  tier softenings** — unchanged, so the gate split is a no-op for every existing type.
+- Both reproduced breaks re-run **against the live module**: the SR-4 case is back to a
+  withheld comparison, and the trial lane is silent before *and* after.
+- One trap worth recording: the reviewer's `attackB5` harness imports a *snapshot* of the
+  engine (`detectionDbg.ts`), so re-running it unchanged still showed the break. Re-pointed
+  at the live file it passes. **A regression harness that pins its own copy of the module
+  under test will report the bug forever** — check what an inherited harness imports before
+  believing its verdict.
+- The client half is fixed at the SQL query (`TRIAL_RESPONSE_LOGGED_DAY_TYPES` no longer
+  selects cough rows, so they never reach `loggedEventMs`), pinned by
+  `guards/loggedDayParity.test.ts` — which now compares against the GATE set and asserts in
+  both directions, including an explicit "no mirror drifts toward the fetch union".
+- Fixture correction found in passing: the ⑦ coverage fixture's first draft used a 5-episode
+  course, which fails `minEpisodes 6` — so it would have "passed" while testing nothing. The
+  committed one clears every other floor so the dark-half guard is the unique blocker. (The
+  same staleness exists in `detection.test.ts` fixture 10's comment, which still says
+  "episodes (5)" passes; noted, not touched.)

@@ -99,7 +99,7 @@ const WALK: WalkRow[] = [
   },
   {
     list: 'CORRELATION_SYMPTOM_TYPES (generate-signal/detection.ts)',
-    governs: 'the engine FETCH union + (by construction, R3) the logged-day denominators — the lanes now read LANE_SYMPTOM_TYPES (3b-s1, #731)',
+    governs: 'the engine FETCH union + the COVERAGE denominators (⑦ span-halves eligibility). NOT the comparison gates — those read LANE_SYMPTOM_TYPES.symptomDelta (R3 re-ruling, 2026-08-28)',
     read: () => scan('supabase/functions/generate-signal/detection.ts',
       'export const CORRELATION_SYMPTOM_TYPES', '] as const'),
     cough: {
@@ -172,12 +172,16 @@ const WALK: WalkRow[] = [
     governs: 'the trial panel’s loggedDays denominator — deliberately redeclared; drifts silently if only the server moves',
     read: () => scan('lib/patternsTiming.ts', 'export const CORRELATION_SYMPTOM_TYPES', '] as const'),
     cough: {
-      now: true,
-      decision: 'YES — LANDED in 3b session 2, in the same PR as the engine edit (R3). The set it '
-        + 'mirrors is the FETCH UNION, now enforced engine-side by isFetchedSymptom rather than by '
-        + 'caller discipline, so client and server read the same denominator by construction.',
+      now: false,
+      decision: 'NO — and the omission is the RULING, not a lag. R3 was re-ruled 2026-08-28 after the '
+        + 'adversarial pass: this list mirrors the engine COMPARISON-GATE set '
+        + '(countsTowardComparisonGate = LANE_SYMPTOM_TYPES.symptomDelta), not the fetch union. A cough '
+        + 'day is real coverage and counts wherever coverage is the question, but this denominator gates '
+        + 'whether a falling VOMITING comparison may be published, and a cough day cannot vouch for vomit '
+        + 'observation — counting it flipped densityComparable false→true and published a 5× apparent '
+        + 'reduction the guard was withholding. guards/loggedDayParity.test.ts pins it in both directions.',
     },
-    sneeze: { now: false, decision: 'NO at W1 — follows the engine: sneeze is not fetched, so it is not a logged day server-side either' },
+    sneeze: { now: false, decision: 'NO — not fetched at W1, and not in the gate cell either' },
   },
   {
     list: 'SYMPTOM_NOUN + SYMPTOM_CHIP_ORDER (lib/daySummary.ts)',
@@ -248,13 +252,14 @@ const WALK: WalkRow[] = [
     governs: 'the trial_response logged-day DENOMINATOR (client parity of the engine’s loggedDaysIn) — a pooled density set, NOT a per-type surface',
     read: () => scan('lib/dietTrialFacts.ts', 'const TRIAL_RESPONSE_LOGGED_DAY_TYPES', '] as const'),
     cough: {
-      now: true,
-      decision: 'YES — LANDED in 3b session 2 (PM ruling (b), 2026-08-28: "activity is activity — '
-        + 'logging a cough is logging"), in the same PR as the engine denominator edit, with a '
-        + 'before/after fixture and a client==server parity fixture. The adversarial dissent '
-        + '(trial-lane drift toward reassurance: cough logs raise the pooled denominator while the '
-        + 'numerator stays vomit-only) is recorded on CUL-676 and disclosed in the file; the C5/§7 '
-        + 'density instruments are the honesty counterweight.',
+      now: false,
+      decision: 'NO — the adversarial dissent this row recorded was UPHELD and R3 re-ruled 2026-08-28. '
+        + 'The drift was not merely a lower rate: cough-only logged days pushed trialLoggingFraction '
+        + 'over its gate and PUBLISHED a comparison the guard was withholding (reproduced: a silent '
+        + 'trial lane became "8 in the trial\u2019s 60 days · 41 in the 49 before", a 5× apparent '
+        + 'reduction) — i.e. it disabled the very C5/§7 instrument named as its own counterweight. '
+        + 'This set now mirrors the engine COMPARISON-GATE cell. Cough still counts as a logged day '
+        + 'wherever coverage is the question; it just cannot vouch for vomit observation.',
     },
     sneeze: {
       now: false,

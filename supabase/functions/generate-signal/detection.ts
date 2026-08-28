@@ -203,23 +203,60 @@ export const LANE_SYMPTOM_TYPES = {
 } as const satisfies Record<string, readonly SymptomType[]>
 
 /**
- * Is this symptom row one the engine actually FETCHES? (W1-PR-3b session 2, CUL-676.)
+ * The two denominator predicates (W1-PR-3b session 2, CUL-676 — R3 as ruled, then re-ruled
+ * 2026-08-28 after the adversarial pass).
  *
- * The logged-day / density denominators count "any logged event", and the module documents
- * the invariant `denominator set == fetch union` (R3). That invariant was true only because
- * both callers — index.ts's query and generate-report's CORRELATION_TYPE_SET filter — happen
- * to pass exactly the fetched types; the denominators themselves counted whatever array they
- * were handed. A test written for R3 found it by feeding the module a `sneeze` row: a type
- * that is NAMED and LABELLED but deliberately not fetched at W1 moved the denominator.
+ * `isFetchedSymptom` — is this a row the engine actually FETCHES? The logged-day denominators
+ * count "any logged event", and the module documents `denominator set == fetch union`. That
+ * invariant was true only because both callers happen to filter; a test fed the module a
+ * `sneeze` row and moved the denominator. Production was never wrong, but "correct because
+ * every caller remembers to filter" is the shape HR-1 was, so the denominators enforce it.
  *
- * Production was never wrong, and nothing here changes a shipped number. But "correct because
- * every caller remembers to filter" is exactly the shape HR-1 was: one list, several consumers,
- * and no structure making the contract true. So the denominators now enforce it themselves —
- * and because the predicate reads the fetch union, a later wave that widens the fetch carries
- * its denominators along automatically, with no second decision to forget.
+ * `countsTowardComparisonGate` — the NARROWER one, and the reason there are two.
+ *
+ * THE RULE, stated once so no future leaf has to re-derive it: A GATE WHOSE FAILURE
+ * DIRECTION IS REASSURANCE READS ITS LANE'S CELL; A GATE WHOSE FAILURE DIRECTION IS
+ * ESCALATION KEEPS FULL COVERAGE.
+ *
+ * The PM ruling stands — "activity is activity; logging a cough is logging" — and a cough day
+ * still counts as a logged day everywhere COVERAGE is the question: ⑦'s own span-halves
+ * eligibility (below), the report's C5/§7 density lines, the day summary, the trial coverage
+ * lines. Nothing is excluded from the record.
+ *
+ * But two of these consumers are not coverage measures, they are COMPARABILITY GATES: they
+ * decide whether a FALLING comparison about one symptom can be published at all
+ * (`densityComparable` for ③'s week-over-week, `trialLoggingFraction` for the trial strip).
+ * There, the denominator is not asking "how much was logged" — it is asking "did the owner's
+ * attention to THIS sign hold steady?", and a cough log cannot answer that. The adversarial
+ * pass built the consequence: 12 cough-only days inside a trial era flipped
+ * `densityComparable` false→true and published a 5× apparent vomiting reduction the guard had
+ * correctly withheld; on the reflection lane, 120 cough logs turned a withheld "3 this week"
+ * into "3 this week, down from 5 last week" — the app made MORE confident that vomiting is
+ * improving by the very evidence that something new is wrong, while ⑦ could not yet speak
+ * about the cough at all.
+ *
+ * The mechanism is specific to symptom substitution and not a general worry about meals: meal
+ * logging is pet-state-INDEPENDENT, so it is noise in that denominator (the known B-733
+ * residual the density copy already hedges). Cough logging is pet-state-DEPENDENT and
+ * anti-correlated with attention to the other sign — an owner starts logging coughs exactly
+ * when watching for vomiting lapses — so it does not merely add noise, it systematically
+ * substitutes for the observation that stopped.
+ *
+ * And the displayed number settles which way this had to go: `densityDisclosureLine` renders
+ * these counts to the owner ONLY when the comparison is published, as the evidence backing
+ * it. A number offered as the receipt for a claim about vomiting must count the days that
+ * could have shown vomiting.
+ *
+ * Both gates belong to the ③/④ lane's window (`computeWindowedStats` / SR-4) or to the trial
+ * lane, whose pre-taxonomy denominator was exactly that cell — so this is BYTE-IDENTICAL to
+ * the pre-cough engine for every existing type, and removes only cough's contribution.
  */
 const FETCHED_SYMPTOM_SET: ReadonlySet<string> = new Set(CORRELATION_SYMPTOM_TYPES)
 const isFetchedSymptom = (s: { type: string }): boolean => FETCHED_SYMPTOM_SET.has(s.type)
+
+const COMPARISON_GATE_SYMPTOM_SET: ReadonlySet<string> = new Set(LANE_SYMPTOM_TYPES.symptomDelta)
+const countsTowardComparisonGate = (s: { type: string }): boolean =>
+  COMPARISON_GATE_SYMPTOM_SET.has(s.type)
 
 /** WSAVA 5-point owner-reported intake scale (migration 011). */
 export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all'
@@ -3653,7 +3690,10 @@ interface WindowedStats {
 function loggingDaysInWindow(input: DetectionInput, startMs: number, endMs: number): number {
   const days = new Set<number>()
   for (const s of input.symptomEvents) {
-    if (!isFetchedSymptom(s)) continue // denominator set == fetch union, enforced here
+    // COMPARISON-GATE scoped, not fetch-scoped — both consumers of this function (③/④'s
+    // eligibility floor and SR-4's density gate) decide whether a FALLING comparison may be
+    // published, and both belong to the symptomDelta lane. See countsTowardComparisonGate.
+    if (!countsTowardComparisonGate(s)) continue
     const ms = Date.parse(s.occurredAt)
     if (Number.isFinite(ms) && ms >= startMs && ms < endMs) days.add(Math.floor(ms / MS_PER_DAY))
   }
@@ -4079,7 +4119,11 @@ function computeChronicityStats(
   const windowStart = nowMs - cfg.windowDays * MS_PER_DAY
 
   const allEventMs = [
-    // denominator set == fetch union (R3) — see isFetchedSymptom.
+    // FULL COVERAGE (fetch union), deliberately NOT comparison-gate scoped: this feeds ⑦'s
+    // span-halves "was the first half dark?" guard, which is a genuine coverage question — a
+    // cough log in the middle of a vomiting course IS evidence the owner was engaged and
+    // would plausibly have logged. And its failure direction is ESCALATION: inflating it lets
+    // the safety lane SPEAK, never silences it. That is the side of the rule this sits on.
     ...input.symptomEvents.filter(isFetchedSymptom).map((s) => Date.parse(s.occurredAt)),
     ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
   ].filter((ms) => Number.isFinite(ms))
@@ -5058,7 +5102,10 @@ export function detectTrialResponse(
   const loggedDaysIn = (pred: (di: number | null) => boolean): number => {
     const days = new Set<number>()
     for (const s of input.symptomEvents) {
-      if (!isFetchedSymptom(s)) continue // denominator set == fetch union, enforced here
+      // COMPARISON-GATE scoped: these counts drive `trialLoggingFraction` /
+      // `densityComparable`, i.e. whether the trial strip may publish a falling vomiting
+      // comparison at all. A cough day cannot vouch for vomit observation.
+      if (!countsTowardComparisonGate(s)) continue
       const di = dayIndexOf(Date.parse(s.occurredAt))
       if (pred(di)) days.add(di as number)
     }
