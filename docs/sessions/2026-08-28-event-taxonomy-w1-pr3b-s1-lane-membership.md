@@ -1,7 +1,7 @@
 # Event taxonomy — W1-PR-3b session 1: the per-lane membership map (CUL-676)
 
 **Date:** 2026-08-28
-**Shipped via #TBD.** _(Same calendar session as PR-3a's #730 — the PM explicitly
+**Shipped via #731.** _(Same calendar session as PR-3a's #730 — the PM explicitly
 directed starting 3b after #730 merged, overriding one-PR-per-session for the day;
 the branch was restarted fresh from `main` per the merged-PR follow-up convention.)_
 
