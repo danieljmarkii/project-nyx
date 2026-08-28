@@ -68,6 +68,21 @@ export interface NamedPayload {
   // through lib/completionCard → lib/logCopy → describeOccurredAt (§5's sentence
   // rule; see that module's header for why the shape is the enforcement).
   record: LoggedRecord;
+  // WEIGHT ONLY (CUL-641) — the `pets.weight_kg` snapshot this reading displaced
+  // when it was written, captured at the log site from the write-time pet.
+  //
+  // It lives here and NOT on `LoggedRecord` deliberately: that type is the
+  // sentence source and carries only what the ROW says (CUL-606's shape rule), and
+  // a displaced denormalized snapshot is a side-effect ledger, not part of the
+  // record. Putting it there would also make it reachable by
+  // `summarizeLoggedRecord`, which has no business knowing it.
+  //
+  // Undo needs it because on a first-ever weigh-in there is no remaining reading
+  // to reconcile to, and the profile weight this log overwrote is the only correct
+  // answer. ABSENT and `null` mean different things — absent is "nobody knows",
+  // `null` is "it was genuinely unset" — so this is read with an explicit
+  // `undefined` check, never `?? null`.
+  previousSnapshotKg?: number | null;
 }
 
 export interface MealPayload {
@@ -546,7 +561,19 @@ export const useMomentStore = create<MomentState>((set) => ({
     // faded, and the owner would never see it take.
     clearHideTimer();
     try {
-      await reverseLoggedEvent(payload.eventId);
+      // CUL-641 — a reversed weigh-in has to take `pets.weight_kg` with it, or the
+      // Profile chip and the next weigh-in's pre-fill go on offering the number the
+      // owner just undid. reverseLoggedEvent decides for itself whether this event
+      // was a weight check; all this card contributes is the one fact only it holds
+      // — what that write displaced. `!== undefined`, not `??`: a payload that
+      // carried `null` is saying the pet genuinely had no weight on file, and that
+      // is a value to restore, not a missing one.
+      await reverseLoggedEvent(
+        payload.eventId,
+        payload.kind === 'named' && payload.previousSnapshotKg !== undefined
+          ? { restoreWeightSnapshotToKg: payload.previousSnapshotKg }
+          : undefined,
+      );
     } catch (e) {
       console.error('[moment] undo failed:', e);
       undoInFlight = false;

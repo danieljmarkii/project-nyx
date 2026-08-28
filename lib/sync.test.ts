@@ -1281,3 +1281,113 @@ describe('syncPendingWeightChecks — snapshot reconcile wiring (CUL-293)', () =
     expect(mockGetFirstAsync).not.toHaveBeenCalled();
   });
 });
+
+// CUL-641 — the RETRY half of the delete-side snapshot reconcile. Removing a weigh-in
+// re-points pets.weight_kg through a direct write that simply cannot land offline, and
+// the CUL-293 loop above never covers it: that one fires on a landed weight_checks ROW,
+// and a soft delete writes its tombstone on the parent EVENT, so no weight row is ever
+// queued. This is the hook that lets the server snapshot self-heal on reconnect.
+describe('syncPendingEvents — weight tombstone reconcile (CUL-641)', () => {
+  const TOMBSTONE = {
+    id: 'e1', pet_id: 'pet-A', event_type: 'weight_check', occurred_at: 't',
+    severity: null, notes: null, source: 'manual', occurred_at_source: 'manual',
+    occurred_at_confidence: null, occurred_at_earliest: null, occurred_at_latest: null,
+    deleted_at: '2026-08-28T00:00:00.000Z', created_at: 't', updated_at: 't', logged_via: 'app',
+  };
+
+  function wire() {
+    const petEq = jest.fn().mockResolvedValue({ error: null });
+    const petUpdate = jest.fn().mockReturnValue({ eq: petEq });
+    const evSelect = jest.fn().mockResolvedValue({ data: [{ id: 'e1' }], error: null });
+    const evUpsert = jest.fn().mockReturnValue({ select: evSelect });
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets' ? { update: petUpdate } : { upsert: evUpsert },
+    );
+    return { petUpdate, evSelect };
+  }
+
+  beforeEach(() => {
+    mockGetSession.mockReset().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } });
+    mockGetAllAsync.mockReset();
+    mockGetFirstAsync.mockReset();
+    mockRunAsync.mockReset().mockResolvedValue(undefined);
+    mockFrom.mockReset();
+  });
+
+  it('re-points the snapshot once a weight_check tombstone lands', async () => {
+    mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
+    mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.4 });
+    const { petUpdate } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).toHaveBeenCalledWith({ weight_kg: 5.4 });
+  });
+
+  it('ignores a weight_check event that is not a tombstone', async () => {
+    // An ordinary weigh-in syncing for the first time is the CUL-293 path's business,
+    // reached from its own landed ROW. Reconciling here too would fire a second
+    // redundant pets write on every single weigh-in.
+    mockGetAllAsync.mockResolvedValue([{ ...TOMBSTONE, deleted_at: null }]);
+    const { petUpdate } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).not.toHaveBeenCalled();
+    expect(mockGetFirstAsync).not.toHaveBeenCalled();
+  });
+
+  it('ignores a tombstone for any other event type', async () => {
+    mockGetAllAsync.mockResolvedValue([{ ...TOMBSTONE, event_type: 'vomit' }]);
+    const { petUpdate } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does NOT reconcile when the tombstone itself failed to land', async () => {
+    // Success-with-0-rows: pushRows leaves an RLS-blocked row out of `landed`. The
+    // server still holds the event as live, so re-pointing its pet's snapshot would
+    // assert a removal the server never accepted.
+    mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets'
+        ? { update: jest.fn() }
+        : { upsert: jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValue({ data: [], error: null }) }) },
+    );
+
+    await syncPendingEvents();
+
+    expect(mockGetFirstAsync).not.toHaveBeenCalled();
+  });
+
+  it('reconciles each affected pet once, not once per tombstone', async () => {
+    // A multi-pet household clearing several bad readings in one offline session
+    // flushes them together; the snapshot is per pet, so the writes are deduped.
+    mockGetAllAsync.mockResolvedValue([
+      TOMBSTONE,
+      { ...TOMBSTONE, id: 'e2' },
+      { ...TOMBSTONE, id: 'e3', pet_id: 'pet-B' },
+    ]);
+    mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.4 });
+    const petEq = jest.fn().mockResolvedValue({ error: null });
+    const petUpdate = jest.fn().mockReturnValue({ eq: petEq });
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets'
+        ? { update: petUpdate }
+        : {
+            upsert: jest.fn().mockReturnValue({
+              select: jest.fn().mockResolvedValue({
+                data: [{ id: 'e1' }, { id: 'e2' }, { id: 'e3' }], error: null,
+              }),
+            }),
+          },
+    );
+
+    await syncPendingEvents();
+
+    expect(petUpdate).toHaveBeenCalledTimes(2);
+    expect(petEq.mock.calls.map((c) => c[1])).toEqual(['pet-A', 'pet-B']);
+  });
+});

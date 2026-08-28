@@ -48,9 +48,10 @@ jest.mock('./supabase', () => ({
 import {
   kgToLbs, kgToLbsNum, lbsToKg, parseWeightLbsToKg, MAX_WEIGHT_LBS,
   insertWeightCheck, getLatestWeightKg, getWeightKgForEvent, updateWeightCheck,
-  getWeightHistory, computeWeightTrend,
+  getWeightHistory, computeWeightTrend, reconcileWeightSnapshotAfterDelete,
   describeWeightDelta, formatWeightDate, type WeightTrend,
 } from './weight';
+import { usePetStore, type Pet } from '../store/petStore';
 
 // Drain past the fire-and-forget syncPendingEvents().then(syncPendingWeightChecks)
 // chain (a macrotask, like meals.test.ts).
@@ -416,5 +417,133 @@ describe('formatWeightDate', () => {
     const lastYear = new Date().getFullYear() - 1;
     const out = formatWeightDate(`${lastYear}-06-01T08:00:00.000Z`);
     expect(out).toContain(String(lastYear));
+  });
+});
+
+// ── CUL-641: the delete-side snapshot reconcile ──────────────────────────────
+//
+// The defect this closes: `pets.weight_kg` is re-pointed on every weigh-in WRITE
+// and was re-pointed on no delete at all, so undoing a fat-fingered "124" left the
+// Profile chip, the next weigh-in's pre-fill and EditPetModal offering 124 forever.
+// These cases are the rule stated in lib/weight.ts's delete-side header, one branch
+// at a time — with the two that decide whether the fix loses data first.
+describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
+  const PET: Pet = {
+    id: 'pet-1', name: 'Pixel', species: 'cat', breed: null,
+    date_of_birth: null, date_of_birth_precision: 'exact', sex: 'unknown',
+    weight_kg: 56.25, photo_path: null,
+  } as Pet;
+
+  /** 1st getFirstAsync = the weight_checks pet_id lookup; 2nd = getLatestWeightKg. */
+  function localReads(opts: { isWeightCheck: boolean; latestKg: number | null }) {
+    mockGetFirstAsync
+      .mockResolvedValueOnce(opts.isWeightCheck ? { pet_id: PET.id } : null)
+      .mockResolvedValueOnce(opts.latestKg == null ? null : { weight_kg: opts.latestKg });
+  }
+
+  beforeEach(() => {
+    // mockRESET, not the file-level mockClear: `mockClear` drops call data but leaves
+    // the `mockResolvedValueOnce` QUEUE intact, and the not-a-weigh-in case below
+    // deliberately queues a second read it never consumes (the early return is the
+    // thing under test). That leftover then answered the NEXT test's pet_id lookup,
+    // which is how two of these first went red — a leak the file-level reset cannot
+    // reach because it does not know about the queue.
+    mockGetFirstAsync.mockReset().mockResolvedValue(null);
+    usePetStore.setState({ pets: [PET], activePet: PET, isOnboarded: true });
+  });
+
+  it('re-points the snapshot at the latest REMAINING reading', async () => {
+    localReads({ isWeightCheck: true, latestKg: 5.62 });
+    const out = await reconcileWeightSnapshotAfterDelete('ev-1');
+    expect(out).toEqual({ petId: 'pet-1', snapshotKg: 5.62 });
+    await flush();
+    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(5.62);
+  });
+
+  it('restores the displaced value when NO reading remains — the first-ever weigh-in', async () => {
+    // The case option A could not reach and the whole reason the caller passes a
+    // restore value: with nothing left to reconcile TO, the profile weight this log
+    // overwrote is the only correct answer. Without it the chip keeps the mis-typed
+    // number next to a card that says no weigh-ins are logged.
+    localReads({ isWeightCheck: true, latestKg: null });
+    const out = await reconcileWeightSnapshotAfterDelete('ev-1', { restoreToKg: 4.2 });
+    expect(out).toEqual({ petId: 'pet-1', snapshotKg: 4.2 });
+    await flush();
+    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 4.2 });
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(4.2);
+  });
+
+  it('restores a displaced NULL — "no weight on file" is a value, not a missing one', async () => {
+    // A pet onboarded without a weight, whose first-ever weigh-in is undone, must go
+    // back to having no weight on file. Treating the null as "nothing to do" would
+    // strand the reversed reading as the profile weight.
+    localReads({ isWeightCheck: true, latestKg: null });
+    const out = await reconcileWeightSnapshotAfterDelete('ev-1', { restoreToKg: null });
+    expect(out).toEqual({ petId: 'pet-1', snapshotKg: null });
+    await flush();
+    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: null });
+    expect(usePetStore.getState().activePet?.weight_kg).toBeNull();
+  });
+
+  it('LEAVES THE SNAPSHOT ALONE when nothing remains and nothing was displaced', async () => {
+    // The data-loss guard, and the reason this is not simply "null it out". This is
+    // the History/detail Remove path, which cannot know what the reading displaced —
+    // and `pets.weight_kg` is also where the owner's onboarding weight lives, with no
+    // other home. Nulling here would trade a stale number for an asserted "no weight
+    // on file" the owner never said. Leaving it loses nothing.
+    localReads({ isWeightCheck: true, latestKg: null });
+    const out = await reconcileWeightSnapshotAfterDelete('ev-1');
+    expect(out).toBeNull();
+    await flush();
+    expect(mockPetsUpdate).not.toHaveBeenCalled();
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(56.25);
+  });
+
+  it('is a no-op for an event that is not a weigh-in', async () => {
+    // Every delete path calls this unconditionally, so the overwhelmingly common
+    // input is a vomit / meal / dose. It must cost one local read and nothing else —
+    // and must never touch the latest-reading query, which is scoped to a pet id it
+    // does not have.
+    localReads({ isWeightCheck: false, latestKg: 9.9 });
+    expect(await reconcileWeightSnapshotAfterDelete('ev-not-weight')).toBeNull();
+    await flush();
+    expect(mockGetFirstAsync).toHaveBeenCalledTimes(1);
+    expect(mockPetsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not patch the store when the reconciled pet is no longer active', async () => {
+    // `updatePet` patches whichever pet is ACTIVE, so a reversal that resolves after
+    // a pet switch would write this pet's weight onto another animal — the wrong-pet
+    // class (CUL-574). The server write still goes out; it is addressed by id.
+    const other = { ...PET, id: 'pet-2', name: 'Juniper', weight_kg: 3.1 } as Pet;
+    usePetStore.setState({ pets: [PET, other], activePet: other, isOnboarded: true });
+    localReads({ isWeightCheck: true, latestKg: 5.62 });
+    await reconcileWeightSnapshotAfterDelete('ev-1');
+    await flush();
+    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(3.1);
+  });
+
+  it('patches the store even when the server write fails — the device stays right offline', async () => {
+    // The owner-visible half must not depend on the network. This is why the store
+    // patch runs BEFORE the server write and why that write is not awaited: a
+    // reversal on a plane still fixes the chip and the next pre-fill, and
+    // syncPendingEvents re-points the server on reconnect.
+    localReads({ isWeightCheck: true, latestKg: 5.62 });
+    mockPetsEq.mockResolvedValueOnce({ error: { message: 'network' } });
+    await expect(reconcileWeightSnapshotAfterDelete('ev-1')).resolves.toEqual({
+      petId: 'pet-1', snapshotKg: 5.62,
+    });
+    await flush();
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(5.62);
+  });
+
+  it('swallows a local read failure — a cosmetic snapshot never fails a reversal', async () => {
+    // Best-effort by contract. The event is already soft-deleted and that is the
+    // durable truth; throwing here would surface as a failed Undo over a denormalized
+    // convenience, and tell the owner a removal did not happen when it did.
+    mockGetFirstAsync.mockRejectedValueOnce(new Error('db closed'));
+    await expect(reconcileWeightSnapshotAfterDelete('ev-1')).resolves.toBeNull();
   });
 });

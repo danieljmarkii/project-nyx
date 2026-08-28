@@ -114,6 +114,15 @@ function defaultDrainDeps(): DrainDeps {
       const { ingestCaptureInbox } = require('./captureInbox');
       return ingestCaptureInbox(new Set(usePetStore.getState().pets.map((p) => p.id)));
     },
+    // reverse-path-ok: this is a ROLLBACK of captures the app just replayed on the
+    // owner's behalf, not an owner-initiated removal, and it runs as a loop — so the
+    // shared `reverseLoggedEvent` would fire one `syncPendingEvents()` flush per
+    // revoked row where the drain wants a single flush at the end. Nothing is lost by
+    // staying on the primitive today: the widget is informational-only (B-664 V2-1)
+    // and its capture intents are meal / treat / bowl top-up, so a revoked event can
+    // never be a weigh-in and there is no CUL-641 snapshot side-effect to inherit.
+    // TRIP-WIRE: if the widget ever gains a weight capture, this must move to
+    // `reverseLoggedEvent` and this exemption must go.
     revokeEvent: softDeleteEvent,
   };
 }

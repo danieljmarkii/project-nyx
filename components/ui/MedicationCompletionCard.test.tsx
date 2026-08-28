@@ -199,7 +199,7 @@ describe('MedicationCompletionCard — Undo', () => {
     seedDose();
     const view = render(<MedicationCompletionCard />);
     await pressUndo(view);
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('m1');
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('m1', undefined);
     view.getByText('Removed');
     view.getByText('Taken out of Mochi’s record');
   });

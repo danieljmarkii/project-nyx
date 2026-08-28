@@ -578,10 +578,11 @@ export async function syncPendingWeightChecks(): Promise<void> {
 // LATEST_WEIGHT_KG_QUERY leaf module — imported by both sides rather than duplicated,
 // which is what lets sync.ts reuse it without the weight → sync import cycle.
 //
-// PRECONDITION: the caller owns the Pattern 4 session-freshness check — the sole caller,
-// syncPendingWeightChecks, calls getSession() and bails on null before the reconcile loop,
-// and this write rides that same authed client. A hypothetical future caller must do the
-// same (a session-less write would RLS-fail to 0 rows anyway). Exported for unit test.
+// PRECONDITION: the caller owns the Pattern 4 session-freshness check. Both callers —
+// syncPendingWeightChecks (a landed reading, CUL-293) and syncPendingEvents (a landed
+// weight_check TOMBSTONE, CUL-641) — call getSession() and bail on null before their
+// reconcile loop, and this write rides that same authed client. A future caller must do
+// the same (a session-less write would RLS-fail to 0 rows anyway). Exported for unit test.
 export async function reconcilePetWeightSnapshot(petId: string): Promise<void> {
   try {
     const db = getDb();
@@ -624,7 +625,7 @@ export async function syncPendingEvents(): Promise<void> {
 
   if (unsyncedEvents.length === 0) return;
 
-  await pushRows(db, 'events', unsyncedEvents, (e) => ({
+  const landedEvents = await pushRows(db, 'events', unsyncedEvents, (e) => ({
     id: e.id,
     pet_id: e.pet_id,
     event_type: e.event_type,
@@ -643,6 +644,30 @@ export async function syncPendingEvents(): Promise<void> {
     // B-289 — capture-surface provenance (see the meals payload note).
     logged_via: e.logged_via ?? 'app',
   }));
+
+  // CUL-641 — the RETRY half of the delete-side snapshot reconcile, and the exact
+  // mirror of the CUL-293 loop in syncPendingWeightChecks above. Removing a weigh-in
+  // re-points pets.weight_kg through a direct write (lib/weight.ts
+  // reconcileWeightSnapshotAfterDelete), which is best-effort and simply does not
+  // land offline — the on-device store is patched either way, so the owner sees the
+  // right number immediately, but the SERVER snapshot would stay on the deleted
+  // reading until some later weigh-in happened to re-point it. Once a weight_check
+  // TOMBSTONE lands, bring that pet's snapshot current.
+  //
+  // KNOWN LIMIT, stated rather than implied: this can only reconcile to a remaining
+  // reading. It cannot restore a DISPLACED value, because only the delete site ever
+  // knew it — so an offline undo of a first-ever weigh-in leaves the server snapshot
+  // stale even after this runs. Closing that needs the displaced value stored per
+  // reading (a schema change, its own issue); the device the owner is holding is
+  // already correct.
+  const tombstonedWeightPetIds = [...new Set(
+    unsyncedEvents
+      .filter((e) => e.event_type === 'weight_check' && e.deleted_at != null && landedEvents.has(e.id))
+      .map((e) => e.pet_id),
+  )];
+  for (const petId of tombstonedWeightPetIds) {
+    await reconcilePetWeightSnapshot(petId);
+  }
 }
 
 export async function syncPendingVetVisits(): Promise<void> {

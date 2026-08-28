@@ -26,6 +26,7 @@ import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingWeightChecks } from './sync';
 import { uuid } from './utils';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
+import { usePetStore } from '../store/petStore';
 
 // ── Unit conversion ─────────────────────────────────────────────────────────
 // Owners enter and read pounds; kilograms is the canonical storage unit
@@ -242,6 +243,108 @@ export async function updateWeightCheck(
   // meals + weight_checks), exactly as it already does for a meal edit; that
   // ordering is what lets the child land right after its re-synced parent.
   return { petId: row.pet_id, snapshotKg };
+}
+
+// ── Delete side (CUL-641) ────────────────────────────────────────────────────
+//
+// The write side re-points `pets.weight_kg` at the latest reading (app/log.tsx's
+// handleConfirmWeight) and so does the edit side (updateWeightCheck above). No
+// DELETE path had a counterpart, and `reconcilePetWeightSnapshot` (lib/sync.ts)
+// could not stand in for one: it fires only from syncPendingWeightChecks, over
+// `weight_checks` rows with `synced = 0`, and a soft delete writes its tombstone
+// on the PARENT event — so no weight row is ever queued, the reconcile never
+// runs, and the snapshot sits on the deleted reading indefinitely.
+//
+// What that costs is worst on UNDO, which is the affordance §5 built to catch a
+// mis-typed weight: the owner types 12.4 as 124, reads "Weight · 124 lbs" on the
+// card, taps Undo — and the Profile chip, the next weigh-in's pre-fill and
+// EditPetModal all go on offering 124 for good. The reading itself drops out of
+// every soft-delete-filtered read correctly, so the chip ends up contradicting
+// WeightTrendCard on the same screen, whose own prop comment says the two agree
+// by construction.
+//
+// ── THE RULE, IN ONE SENTENCE ────────────────────────────────────────────────
+// After a weight check is soft-deleted the snapshot becomes the latest REMAINING
+// reading; when none remains it becomes the value that reading displaced when it
+// was written, if the caller knows it; otherwise it is left alone.
+//
+// "Left alone" rather than nulled, and this is the load-bearing half: `pets.
+// weight_kg` is ALSO where the owner's onboarding / Edit-profile weight lives,
+// and that value has no other home. Nulling would trade a stale number for an
+// asserted "no weight on file" the owner never said — losing data to fix a
+// display. Leaving it loses nothing. The residual (removing the ONLY reading
+// from History keeps the old number, because that path cannot know what it
+// displaced) is closed by storing the displaced value per reading, which is a
+// schema change and its own issue.
+//
+// ── WHY ONE HELPER, CALLED UNCONDITIONALLY ───────────────────────────────────
+// It decides FOR ITSELF whether the event was a weigh-in, so a delete site never
+// has to know what it just removed. Four hand-rolled "was this a weight check?"
+// checks is precisely the shape that produced this bug — three delete paths each
+// silently missing a side-effect the write path performs.
+
+/**
+ * Re-point `pets.weight_kg` after an event has been soft-deleted. A no-op for
+ * every event that is not a weight check.
+ *
+ * PRECONDITION: the parent event is ALREADY soft-deleted. The latest-reading read
+ * is soft-delete filtered, so calling this first would just re-select the row
+ * being removed and change nothing.
+ *
+ * `restore` is presence-distinguished on purpose: `{ restoreToKg: null }` is a
+ * meaningful instruction (put the snapshot back to "no weight on file", which is
+ * the correct outcome for a first-ever weigh-in on a pet with no profile weight),
+ * and it must not be confusable with "the caller doesn't know".
+ *
+ * Best-effort by contract — it never throws, mirroring the inline snapshot writes
+ * it completes. The LOCAL half (resolve + patch the pet store) is awaited, because
+ * that is what the owner sees on this device; the SERVER write is fired without
+ * awaiting so an Undo tap never waits on a network round trip to show its removal
+ * line — a flaky connection would otherwise leave the card frozen on the state the
+ * owner just reversed. `syncPendingEvents` picks the server half back up on
+ * reconnect (see the tombstone reconcile in lib/sync.ts).
+ */
+export async function reconcileWeightSnapshotAfterDelete(
+  eventId: string,
+  restore?: { restoreToKg: number | null },
+): Promise<{ petId: string; snapshotKg: number | null } | null> {
+  try {
+    const db = getDb();
+    const row = await db.getFirstAsync<{ pet_id: string }>(
+      `SELECT pet_id FROM weight_checks WHERE event_id = ?`,
+      [eventId],
+    );
+    // Not a weigh-in — the common case, since every other event type calls here too.
+    if (!row) return null;
+
+    const latestKg = await getLatestWeightKg(row.pet_id);
+    // Nothing left to point at AND no idea what this reading displaced: leave the
+    // snapshot as it is rather than destroying a profile weight (see the rule above).
+    if (latestKg == null && !restore) return null;
+    const snapshotKg = latestKg ?? restore!.restoreToKg;
+
+    // Patch the in-memory pet FIRST so the chip / pre-fill / EditPetModal are right
+    // on this device immediately — including offline, where the server write below
+    // cannot land. `updatePet` patches the ACTIVE pet, so guard on the reconciled
+    // pet still being it: a queue-then-switch would otherwise write this pet's
+    // weight onto another animal (the wrong-pet class).
+    if (usePetStore.getState().activePet?.id === row.pet_id) {
+      usePetStore.getState().updatePet({ weight_kg: snapshotKg });
+    }
+
+    void supabase
+      .from('pets')
+      .update({ weight_kg: snapshotKg })
+      .eq('id', row.pet_id)
+      .then(({ error }: { error: { message: string } | null }) => {
+        if (error) console.warn('[weight] snapshot reconcile after delete failed:', error.message);
+      });
+
+    return { petId: row.pet_id, snapshotKg };
+  } catch (e) {
+    console.warn('[weight] snapshot reconcile after delete error:', e);
+    return null;
+  }
 }
 
 // ── Trend read (B-186 PR 3) ──────────────────────────────────────────────────
