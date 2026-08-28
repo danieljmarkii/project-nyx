@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
 import { TimeConfidenceField } from './TimeConfidenceField';
 
@@ -104,10 +105,6 @@ describe('TimeConfidenceField', () => {
   // from both sides, letting a boundary tap resolve to the neighbouring
   // confidence class by z-order (CUL-612). Asserting its ABSENCE, because the
   // instinct on reading "44pt floor" is to add it back.
-  //
-  // Scoped to the radio rows on purpose: the segmented control above them still
-  // carries hitSlop 8 on two FLUSH siblings, which is the same defect one level
-  // up and is deliberately NOT fixed here — see the note on CUL-579.
   it('selects the found-mode a radio row names, claiming no reach into its neighbours', () => {
     const { getByText, props } = setup({ foundMode: 'before' });
 
@@ -120,4 +117,67 @@ describe('TimeConfidenceField', () => {
       expect(row.props.hitSlop).toBeUndefined();
     }
   });
+
+  // ── CUL-657 — the same defect one level up, on the worse control. ──
+  // The two segments are flex:1, minHeight-44 siblings sitting FLUSH inside an
+  // overflow-hidden bordered box. Each carried hitSlop 8, so their expanded
+  // rectangles shared a 16pt band centred on the divider — dead centre of the
+  // widget, where a thumb lands on a two-option control — and a tap there
+  // resolved by z-order, not intent. Unlike the radio rows there is no gap to
+  // spend here, so every point of slop reached into the neighbour.
+  //
+  // This is the top-level witnessed-vs-discovered classifier: the wrong segment
+  // files a witnessed event as a discovery window or the reverse (B-448), and
+  // the vet report prints the difference.
+  describe('the Saw it / Found it segments claim no reach into each other', () => {
+    it('neither segment carries hitSlop', () => {
+      const { getByText } = setup({ mode: 'saw' });
+
+      for (const label of ['Saw it happen', 'Found it']) {
+        const seg = owningTouchable(getByText(label));
+        expect(seg).not.toBeNull();
+        expect(seg.props.hitSlop).toBeUndefined();
+      }
+    });
+
+    // Pins the geometry the rule above rests on. The segments are flush by
+    // design (a shared border, not a gap), which is what makes ANY slop here an
+    // overlap rather than a spend of empty space — the CLAUDE.md CUL-612 test is
+    // `gap >= facing(a) + facing(b)`, and this row's gap is zero. If a later
+    // redesign puts real space between them, that is the moment to re-derive
+    // this rule rather than inherit it.
+    it('the segments are flush — there is no gap for slop to spend', () => {
+      const { getByText } = setup({ mode: 'saw' });
+      const row = commonAncestor(
+        owningTouchable(getByText('Saw it happen')),
+        owningTouchable(getByText('Found it')),
+      );
+      expect(row).not.toBeNull();
+
+      const flat = (StyleSheet.flatten(row.props?.style) ?? {}) as Record<string, number | undefined>;
+      expect(flat.gap ?? 0).toBe(0);
+      expect(flat.columnGap ?? 0).toBe(0);
+    });
+
+    it('each segment selects its own mode', () => {
+      const saw = setup({ mode: 'found' });
+      fireEvent.press(saw.getByText('Saw it happen'));
+      expect(saw.props.onModeChange).toHaveBeenCalledWith('saw');
+
+      const found = setup({ mode: 'saw' });
+      fireEvent.press(found.getByText('Found it'));
+      expect(found.props.onModeChange).toHaveBeenCalledWith('found');
+    });
+  });
 });
+
+// The nearest ancestor that contains BOTH nodes — i.e. the row the two segments
+// are siblings in, whichever intermediate composites the tree happens to have.
+// Derived from the tree rather than reached by a fixed number of `.parent` hops,
+// so it does not quietly start measuring some other element after a refactor.
+function commonAncestor(a: any, b: any): any {
+  const chain = new Set<any>();
+  for (let n = a; n; n = n.parent) chain.add(n);
+  for (let n = b; n; n = n.parent) if (chain.has(n)) return n;
+  return null;
+}

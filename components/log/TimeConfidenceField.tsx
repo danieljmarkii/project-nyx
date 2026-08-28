@@ -109,11 +109,22 @@ export function TimeConfidenceField({
 
   return (
     <View style={styles.container}>
+      {/* The two segments carry NO hitSlop, deliberately (CUL-657). `segItem` is
+          flex: 1 and minHeight 44, so each is already at the floor across half the
+          width — slop bought no reach it did not already have. What it bought was
+          an OVERLAP: the pair sits FLUSH (no gap, inside an overflow-hidden bordered
+          box), so 8pt of inward slop each made them share a 16pt band centred on the
+          divider, where a tap resolves by z-order rather than by intent (CUL-612).
+          Dead centre of a two-option control is exactly where a thumb lands, and
+          this is the top-level witnessed-vs-discovered classifier: the wrong segment
+          records a witnessed event as a discovery window or the reverse (the B-448
+          confidence-leak class), and the vet report prints the difference. Flush
+          siblings get no slop at all — there is no gap to spend, so every point of
+          it reaches into the neighbour. Don't add it back. */}
       <View style={styles.seg}>
         <TouchableOpacity
           style={[styles.segItem, mode === 'saw' && styles.segItemOn]}
           onPress={() => onModeChange('saw')}
-          hitSlop={8}
           activeOpacity={0.7}
         >
           <ThemedText style={[styles.segText, mode === 'saw' && styles.segTextOn]}>Saw it happen</ThemedText>
@@ -121,7 +132,6 @@ export function TimeConfidenceField({
         <TouchableOpacity
           style={[styles.segItem, mode === 'found' && styles.segItemOn]}
           onPress={() => onModeChange('found')}
-          hitSlop={8}
           activeOpacity={0.7}
         >
           <ThemedText style={[styles.segText, mode === 'found' && styles.segTextOn]}>Found it</ThemedText>
