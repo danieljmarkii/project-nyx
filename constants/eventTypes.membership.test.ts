@@ -67,7 +67,10 @@ function declBlock(relPath: string, marker: string, terminator: string): string 
 
 function scan(relPath: string, marker: string, terminator: string) {
   const block = declBlock(relPath, marker, terminator);
-  return { cough: /'cough'/.test(block), sneeze: /'sneeze'/.test(block) };
+  // A leaf lives in a list as a quoted member ('cough') OR as a Record key (cough:) —
+  // the label maps use the key form, and missing it read three joined rows as absent.
+  const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(block);
+  return { cough: has('cough'), sneeze: has('sneeze') };
 }
 
 const inSet = (set: ReadonlySet<string> | readonly string[]) => () => {
@@ -116,15 +119,23 @@ const WALK: WalkRow[] = [
     list: 'TREND_SYMPTOM_TYPES (lib/trendSummary.ts)',
     governs: 'the Trend surface',
     read: inSet(TREND_SYMPTOM_TYPES),
-    cough: { now: false, decision: 'YES — lands in PR-3a (client mirrors ship first, HR-2)' },
-    sneeze: { now: false, decision: 'YES — lands in PR-3a' },
+    cough: { now: true, decision: 'YES — landed in PR-3a (client mirrors ship first, HR-2)' },
+    sneeze: { now: true, decision: 'YES — landed in PR-3a' },
   },
   {
     list: 'SYMPTOM_EVENT_TYPES (lib/analytics.ts)',
     governs: 'Patterns grid · frequency calendar · diet-trial outcome deltas · widget symptom tile — the widest single miss',
     read: inSet(SYMPTOM_EVENT_TYPES),
-    cough: { now: false, decision: 'YES — lands in PR-3a' },
-    sneeze: { now: false, decision: 'YES — lands in PR-3a' },
+    cough: {
+      now: true,
+      decision: 'YES — landed in PR-3a (per-type surfaces only; the pooled logged-day denominators '
+        + 'are their own row below). NOTE the transitive consumer the discovery guard cannot see '
+        + '(it imports, declares no literals): dietTrialOutcomeFacts → the trial COMPLETION sheet '
+        + 'now renders a per-type cough line — pinned in dietTrialOutcomeFacts.test.ts + '
+        + 'dietTrialCompletion.test.ts, inheriting that surface’s record-form/untracked-never-zero '
+        + 'discipline unchanged.',
+    },
+    sneeze: { now: true, decision: 'YES — landed in PR-3a (same consumers, same pins)' },
   },
   {
     list: 'ASK_SYMPTOM_TYPES (supabase/functions/ask/tools.ts)',
@@ -154,30 +165,28 @@ const WALK: WalkRow[] = [
     list: 'SYMPTOM_NOUN + SYMPTOM_CHIP_ORDER (lib/daySummary.ts)',
     governs: 'the Day Summary’s lead sentence + count chips',
     read: () => {
+      // Both halves must carry the leaf (AND) now that the row is joined — losing either
+      // half alone would be exactly the silent partial membership this table exists for.
       const order = scan('lib/daySummary.ts', 'const SYMPTOM_CHIP_ORDER', '];');
       const noun = scan('lib/daySummary.ts', 'const SYMPTOM_NOUN', '};');
-      return { cough: order.cough || noun.cough, sneeze: order.sneeze || noun.sneeze };
+      return { cough: order.cough && noun.cough, sneeze: order.sneeze && noun.sneeze };
     },
-    cough: {
-      now: false,
-      decision: 'YES — lands in PR-3a. INTERIM IS SAFE, verified below: symptomNoun falls back to '
-        + 'the lowercased EVENT_TYPES label ("cough"), so a beta cough still counts and reads sanely.',
-    },
-    sneeze: { now: false, decision: 'YES — lands in PR-3a (same safe fallback meanwhile)' },
+    cough: { now: true, decision: 'YES — landed in PR-3a (real noun + chip slot after the GI pair, family order)' },
+    sneeze: { now: true, decision: 'YES — landed in PR-3a' },
   },
   {
     list: 'WIDGET_SYMPTOM_LABELS (lib/widgetSnapshot.ts)',
     governs: 'the home-screen widget’s symptom tile labels',
     read: () => scan('lib/widgetSnapshot.ts', 'const WIDGET_SYMPTOM_LABELS', '};'),
-    cough: { now: false, decision: 'YES — lands in PR-3a (with SYMPTOM_EVENT_TYPES, which scopes the widget query)' },
-    sneeze: { now: false, decision: 'YES — lands in PR-3a' },
+    cough: { now: true, decision: 'YES — landed in PR-3a (with SYMPTOM_EVENT_TYPES, which scopes the widget query)' },
+    sneeze: { now: true, decision: 'YES — landed in PR-3a' },
   },
   {
     list: 'TYPE_FILTER_KEYS (components/history/TypeScopeControl.tsx)',
     governs: 'History’s type filter — the quietest miss: rows visible but unfilterable',
     read: () => scan('components/history/TypeScopeControl.tsx', 'const TYPE_FILTER_KEYS', '];'),
-    cough: { now: false, decision: 'YES — lands in PR-3a' },
-    sneeze: { now: false, decision: 'YES — lands in PR-3a' },
+    cough: { now: true, decision: 'YES — landed in PR-3a (un-gated on purpose — §12: reads are never flag-gated)' },
+    sneeze: { now: true, decision: 'YES — landed in PR-3a' },
   },
   {
     list: 'SignalSymptomType + SYMPTOM_LABEL (lib/signal.ts / lib/signalCopy.ts)',
@@ -185,15 +194,62 @@ const WALK: WalkRow[] = [
     read: () => {
       const union = scan('lib/signal.ts', 'export type SignalSymptomType', ';');
       const label = scan('lib/signalCopy.ts', 'const SYMPTOM_LABEL', '};');
-      return { cough: union.cough || label.cough, sneeze: union.sneeze || label.sneeze };
+      return { cough: union.cough && label.cough, sneeze: union.sneeze && label.sneeze };
     },
     cough: {
-      now: false,
-      decision: 'YES — lands in PR-3a, BEFORE the engine (HR-2): ship 3b first and a cough '
-        + 'chronicity finding renders on the safety banner as literal "recurring undefined". '
-        + 'The Signal surface is not gated by event_types_v2 at all.',
+      now: true,
+      decision: 'YES — landed in PR-3a, BEFORE the engine (HR-2). Plus the runtime fallback '
+        + '(symptomWord) so an out-of-union payload type can never render "recurring undefined" '
+        + '— pinned in lib/signalCopy.symptomWord.test.ts.',
     },
-    sneeze: { now: false, decision: 'YES — lands in PR-3a (the mirrors carry every W1 leaf so a later config flip needs no client cut)' },
+    sneeze: { now: true, decision: 'YES — landed in PR-3a (the mirrors carry every W1 leaf so a later config flip needs no client cut)' },
+  },
+  // ── Rows 12–15: lists the 2026-08-27 product-team review discovered OUTSIDE the §13a
+  // ten (+ signal mirrors) — the reason the discovery guard (guards/symptomLists.test.ts)
+  // now exists. Registered here so each has an explicit decision, not a default.
+  {
+    list: 'SYMPTOM_METRICS + HISTORY_SYMPTOM_TYPES (lib/ask.ts)',
+    governs: 'Ask’s provenance tap-through (G5 audit) — un-listed, a cough count silently loses its "Open in History" audit link',
+    read: () => {
+      const metrics = scan('lib/ask.ts', 'const SYMPTOM_METRICS', ');');
+      const history = scan('lib/ask.ts', 'const HISTORY_SYMPTOM_TYPES', ');');
+      return { cough: metrics.cough && history.cough, sneeze: metrics.sneeze && history.sneeze };
+    },
+    cough: { now: true, decision: 'YES — landed in PR-3a (review finding; Patterns detail + History filter both exist as of this PR)' },
+    sneeze: { now: true, decision: 'YES — landed in PR-3a' },
+  },
+  {
+    list: 'SYMPTOM_OCCURRENCE_LABELS (lib/metricDetail.ts)',
+    governs: 'the frequency calendar’s sentence form ("Coughing on 5 days") — display-only, safe fallback to symptomLabel',
+    read: () => scan('lib/metricDetail.ts', 'const SYMPTOM_OCCURRENCE_LABELS', '};'),
+    cough: { now: true, decision: 'YES — landed in PR-3a (found by the discovery-guard sweep; fallback was safe but terse)' },
+    sneeze: { now: true, decision: 'YES — landed in PR-3a' },
+  },
+  {
+    list: 'TRIAL_RESPONSE_LOGGED_DAY_TYPES (lib/dietTrialFacts.ts)',
+    governs: 'the trial_response logged-day DENOMINATOR (client parity of the engine’s loggedDaysIn) — a pooled density set, NOT a per-type surface',
+    read: () => scan('lib/dietTrialFacts.ts', 'const TRIAL_RESPONSE_LOGGED_DAY_TYPES', '] as const'),
+    cough: {
+      now: false,
+      decision: 'OPEN — the PM logged-day brief on CUL-676 (review finding 2): (a) keep the set at '
+        + 'the existing five + meals so W1 is denominator-neutral, or (b) include cough as real '
+        + 'coverage. Either way it flips (or is confirmed) at 3b IN THE SAME PR as the engine’s '
+        + 'denominator edit, with a parity fixture — never here alone, or client and server drift.',
+    },
+    sneeze: { now: false, decision: 'NO at W1 — follows the engine (sneeze is data-only)' },
+  },
+  {
+    list: 'signalWatching gap row (lib/signalWatching.ts)',
+    governs: 'the sub-floor "watching" register — vomit-anchored BY DESIGN (v1 scoped to the dominant symptom)',
+    read: () => scan('lib/signalWatching.ts', 'export const WATCHING_GAP_SYMPTOM_LABEL', ';'),
+    cough: {
+      now: false,
+      decision: 'OPEN — W1-greenlight rider (review): either cough gets a watching row (per-surface '
+        + 'membership decision, composes with CUL-80) or spec §9:150’s "sub-floor watching covers '
+        + 'the first weeks" sentence is corrected and the day summary + Trend are the honest '
+        + 'first-weeks floor. Not decidable in a build session.',
+    },
+    sneeze: { now: false, decision: 'NO — same rider; sneeze is data-only at W1 regardless' },
   },
 ];
 
@@ -210,8 +266,11 @@ describe('W1 membership walk (HR-6) — every list decided, current state == dec
     expect(row.sneeze.decision.length).toBeGreaterThan(0);
   });
 
-  it('the walk covers all ten §13a lists (+ the signal mirrors) — a list added later must join the table', () => {
-    expect(WALK).toHaveLength(11);
+  it('the walk covers the ten §13a lists + the signal mirrors + the four review-discovered lists — a list added later must join the table', () => {
+    // 11 original rows + SYMPTOM_METRICS/HISTORY (ask) + SYMPTOM_OCCURRENCE_LABELS +
+    // TRIAL_RESPONSE_LOGGED_DAY_TYPES + the signalWatching gap row (2026-08-27 review).
+    // guards/symptomLists.test.ts is the discovery side: an UNREGISTERED list fails there.
+    expect(WALK).toHaveLength(15);
   });
 });
 

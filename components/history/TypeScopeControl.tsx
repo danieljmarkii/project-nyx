@@ -12,8 +12,10 @@ import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 // label (it used to hardcode "Diarrhea" while the rows render "Loose stool").
 // Order keeps the two stool types adjacent for scanning. `weight_check` is
 // loggable (B-186) and gains a filter here for the first time.
+// cough/sneeze are deliberately NOT flag-gated here (§12: reads are never gated — a beta
+// household's rows are visible to every account member, so they must be filterable too).
 const TYPE_FILTER_KEYS: EventTypeKey[] = [
-  'meal', 'vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch',
+  'meal', 'vomit', 'diarrhea', 'stool_normal', 'cough', 'sneeze', 'lethargy', 'itch',
   'medication', 'weight_check', 'other',
 ];
 

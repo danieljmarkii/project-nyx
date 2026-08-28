@@ -354,12 +354,17 @@ function joinNatural(parts: readonly string[]): string {
 // set is closed) keeps the plurals honest — "loose stool"/"loose stools", never a
 // naive "diarrheas". A refusal already reads "refused" on its own row; these are
 // the logged SYMPTOM types only. Ordered by GI-first salience for the chip row.
-const SYMPTOM_CHIP_ORDER: readonly EventTypeKey[] = ['vomit', 'diarrhea', 'lethargy', 'itch'];
+// W1 (CUL-676 PR-3a): cough/sneeze slot after the GI pair, matching the ratified family
+// order (Digestion → Breathing → the rest); the pre-W1 types keep their relative order.
+const SYMPTOM_CHIP_ORDER: readonly EventTypeKey[] =
+  ['vomit', 'diarrhea', 'cough', 'sneeze', 'lethargy', 'itch'];
 const SYMPTOM_NOUN: Record<string, { one: string; many: string }> = {
   vomit: { one: 'vomit', many: 'vomits' },
   diarrhea: { one: 'loose stool', many: 'loose stools' },
   lethargy: { one: 'lethargy', many: 'lethargy' },
   itch: { one: 'itch', many: 'itches' },
+  cough: { one: 'cough', many: 'coughs' },
+  sneeze: { one: 'sneeze', many: 'sneezes' },
 };
 function symptomNoun(eventType: string, count: number): string {
   const entry = SYMPTOM_NOUN[eventType];

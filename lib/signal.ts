@@ -44,7 +44,12 @@ export type InsightType =
   | 'trial_response';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
-export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction';
+// W1 (CUL-676 PR-3a): cough + sneeze join the CLIENT mirror before the engine learns them
+// (HR-2 release-order asymmetry) — the union carries every W1 leaf so a later engine config
+// flip needs no client cut. A payload can still outrun an installed build's union (a future
+// wave's type on an old build), which is why every label read goes through symptomWord().
+export type SignalSymptomType =
+  | 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction' | 'cough' | 'sneeze';
 // The visible red-flag kinds a per-incident photo read can surface (B-340). Mirror of
 // IncidentFlagKind in detection.ts; blood before foreign_material is the engine's stable order.
 export type IncidentFlagKind = 'blood' | 'foreign_material';

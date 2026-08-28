@@ -957,13 +957,12 @@ describe('buildDaySummary — the rich single-pet recap end-to-end (§2)', () =>
   });
 });
 
-// ── W1 interim-noun fallback (CUL-675 — verified until PR-3a lands the nouns) ──
-// SYMPTOM_NOUN / SYMPTOM_CHIP_ORDER gain cough/sneeze in W1-PR-3a (the membership
-// walk pins that). Meanwhile a beta cough must still COUNT and read sanely: the
-// noun falls back to the lowercased EVENT_TYPES label, un-pluralised (safer than a
-// naive +s on an unknown word). This is the §8 "degrade to a generic noun, never
-// silence" contract exercised on the one surface that speaks counts in prose.
-describe('W1 interim — a cough chip counts and reads through the noun fallback', () => {
+// ── W1 real nouns (PR-3a landed them — this was the CUL-675 interim-fallback pin) ──
+// PR-2 shipped capture with the noun FALLBACK carrying cough ("1 cough" via the
+// lowercased label, un-pluralised); PR-3a moved both into SYMPTOM_NOUN /
+// SYMPTOM_CHIP_ORDER. The singular is identical either way, so the PLURAL is the
+// case that proves the real noun is live — the fallback would have said "2 cough".
+describe('W1 — cough chips count and read through the real nouns (PR-3a)', () => {
   it('renders a symptom-toned "1 cough" chip ahead of meals (symptoms lead)', () => {
     const rows = [
       dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
@@ -971,5 +970,26 @@ describe('W1 interim — a cough chip counts and reads through the noun fallback
     ];
     const chips = buildCountChips(rows);
     expect(chips[0]).toEqual({ key: 'cough', label: '1 cough', tone: 'symptom' });
+  });
+
+  it('pluralises through the noun table — "2 coughs", not the fallback\'s "2 cough"', () => {
+    const rows = [
+      dsr({ id: 'c1', category: 'symptom', eventType: 'cough' }),
+      dsr({ id: 'c2', category: 'symptom', eventType: 'cough' }),
+      dsr({ id: 's1', category: 'symptom', eventType: 'sneeze' }),
+    ];
+    const chips = buildCountChips(rows);
+    expect(chips[0]).toEqual({ key: 'cough', label: '2 coughs', tone: 'symptom' });
+    expect(chips[1]).toEqual({ key: 'sneeze', label: '1 sneeze', tone: 'symptom' });
+  });
+
+  it('chip order slots the respiratory pair after the GI pair (family order)', () => {
+    const rows = [
+      dsr({ id: 'l1', category: 'symptom', eventType: 'lethargy' }),
+      dsr({ id: 'c1', category: 'symptom', eventType: 'cough' }),
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit' }),
+    ];
+    const chips = buildCountChips(rows);
+    expect(chips.map((c) => c.key)).toEqual(['vomit', 'cough', 'lethargy']);
   });
 });

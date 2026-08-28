@@ -250,14 +250,14 @@ export type AskNav =
 // The symptom event_types that have a real `/insights/[metric]` detail screen (a
 // symptom-count trend). count_symptom/time_of_day only parameterize over these
 // (ASK_SYMPTOM_TYPES), so a symptom `filter` always resolves to a live Patterns detail.
-const SYMPTOM_METRICS = new Set(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch', 'scratch', 'skin_reaction']);
+const SYMPTOM_METRICS = new Set(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze']);
 
 // B-378 — the symptoms History can render as a `?type=` filter: the intersection of
 // SYMPTOM_METRICS and the event types exposed in the History TypeScopeControl. `scratch` and
 // `skin_reaction` are valid schema values with a Patterns detail but NO History filter chip, so
 // they stay on the Patterns route. Typed EventTypeKey so a typo here fails the type-check
 // rather than silently degrading to an unfiltered History list.
-const HISTORY_SYMPTOM_TYPES = new Set<EventTypeKey>(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch']);
+const HISTORY_SYMPTOM_TYPES = new Set<EventTypeKey>(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch', 'cough', 'sneeze']);
 
 /** The History `?type=` value for an Ask symptom, or null when History has no filter for it. */
 function historySymptomType(symptomType: string | undefined): EventTypeKey | null {

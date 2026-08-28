@@ -77,6 +77,8 @@ const WIDGET_SYMPTOM_LABELS: Record<string, string> = {
   scratch: 'Scratching',
   skin_reaction: 'Skin',
   lethargy: 'Lethargy',
+  cough: 'Coughing',
+  sneeze: 'Sneezing',
 };
 
 export const WIDGET_SNAPSHOT_SCHEMA_VERSION = 1;
