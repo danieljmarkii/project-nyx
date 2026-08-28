@@ -2196,7 +2196,7 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
     // then dated its last observation weeks back. Cough's widened recency floor made that
     // pairing reachable; span/onset and recency are each stated once now.
     expect(facts).toContainEqual({ label: 'First logged', value: 'May' });
-    expect(facts.map((f) => f.label)).not.toContain('Ongoing since');
+    expect(facts?.map((f) => f.label)).not.toContain('Ongoing since');
     expect(facts).toContainEqual({ label: 'How often', value: '20 episodes across 6 of 8 weeks' });
     expect(facts).toContainEqual({ label: 'Most recent', value: 'yesterday' });
   });
