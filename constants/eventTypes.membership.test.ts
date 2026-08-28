@@ -231,12 +231,14 @@ const WALK: WalkRow[] = [
     read: () => scan('lib/dietTrialFacts.ts', 'const TRIAL_RESPONSE_LOGGED_DAY_TYPES', '] as const'),
     cough: {
       now: false,
-      decision: 'OPEN — the PM logged-day brief on CUL-676 (review finding 2): (a) keep the set at '
-        + 'the existing five + meals so W1 is denominator-neutral, or (b) include cough as real '
-        + 'coverage. Either way it flips (or is confirmed) at 3b IN THE SAME PR as the engine’s '
-        + 'denominator edit, with a parity fixture — never here alone, or client and server drift.',
+      decision: 'RULED (b) — PM, 2026-08-28 ("activity is activity — logging a cough is logging"): '
+        + 'cough COUNTS as a logged day. Flips at 3b IN THE SAME PR as the engine’s denominator '
+        + 'edit, with a before/after fixture + a client==server parity fixture — never here alone, '
+        + 'or client and server drift. The adversarial dissent (trial-lane drift toward '
+        + 'reassurance) is recorded on CUL-676; the C5/§7 density disclosures are the honesty '
+        + 'instrument for it.',
     },
-    sneeze: { now: false, decision: 'NO at W1 — follows the engine (sneeze is data-only)' },
+    sneeze: { now: false, decision: 'Follows the same ruling at 3b (a sneeze log is logging too); data-only for every per-type lane' },
   },
   {
     list: 'signalWatching gap row (lib/signalWatching.ts)',
