@@ -100,15 +100,81 @@ import {
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
-/** Symptom event types the correlation detector considers (schema reference query [2]). */
+// ── Symptom membership (W1-PR-3b session 1, CUL-676 — HR-1) ───────────────────
+//
+// Three concerns that used to be ONE list, split so a leaf can be TYPED without
+// being FETCHED, and fetched without enrolling in every lane:
+//
+//   • SYMPTOM_TYPE_UNIVERSE — every symptom leaf this module can NAME. Widening
+//     it compile-forces the label map (phrasing.ts SYMPTOM_LABEL) and lets a
+//     fixture exercise a leaf the lanes must ignore, without a cast.
+//   • CORRELATION_SYMPTOM_TYPES — the FETCH union (index.ts pulls exactly these;
+//     generate-report's CORRELATION_TYPE_SET reads it too). Still the five GI/derm
+//     types: cough joins HERE in 3b session 2, and only alongside the lane cells
+//     below saying where it may speak.
+//   • LANE_SYMPTOM_TYPES — which fetched types each LANE consumes (§9's per-lane
+//     membership, the ruled cells). Before this split, adding one type to the
+//     fetch auto-enrolled it in ①③④⑦, L4 AND the diagnostics floor at once —
+//     including the food↔cough attribution §9 forbids by name (HR-1).
+//
+// Deliberately NOT cells in this map:
+//   • ⑤/⑥/L1/L2-timing are structurally single-type (POSTPRANDIAL_SYMPTOM_TYPE /
+//     TIMEOFDAY_SYMPTOM_TYPE / EMPTY_STOMACH_SYMPTOM_TYPE / TRIAL_TIMING_SYMPTOM_TYPE
+//     constants below) — the corrected HR-1 inventory (2026-08-27 review, finding 1):
+//     they never iterated the shared list, so they are not membership cells.
+//   • The logged-day/density DENOMINATORS (loggingDaysInWindow, chronicity's
+//     logging-density count, trial_response's loggedDaysIn) read the whole fetched
+//     input by construction — the denominator set == the fetch union. That is now
+//     the RULED state, not an accident (R3, PM 2026-08-28: "a logged cough IS a
+//     logged day" — cough joins these denominators when it joins the fetch, with
+//     before/after fixtures and the client-mirror parity in the same PR).
+
+export const SYMPTOM_TYPE_UNIVERSE = [
+  'vomit',
+  'diarrhea',
+  'itch',
+  'scratch',
+  'skin_reaction',
+  'cough',
+  'sneeze',
+] as const
+export type SymptomType = (typeof SYMPTOM_TYPE_UNIVERSE)[number]
+
+/** Symptom event types the engine FETCHES (schema reference query [2]). */
 export const CORRELATION_SYMPTOM_TYPES = [
   'vomit',
   'diarrhea',
   'itch',
   'scratch',
   'skin_reaction',
-] as const
-export type SymptomType = (typeof CORRELATION_SYMPTOM_TYPES)[number]
+] as const satisfies readonly SymptomType[]
+
+/** The five pre-taxonomy types every list-driven lane consumed before the split.
+ *  Each cell below starts as exactly this list — the split is behaviour-neutral
+ *  by construction, and every later divergence is a visible per-cell diff. */
+const PRE_TAXONOMY_LANE_TYPES: readonly SymptomType[] = [
+  'vomit',
+  'diarrhea',
+  'itch',
+  'scratch',
+  'skin_reaction',
+]
+
+/** Per-lane membership — the ruled §9 cells. A lane iterates ITS cell, never the
+ *  fetch union; its tie-breaks order by ITS cell. Pinned by laneMembership.test.ts. */
+export const LANE_SYMPTOM_TYPES = {
+  /** ① food↔symptom correlation. cough: NEVER (§9 — a respiratory sign gets no food-attribution window). */
+  correlation: PRE_TAXONOMY_LANE_TYPES,
+  /** ③ reflection + ④ worsening (one shared stats loop feeds both). cough: no at W1 (§9 row). */
+  symptomDelta: PRE_TAXONOMY_LANE_TYPES,
+  /** ⑦ chronicity. cough joins HERE in 3b session 2 — ⑦-only, with its own perType floors (B-755, Dr. Chen). */
+  chronicity: PRE_TAXONOMY_LANE_TYPES,
+  /** L4 gap-shortening. cough: NO at W1 (R1, PM 2026-08-28 — acceleration is a future ④ question, not L4's). */
+  gapShortening: PRE_TAXONOMY_LANE_TYPES,
+  /** The staple-washout / diet-churn symptom-evidence floor. cough: NEVER (R2, PM 2026-08-28 —
+   *  a respiratory sign must never satisfy a food-attribution card's symptom gate). */
+  diagnosticsFloor: PRE_TAXONOMY_LANE_TYPES,
+} as const satisfies Record<string, readonly SymptomType[]>
 
 /** WSAVA 5-point owner-reported intake scale (migration 011). */
 export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all'
@@ -996,9 +1062,10 @@ export type ChronicityTier = 'standard' | 'firm'
  * Fires on the §4.3 conjunction (span AND episodes AND active-weeks AND recency floors,
  * plus the coarse logging-eligibility guard) — the same episode-collapsing and honesty-
  * floor philosophy ④ obeys, but a long-span persistence test, not a two-window delta.
- * Runs on ALL CORRELATION_SYMPTOM_TYPES (chronic diarrhea / pruritus are as real as
- * chronic vomiting — differs from ⑤'s vomit-only scope, matches ③/④). Surfaces at most
- * ONE card (the most-chronic symptom) so the safety surface stays calm.
+ * Runs on LANE_SYMPTOM_TYPES.chronicity (chronic diarrhea / pruritus are as real as
+ * chronic vomiting — differs from ⑤'s vomit-only scope, matches ③/④; cough joins this
+ * cell, and only this cell, in 3b session 2). Surfaces at most ONE card (the
+ * most-chronic symptom) so the safety surface stays calm.
  */
 export interface SymptomChronicityFinding extends FindingBase {
   type: 'symptom_chronicity'
@@ -1793,6 +1860,30 @@ export interface DetectionConfig {
     ongoingRecencyDays: number
     /** Duration-anchored 'firm' register floor (≥6 weeks → "book a vet visit"). */
     firmSpanDays: number
+    /**
+     * Per-type floor overrides (W1-PR-3b session 1, CUL-676). The global floors above
+     * were calibrated on GI/derm signs; a leaf joining the lane brings ITS OWN floors
+     * (the B-755 contract — cough's numbers are Dr. Chen's to set when it joins in
+     * session 2). An absent type resolves to the global floors, so an empty/omitted
+     * map is byte-identical to the pre-slot engine. `windowDays` is deliberately NOT
+     * overridable: the card's "{N} weeks" denominator and the weekly distribution
+     * buckets are one shared window — a per-type window would be a different lane,
+     * not a different floor. Every consumer resolves through chronicityFloorsFor —
+     * ⑦'s fire predicate, its tier resolver AND the ③-valve share the resolved
+     * floors by construction (the one-predicate rule, §5.3).
+     */
+    perType?: Partial<
+      Record<
+        SymptomType,
+        Partial<{
+          minSpanDays: number
+          minEpisodes: number
+          minActiveWeeks: number
+          ongoingRecencyDays: number
+          firmSpanDays: number
+        }>
+      >
+    >
   }
   postprandial: {
     /** §3.3: minimum rapid episodes before a pattern is worth stating (2 is an anecdote). */
@@ -2895,7 +2986,7 @@ export function detectCorrelations(
   // (adversarial review, B-117 PR 9 — a real tier wart, though never a false reassurance).
   let suppressedFamilyCount = 0
 
-  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+  for (const symptomType of LANE_SYMPTOM_TYPES.correlation) {
     const windowHours =
       config.correlationWindowHoursByType[symptomType] ?? config.correlationWindowHours
     const windowMs = windowHours * MS_PER_HOUR
@@ -3498,7 +3589,7 @@ function computeWindowedStats(input: DetectionInput, config: DetectionConfig): W
     loggingDaysInWindow(input, priorStart, currentStart) >= cfg.minLoggingDaysPerWindow
 
   const stats: SymptomStat[] = []
-  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+  for (const symptomType of LANE_SYMPTOM_TYPES.symptomDelta) {
     const msList = input.symptomEvents
       .filter((s) => s.type === symptomType)
       .map((s) => Date.parse(s.occurredAt))
@@ -3729,8 +3820,8 @@ export function detectWorsening(
     if (riseDiff !== 0) return riseDiff
     if (b.currentCount !== a.currentCount) return b.currentCount - a.currentCount
     return (
-      CORRELATION_SYMPTOM_TYPES.indexOf(a.symptomType) -
-      CORRELATION_SYMPTOM_TYPES.indexOf(b.symptomType)
+      LANE_SYMPTOM_TYPES.symptomDelta.indexOf(a.symptomType) -
+      LANE_SYMPTOM_TYPES.symptomDelta.indexOf(b.symptomType)
     )
   })
 
@@ -3888,7 +3979,7 @@ function computeChronicityStats(
   }
 
   const stats: ChronicityStat[] = []
-  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+  for (const symptomType of LANE_SYMPTOM_TYPES.chronicity) {
     const msList = input.symptomEvents
       .filter((s) => s.type === symptomType)
       .map((s) => Date.parse(s.occurredAt))
@@ -3935,12 +4026,28 @@ function computeChronicityStats(
  * detectChronicity gates on `isChronic(s) && s.loggingEligible`, and PR 2's valve must too.
  */
 export function isChronic(s: ChronicityStat, cfg: DetectionConfig['chronicity']): boolean {
+  const floors = chronicityFloorsFor(s.symptomType, cfg)
   return (
-    s.spanDays >= cfg.minSpanDays &&
-    s.episodeCount >= cfg.minEpisodes &&
-    s.activeWeeks >= cfg.minActiveWeeks &&
-    s.daysSinceLastEpisode <= cfg.ongoingRecencyDays
+    s.spanDays >= floors.minSpanDays &&
+    s.episodeCount >= floors.minEpisodes &&
+    s.activeWeeks >= floors.minActiveWeeks &&
+    s.daysSinceLastEpisode <= floors.ongoingRecencyDays
   )
+}
+
+/**
+ * The per-type floor resolver — the ONLY way a chronicity floor is read (W1-PR-3b
+ * session 1). Global floors overlaid with the type's `perType` entry; no entry ⇒ the
+ * globals unchanged. Resolving INSIDE isChronic / resolveChronicityTier (rather than
+ * at each call site) is what makes ⑦, its tier and the ③-valve share the per-type
+ * floors by construction — a consumer cannot forget to resolve.
+ */
+export function chronicityFloorsFor(
+  symptomType: SymptomType,
+  cfg: DetectionConfig['chronicity'],
+): DetectionConfig['chronicity'] {
+  const over = cfg.perType?.[symptomType]
+  return over ? { ...cfg, ...over } : cfg
 }
 
 /**
@@ -3953,7 +4060,7 @@ function resolveChronicityTier(
   s: ChronicityStat,
   cfg: DetectionConfig['chronicity'],
 ): ChronicityTier {
-  return s.spanDays >= cfg.firmSpanDays ? 'firm' : 'standard'
+  return s.spanDays >= chronicityFloorsFor(s.symptomType, cfg).firmSpanDays ? 'firm' : 'standard'
 }
 // NOTE: the §4.6 firm-tier INHERITANCE arm (firm when the same symptom is also worsening
 // week-over-week) is applied downstream in suppressWorseningWhenChronic, not here — that fact
@@ -3979,8 +4086,8 @@ export function detectChronicity(
     if (b.spanDays !== a.spanDays) return b.spanDays - a.spanDays
     if (b.episodeCount !== a.episodeCount) return b.episodeCount - a.episodeCount
     return (
-      CORRELATION_SYMPTOM_TYPES.indexOf(a.symptomType) -
-      CORRELATION_SYMPTOM_TYPES.indexOf(b.symptomType)
+      LANE_SYMPTOM_TYPES.chronicity.indexOf(a.symptomType) -
+      LANE_SYMPTOM_TYPES.chronicity.indexOf(b.symptomType)
     )
   })
 
@@ -5049,7 +5156,7 @@ export function detectGapShortening(
   const runLength = Math.max(2, Math.floor(cfg.runLength))
 
   const candidates: GapShorteningStat[] = []
-  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+  for (const symptomType of LANE_SYMPTOM_TYPES.gapShortening) {
     const msList = input.symptomEvents
       .filter((s) => s.type === symptomType)
       .map((s) => Date.parse(s.occurredAt))
@@ -5112,8 +5219,8 @@ export function detectGapShortening(
     if (ra !== rb) return ra - rb
     if (a.lastOnsetMs !== b.lastOnsetMs) return b.lastOnsetMs - a.lastOnsetMs
     return (
-      CORRELATION_SYMPTOM_TYPES.indexOf(a.symptomType) -
-      CORRELATION_SYMPTOM_TYPES.indexOf(b.symptomType)
+      LANE_SYMPTOM_TYPES.gapShortening.indexOf(a.symptomType) -
+      LANE_SYMPTOM_TYPES.gapShortening.indexOf(b.symptomType)
     )
   })
 
@@ -5174,7 +5281,7 @@ export function detectGapShortening(
 /** Distinct symptom episodes across ALL correlation types (re-logs collapsed, like detector ①). */
 function countSymptomEpisodes(symptomEvents: SymptomEvent[], config: DetectionConfig): number {
   let total = 0
-  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+  for (const symptomType of LANE_SYMPTOM_TYPES.diagnosticsFloor) {
     const msList = symptomEvents
       .filter((s) => s.type === symptomType)
       .map((s) => Date.parse(s.occurredAt))
@@ -5823,9 +5930,9 @@ export const DETECTOR_REGISTRY: Detector[] = [
   // (SAFETY_TYPE_ORDER: chronicity above worsening) and composition couplings — the
   // ③-suppression valve (§4.4) and same-symptom ④-suppression with firm-tier inheritance
   // (§4.5, suppressWorseningWhenChronic) — now landed (PR 2): a same-symptom chronic+worsening
-  // pet shows ONE card (⑦, firm-inherited), never two. DEPLOY-GATED: the client (lib/signal.ts
-  // InsightType, InsightCard renderers) does not handle 'symptom_chronicity' until PR 3, so do
-  // NOT redeploy generate-signal until the PR3 copy layer + client land.
+  // pet shows ONE card (⑦, firm-inherited), never two. The PR 3 copy layer and client renderers
+  // shipped long ago (⑦ live end-to-end since v32) — the old deploy-gate note here was deleted
+  // as stale, 2026-08-28 (HR-30, CUL-676).
   { type: 'symptom_chronicity', detect: detectChronicity },
   { type: 'postprandial_timing', detect: detectPostprandialTiming },
   // Detector L1 (Signals v2 / B-755 / CUL-7 — the empty-stomach ≥6h mirror of ⑤). A same-symptom
