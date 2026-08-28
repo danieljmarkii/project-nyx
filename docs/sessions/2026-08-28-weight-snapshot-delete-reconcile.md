@@ -48,17 +48,49 @@ Two corrections to the issue's framing came out of reading the tree, and both ch
 A third option surfaced while pricing the others and was recorded rather than built — see
 *Not taken* below.
 
-## The rule
+## The rule — as first drafted, and as it ended up
 
-> After a weight check is soft-deleted the snapshot becomes the latest **remaining** reading;
-> when none remains it becomes the value that reading **displaced** when it was written, if the
-> caller knows it; otherwise it is **left alone**.
+The rule I briefed and built first was:
 
-**"Left alone" rather than nulled is the load-bearing half, and it is a data-loss argument, not
-a display one.** `pets.weight_kg` is also where the owner's onboarding / Edit-profile weight
-lives, and that value has no other home. Nulling when nothing is known would trade a stale
-number for an asserted "no weight on file" the owner never said — destroying an owner-entered
-datum to fix a display. Leaving it loses nothing.
+> latest **remaining** reading → else the value this reading **displaced** (only Undo knows it)
+> → else **leave it alone**.
+
+I justified "leave it alone" as protecting the owner's onboarding / Edit-profile weight, which
+also lives in this column and has no other home. **The adversarial pass falsified that
+justification in both directions, and it was right.** The rule now gates on identity first:
+
+> A delete may only ever undo the snapshot write **this reading** made. Is the snapshot this
+> reading's own value? No → leave it entirely alone. Yes → latest remaining reading, else the
+> displaced value, else **null**.
+
+Two reachable sequences forced it, neither exotic:
+
+1. **"Leaving it loses nothing" was false on the ordinary online path.** Onboarding 5.0 kg, then
+   a first-ever weigh-in of 4.2 — the **write** side already destroyed the 5.0 at log time. Remove
+   that reading from History an hour later and "leave it alone" preserves **4.2: the deleted
+   reading**, not a profile weight. `WeightTrendCard` renders it captioned *"From {pet}'s
+   profile."* — an affirmative false provenance claim about a weigh-in the owner removed — and
+   `EditPetModal` pre-fills it and writes it back on Save, laundering the corpse into a genuine
+   owner-entered profile weight, permanently indistinguishable.
+2. **Un-gated re-pointing introduced a new destruction vector for the very value the rule claimed
+   to protect.** Type a vet-measured 18.0 into Edit profile, then remove an unrelated *older*
+   weigh-in: the snapshot is re-pointed at the latest reading and the owner's 18.0 is gone,
+   destroyed by a delete of a different row. Nothing on any delete path could do that before.
+
+One gate closes both, because both are the same mistake — acting on a snapshot this reading did
+not set. Comparing the deleted row's own `weight_kg` to the snapshot separates *"this number is
+the corpse"* from *"this number is the owner's"*, at **zero schema cost** (the helper was already
+reading that row). The reviewer's correction of my cost estimate was the useful part: I had
+written the fix off as needing a schema change.
+
+**The trap worth carrying forward: a "leave it alone, we might destroy something" argument is
+only as good as the claim that the something still exists.** An earlier writer had already
+destroyed it, so the caution preserved exactly the thing it was meant to remove.
+
+Nulling a corpse is not data loss, and the sharpest reason is the **pre-fill**, not the chip:
+Principle 2 has trained this owner to confirm rather than type, so a stale number sitting in
+`seedWeightPrefill` is one tap from being confirmed into `weight_checks` as a real reading —
+biased toward the older, heavier value, which is the direction that masks loss.
 
 The asymmetry between Undo and Remove is therefore **an information difference, not an arbitrary
 inconsistency**: Undo is bounded to the row it just watched being written, so it holds the
@@ -113,6 +145,40 @@ CUL-613's lesson, applied rather than cited: before trusting `guards/reversePath
 Remove paths were restored from `HEAD` and the guard re-run. It failed, naming
 `app/(tabs)/history.tsx`, `app/event/[id].tsx` **and** `lib/widgetBridge.ts`. A guard that has
 only ever been green has not been tested.
+
+## What the three reviews changed
+
+All three ran against the first draft. `rls-privacy-reviewer` returned **PASS on every boundary**
+(cross-account `pets` write, the unverified `pet_id`, the session precondition on the new reconcile
+caller, cross-pet bleed, and the soft-delete rule across `generate-report` / `ask` /
+`delete-account`), and `adversarial-reviewer` returned **FAIL**. Fixed this session:
+
+- **The identity gate** (above) — closes the phantom-preservation and the Edit-profile destruction.
+- **`patchPetById`** (`store/petStore.ts`), found independently by the code and adversarial passes.
+  `updatePet` derives its target from `activePet`, so guarding on "is the reconciled pet active?"
+  silently skipped the pet the record belonged to — and a record screen is reached BY ID for any
+  pet, which `app/event/[id].tsx` states in its own comment (the day-summary spine, deep links,
+  notifications; CUL-574). `selectPet` never refetches, so that staleness survived the session:
+  CUL-641 reproduced on the cross-pet path by the guard meant to prevent a wrong-pet write. A
+  by-id patch is also **strictly safer** than the check it replaced — it cannot land on another
+  animal *and* cannot skip the right one.
+- **Partial hydration** — `events` lands before `weight_checks`, so a weigh-in can exist with no
+  child row. The bare child lookup scored that as "this wasn't a weigh-in": a logging gap read as
+  an absence. Now reads the parent's `event_type` and says so instead.
+- **`momentStore` on the sign-out wipe** (`lib/session.ts`) — pre-existing, but this issue added
+  `previousSnapshotKg`, a second health value, to a payload that `hide()` deliberately keeps and
+  that renders from the **root** layout, above the auth redirect. An involuntary sign-out with a
+  card up left it naming the previous owner's pet and weight over the next person's login screen.
+  CLAUDE.md's in-memory-cache rule names this directly.
+- **Two comments that overstated their case** — the offline known-limit (the server staleness is
+  inherited by every *other* device and every reinstall, not just "a stale row"), and the widget
+  `reverse-path-ok` exemption (what stops a weight_check id reaching that loop is the *writer's*
+  convention, not a check on the reader's side).
+
+Also held under attack, worth recording because they were tried: back-dated deletes in all four
+permutations, wrong-pet *writes*, the retry-vs-restore null race, presence-vs-`null`, and the
+`generate-report` isolation — the report reads `weight_checks` with the soft-delete filter, and
+`pet.weightKg` is mapped in and read by **nothing**.
 
 ## Residuals, stated rather than implied
 

@@ -117,12 +117,20 @@ function defaultDrainDeps(): DrainDeps {
     // reverse-path-ok: this is a ROLLBACK of captures the app just replayed on the
     // owner's behalf, not an owner-initiated removal, and it runs as a loop — so the
     // shared `reverseLoggedEvent` would fire one `syncPendingEvents()` flush per
-    // revoked row where the drain wants a single flush at the end. Nothing is lost by
-    // staying on the primitive today: the widget is informational-only (B-664 V2-1)
-    // and its capture intents are meal / treat / bowl top-up, so a revoked event can
-    // never be a weigh-in and there is no CUL-641 snapshot side-effect to inherit.
+    // revoked row where the drain wants a single flush at the end.
+    //
+    // WHAT IS AND IS NOT GUARANTEED HERE (rls-privacy-reviewer, stated precisely
+    // because the first draft overstated it). The WRITER cannot mint a weigh-in:
+    // `captureInbox` hardcodes `event_type: 'meal'`, and the widget is
+    // informational-only (B-664 V2-1). The READER does not check: `outbox.revoked`
+    // is accepted as any string off the App Group, which is outside the app sandbox
+    // (lib/widgetProps.ts), so what keeps a weight_check id out of this loop is the
+    // writer's convention, not a check on this side. Tracked separately; the exposure
+    // is device-local and within the owner's own account, and RLS bounds it.
     // TRIP-WIRE: if the widget ever gains a weight capture, this must move to
-    // `reverseLoggedEvent` and this exemption must go.
+    // `reverseLoggedEvent` and this exemption must go. Note the guard's marker is
+    // file-wide, so that trip-wire is prose — a NEW delete call added anywhere in this
+    // file inherits this exemption silently. Read it before adding one.
     revokeEvent: softDeleteEvent,
   };
 }

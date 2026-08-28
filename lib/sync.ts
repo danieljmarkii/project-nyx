@@ -654,12 +654,15 @@ export async function syncPendingEvents(): Promise<void> {
   // reading until some later weigh-in happened to re-point it. Once a weight_check
   // TOMBSTONE lands, bring that pet's snapshot current.
   //
-  // KNOWN LIMIT, stated rather than implied: this can only reconcile to a remaining
-  // reading. It cannot restore a DISPLACED value, because only the delete site ever
-  // knew it — so an offline undo of a first-ever weigh-in leaves the server snapshot
-  // stale even after this runs. Closing that needs the displaced value stored per
-  // reading (a schema change, its own issue); the device the owner is holding is
-  // already correct.
+  // KNOWN LIMIT, and the blast radius is wider than "a stale row" (adversarial pass):
+  // this can only reconcile TO a remaining reading. It cannot restore a DISPLACED value,
+  // because only the delete site ever knew it, and `reconcilePetWeightSnapshot` bails
+  // when there is no reading left. So: log a first-ever weigh-in ONLINE (server snapshot
+  // moves), lose signal, undo it. This device is correct — the store was patched inline —
+  // but the server keeps the undone reading, and every OTHER device and every reinstall
+  // pulls `pets` from the server, so they inherit it indefinitely in the chip, the
+  // pre-fill and EditPetModal. Closing it needs the displaced value stored per reading
+  // (a schema change, its own issue).
   const tombstonedWeightPetIds = [...new Set(
     unsyncedEvents
       .filter((e) => e.event_type === 'weight_check' && e.deleted_at != null && landedEvents.has(e.id))
