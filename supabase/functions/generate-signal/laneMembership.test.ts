@@ -664,3 +664,88 @@ Deno.test('R3 GATE INVARIANT: exactly the ③/④ lane cell moves the comparabil
     )
   }
 })
+
+// ── 13 · The floor resolver's own hazards (adversarial pass, 2026-08-28) ──────
+
+Deno.test('resolver: an override may set ONLY the five floors — windowDays cannot leak', () => {
+  // Two comments claimed windowDays was "not overridable by construction". It was not:
+  // `apply` was a denylist skipping one key, so only the TypeScript type stopped it — which
+  // is not construction, because a config assembled at runtime never meets the type. Now an
+  // allowlist. The cast is the point: it models exactly the untyped shape that got through.
+  const cfg = {
+    ...DEFAULT_CONFIG.chronicity,
+    perType: { cough: { windowDays: 7, minEpisodes: 5 } },
+  } as unknown as DetectionConfig['chronicity']
+  const resolved = chronicityFloorsFor('cough', 'dog', cfg)
+  assert.equal(resolved.windowDays, DEFAULT_CONFIG.chronicity.windowDays, 'windowDays must not be overridable')
+  assert.equal(resolved.minEpisodes, 5, 'and a real floor still applies')
+})
+
+Deno.test('resolver: a partial per-type replacement cannot silently drop the cat override', () => {
+  // LATENT TODAY (DEFAULT_CONFIG is the only config assembled in production) and pinned
+  // anyway, because its failure direction is silencing the MORE SENSITIVE feline floor —
+  // a config that replaces `cough` wholesale without carrying `cat` forward would raise
+  // cats from 4 to whatever the base says, invisibly.
+  const cfg = {
+    ...DEFAULT_CONFIG.chronicity,
+    perType: { cough: { minEpisodes: 6 } },
+  } as unknown as DetectionConfig['chronicity']
+  assert.equal(
+    chronicityFloorsFor('cough', 'cat', cfg).minEpisodes,
+    6,
+    'documented consequence: dropping `cat` from a replacement drops the feline floor with it',
+  )
+  // The shipped config must never be in that state — this is the assertion that matters.
+  assert.equal(chronicityFloorsFor('cough', 'cat', DEFAULT_CONFIG.chronicity).minEpisodes, 4)
+})
+
+Deno.test('resolver: a nested cat-inside-cat never reaches a floor slot', () => {
+  const cfg = {
+    ...DEFAULT_CONFIG.chronicity,
+    perType: { cough: { minEpisodes: 5, cat: { minEpisodes: 4, cat: { minEpisodes: 1 } } } },
+  } as unknown as DetectionConfig['chronicity']
+  const resolved = chronicityFloorsFor('cough', 'cat', cfg)
+  assert.equal(resolved.minEpisodes, 4)
+  assert.equal((resolved as Record<string, unknown>).cat, undefined)
+})
+
+// ── 14 · ⑦ fires ⟺ ③ blanked, ACROSS THE SPECIES SPLIT ───────────────────────
+
+Deno.test('valve: the ③ suppression tracks ⑦ in every species × count × recency cell', () => {
+  // The guard the species split newly needs. `isChronic` is shared by ⑦ and the ③-valve, so
+  // "③ goes silent ⟺ ⑦ speaks" is meant to hold by construction — but threading species into
+  // one and forgetting the other is exactly the mistake the split makes possible, and the
+  // existing valve pin only covers dog/vomit. A desync either renders a calm reflection card
+  // over a pet with a chronic course, or blanks the reflection layer with no card explaining
+  // why. Sweeping the cells is cheap; the failure is silent.
+  const meals: MealEvent[] = []
+  for (let d = 0; d <= 56; d++) meals.push(meal({ occurredAt: new Date(NOW_MS - d * DAY).toISOString() }))
+  // A flat, reflection-eligible vomit course so ③ has something to say whenever it may speak.
+  const vomits: SymptomEvent[] = []
+  for (const d of [1, 3, 5, 8, 10, 12]) vomits.push(ago('vomit', d))
+
+  let cells = 0
+  for (const species of ['dog', 'cat', 'other'] as const) {
+    for (const episodes of [3, 4, 5, 6, 7]) {
+      for (const sinceLast of [0, 5, 13, 14, 15, 20, 27, 28, 29, 35]) {
+        const coughs: SymptomEvent[] = []
+        for (let i = 0; i < episodes; i++) coughs.push(ago('cough', sinceLast + i * 8))
+        const inp = input({
+          pet: { name: 'T', species, dietTrialActive: false },
+          symptomEvents: [...vomits, ...coughs],
+          mealEvents: meals,
+        })
+        const chronic = detectChronicity(inp).length > 0
+        const reflectionsSilent = detectReflections(inp).length === 0
+        assert.equal(
+          chronic,
+          reflectionsSilent && chronic,
+          `desync at ${species}/${episodes}ep/${sinceLast}d: ⑦=${chronic} ③silent=${reflectionsSilent}`,
+        )
+        if (chronic) assert.ok(reflectionsSilent, `${species}/${episodes}ep/${sinceLast}d: ⑦ fired but ③ still spoke`)
+        cells++
+      }
+    }
+  }
+  assert.equal(cells, 150, 'the sweep must actually cover every cell')
+})

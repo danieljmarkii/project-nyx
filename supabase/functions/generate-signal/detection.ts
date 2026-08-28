@@ -2366,29 +2366,18 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     firmSpanDays: 42,
     // ── Per-type floors (B-755 contract; W1-PR-3b session 2, CUL-676) ──────────
     //
-    // ⚠️ PROVISIONAL — PENDING THE Dr. CHEN RULING (CUL-687). These numbers decide when the
-    // app tells an owner to contact a vet about a cough. They were set by a build session
-    // against a noise model and a sensitivity pair; the PM ruled (2026-08-28) that the
-    // calibration is the Dr. Chen lens's call, not the build's. Under the DoD that is not a
-    // sign-off — it is a falsification pass that must state the counterexample it tried and
-    // why the value held. Do not read the reasoning below as a ratified clinical position:
-    // it is the argument being PUT to that review. The `generate-signal` deploy gate names
-    // this alongside the client-build gate.
+    // RULED by the Dr. Chen lens, 2026-08-28 (CUL-687) — the verdict on the build session's
+    // own set was NOT DEFENSIBLE AS-IS, and two of its values were reversed. What follows is
+    // the ruling, not a proposal. The lens was run in ISOLATION for the reason this project
+    // runs adversarial review out-of-context at all: the session that set these floors then
+    // argued for them, so it was the wrong lens to grade them.
     //
     // OWNED CALIBRATION, NOT GUIDELINE AUTHORITY. The 2026-08-14 verification pass
     // searched for a numeric veterinary chronic-cough threshold and found none: the
     // widely-quoted "≥4 weeks" is HUMAN PAEDIATRIC guidance, and the veterinary
     // chronic-bronchitis convention (~2 months) is a DIAGNOSTIC label, not an
     // ask-the-owner-to-call-someone boundary. So the copy must never cite a guideline.
-    //
-    // WHY 4 IS THE SAFE PLACE TO WAIT, rather than reverting to the global 6 until the
-    // ruling lands: the two error directions are not symmetric. At 4 the lane over-fires
-    // on a noise model (~9.2%, measured); at 6 it goes SILENT on the once-weekly and
-    // fortnightly courses chronic bronchitis and feline asthma actually present as (also
-    // measured — both fire only at 4). A safety lane that fails toward silence is the
-    // failure this codebase treats as unacceptable, so the provisional value errs toward
-    // speaking. That is a deliberate choice about which way to be wrong while waiting,
-    // not a claim that 4 is correct.
+
     //
     // Why cough differs from the globals at all: the global floors were calibrated
     // against a noise model for signs that have a real BENIGN BASE RATE — an occasional
@@ -2439,13 +2428,19 @@ export const DEFAULT_CONFIG: DetectionConfig = {
         // defensible pieces composing into a calm surface over documented airway disease.
         // That is reassurance-by-absence wearing an honesty costume.
         //
-        // Extending it stays honest because the copy is already past-tense: "We've logged
-        // coughing across 5 of the last 8 weeks — 8 episodes since April." It never claims
-        // the cough is happening today, so the word "ongoing" is not being stretched — it
-        // is not used. Priced cost, accepted: a resolved kennel cough keeps a calm
-        // `standard` card for up to 28 days instead of 14. 28 is one full inter-flare
-        // interval — long enough to span real quiescence, short enough not to nag for two
-        // months about a settled problem.
+        // The honesty argument, CORRECTED (adversarial pass, same day). It originally read
+        // "the word 'ongoing' is not used" — true of THIS module's copy (phrasing.ts) and of
+        // the client expand, and FALSE at two seams that render the same finding: the vet
+        // report's bold lead safety line said "has been ongoing 28 days … most recent 27
+        // days ago", and the owner's read-aloud receipt put "Ongoing since May" directly
+        // above "Most recent — 27 days ago". Widening this floor is what made those
+        // self-contradictions reachable, so both were rewritten to state span and recency
+        // once each (render.ts, lib/signalCopy.ts). The module comment was right about the
+        // module and wrong about the seam — the recurring shape here.
+        //
+        // Priced cost, accepted: a resolved kennel cough keeps a calm `standard` card for up
+        // to 28 days instead of 14. 28 is one full inter-flare interval — long enough to span
+        // real quiescence, short enough not to nag for two months about a settled problem.
         ongoingRecencyDays: 28,
         cat: {
           // Cats keep 4: no common benign feline phenotype produces 4+ distinct cough
@@ -4303,6 +4298,17 @@ export function isChronic(
  * undefined floor is treated exactly like an absent one, and the pin lives in
  * laneMembership.test.ts.
  */
+/** The only keys a per-type override may set. `windowDays` is deliberately absent: the
+ *  card's "{N} weeks" denominator and the weekly distribution buckets are one shared window,
+ *  so a per-type window would be a different lane, not a different floor. */
+const CHRONICITY_FLOOR_KEYS = [
+  'minSpanDays',
+  'minEpisodes',
+  'minActiveWeeks',
+  'ongoingRecencyDays',
+  'firmSpanDays',
+] as const
+
 export function chronicityFloorsFor(
   symptomType: SymptomType,
   species: Species,
@@ -4311,13 +4317,16 @@ export function chronicityFloorsFor(
   const over = cfg.perType?.[symptomType]
   if (!over) return cfg
   const resolved = { ...cfg }
+  // ALLOWLIST, not a denylist (adversarial pass, 2026-08-28). This used to copy every key
+  // except `cat`, which let two things through that two separate comments claimed were
+  // impossible: a `windowDays` override (documented as "not overridable by construction",
+  // and asserted as such in laneMembership.test.ts — but only the TypeScript type was
+  // stopping it, which is not "by construction"), and any future non-floor key added to the
+  // override shape. Naming the five floors is the version that makes both comments true.
   const apply = (src: Record<string, unknown> | undefined): void => {
     if (!src) return
-    for (const [k, v] of Object.entries(src)) {
-      // `cat` is a nested override, never a floor — spreading it would put an object
-      // where a number belongs and make every comparison against it false, which is the
-      // silent-lane failure mode the undefined-hardening below already exists for.
-      if (k === 'cat') continue
+    for (const k of CHRONICITY_FLOOR_KEYS) {
+      const v = src[k]
       if (v !== undefined) (resolved as Record<string, unknown>)[k] = v
     }
   }

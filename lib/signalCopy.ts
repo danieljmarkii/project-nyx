@@ -1706,7 +1706,12 @@ export function phoneScript(finding: SignalFinding, petName: string): PhoneScrip
     const weeks = Math.round(finding.windowDays / 7);
     return [
       { label: 'Sign', value: symptomWord(finding.symptomType) },
-      { label: 'Ongoing since', value: onsetMonth(finding.firstOnsetIso) },
+      // "First logged", not "Ongoing since" (CUL-687, adversarial pass 2026-08-28). This row
+      // sat directly above "Most recent — 27 days ago", so the receipt asserted a continuing
+      // state and then dated its last observation a month back. Cough's widened recency floor
+      // makes that pairing reachable, and this is the script an owner reads ALOUD to their
+      // vet — the one surface where an internal contradiction costs the most credibility.
+      { label: 'First logged', value: onsetMonth(finding.firstOnsetIso) },
       {
         label: 'How often',
         value: `${count(finding.episodeCount, 'episode', 'episodes')} across ${finding.activeWeeks} of ${weeks} weeks`,

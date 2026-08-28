@@ -2191,7 +2191,12 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
 
   it('chronicity: carries the recency line (payload has daysSinceLastEpisode)', () => {
     const facts = phoneScript(chronicity({ daysSinceLastEpisode: 1, episodeCount: 20, activeWeeks: 6, windowDays: 56, firstOnsetIso: '2026-05-15T08:00:00.000Z' }), 'Nyx');
-    expect(facts).toContainEqual({ label: 'Ongoing since', value: 'May' });
+    // "First logged", not "Ongoing since" (CUL-687): this row sat directly above
+    // "Most recent — N days ago", so the read-aloud script asserted a continuing state and
+    // then dated its last observation weeks back. Cough's widened recency floor made that
+    // pairing reachable; span/onset and recency are each stated once now.
+    expect(facts).toContainEqual({ label: 'First logged', value: 'May' });
+    expect(facts.map((f) => f.label)).not.toContain('Ongoing since');
     expect(facts).toContainEqual({ label: 'How often', value: '20 episodes across 6 of 8 weeks' });
     expect(facts).toContainEqual({ label: 'Most recent', value: 'yesterday' });
   });

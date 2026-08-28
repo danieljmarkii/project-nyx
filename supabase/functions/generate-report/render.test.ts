@@ -359,7 +359,11 @@ Deno.test('chronicity flag → safety band leads, mono-prominent, escalates on p
   const html = renderReport(base({ safetyFlags: [flag] }))
   assert.ok(html.includes('class="safetyband"'), 'safety band present')
   assert.ok(/ongoing/i.test(html), 'chronicity reads as ongoing')
-  assert.ok(html.includes('Vomiting has been ongoing'))
+  // "spans", not "has been ongoing" (CUL-687): the lead safety line stated a continuing
+  // state in the same sentence that dated the most recent episode, and cough's widened
+  // recency floor made that pairing reachable. Span and recency are each stated once now.
+  assert.ok(html.includes('Vomiting spans'))
+  assert.ok(!/has been ongoing/.test(html), 'the contradicting continuation claim is gone')
 })
 
 Deno.test('present_blood flag → "Possible blood" leads the safety band', () => {

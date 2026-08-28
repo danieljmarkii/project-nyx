@@ -1429,7 +1429,16 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         : ''
       return flagRow(
         'Chronicity',
-        `<b>${h(symptomLabel(f.symptomType))} has been ongoing ${num(f.spanDays)} day${
+        // "SPANS", not "has been ongoing" (CUL-687, adversarial pass 2026-08-28). This is the
+        // BOLD LEAD of the safety band — the zone the legend teaches a vet to scan first — and
+        // it asserted a continuing state in the same sentence that then said "most recent 27
+        // days ago". Since cough's recency floor widened to 28 days, a course can legitimately
+        // fire here having been silent for nearly a month, so the two clauses openly
+        // contradicted each other on the highest-stakes line in the report. The span is a fact
+        // about the RECORD's extent; whether the sign is current is the recency clause's job,
+        // and it is right there. Stating each once removes the contradiction without dropping
+        // anything a reader needs.
+        `<b>${h(symptomLabel(f.symptomType))} spans ${num(f.spanDays)} day${
           f.spanDays === 1 ? '' : 's'
         }</b> (first logged ${h(onsetDay)}): ${num(f.episodeCount)} episode${
           f.episodeCount === 1 ? '' : 's'

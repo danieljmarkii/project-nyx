@@ -347,3 +347,57 @@ under a floor ruling would be exactly the kind of scope drift the gates exist to
 **The property gate is now per-species**, and the cat noise rate *rose* 9.4% → 11.1% — not
 drift, but Q4's priced cost surfacing, recorded in the fixture so the next reader does not
 mistake it for slippage.
+
+
+## Post-ruling verification pass — FAIL on the pricing, not the numbers
+
+The DoD's adversarial line was re-run after the floors moved, because a bare ✓ over changed
+clinical logic is exactly what this project instituted the line to stop.
+
+**What held, exhaustively.** The species split was swept across **150 cells** (3 species × 5
+episode counts × 10 recency values) looking for a ⑦-fires-but-③-speaks disagreement: **zero**.
+The fire predicate, the tier and the ③-valve all resolve the same species; a source scan
+confirms no consumer reads a floor outside `chronicityFloorsFor`; the composition layer and
+the client re-derive nothing; and both `as Species` casts are backed by the DB enum, so no
+fourth value can reach the resolver. Dog@4 silent / dog@5 fires and cat@3 silent / cat@4 fires
+end-to-end through `detectSignals`, with `generate-report`'s own call taking the same config
+and species. `'other'` takes the base floors. The nested-`cat` and present-but-undefined
+hazards both held.
+
+**What broke — and it was my justification, not the value.** The in-code Q4 argument said
+extending recency stays honest because *"the word 'ongoing' … is not used"*. True of this
+module and of the client expand. **False at two seams that render the same finding:**
+
+- the vet report's **bold lead safety line** — the zone the legend teaches a vet to scan first
+  — read *"Coughing has been **ongoing** 28 days … most recent 27 days ago"*: a continuing
+  state asserted in the same sentence that dates the last observation a month back;
+- the owner's **read-aloud receipt** put *"Ongoing since May"* directly above *"Most recent —
+  27 days ago"*.
+
+Widening the floor is what made both reachable. Fixed: the report says **"spans N days"** and
+the receipt says **"First logged"**, so span and recency are each stated once. The module
+comment was right about the module and wrong about the seam — the same shape as the adjacency
+copy earlier in this session, twice in one day.
+
+**Two latent config holes closed.** The floor resolver was a **denylist** (skip `cat`, copy
+everything else), which left `windowDays` overridable at runtime **despite two places claiming
+it was impossible "by construction"** — only the TypeScript type was stopping it, and a
+runtime-assembled config never meets the type. It is now an **allowlist** of the five floor
+keys, which makes both comments true and closes the same class for any future non-floor key.
+Red-checked against the denylist. The sibling hazard — a partial `perType.cough` replacement
+silently dropping the `cat` override, i.e. *raising* the more sensitive feline floor — is
+unreachable today (only `DEFAULT_CONFIG` is assembled in production) and is now pinned anyway.
+
+**The stale `⚠️ PROVISIONAL` block was still sitting seven lines above the ruled values**,
+telling the next deployer the numbers were unratified. Deleted; the block now states the
+ruling.
+
+**One item routed, not fixed — CUL-689.** With recency at 28, R4's span-first ordering can let
+a course last seen 27 days ago **lead** one seen today (both still stated; nothing dropped).
+That is a genuine ordering call that was never put to anyone — ⑦'s claim is duration, which
+argues for span-first, against a surface that answers "what needs attention". Deciding it
+silently at wrap time is precisely what the Conflict Protocol forbids.
+
+**The guard the split needed** is now committed beside the fixtures: the 150-cell valve sweep.
+The existing valve pin only covered dog/vomit, so the failure the species split newly makes
+possible — threading species into ⑦ and forgetting the valve — was unguarded.
