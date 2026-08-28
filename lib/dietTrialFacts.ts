@@ -1026,8 +1026,20 @@ async function readStandingNote(
  * looser denominator than the server, breaking the parity the standing line depends on
  * (adversarial-reviewer + code-reviewer, CUL-13). Kept in sync with detection.ts's
  * `CORRELATION_SYMPTOM_TYPES`; the vomit count itself is filtered from these rows.
+ *
+ * `cough` joined with the engine's fetch union (R3, PM 2026-08-28, CUL-676 — "activity is
+ * activity"). The ACCEPTED COST, recorded rather than discovered later: this is a POOLED
+ * density denominator, and the trial line's numerator is vomiting only. So a cough-heavy
+ * stretch inside the trial era raises the era's logged-day count without raising its vomit
+ * count, which moves the per-day rate DOWN — i.e. respiratory logging can nudge the trial
+ * read toward "fewer during the trial". The drift is toward REASSURANCE on the wedge's own
+ * lane, which is why it is disclosed here and not merely allowed: the counterweight is the
+ * C5/§7 logging-density instruments, which state the coverage the reading rests on, and the
+ * §11 swap-day verification, which must compute the denominator deltas before and after.
+ * A parity fixture pins this set == the engine's; drifting them is the failure this
+ * comment exists to make loud.
  */
-const TRIAL_RESPONSE_LOGGED_DAY_TYPES = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'meal'] as const;
+const TRIAL_RESPONSE_LOGGED_DAY_TYPES = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'meal'] as const;
 
 async function readTrialResponseCounts(
   petId: string,

@@ -268,7 +268,10 @@ Deno.test('buildSummaryPacket — descriptive symptom fallback when symptoms log
     nowMs: NOW_MS,
   })
   assert.ok(packet)
-  assert.match(packet!.clauses[0], /I've logged 2 episodes of itching for Pixel this month/)
+  // HR-7 (CUL-676): this clause counts RAW ROWS, so it states a count of LOGS and drops
+  // the unit noun — "2 episodes" was a claim about bouts the count cannot support, and it
+  // collided with the ⑦ card's chained-episode count in the same surface family.
+  assert.match(packet!.clauses[0], /I've logged itching 2 times for Pixel this month/)
 })
 
 Deno.test('buildSummaryPacket — out-of-window meals/symptoms are excluded from the month', () => {

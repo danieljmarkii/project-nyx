@@ -243,6 +243,15 @@ function symptomLabel(type: string): string {
       return 'Skin reaction'
     case 'lethargy':
       return 'Lethargy'
+    // Cough + sneeze (W1-PR-3b session 2, CUL-676). The `default` below would have
+    // humanized these to "cough" / "sneeze" — safe, but wrong in register: every other
+    // entry here is the CLINICAL noun a vet scans for, and this label is what the §3.5
+    // frequency table, the chronicity safety flag and the trend chart's aria all read.
+    // Discovered by the guards/symptomLists.test.ts scan, not by review (#730).
+    case 'cough':
+      return 'Coughing'
+    case 'sneeze':
+      return 'Sneezing'
     case 'stool_normal':
       return 'Stool (normal)'
     case 'meal':
@@ -443,7 +452,7 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   // The marker is only legible where the sheet defines it, and only emitted when one was drawn.
   if (unobserved.length > 0) {
     parts.push(
-      `<text class="ann" x="${R}" y="${BASE + 26}" text-anchor="end">&ndash; nothing logged that week (not a week without episodes)</text>`,
+      `<text class="ann" x="${R}" y="${BASE + 26}" text-anchor="end">&ndash; nothing logged that week (not a week without entries)</text>`,
     )
   }
 
@@ -451,7 +460,7 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   const ariaBuckets = buckets
     .map((c, i) => ((loggedByBucket[i] ?? 0) > 0 ? String(c) : 'not logged'))
     .join(', ')
-  const aria = `${symptomLabel(sym.type)} episodes per week: ${ariaBuckets}. Window ends ${h(fmtDay(windowEndDate))}.`
+  const aria = `${symptomLabel(sym.type)} entries per week: ${ariaBuckets}. Window ends ${h(fmtDay(windowEndDate))}.`
   return `<svg viewBox="0 0 648 158" role="img" aria-label="${h(aria)}">${parts.join('')}</svg>`
 }
 
@@ -1408,6 +1417,16 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const censorBit = leftCensored
         ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
         : ''
+      // §9 cough↔vomit adjacency (CUL-676) — the clinical register of the same fact the
+      // Signal card states to the owner. Post-tussive vomiting and the cough-mistaken-for-
+      // -hairball error make these two owner-logged streams cross-contaminate in BOTH
+      // directions, so a reader tallying them as independent problem lines is reading two
+      // counts that may share events. Stated as a caveat on the record, never as a
+      // reclassification: neither count is adjusted, and the report does not guess which
+      // events belong to which sign.
+      const adjacencyBit = f.coughVomitAdjacent
+        ? ` This pet also has a concurrent chronic course of the other sign (cough and vomiting both flagged): post-tussive vomiting and cough mistaken for hairball retching are common in both directions, so these two counts may not be independent &mdash; they are reported separately and un-reclassified.`
+        : ''
       return flagRow(
         'Chronicity',
         `<b>${h(symptomLabel(f.symptomType))} has been ongoing ${num(f.spanDays)} day${
@@ -1416,7 +1435,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
-        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${censorBit}`,
+        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${censorBit}${adjacencyBit}`,
       )
     }
     case 'symptom_worsening': {
@@ -3276,7 +3295,7 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
         : sparse?.side === 'late'
           ? `<div class="delta-caveat">later window sparsely logged (${num(
               snap.atAGlance.secondHalfLoggedDays,
-            )} of ${num(days)}&nbsp;d) &mdash; a fall here may be less logging, not fewer episodes</div>`
+            )} of ${num(days)}&nbsp;d) &mdash; a fall here may be less logging, not fewer entries</div>`
           : ''
     // THE EXPOSURE RIDES THE DELTA ITSELF (B-532, cold-read round 7). The per-half logged-day
     // counts were in the subnote under the chart, and round 7 found the gap that leaves: on the
@@ -3338,12 +3357,12 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
     fmtDay(snap.scope.endDate),
   )}</span></div>
         <div class="big">
-          <div class="n num">${s.count}<small>&nbsp;/&nbsp;${s.windowDays}&nbsp;d</small></div>
+          <div class="n num">${s.count}<small>&nbsp;entries&nbsp;/&nbsp;${s.windowDays}&nbsp;d</small></div>
           ${deltaHtml}
         </div>
       </div>
       ${symptomChart(s, markers, snap.scope.endDate)}
-      <div class="subnote">${num(s.symptomDays)} of ${num(s.windowDays)} days had an episode · ${num(
+      <div class="subnote">${num(s.symptomDays)} of ${num(s.windowDays)} days had an entry · ${num(
     s.loggedDays,
   )} of ${num(s.windowDays)} days logged${halvesBit}.</div>
     </div>`
@@ -3368,7 +3387,7 @@ function readingTheTrend(snap: ReportSnapshot): string {
     return `
     <div class="callout">
       <span class="k">Reading the trend</span>
-      Read the trend by how often episodes occur across the window.${gapBit}</div>`
+      Read the trend by how often entries occur across the window.${gapBit}</div>`
   }
 
   // Split real in-window CHANGES (something started or stopped mid-window — a dated event with a
@@ -5497,6 +5516,7 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Owner-reported</dt><dd>Every entry was logged by the owner on a phone. This is a record of what the owner observed, not a clinical examination, and contains no diagnosis or treatment recommendation.</dd>
     <dt>Range</dt><dd>Scoped to ${h(scopeBasisLabel(snap.scope).toLowerCase())} (${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}). A custom (hand-picked) window discloses the count of symptom events that fall outside it, so nothing is cropped to a good week.</dd>
     <dt>Denominators</dt><dd>Counts are shown over their window and the days logged, so a count is never read without knowing how long and how completely it was tracked.</dd>
+    <dt>Entries vs episodes</dt><dd>Two different measures, deliberately not reconciled into one number (HR-7). An <b>entry</b> is one logged row (same-minute duplicates already collapsed) &mdash; the unit of the frequency trends. An <b>episode</b> is a bout: entries within three hours of each other are chained into one &mdash; the unit of the chronicity flag. So a sign the owner logs repeatedly during a single bout, such as coughing, will show more entries than episodes, and the <b>ratio between them describes how the sign presents</b> rather than being a discrepancy.</dd>
     <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed — a one-sided account renders as &ldquo;before/after&rdquo; that bound &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>
     <dt>Duplicate logs</dt><dd>A <span class="conf">N logs</span> tag marks the same incident logged more than once (a re-log or sync retry). It is counted once everywhere in this report; the duplicate count is disclosed rather than hidden.</dd>
     <dt>Photo analysis</dt><dd>For photographed incidents, structured fields (colour, contents, blood, foreign material) are read automatically from the photo the owner took. These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>

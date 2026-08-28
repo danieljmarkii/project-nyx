@@ -28,6 +28,7 @@ import {
   detectGapShortening,
   detectCoverage,
   detectSignals,
+  computeReflectionDensity,
   chronicityFloorsFor,
   DEFAULT_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
@@ -115,18 +116,32 @@ const findDiag = <T extends CoverageDiagnostic['type']>(
 
 const FIVE: readonly SymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction']
 
-Deno.test('membership: the universe names the W1 pair; the fetch does NOT (cough joins in session 2)', () => {
+Deno.test('membership: the universe names the W1 pair; the fetch carries cough, NOT sneeze', () => {
   assert.deepEqual(
     [...SYMPTOM_TYPE_UNIVERSE],
     ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'],
   )
-  assert.deepEqual([...CORRELATION_SYMPTOM_TYPES], [...FIVE])
+  // Session 2 (CUL-676): cough joins the FETCH — which buys it the DB read and the
+  // logged-day denominators (R3), and nothing else. `sneeze` stays out: it is typed and
+  // labelled everywhere, and deliberately never read by the engine at W1 (§9).
+  assert.deepEqual([...CORRELATION_SYMPTOM_TYPES], [...FIVE, 'cough'])
+  // Widened deliberately: the `as const` tuple already makes this a COMPILE error, which is
+  // the stronger guarantee — the cast is what lets the runtime assertion exist beside it.
+  assert.ok(!(CORRELATION_SYMPTOM_TYPES as readonly SymptomType[]).includes('sneeze'))
 })
 
-Deno.test('membership: every lane cell is exactly the pre-taxonomy five (behaviour-neutral split)', () => {
+Deno.test('membership: cough is in EXACTLY ONE lane cell — ⑦ — and no other cell moved', () => {
+  // The whole point of the HR-1 split, pinned as one assertion: widening the fetch must
+  // move exactly one cell. If a future edit adds cough to a second lane, this fails here
+  // rather than surfacing as a food↔cough card in production.
   for (const [lane, cell] of Object.entries(LANE_SYMPTOM_TYPES)) {
-    assert.deepEqual([...cell], [...FIVE], `lane ${lane} must carry exactly the five`)
+    const expected = lane === 'chronicity' ? [...FIVE, 'cough'] : [...FIVE]
+    assert.deepEqual([...cell], expected, `lane ${lane} cell`)
   }
+  const lanesWithCough = Object.entries(LANE_SYMPTOM_TYPES)
+    .filter(([, cell]) => (cell as readonly SymptomType[]).includes('cough'))
+    .map(([lane]) => lane)
+  assert.deepEqual(lanesWithCough, ['chronicity'])
 })
 
 Deno.test('membership: the two NEVER-cells carry no respiratory type (§9 / R2 — these never flip)', () => {
@@ -220,8 +235,17 @@ Deno.test('⑦ positive control: the council case fires FIRM for vomit', () => {
   assert.equal(findings[0].tier, 'firm')
 })
 
-Deno.test('⑦ negative (flips in session 2): the identical 6-week course as cough is silent today', () => {
-  assert.deepEqual(detectChronicity(input({ symptomEvents: councilShape('cough') })), [])
+Deno.test('⑦ FLIPPED (session 2): the identical 6-week course as cough now fires FIRM', () => {
+  // The one cell that moves in session 2. Same event shape as the vomit positive control
+  // above — so this pair proves the enrolment, not a difference in the fixture.
+  const findings = detectChronicity(input({ symptomEvents: councilShape('cough') }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].symptomType, 'cough')
+  assert.equal(findings[0].tier, 'firm')
+})
+
+Deno.test('⑦ sneeze stays silent on the identical course — the fetch, not the lane, excludes it', () => {
+  assert.deepEqual(detectChronicity(input({ symptomEvents: councilShape('sneeze') })), [])
 })
 
 // ── 5 · Lane L4 — no accelerating-cadence card for cough (R1: no at W1) ───────
@@ -273,10 +297,25 @@ Deno.test('floor negative: three cough episodes never open the staple_washout do
 
 // ── 7 · The per-type chronicity floor slot (the B-755 seam, empty today) ──────
 
-Deno.test('perType: absent map resolves to the globals — byte-identical engine', () => {
+Deno.test('perType: a type with no entry resolves to the globals — identity, not a copy', () => {
   const cfg = DEFAULT_CONFIG.chronicity
   assert.equal(chronicityFloorsFor('vomit', cfg), cfg)
-  assert.equal(chronicityFloorsFor('cough', cfg), cfg)
+  assert.equal(chronicityFloorsFor('diarrhea', cfg), cfg)
+})
+
+Deno.test('perType: cough now carries the B-755 floors, and ONLY the two ruled ones move', () => {
+  const cfg = DEFAULT_CONFIG.chronicity
+  const cough = chronicityFloorsFor('cough', cfg)
+  assert.equal(cough.minEpisodes, 4, 'lowered: no benign base rate to out-count')
+  assert.equal(cough.firmSpanDays, 28, 'lowered: the vet ask escalates earlier')
+  // The three DELIBERATELY unchanged floors — pinned so "calibrating cough" cannot quietly
+  // become "loosening cough". minSpanDays especially: it is what excludes the self-limiting
+  // course (kennel cough / post-viral), and lowering it would fire hardest on exactly the
+  // cough that was about to stop on its own.
+  assert.equal(cough.minSpanDays, cfg.minSpanDays)
+  assert.equal(cough.minActiveWeeks, cfg.minActiveWeeks)
+  assert.equal(cough.ongoingRecencyDays, cfg.ongoingRecencyDays)
+  assert.equal(cough.windowDays, cfg.windowDays, 'never per-type by construction')
 })
 
 Deno.test('perType: an explicit-undefined floor resolves to the GLOBAL, never silences the lane (adversarial 2026-08-28)', () => {
@@ -354,14 +393,28 @@ const SWEEP_INPUTS: Record<string, Partial<DetectionInput>> = {
   'monotone shortening run (L4)': { symptomEvents: gapShape('cough', [20, 12, 6, 3]) },
 }
 
-Deno.test('sweep: each potent cough shape produces NO finding naming cough through detectSignals', () => {
+Deno.test('sweep: ⑦ is the ONLY lane that may ever name cough end-to-end', () => {
+  // NARROWED, not weakened, in session 2. It used to assert that NO finding names cough;
+  // now exactly one lane legitimately does, so the assertion becomes the sharper one: run
+  // every lane's own potent shape as cough through the whole composed pipeline, and the
+  // only finding type allowed to carry the name is symptom_chronicity. The four "never"
+  // cells are still proven by the same fixtures they were before — a cell quietly gaining
+  // cough still fails here, which is the property that had to survive the flip.
+  let sawChronicity = false
   for (const [name, over] of Object.entries(SWEEP_INPUTS)) {
     for (const { finding } of detectSignals(input(over))) {
       const named = (finding as { symptomType?: string }).symptomType
-      assert.notEqual(named, 'cough', `${name}: lane ${finding.type} must not name cough`)
+      if (named === 'cough') {
+        assert.equal(finding.type, 'symptom_chronicity', `${name}: lane ${finding.type} must not name cough`)
+        sawChronicity = true
+      }
       assert.notEqual(named, 'sneeze', `${name}: lane ${finding.type} must not name sneeze`)
     }
   }
+  // Anti-vacuity: the sweep must actually have reached the one lane it now permits, or a
+  // future silencing bug would leave this test green over a cough the engine stopped
+  // seeing entirely (the unfalsifiable-fixture class this file exists to avoid).
+  assert.ok(sawChronicity, 'the ⑦ shape must still produce a cough chronicity finding')
 })
 
 Deno.test('sweep: the staple-washout shape as cough mints no diagnostic naming the symptoms (floor half)', () => {
@@ -389,4 +442,141 @@ Deno.test('no detector loop iterates CORRELATION_SYMPTOM_TYPES or SYMPTOM_TYPE_U
     null,
     'no lane may iterate the type universe — it exists so a leaf can be NAMED without being consumed',
   )
+})
+
+// ── 10 · R4 "both stated" — the displacement acceptance test ──────────────────
+//
+// THE ACCEPTANCE TEST FOR THIS PR (PM ruling R4, 2026-08-28; shape contributed by the
+// session-1 adversarial pass). ⑦ used to `return [chronic[0]]`, and the sort's first key
+// is SPAN — so the LONGEST course won, which is not the same as the WORST one. With cough
+// enrolled, a long mild cough could silently delete a shorter, denser, more urgent
+// vomiting course from Home AND from the vet report, and cough's lower per-type episode
+// floor makes that strictly more likely.
+//
+// The shape is deliberately adversarial rather than merely "two chronic symptoms":
+//   • cough    — 52-day span, 10 episodes  (wins on span; the MILDER course)
+//   • vomiting — 24-day span,  8 episodes  (loses on span; the DENSER, more urgent one)
+// A fixture where the urgent course also happened to be the longest would pass against
+// the un-fixed engine, and prove nothing.
+
+/** `count` episodes spread evenly across `spanDays`, ending 1 day before NOW (inside the
+ *  14-day recency floor) — so span, episode count and active weeks are all controlled. */
+const courseOf = (type: SymptomType, spanDays: number, count: number): SymptomEvent[] => {
+  const step = spanDays / (count - 1)
+  const out: SymptomEvent[] = []
+  for (let i = 0; i < count; i++) out.push(ago(type, Math.round(spanDays - i * step) + 1))
+  return out
+}
+
+const DISPLACEMENT = [...courseOf('cough', 52, 10), ...courseOf('vomit', 24, 8)]
+
+Deno.test('R4 ACCEPTANCE: a longer MILD cough does not delete a denser vomiting course', () => {
+  const findings = detectChronicity(input({ symptomEvents: DISPLACEMENT }))
+  const named = findings.map((f) => f.symptomType)
+  assert.deepEqual(named, ['cough', 'vomit'], 'BOTH courses are stated, longest span leading')
+
+  // Anti-vacuity: each course must independently clear its own floors, or "both stated"
+  // would be trivially satisfiable by a fixture where neither is really chronic.
+  const vomit = findings.find((f) => f.symptomType === 'vomit')!
+  const cough = findings.find((f) => f.symptomType === 'cough')!
+  assert.ok(cough.spanDays > vomit.spanDays, 'the cough is the LONGER course (it would have won the cap)')
+  assert.ok(vomit.episodeCount >= DEFAULT_CONFIG.chronicity.minEpisodes, 'the vomiting course clears the GI floor on its own')
+})
+
+Deno.test('R4: the vomiting course survives the WHOLE pipeline, not just the detector', () => {
+  // The displacement was a surface defect, so the proof has to run past composition,
+  // ranking and curation — the layers that could each drop a second safety card.
+  const ranked = detectSignals(input({ symptomEvents: DISPLACEMENT }))
+  const chronic = ranked
+    .map((r) => r.finding)
+    .filter((f): f is Extract<typeof f, { type: 'symptom_chronicity' }> => f.type === 'symptom_chronicity')
+  assert.deepEqual(chronic.map((f) => f.symptomType), ['cough', 'vomit'])
+  // Both are safety-class, so curateFindings' cap can never reach them (§3 / Principle 3).
+  assert.ok(chronic.every((f) => f.priorityClass === 'safety'))
+})
+
+Deno.test('R4: a single chronic course still returns exactly one card (no regression)', () => {
+  const findings = detectChronicity(input({ symptomEvents: councilShape('vomit') }))
+  assert.equal(findings.length, 1)
+})
+
+// ── 11 · §9 cough↔vomit adjacency disclosure ─────────────────────────────────
+
+Deno.test('adjacency: co-firing cough + vomit marks the LEADING card only', () => {
+  const findings = detectSignals(input({ symptomEvents: DISPLACEMENT }))
+    .map((r) => r.finding)
+    .filter((f): f is Extract<typeof f, { type: 'symptom_chronicity' }> => f.type === 'symptom_chronicity')
+  assert.equal(findings[0].coughVomitAdjacent, true, 'the leader carries the note')
+  assert.equal(findings[1].coughVomitAdjacent, undefined, 'and it is not repeated on every card')
+})
+
+Deno.test('adjacency: a chronic cough with NO chronic vomiting is not marked', () => {
+  const findings = detectChronicity(input({ symptomEvents: councilShape('cough') }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].coughVomitAdjacent, undefined)
+})
+
+Deno.test('adjacency: two chronic GI courses are not marked (the rule is cough↔vomit)', () => {
+  const findings = detectChronicity(
+    input({ symptomEvents: [...courseOf('vomit', 52, 10), ...courseOf('diarrhea', 24, 8)] }),
+  )
+  assert.equal(findings.length, 2)
+  assert.ok(findings.every((f) => f.coughVomitAdjacent === undefined))
+})
+
+// ── 12 · R3 — cough days count in the logged-day / density denominators ───────
+//
+// PM ruling R3 (2026-08-28): (b) INCLUDE — "activity is activity; logging a cough is
+// logging." The engine needs no edit for this: every denominator reads the FETCHED input
+// wholesale, so cough joined them the moment it joined CORRELATION_SYMPTOM_TYPES. That is
+// precisely why it needs a test — "by construction" is the kind of correctness that
+// silently stops being true, and this is the ONE consequence of the fetch widening that no
+// lane cell governs.
+//
+// BEFORE/AFTER is expressed as a controlled pair on the same window rather than by pinning
+// the old engine: identical vomit logs, once with cough days added and once without. The
+// delta IS the before/after, and it cannot rot the way a hard-coded prior number can.
+
+Deno.test('R3 BEFORE/AFTER: cough-only days raise the density denominator', () => {
+  // Six vomit days in the current week; the prior week has the same vomit record PLUS
+  // three days whose only event is a cough.
+  const vomitOnly: SymptomEvent[] = []
+  for (const d of [1, 2, 3, 8, 9, 10]) vomitOnly.push(ago('vomit', d))
+  const withCough = [...vomitOnly, ago('cough', 11), ago('cough', 12), ago('cough', 13)]
+
+  const before = computeReflectionDensity(input({ symptomEvents: vomitOnly }), DEFAULT_CONFIG)!
+  const after = computeReflectionDensity(input({ symptomEvents: withCough }), DEFAULT_CONFIG)!
+
+  assert.equal(before.currentLoggingDays, after.currentLoggingDays, 'the current week is unchanged — only the prior week gained cough days')
+  assert.equal(
+    after.priorLoggingDays,
+    before.priorLoggingDays + 3,
+    'each cough-only day is a logged day (R3 (b)) — the whole point of the ruling',
+  )
+})
+
+Deno.test('R3: sneeze days do NOT count — the denominator is the FETCH, not the universe', () => {
+  // The discriminating half of R3, and the reason "the denominator == the fetch union" is
+  // a real invariant rather than a restatement: sneeze is a NAMED type with a label, so a
+  // denominator keyed on the universe (or on SYMPTOM_LABEL, the shape that bit summary.ts)
+  // would count it. It must not, because sneeze is not fetched at W1.
+  const vomitOnly: SymptomEvent[] = []
+  for (const d of [1, 2, 3, 8, 9, 10]) vomitOnly.push(ago('vomit', d))
+  const withSneeze = [...vomitOnly, ago('sneeze', 11), ago('sneeze', 12), ago('sneeze', 13)]
+  const before = computeReflectionDensity(input({ symptomEvents: vomitOnly }), DEFAULT_CONFIG)!
+  const after = computeReflectionDensity(input({ symptomEvents: withSneeze }), DEFAULT_CONFIG)!
+  assert.equal(after.priorLoggingDays, before.priorLoggingDays)
+})
+
+Deno.test('R3 INVARIANT: every fetched type counts as a logged day, uniformly', () => {
+  // The generalisation, so a W2 leaf joining the fetch inherits the ruling instead of
+  // re-deriving it: each fetched type, alone on its own day, moves the denominator by one.
+  for (const type of CORRELATION_SYMPTOM_TYPES) {
+    const base = computeReflectionDensity(input({ symptomEvents: [ago('vomit', 1)] }), DEFAULT_CONFIG)!
+    const plus = computeReflectionDensity(
+      input({ symptomEvents: [ago('vomit', 1), symptom(type, new Date(NOW_MS - 3 * DAY).toISOString())] }),
+      DEFAULT_CONFIG,
+    )!
+    assert.equal(plus.currentLoggingDays, base.currentLoggingDays + 1, `${type} must count as a logged day`)
+  }
 })

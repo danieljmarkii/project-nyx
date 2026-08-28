@@ -227,6 +227,23 @@ const TREND_HALF_MIN_WINDOW_DAYS = 8
  * — a real symptom an owner logs and a vet wants counted, but one the correlation
  * engine deliberately does not correlate. Detection reuse is scoped to
  * CORRELATION_SYMPTOM_TYPES only; the frequency aggregation covers all of these.
+ *
+ * `cough` + `sneeze` join in W1-PR-3b session 2 (CUL-676), and the two arrive for
+ * DIFFERENT reasons — which is the point of this list being separate from the engine's:
+ *
+ *   • `cough` MUST be here, because it joined the engine's fetch union in the same PR
+ *     (§10.5 / HR-3 — "a lane-membership change is report work"). `buildDetectionInput`
+ *     filters this report's detection input on CORRELATION_SYMPTOM_TYPES, so the report
+ *     now runs ⑦ over cough and can render an "ongoing 52 days" chronicity flag. Had this
+ *     list not moved with it, the report would print a safety flag about a sign its own
+ *     §3.5 frequency table never counts — a zone that advertises itself and then cannot
+ *     show its evidence. That is squarely the B-494 class, and it is why "add the leaf
+ *     here OR exclude it from detection, never neither" is a rule rather than a
+ *     preference.
+ *   • `sneeze` is here on §10.2's plain reason instead — a real symptom an owner logs and
+ *     a vet wants counted — exactly the ground `lethargy` stands on. It is NOT in the
+ *     engine's fetch union (data-only at W1, §9), and nothing here changes that: this
+ *     list feeds counting, not detection.
  */
 export const REPORT_SYMPTOM_TYPES = [
   'vomit',
@@ -234,6 +251,8 @@ export const REPORT_SYMPTOM_TYPES = [
   'itch',
   'scratch',
   'skin_reaction',
+  'cough',
+  'sneeze',
   'lethargy',
 ] as const
 export type ReportSymptomType = (typeof REPORT_SYMPTOM_TYPES)[number]
@@ -1102,6 +1121,10 @@ export type SafetyFlag =
       firstOnsetIso: string
       tier: SymptomChronicityFinding['tier']
       windowDays: number
+      /** §9 cough↔vomit adjacency — set on the leading flag when both courses are chronic
+       *  (CUL-676). The report states it in the vet register; the Signal card states it in
+       *  the owner's. Both read off the same engine fact, so they cannot disagree. */
+      coughVomitAdjacent?: true
     }
   | {
       kind: 'symptom_worsening'
@@ -2344,7 +2367,11 @@ export interface DetectionExtract {
   established: EstablishedCorrelation[]
   timing: TimingFinding[]
   intakeDecline: IntakeDeclineFinding | null
-  chronicity: SymptomChronicityFinding | null
+  /** EVERY chronic course, not just the longest (R4 both-stated, CUL-676). Was a
+   *  singular; a `| null` here quietly discarded the engine's second card, so the
+   *  report could print one problem line while the Signal showed two. Mirrors
+   *  `worsening`, which has always been a list. */
+  chronicity: SymptomChronicityFinding[]
   worsening: SymptomWorseningFinding[]
   stapleProtein: string | null
 }
@@ -2488,7 +2515,7 @@ function runDetection(detInput: DetectionInput): DetectionExtract {
   const established: EstablishedCorrelation[] = []
   const timing: TimingFinding[] = []
   let intakeDecline: IntakeDeclineFinding | null = null
-  let chronicity: SymptomChronicityFinding | null = null
+  const chronicity: SymptomChronicityFinding[] = []
   const worsening: SymptomWorseningFinding[] = []
 
   for (const { finding } of ranked) {
@@ -2515,7 +2542,9 @@ function runDetection(detInput: DetectionInput): DetectionExtract {
         if (!intakeDecline) intakeDecline = finding as IntakeDeclineFinding
         break
       case 'symptom_chronicity':
-        if (!chronicity) chronicity = finding as SymptomChronicityFinding
+        // Every course, in the engine's rank order — the ranked list is already sorted
+        // (longest span leads), so the report's flag order matches Home's card order.
+        chronicity.push(finding as SymptomChronicityFinding)
         break
       case 'symptom_worsening':
         worsening.push(finding as SymptomWorseningFinding)
@@ -3431,8 +3460,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
             : [],
     })
   }
-  if (detection.chronicity) {
-    const f = detection.chronicity
+  for (const f of detection.chronicity) {
     // The engine buckets by UTC day — deliberate for the rolling Signal (detection.ts §2:
     // chronicity is timezone-independent), but on THIS artifact the numbers sit one page from
     // appendix A + the At-a-glance tile, which a vet tallies in LOCAL days: the first real report
@@ -3475,6 +3503,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       firstOnsetIso: f.firstOnsetIso,
       tier: f.tier,
       windowDays: f.windowDays,
+      ...(f.coughVomitAdjacent ? { coughVomitAdjacent: true as const } : {}),
     })
   }
   for (const f of detection.worsening) {

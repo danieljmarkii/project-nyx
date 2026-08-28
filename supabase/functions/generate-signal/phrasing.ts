@@ -249,7 +249,16 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   const windowWeeks = Math.round(f.windowDays / 7)
   const noun = f.episodeCount === 1 ? 'episode' : 'episodes'
   const vetAsk = f.tier === 'firm' ? 'worth booking a vet visit' : 'worth a word with your vet'
-  return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}. This is a read of your logs, not a diagnosis.`
+  // §9's cough↔vomit adjacency (CUL-676). Appended ONLY when both courses are chronic
+  // (the composition layer decides — see coughVomitAdjacent). It discloses that the two
+  // records may describe overlapping moments and asks for them to be raised TOGETHER; it
+  // deliberately does not net either count down, name a mechanism, or offer the hairball
+  // explanation the deep-dive names as the canonical diagnosis-delaying error. Screened by
+  // validatePhrasing's chronicity branch (causal / mechanism / food) like the rest of the line.
+  const adjacency = f.coughVomitAdjacent
+    ? ` Coughing and vomiting can look alike and can happen together, so these counts may describe some of the same moments — raise both with your vet at once, not as separate problems.`
+    : ''
+  return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
 }
 
 export function templatePostprandialTiming(f: PostprandialTimingFinding, petName: string): string {

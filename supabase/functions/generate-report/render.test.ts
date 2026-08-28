@@ -3709,7 +3709,9 @@ Deno.test('B-532 COLD⑦ — an unobserved week is never drawn as a zero week', 
   assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week nobody logged')
   assert.ok(!/class="nub"/.test(html), 'and no measured-zero nub, because no week here was a measured zero')
   assert.ok(
-    /nothing logged that week \(not a week without episodes\)/.test(plain(html)),
+    // HR-7 (CUL-676): "entries" — this marker annotates the §3.5 weekly buckets, which
+    // count minute-deduped entries, not chained episodes.
+    /nothing logged that week \(not a week without entries\)/.test(plain(html)),
     'the marker is defined on the same sheet it appears on',
   )
   assert.ok(/not logged/.test(html), 'and the alt text draws the same distinction the bars do')

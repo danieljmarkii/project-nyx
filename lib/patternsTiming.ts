@@ -65,6 +65,13 @@ export const CORRELATION_SYMPTOM_TYPES = [
   'itch',
   'scratch',
   'skin_reaction',
+  // R3 (PM 2026-08-28, CUL-676): "activity is activity; logging a cough is logging."
+  // A cough log is observational COVERAGE — the owner was watching and recorded what they
+  // saw — so it counts as a logged day here exactly as it does in the engine. This mirror
+  // moves in the SAME PR as the engine's fetch union; if it lags, this panel's `loggedDays`
+  // denominator silently runs smaller than `loggedDaysIn` on the server and the two
+  // surfaces disagree about how well-observed the same window was.
+  'cough',
 ] as const;
 
 // ── Render geometry (presentation only — NOT timing math) ─────────────────────
