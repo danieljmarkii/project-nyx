@@ -1,7 +1,7 @@
 # Event taxonomy — W1-PR-3a: the client symptom mirrors (CUL-676, first half)
 
 **Date:** 2026-08-28 (session opened 2026-08-27 late)
-**Shipped via #TBD.**
+**Shipped via #730.**
 
 ## What this was
 
