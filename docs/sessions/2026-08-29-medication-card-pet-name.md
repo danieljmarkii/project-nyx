@@ -56,10 +56,12 @@ Adversarial review: **N/A** — the diff touches no detection engine, AI read, e
 
 ## Base merge (CUL-701)
 
-`main` moved mid-session: [#744 / CUL-701](https://github.com/danieljmarkii/project-nyx/pull/744) ("Meal + dose cards keep their provenance on a peek-and-save") landed on **the same two files**. Merged `origin/main` in rather than rebasing, per the no-history-rewrite rule.
+`main` moved mid-session: [#743 / CUL-701](https://github.com/danieljmarkii/project-nyx/pull/743) ("Meal + dose completion cards preserve provenance on a peek-and-save") landed on **the same two files**. Merged `origin/main` in rather than rebasing, per the no-history-rewrite rule.
 
 One conflict, in the import block only — CUL-701 added `getEventSource` to the `lib/db` import while this session added `resolveRecordPetName` to the `petStore` import. Both kept.
 
 The changes are orthogonal by construction and the auto-merge is coherent: CUL-701 works `savePicker`'s `occurred_at_source` provenance (the write path), this one works the display name (the render path), and neither reads what the other writes. Verified rather than assumed — `tsc` clean, **280 suites / 6124 tests** green after the merge (6121 from this branch plus CUL-701's three new cases).
 
-Worth noting for the two sibling issues still open (CUL-659, CUL-711): the completion cards are currently a hot file with several sessions landing on them, so take those two together and expect to merge base before pushing.
+`main` then moved a *second* time before the squash landed — #744 (CUL-688, adjacent-control hit areas on the confirm sheet) — so the merged commit `3cf7b44` sits on a base this branch never tested against. Verified after the fact rather than assumed: `main` at `3cf7b44` is `tsc`-clean with **280 suites / 6133 tests** green, and its own CI run confirms it.
+
+Worth noting for the two sibling issues still open (CUL-659, CUL-711): the completion cards are a **hot file** — three PRs landed on them the same afternoon (#739, #743, #745) — so take those two together and expect to merge base more than once.
