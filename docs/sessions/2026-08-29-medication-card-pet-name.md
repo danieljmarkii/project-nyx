@@ -53,3 +53,13 @@ With those two, the CUL-574 class is fully enumerated at three sites.
 Data Scientist ✓ (multi-pet attribution — the failing sequence reproduced in a test before the fix, and the archived-pet path proved to land anonymous rather than on the active pet) — Engineer ✓ (one predicate, no new lookup, `activePet` removed rather than left dangling) — Designer ✓ (no copy change; the anonymous form is the shipped `ANONYMOUS_PET_NAME`) — Dr. Chen N/A (no clinical logic changed — the same prompt fires on the same conditions; only the name in it moved) — QA ✓ (pre-fix red/green split recorded above).
 
 Adversarial review: **N/A** — the diff touches no detection engine, AI read, escalation threshold, or vet-report input. It changes which of two strings a display name resolves from. The falsification that mattered here is the pre-fix test run, and it is recorded.
+
+## Base merge (CUL-701)
+
+`main` moved mid-session: [#744 / CUL-701](https://github.com/danieljmarkii/project-nyx/pull/744) ("Meal + dose cards keep their provenance on a peek-and-save") landed on **the same two files**. Merged `origin/main` in rather than rebasing, per the no-history-rewrite rule.
+
+One conflict, in the import block only — CUL-701 added `getEventSource` to the `lib/db` import while this session added `resolveRecordPetName` to the `petStore` import. Both kept.
+
+The changes are orthogonal by construction and the auto-merge is coherent: CUL-701 works `savePicker`'s `occurred_at_source` provenance (the write path), this one works the display name (the render path), and neither reads what the other writes. Verified rather than assumed — `tsc` clean, **280 suites / 6124 tests** green after the merge (6121 from this branch plus CUL-701's three new cases).
+
+Worth noting for the two sibling issues still open (CUL-659, CUL-711): the completion cards are currently a hot file with several sessions landing on them, so take those two together and expect to merge base before pushing.
