@@ -34,6 +34,10 @@ jest.mock('../../lib/db', () => ({
   updateDoseAdherence: (...a: unknown[]) => mockUpdateDoseAdherence(...a),
   updateDoseHowGiven: jest.fn().mockResolvedValue(undefined),
   getDoubleDoseFlag: (...a: unknown[]) => mockGetDoubleDoseFlag(...a),
+  // Defaults to 'now' because that is the ONLY value a dose can hold here:
+  // insertMedicationDose hardcodes occurred_at_source 'now' (there is no photo
+  // path onto this card). beforeEach re-arms it.
+  getEventSource: jest.fn(),
 }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
@@ -41,7 +45,7 @@ import { Alert } from 'react-native';
 import { MedicationCompletionCard } from './MedicationCompletionCard';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useMomentStore } from '../../store/momentStore';
-import { updateEvent } from '../../lib/db';
+import { updateEvent, getEventSource } from '../../lib/db';
 import { usePetStore } from '../../store/petStore';
 
 const CONFLICT = { conflict: true, otherEventId: 'm0', gapMinutes: 95 };
@@ -83,6 +87,7 @@ beforeEach(() => {
   useMomentStore.getState().hide();
   useMomentStore.setState({ payload: null, removed: false });
   (reverseLoggedEvent as jest.Mock).mockResolvedValue(undefined);
+  (getEventSource as jest.Mock).mockResolvedValue('now');
 });
 
 afterEach(() => {
@@ -341,6 +346,32 @@ describe('MedicationCompletionCard — Change time', () => {
     expect(fields.occurred_at_source).toBe('manual');
     expect(fields.confidence).toEqual({ value: 'witnessed', earliest: null, latest: null });
     expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  // ── Provenance on a peek-and-save (CUL-701) ────────────────────────────────
+  // Save is live the moment the sheet opens, so "tap Change time, look, tap Save"
+  // scrubs nothing — and this card used to answer it by writing
+  // occurred_at_source: 'manual' unconditionally, flipping the column from the
+  // 'now' insertMedicationDose stamped. That column is how the vet report and the
+  // correlation engine tell an app-stamped time from an owner-chosen one, so the
+  // write asserted a human decision nobody made.
+  //
+  // Unlike the meal card, nothing owner-authored is destroyed — a dose is always
+  // 'now' at insert, there being no photo path onto this card. The cost is the
+  // false claim alone. It routes through the same shared predicate anyway, so the
+  // two cards cannot drift and a future dose path that DID carry a stamp would
+  // inherit the rule rather than have to rediscover it.
+  it("preserves the auto-stamped 'now' on a peek-and-save", async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    expect(getEventSource).toHaveBeenCalledWith('m1');
+    const fields = (updateEvent as jest.Mock).mock.calls[0][1];
+    expect(fields.occurred_at_source).toBe('now');
+    // The save still HAPPENED — this is a provenance rule, not a refusal to write.
+    expect(fields.occurred_at).toBe('2026-06-07T14:00:00.000Z');
   });
 
   it('Cancel writes nothing and leaves the card standing', async () => {

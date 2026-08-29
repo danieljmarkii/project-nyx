@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-nativ
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
@@ -10,7 +11,7 @@ import {
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
-import { getDoubleDoseFlag, updateDoseAdherence, updateDoseHowGiven, updateEvent } from '../../lib/db';
+import { getDoubleDoseFlag, getEventSource, updateDoseAdherence, updateDoseHowGiven, updateEvent } from '../../lib/db';
 import { syncPendingMedicationAdministrations, syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import {
@@ -109,19 +110,30 @@ export function MedicationCompletionCard() {
     setSaving(true);
     try {
       const iso = next.toISOString();
-      // Touching the picker means the owner explicitly chose a time → flip
-      // provenance from 'now' to 'manual' so the vet report + correlation engine
-      // can tell witnessed-now from owner-backfilled later. Doses are always
-      // witnessed point-in-time (you administer the dose yourself — the B-010
-      // found/window path never applies to a med, exactly as edit-event.tsx does
-      // for medication), and this card only ever edits a dose insertMedicationDose
-      // just wrote as witnessed — so re-asserting it is a no-op that keeps the
-      // claim explicit. Mirrors the meal card's savePicker.
+      // Provenance MOVES ONLY WHEN THE TIME MOVES (CUL-701) — see the meal card's
+      // savePicker for the full argument. Save is live the moment the sheet opens,
+      // so a peek that scrubs nothing used to flip occurred_at_source from the
+      // 'now' insertMedicationDose stamped to 'manual', asserting the owner chose
+      // a time the app had stamped itself. That column is how the vet report and
+      // the correlation engine tell a witnessed-now dose from an owner backfill.
+      //
+      // Nothing owner-authored is destroyed here, unlike on the meal card: a dose
+      // is always 'now' at insert (insertMedicationDose hardcodes it — there is no
+      // photo path onto this card), so the cost is the false claim alone. It goes
+      // through the same shared predicate anyway, so the two cards cannot drift
+      // and a dose path that DID carry a stamp would inherit the rule.
+      const changed = next.getTime() !== new Date(payload.occurredAt).getTime();
+      const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
+      // Doses are always witnessed point-in-time (you administer the dose yourself
+      // — the B-010 found/window path never applies to a med, exactly as
+      // edit-event.tsx does for medication), and this card only ever edits a dose
+      // insertMedicationDose just wrote as witnessed — so re-asserting it is a
+      // no-op that keeps the claim explicit. Mirrors the meal card's savePicker.
       await updateEvent(payload.eventId, {
         occurred_at: iso,
         severity: null,
         notes: null,
-        occurred_at_source: 'manual',
+        occurred_at_source: source,
         confidence: { value: 'witnessed', earliest: null, latest: null },
       });
       patchInToday(payload.eventId, { occurred_at: iso });
