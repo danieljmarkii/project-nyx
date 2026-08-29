@@ -54,6 +54,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
+
 const ts = require('typescript') as typeof import('typescript');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -111,21 +113,30 @@ const WEIGHT_TOKEN: Record<string, string> = {
 
 type Finding = { file: string; line: number; what: string };
 
-function walk(dir: string, out: string[] = []): string[] {
+// `root` is threaded through every scanner below rather than read from the module
+// constant, so the detector fixtures can live in a temp tree instead of inside
+// `components/`. They used to be written in-tree, where a PARALLEL guard's scan picked
+// them up — and this scanner is the one with the widest reach, so it was the usual
+// victim: a foreign fixture either vanished between the walk and the read (ENOENT) or
+// was reported as a real `<Text>` violation naming a file that no longer existed
+// (CUL-712). It is a required parameter, not a defaulted one: a default silently
+// re-points a forgetful self-test at the real working tree, which is the failure being
+// removed here.
+function walk(dir: string, root: string, out: string[] = []): string[] {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, ent.name);
     if (ent.isDirectory()) {
       if (ent.name === 'node_modules' || ent.name === '__snapshots__') continue;
-      walk(full, out);
+      walk(full, root, out);
     } else if (ent.name.endsWith('.tsx') && !ent.name.includes('.test.')) {
-      out.push(path.relative(ROOT, full));
+      out.push(path.relative(root, full));
     }
   }
   return out;
 }
 
-function sourceFiles(): string[] {
-  return SCAN_DIRS.flatMap((d) => walk(path.join(ROOT, d)))
+function sourceFiles(root: string): string[] {
+  return SCAN_DIRS.flatMap((d) => walk(path.join(root, d), root))
     .filter((rel) => !EXCLUDED_FILES.includes(rel))
     .sort();
 }
@@ -166,8 +177,8 @@ interface Parsed {
   pairs: { line: number; family: string; weight: string }[];
 }
 
-function parse(rel: string): Parsed {
-  const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+function parse(rel: string, root: string): Parsed {
+  const src = fs.readFileSync(path.join(root, rel), 'utf8');
   const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const blocks = new Map<string, Map<string, Block>>();
   const pairs: Parsed['pairs'] = [];
@@ -339,13 +350,13 @@ function declaresWeight(open: import('typescript').JsxOpeningLikeElement, p: Par
 }
 
 /** Every RN text node and field in a file, with whether it already names a family. */
-function scanFile(rel: string): {
+function scanFile(rel: string, root: string): {
   sites: Finding[];
   inputs: Finding[];
   nested: Finding[];
   textCount: number;
 } {
-  const p = parse(rel);
+  const p = parse(rel, root);
   const sites: Finding[] = [];
   const inputs: Finding[] = [];
   const nested: Finding[] = [];
@@ -409,8 +420,8 @@ function scanFile(rel: string): {
  * Reads RAW source on purpose: the marker is a comment, so a parser has already
  * discarded it by the time the AST exists.
  */
-function matchMarkers(rel: string, sites: Finding[]): Finding[] {
-  const lines = fs.readFileSync(path.join(ROOT, rel), 'utf8').split('\n');
+function matchMarkers(rel: string, sites: Finding[], root: string): Finding[] {
+  const lines = fs.readFileSync(path.join(root, rel), 'utf8').split('\n');
   const markerLines = lines
     .map((l, i) => (MARKER.test(l) ? i + 1 : -1))
     .filter((i) => i > 0);
@@ -440,11 +451,11 @@ function allFindings() {
   const inputs: Finding[] = [];
   const nested: Finding[] = [];
   let textCount = 0;
-  for (const rel of sourceFiles()) {
-    const r = scanFile(rel);
+  for (const rel of sourceFiles(ROOT)) {
+    const r = scanFile(rel, ROOT);
     textCount += r.textCount;
-    text.push(...matchMarkers(rel, r.sites));
-    inputs.push(...matchMarkers(rel, r.inputs));
+    text.push(...matchMarkers(rel, r.sites, ROOT));
+    inputs.push(...matchMarkers(rel, r.inputs, ROOT));
     // Assertion 4 takes NO marker. A `geist-ok` marker says "this node is deliberately
     // raw" — it never says "this node is deliberately rendering the wrong weight", and
     // letting one cover both would turn every glyph exemption into a blind spot.
@@ -455,8 +466,8 @@ function allFindings() {
 
 function disagreeingPairs(): Finding[] {
   const out: Finding[] = [];
-  for (const rel of sourceFiles()) {
-    for (const pair of parse(rel).pairs) {
+  for (const rel of sourceFiles(ROOT)) {
+    for (const pair of parse(rel, ROOT).pairs) {
       const fam = FAMILY_WEIGHT[familyKey(pair.family)];
       if (!fam) continue; // not one of our faces — not our rule to enforce
       const w = weightValue(pair.weight);
@@ -479,7 +490,7 @@ describe('§7 — the Geist rollout stays finished', () => {
     // assertion below pass by checking nothing at all.
     const { textCount } = allFindings();
     expect(textCount).toBeGreaterThan(500);
-    expect(sourceFiles().length).toBeGreaterThan(100);
+    expect(sourceFiles(ROOT).length).toBeGreaterThan(100);
   });
 
   it('no raw <Text> renders without an explicit family', () => {
@@ -527,11 +538,23 @@ describe('§7 — the Geist rollout stays finished', () => {
 // each rule below is pointed at a known-bad file and required to go red.
 
 describe('the detector itself', () => {
-  const tmp = path.join(ROOT, 'components', '__geist_guard_fixture__.tsx');
-  const rel = path.relative(ROOT, tmp);
-  const write = (s: string) => fs.writeFileSync(tmp, s, 'utf8');
+  // The fixture lives OUTSIDE the repo (CUL-712). It used to be written to
+  // `components/__geist_guard_fixture__.tsx` — inside the tree this guard AND
+  // `haptics`/`completionCard` all scan — so a parallel worker either read it
+  // mid-delete (ENOENT, observed for real during CUL-654) or reported a deliberately
+  // non-compliant file as a live violation.
+  //
+  // It keeps its `components/` SHAPE inside that root so the fixture is a realistic
+  // component path, and every scanner call below states the root explicitly.
+  const rel = 'components/GeistFixture.tsx';
+  let root = '';
+  const write = (src: string) => writeFixture(root, rel, src);
+
+  beforeEach(() => {
+    root = createFixtureRoot('geist', SCAN_DIRS);
+  });
   afterEach(() => {
-    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    removeFixtureRoot(root);
   });
 
   it('FLAGS a raw <Text> whose style names no family', () => {
@@ -539,7 +562,7 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ a: { fontSize: 12 } });\n` +
         `export const X = () => <Text style={styles.a}>hi</Text>;\n`,
     );
-    expect(fmt(scanFile(rel).sites)).toEqual([`${rel}:2 — <Text>`]);
+    expect(fmt(scanFile(rel, root).sites)).toEqual([`${rel}:2 — <Text>`]);
   });
 
   it('CLEARS the same node once the style names a family', () => {
@@ -547,12 +570,12 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ a: { fontFamily: theme.fontBody } });\n` +
         `export const X = () => <Text style={styles.a}>hi</Text>;\n`,
     );
-    expect(scanFile(rel).sites).toEqual([]);
+    expect(scanFile(rel, root).sites).toEqual([]);
   });
 
   it('CLEARS a ThemedText, which carries its family by construction', () => {
     write(`export const X = () => <ThemedText style={styles.a}>hi</ThemedText>;\n`);
-    expect(scanFile(rel).sites).toEqual([]);
+    expect(scanFile(rel, root).sites).toEqual([]);
   });
 
   it('FLAGS an Animated.Text — the shape that slips through both nets', () => {
@@ -563,7 +586,7 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ a: { fontSize: 12 } });\n` +
         `export const X = () => <Animated.Text style={styles.a}>hi</Animated.Text>;\n`,
     );
-    expect(fmt(scanFile(rel).sites)).toEqual([`${rel}:2 — <Animated.Text>`]);
+    expect(fmt(scanFile(rel, root).sites)).toEqual([`${rel}:2 — <Animated.Text>`]);
   });
 
   it('FLAGS a TextInput whose style names no family', () => {
@@ -571,12 +594,12 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ a: { fontSize: 12 } });\n` +
         `export const X = () => <TextInput style={styles.a} />;\n`,
     );
-    expect(fmt(scanFile(rel).inputs)).toEqual([`${rel}:2 — <TextInput>`]);
+    expect(fmt(scanFile(rel, root).inputs)).toEqual([`${rel}:2 — <TextInput>`]);
   });
 
   it('FLAGS a style it cannot resolve, rather than assuming it is fine', () => {
     write(`export const X = ({ style }) => <Text style={style}>hi</Text>;\n`);
-    expect(scanFile(rel).sites).toHaveLength(1);
+    expect(scanFile(rel, root).sites).toHaveLength(1);
   });
 
   it('FLAGS a conditional style where only ONE arm names a family', () => {
@@ -585,7 +608,7 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ a: { fontFamily: theme.fontBody }, b: { fontSize: 12 } });\n` +
         `export const X = ({ on }) => <Text style={on ? styles.a : styles.b}>hi</Text>;\n`,
     );
-    expect(scanFile(rel).sites).toHaveLength(1);
+    expect(scanFile(rel, root).sites).toHaveLength(1);
   });
 
   it('does NOT accept a fontFamily written inside a COMMENT', () => {
@@ -595,14 +618,14 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ a: { /* fontFamily: theme.fontBody */ fontSize: 12 } });\n` +
         `export const X = () => <Text style={styles.a}>hi</Text>;\n`,
     );
-    expect(scanFile(rel).sites).toHaveLength(1);
+    expect(scanFile(rel, root).sites).toHaveLength(1);
   });
 
   it('does NOT treat a <Text> written inside a COMMENT as a violation', () => {
     // The other direction: every exemption marker in the tree contains the literal
     // string `<Text>`, so a scan that matched raw source would flag its own paperwork.
     write(`// stays a raw <Text> so it inherits the parent face\nexport const X = () => null;\n`);
-    expect(scanFile(rel).sites).toEqual([]);
+    expect(scanFile(rel, root).sites).toEqual([]);
   });
 
   it('CLEARS a flagged site covered by a geist-ok marker', () => {
@@ -611,7 +634,7 @@ describe('the detector itself', () => {
         `// geist-ok: icon glyph, not copy\n` +
         `export const X = () => <Text style={styles.a}>›</Text>;\n`,
     );
-    expect(matchMarkers(rel, scanFile(rel).sites)).toEqual([]);
+    expect(matchMarkers(rel, scanFile(rel, root).sites, root)).toEqual([]);
   });
 
   it('lets ONE marker cover only ONE site', () => {
@@ -622,7 +645,7 @@ describe('the detector itself', () => {
         `// geist-ok: icon glyph, not copy\n` +
         `export const X = () => <><Text style={styles.a}>›</Text><Text style={styles.a}>copy</Text></>;\n`,
     );
-    expect(matchMarkers(rel, scanFile(rel).sites)).toHaveLength(1);
+    expect(matchMarkers(rel, scanFile(rel, root).sites, root)).toHaveLength(1);
   });
 
   it('does NOT let a marker reach a site far below it', () => {
@@ -632,7 +655,7 @@ describe('the detector itself', () => {
         '\n'.repeat(MARKER_REACH_LINES + 2) +
         `export const X = () => <Text style={styles.a}>copy</Text>;\n`,
     );
-    expect(matchMarkers(rel, scanFile(rel).sites)).toHaveLength(1);
+    expect(matchMarkers(rel, scanFile(rel, root).sites, root)).toHaveLength(1);
   });
 
   it('FLAGS a raw child whose fontWeight the parent family makes inert', () => {
@@ -642,7 +665,7 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ big: { fontWeight: theme.weightSemibold }, sub: { fontWeight: theme.weightRegular } });\n` +
         `export const X = () => <ThemedText style={styles.big}>37% <Text style={styles.sub}>finished</Text></ThemedText>;\n`,
     );
-    expect(scanFile(rel).nested).toHaveLength(1);
+    expect(scanFile(rel, root).nested).toHaveLength(1);
   });
 
   it('SPARES that child once it names its own family', () => {
@@ -650,7 +673,7 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ big: { fontWeight: theme.weightSemibold }, sub: { fontFamily: theme.fontBody } });\n` +
         `export const X = () => <ThemedText style={styles.big}>37% <Text style={styles.sub}>finished</Text></ThemedText>;\n`,
     );
-    expect(scanFile(rel).nested).toEqual([]);
+    expect(scanFile(rel, root).nested).toEqual([]);
   });
 
   it('SPARES a colour-only child, which is SUPPOSED to inherit the parent face', () => {
@@ -660,7 +683,7 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ big: { fontWeight: theme.weightSemibold }, sub: { color: theme.colorTextTertiary } });\n` +
         `export const X = () => <ThemedText style={styles.big}>a <Text style={styles.sub}>b</Text></ThemedText>;\n`,
     );
-    expect(scanFile(rel).nested).toEqual([]);
+    expect(scanFile(rel, root).nested).toEqual([]);
   });
 
   it('FLAGS a weightless ThemedText nested under a text ancestor', () => {
@@ -670,7 +693,7 @@ describe('the detector itself', () => {
       `const styles = StyleSheet.create({ big: { fontWeight: theme.weightSemibold } });\n` +
         `export const X = () => <ThemedText style={styles.big}>a <ThemedText>b</ThemedText></ThemedText>;\n`,
     );
-    expect(scanFile(rel).nested).toHaveLength(1);
+    expect(scanFile(rel, root).nested).toHaveLength(1);
   });
 
   it('a geist-ok marker does NOT excuse a lost weight', () => {
@@ -682,8 +705,8 @@ describe('the detector itself', () => {
         `// geist-ok: nested span\n` +
         `export const X = () => <ThemedText style={styles.big}>a <Text style={styles.sub}>b</Text></ThemedText>;\n`,
     );
-    const r = scanFile(rel);
-    expect(matchMarkers(rel, r.sites)).toEqual([]); // assertion 1 is satisfied…
+    const r = scanFile(rel, root);
+    expect(matchMarkers(rel, r.sites, root)).toEqual([]); // assertion 1 is satisfied…
     expect(r.nested).toHaveLength(1); // …and assertion 4 still fires.
   });
 
@@ -695,7 +718,7 @@ describe('the detector itself', () => {
       `const nightVariant = StyleSheet.create({ big: { fontWeight: theme.weightSemibold }, sub: { fontWeight: theme.weightRegular } });\n` +
         `export const X = () => <ThemedText style={nightVariant.big}>37% <Text style={nightVariant.sub}>finished</Text></ThemedText>;\n`,
     );
-    expect(scanFile(rel).nested).toHaveLength(1);
+    expect(scanFile(rel, root).nested).toHaveLength(1);
   });
 
   it('still FLAGS a lost weight when the site carries a geist-ok marker', () => {
@@ -707,8 +730,8 @@ describe('the detector itself', () => {
         `// geist-ok: nested span — colour only\n` +
         `export const X = () => <ThemedText style={nightVariant.big}>37% <Text style={nightVariant.sub}>finished</Text></ThemedText>;\n`,
     );
-    const r = scanFile(rel);
-    expect(matchMarkers(rel, r.sites)).toEqual([]);
+    const r = scanFile(rel, root);
+    expect(matchMarkers(rel, r.sites, root)).toEqual([]);
     expect(r.nested).toHaveLength(1);
   });
 
@@ -721,7 +744,7 @@ describe('the detector itself', () => {
         `const nightStyles = StyleSheet.create({ label: { fontSize: 12 } });\n` +
         `export const X = () => <Text style={nightStyles.label}>copy</Text>;\n`,
     );
-    expect(scanFile(rel).sites).toHaveLength(1);
+    expect(scanFile(rel, root).sites).toHaveLength(1);
   });
 
   it('pairs each site with the NEAREST marker above it, in line order', () => {
@@ -735,7 +758,7 @@ describe('the detector itself', () => {
         `// geist-ok: second\n` +
         `export const B = () => <Text style={styles.b}>two</Text>;\n`,
     );
-    expect(matchMarkers(rel, scanFile(rel).sites)).toEqual([]);
+    expect(matchMarkers(rel, scanFile(rel, root).sites, root)).toEqual([]);
     // …and with one marker removed, exactly the uncovered site is reported.
     write(
       `const styles = StyleSheet.create({ a: { fontSize: 12 }, b: { fontSize: 12 } });\n` +
@@ -743,7 +766,7 @@ describe('the detector itself', () => {
         `// geist-ok: second\n` +
         `export const B = () => <Text style={styles.b}>two</Text>;\n`,
     );
-    expect(fmt(matchMarkers(rel, scanFile(rel).sites))).toEqual([`${rel}:2 — <Text>`]);
+    expect(fmt(matchMarkers(rel, scanFile(rel, root).sites, root))).toEqual([`${rel}:2 — <Text>`]);
   });
 
   it('FLAGS a family and weight that disagree, and spares ones that agree', () => {
@@ -765,7 +788,7 @@ describe('the detector itself', () => {
 
   it('spares a family that is not one of ours', () => {
     write(`const styles = StyleSheet.create({ a: { fontFamily: 'Menlo', fontWeight: '600' } });\n`);
-    expect(parse(rel).pairs).toHaveLength(1);
+    expect(parse(rel, root).pairs).toHaveLength(1);
     expect(FAMILY_WEIGHT[familyKey("'Menlo'")]).toBeUndefined();
   });
 });

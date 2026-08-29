@@ -32,6 +32,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
+
 const ROOT = path.resolve(__dirname, '..');
 const SCAN_DIRS = ['app', 'components'];
 
@@ -101,21 +103,25 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
 }
 
-function walk(dir: string, out: string[] = []): string[] {
+// `root` is threaded through the walk rather than read from the module constant, so
+// this guard's detector fixtures can live in a temp tree instead of inside `app/`,
+// where a PARALLEL guard's scan would pick them up (CUL-712). Required, not defaulted:
+// a default silently re-points a forgetful self-test at the real working tree.
+function walk(dir: string, root: string, out: string[] = []): string[] {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, ent.name);
     if (ent.isDirectory()) {
       if (ent.name === 'node_modules' || ent.name === '__snapshots__') continue;
-      walk(full, out);
+      walk(full, root, out);
     } else if (/\.tsx?$/.test(ent.name) && !ent.name.includes('.test.')) {
-      out.push(path.relative(ROOT, full));
+      out.push(path.relative(root, full));
     }
   }
   return out;
 }
 
-function sourceFiles(): string[] {
-  return SCAN_DIRS.flatMap((d) => walk(path.join(ROOT, d)))
+function sourceFiles(root: string): string[] {
+  return SCAN_DIRS.flatMap((d) => walk(path.join(root, d), root))
     .filter((rel) => !DEFINITIONS.includes(rel))
     .sort();
 }
@@ -140,10 +146,10 @@ function wiresHandle(src: string, handle: string): boolean {
   return new RegExp(`\\b${handle}\\b`).test(stripComments(src));
 }
 
-function callSites(helper: string): string[] {
+function callSites(helper: string, root: string): string[] {
   const call = new RegExp(`\\b${helper}\\s*\\(`);
-  return sourceFiles().filter((rel) =>
-    call.test(stripComments(fs.readFileSync(path.join(ROOT, rel), 'utf8'))),
+  return sourceFiles(root).filter((rel) =>
+    call.test(stripComments(fs.readFileSync(path.join(root, rel), 'utf8'))),
   );
 }
 
@@ -151,14 +157,14 @@ describe('§5 — every commit path routes through its completion card', () => {
   it.each(RULES)('finds real $helper call sites to check', ({ helper }) => {
     // If a rename ever makes the scan match nothing, the guard would pass by checking
     // an empty set. Fail instead — the same reason haptics.test.ts pins its floor.
-    expect(callSites(helper).length).toBeGreaterThan(0);
+    expect(callSites(helper, ROOT).length).toBeGreaterThan(0);
   });
 
   it.each(RULES)('every $helper call site fires $handle', ({ helper, handle, why }) => {
     // The remedy rides in the finding string rather than an assertion message: jest's
     // expect takes no message argument, and a bare list of paths does not tell the
     // next author what the build wants from them.
-    const findings = callSites(helper)
+    const findings = callSites(helper, ROOT)
       .filter((rel) => {
         if (EXEMPT[rel]) return false;
         const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -184,44 +190,48 @@ describe('§5 — every commit path routes through its completion card', () => {
 });
 
 describe('the detector itself', () => {
-  const tmp = path.join(ROOT, 'app', '__completion_card_guard_fixture__.tsx');
+  // The fixture lives OUTSIDE the repo (CUL-712). It used to be written to
+  // `app/__completion_card_guard_fixture__.tsx` — inside the tree `geistRollout`
+  // scans — so a parallel worker either read it mid-delete (ENOENT) or reported this
+  // deliberately non-compliant file as a real violation.
+  //
+  // It keeps its `app/` SHAPE inside that root, so the walk → strip → match path
+  // under test is the same one the live scan runs.
+  const REL = 'app/CompletionCardFixture.tsx';
+  let root = '';
+  const write = (src: string) => writeFixture(root, REL, src);
+  const read = () => fs.readFileSync(path.join(root, REL), 'utf8');
+
+  beforeEach(() => {
+    root = createFixtureRoot('completion-card', SCAN_DIRS);
+  });
   afterEach(() => {
-    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    removeFixtureRoot(root);
   });
 
   it('FLAGS a file that writes a meal and never shows the card', () => {
-    fs.writeFileSync(tmp, `const r = await insertMeal({ petId, foodId });\n`, 'utf8');
-    const rel = path.relative(ROOT, tmp);
-    expect(callSites('insertMeal')).toContain(rel);
-    const src = fs.readFileSync(tmp, 'utf8');
-    expect(src.includes('showMeal')).toBe(false);
+    write(`const r = await insertMeal({ petId, foodId });\n`);
+    expect(callSites('insertMeal', root)).toContain(REL);
+    expect(read().includes('showMeal')).toBe(false);
   });
 
   it('CLEARS the same file once it fires the card', () => {
-    fs.writeFileSync(
-      tmp,
-      `const r = await insertMeal({ petId, foodId });\nshowMeal({ eventId: r.eventId });\n`,
-      'utf8',
-    );
-    expect(fs.readFileSync(tmp, 'utf8').includes('showMeal')).toBe(true);
+    write(`const r = await insertMeal({ petId, foodId });\nshowMeal({ eventId: r.eventId });\n`);
+    expect(wiresHandle(read(), 'showMeal')).toBe(true);
   });
 
   it('IGNORES a mention of the helper inside a comment', () => {
     // The `app/(tabs)/foods.tsx` false positive from this guard's first run.
-    fs.writeFileSync(tmp, `{/* skips insertMeal (the capture screen branches) */}\n`, 'utf8');
-    expect(callSites('insertMeal')).not.toContain(path.relative(ROOT, tmp));
+    write(`{/* skips insertMeal (the capture screen branches) */}\n`);
+    expect(callSites('insertMeal', root)).not.toContain(REL);
   });
 
   it('does NOT accept a commented-out handle as wiring', () => {
     // The costlier direction: a real write whose only `showMeal` is the warning
     // COMMENT this guard replaced. Satisfying the rule by pasting prose is precisely
     // how the rule failed before.
-    fs.writeFileSync(
-      tmp,
-      `// every meal-entry path must route through showMeal\nconst r = await insertMeal({ petId });\n`,
-      'utf8',
-    );
-    const src = fs.readFileSync(tmp, 'utf8');
+    write(`// every meal-entry path must route through showMeal\nconst r = await insertMeal({ petId });\n`);
+    const src = read();
     expect(src.includes('showMeal')).toBe(true);
     expect(wiresHandle(src, 'showMeal')).toBe(false);
   });
@@ -242,11 +252,7 @@ describe('the detector itself', () => {
   });
 
   it('CLEARS a file carrying the exemption comment', () => {
-    fs.writeFileSync(
-      tmp,
-      `// completion-card-ok: R2 in-place beat\nconst r = await insertMeal({ petId, foodId });\n`,
-      'utf8',
-    );
-    expect(EXEMPTION.test(fs.readFileSync(tmp, 'utf8'))).toBe(true);
+    write(`// completion-card-ok: R2 in-place beat\nconst r = await insertMeal({ petId, foodId });\n`);
+    expect(EXEMPTION.test(read())).toBe(true);
   });
 });
