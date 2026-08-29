@@ -1,0 +1,8 @@
+# Emitted SQL — deterministic from reviewed-ids.json, so committing it adds nothing
+# but a live-mode script sitting in the repo waiting to be pasted by accident.
+swap.*.sql
+rollback.*.sql
+
+# The engine-input export for the predictor: a dump of the pet's event stream, which
+# is well past the "ids and counts only, never note text" rule this directory follows.
+predict-input.json
