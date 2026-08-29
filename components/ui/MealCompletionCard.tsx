@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  View, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
-} from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { TimeEditSheet } from './TimeEditSheet';
 import { useMomentStore } from '../../store/momentStore';
 import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
@@ -135,9 +133,8 @@ export function MealCompletionCard() {
   const checkScale = useRef(new Animated.Value(0.6)).current;
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Local draft separate from the card's authoritative occurredAt so the picker
-  // can be opened, scrubbed, and cancelled without mutating the card.
-  const [draft, setDraft] = useState<Date | null>(null);
+  // No local draft: TimeEditSheet owns it, so opening and abandoning the picker
+  // cannot touch the card's authoritative occurredAt.
   const [saving, setSaving] = useState(false);
 
   // B-693 — the "+ Add to the trial list" confirm-sheet state. `addTarget` is the
@@ -178,20 +175,14 @@ export function MealCompletionCard() {
 
   function openPicker() {
     if (!isMeal) return;
-    setDraft(new Date(payload.occurredAt));
     setPickerOpen(true);
   }
 
-  function cancelPicker() {
-    setPickerOpen(false);
-    setDraft(null);
-  }
-
-  async function savePicker() {
-    if (!isMeal || !draft) return;
+  async function savePicker(next: Date) {
+    if (!isMeal) return;
     setSaving(true);
     try {
-      const iso = draft.toISOString();
+      const iso = next.toISOString();
       // Touching the picker means the user explicitly chose a time → flip
       // provenance from 'now' to 'manual' so the vet report and correlation
       // engine can distinguish witnessed-now from owner-backfilled later.
@@ -210,7 +201,6 @@ export function MealCompletionCard() {
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
       setPickerOpen(false);
-      setDraft(null);
       // Dismiss on save — the affirmative action is its own confirmation;
       // lingering with an updated time would just be noise.
       hide();
@@ -571,47 +561,24 @@ export function MealCompletionCard() {
         </View>
       </Animated.View>
 
-      <Modal
-        visible={pickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={cancelPicker}
-        statusBarTranslucent
-      >
-        <Pressable style={styles.backdrop} onPress={cancelPicker} />
-        {/* Empty-onPress Pressable around the sheet so taps on the title or
-            whitespace are captured here and don't fall through to the
-            absolute-positioned backdrop, silently dismissing the picker
-            mid-edit. */}
-        <Pressable style={styles.sheet} onPress={() => {}}>
-          <ThemedText style={styles.sheetTitle}>When did this happen?</ThemedText>
-          {draft && (
-            <DateTimePicker
-              value={draft}
-              mode="datetime"
-              display={Platform.OS === 'ios' ? 'inline' : 'default'}
-              maximumDate={new Date()}
-              onChange={(_e, date) => {
-                if (Platform.OS === 'android') setPickerOpen(false);
-                if (date) setDraft(date);
-              }}
-            />
-          )}
-          <View style={styles.sheetActions}>
-            <TouchableOpacity onPress={cancelPicker} hitSlop={12} style={styles.sheetBtn}>
-              <ThemedText style={styles.sheetCancel}>Cancel</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={savePicker}
-              hitSlop={12}
-              style={styles.sheetBtn}
-              disabled={saving}
-            >
-              <ThemedText style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</ThemedText>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
+      {/* The shared time-edit sheet (CUL-621) — this card carried its own inline
+          copy until the named card's extraction gave all three completion
+          surfaces one. Mounted conditionally, which is what pins the sheet's
+          maximumDate to the moment the owner opened it.
+
+          A meal is witnessed by construction, so the question is about
+          OCCURRENCE. That is not a default the sheet supplies: `title` is
+          required precisely so a caller editing a discovery bound cannot inherit
+          this question (CUL-606's adversarial finding). */}
+      {pickerOpen && (
+        <TimeEditSheet
+          value={new Date(payload.occurredAt)}
+          title="When did this happen?"
+          saving={saving}
+          onCancel={() => setPickerOpen(false)}
+          onSave={savePicker}
+        />
+      )}
 
       {/* B-693 — the "+ Add to the trial list" hatch's destination: the SHIPPED
           AddTrialFoodSheet (B-616 PR 2), reused verbatim (mock §3). Its own Modal,
@@ -803,48 +770,4 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
   },
 
-  backdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: theme.colorScrimBackdrop,
-  },
-  sheet: {
-    position: 'absolute',
-    left: theme.space2,
-    right: theme.space2,
-    bottom: theme.space3,
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space3,
-    gap: theme.space2,
-    ...shadows.lg,
-  },
-  sheetTitle: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  sheetActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: theme.space3,
-    marginTop: theme.space1,
-  },
-  sheetBtn: {
-    paddingVertical: theme.space1,
-    paddingHorizontal: theme.space1,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  sheetCancel: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-  },
-  sheetSave: {
-    fontSize: theme.textMD,
-    color: theme.colorAccent,
-    fontWeight: theme.weightMedium,
-  },
-  sheetSaveDisabled: {
-    opacity: theme.opacityDisabled,
-  },
 });
