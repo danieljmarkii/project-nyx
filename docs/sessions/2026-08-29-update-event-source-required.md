@@ -60,9 +60,21 @@ Five shapes were tried against the new signature in a scratch module, each asser
 
 Then the step that makes the pass mean something: a **negative control** — a legal call carrying the same directive — was confirmed to report `TS2578`, proving the five were discriminating rather than vacuously green. (Without it, five directives over five *legal* calls would also have exited 0.) Scratch module deleted; `tsc` re-verified clean.
 
-## Residual, deliberately not folded in
+## Residual, deliberately not folded in — and closed by a sibling mid-session
 
-Requiring the field does not stop a future caller writing a **wrong literal** to satisfy the compiler — which is precisely CUL-701's live defect (the meal and dose cards still write `occurred_at_source: 'manual'` unconditionally on a picker save that may have changed nothing). CUL-701 stays open and owns it. This PR is about what `updateEvent` does with silence; that one is about what two callers write.
+Requiring the field does not stop a future caller writing a **wrong literal** to satisfy the compiler. That was CUL-701's live defect (the meal and dose cards writing `occurred_at_source: 'manual'` unconditionally on a picker save), deliberately left to CUL-701 rather than folded in here — this PR is about what `updateEvent` does with silence, that one about what two callers write.
+
+**CUL-701 landed on `main` while this session was running** (d81b089), so the residual is closed rather than outstanding. Both cards now route through `sourceAfterPointEdit` + `getEventSource`. The two changes are complements and the merge confirmed it: with CUL-701's cards merged in, `tsc` stays clean because both already pass the key explicitly.
+
+### What the merge cost, and why it was not mechanical
+
+`main` was merged into this branch (never rebased). One conflict, on the CLAUDE.md CUL-576 bullet both sessions appended to — and it could not be resolved by keeping both sides. CUL-701's passage ended by naming *this* trapdoor as still open:
+
+> **And the trap one layer down: `updateEvent` defaults a missing `occurred_at_source` to `'manual'`** … pass the key explicitly until CUL-708 settles what silence should mean.
+
+Keeping both would have shipped a manual asserting the default both exists and does not. Their sentence was **deleted** and this session's addendum kept, since the addendum states the same asymmetry with the resolution attached. Everything else of CUL-701's passage — the holdout cards, "every glance becomes an assertion", the destroyed EXIF attribution — survives verbatim.
+
+The same staleness reached the code: `MealCompletionCard.tsx` carried *"The key is passed rather than omitted deliberately: updateEvent defaults a missing occurred_at_source to 'manual', so silence here is not neutral"* — a comment made false by this PR, arriving through the merge rather than through the diff. Corrected in place to say the compiler now holds what the comment used to.
 
 ## Records updated
 
