@@ -1,0 +1,759 @@
+<title>Culprit — The Living Signal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     The Living Signal — Signal freshness discovery, mock ROUND 1
+     (exploratory). 2026-08-29.
+
+     This round is a DISCOVERY artifact: options drawn side by
+     side so the reaction can be visual, per the 2026-08-07 PM
+     directive. Nothing here is design-locked. The design
+     authority for the SHIPPED Signal/Home surface remains
+     docs/culprit-signal-home-mockups.html (round 2.1) — this
+     page proposes what comes next, it supersedes nothing.
+
+     Document chrome follows the house mock convention; DEVICE
+     FRAMES stay light in both themes — they render the app's
+     shipping light surfaces. Frame values are real tokens from
+     constants/theme.ts.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;   /* theme.colorAccent */
+    --teal-ink:   #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash:  #E0FBF7;   /* theme.colorAccentLight */
+    --rose:       #F43F5E;   /* theme.colorEventSymptom */
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --med:        #5B7A9E;   /* theme.colorEventMedication */
+    --med-wash:   #EAF0F7;
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+      --med:       #93B0CE;
+      --med-wash:  rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--teal-ink); background: var(--teal-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+
+  /* evidence block */
+  .evidence {
+    margin: 28px 0 8px; padding: 26px 30px;
+    background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px;
+  }
+  .evidence .lede { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 16px; }
+  .weekrow { display: flex; align-items: flex-end; gap: 6px; margin: 10px 0 6px; }
+  .wk { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+  .wk .bar { width: 100%; max-width: 34px; background: var(--rose); opacity: 0.75; border-radius: 3px 3px 0 0; }
+  .wk .bar.zero { background: var(--rule); opacity: 1; height: 2px !important; }
+  .wk .n { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+  .wk .lbl { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); letter-spacing: 0.02em; }
+  .evidence .foot { font-size: 13.5px; color: var(--ink-2); margin: 14px 0 0; }
+  .evidence .foot strong { color: var(--ink); }
+
+  /* decision briefs */
+  .brief {
+    margin: 24px 0; padding: 22px 26px;
+    background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px;
+  }
+  .brief .bid { font-family: var(--mono); font-size: 11px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--teal-ink); font-weight: 700; margin: 0 0 10px; }
+  .revnew {
+    margin: 20px 0 0; padding: 13px 17px; border-radius: 8px;
+    background: var(--teal-wash); border: 1px solid rgba(11,123,108,0.3);
+    font-size: 14.5px; color: var(--ink-2); line-height: 1.55;
+  }
+  .revnew b { color: var(--teal-ink); }
+  .revnew a { color: var(--teal-ink); font-weight: 600; }
+  .newchip {
+    display: inline-block; vertical-align: 2px; margin-left: 8px;
+    font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--teal-ink); background: var(--teal-wash); border: 1px solid rgba(11,123,108,0.3);
+    border-radius: 5px; padding: 1px 6px; text-transform: uppercase;
+  }
+  .askfield {
+    display: flex; align-items: center; gap: 8px; margin-top: 10px;
+    background: #F7F6FA; border: 1px solid #E4E2EE; border-radius: 12px;
+    padding: 9px 12px; font-size: 12.5px; color: #8B87A8;
+  }
+  .askdot { width: 7px; height: 7px; border-radius: 50%; background: #00C2A8; flex-shrink: 0; }
+  .typed { font-size: 12.5px; color: #1A1A24; background: #F0EFF5; border-radius: 12px 12px 12px 4px; padding: 8px 11px; margin-top: 9px; display: inline-block; }
+  .proposal { margin-top: 9px; border: 1px solid rgba(11,123,108,0.3); background: #ECFDF9; border-radius: 10px; padding: 9px 11px; }
+  .proposal .ppill { font-size: 12.5px; font-weight: 600; color: #1A1A24; }
+  .proposal .pnote { font-size: 10.5px; color: #5F5C7A; margin-top: 3px; }
+  .proposal .pact { display: flex; gap: 7px; margin-top: 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+
+  /* conflict block */
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .frame-cap .fnote { color: var(--ink-3); font-size: 12.5px; }
+  .cost { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 8px; color: var(--ink-3); display: block; }
+
+  .phone {
+    width: 316px; max-width: 100%; background: #F2F2F4; border-radius: 34px;
+    border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16);
+    padding: 12px 12px 20px; color: #1A1A24; font-family: var(--sans);
+  }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 10px; }
+  .appbody { display: grid; gap: 12px; }
+
+  .acard { background: #FFFFFF; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #8B87A8; margin-bottom: 8px; }
+
+  .irow { display: flex; gap: 9px; padding: 8px 0; }
+  .irow + .irow { border-top: 1px solid #F0EFF5; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.85; }
+  .rail.safety { background: #F43F5E; }
+  .rail.insight { background: #00C2A8; }
+  .rail.week { background: #5B7A9E; }
+  .ibody { flex: 1; min-width: 0; }
+  .lead { font-family: var(--serif); font-size: 19.5px; line-height: 1.32; letter-spacing: -0.012em; color: #1A1A24; margin: 0 0 6px; }
+  .lead.compact { font-size: 15.5px; }
+  .samp { font-size: 10.5px; color: #8B87A8; margin-top: 5px; }
+  .why { font-size: 11px; color: #0B7B6C; font-weight: 600; margin-top: 7px; }
+
+  /* dot lane receipt (Shape A, as shipped) */
+  .lane { position: relative; height: 22px; background: #F7F6FA; border: 1px solid #EFEEF4; border-radius: 6px; margin-top: 8px; overflow: hidden; }
+  .laneband { position: absolute; top: 0; bottom: 0; left: 0; width: 33%; background: rgba(0,194,168,0.10); border-right: 1.5px dashed rgba(11,123,108,0.5); }
+  .dot { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #F43F5E; transform: translateY(-50%); }
+  .laneax { display: flex; justify-content: space-between; font-size: 9px; color: #8B87A8; margin-top: 3px; padding: 0 2px; }
+
+  /* stacked compare receipt (Shape C, as shipped) */
+  .cmp { display: grid; gap: 6px; margin-top: 8px; }
+  .cmprow { display: grid; grid-template-columns: 92px 1fr 34px; gap: 8px; align-items: center; font-size: 11px; color: #5F5C7A; }
+  .cmprow .cbar { height: 8px; border-radius: 4px; background: #F43F5E; opacity: 0.7; min-width: 2px; }
+  .cmprow .cbar.calm { background: #C9C5E6; opacity: 0.9; }
+  .cmprow .cn { font-family: var(--mono); font-size: 11px; color: #1A1A24; text-align: right; }
+
+  /* chips / affordances inside frames */
+  .chiprow { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+  .chip {
+    font-size: 12px; font-weight: 600; color: #0B7B6C; background: #E0FBF7;
+    border: 1px solid rgba(11,123,108,0.25); border-radius: 999px; padding: 5px 12px;
+  }
+  .chip.quiet { color: #5F5C7A; background: #F7F6FA; border-color: #E4E2EE; font-weight: 500; }
+  .metachip { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #0B7B6C; background: #E0FBF7; border-radius: 5px; padding: 2px 6px; margin-top: 7px; }
+  .metachip.new { color: #B4123B; background: #FFE4E6; }
+  .foldrow { display: flex; align-items: center; gap: 9px; padding: 9px 2px; border-top: 1px solid #F0EFF5; }
+  .foldrow .ftext { flex: 1; font-size: 12.5px; color: #5F5C7A; }
+  .foldrow .chev { color: #B9B6CC; font-size: 14px; }
+  .quietline { font-size: 12px; color: #8B87A8; font-style: italic; padding: 8px 2px 2px; }
+  .ackline { font-size: 11.5px; color: #5B7A9E; background: #EAF0F7; border-radius: 8px; padding: 6px 10px; margin-top: 9px; }
+  .statechips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .annot { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.05em; color: #B4123B; background: #FFF1F2; border: 1px dashed rgba(180,18,59,0.35); border-radius: 6px; padding: 3px 7px; margin-top: 8px; display: inline-block; }
+  .annot.ok { color: #0B7B6C; background: #ECFDF9; border-color: rgba(11,123,108,0.3); }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span class="roundtag">Round 1.2 — exploratory</span>
+      <span>Signal freshness discovery · 2026-08-29 (rev 1.1: F7 + D5 + research · rev 1.2: F7 → omnibox)</span>
+      <span>Sibling of B-721 (shipped, GA'd) — supersedes nothing</span>
+    </p>
+    <h1>The Living Signal</h1>
+    <p class="standfirst">
+      The Signal is Home's hero, and for six weeks it has opened on the same two cards.
+      The cache is fresh — it regenerates daily — but the <em>content</em> is standing truth,
+      and standing truth doesn't move. This round separates the Signal's two jobs —
+      <strong>what is true</strong> and <strong>what changed</strong> — and draws six ways to
+      give the second job a surface. Rev 1.1 added <strong>F7</strong> (the PM's F4+F6-fusion
+      suggestion) and the competitive/inspiration research; rev 1.2 redraws F7 as a true
+      <strong>omnibox</strong> — free text plus pre-shown prompts — after the PM's push.
+      Nothing here is design-locked; the shipped surface's authority remains
+      <code>culprit-signal-home-mockups.html</code> (round 2.1).
+    </p>
+    <div class="revnew">
+      <b>Already read round 1? What's new since:</b>
+      <a href="#f7">F7 · the companion surface</a> — your F4+F6 fusion, redrawn in rev 1.2 as a
+      true omnibox (free text + pre-shown prompts; typed capture routes to propose-and-confirm,
+      the photo-extraction shape) · <a href="#research">the research callout</a>
+      (Oura / Whoop / Linear Pulse / Huckleberry / Bearable + the competitor trip-wire check) ·
+      <a href="#d5">D5 · the companion-surface ruling</a>, rewritten with the omnibox as the
+      recommendation. F1–F6 and D1–D4 are unchanged from round 1. Same URL on purpose — rounds
+      republish in place so the link on CUL-695 never goes stale.
+    </div>
+  </header>
+
+  <!-- ================================================== 01 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Why now — the record moved and the card couldn't say so</h2></div>
+    <div class="col">
+      <p>
+        The complaint is "I see the same thing every day," and the live data says it's worse than
+        an aesthetics problem. Nyx's chronicity card has led since mid-July
+        (<code>firstOnsetIso 2026-07-05</code>). Since then the record genuinely changed:
+      </p>
+    </div>
+
+    <div class="evidence">
+      <p class="lede">Vomiting episodes per week — Nyx, live production record (queried 2026-08-29)</p>
+      <div class="weekrow">
+        <div class="wk"><div class="bar" style="height:28px"></div><span class="n">4</span><span class="lbl">Jun 15</span></div>
+        <div class="wk"><div class="bar" style="height:42px"></div><span class="n">6</span><span class="lbl">Jun 22</span></div>
+        <div class="wk"><div class="bar" style="height:56px"></div><span class="n">8</span><span class="lbl">Jun 29</span></div>
+        <div class="wk"><div class="bar" style="height:28px"></div><span class="n">4</span><span class="lbl">Jul 6</span></div>
+        <div class="wk"><div class="bar" style="height:28px"></div><span class="n">4</span><span class="lbl">Jul 13</span></div>
+        <div class="wk"><div class="bar" style="height:28px"></div><span class="n">4</span><span class="lbl">Jul 20</span></div>
+        <div class="wk"><div class="bar" style="height:28px"></div><span class="n">4</span><span class="lbl">Jul 27</span></div>
+        <div class="wk"><div class="bar" style="height:14px"></div><span class="n">2</span><span class="lbl">Aug 3</span></div>
+        <div class="wk"><div class="bar zero" style="height:2px"></div><span class="n">0</span><span class="lbl">Aug 10</span></div>
+        <div class="wk"><div class="bar" style="height:7px"></div><span class="n">1</span><span class="lbl">Aug 17</span></div>
+        <div class="wk"><div class="bar" style="height:7px"></div><span class="n">1</span><span class="lbl">Aug 24</span></div>
+      </div>
+      <p class="foot">
+        <strong>2 episodes in the last 4 weeks, 12 in the 4 before</strong> — with logging density
+        steady by days (28 of the last 28 days have logs; 29 of the 28 before), so the shipped
+        density gate would <em>pass</em> this falling comparison. The improvement is expressible
+        under the ratified Change Contract. The surface has no slot that can say it:
+        chronicity is deliberately barred from week-pair framing (its job is span + recency,
+        and that ruling is correct), and the reflection card — the one lane whose job
+        <em>is</em> week-over-week — is displaced by the insight cap whenever the timing story
+        renders. The pets with the strongest standing patterns are exactly the pets whose
+        change can never get a card.
+      </p>
+    </div>
+
+    <div class="col">
+      <p style="margin-top:24px">
+        Two more facts shape the round. <strong>The staleness is a success artifact:</strong> the
+        engine's job is to establish patterns, and an established pattern is stable by
+        definition — every successful Culprit user eventually lands exactly here.
+        And <strong>habituation is a safety cost, not a taste issue:</strong> a hero card that
+        never changes trains the eye to skip the zone, so the day a <em>new</em> safety finding
+        lands, it inherits the blindness. Freshness isn't decoration on this surface; it's what
+        keeps the safety lane readable.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================== 02 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The reframe — one surface, two jobs</h2></div>
+    <div class="col">
+      <p>
+        <strong>Job one: standing truth.</strong> "This pattern is established and still holds."
+        Belongs on a persistent register that never silently disappears (Principle 3's
+        safety-leads rule; the §3.5 veto on inferring all-clear from absence). Its natural
+        register is <em>calm and compact</em> — it doesn't need the hero canvas every day to stay true.
+      </p>
+      <p>
+        <strong>Job two: movement.</strong> "Here is what's different since you last looked" —
+        counted, time-ordered, never verdicted (the Change Contract, already ratified). This is
+        the job a daily-open surface is opened <em>for</em>, and it currently has no carrier:
+        no engine memory of the prior finding set (a registered v2 gap), no per-finding seen
+        state, no cadence beat, and a displaced reflection lane.
+      </p>
+      <p>
+        Every frame below is some allocation of the hero canvas between those two jobs. None of
+        them touch detection, thresholds, or the safety register's plainness (S1 stands: safety
+        faces stay austere).
+      </p>
+      <div class="callout" id="research">
+        <strong>What the research pass found (2026-08-29 — full evidence:
+        <code>docs/research/2026-08-home-freshness-inspiration.md</code>):</strong> every
+        best-in-class daily-open app splits <strong>time grains</strong> into separate surfaces
+        and reserves the hero for the fastest-changing one — Oura's 2025 redesign (a
+        time-of-day-varying "Daily highlight" over a "one big thing" lead), Whoop's home revamp
+        (long-term metrics moved to their own tab; a generated morning brief that replaced a
+        chatbot), Linear Pulse (the "what changed while you were away" feed + AI daily digest),
+        Huckleberry's SweetSpot (a forecast tile — fresh because it answers <em>what's next</em>).
+        Bearable — the closest human analog to this exact surface — is the cautionary tale: its
+        dominant complaint is "overwhelming and slow, 2–3 check-ins a day." And the pet category
+        still has <em>no</em> intelligence-surface home at all (trip-wire check: PerkyPet still
+        pre-launch, CompanAIn un-funded, Zoetis Pack insight-less, Digitail trackers unshipped)
+        — the bar here is Oura/Whoop/Linear, not any pet app.
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 03 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>The frames</h2></div>
+    <div class="col">
+      <p>
+        F1 is today, as shipped. F2–F7 are six directions, drawn on Nyx's real record.
+        They compose — F2 is near-term, F3 layers on it, F4 and F5 are the two bigger bets,
+        F6 is the capture-side idea, and F7 (rev 1.1) is the PM's suggestion that F4 and F6
+        fuse into one prompt system. Exploratory copy is marked; every string would still pass
+        the <code>nyx-voice</code> + guardrail screens before build.
+      </p>
+    </div>
+
+    <div class="frames">
+
+      <!-- F1 — control -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <div class="rail safety"></div>
+                <div class="ibody">
+                  <p class="lead">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                  <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                  <div class="why">Why we're showing this</div>
+                </div>
+              </div>
+              <div class="irow">
+                <div class="rail insight"></div>
+                <div class="ibody">
+                  <p class="lead compact">8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet.</p>
+                  <div class="lane">
+                    <div class="laneband"></div>
+                    <div class="dot" style="left:5%"></div><div class="dot" style="left:9%"></div>
+                    <div class="dot" style="left:13%"></div><div class="dot" style="left:17%"></div>
+                    <div class="dot" style="left:21%"></div><div class="dot" style="left:24%"></div>
+                    <div class="dot" style="left:28%"></div><div class="dot" style="left:31%"></div>
+                  </div>
+                  <div class="laneax"><span>ate</span><span>30m</span><span>2h+</span></div>
+                  <div class="samp">8 of 8 timed episodes within 30 min of eating</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F1 — Today (control)</b>
+          Both cards correct, both standing. This exact pair has led since ~Jul 20; the cache
+          regenerates every 24h and re-derives it. Counts drift down as episodes age out of the
+          window, but the shape never changes — which reads as "nothing new," even in a month
+          where the record improved.
+          <span class="cost">shipped behavior · zero changes</span>
+        </p>
+      </div>
+
+      <!-- F2 — change lane -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <div class="rail safety"></div>
+                <div class="ibody">
+                  <p class="lead compact">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                  <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                  <div class="why">Why we're showing this</div>
+                </div>
+              </div>
+              <div class="irow">
+                <div class="rail insight"></div>
+                <div class="ibody">
+                  <p class="lead">2 vomiting episodes logged in the last 4 weeks — down from 12 in the 4 weeks before.</p>
+                  <div class="cmp">
+                    <div class="cmprow"><span>Last 4 weeks</span><div class="cbar calm" style="width:14%"></div><span class="cn">2</span></div>
+                    <div class="cmprow"><span>The 4 before</span><div class="cbar" style="width:86%"></div><span class="cn">12</span></div>
+                  </div>
+                  <div class="samp">Counted from days you logged: 28 of 28, and 29 of the 28 before</div>
+                  <div class="why">Why we're showing this</div>
+                </div>
+              </div>
+              <div class="foldrow">
+                <div class="rail insight" style="height:14px"></div>
+                <div class="ftext">Timing — 8 of 8 within 30 min of eating</div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F2 — Let change through</b>
+          The safety card stays lead and untouched. The second slot goes to the <em>change
+          register</em>: the counted movement, density-disclosed, no verdict words — "down from"
+          mirrors the shipped "up from" grammar. The standing timing pattern compresses to one
+          line rather than being restated daily at full size. Open design question: the change
+          window should answer the standing card's own span (4-week halves here), not just
+          last-week-vs-this — needs its own Change-Contract row + adversarial pass.
+          <span class="cost">engine ranking/composition + one template · no new state</span>
+        </p>
+      </div>
+
+      <!-- F3 — seen + fold -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <div class="rail safety"></div>
+                <div class="ibody">
+                  <p class="lead compact">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                  <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                  <div class="chiprow">
+                    <span class="chip quiet">Keep it compact</span>
+                  </div>
+                  <div class="annot">D1-gated — may a safety card fold on a bare "got it"? See §05</div>
+                </div>
+              </div>
+              <div class="foldrow">
+                <div class="rail insight" style="height:14px"></div>
+                <div class="ftext">Timing — 8 of 8 within 30 min of eating</div>
+                <div class="chev">›</div>
+              </div>
+              <div class="foldrow">
+                <div class="rail safety" style="height:14px"></div>
+                <div class="ftext"><strong>Recurring vomiting — worth a vet visit</strong> · 14 episodes, 8 wks</div>
+                <div class="chev">›</div>
+              </div>
+              <div class="quietline">Folded cards return on their own when the picture changes.</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F3 — Seen &amp; fold (persistent)</b>
+          The PM's first idea, drawn with its guardrails. Any card folds to a one-line strip —
+          <em>never gone</em>: rail kept, count kept, tap re-expands. State persists across
+          sessions and re-expands itself when the finding's material fingerprint moves (new
+          episode, count change, tier change). A folded safety card keeps its ask visible in the
+          strip. Fold is "seen," never "resolved" — no all-clear is ever inferred from it (§3.5
+          veto stands). Whether a safety card may fold at all without a stated owner action is
+          the round's central conflict — §05 D1.
+          <span class="cost">client state + fingerprint memory · no engine change for benign-only</span>
+        </p>
+      </div>
+
+      <!-- F4 — care thread -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <div class="rail safety"></div>
+                <div class="ibody">
+                  <p class="lead compact">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                  <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                  <div class="statechips">
+                    <span class="chip">Visit booked</span>
+                    <span class="chip quiet">We've been</span>
+                    <span class="chip quiet">Not yet</span>
+                  </div>
+                  <div class="annot ok">exploratory copy — the chips answer the card's own ask</div>
+                </div>
+              </div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Signal · after "Visit booked"</div>
+              <div class="irow">
+                <div class="rail safety"></div>
+                <div class="ibody">
+                  <p class="lead compact">Recurring vomiting — visit noted for Fri, Sep 4.</p>
+                  <div class="ackline">The rundown of what to bring will be ready before you go — dates, counts, and the timing pattern.</div>
+                  <div class="samp">Still counting — 14 episodes across 5 of the last 8 weeks</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F4 — The care thread</b>
+          The deepest answer to "I get it": the card's ask ("book a vet visit") becomes a state
+          it can see. An owner-stated state changes the card's register — booked → prep (the
+          shipped Ask vet-visit rundown becomes the card's doorway), been → follow-up, not-yet →
+          unchanged. Acknowledgment stops being suppression and becomes <em>record data</em>
+          (owner-entered, exportable, arguably vet-visible). The safety finding never stops
+          counting underneath. Needs its own schema (per-finding owner state, pet-scoped, RLS)
+          and its own scoping round.
+          <span class="cost">new table + card states + Ask tie-in · the big bet</span>
+        </p>
+      </div>
+
+      <!-- F5 — weekly review -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal · Monday</div>
+              <div class="irow">
+                <div class="rail week"></div>
+                <div class="ibody">
+                  <span class="metachip">The week, read back</span>
+                  <p class="lead" style="margin-top:6px">1 vomiting episode this week — 1 the week before. Meals logged on 7 of 7 days.</p>
+                  <div class="cmp">
+                    <div class="cmprow"><span>This week</span><div class="cbar calm" style="width:14%"></div><span class="cn">1</span></div>
+                    <div class="cmprow"><span>Last week</span><div class="cbar calm" style="width:14%"></div><span class="cn">1</span></div>
+                  </div>
+                  <div class="quietline" style="padding-left:0">Nothing else moved enough to name this week.</div>
+                  <div class="samp">Counted from days you logged: 7 of 7, and 7 of 7 last week</div>
+                </div>
+              </div>
+              <div class="foldrow">
+                <div class="rail safety" style="height:14px"></div>
+                <div class="ftext"><strong>Recurring vomiting — worth a vet visit</strong> · standing</div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F5 — The weekly review, un-parked</b>
+          B-721's own ruling parked the weekly review "first in queue post-build" — the build
+          GA'd Aug 20, so by that ruling's terms its queue position is now. A Monday cadence
+          beat is the one freshness source that's <em>guaranteed</em> to be new weekly, quiet is
+          labeled rather than silent (S6), and it's the only register where a calm week can be
+          said safely — counted, disclosed, never a verdict. Standing findings hold beneath it
+          as strips. Machinery mostly ships today: Shape C, the density gate, the Change
+          Contract grammar.
+          <span class="cost">one new composed card + cadence rule · engine additive</span>
+        </p>
+      </div>
+
+      <!-- F6 — check-in -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="irow">
+                <div class="rail insight"></div>
+                <div class="ibody">
+                  <p class="lead compact">How has Nyx seemed today?</p>
+                  <div class="chiprow">
+                    <span class="chip">Her usual self</span>
+                    <span class="chip quiet">A little off</span>
+                    <span class="chip quiet">Skip</span>
+                  </div>
+                  <div class="annot">D3-gated — its own discovery with Dr. Chen + the taxonomy track</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F6 — The daily check-in, as capture</b>
+          The PM's third idea, reframed to survive the guardrails: not a mood diary, a
+          <em>demeanor observation event</em> — one tap, writes to the record at event grain,
+          feeds the engine (the honest fix for staleness is more signal, not shuffled
+          presentation). Belongs to the taxonomy track's tracked-events lane, not the Signal
+          zone. Hard edges: "usual self" streaks may never render as reassurance (n=1 rule);
+          it's a manufactured daily decision (Principle 1 tension); Jordan reads it as the app
+          needing him, Sam reads it as exactly the fussy-vs-sick capture she lacks. Real
+          candidate, wrong to bolt on here — §05 D3.
+          <span class="cost">new event leaf + capture surface · own track</span>
+        </p>
+      </div>
+
+      <!-- F7 — companion row (rev 1.1, the PM's F4+F6 fusion) -->
+      <div class="frame-slot" id="f7">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <div class="rail safety"></div>
+                <div class="ibody">
+                  <p class="lead compact">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                  <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                  <div class="askfield"><span class="askdot"></span><span>Ask about this — or tell me what happened…</span></div>
+                  <div class="chiprow">
+                    <span class="chip">Visit booked</span>
+                    <span class="chip">She's seemed off today</span>
+                    <span class="chip quiet">What should I tell the vet? ›</span>
+                  </div>
+                  <div class="annot ok">a real input, Linear-agent style — chips are the pre-shown prompts, the field takes anything</div>
+                </div>
+              </div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Typed free text · capture-shaped → a proposal, never a silent write</div>
+              <div class="irow">
+                <div class="rail insight"></div>
+                <div class="ibody">
+                  <span class="typed">threw up again right after breakfast, small, mostly food</span>
+                  <div class="proposal">
+                    <div class="ppill">Vomit · this morning, after a meal · food, small amount</div>
+                    <div class="pnote">Read from what you typed — check it before it lands.</div>
+                    <div class="pact"><span class="chip">Save to Nyx's record</span><span class="chip quiet">Edit</span></div>
+                  </div>
+                  <div class="annot ok">the photo→food extraction shape, extended to text: AI proposes, the confirm register writes</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F7 — The companion surface (F4 + F6 fused; rev 1.2 — now an omnibox, per the PM's push)<span class="newchip">Revised · 1.2</span></b>
+          The full Linear-agent shape: <strong>a real input plus pre-shown prompts</strong>, not
+          chips alone. The chips stay (state writes one tap away; scoped-Ask doorways); the field
+          takes anything, and <strong>typed input routes by intent</strong> — question-shaped goes
+          to Ask's shipped read-only Q&amp;A loop; capture-shaped goes to an
+          <em>extract-event-from-text</em> proposal that lands in the same confirm register as
+          every capture (B-745: the summary pill IS the save). That's the shipped
+          photo→food-extraction pattern extended to text — <strong>the AI proposes, the owner's
+          tap writes, nothing lands silently</strong> — so Ask's §6 read-only boundary is intact
+          (capture never rides its tool loop) and the only thing still off the table is an
+          unconfirmed LLM write. Gates that come with it: the CUL-552 AI-consent state covers
+          typed health text like photos; clinical-guardrails screens anything the parse says
+          back; ai_usage caps apply; the proposal obeys taxonomy + occurred-at-confidence rules
+          ("this morning" lands estimated, never stamped witnessed).
+          <span class="cost">omnibox + intent routing + extract-event-from-text fn · confirm register reused · Ask untouched</span>
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================================================== 04 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>What this round is not proposing</h2></div>
+    <div class="col">
+      <ul style="margin:0; padding-left:20px; color:var(--ink-2); font-size:15px; display:grid; gap:8px;">
+        <li><strong style="color:var(--ink)">No detection, threshold, or safety-ranking changes.</strong> Safety leads, always; chronicity keeps firing exactly as calibrated. F2's change is composition/ranking below the safety lane only.</li>
+        <li><strong style="color:var(--ink)">S1 stands.</strong> Safety card faces stay plain text — F4's state chips sit below the sentence in the meta region and would need their own S1-compatibility ruling before build.</li>
+        <li><strong style="color:var(--ink)">No "mark all read," no dismissal.</strong> Fold is compression with a persistent strip, never removal. Nothing ever infers wellness from a fold, an ack, or absence of detection (§3.5).</li>
+        <li><strong style="color:var(--ink)">No night ground, no motion, no badges.</strong> SD-7 and the polish track's no-looping-chrome rule are untouched.</li>
+        <li><strong style="color:var(--ink)">No rotation-for-rotation's-sake.</strong> A "different card each day" restating standing facts fails S10 (a receipt must earn its place) — considered and dropped; freshness must come from real movement (F2), real cadence (F5), or real new capture (F6).</li>
+        <li><strong style="color:var(--ink)">Ask stays read-only.</strong> The "Ask collects data" variant means the LLM writing to the health record — a D2-class T&amp;S + spec change, parked as horizon-2, not folded in here.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================================================== 05 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Decisions requested</h2></div>
+
+    <div class="conflict">
+      <p><strong>The round's one genuine persona conflict — safety-card folding (D1):</strong></p>
+      <p><strong>Designer:</strong> a hero card that never changes trains banner blindness; by week six the owner has stopped reading the zone, so the static safety card is itself a safety cost. Fold-on-seen, with a persistent strip, keeps the zone readable.</p>
+      <p><strong>Dr. Chen:</strong> an unacted-on escalation must never quietly shrink. A fold the owner taps to make a red card smaller is the app helping them look away from the one thing it believes they should act on. If a safety card compresses at all, it should be because the owner <em>stated something</em> ("booked," "we've been"), not because they got tired of it.</p>
+      <p><strong>PM decision needed:</strong> which constraint governs the safety lane?</p>
+    </div>
+
+    <div class="brief">
+      <p class="bid">D1 — May a safety card fold?</p>
+      <p><strong>Deciding:</strong> whether F3's fold applies to safety cards, and on what trigger.</p>
+      <p><strong>Options:</strong> (a) never — only benign cards fold · <span class="rec">(b) only via a stated action (F4's chips) — fold is information, recommended</span> · (c) any card folds on "seen," safety keeps a sticky strip.</p>
+      <p><strong>Consequence:</strong> (b) makes F3 and F4 one design and seeds the care thread; (a) ships F3 benign-only now with zero clinical risk; (c) is the fastest full answer but carries the conflict above unresolved.</p>
+    </div>
+
+    <div class="brief">
+      <p class="bid">D2 — What builds first?</p>
+      <p><strong>Deciding:</strong> the track's rung 1.</p>
+      <p><strong>Options:</strong> <span class="rec">(a) F2 (change lane un-displaced) + benign fold + the freshness bug set (cache invalidation on delete, cache-vs-Trend drift) — recommended: smallest set that makes Home say something new this month</span> · (b) jump to F5 weekly review as the anchor · (c) full finding-set memory first (engine prior-set diffing), surfaces after.</p>
+      <p><strong>Consequence:</strong> (a) delivers visible change within one or two PRs and nothing it ships is throwaway under (b) or (c); both bigger bets still queue behind their own rounds.</p>
+    </div>
+
+    <div class="brief">
+      <p class="bid">D3 — The daily check-in</p>
+      <p><strong>Deciding:</strong> whether F6 gets its own discovery.</p>
+      <p><strong>Options:</strong> <span class="rec">(a) yes — own session with Dr. Chen + taxonomy alignment (tracked-events lane), recommended</span> · (b) fold into this track · (c) drop.</p>
+      <p><strong>Consequence:</strong> (a) keeps this track presentation-only and gives the capture idea the clinical scrutiny it needs; (b) doubles this track's surface area and mixes registers.</p>
+    </div>
+
+    <div class="brief">
+      <p class="bid">D4 — The care thread's next step</p>
+      <p><strong>Deciding:</strong> how far F4 advances now.</p>
+      <p><strong>Options:</strong> <span class="rec">(a) scoping round next — frames + schema sketch + S1-compatibility ruling, recommended</span> · (b) park until after rung 1 ships · (c) fold its chips into rung 1 now.</p>
+      <p><strong>Consequence:</strong> (a) keeps the momentum on the round's most-loved idea without letting it block rung 1; (c) puts unruled schema + S1 questions inside what should be a small first rung. <em>If D5 rules (a), this brief merges into that scoping round.</em></p>
+    </div>
+
+    <div class="brief" id="d5">
+      <p class="bid">D5 — The companion surface: fuse F4 + F6, and how far does the input go? (rev 1.2)<span class="newchip">Revised · 1.2</span></p>
+      <p><strong>Deciding:</strong> whether F4 and F6 fuse into one companion surface (yes was uncontested), and — the live half after the PM's push — whether it takes <em>free text</em>, not just pre-shown prompts.</p>
+      <p><strong>Options:</strong> (a) chips only (rev 1.1's drawing) — the conservative floor · <span class="rec">(b) the omnibox — chips + free text, routed by intent: questions → Ask's shipped read-only loop; capture-shaped text → AI-proposes / owner-confirms through the standard confirm register (the shipped photo→food-extraction shape, extended to text) — recommended, phased: the ask half ships today, the text-capture half is one new Edge Function + routing</span> · (c) unconfirmed LLM writes (typed text lands in the record with no confirm) — off the table; that is the actual boundary, and the confirm step is what keeps this on the right side of it.</p>
+      <p><strong>Consequence:</strong> (b) makes F7 the true Linear-agent surface the PM named. The rev-1.1 recommendation under-weighted a shipped precedent — <em>AI-assisted capture with owner confirmation is already sanctioned in this codebase</em> (photo → extraction → confirm → deterministic write); text is its sibling, not a new boundary class. Gates named, not waived: CUL-552 AI-consent covers typed health text; clinical-guardrails on anything the parse says back; ai_usage caps; taxonomy + confidence rules on every proposal; Ask's §6 untouched (capture never rides its tool loop). One scoping round replaces D3(a) + D4(a) either way.</p>
+    </div>
+  </section>
+
+  <!-- ================================================== 06 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Round status</h2></div>
+    <div class="col">
+      <p>
+        <strong>Round 1.2 · exploratory · 2026-08-29.</strong> Produced by the signal-freshness
+        discovery session; revised twice the same day on the PM's reactions — rev 1.1 added F7,
+        D5, and the research callout; rev 1.2 redrew F7 as the omnibox and rewrote D5 (evidence:
+        <code>docs/research/2026-08-home-freshness-inspiration.md</code>; live production
+        queries; the shipped specs' own rulings; session record
+        <code>docs/sessions/2026-08-29-signal-freshness-discovery.md</code>).
+        <strong>Linear: CUL-695</strong> carries the full brief, the convening record, and the
+        PM rulings as they land. On reaction, round 2 republishes to this same URL —
+        superseded frames will say so in place.
+      </p>
+    </div>
+  </section>
+
+</div>
