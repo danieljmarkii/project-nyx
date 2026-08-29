@@ -633,6 +633,27 @@ describe('CUL-688 — the Saw it / Found it chips', () => {
       .toBeLessThanOrEqual(rowGap);
   });
 
+  // The other direction of the same reach. Once the pair wraps to its own line
+  // (AC-CHIP), `timeRow`'s rowGap is the whole of what separates these chips from
+  // the Change-time control above them — so the vertical slop that carries the 44pt
+  // floor in the test above is, in this state, reach toward a neighbour. It held by
+  // coincidence: the reach and the gap were two independently-written 8s. Pinned
+  // here so narrowing the row's gap fails the build rather than silently reopening
+  // the defect in the wrapped state alone, where nothing else was looking.
+  it('the wrapped pair does not reach up into the Change-time control', () => {
+    const { getByTestId } = renderConfirm();
+    const row = getByTestId('confirm-time-row');
+    // The state this guards is reachable at all — AC-CHIP's wrap is what creates it.
+    expect(flat(row).flexWrap).toBe('wrap');
+
+    const rowGap = flat(row).rowGap ?? flat(row).gap ?? 0;
+    const timeMain = getByTestId('confirm-time-main');
+    for (const id of ['chip-saw', 'chip-found']) {
+      expect(facing(getByTestId(id), 'top') + facing(timeMain, 'bottom'))
+        .toBeLessThanOrEqual(rowGap);
+    }
+  });
+
   it('each chip still selects its own mode', () => {
     const { getByText, getByTestId, queryByTestId } = renderConfirm();
     fireEvent.press(getByText('Found it'));

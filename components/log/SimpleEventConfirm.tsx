@@ -610,6 +610,16 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
 // cross. Derived from the one gap constant rather than restated, so the arithmetic
 // cannot drift apart from the layout it describes.
 //
+// The VERTICAL reach is derived for the same reason, and it is bounded on BOTH
+// sides — which is why it is computed rather than chosen. It must be at least 6,
+// or the 32pt pill stops clearing the 44pt floor; and at most `timeRow`'s rowGap,
+// because in the wrapped AC-CHIP state (the pair drops to its own line) that gap
+// is the whole of what separates these chips from the Change-time control above
+// them. Written as two independent 8s those bounds held by coincidence, and a
+// later narrowing of the row's gap would have reopened this very defect in the
+// wrapped state alone, silently. Both bounds are now guarded, so a token change
+// that makes them incompatible fails the build instead of quietly picking a side.
+//
 // The LEFT chip's outward edge is the part that is easy to get wrong: it looks
 // free, and it is not. `timeMain` is flexGrow:1, so it consumes the row's slack and
 // `chipPair`'s `marginLeft: 'auto'` resolves to zero — the two ABUT. Its neighbour
@@ -617,7 +627,8 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
 // so a flush boundary gets no reach at all: 8pt of a control that opens the time
 // picker was resolving to a control that reclassifies the event.
 const CHIP_PAIR_GAP = theme.space0_5;
-const CHIP_REACH = 8;
+const CHIP_ROW_GAP = theme.space1;      // timeRow's rowGap — the wrapped-state separation
+const CHIP_REACH = CHIP_ROW_GAP;        // the tighter of the two vertical bounds
 const CHIP_GAP_HALF = CHIP_PAIR_GAP / 2;
 
 /** The LEFT chip — Saw it. Flush with Change time, so it yields its left edge whole. */
@@ -742,7 +753,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space1,
     paddingVertical: theme.space1,
     minHeight: 56,
-    rowGap: theme.space1,
+    // The chips' vertical hitSlop is derived from this (CUL-688) — it is the only
+    // thing between them and the Change-time control once the pair wraps.
+    rowGap: CHIP_ROW_GAP,
   },
   timeMain: {
     flexGrow: 1,

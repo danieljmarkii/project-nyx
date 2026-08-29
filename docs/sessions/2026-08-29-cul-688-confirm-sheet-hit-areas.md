@@ -62,9 +62,10 @@ against a slop-less neighbour — exactly abutting, not overlapping).
 
 ## Testing — the part worth repeating
 
-Five new guards, **each proven RED against the pre-fix tree one defect at a time** before being
-trusted, and the five failures read as five distinct statements (floor 40 < 44 · slop present ·
-panel band 16 > 4 · chip band 16 > 4 · flush edge 8 > 0). Three behaviour tests were written to
+Six new guards (five at first, plus the wrapped-state one the review earned), **each proven RED
+one defect at a time** before being trusted, and the five original failures read as five distinct
+statements (floor 40 < 44 · slop present · panel band 16 > 4 · chip band 16 > 4 · flush edge
+8 > 0). Three behaviour tests were written to
 pass on **both** sides of the change, so the preserved behaviour has a baseline — the
 guard-vs-refactor-safety split, decided before writing rather than discovered after. One of those
 three is load-bearing in its own right: it pins that the chips still clear 44pt through their
@@ -77,8 +78,36 @@ Restating the tokens would assert only that two constants the test itself names 
 from an enclosing composite, which is how the first draft of the sibling file's tests went green
 on an unfixed tree (CUL-613).
 
-`tsc --noEmit` clean · full suite **280 suites / 6124 tests green** · touched suites re-run under
-the CI's three non-UTC zones (UTC+14 / UTC+12:45 / UTC−10).
+`tsc --noEmit` clean · full suite **280 suites / 6125 tests green** · touched suites re-run under
+the CI's three non-UTC zones (UTC+14 / UTC+12:45 / UTC−10) · all three CI checks green on #744.
+
+## What the review changed
+
+`code-reviewer` returned **ship-ready** with one finding worth taking, and it is the same
+discipline this session was applying on the other axis. `CHIP_REACH` was a bare `8` that happened
+to equal `theme.space1` — the token behind `timeRow`'s `rowGap`, which in the **wrapped** AC-CHIP
+state is the whole of what separates the chip pair from the Change-time control above it. Two
+independently-written 8s holding by coincidence, and narrowing the row's gap would have reopened
+this very defect *in the wrapped state alone*, where nothing was looking.
+
+Fixed by deriving it (`CHIP_ROW_GAP`, which the style also reads) and adding a sixth guard. Worth
+recording *why* the derivation alone was not enough: the reach is bounded on **both** sides at
+once — at least 6, or the 32pt pill stops clearing the 44pt floor; at most the row gap, or it
+reaches into the neighbour. A naive derivation trades one defect for the other. So both bounds are
+guarded, and the two mutations land on opposite guards: breaking the link (a bare `12`) reddens
+only the wrapped-state guard, and narrowing the gap to 4 (reach following it down) reddens only the
+floor guard. A token change that makes the two incompatible now fails the build instead of quietly
+picking a side.
+
+The review also independently walked the flexbox algorithm and **confirmed** the abutting claim
+behind fix 3, with a caveat worth carrying: jest runs no Yoga pass, so the guard infers a zero gap
+from the *absence* of a `gap`/`columnGap` token rather than measuring one. That is a sound proxy
+here — and it can only ever force the conservative `left: 0`, never green-light a real overlap —
+but the *reason* `left: 0` is right is architectural reasoning, not something the suite measures.
+Said plainly here so the pattern is not cited elsewhere as though it were.
+
+Left undone, filed rather than folded in: `owningTouchable` / `commonAncestor` are now copy-pasted
+in a third test file (CUL-710).
 
 ## Why this was record fidelity, not polish
 
