@@ -78,8 +78,14 @@ Restating the tokens would assert only that two constants the test itself names 
 from an enclosing composite, which is how the first draft of the sibling file's tests went green
 on an unfixed tree (CUL-613).
 
-`tsc --noEmit` clean · full suite **280 suites / 6125 tests green** · touched suites re-run under
-the CI's three non-UTC zones (UTC+14 / UTC+12:45 / UTC−10) · all three CI checks green on #744.
+`tsc --noEmit` clean · touched suites re-run under the CI's three non-UTC zones (UTC+14 /
+UTC+12:45 / UTC−10) · all three CI checks green on #744.
+
+`main` moved twice under this branch while it was open (CUL-701, CUL-704), so it was merged in and
+the whole suite re-run rather than trusting the earlier green: **280 suites / 6128 tests**, clean
+`tsc`. Worth the re-run rather than a formality — CUL-701 touched `lib/eventTimeEdit.ts`, which is
+exactly where this component gets `buildTimeFields` / `resolveFoundModeChange` / `refreshedNowPoint`
+from, so the two diffs met in a real seam even though neither touched the other's lines.
 
 ## What the review changed
 
