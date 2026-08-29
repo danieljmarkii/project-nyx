@@ -7,16 +7,18 @@ import { router } from 'expo-router';
 import { ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { EmptyState } from '../ui/EmptyState';
 import { usePetStore } from '../../store/petStore';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import type { MomentTone } from '../../store/momentStore';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import { GroupedEventGrid } from './EventTypePicker';
-import { SimpleEventConfirm } from './SimpleEventConfirm';
+import { SimpleEventConfirm, SHEET_HEADER_DISC } from './SimpleEventConfirm';
 import { summarizeLoggedRecord, type LoggedRecord } from '../../lib/completionCard';
 import { SheetLogBeat } from './SheetLogBeat';
 import { PetSwitcherPanel } from '../pet/PetSwitcherSheet';
+import { PetAvatar } from '../pet/PetAvatar';
 import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
 
 // The "More events" destination as a bottom sheet over the current tab (B-745). The
@@ -145,7 +147,9 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     requestClose();
   }
 
-  const petName = activePet?.name ?? 'your pet';
+  // No `petName` fallback here on purpose: the grid renders only WITH an active pet
+  // (the stage-'grid' branch below), so a 'your pet' placeholder on this surface
+  // would assert a state that can no longer reach it — CUL-681.
   const multiPet = pets.length > 1;
 
   function handleSelect(type: EventTypeKey) {
@@ -159,7 +163,18 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     // A simple event — complete it in place. Capture the pet now (the confirm has no
     // switcher, so this is the pet the owner selected on the grid).
     const pet = usePetStore.getState().activePet;
-    if (!pet) { onClose(); return; } // no pet to write for — nothing to confirm
+    if (!pet) {
+      // CUL-681. This used to call onClose(): the sheet vanished, nothing was
+      // written and nothing was said — CUL-575's "a failed write is always said",
+      // applied to a write that never starts. It now stays PUT, and the grid gate
+      // below means there is no tile to tap without a pet in the first place, so
+      // this is only the write-time re-read's answer for the instant between a
+      // render and a tap. It is deliberately silent because the surface speaks for
+      // itself: losing the pet re-renders the grid into the no-pet copy under the
+      // owner's finger, which is the message.
+      console.warn('[EventTypeSheet] tile tap with no active pet — nothing to write for');
+      return;
+    }
     setConfirm({ type, petId: pet.id, petName: pet.name });
     setStage('confirm');
   }
@@ -204,7 +219,43 @@ export function EventTypeSheet({ visible, onClose }: Props) {
         >
           <View style={styles.grabber} />
 
-          {stage === 'grid' && (
+          {/* ── THE GRID STAGE, GATED ON THERE BEING A PET (CUL-681) ────────────
+              The grid does not render without an active pet, so there is no tile
+              to tap into a vanish — the ruled shape (PM, 2026-08-29) is the issue's
+              "a grid that does not accept taps at all", plus its line of copy.
+
+              One gate closes both halves of the old defect. The in-sheet half was
+              handleSelect's bare onClose(); the routes-out half never reached that
+              guard at all — Meal/Medication/Weight closed the sheet and pushed
+              /log, whose pickers are themselves gated on activePet, so the owner
+              landed on an empty screen under a "What did your pet eat?" header.
+
+              Not a rare state, either: the FAB mounts unconditionally in the tabs
+              layout while pets hydrate from a NETWORK read (hooks/usePet.ts) that
+              only runs once the session restores — so every cold start has a
+              window, and on a failed double-read that hook leaves the store empty
+              on purpose. The branch is reactive, so the grid replaces this copy the
+              moment the rows land; no reopen. */}
+          {stage === 'grid' && !activePet && (
+            <EmptyState
+              // Forward-looking, and true for each way an owner arrives here
+              // (Principle 5 / nyx-voice P3). The order is the likelihood order: the
+              // hydration read is the usual answer, a failed one is the next
+              // ("check your connection" is the shipped idiom — lib/authErrors,
+              // ArchivePetSheet), and the genuinely-petless account is last because
+              // it is nearly unreachable (archiving a last pet is blocked). Telling
+              // an owner who HAS a pet to add one would be the wrong instruction on
+              // the common path, which is why adding one is the final clause rather
+              // than the headline. No action button — CUL-678 keeps management rows
+              // off a capture surface, and a push from inside a Modal renders BEHIND
+              // it (CUL-662), so a door here would appear to do nothing.
+              title="No pet to log for yet"
+              body="Your pets load a moment after the app opens. If they don't, check your connection — or add a pet from the Pet tab."
+              style={styles.noPet}
+            />
+          )}
+
+          {stage === 'grid' && activePet && (
             <>
               <TouchableOpacity
                 style={styles.titleRow}
@@ -212,10 +263,39 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                 disabled={!multiPet}
                 activeOpacity={0.7}
                 accessibilityRole={multiPet ? 'button' : undefined}
-                accessibilityLabel={multiPet ? `Log for ${petName} — switch pet` : undefined}
+                accessibilityLabel={multiPet ? `Log for ${activePet.name} — switch pet` : undefined}
               >
+                {/* CUL-679 — the pet's face leads the row, as it does everywhere else
+                    the app names the active pet (Home header, the FAB's "Logging for"
+                    chip, every row of the switcher the owner just tapped).
+
+                    It matters HERE and not on Home because the eight tiles below are
+                    pet-independent: nothing else on screen moves, so without this the
+                    entire confirmation of a switch is four characters changing at the
+                    top of the sheet, with the finger still resting where the switcher
+                    row was. Two similarly-named pets and that fails a glance-check on
+                    the one surface where the wrong answer writes a health row.
+
+                    Rendered for a SINGLE-pet household too (R5-1, PM-ruled 2026-08-29).
+                    Multi-pet §3.1 suppresses the CHEVRON below — the switch affordance
+                    — not the pet's identity, and the Home header already draws the disc
+                    for a one-pet account. It also keeps this row and the confirm's
+                    header on the same leading disc, so stage 1 → stage 2 swaps the
+                    disc's contents instead of sliding the title 38pt sideways.
+
+                    Unguarded because the branch above narrows it: this row cannot
+                    render without a pet. It used to carry its own `activePet &&`
+                    check, because the title's `petName` fell back to "your pet" and
+                    an avatar built from that renders a confident "Y" disc for a pet
+                    that isn't there. CUL-681 removed the fallback rather than the
+                    disc — the surface says what it means instead. */}
+                <PetAvatar
+                  name={activePet.name}
+                  photoPath={activePet.photo_path}
+                  size={SHEET_HEADER_DISC}
+                />
                 <ThemedText style={styles.title} numberOfLines={1}>
-                  Log for {petName}
+                  Log for {activePet.name}
                 </ThemedText>
                 {multiPet && (
                   <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
@@ -227,7 +307,7 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                 <GroupedEventGrid
                   onSelectType={handleSelect}
                   expanded={expanded}
-                  species={activePet?.species}
+                  species={activePet.species}
                 />
               </ScrollView>
             </>
@@ -322,6 +402,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space3,
   },
   title: {
+    // The confirm header's headerText carries this for the same reason: with a
+    // leading disc and a trailing chevron on the row, a long pet name would push
+    // the chevron off the end rather than ellipsing itself. numberOfLines alone
+    // does not shrink a Text inside a row — it needs somewhere to shrink to.
+    flexShrink: 1,
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
@@ -329,5 +414,16 @@ const styles = StyleSheet.create({
   },
   gridScroll: {
     flexShrink: 1,
+  },
+  // The no-pet copy sits where the grid would (EmptyState's top-anchored 'inset'),
+  // with the padding the eight tiles used to supply so the sheet does not collapse
+  // to a sliver of text against its own rounded top.
+  noPet: {
+    // Overrides EmptyState's top-anchored 'inset' padding, which is sized to sit
+    // below a screen header this sheet does not have — 64pt would leave the copy
+    // floating off the grabber. The bottom pad stands in for what the eight tiles
+    // used to give the sheet, so it does not collapse to a sliver of text.
+    paddingTop: theme.space4,
+    paddingBottom: theme.space3,
   },
 });
