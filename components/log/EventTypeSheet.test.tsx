@@ -94,6 +94,7 @@ import { Alert } from 'react-native';
 import { router } from 'expo-router';
 import { EventTypeSheet } from './EventTypeSheet';
 import { usePetStore } from '../../store/petStore';
+import { PetAvatar } from '../pet/PetAvatar';
 
 function seedPets(count: number) {
   const pets =
@@ -331,6 +332,67 @@ describe('EventTypeSheet', () => {
     expect(view.queryByText('Add a pet')).toBeNull();            // the admin, no
     expect(view.queryByText('Archived pets')).toBeNull();
     expect(router.push).not.toHaveBeenCalled();
+  });
+
+  // ── CUL-679 — the pet's face on the title row ────────────────────────────
+  //
+  // The eight tiles below the title are pet-independent, so a switch moves
+  // NOTHING else on this surface. Before this, its entire confirmation was four
+  // characters changing at the top of the sheet, ~300pt from where the finger
+  // had just tapped — on the one capture surface where the wrong answer writes a
+  // health row.
+  //
+  // Read off the PetAvatar's own `name` prop rather than the rendered initial:
+  // the initial collides for two pets sharing a letter (Milo / Mochi — the
+  // issue's own stress case), so an assertion on the glyph would pass over a
+  // switch that never happened.
+  const avatarPets = (view: ReturnType<typeof render>) =>
+    view.UNSAFE_queryAllByType(PetAvatar).map((n) => n.props.name);
+
+  it("the title row leads with the pet's avatar, and it follows a switch", () => {
+    seedPets(2);
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    // Exactly one: the title row's. (The switcher's rows carry their own, so this
+    // also holds that the switcher is closed.)
+    expect(avatarPets(view)).toEqual(['Nyx']);
+
+    fireEvent.press(view.getByLabelText('Log for Nyx — switch pet'));
+    fireEvent.press(view.getByLabelText('Switch to Mochi'));
+
+    expect(avatarPets(view)).toEqual(['Mochi']);
+    expect(view.getByText('Log for Mochi')).toBeTruthy(); // the word moved too
+  });
+
+  // Not decoration parked next to the control: the disc is INSIDE the button the
+  // owner taps, so it travels with the row. Node identity rather than a press —
+  // RTL-RN's press can descend from an enclosing composite and reach a handler
+  // the node itself does not own (the CUL-579 lesson).
+  it("the avatar is part of the switch control, not a neighbour of it", () => {
+    seedPets(2);
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    const owning = (node: any) => {
+      let n = node;
+      while (n) {
+        if (n.props?.accessible && typeof n.props?.onStartShouldSetResponder === 'function') return n;
+        n = n.parent;
+      }
+      return null;
+    };
+    const row = owning(view.getByText('Log for Nyx'));
+    expect(row).not.toBeNull();
+    expect(owning(view.UNSAFE_getAllByType(PetAvatar)[0])).toBe(row);
+  });
+
+  // R5-1, PM-ruled 2026-08-29 (mock round 5, §06): the disc renders for a
+  // single-pet household too. Multi-pet §3.1 suppresses the CHEVRON — the switch
+  // affordance — not the pet's identity, and the Home header already draws the
+  // disc for a one-pet account. Pinned in both directions because the rival
+  // reading (mirror the FAB chip, which renders nothing at all for one pet) is a
+  // one-line change away and would silently take the identity with the chrome.
+  it('a single-pet household keeps the avatar and loses only the switch (R5-1)', () => {
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(avatarPets(view)).toEqual(['Nyx']);
+    expect(view.queryByLabelText('Log for Nyx — switch pet')).toBeNull();
   });
 
   it('shows the pet-switcher affordance only for multi-pet households', () => {
