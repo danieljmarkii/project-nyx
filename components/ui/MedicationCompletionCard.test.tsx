@@ -58,10 +58,13 @@ const NOTE = "Logged within about 2 hours of another Prednisolone dose — worth
 
 type MedOver = Partial<Parameters<ReturnType<typeof useMomentStore.getState>['showMedication']>[0]>;
 
-function seedDose(over: MedOver = {}) {
+function seedDose(over: MedOver = {}, activePetId = 'p1') {
   usePetStore.setState({
-    pets: [{ id: 'p1', name: 'Mochi' }] as never,
-    activePet: { id: 'p1', name: 'Mochi' } as never,
+    pets: [
+      { id: 'p1', name: 'Mochi' },
+      { id: 'p2', name: 'Biscuit' },
+    ] as never,
+    activePet: { id: activePetId, name: activePetId === 'p1' ? 'Mochi' : 'Biscuit' } as never,
   });
   act(() => {
     useMomentStore.getState().showMedication({
@@ -395,5 +398,68 @@ describe('MedicationCompletionCard — Change time', () => {
     openPicker(view);
     view.getByRole('button', { name: 'Cancel' });
     view.getByRole('button', { name: 'Save' });
+  });
+});
+
+
+// ── One card, one pet (CUL-626) ──────────────────────────────────────────────
+//
+// The card outlives a pet switch: it is queued against the pet captured at write
+// time, and the store can move under it (log Mochi's dose, switch to Biscuit
+// before the 5s dismiss). Every name on it must come from the payload's petId.
+//
+// Until CUL-626 the two clinical strings here read the ACTIVE pet, so a card about
+// Mochi's dose asked whether BISCUIT still got it — over a record that is Mochi's —
+// while the removal line on the same card said Mochi. Same class as CUL-574; a
+// clinical heads-up naming the wrong animal is worse than no name at all.
+describe('MedicationCompletionCard — one card, one pet (CUL-626)', () => {
+  it('the adherence prompt names the DOSE’s pet, not a since-switched active one', () => {
+    seedDose({ adherence: null }, 'p2');
+    const view = render(<MedicationCompletionCard />);
+    view.getByText('Did Mochi take it?');
+    expect(view.queryByText('Did Biscuit take it?')).toBeNull();
+  });
+
+  it('the confirm-to-correct restatement names the DOSE’s pet too', () => {
+    seedDose({}, 'p2');
+    const view = render(<MedicationCompletionCard />);
+    view.getByText('Mochi took it — tap to change.');
+    expect(view.queryByText('Biscuit took it — tap to change.')).toBeNull();
+  });
+
+  it('the in-doubt sharpening and its reason line both name the DOSE’s pet', () => {
+    // The highest-stakes pair on this card: an unconfirmed dose whose vehicle was
+    // refused. Both strings interpolate the name, and they must agree with each
+    // other AND with the record.
+    seedDose({ adherence: null, pairedFoodName: 'chicken', vehicleIntake: 'refused' }, 'p2');
+    const view = render(<MedicationCompletionCard />);
+    view.getByText('Did Mochi still get it?');
+    view.getByText("Mochi didn't finish the food.");
+    expect(view.queryByText('Did Biscuit still get it?')).toBeNull();
+    expect(view.queryByText("Biscuit didn't finish the food.")).toBeNull();
+  });
+
+  // `pets` holds only non-archived pets, so archiving the dose's pet makes the
+  // lookup miss. It must fall to the anonymous form — the `?? activePet` rung this
+  // card used to carry named the wrong animal on exactly this path, which is the
+  // whole defect (store/petStore.ts :: resolveRecordPetName carries the argument).
+  it('falls to the anonymous form when the dose’s pet is gone, never to the active one', () => {
+    seedDose({ adherence: null }, 'p2');
+    act(() => {
+      usePetStore.setState({ pets: [{ id: 'p2', name: 'Biscuit' }] as never });
+    });
+    const view = render(<MedicationCompletionCard />);
+    view.getByText('Did your pet take it?');
+    expect(view.queryByText('Did Biscuit take it?')).toBeNull();
+  });
+
+  // The removal line was already correct (CUL-612 resolved it from the payload and
+  // deliberately left the rest alone). Pinned here so the CUL-626 rebase — which
+  // routes it through the same one name — is provably a no-op for it.
+  it('the removal line still names the DOSE’s pet', async () => {
+    seedDose({}, 'p2');
+    const view = render(<MedicationCompletionCard />);
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this dose')); });
+    view.getByText('Taken out of Mochi’s record');
   });
 });
