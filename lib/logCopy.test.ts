@@ -5,7 +5,7 @@
 // carry the mock's draft "since this morning" (a lower bound the record doesn't
 // hold — clinical-guardrails).
 
-import { summarizeSimpleEvent, confirmTimePhrase, confirmTimeRowLabel } from './logCopy';
+import { summarizeSimpleEvent, confirmTimePhrase, confirmTimeRowLabel, noPetToLogForCopy } from './logCopy';
 import { describeOccurredAt, formatTime } from './utils';
 
 // Local-component dates (B-514): a witnessed "today at" assertion must not become a
@@ -94,5 +94,25 @@ describe('confirm copy — voice', () => {
       expect(summarizeSimpleEvent({ ...i, typeLabel: 'Vomit' })).not.toContain('!');
       expect(confirmTimeRowLabel(i)).not.toContain('!');
     }
+  });
+});
+
+describe('noPetToLogForCopy — CUL-681 / CUL-717', () => {
+  it('noPetToLogForCopy orders its clauses by likelihood, not by what is actionable', () => {
+    // CUL-717 / CUL-681. The order is the whole reason this is shared rather than
+    // written twice: the dominant cause of the state is a pets read that has not
+    // answered, so the owner reading it usually HAS a pet — and a draft that led
+    // with "add a pet" told them to add another. Sam's falsification, pinned so a
+    // later copy edit has to argue with it rather than quietly re-order it.
+    const copy = noPetToLogForCopy();
+    expect(copy.title).toBe('No pet to log for yet');
+    const loading = copy.body.indexOf('load a moment');
+    const connection = copy.body.indexOf('check your connection');
+    const addAPet = copy.body.indexOf('add a pet');
+    expect(loading).toBeGreaterThanOrEqual(0);
+    expect(connection).toBeGreaterThan(loading);
+    expect(addAPet).toBeGreaterThan(connection);
+    expect(copy.title).not.toContain('!');
+    expect(copy.body).not.toContain('!');
   });
 });

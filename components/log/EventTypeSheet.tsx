@@ -20,6 +20,10 @@ import { SheetLogBeat } from './SheetLogBeat';
 import { PetSwitcherPanel } from '../pet/PetSwitcherSheet';
 import { PetAvatar } from '../pet/PetAvatar';
 import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
+import { noPetToLogForCopy } from '../../lib/logCopy';
+
+// Resolved once at module scope — a literal, shared with the FAB menu (CUL-717).
+const noPetCopy = noPetToLogForCopy();
 
 // The "More events" destination as a bottom sheet over the current tab (B-745). The
 // FAB opens this instead of pushing the full-screen /log picker when log_picker_v2
@@ -239,18 +243,17 @@ export function EventTypeSheet({ visible, onClose }: Props) {
           {stage === 'grid' && !activePet && (
             <EmptyState
               // Forward-looking, and true for each way an owner arrives here
-              // (Principle 5 / nyx-voice P3). The order is the likelihood order: the
-              // hydration read is the usual answer, a failed one is the next
-              // ("check your connection" is the shipped idiom — lib/authErrors,
-              // ArchivePetSheet), and the genuinely-petless account is last because
-              // it is nearly unreachable (archiving a last pet is blocked). Telling
-              // an owner who HAS a pet to add one would be the wrong instruction on
-              // the common path, which is why adding one is the final clause rather
-              // than the headline. No action button — CUL-678 keeps management rows
-              // off a capture surface, and a push from inside a Modal renders BEHIND
-              // it (CUL-662), so a door here would appear to do nothing.
-              title="No pet to log for yet"
-              body="Your pets load a moment after the app opens. If they don't, check your connection — or add a pet from the Pet tab."
+              // (Principle 5 / nyx-voice P3). The wording and its clause ORDER moved
+              // to lib/logCopy on CUL-717, when the FAB menu one layer up gained the
+              // same state: two capture surfaces expressing one state, whose copy is
+              // load-bearing enough that two independent copies would drift. The
+              // rationale for the order lives with it there.
+              //
+              // No action button — CUL-678 keeps management rows off a capture
+              // surface, and a push from inside a Modal renders BEHIND it (CUL-662),
+              // so a door here would appear to do nothing.
+              title={noPetCopy.title}
+              body={noPetCopy.body}
               style={styles.noPet}
             />
           )}
