@@ -75,6 +75,22 @@ function sourceFiles(): string[] {
 }
 
 /**
+ * Read a walked file, or `null` if it vanished between the listing and this read.
+ * `guards/completionCard.test.ts` writes a real fixture into `app/` and unlinks it, and
+ * jest runs suites in parallel workers — so any `app/` walker can list a file that is
+ * gone by the time it reads it. A path that no longer exists has no call sites in it.
+ * ENOENT only: every other read failure is a real error and still throws.
+ */
+function readSource(file: string): string | null {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
+    throw e;
+  }
+}
+
+/**
  * Files that USE the primitive. Deliberately not just the `softDeleteEvent(` call form:
  * `lib/widgetBridge.ts` passes it as a value (`revokeEvent: softDeleteEvent`), which is
  * a delete path exactly as much as a call is — and is precisely the fourth path the
@@ -108,7 +124,8 @@ describe('CUL-641 — every soft delete goes through the one shared reversal', (
     const offenders = sourceFiles()
       .filter((rel) => rel !== DEFINITION && rel !== SANCTIONED_PATH)
       .filter((rel) => {
-        const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+        const src = readSource(path.join(ROOT, rel));
+        if (src === null) return false;
         return usesPrimitive(src) && !EXEMPTION.test(src);
       });
 

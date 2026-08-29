@@ -72,6 +72,30 @@ const EXCLUDED_DIRS = new Set([
   'docs', 'assets', 'supabase', 'ios', 'android',
 ]);
 
+/**
+ * Read a walked file, or `null` if it vanished between the listing and this read.
+ *
+ * Not defensive padding — a real, reproducible race, and it took this suite red in CI
+ * (CUL-641). `guards/completionCard.test.ts`'s "the detector itself" block proves its
+ * scan works by WRITING a real fixture into `app/` and unlinking it in `afterEach`, and
+ * jest runs suites in parallel workers. Any suite that walks `app/` can therefore list a
+ * file that is gone by the time it reads it. The listing here happens at module scope
+ * and the reads happen inside the tests, so the window is the whole suite.
+ *
+ * Skipping is the correct answer rather than a concession: a source scan reports on the
+ * tree as it is, and a path that no longer exists has no call sites in it. Narrow to
+ * ENOENT on purpose — every other read failure is still a real error and still throws,
+ * so this cannot quietly swallow a permissions or encoding problem.
+ */
+function readSource(file: string): string | null {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
+    throw e;
+  }
+}
+
 function sourceFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -115,7 +139,9 @@ function bucketConstants(): Map<string, string> {
   const constants = new Map<string, string>();
   const conflicts: string[] = [];
   for (const file of files) {
-    for (const m of readFileSync(file, 'utf8').matchAll(BUCKET_CONST_RE)) {
+    const src = readSource(file);
+    if (src === null) continue;
+    for (const m of src.matchAll(BUCKET_CONST_RE)) {
       const [, name, value] = m;
       const prior = constants.get(name);
       // Two files may legitimately declare the same constant (PET_PHOTO_BUCKET
@@ -134,7 +160,9 @@ function uploadCallSites(): CallSite[] {
   const constants = bucketConstants();
   const calls: CallSite[] = [];
   for (const file of files) {
-    for (const m of readFileSync(file, 'utf8').matchAll(UPLOAD_CALL_RE)) {
+    const src = readSource(file);
+    if (src === null) continue;
+    for (const m of src.matchAll(UPLOAD_CALL_RE)) {
       const token = m[1];
       const literal = /^['"](.+)['"]$/.exec(token);
       calls.push({
@@ -151,7 +179,9 @@ function rawUploadSites(): string[] {
   const out: string[] = [];
   for (const file of files) {
     const rel = file.slice(ROOT.length + 1);
-    for (const _ of readFileSync(file, 'utf8').matchAll(RAW_UPLOAD_RE)) out.push(rel);
+    const src = readSource(file);
+    if (src === null) continue;
+    for (const _ of src.matchAll(RAW_UPLOAD_RE)) out.push(rel);
   }
   return out;
 }
