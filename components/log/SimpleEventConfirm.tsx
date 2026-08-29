@@ -81,6 +81,13 @@ function isRoseType(type: EventTypeKey): boolean {
 // (clinical-guardrails: never assert a capability the record won't deliver).
 const PHOTO_READ_TYPES: ReadonlySet<EventTypeKey> = new Set(['vomit', 'diarrhea', 'stool_normal']);
 
+// The leading disc on this sheet's header, shared with the GRID stage's title row
+// (CUL-679) so stage 1 → stage 2 is a disc swapping its contents in place rather
+// than a header that jumps sideways. Exported rather than restated: the two rows
+// already share their gap, height and gutters, and a second literal 30 is one
+// tuning pass away from disagreeing with this one silently.
+export const SHEET_HEADER_DISC = 30;
+
 export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onDraftChange }: Props) {
   const prependEvent = useEventStore((s) => s.prependEvent);
   // The summary pill IS the write, so it needs the SAME hardened ref-latch guard the
@@ -693,7 +700,7 @@ const styles = StyleSheet.create({
     letterSpacing: theme.trackingTight,
   },
   headerCircle: {
-    width: 30, height: 30, borderRadius: theme.radiusFull,
+    width: SHEET_HEADER_DISC, height: SHEET_HEADER_DISC, borderRadius: theme.radiusFull,
     alignItems: 'center', justifyContent: 'center',
   },
   circleRose: { backgroundColor: theme.colorEventSymptomLight },

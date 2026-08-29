@@ -13,10 +13,11 @@ import type { MomentTone } from '../../store/momentStore';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import { GroupedEventGrid } from './EventTypePicker';
-import { SimpleEventConfirm } from './SimpleEventConfirm';
+import { SimpleEventConfirm, SHEET_HEADER_DISC } from './SimpleEventConfirm';
 import { summarizeLoggedRecord, type LoggedRecord } from '../../lib/completionCard';
 import { SheetLogBeat } from './SheetLogBeat';
 import { PetSwitcherPanel } from '../pet/PetSwitcherSheet';
+import { PetAvatar } from '../pet/PetAvatar';
 import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
 
 // The "More events" destination as a bottom sheet over the current tab (B-745). The
@@ -214,6 +215,34 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                 accessibilityRole={multiPet ? 'button' : undefined}
                 accessibilityLabel={multiPet ? `Log for ${petName} — switch pet` : undefined}
               >
+                {/* CUL-679 — the pet's face leads the row, as it does everywhere else
+                    the app names the active pet (Home header, the FAB's "Logging for"
+                    chip, every row of the switcher the owner just tapped).
+
+                    It matters HERE and not on Home because the eight tiles below are
+                    pet-independent: nothing else on screen moves, so without this the
+                    entire confirmation of a switch is four characters changing at the
+                    top of the sheet, with the finger still resting where the switcher
+                    row was. Two similarly-named pets and that fails a glance-check on
+                    the one surface where the wrong answer writes a health row.
+
+                    Rendered for a SINGLE-pet household too (R5-1, PM-ruled 2026-08-29).
+                    Multi-pet §3.1 suppresses the CHEVRON below — the switch affordance
+                    — not the pet's identity, and the Home header already draws the disc
+                    for a one-pet account. It also keeps this row and the confirm's
+                    header on the same leading disc, so stage 1 → stage 2 swaps the
+                    disc's contents instead of sliding the title 38pt sideways.
+
+                    Guarded on activePet rather than reusing petName: that falls back to
+                    "your pet", and an avatar built from it would render a confident "Y"
+                    disc for a pet that isn't there. */}
+                {activePet && (
+                  <PetAvatar
+                    name={activePet.name}
+                    photoPath={activePet.photo_path}
+                    size={SHEET_HEADER_DISC}
+                  />
+                )}
                 <ThemedText style={styles.title} numberOfLines={1}>
                   Log for {petName}
                 </ThemedText>
@@ -322,6 +351,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space3,
   },
   title: {
+    // The confirm header's headerText carries this for the same reason: with a
+    // leading disc and a trailing chevron on the row, a long pet name would push
+    // the chevron off the end rather than ellipsing itself. numberOfLines alone
+    // does not shrink a Text inside a row — it needs somewhere to shrink to.
+    flexShrink: 1,
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,

@@ -16,9 +16,9 @@
 
      ROUND 5 (2026-08-29, §06) amends ONE element of the locked
      design: the stage-1 title row gains the pet's avatar (CUL-679).
-     Rounds 1–4 are otherwise untouched; §03's stage-1 frame still
-     shows the round-4 text-only title and is annotated as such, so
-     the two readings stay side by side until the fork is ruled.
+     R5-1 was ruled B (avatar for every household size) on
+     2026-08-29, so §03's stage-1 frame now carries it; §06 keeps
+     the comparison frames as the record of how it was decided.
 
      Frame values are the real tokens from constants/theme.ts.
      ============================================================ */
@@ -298,7 +298,7 @@
   <header class="mast">
     <p class="eyebrow">
       <span>B-745 · FAB → More events</span><span>Round 4 — convergence · 2026-08-13</span><span>Round 5 — the title row · 2026-08-29</span>
-      <span class="round-chip">Round 5 open — §06 awaits a call</span>
+      <span class="round-chip">Round 5 ruled — R5-1 = B, shipped</span>
     </p>
     <h1>One surface, in daylight colours</h1>
     <p class="standfirst">
@@ -308,8 +308,8 @@
       pill reborn as the save affordance: a live summary sentence with <em>Log it</em> on it. The predictive
       engine stays parked; only its clothes came over. <em>This page supersedes rounds 1–3 at this URL,
       and round 4 is the design-locked build spec (F1).</em>
-      <strong>Round 5 (§06) is open:</strong> the sheet title gains the pet's avatar (CUL-679), with one
-      fork for the PM. Everything above §06 is round 4, unchanged and still current.
+      <strong>Round 5 (§06) is ruled:</strong> the sheet title gains the pet's avatar (CUL-679) for
+      every household size (R5-1 = B, 2026-08-29). Everything else above is round 4, unchanged.
     </p>
   </header>
 
@@ -413,7 +413,10 @@
           <div class="sheet">
             <div class="grab"></div>
             <div class="p-head">
-              <div class="p-title">Log for Nyx <span style="color:#737373;font-size:13px;font-weight:400;">▾</span></div>
+              <div class="p-title" style="display:flex;align-items:center;gap:8px;">
+                <span class="pa" style="width:30px;height:30px;font-size:12px;">N</span>
+                Log for Nyx <span style="color:#737373;font-size:13px;font-weight:400;">▾</span>
+              </div>
             </div>
             <div class="gC">
               <div class="eyebrow-s">Symptoms</div>
@@ -444,8 +447,8 @@
         The confirmed grid as a sheet over Home: C groups, split stool (the sub-step deleted), splat
         and swirl in place, pet switcher on the title. Meal, Medication, and Weight still route to
         their own screens; symptoms and Other never leave the sheet.
-        <em>The title row is amended in round 5 (§06) — this frame shows the round-4 text-only
-        version.</em></figcaption>
+        <em>Title row updated per round 5 (§06): the pet's avatar leads it, for every household
+        size. The round-4 text-only version is superseded.</em></figcaption>
       </figure>
 
       <!-- STAGE 2 — SAW IT -->
@@ -747,14 +750,14 @@
     </div>
 
     <div class="brief">
-      <div class="bid">R5-1 &middot; The single-pet disc &mdash; PM call</div>
+      <div class="bid">R5-1 &middot; The single-pet disc &mdash; RULED B, 2026-08-29</div>
       <div class="bq">Does the &ldquo;Log for {pet}&rdquo; row show the avatar when the household has one pet?</div>
       <dl>
         <dt>Deciding</dt>
         <dd>One conditional in <code>EventTypeSheet</code>. Multi-pet accounts get the disc either
         way — this is only about the one-pet case.</dd>
         <dt>Options</dt>
-        <dd><span class="rec">B — always (recommended).</span> Matches the Home header, which already
+        <dd><span class="rec">B — always. RULED.</span> Matches the Home header, which already
         draws the disc for one pet, and keeps stage 1 and stage 2 on the same 30pt leading disc, so
         the header stops sliding 38pt on every single-pet log. &sect;3.1 suppresses the
         <em>chevron</em>, which stays multi-pet-only under both options.</dd>
@@ -779,7 +782,8 @@
   <footer>
     Source of truth: <code>docs/culprit-more-events-mockups.html</code>. Round 4 — the convergence,
     <strong>design-locked 2026-08-13 (F1)</strong>; supersedes rounds 1–3. Round 5 (§06, 2026-08-29)
-    amends the title row only and is <strong>open</strong>. Same artifact URL throughout.
+    amends the title row only — <strong>R5-1 ruled B and shipped</strong>; §03's stage-1 frame carries
+    it. Same artifact URL throughout.
     Build contract: <code>docs/nyx-more-events-picker-requirements.md</code>. Frame values are copied
     from <code>constants/theme.ts</code>; the splat/swirl customs are mock drafts the build refines at
     24px master size.
