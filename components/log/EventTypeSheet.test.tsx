@@ -606,7 +606,7 @@ describe('EventTypeSheet — no pet to log for (CUL-681)', () => {
   it('says why, in place — the sheet stays open and speaks', () => {
     const onClose = jest.fn();
     const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
-    expect(getByText('No pet to log for yet')).toBeTruthy();
+    expect(getByText('No pet loaded yet')).toBeTruthy();
     // Forward-looking, per Principle 5 / nyx-voice Pattern 3, and true for each
     // way an owner reaches this state. The connection clause is pinned because it
     // carries the COMMON case: the dominant cause is a pets read that has not
@@ -629,7 +629,7 @@ describe('EventTypeSheet — no pet to log for (CUL-681)', () => {
     act(() => { seedPets(1); });
     expect(view.getByText('Log for Nyx')).toBeTruthy();
     expect(view.getByText('Vomit')).toBeTruthy();
-    expect(view.queryByText('No pet to log for yet')).toBeNull();
+    expect(view.queryByText('No pet loaded yet')).toBeNull();
   });
 
   it('and back again if the store is wiped under an open sheet', () => {
@@ -640,7 +640,7 @@ describe('EventTypeSheet — no pet to log for (CUL-681)', () => {
     act(() => { usePetStore.setState({ pets: [], activePet: null }); });
     // The surface speaks for itself — which is why handleSelect's residual
     // write-time guard is silent rather than alerting.
-    expect(view.getByText('No pet to log for yet')).toBeTruthy();
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 

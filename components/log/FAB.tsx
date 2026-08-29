@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { ChevronDown, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { EmptyState } from '../ui/EmptyState';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
@@ -21,6 +22,10 @@ import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '.
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
 import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../../lib/trialContaminant';
+import { noPetToLogForCopy } from '../../lib/logCopy';
+
+// Resolved once at module scope — a literal, shared with the log sheet (CUL-717).
+const noPetCopy = noPetToLogForCopy();
 
 export function FAB() {
   const { prependEvent } = useEventStore();
@@ -109,7 +114,21 @@ export function FAB() {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
     // of write, not the render-time closure (the queue-then-switch edge).
     const pet = usePetStore.getState().activePet;
-    if (logging || !pet) return;
+    if (logging) return; // a write is already in flight — silence is correct here
+    if (!pet) {
+      // CUL-717. This used to share the `logging` guard's bare return: the row did
+      // not even show its spinner, so a tap produced no feedback of any kind —
+      // CUL-575's "a failed write is always said", applied to a write that never
+      // starts. It now stays PUT, and the menu gate below means there is no recent
+      // -food row to tap without a pet in the first place, so this is only the
+      // write-time re-read's answer for the instant between a render and a tap.
+      // Deliberately silent because the surface speaks for itself: losing the pet
+      // re-renders the menu into the no-pet copy under the owner's finger, which is
+      // the message. Split off the `logging` return above so the warning is
+      // accurate — re-entrancy and no-pet are different states.
+      console.warn('[FAB] quick-meal tap with no active pet — nothing to write for');
+      return;
+    }
     setLogging(food.id);
     try {
       // insertMeal owns the event+meal write, the food-recency touch, the sync
@@ -195,126 +214,179 @@ export function FAB() {
           <Animated.View
             style={[styles.menu, { opacity: menuOpacity, transform: [{ translateY: menuTranslateY }] }]}
           >
-            {/* Pet identity leads the log sheet (multi-pet spec §3.3, mock B1).
-                The flip happens *before* logging — v1 has no move-to-pet, so a
-                wrong-pet log means delete + re-log; the log taps below stay
-                one-tap (Principle 1). Renders only when pets.length > 1 —
-                single-pet households see no multi-pet chrome (§7.8). The menu
-                stays open across a flip: recent foods re-query reactively and
-                every write path reads the store at write time. */}
-            {pets.length > 1 && activePet && (
-              <>
-                <TouchableOpacity
-                  style={styles.logForChip}
-                  onPress={() => setSwitcherVisible(true)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
-                >
-                  <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={28} />
-                  {/* "Logging for" is a quiet eyebrow; the NAME gets its own
-                      line below it. The name WRAPS (never truncates) — a pet's
-                      name should never be cut — and the widened menu keeps
-                      common 1–2 word names (incl. "Schrodingers Cat", 16 ch) on
-                      a single line; only the genuinely long ones spill to two. */}
-                  <View style={styles.logForTextCol}>
-                    <ThemedText style={styles.logForLabel} numberOfLines={1}>Logging for</ThemedText>
-                    <ThemedText style={styles.logForName} numberOfLines={2}>{activePet.name}</ThemedText>
-                  </View>
-                  <ChevronDown size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
-                </TouchableOpacity>
-                <View style={styles.divider} />
-              </>
+            {/* ── THE MENU BODY, GATED ON THERE BEING A PET (CUL-717) ───────────
+                None of these rows render without an active pet, so there is no row
+                to tap into a silence — the same gate CUL-681 put on the log sheet's
+                grid one layer down, applied to the surface above it.
+
+                One gate closes all three paths. A recent-food tap returned with no
+                feedback at all — not even the row's own spinner. `Log food` and the
+                Vomit / Loose stool rows closed the menu and pushed /log, which is
+                worse than it sounds: `Log food` lands on an empty screen under a
+                "What did your pet eat?" header (its FoodPicker is gated on
+                activePet), but the two symptom rows reach the `simple` step, which
+                is NOT gated — it renders the whole form, photo row included, and
+                then handleConfirm returns null on the missing pet. So an owner
+                photographs the vomit, writes a note, taps Log vomit, and nothing
+                happens. The photo cannot be taken again.
+
+                Not a rare state, either: this FAB mounts unconditionally in the tabs
+                layout while pets hydrate from a NETWORK read (hooks/usePet.ts) that
+                only runs once the session restores — so every cold start has a
+                window, and on a failed double-read that hook leaves the store as-is
+                on purpose. The branch is reactive, so the rows replace this copy the
+                moment the pets land; no need to close and reopen the menu.
+
+                `More events` goes with the rest even though it could arguably stay:
+                flag-on it opens the sheet, which now says this for itself (a second
+                surface repeating the message), and flag-off it pushes bare /log —
+                the same dead end. The menu gets one answer. */}
+            {!activePet && (
+              <EmptyState
+                // Shared with the log sheet (lib/logCopy) — one state, two capture
+                // surfaces, one wording. The clause order is load-bearing and its
+                // rationale lives with the copy.
+                //
+                // No action button, same two reasons as the sheet: CUL-678 keeps
+                // management rows off a capture surface, and this menu sits under a
+                // full-screen Pressable backdrop that closes it, so a door here
+                // would fight its own dismissal.
+                title={noPetCopy.title}
+                body={noPetCopy.body}
+                style={styles.noPet}
+              />
             )}
 
-            {/* Recent foods — meals AND treats the pet actually ate (the recency
-                query is food_type-agnostic), so "foods" not "meals". */}
-            <ThemedText style={styles.sectionHeader}>Recent foods</ThemedText>
-            {recentFoods.length === 0 ? (
-              <ThemedText style={styles.emptyFoods}>No foods logged yet</ThemedText>
-            ) : (
-              recentFoods.map((food) => (
+            {activePet && (
+              <>
+                {/* Pet identity leads the log sheet (multi-pet spec §3.3, mock B1).
+                    The flip happens *before* logging — v1 has no move-to-pet, so a
+                    wrong-pet log means delete + re-log; the log taps below stay
+                    one-tap (Principle 1). Renders only when pets.length > 1 —
+                    single-pet households see no multi-pet chrome (§7.8). The menu
+                    stays open across a flip: recent foods re-query reactively and
+                    every write path reads the store at write time.
+
+                    It used to carry its own `activePet &&` alongside the count; the
+                    CUL-717 branch above narrows that for it, the way CUL-681 let the
+                    sheet's avatar drop its own guard. The chip was already the one
+                    part of this menu that self-suppressed with no pet — which is what
+                    made the old menu silently pet-less rather than saying so. */}
+                {pets.length > 1 && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.logForChip}
+                      onPress={() => setSwitcherVisible(true)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
+                    >
+                      <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={28} />
+                      {/* "Logging for" is a quiet eyebrow; the NAME gets its own
+                          line below it. The name WRAPS (never truncates) — a pet's
+                          name should never be cut — and the widened menu keeps
+                          common 1–2 word names (incl. "Schrodingers Cat", 16 ch) on
+                          a single line; only the genuinely long ones spill to two. */}
+                      <View style={styles.logForTextCol}>
+                        <ThemedText style={styles.logForLabel} numberOfLines={1}>Logging for</ThemedText>
+                        <ThemedText style={styles.logForName} numberOfLines={2}>{activePet.name}</ThemedText>
+                      </View>
+                      <ChevronDown size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                    </TouchableOpacity>
+                    <View style={styles.divider} />
+                  </>
+                )}
+
+                {/* Recent foods — meals AND treats the pet actually ate (the recency
+                    query is food_type-agnostic), so "foods" not "meals". */}
+                <ThemedText style={styles.sectionHeader}>Recent foods</ThemedText>
+                {recentFoods.length === 0 ? (
+                  <ThemedText style={styles.emptyFoods}>No foods logged yet</ThemedText>
+                ) : (
+                  recentFoods.map((food) => (
+                    <TouchableOpacity
+                      key={food.id}
+                      style={styles.menuAction}
+                      onPress={() => handleQuickMeal(food)}
+                      activeOpacity={0.7}
+                      disabled={logging !== null}
+                    >
+                      <View style={styles.menuActionIcon}>
+                        <EventIcon type="meal" size={20} />
+                      </View>
+                      <ThemedText style={styles.menuActionLabel} numberOfLines={2}>
+                        {food.brand} {food.product_name}
+                      </ThemedText>
+                      {logging === food.id && (
+                        <WhorlSpinner size="sm" ground="day" style={styles.spinner} />
+                      )}
+                    </TouchableOpacity>
+                  ))
+                )}
                 <TouchableOpacity
-                  key={food.id}
                   style={styles.menuAction}
-                  onPress={() => handleQuickMeal(food)}
+                  onPress={() => { closeMenu(); router.push('/log?type=meal'); }}
                   activeOpacity={0.7}
-                  disabled={logging !== null}
                 >
                   <View style={styles.menuActionIcon}>
-                    <EventIcon type="meal" size={20} />
+                    <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
                   </View>
-                  <ThemedText style={styles.menuActionLabel} numberOfLines={2}>
-                    {food.brand} {food.product_name}
-                  </ThemedText>
-                  {logging === food.id && (
-                    <WhorlSpinner size="sm" ground="day" style={styles.spinner} />
-                  )}
+                  <ThemedText style={[styles.menuActionLabel, styles.newFoodLabel]}>Log food</ThemedText>
                 </TouchableOpacity>
-              ))
+
+                <View style={styles.divider} />
+
+                {/* Quick GI symptom taps — route into the full log flow (the `simple`
+                    step) rather than logging silently. That flow already carries the
+                    optional photo step (a vomit photo auto-triggers the AI read) and
+                    the B-010 "Saw it / Found it" time affordance, which vomit/loose
+                    stool need because they're discovery-prone. The photo is optional,
+                    so this stays fast — one tap to the screen, one tap to save — while
+                    closing the old no-photo gap (was FAB.tsx handleQuickSymptom TODO). */}
+                <View style={styles.symptomRow}>
+                  <TouchableOpacity
+                    style={styles.symptomBtn}
+                    onPress={() => { closeMenu(); router.push('/log?type=vomit'); }}
+                    activeOpacity={0.7}
+                  >
+                    <EventIcon type="vomit" size={20} color={theme.colorEventSymptom} />
+                    <ThemedText style={styles.symptomBtnText}>Vomit</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.symptomBtn}
+                    onPress={() => { closeMenu(); router.push('/log?type=diarrhea'); }}
+                    activeOpacity={0.7}
+                  >
+                    <EventIcon type="diarrhea" size={20} color={theme.colorEventSymptom} />
+                    <ThemedText style={styles.symptomBtnText}>Loose stool</ThemedText>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* More events → the type grid. Flag-on (B-745 PR 2) this rises as a
+                    bottom sheet over the current tab; flag-off it pushes the shipped
+                    full-screen picker, byte-identical. The photo-first "Attach photo"
+                    entry it used to carry was retired in B-745 PR 1 (R4: every log
+                    starts from the event; photos still attach inside each event flow),
+                    as was the older "Log with photo" row before it — both were
+                    redundant second pathways to this one destination. */}
+                <TouchableOpacity
+                  style={styles.menuAction}
+                  onPress={() => {
+                    closeMenu();
+                    if (pickerV2) setEventSheetVisible(true);
+                    else router.push('/log');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.menuActionIcon}>
+                    <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                  </View>
+                  <ThemedText style={styles.menuActionLabel}>More events</ThemedText>
+                </TouchableOpacity>
+              </>
             )}
-            <TouchableOpacity
-              style={styles.menuAction}
-              onPress={() => { closeMenu(); router.push('/log?type=meal'); }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.menuActionIcon}>
-                <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
-              </View>
-              <ThemedText style={[styles.menuActionLabel, styles.newFoodLabel]}>Log food</ThemedText>
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            {/* Quick GI symptom taps — route into the full log flow (the `simple`
-                step) rather than logging silently. That flow already carries the
-                optional photo step (a vomit photo auto-triggers the AI read) and
-                the B-010 "Saw it / Found it" time affordance, which vomit/loose
-                stool need because they're discovery-prone. The photo is optional,
-                so this stays fast — one tap to the screen, one tap to save — while
-                closing the old no-photo gap (was FAB.tsx handleQuickSymptom TODO). */}
-            <View style={styles.symptomRow}>
-              <TouchableOpacity
-                style={styles.symptomBtn}
-                onPress={() => { closeMenu(); router.push('/log?type=vomit'); }}
-                activeOpacity={0.7}
-              >
-                <EventIcon type="vomit" size={20} color={theme.colorEventSymptom} />
-                <ThemedText style={styles.symptomBtnText}>Vomit</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.symptomBtn}
-                onPress={() => { closeMenu(); router.push('/log?type=diarrhea'); }}
-                activeOpacity={0.7}
-              >
-                <EventIcon type="diarrhea" size={20} color={theme.colorEventSymptom} />
-                <ThemedText style={styles.symptomBtnText}>Loose stool</ThemedText>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.divider} />
-
-            {/* More events → the type grid. Flag-on (B-745 PR 2) this rises as a
-                bottom sheet over the current tab; flag-off it pushes the shipped
-                full-screen picker, byte-identical. The photo-first "Attach photo"
-                entry it used to carry was retired in B-745 PR 1 (R4: every log
-                starts from the event; photos still attach inside each event flow),
-                as was the older "Log with photo" row before it — both were
-                redundant second pathways to this one destination. */}
-            <TouchableOpacity
-              style={styles.menuAction}
-              onPress={() => {
-                closeMenu();
-                if (pickerV2) setEventSheetVisible(true);
-                else router.push('/log');
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.menuActionIcon}>
-                <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
-              </View>
-              <ThemedText style={styles.menuActionLabel}>More events</ThemedText>
-            </TouchableOpacity>
           </Animated.View>
         )}
 
@@ -423,6 +495,18 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     paddingHorizontal: theme.space2,
     paddingBottom: theme.space1,
+  },
+  // The no-pet copy sits where the action rows would (EmptyState's top-anchored
+  // 'inset'), re-padded for a popover rather than a screen. EmptyState's own inset
+  // is sized for a full-width list below a screen header: 64pt of top pad and a
+  // 32pt side inset would leave a ~226pt column of text floating in a 290pt menu.
+  // These match the rows' own paddingHorizontal, so the copy sits on the margin the
+  // vanished rows did, and the vertical pad stands in for their height so the menu
+  // does not collapse to a sliver of text against its own rounded corners.
+  noPet: {
+    paddingHorizontal: theme.space2,
+    paddingTop: theme.space2,
+    paddingBottom: theme.space2,
   },
 
   divider: {

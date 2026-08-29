@@ -76,3 +76,56 @@ export function confirmTimeRowLabel(input: ConfirmTimeInput): string {
 export function summarizeSimpleEvent(input: ConfirmTimeInput & { typeLabel: string }): string {
   return `${input.typeLabel} · ${confirmTimePhrase(input)}`;
 }
+
+
+// It lives HERE and not in lib/utils, which was the first instinct (that is where
+// archiveBlockedCopy sits, and this is the same shape). The deploy-ledger guard
+// rejected it: `ask`, `generate-report` and `generate-signal` all import lib/utils
+// for its date helpers, so the whole FILE is in their shipping closure, and one
+// appended string constant drifted three Edge Function fingerprints — two of them
+// under standing deploy holds. Owner-facing copy no Edge Function reads should not
+// be able to make a held function look un-deployed. lib/logCopy is client-only and
+// is already this surface's copy module.
+
+// ── "There is no pet to log for" ─────────────────────────────────────────────
+//
+// One source for every capture surface
+// that can be reached before the pets have landed (CUL-681 the log sheet,
+// CUL-717 the FAB menu). Shared for the same reason archiveBlockedCopy is: two
+// surfaces expressing ONE state, whose wording is load-bearing and would
+// otherwise drift as two comments in two files.
+//
+// The clause ORDER is the part worth protecting, and it is ordered by
+// likelihood rather than by drama. The dominant cause is a pets read that has
+// not answered yet — the FAB mounts unconditionally in the tabs layout
+// (app/(tabs)/_layout.tsx) while pets hydrate from a NETWORK read
+// (hooks/usePet.ts) that only runs once the session restores, and on a failed
+// double-read that hook deliberately leaves the store as-is. So the hydration
+// read comes first, a failed one second ("check your connection" is the app's
+// shipped idiom — lib/authErrors, ArchivePetSheet, DeleteAccountSheet), and the
+// genuinely petless account last, because it is near-unreachable (archiving a
+// last pet is blocked — lib/utils archiveBlockedCopy).
+//
+// A first draft led with "add a pet" and the pet-owner lens (Sam) falsified it:
+// the owner reading this most often ALREADY HAS a pet, and the app's one
+// instruction to them was to add another. The least likely cause makes a bad
+// headline even when it is the only actionable one.
+//
+// THE TITLE IS UNDER THE SAME RULE (CUL-717, PM-ruled 2026-08-29). It shipped as
+// "No pet to log for yet", which applied the ordering to the body and then undid
+// it one line up: read cold at 2am that is "the app lost my dog" — an assertion
+// about the ACCOUNT, i.e. the third arrival, the one the body is ordered to put
+// last. It is now a LOAD-state claim, which is the only framing true of all three
+// (nothing has loaded yet, whether the read is in flight, failed, or answered
+// empty), and it borrows the body's own verb so the second line explains the
+// first instead of walking it back.
+//
+// The plural "your pets" is deliberate and stays: in this state the app does not
+// know the count, so a singular would assert one more thing it cannot see. It is a
+// small snag for a one-pet household and the honest option available.
+export function noPetToLogForCopy(): { title: string; body: string } {
+  return {
+    title: 'No pet loaded yet',
+    body: "Your pets load a moment after the app opens. If they don't, check your connection — or add a pet from the Pet tab.",
+  };
+}

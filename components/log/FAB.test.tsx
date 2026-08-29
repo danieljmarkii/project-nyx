@@ -40,7 +40,9 @@ jest.mock('../pet/PetSwitcherSheet', () => ({
   },
 }));
 
+import { TouchableOpacity } from 'react-native';
 import { act, render, fireEvent } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { FAB } from './FAB';
 import { usePetStore } from '../../store/petStore';
 
@@ -62,6 +64,7 @@ async function openMenu() {
 
 beforeEach(() => {
   mockSwitcherProps.length = 0;
+  (router.push as jest.Mock).mockClear();
   seedPets(2);
 });
 
@@ -93,5 +96,115 @@ describe('FAB — the "Logging for" switcher', () => {
     seedPets(1);
     const view = await openMenu();
     expect(view.queryByLabelText('Logging for Nyx — switch pet')).toBeNull();
+  });
+});
+
+// ── CUL-717 — the menu with no pet to log for ────────────────────────────────
+//
+// Same defect and same ruled shape as CUL-681 one layer down: with no activePet
+// the rows either wrote nothing and said nothing (a recent-food tap did not even
+// show its spinner) or pushed into /log, which is gated on a pet it does not
+// have. The gate is that the rows do not render, so there is nothing to tap.
+//
+// Four of the five below are GUARDS: run against the pre-fix tree and confirmed
+// red before being trusted green (CUL-613). The one marked a regression guard is
+// the opposite direction — it must pass before AND after, because its job is to
+// pin behaviour the gate must not break. Each test states which it is, and the
+// run is what decided: two of these labels were written wrong and corrected by
+// it, one in each direction (see the notes on tests 3 and 5).
+
+const { getRecentFoods } = require('../../lib/db') as { getRecentFoods: jest.Mock };
+
+/** A signed-in session whose pets read has not answered yet — the common cause. */
+function seedNoPets() {
+  usePetStore.setState({ pets: [] as never, activePet: null as never });
+}
+
+/** Every row the menu offers when it has a pet. */
+const ACTION_ROWS = ['Log food', 'Vomit', 'Loose stool', 'More events'];
+
+describe('FAB — no pet to log for', () => {
+  it('offers no row to tap, and says why instead', async () => {
+    seedNoPets();
+    const view = await openMenu();
+
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
+    for (const row of ACTION_ROWS) expect(view.queryByText(row)).toBeNull();
+    // The "Recent foods" header goes too — a section head over nothing is the
+    // menu still claiming to be a logging menu.
+    expect(view.queryByText('Recent foods')).toBeNull();
+  });
+
+  it('takes the recent-food rows with it when the pet goes', async () => {
+    // The discriminating case. Opening with NO pet never loads foods (the effect
+    // is gated on one), so an empty menu proves nothing on its own — the rows
+    // have to exist first. Open with a pet, let the foods land, then lose the
+    // store: pre-fix the row stayed on screen and a tap on it was the silent
+    // no-op this issue was filed for.
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' },
+    ]);
+    const view = await openMenu();
+    expect(view.getByText(/Hills/)).toBeTruthy();
+
+    await act(async () => { seedNoPets(); });
+
+    expect(view.queryByText(/Hills/)).toBeNull();
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
+  });
+
+  it('leaves no door open — the menu holds no touchable but the FAB', async () => {
+    // The structural form of the claim above, and the one that survives a row
+    // being ADDED to this menu later without its author reading this file: not
+    // "these four labels are absent" but "nothing here is pressable".
+    //
+    // Its first draft asserted the switcher chip was absent and router.push
+    // uncalled — and it PASSED against the pre-fix tree, so it discriminated
+    // nothing (CUL-613). Both halves were already true for other reasons: the
+    // chip self-suppressed on `pets.length > 1 && activePet` (which is exactly
+    // what made the old menu silently pet-less rather than saying so), and
+    // router.push cannot fire in a test that presses nothing.
+    seedNoPets();
+    const view = await openMenu();
+
+    // Pre-fix this was 5 — Log food, Vomit, Loose stool, More events, and the
+    // FAB. Only the FAB is a way OUT rather than a way in.
+    const touchables = view.UNSAFE_queryAllByType(TouchableOpacity);
+    expect(touchables).toHaveLength(1);
+    expect(touchables[0].props.accessibilityLabel).toBe('Close menu');
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('replaces the copy with the rows the moment the pets land — no reopen', async () => {
+    // A guard, not a regression guard, despite reading like one: it opens on the
+    // copy, which only exists post-fix. The claim is the reactive direction —
+    // the branch re-evaluates, so an owner who opened the menu inside the
+    // hydration window watches it fill in rather than having to close and reopen
+    // it. That is most of why gating the RENDER is the right shape here and a
+    // one-shot alert would not be.
+    seedNoPets();
+    const view = await openMenu();
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
+
+    await act(async () => { seedPets(1); });
+
+    expect(view.queryByText('No pet loaded yet')).toBeNull();
+    for (const row of ACTION_ROWS) expect(view.getByText(row)).toBeTruthy();
+  });
+
+  it('still opens on the FAB, which is deliberately not gated', async () => {
+    // Regression guard — it must pass BEFORE and after, which is why it asserts
+    // only the opening and not the copy. Its first draft asserted both and so
+    // went red pre-fix: a mixed test cannot tell a preserved behaviour from a
+    // changed one, and the copy is test 1's claim anyway.
+    //
+    // The button stays ungated on purpose: a missing FAB is the app looking
+    // broken in a different way, and the menu it opens is the thing that
+    // explains itself (Principle 5). The label flipping to 'Close menu' is the
+    // menu being open — and the way back out of it.
+    seedNoPets();
+    const view = await openMenu();
+
+    expect(view.getByLabelText('Close menu')).toBeTruthy();
   });
 });
