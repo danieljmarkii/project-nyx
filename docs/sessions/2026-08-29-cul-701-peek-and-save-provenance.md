@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-29
 
-Project: **Aug. 2026 Design Polish**. Shipped via #TBD.
+Project: **Aug. 2026 Design Polish**. Shipped via #743.
 
 ## What was wrong
 
