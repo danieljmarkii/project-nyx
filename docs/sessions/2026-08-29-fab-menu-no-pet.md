@@ -41,10 +41,16 @@ The chip's own `activePet &&` drops, narrowed by the branch above it, the way CU
 
 ## The copy, and where it ended up
 
-Unchanged from what CUL-681 shipped — same state, same words:
+The body is unchanged from what CUL-681 shipped. The **title changed after the review**, PM-ruled the same session:
 
-> **No pet to log for yet**
+> **No pet loaded yet**
 > Your pets load a moment after the app opens. If they don't, check your connection — or add a pet from the Pet tab.
+
+`pm-feature-review` caught that the ordering principle had been applied to the body and then undone one line above it. *"No pet to log for yet"*, read cold at 2am, is *the app lost my dog* — an assertion about the **account**, which is the third arrival, the one the body is deliberately ordered to put last. Title said drama, body said likelihood.
+
+A **load-state** title is the only framing true of all three arrivals (nothing has loaded yet, whether the read is in flight, failed, or answered empty), and it borrows the body's own verb so the second line now explains the first instead of walking it back. The plural *"your pets"* stays deliberately: in this state the app does not know the count, so a singular would assert one more thing it cannot see.
+
+*The generalisable bit: a copy rule applied to the body is not applied to the surface. The title is read first and is the part that gets quoted back.*
 
 Two capture surfaces now express one state, so the string moved to a helper (`noPetToLogForCopy`) rather than being written twice. That is the `archiveBlockedCopy` shape, and what is being protected is the **clause order**: the dominant cause is a pets read that has not answered, so the owner reading this usually already *has* a pet, and a draft leading with "add a pet" told them to add another. Its test pins the ordering rather than the sentence, so a later copy edit has to argue with it instead of quietly re-ordering it.
 
@@ -77,7 +83,7 @@ It also surfaced the root cause, which is worth stating plainly: **pets are the 
 Two findings it raised that I deliberately did **not** act on:
 
 - **The reactive swap lands one-tap write rows under a resting finger** — CUL-612's hit-area reasoning rotated into the time dimension. Real in principle; I cannot judge its likelihood from source, and the obvious mitigation (delay the swap) would undermine the reactive property that is most of why this shape is right. Needs a device recording before anyone changes it.
-- **The title asserts the least likely cause.** The clause-order principle was applied to the body and not the title: *"No pet to log for yet"* reads as *the app lost my dog*, which is the arrival the body is ordered to de-emphasise. A load-state framing would be honest for all three. It is a shared string that moves both surfaces, so it is a PM call, raised rather than taken.
+- **The title asserted the least likely cause** — raised as a decision brief, **ruled the same session (PM: load-state framing)**, and applied. See below.
 
 ## DoD
 

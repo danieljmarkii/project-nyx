@@ -110,9 +110,22 @@ export function summarizeSimpleEvent(input: ConfirmTimeInput & { typeLabel: stri
 // the owner reading this most often ALREADY HAS a pet, and the app's one
 // instruction to them was to add another. The least likely cause makes a bad
 // headline even when it is the only actionable one.
+//
+// THE TITLE IS UNDER THE SAME RULE (CUL-717, PM-ruled 2026-08-29). It shipped as
+// "No pet to log for yet", which applied the ordering to the body and then undid
+// it one line up: read cold at 2am that is "the app lost my dog" — an assertion
+// about the ACCOUNT, i.e. the third arrival, the one the body is ordered to put
+// last. It is now a LOAD-state claim, which is the only framing true of all three
+// (nothing has loaded yet, whether the read is in flight, failed, or answered
+// empty), and it borrows the body's own verb so the second line explains the
+// first instead of walking it back.
+//
+// The plural "your pets" is deliberate and stays: in this state the app does not
+// know the count, so a singular would assert one more thing it cannot see. It is a
+// small snag for a one-pet household and the honest option available.
 export function noPetToLogForCopy(): { title: string; body: string } {
   return {
-    title: 'No pet to log for yet',
+    title: 'No pet loaded yet',
     body: "Your pets load a moment after the app opens. If they don't, check your connection — or add a pet from the Pet tab.",
   };
 }

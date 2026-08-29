@@ -105,7 +105,14 @@ describe('noPetToLogForCopy — CUL-681 / CUL-717', () => {
     // with "add a pet" told them to add another. Sam's falsification, pinned so a
     // later copy edit has to argue with it rather than quietly re-order it.
     const copy = noPetToLogForCopy();
-    expect(copy.title).toBe('No pet to log for yet');
+    expect(copy.title).toBe('No pet loaded yet');
+    // The title is under the ordering rule too (CUL-717, PM-ruled). It must be a
+    // LOAD-state claim — the only framing true of all three arrivals — and share
+    // the body's verb so the second line explains the first. Asserted as the
+    // shared stem rather than the exact word, so a reword can pass and a revert to
+    // an account-state title ("No pet to log for yet") cannot.
+    expect(copy.title.toLowerCase()).toContain('load');
+    expect(copy.body.toLowerCase()).toContain('load');
     const loading = copy.body.indexOf('load a moment');
     const connection = copy.body.indexOf('check your connection');
     const addAPet = copy.body.indexOf('add a pet');

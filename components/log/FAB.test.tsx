@@ -128,7 +128,7 @@ describe('FAB — no pet to log for', () => {
     seedNoPets();
     const view = await openMenu();
 
-    expect(view.getByText('No pet to log for yet')).toBeTruthy();
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
     for (const row of ACTION_ROWS) expect(view.queryByText(row)).toBeNull();
     // The "Recent foods" header goes too — a section head over nothing is the
     // menu still claiming to be a logging menu.
@@ -150,7 +150,7 @@ describe('FAB — no pet to log for', () => {
     await act(async () => { seedNoPets(); });
 
     expect(view.queryByText(/Hills/)).toBeNull();
-    expect(view.getByText('No pet to log for yet')).toBeTruthy();
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
   });
 
   it('leaves no door open — the menu holds no touchable but the FAB', async () => {
@@ -184,11 +184,11 @@ describe('FAB — no pet to log for', () => {
     // one-shot alert would not be.
     seedNoPets();
     const view = await openMenu();
-    expect(view.getByText('No pet to log for yet')).toBeTruthy();
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
 
     await act(async () => { seedPets(1); });
 
-    expect(view.queryByText('No pet to log for yet')).toBeNull();
+    expect(view.queryByText('No pet loaded yet')).toBeNull();
     for (const row of ACTION_ROWS) expect(view.getByText(row)).toBeTruthy();
   });
 
