@@ -71,6 +71,10 @@
   .tag.rec{color:var(--rec);background:var(--rec-bg);}
   .tag.risk{color:var(--ink-3);border:1px solid var(--border-strong);}
   .tag.bad{color:var(--rose-ink);background:var(--rose-light);}
+  .tag.ruled{color:var(--rec);background:var(--rec-bg);}
+  .ruledbox{border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;
+            padding:12px 16px;margin-top:14px;font-size:13.5px;color:var(--ink-2);}
+  .ruledbox b{color:var(--ink);}
   .frame{background:#FAFAFA;border:1px solid var(--frame-edge);border-radius:22px;box-shadow:var(--frame-shadow);
          overflow:hidden;font-size:13px;color:#0A0A0A;}
   .frame *{box-sizing:border-box;}
@@ -189,7 +193,7 @@
   </div>
 
   <div class="banner">
-    <b>Nothing here is built.</b> This is the decision round for <b>CUL-618</b> — the fork the issue names, plus the fourth option the Designer added on the <b>CUL-600</b> comment. Three briefs at the bottom; the frames exist so the choice is looked at rather than described. <b>No app code changed on this branch.</b>
+    <b>Ruled 2026-08-29 — this round is closed except for R3.</b> <b>R1 = (a)</b> the Pet tab gets the switcher · <b>R2 = a2</b> the profile&rsquo;s existing name gains the chevron (&ldquo;love it&rdquo;) · <b>the one-pet case = (i)</b>, a stated &ldquo;Add a pet&rdquo; rather than a silent tap. <b>R3 — whether option (d) rides along or follows — is still open</b>, and the build proceeds either way. The frames below are the deliberation record; a1, a3, (b) and (c) are <b>superseded</b>, kept because the rulings are only legible beside what they rejected.
   </div>
 
   <h1>The Pet tab shows a switcher that doesn&rsquo;t switch</h1>
@@ -574,6 +578,8 @@
       <p><b>Deciding:</b> how the switcher appears on a screen that today has no header row.</p>
       <p><b>Options:</b> <b>a2 — the name gains the chevron</b> — <span style="color:var(--rec);font-weight:600;">team rec</span>: no new row, no third avatar, and it reuses the chevron&rsquo;s existing meaning · <b>a1 — Home&rsquo;s header row, re-used</b> — most consistent, but puts the pet&rsquo;s face on screen three times · <b>a3 — an explicit &ldquo;Switch to Luna&rdquo; row</b> — shortest switch at two pets, but a second idiom that degrades past two and reads as settings.</p>
       <p><b>Consequence:</b> picks what the build PR renders. a2 is the smallest diff and the only one that adds nothing new for a one-pet household.</p>
+      <div class="ruledbox"><b>Ruled a2, 2026-08-29</b> — <i>&ldquo;pet profile pet name becomes the switch. Love it.&rdquo;</i>
+      <br><br><b>And a sub-decision the ruling did not reach, ruled (i) the same day:</b> a2 gates the chevron on 2+ pets, but Home&rsquo;s cluster stays tappable at one pet <i>because it is that household&rsquo;s only &ldquo;Add a pet&rdquo; door</i> — so a2 had to say what the name does at one pet. It does <b>nothing</b>; the tab states the action instead, as a quiet <b>&ldquo;Add a pet&rdquo;</b> beside <span style="font-variant-numeric:tabular-nums;">Archive {name}</span> — the same rare-lifecycle register. That is what gives the Pet tab a second door and makes (d) safe.</div>
     </div>
 
     <div class="brief">
@@ -581,6 +587,7 @@
       <p><b>Deciding:</b> whether the single-pet Home header stops opening the switcher in the same change.</p>
       <p><b>Options:</b> <b>a follow-on issue, ruled after (a) ships</b> — <span style="color:var(--rec);font-weight:600;">team rec</span>: (d) is only safe once the Pet tab carries &ldquo;Add a pet&rdquo;, and shipping both at once means one PR changes the switcher&rsquo;s reach in two directions before either is on a device · <b>same PR</b> — one coherent story, one device pass · <b>drop it</b> — accept the silent single-pet tap.</p>
       <p><b>Consequence:</b> a follow-on keeps the App-Store-window diff small and testable; same-PR risks a one-pet account with no route to a second pet if the ordering is got wrong.</p>
+      <div class="ruledbox" style="border-left-color:var(--border-strong);"><b>Still open.</b> The a2 build ships without it; (d) needs only a ruling, not a rebuild, and its prerequisite is now satisfied.</div>
     </div>
   </div>
 
