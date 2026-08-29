@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Card } from '../../components/ui/Card';
@@ -28,6 +29,8 @@ import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
 import { insertMedicationDose, applyLogTimeDoubleDoseCheck } from '../../lib/medicationDose';
+import { PetSwitcherSheet } from '../../components/pet/PetSwitcherSheet';
+import { HEADER_CHEVRON_SIZE, headerSwitcherLabel } from '../../lib/headerName';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
@@ -200,6 +203,11 @@ export default function ProfileScreen() {
   // the slot instead of leaving the owner to bind by trial and error.
   const widgetSlotLabel = useWidgetSlotLabel(activePet?.id);
 
+  // CUL-618 — the pet-switcher sheet, opened from the name (see the header card).
+  // PetSwitcherSheet (the Modal wrapper), NOT PetSwitcherPanel: this is a root
+  // screen with nothing presented over it, so a Modal is correct here. The panel
+  // exists for a host that is ITSELF a Modal (CUL-662).
+  const [switcherVisible, setSwitcherVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
   const [editingCondition, setEditingCondition] = useState<Condition | undefined>(undefined);
@@ -852,6 +860,14 @@ export default function ProfileScreen() {
     ? getPublicUrl(PET_PHOTO_BUCKET, activePet.photo_path)
     : null;
 
+  // CUL-618 — the pet's name IS the switcher on this tab (ruling R2 = shape a2).
+  // Derived in the render body, like photoUri above and for the same reason: the
+  // switch happens IN PLACE here (the tab never blurs), so anything mirrored into
+  // state would need its own reset and a forgotten one renders the previous pet's
+  // material under the new pet's name — CUL-574's wrong-pet class arriving through
+  // a switch instead of a name lookup.
+  const multiPet = pets.length > 1;
+
   const initials = activePet.name.slice(0, 2).toUpperCase();
   const speciesLabel =
     activePet.species.charAt(0).toUpperCase() + activePet.species.slice(1);
@@ -927,7 +943,36 @@ export default function ProfileScreen() {
             </ThemedText>
           </TouchableOpacity>
 
-          <ThemedText style={styles.petName}>{activePet.name}</ThemedText>
+          {/* CUL-618 (R1 = a, R2 = a2) — the name IS the switcher.
+              The tab bar shows this pet's face, and everywhere else in the app that
+              face opens the switcher; here it navigated to a screen that had none,
+              so on History and Foods the only visible pet control answered the wrong
+              question. The chevron attaches to the name that was ALREADY this page's
+              title rather than adding a header row: a row would put this pet's photo
+              on screen a third time (30pt row + 112pt card + 22pt tab), which is this
+              issue's own complaint one level down.
+
+              Both branches share `nameRow`, so the 44pt floor and the card's rhythm
+              do not depend on how many pets the household has — a one-pet owner and a
+              two-pet owner see the same layout, differing only by the chevron. */}
+          {multiPet ? (
+            <TouchableOpacity
+              style={styles.nameRow}
+              onPress={() => setSwitcherVisible(true)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              // The full name at every rung, and it SAYS it switches — the name alone
+              // reads as a heading, which is what made the tab-bar avatar misleading.
+              accessibilityLabel={headerSwitcherLabel(activePet.name, multiPet)}
+            >
+              <ThemedText style={styles.petName}>{activePet.name}</ThemedText>
+              <ChevronDown size={HEADER_CHEVRON_SIZE} color={theme.colorTextSecondary} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.nameRow}>
+              <ThemedText style={styles.petName}>{activePet.name}</ThemedText>
+            </View>
+          )}
           {subtitle ? <ThemedText style={styles.petSubtitle}>{subtitle}</ThemedText> : null}
 
           <TouchableOpacity
@@ -1306,6 +1351,33 @@ export default function ProfileScreen() {
         {/* Account actions (owner name / Sign out / Delete account) moved to the
             "You" screen (B-283, §4.3) — the Pet tab stays entirely pet-scoped. */}
 
+        {/* CUL-618 (PM ruling (i)) — the one-pet household's door to a second pet.
+            At 2+ pets the name above opens the switcher, and "Add a pet" lives
+            inside that sheet; at one pet there is nothing to switch, so rather than
+            leave a silent tap target that opens a list of one — the Designer's
+            CUL-600 complaint about Home — this tab states the action outright.
+
+            It sits beside Archive deliberately: this is the same register the
+            comment below names — a rare lifecycle moment, styled to recede, not a
+            daily affordance. Before this, `router.push('/add-pet')` was called from
+            exactly ONE file in the app (PetSwitcherSheet), so a one-pet owner's only
+            route to a second pet was a chevron-less tap on the Home header.
+
+            Adding a pet makes it the active one (`addPet(data, { select: true })`),
+            which is coherent HERE — you added a pet and you are on the pet's page —
+            and is exactly what makes the same rows wrong inside a capture surface
+            (CUL-678). */}
+        {!multiPet && (
+          <TouchableOpacity
+            style={styles.addPetBtn}
+            onPress={() => router.push('/add-pet')}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <ThemedText style={styles.addPetBtnText}>Add a pet</ThemedText>
+          </TouchableOpacity>
+        )}
+
         {/* Quiet archive action (spec §3.5, mock B4) — bottom of the tab,
             styled to recede: removal is a rare lifecycle moment, not a daily
             affordance. Tap on the last active pet explains the block instead
@@ -1329,6 +1401,11 @@ export default function ProfileScreen() {
           onClose={() => setArchivingPet(null)}
         />
       )}
+
+      <PetSwitcherSheet
+        visible={switcherVisible}
+        onClose={() => setSwitcherVisible(false)}
+      />
 
       <EditPetModal
         visible={editModalVisible}
@@ -1458,11 +1535,35 @@ const styles = StyleSheet.create({
     color: theme.colorAccent,
     fontWeight: theme.weightMedium,
   },
+  // CUL-618 — the name's row, shared by the switcher branch and the plain one so
+  // the card's rhythm does not change with the household's pet count.
+  //
+  // The 44pt floor is an explicit minHeight and this row carries NO hitSlop, which
+  // is the CUL-579 call rather than a default. The control directly above is
+  // "Change photo", which already reaches down with hitSlop={8}, and CUL-612's rule
+  // is `gap >= hitSlop.facing(a) + hitSlop.facing(b)`: the two rects must not
+  // overlap, because an overlap resolves by z-order rather than by intent — here on
+  // a neighbour that opens the camera roll. The arithmetic is 8 (headerCard's gap)
+  // + 4 (marginTop below) = 12 >= 8 + 0, so it clears with headroom rather than by
+  // exact equality; the marginTop is the 4pt that used to sit on petName and is kept
+  // for that reason as much as for the rhythm. Growing the box buys the reach that
+  // slop would have, and takes none of the neighbour's.
+  //
+  // Stating the floor as minHeight also makes it ASSERTABLE — a 44pt claim resting
+  // on a rendered font line box is one jest cannot compute, so it is a floor nobody
+  // is holding. profile.test.tsx pins both halves.
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.space0_5,
+    minHeight: 44,
+    marginTop: theme.space0_5,
+  },
   petName: {
     fontSize: theme.text2XL,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
-    marginTop: 4,
   },
   petSubtitle: {
     fontSize: theme.textMD,
@@ -1733,6 +1834,25 @@ const styles = StyleSheet.create({
   },
 
   // ── Archive ──
+  // CUL-618 — the one-pet "Add a pet" door. Deliberately the archive button's box
+  // (same rare-lifecycle register, same 44pt floor); secondary rather than tertiary
+  // ink because this one is a way forward, not a way out.
+  addPetBtn: {
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusMedium,
+    paddingVertical: 13,
+    paddingHorizontal: theme.space2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: theme.space1,
+  },
+  addPetBtnText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextSecondary,
+  },
   archiveBtn: {
     borderWidth: 1,
     borderColor: theme.colorBorder,

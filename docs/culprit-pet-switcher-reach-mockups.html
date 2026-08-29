@@ -1,0 +1,598 @@
+<title>Pet Switcher Reach</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Geist:wght@400..600&display=swap">
+<style>
+  :root{
+    --ground:#FAFAFA; --card:#FFFFFF; --card-subtle:#F5F5F5;
+    --ink:#0A0A0A; --ink-2:#525252; --ink-3:#737373;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --accent:#00C2A8; --accent-ink:#0B7B6C; --accent-light:#E0FBF7;
+    --rose:#F43F5E; --rose-light:#FFE4E6; --rose-ink:#BE123C;
+    --eyebrow:#0B7B6C;
+    --frame-edge:rgba(10,10,10,.14); --frame-shadow:0 10px 28px rgba(10,10,10,.10);
+    --rec:#0B7B6C; --rec-bg:#E0FBF7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+      --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+      --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+      --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+      --rose:#FB7185; --rose-light:rgba(251,113,133,.14); --rose-ink:#FB7185;
+      --eyebrow:#4FD8C4;
+      --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+      --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+    --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+    --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+    --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+    --rose:#FB7185; --rose-light:rgba(251,113,133,.14); --rose-ink:#FB7185;
+    --eyebrow:#4FD8C4;
+    --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+    --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+  }
+
+  body{background:var(--ground);color:var(--ink);font-family:'Geist',system-ui,-apple-system,sans-serif;
+       font-size:15px;line-height:1.55;margin:0;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px;}
+  a{color:var(--accent-ink);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+  .mast{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .mast svg{color:#211E4E;}
+  :root[data-theme="dark"] .mast svg{color:#F2EEE4;}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .mast svg{color:#F2EEE4;}}
+  .mast .wordmark{font-family:'Newsreader',Georgia,serif;font-size:17px;color:var(--ink-3);letter-spacing:-.3px;}
+  .roundtag{margin-left:auto;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--eyebrow);
+            border:1px solid var(--border-strong);border-radius:999px;padding:4px 10px;}
+  h1{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:clamp(30px,5vw,42px);line-height:1.12;
+     letter-spacing:-.5px;margin:6px 0 14px;text-wrap:balance;}
+  .lede{color:var(--ink-2);max-width:66ch;margin:0 0 6px;}
+  .lede b{color:var(--ink);font-weight:600;}
+  .meta{font-size:13px;color:var(--ink-3);margin:10px 0 0;}
+  .banner{border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;
+          padding:12px 16px;margin:6px 0 18px;font-size:13.5px;color:var(--ink-2);}
+  .banner b{color:var(--ink);}
+
+  .sec{margin-top:60px;}
+  .eyebrow{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--eyebrow);font-weight:600;margin:0 0 6px;}
+  h2{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:27px;letter-spacing:-.3px;margin:0 0 10px;text-wrap:balance;}
+  .sec>p{color:var(--ink-2);max-width:68ch;margin:0 0 8px;}
+  .sec>p b{color:var(--ink);font-weight:600;}
+  .row{display:flex;flex-wrap:wrap;gap:26px;margin-top:22px;align-items:flex-start;}
+
+  .fig{width:322px;max-width:100%;}
+  .opt{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+  .opt .k{font-weight:600;font-size:13px;letter-spacing:.4px;}
+  .tag{font-size:10px;letter-spacing:.7px;text-transform:uppercase;border-radius:999px;padding:3px 8px;font-weight:600;}
+  .tag.rec{color:var(--rec);background:var(--rec-bg);}
+  .tag.risk{color:var(--ink-3);border:1px solid var(--border-strong);}
+  .tag.bad{color:var(--rose-ink);background:var(--rose-light);}
+  .tag.ruled{color:var(--rec);background:var(--rec-bg);}
+  .ruledbox{border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;
+            padding:12px 16px;margin-top:14px;font-size:13.5px;color:var(--ink-2);}
+  .ruledbox b{color:var(--ink);}
+  .frame{background:#FAFAFA;border:1px solid var(--frame-edge);border-radius:22px;box-shadow:var(--frame-shadow);
+         overflow:hidden;font-size:13px;color:#0A0A0A;}
+  .frame *{box-sizing:border-box;}
+  .cap{font-size:13px;color:var(--ink-2);margin-top:10px;line-height:1.5;}
+  .cap b{color:var(--ink);font-weight:600;}
+  .capnote{font-size:12px;color:var(--ink-3);margin-top:6px;line-height:1.5;}
+
+  /* ── in-frame primitives (literal day colors — frames depict the app) ── */
+  .hframe{background:#FFFFFF;border-bottom:1px solid #EAEAEA;padding:12px 14px;}
+  .hrow{display:flex;align-items:center;gap:10px;justify-content:space-between;}
+  .askpill{display:inline-flex;align-items:center;gap:5px;border:1px solid #D4D4D4;border-radius:999px;padding:4px 9px;
+           font-size:12px;font-weight:600;color:#0A0A0A;background:#fff;}
+  .askdot{width:5px;height:5px;border-radius:3px;background:#00C2A8;}
+  .ownerav{width:26px;height:26px;border-radius:13px;background:#F5F5F5;border:1px solid #EAEAEA;color:#525252;
+           font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .petav{width:30px;height:30px;border-radius:15px;background:#E0FBF7;color:#0B7B6C;font-size:12px;font-weight:600;
+         display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .petav.lg{width:76px;height:76px;border-radius:38px;font-size:26px;}
+  .petav.md{width:36px;height:36px;border-radius:18px;font-size:14px;}
+  .body{background:#FAFAFA;padding:12px;min-height:150px;}
+  .f-card{background:#FFFFFF;border-radius:16px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .f-label{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:#737373;font-weight:600;}
+  .f-serif{font-family:'Newsreader',Georgia,serif;}
+  .screentitle{font-family:'Newsreader',Georgia,serif;font-size:19px;padding:12px 14px 4px;background:#FAFAFA;}
+  .hrow-item{display:inline-flex;align-items:center;gap:9px;min-width:0;}
+  .hname{font-weight:600;font-size:17px;white-space:nowrap;}
+  .chev{color:#737373;font-weight:400;}
+
+  /* history rows */
+  .hlog{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid #F0F0F0;}
+  .hlog:first-child{border-top:0;}
+  .hlog .t{flex:0 0 52px;font-size:11px;color:#737373;font-variant-numeric:tabular-nums;padding-top:2px;}
+  .hlog .n{font-size:13px;color:#0A0A0A;}
+  .hlog .s{font-size:11.5px;color:#737373;}
+
+  /* profile card bits */
+  .pcard{background:#FFFFFF;border-radius:16px;padding:16px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06);
+         display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .pname{font-size:22px;font-weight:500;color:#0A0A0A;margin-top:4px;}
+  .psub{font-size:13px;color:#525252;}
+  .plink{font-size:12.5px;color:#0B7B6C;font-weight:500;}
+  .pbtn{margin-top:6px;border:1px solid #EAEAEA;border-radius:8px;padding:7px 14px;font-size:12.5px;color:#0A0A0A;}
+  .chips{display:flex;background:#FFFFFF;border-radius:16px;margin-top:10px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .chip{flex:1;padding:11px 4px;text-align:center;}
+  .chip + .chip{border-left:1px solid #F0F0F0;}
+  .chip .cl{font-size:9.5px;letter-spacing:.7px;text-transform:uppercase;color:#737373;font-weight:600;}
+  .chip .cv{font-size:14px;color:#0A0A0A;font-weight:500;font-variant-numeric:tabular-nums;}
+
+  /* tab bar */
+  .tbar{display:flex;border-top:1px solid #EAEAEA;background:#FFFFFF;padding:10px 0 14px;}
+  .tbar .t{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:#737373;min-width:0;}
+  .tbar .t svg{display:block;flex:0 0 auto;}
+  .tbar .t .lbl{font-size:11px;letter-spacing:.4px;font-weight:500;max-width:100%;overflow:hidden;white-space:nowrap;}
+  .tbar .t.on{color:#0A0A0A;}
+  .tbar .t.on .lbl{font-weight:600;}
+  .tbar .t .dot{width:4px;height:4px;border-radius:2px;background:transparent;}
+  .tbar .t.on .dot{background:#00C2A8;}
+  .avatarchip{width:22px;height:22px;border-radius:11px;background:#E0FBF7;color:#0B7B6C;font-size:10px;font-weight:600;
+              display:flex;align-items:center;justify-content:center;border:2px solid transparent;}
+  .t.on .avatarchip{border-color:#00C2A8;}
+
+  /* the switcher sheet */
+  .sheetwrap{position:relative;}
+  .sheet{background:#FFFFFF;border-radius:18px 18px 0 0;padding:10px 14px 14px;}
+  .grab{width:34px;height:4px;border-radius:2px;background:#E5E5E5;margin:0 auto 10px;}
+  .sheet .sh{font-size:12px;font-weight:600;letter-spacing:.3px;color:#737373;margin-bottom:6px;}
+  .prow{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:12px;}
+  .prow.sel{background:#F0FDFA;}
+  .prow .pn{font-size:14px;font-weight:500;color:#0A0A0A;}
+  .prow .pi{font-size:11.5px;color:#737373;}
+  .prow .tick{margin-left:auto;color:#0B7B6C;font-weight:600;}
+  .srow{display:flex;align-items:center;gap:9px;padding:10px 8px;border-top:1px solid #F0F0F0;margin-top:6px;
+        font-size:13.5px;color:#0A0A0A;}
+  .srow.q{font-size:12.5px;color:#737373;border-top:0;padding-top:4px;}
+
+  /* annotations inside frames */
+  .xnote,.oknote{font-size:11.5px;padding:7px 12px;line-height:1.45;}
+  .xnote{background:#FFE4E6;color:#9F1239;}
+  .oknote{background:#E0FBF7;color:#0B7B6C;}
+  .press{position:relative;}
+  .pressring{position:absolute;left:50%;bottom:34px;width:44px;height:44px;margin-left:-22px;border-radius:22px;
+             border:2px dashed #0B7B6C;opacity:.75;}
+
+  /* door map */
+  .doors{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-top:20px;overflow:hidden;}
+  .doors table{border-collapse:collapse;width:100%;font-size:13.5px;}
+  .doors th{text-align:left;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3);
+            font-weight:600;padding:11px 16px;border-bottom:1px solid var(--border);}
+  .doors td{padding:11px 16px;border-top:1px solid var(--border);color:var(--ink-2);vertical-align:top;}
+  .doors td:first-child{color:var(--ink);font-weight:600;white-space:nowrap;}
+  .doors tr:first-child td{border-top:0;}
+  .pill{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px;white-space:nowrap;}
+  .pill.sw{color:var(--rec);background:var(--rec-bg);}
+  .pill.no{color:var(--rose-ink);background:var(--rose-light);}
+  .scroller{overflow-x:auto;}
+
+  .brief{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-top:14px;}
+  .brief .bh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .brief .bid{font-weight:600;color:var(--accent-ink);font-size:13px;letter-spacing:.3px;white-space:nowrap;}
+  .brief .bt{font-weight:600;color:var(--ink);}
+  .brief p{margin:7px 0 0;color:var(--ink-2);font-size:13.5px;line-height:1.55;}
+  .brief p b{color:var(--ink);}
+  .ledger{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:6px 18px;margin-top:16px;}
+  .ledger .lr{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid var(--border);flex-wrap:wrap;font-size:13.5px;}
+  .ledger .lr:first-child{border-top:0;}
+  .ledger .ln{font-weight:600;color:var(--ink);flex:0 0 108px;}
+  .ledger .ld{color:var(--ink-2);flex:1 1 300px;}
+  footer{margin-top:72px;border-top:1px solid var(--border);padding-top:18px;font-size:12.5px;color:var(--ink-3);max-width:74ch;line-height:1.6;}
+</style>
+
+<div class="wrap">
+  <div class="mast">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    <span class="wordmark">Culprit</span>
+    <span class="roundtag">Round 1 · CUL-618</span>
+  </div>
+
+  <div class="banner">
+    <b>Ruled 2026-08-29 — this round is closed except for R3.</b> <b>R1 = (a)</b> the Pet tab gets the switcher · <b>R2 = a2</b> the profile&rsquo;s existing name gains the chevron (&ldquo;love it&rdquo;) · <b>the one-pet case = (i)</b>, a stated &ldquo;Add a pet&rdquo; rather than a silent tap. <b>R3 — whether option (d) rides along or follows — is still open</b>, and the build proceeds either way. The frames below are the deliberation record; a1, a3, (b) and (c) are <b>superseded</b>, kept because the rulings are only legible beside what they rejected.
+  </div>
+
+  <h1>The Pet tab shows a switcher that doesn&rsquo;t switch</h1>
+  <p class="lede">In this app a pet&rsquo;s face has always meant <b>&ldquo;open the switcher&rdquo;</b> — the Home header, the FAB&rsquo;s <span style="white-space:nowrap;">&ldquo;Logging for&hellip;&rdquo;</span> chip, the log sheet&rsquo;s title. <b>CUL-599</b> put that same face in the tab bar, where it navigates to the profile instead — and the profile has no switcher at all. On History and Foods it is now <b>the only pet control on screen</b>, and it answers a question nobody asked.</p>
+  <p class="meta">Filed from the <span style="font-variant-numeric:tabular-nums;">pm-feature-review</span> pass on CUL-599 · sharpened by the Designer&rsquo;s CUL-600 comment · related: CUL-678, CUL-680</p>
+
+  <!-- ══════════════ TODAY ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">Today · what actually happens</p>
+    <h2>Sam taps her cat and lands on the wrong question</h2>
+    <p>Three frames, all shipped behaviour. Read them left to right — it is one gesture and its consequence. <b>&ldquo;I&rsquo;m looking at Mochi&rsquo;s history, I want Luna — there she is at the bottom, tap — no, this is Mochi&rsquo;s profile. Where did the list of my cats go?&rdquo;</b></p>
+    <div class="row">
+
+      <div class="fig">
+        <div class="opt"><span class="k">1 · History, two cats</span></div>
+        <div class="frame">
+          <div class="screentitle">History</div>
+          <div class="body" style="padding-top:4px;">
+            <div class="f-card">
+              <div class="hlog"><span class="t">7:14 AM</span><span><span class="n">Meal &middot; Hydrolyzed chicken</span><br><span class="s">Finished</span></span></div>
+              <div class="hlog"><span class="t">11:02 AM</span><span><span class="n">Vomit</span><br><span class="s">Found by 11:02 AM</span></span></div>
+              <div class="hlog"><span class="t">6:40 PM</span><span><span class="n">Meal &middot; Hydrolyzed chicken</span><br><span class="s">Ate about half</span></span></div>
+            </div>
+          </div>
+          <div class="tbar">
+            <div class="t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t"><span class="avatarchip">M</span><span class="lbl">Mochi</span><span class="dot"></span></div>
+          </div>
+        </div>
+        <p class="cap">No header, no pet name in the content — <b>the tab-bar avatar is the only pet control on this screen.</b> It is also the only thing telling Sam whose history she is reading.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">2 · The tap</span><span class="tag bad">Dead end</span></div>
+        <div class="frame">
+          <div class="body" style="padding-top:12px;">
+            <div class="pcard">
+              <div class="petav lg">M</div>
+              <div class="plink">Change photo</div>
+              <div class="pname">Mochi</div>
+              <div class="psub">Cat &middot; Domestic shorthair</div>
+              <div class="pbtn">Edit profile</div>
+            </div>
+            <div class="chips">
+              <div class="chip"><div class="cl">Age</div><div class="cv">8 yr</div></div>
+              <div class="chip"><div class="cl">Sex</div><div class="cv">Female</div></div>
+              <div class="chip"><div class="cl">Weight</div><div class="cv">9.1 lbs</div></div>
+            </div>
+          </div>
+          <div class="xnote">Nothing on this screen switches pets. Luna is not named anywhere in the app right now.</div>
+          <div class="tbar">
+            <div class="t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t on"><span class="avatarchip">M</span><span class="lbl">Mochi</span><span class="dot"></span></div>
+          </div>
+        </div>
+        <p class="cap">The destination is <b>unchanged from the old text tab</b> — CUL-599 broke nothing. What changed is that the control now <b>looks like</b> the switcher, so the same screen reads as a failure instead of as a profile.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">3 · Home — the same face, twice</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow">
+              <span class="hrow-item"><span class="petav">M</span><span class="hname">Mochi <span class="chev">&#9662;</span></span></span>
+              <span style="display:inline-flex;align-items:center;gap:8px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+          </div>
+          <div class="body">
+            <div class="f-card" style="position:relative;overflow:hidden;">
+              <span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:#00C2A8;"></span>
+              <div class="f-label" style="color:#0B7B6C;">Signal</div>
+              <div class="f-serif" style="font-size:16px;line-height:1.3;">Vomiting tends to follow within 3 hours of chicken meals</div>
+            </div>
+          </div>
+          <div class="oknote">30pt avatar &rarr; the switcher sheet</div>
+          <div class="xnote">22pt avatar &rarr; the profile. Same photo, ~600pt apart, two destinations.</div>
+          <div class="tbar">
+            <div class="t on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t"><span class="avatarchip">M</span><span class="lbl">Mochi</span><span class="dot"></span></div>
+          </div>
+        </div>
+        <p class="cap">The Designer&rsquo;s CUL-600 note, drawn. <b>D3 knowingly accepted the pet appearing twice</b> (&ldquo;the photo is the warmth&rdquo;) — it did not knowingly accept <b>one symbol meaning two things on one screen.</b></p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════ DOOR MAP ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">The constraint · read this before ruling</p>
+    <h2>The switcher sheet is also the only door to &ldquo;Add a pet&rdquo;</h2>
+    <p>Verified in the code, not assumed: <b><span style="font-variant-numeric:tabular-nums;">router.push('/add-pet')</span> and <span style="font-variant-numeric:tabular-nums;">router.push('/archived-pets')</span> are each called from exactly one file</b> — <span style="font-variant-numeric:tabular-nums;">PetSwitcherSheet.tsx</span>. There is no entry in Settings, none on the Pet tab, none anywhere else. That single fact is what ranks the options, and it is what makes option (d) conditional rather than free.</p>
+    <div class="doors scroller">
+      <table>
+        <thead><tr><th>Surface</th><th>Pet avatar shown?</th><th>What the tap does</th><th>Reaches &ldquo;Add a pet&rdquo;?</th></tr></thead>
+        <tbody>
+          <tr><td>Home header</td><td>Yes, 30pt</td><td>Opens the switcher — chevron only when there are 2+ pets</td><td><span class="pill sw">Yes — the only door</span></td></tr>
+          <tr><td>FAB log chip</td><td>Yes</td><td>Opens the switcher — <b>renders only for 2+ pets</b></td><td><span class="pill sw">Yes, if multi-pet</span></td></tr>
+          <tr><td>Log sheet title <span style="font-weight:400;color:var(--ink-3);">(beta)</span></td><td>No <span style="color:var(--ink-3);">(CUL-679)</span></td><td>Opens the switcher — 2+ pets only</td><td><span class="pill sw">Yes, if multi-pet</span> <span style="color:var(--ink-3);">— and CUL-678 argues it shouldn&rsquo;t</span></td></tr>
+          <tr><td>History / Foods</td><td>Only in the tab bar</td><td>Navigates to the profile</td><td><span class="pill no">No</span></td></tr>
+          <tr><td>Pet tab (profile)</td><td>Yes, 112pt</td><td>Opens the photo picker</td><td><span class="pill no">No</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="capnote" style="max-width:68ch;">Two consequences fall out of the table. <b>For a one-pet household the only route to a second pet is a silent, chevron-less tap on the Home header</b> — an affordance that deliberately shows no cue (multi-pet spec §3.1: single-pet households see no multi-pet chrome). And <b>CUL-678 cannot be resolved by deletion</b>: pulling the management rows out of the capture sheet needs somewhere for them to go first.</p>
+  </div>
+
+  <!-- ══════════════ THE OPTIONS ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">The fork · (a) in three shapes, then (b) and (c)</p>
+    <h2>Where the switcher would live</h2>
+    <p>The issue&rsquo;s option (a) says <i>put it on the profile screen&rsquo;s header</i> but not <b>how</b> — and the profile has no header row today, it opens straight into a photo card. So (a) is drawn three ways. <b>An honest note first: none of these saves a tap.</b> Tab &rarr; header &rarr; row is three taps; so is Home &rarr; header &rarr; row. What (a) buys is that <b>the tap Sam already made stops dead-ending</b> — the recovery is under her thumb instead of back across the app.</p>
+    <div class="row">
+
+      <div class="fig">
+        <div class="opt"><span class="k">a1 · A header row above the card</span><span class="tag risk">Consistent, but a third face</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow">
+              <span class="hrow-item"><span class="petav">M</span><span class="hname">Mochi <span class="chev">&#9662;</span></span></span>
+            </div>
+          </div>
+          <div class="body" style="padding-top:12px;">
+            <div class="pcard">
+              <div class="petav lg">M</div>
+              <div class="plink">Change photo</div>
+              <div class="pname">Mochi</div>
+              <div class="psub">Cat &middot; Domestic shorthair</div>
+              <div class="pbtn">Edit profile</div>
+            </div>
+          </div>
+          <div class="tbar">
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t on"><span class="avatarchip">M</span><span class="lbl">Mochi</span><span class="dot"></span></div>
+          </div>
+        </div>
+        <p class="cap">Literally Home&rsquo;s header, re-used. Maximum consistency — the same row means the same thing on both screens.</p>
+        <p class="capnote"><b>Cost:</b> Mochi&rsquo;s face now appears <b>three times on one screen</b> (30pt header, 112pt card, 22pt tab). The complaint this issue exists to fix, one level down.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">a2 · The name becomes the switcher</span><span class="tag rec">Team rec</span></div>
+        <div class="frame">
+          <div class="body" style="padding-top:12px;">
+            <div class="pcard">
+              <div class="petav lg">M</div>
+              <div class="plink">Change photo</div>
+              <div class="pname">Mochi <span class="chev" style="font-size:18px;">&#9662;</span></div>
+              <div class="psub">Cat &middot; Domestic shorthair</div>
+              <div class="pbtn">Edit profile</div>
+            </div>
+            <div class="chips">
+              <div class="chip"><div class="cl">Age</div><div class="cv">8 yr</div></div>
+              <div class="chip"><div class="cl">Sex</div><div class="cv">Female</div></div>
+              <div class="chip"><div class="cl">Weight</div><div class="cv">9.1 lbs</div></div>
+            </div>
+          </div>
+          <div class="oknote">The chevron renders only for 2+ pets — one-pet households see no new chrome, exactly as on Home.</div>
+          <div class="tbar">
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t on"><span class="avatarchip">M</span><span class="lbl">Mochi</span><span class="dot"></span></div>
+          </div>
+        </div>
+        <p class="cap">The name that is <b>already the page&rsquo;s title</b> gains the chevron and becomes the tap target. No new row, no third avatar, no new vocabulary — the chevron already means &ldquo;this names the pet, tap to change which one.&rdquo;</p>
+        <p class="capnote"><b>Cost:</b> the profile screen gains a control that changes the whole app&rsquo;s pet — see brief R3 on whether the Pet tab is where management belongs.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">a3 · An explicit row</span><span class="tag risk">Plainest, coldest</span></div>
+        <div class="frame">
+          <div class="body" style="padding-top:12px;">
+            <div class="pcard">
+              <div class="petav lg">M</div>
+              <div class="plink">Change photo</div>
+              <div class="pname">Mochi</div>
+              <div class="psub">Cat &middot; Domestic shorthair</div>
+              <div class="pbtn">Edit profile</div>
+            </div>
+            <div class="f-card" style="margin-top:10px;padding:0;">
+              <div class="srow" style="border-top:0;">
+                <span class="petav md" style="width:26px;height:26px;border-radius:13px;font-size:11px;">L</span>
+                <span>Switch to Luna</span>
+                <span style="margin-left:auto;color:#737373;">&rsaquo;</span>
+              </div>
+              <div class="srow" style="font-size:12.5px;color:#737373;"><span>All pets</span><span style="margin-left:auto;">&rsaquo;</span></div>
+            </div>
+          </div>
+          <div class="tbar">
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t on"><span class="avatarchip">M</span><span class="lbl">Mochi</span><span class="dot"></span></div>
+          </div>
+        </div>
+        <p class="cap">A named row, and in a two-pet household it can name the <b>other cat outright</b> — the shortest possible switch, one tap, no sheet.</p>
+        <p class="capnote"><b>Cost:</b> a second switching idiom to maintain beside the sheet, and it degrades badly past two pets. Reads as settings, not as the pet&rsquo;s page.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">b · Long-press the tab</span><span class="tag risk">Invisible</span></div>
+        <div class="frame press">
+          <div class="body" style="padding-top:12px;min-height:96px;">
+            <div class="f-card">
+              <div class="hlog"><span class="t">7:14 AM</span><span><span class="n">Meal &middot; Hydrolyzed chicken</span><br><span class="s">Finished</span></span></div>
+              <div class="hlog"><span class="t">11:02 AM</span><span><span class="n">Vomit</span><br><span class="s">Found by 11:02 AM</span></span></div>
+            </div>
+          </div>
+          <div class="sheetwrap">
+            <div class="sheet" style="border-top:1px solid #EAEAEA;">
+              <div class="grab"></div>
+              <div class="sh">Your pets</div>
+              <div class="prow sel"><span class="petav md">M</span><span><span class="pn">Mochi</span><br><span class="pi">Cat &middot; 8 yr</span></span><span class="tick">&#10003;</span></div>
+              <div class="prow"><span class="petav md" style="background:#F5F5F5;color:#525252;">L</span><span><span class="pn">Luna</span><br><span class="pi">Cat &middot; 3 yr</span></span></div>
+            </div>
+          </div>
+          <div class="tbar" style="position:relative;">
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t on"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t" style="position:relative;"><span class="avatarchip">M</span><span class="lbl">Mochi</span><span class="dot"></span><span class="pressring" style="bottom:-6px;"></span></div>
+          </div>
+        </div>
+        <p class="cap">Fastest when you know it exists: switch from any tab without leaving the screen.</p>
+        <p class="capnote"><b>Cost:</b> <b>at rest it looks exactly like today&rsquo;s frame 1</b> — Sam&rsquo;s complaint is that she couldn&rsquo;t find the list, and a hidden gesture is not findable. It also needs a VoiceOver equivalent (a custom action), and it does not help the one-pet household reach &ldquo;Add a pet&rdquo;.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">c · Accept it</span><span class="tag risk">Zero cost, zero change</span></div>
+        <div class="frame">
+          <div class="body" style="padding-top:12px;">
+            <div class="pcard">
+              <div class="petav lg">M</div>
+              <div class="plink">Change photo</div>
+              <div class="pname">Mochi</div>
+              <div class="psub">Cat &middot; Domestic shorthair</div>
+              <div class="pbtn">Edit profile</div>
+            </div>
+          </div>
+          <div class="xnote">Home is the switcher, one tab away. The wrong tap stays a wrong tap.</div>
+          <div class="tbar">
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t on"><span class="avatarchip">M</span><span class="lbl">Mochi</span><span class="dot"></span></div>
+          </div>
+        </div>
+        <p class="cap">Defensible: it is one tab away, nothing is broken, and the App Store cut is close. Multi-pet is a minority of accounts.</p>
+        <p class="capnote"><b>Cost:</b> the app keeps one symbol with two meanings, and <b>&ldquo;Add a pet&rdquo; keeps its single silent door.</b> Sam&rsquo;s recovery stays &ldquo;go back to Home and try again&rdquo;.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════ WHAT a2 OPENS ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">The destination, unchanged</p>
+    <h2>Whatever wins opens the sheet that already exists</h2>
+    <p>No new component. <span style="font-variant-numeric:tabular-nums;">PetSwitcherSheet</span> is the shipped Modal wrapper — the profile is a root screen with nothing presented over it, so it takes the wrapper, not <span style="font-variant-numeric:tabular-nums;">PetSwitcherPanel</span> (the CUL-662 rule: a component already inside a Modal never presents another).</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">a2, tapped</span></div>
+        <div class="frame">
+          <div class="body" style="padding-top:12px;padding-bottom:0;filter:brightness(.94);">
+            <div class="pcard">
+              <div class="petav lg">M</div>
+              <div class="plink">Change photo</div>
+              <div class="pname">Mochi <span class="chev" style="font-size:18px;">&#9662;</span></div>
+            </div>
+          </div>
+          <div class="sheetwrap">
+            <div class="sheet">
+              <div class="grab"></div>
+              <div class="sh">Your pets</div>
+              <div class="prow sel"><span class="petav md">M</span><span><span class="pn">Mochi</span><br><span class="pi">Cat &middot; 8 yr</span></span><span class="tick">&#10003;</span></div>
+              <div class="prow"><span class="petav md" style="background:#F5F5F5;color:#525252;">L</span><span><span class="pn">Luna</span><br><span class="pi">Cat &middot; 3 yr</span></span></div>
+              <div class="srow"><span style="color:#0B7B6C;font-weight:600;">+</span><span>Add a pet</span></div>
+              <div class="srow q"><span>Archived pets</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="cap">Switching re-renders the profile for Luna — which is <b>coherent here in a way it is not on a capture surface</b>: the Pet tab is inherently &ldquo;the pet&rsquo;s page&rdquo;, so changing which pet is the page&rsquo;s whole job. Compare CUL-680, where the same sheet inside a log sheet leaves &ldquo;scoped or global?&rdquo; genuinely ambiguous.</p>
+      </div>
+      <div class="fig" style="width:auto;flex:1 1 380px;">
+        <div class="opt"><span class="k">What (a) unlocks beyond this issue</span></div>
+        <div class="ledger" style="margin-top:0;">
+          <div class="lr"><span class="ln">CUL-678</span><span class="ld">&ldquo;Add a pet&rdquo; / &ldquo;Archived pets&rdquo; inside the log sheet destroy a log in progress. They can&rsquo;t simply be deleted while the sheet is one of their only doors — <b>a switcher on the Pet tab gives them somewhere to live</b>, which turns CUL-678 from a fork into a move.</span></div>
+          <div class="lr"><span class="ln">Option (d)</span><span class="ld">The Designer&rsquo;s proposal — route the <b>single-pet</b> Home header to the profile — is blocked today because the header is that household&rsquo;s only route to &ldquo;Add a pet&rdquo;. After (a), it isn&rsquo;t. <b>(d) is downstream of (a), not a rival to it.</b></span></div>
+          <div class="lr"><span class="ln">Sam, in chrome</span><span class="ld">The Pet tab becomes the one place that answers <i>whose record is this, and can I see the other one</i> — the question the tab bar&rsquo;s avatar already implies it answers.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ (d) ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">The Home-side half · from the CUL-600 comment</p>
+    <h2>(d) — the one-pet header stops being a switcher</h2>
+    <p>Jordan has one dog. Her header has <b>no chevron</b> (deliberate — spec §2, no multi-pet chrome), so the left cluster is a silent tap target that opens a sheet headed <i>&ldquo;Your pets&rdquo;</i> listing exactly one pet. <b>&ldquo;A picture of my dog&rdquo; reads as &ldquo;tap it to see my dog&rdquo;. She gets a list.</b></p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">Today — one pet, tapped</span><span class="tag bad">Answers a question she didn&rsquo;t ask</span></div>
+        <div class="frame">
+          <div class="hframe">
+            <div class="hrow">
+              <span class="hrow-item"><span class="petav">B</span><span class="hname">Biscuit</span></span>
+              <span style="display:inline-flex;align-items:center;gap:8px;"><span class="askpill"><span class="askdot"></span>Ask</span><span class="ownerav">D</span></span>
+            </div>
+          </div>
+          <div class="body" style="padding-bottom:0;filter:brightness(.94);min-height:64px;">
+            <div class="f-card" style="position:relative;overflow:hidden;">
+              <span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:#00C2A8;"></span>
+              <div class="f-label" style="color:#0B7B6C;">Signal</div>
+              <div class="f-serif" style="font-size:15px;line-height:1.3;">Still building Biscuit&rsquo;s picture</div>
+            </div>
+          </div>
+          <div class="sheetwrap">
+            <div class="sheet">
+              <div class="grab"></div>
+              <div class="sh">Your pets</div>
+              <div class="prow sel"><span class="petav md">B</span><span><span class="pn">Biscuit</span><br><span class="pi">Dog &middot; 4 yr</span></span><span class="tick">&#10003;</span></div>
+              <div class="srow"><span style="color:#0B7B6C;font-weight:600;">+</span><span>Add a pet</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="cap">A list of one, and the only other row is a management action. No chevron warned her this was a menu.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">(d) — the tap goes to Biscuit</span><span class="tag risk">Only after (a)</span></div>
+        <div class="frame">
+          <div class="body" style="padding-top:12px;">
+            <div class="pcard">
+              <div class="petav lg">B</div>
+              <div class="plink">Change photo</div>
+              <div class="pname">Biscuit</div>
+              <div class="psub">Dog &middot; Labrador retriever</div>
+              <div class="pbtn">Edit profile</div>
+            </div>
+            <div class="chips">
+              <div class="chip"><div class="cl">Age</div><div class="cv">4 yr</div></div>
+              <div class="chip"><div class="cl">Sex</div><div class="cv">Male</div></div>
+              <div class="chip"><div class="cl">Weight</div><div class="cv">62 lbs</div></div>
+            </div>
+          </div>
+          <div class="oknote">Both faces now mean the same thing: tap the dog, go to the dog. Multi-pet households keep the switcher and the chevron.</div>
+          <div class="tbar">
+            <div class="t on"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg><span class="lbl">Home</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg><span class="lbl">History</span><span class="dot"></span></div>
+            <div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z" transform="translate(0 2)"/><path d="M9 20h6"/></svg><span class="lbl">Foods</span><span class="dot"></span></div>
+            <div class="t"><span class="avatarchip">B</span><span class="lbl">Biscuit</span><span class="dot"></span></div>
+          </div>
+        </div>
+        <p class="cap">The redundancy turns back into warmth: two sizes of the same face, one meaning.</p>
+        <p class="capnote"><b>Hard prerequisite:</b> &ldquo;Add a pet&rdquo; must have another door first, or a one-pet household can never become a two-pet household. That door is (a).</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ REACT ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">React · three rulings, ~4 lines each</p>
+    <h2>What we need from you</h2>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R1</span><span class="bt">Should the Pet tab be able to switch pets?</span></div>
+      <p><b>Deciding:</b> whether the tab-bar avatar&rsquo;s destination fulfils the promise its face makes, or whether Home stays the only switcher.</p>
+      <p><b>Options:</b> <b>(a) put the switcher on the Pet tab</b> — <span style="color:var(--rec);font-weight:600;">team rec</span>: it is the only option that closes the gap on History/Foods <i>and</i> gives &ldquo;Add a pet&rdquo; a second door, which unblocks CUL-678 and (d) · <b>(b) long-press the tab</b> — fastest once known, but invisible at rest, which is the actual complaint · <b>(c) accept it</b> — free, and honest that Home is one tab away.</p>
+      <p><b>Consequence:</b> (a) is one screen, no schema, no new component, and turns two other open issues from forks into moves. (c) closes this issue as a known limit and leaves the single silent &ldquo;Add a pet&rdquo; door standing.</p>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R2</span><span class="bt">If (a) — which shape?</span></div>
+      <p><b>Deciding:</b> how the switcher appears on a screen that today has no header row.</p>
+      <p><b>Options:</b> <b>a2 — the name gains the chevron</b> — <span style="color:var(--rec);font-weight:600;">team rec</span>: no new row, no third avatar, and it reuses the chevron&rsquo;s existing meaning · <b>a1 — Home&rsquo;s header row, re-used</b> — most consistent, but puts the pet&rsquo;s face on screen three times · <b>a3 — an explicit &ldquo;Switch to Luna&rdquo; row</b> — shortest switch at two pets, but a second idiom that degrades past two and reads as settings.</p>
+      <p><b>Consequence:</b> picks what the build PR renders. a2 is the smallest diff and the only one that adds nothing new for a one-pet household.</p>
+      <div class="ruledbox"><b>Ruled a2, 2026-08-29</b> — <i>&ldquo;pet profile pet name becomes the switch. Love it.&rdquo;</i>
+      <br><br><b>And a sub-decision the ruling did not reach, ruled (i) the same day:</b> a2 gates the chevron on 2+ pets, but Home&rsquo;s cluster stays tappable at one pet <i>because it is that household&rsquo;s only &ldquo;Add a pet&rdquo; door</i> — so a2 had to say what the name does at one pet. It does <b>nothing</b>; the tab states the action instead, as a quiet <b>&ldquo;Add a pet&rdquo;</b> beside <span style="font-variant-numeric:tabular-nums;">Archive {name}</span> — the same rare-lifecycle register. That is what gives the Pet tab a second door and makes (d) safe.</div>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">R3</span><span class="bt">Is (d) in scope now, or a follow-on?</span></div>
+      <p><b>Deciding:</b> whether the single-pet Home header stops opening the switcher in the same change.</p>
+      <p><b>Options:</b> <b>a follow-on issue, ruled after (a) ships</b> — <span style="color:var(--rec);font-weight:600;">team rec</span>: (d) is only safe once the Pet tab carries &ldquo;Add a pet&rdquo;, and shipping both at once means one PR changes the switcher&rsquo;s reach in two directions before either is on a device · <b>same PR</b> — one coherent story, one device pass · <b>drop it</b> — accept the silent single-pet tap.</p>
+      <p><b>Consequence:</b> a follow-on keeps the App-Store-window diff small and testable; same-PR risks a one-pet account with no route to a second pet if the ordering is got wrong.</p>
+      <div class="ruledbox" style="border-left-color:var(--border-strong);"><b>Still open.</b> The a2 build ships without it; (d) needs only a ruling, not a rebuild, and its prerequisite is now satisfied.</div>
+    </div>
+  </div>
+
+  <footer>
+    <b>Round 1 · CUL-618.</b> Nothing in this round is built — the frames are proposals, and the shipped behaviour is the three frames at the top. The switcher sheet drawn here is the existing <span style="font-variant-numeric:tabular-nums;">PetSwitcherSheet</span>, unchanged. Related and deliberately untouched: <b>CUL-679</b> (the log sheet&rsquo;s missing avatar), <b>CUL-680</b> (scoped-vs-global switching in a capture surface), <b>CUL-617</b> (PetAvatar&rsquo;s missing loading state), <b>CUL-628</b> (the two name ladders at 320pt).
+    <br><br>Canonical spec for this track: <span style="font-variant-numeric:tabular-nums;">docs/nyx-app-polish-requirements.md</span> §1–§2 · switcher contract: <span style="font-variant-numeric:tabular-nums;">docs/nyx-multi-pet-requirements.md</span> §3.1.
+  </footer>
+</div>

@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { render, fireEvent, act } from '@testing-library/react-native';
 import { HomeHeader, HOME_HEADER_CONTENT_HEIGHT } from './HomeHeader';
 import { usePetStore, type Pet } from '../../store/petStore';
@@ -94,12 +95,16 @@ beforeEach(() => {
 
 describe('one row, and the pet leads it (D3)', () => {
   it('renders the pet name and the pet photo', () => {
-    const { getByText, toJSON } = render(<HomeHeader />);
+    const { getByText, getByTestId, toJSON } = render(<HomeHeader />);
     getByText('Biscuit');
     const images = collect(toJSON(), 'Image');
     expect(images).toHaveLength(1);
     expect(images[0].props.source.uri).toContain('pet-a/photo.jpg');
-    expect(images[0].props.style).toEqual(
+    // The size moved off the <Image> and onto the disc that clips it when the
+    // initial became the layer underneath (CUL-617): the photo now fills its
+    // container absolutely, so the container is what has to be header-sized.
+    const disc = getByTestId('pet-avatar', { includeHiddenElements: true });
+    expect(StyleSheet.flatten(disc.props.style)).toEqual(
       expect.objectContaining({ width: HEADER_AVATAR_SIZE, height: HEADER_AVATAR_SIZE }),
     );
   });
@@ -153,10 +158,13 @@ describe('what D3/D4 removed stays removed', () => {
     } as never);
     const text = allText(render(<HomeHeader />).toJSON());
     expect(text.some((t) => t.includes('Beagle'))).toBe(false);
-    // Exactly three strings survive on the row, in order: the pet's name, the Ask
-    // pill's word, and the owner monogram. Asserted as the whole set rather than as
-    // an absence, so a future addition to this row has to be a deliberate edit here.
-    expect(text).toEqual(['Biscuit', 'Ask', 'D']);
+    // Exactly four strings survive on the row, in order: the avatar's initial, the
+    // pet's name, the Ask pill's word, and the owner monogram. Asserted as the whole
+    // set rather than as an absence, so a future addition to this row has to be a
+    // deliberate edit here — and this IS that edit: the initial joined the row when
+    // it became the layer under the photo rather than its replacement (CUL-617).
+    // It is drawn, not spoken; the disc is hidden from assistive tech.
+    expect(text).toEqual(['B', 'Biscuit', 'Ask', 'D']);
   });
 
   it('takes no onPressMark — the jump-to-Signal tap retired with the mark', () => {

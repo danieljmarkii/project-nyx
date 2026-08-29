@@ -251,7 +251,17 @@ describe('EventTypeSheet', () => {
     const hosts = (prop: string, value: unknown) =>
       view.UNSAFE_root.findAll((n: Node) => typeof n.type === 'string' && n.props?.[prop] === value)
         .length;
-    const hidden = () => hosts('importantForAccessibility', 'no-hide-descendants');
+    // Excludes the PetAvatar discs, which carry the same prop permanently as
+    // decoration (CUL-617). This counts the SHEET standing down — a node that
+    // toggles — so a global count over the prop would rise with every avatar on
+    // screen and stop measuring what the test is named for.
+    const hidden = () =>
+      view.UNSAFE_root.findAll(
+        (n: Node) =>
+          typeof n.type === 'string' &&
+          n.props?.importantForAccessibility === 'no-hide-descendants' &&
+          n.props?.testID !== 'pet-avatar',
+      ).length;
     const modalLayers = () => hosts('accessibilityViewIsModal', true);
 
     expect(hidden()).toBe(0);

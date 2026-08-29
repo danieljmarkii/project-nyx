@@ -28,6 +28,11 @@ const mockedUseWindowDimensions =
 /** 320pt — the narrowest supported frame (iPhone SE 1st gen), and the AC's frame. */
 const NARROWEST = 320;
 
+// The PetAvatar disc is decoration and is hidden from assistive tech (CUL-617),
+// which RTL's queries skip exactly as VoiceOver does — so a query for the
+// initial has to opt in.
+const INSIDE_AVATAR = { includeHiddenElements: true } as const;
+
 function setWindowWidth(width: number) {
   mockedUseWindowDimensions.mockReturnValue({ width, height: 568, scale: 2, fontScale: 1 });
 }
@@ -155,17 +160,21 @@ describe('the Pet tab is the pet', () => {
 
   it('renders the initial chip when the pet has no photo', () => {
     const { getByText } = render(<NyxTabBar {...makeProps()} />);
-    expect(getByText('B')).toBeTruthy();
+    expect(getByText('B', INSIDE_AVATAR)).toBeTruthy();
   });
 
-  it('renders the photo when the pet has one', () => {
+  it('keeps the initial under the photo, so the tab is never a blank disc', () => {
+    // Reversed by CUL-617. This asserted the opposite — "the initial is the
+    // fallback, not a companion to the photo" — which is exactly what left an
+    // empty circle on the bar whenever the photo was in flight or 404ing. The
+    // initial is now the FLOOR the photo sits on, and this tab is the reason:
+    // it is the pet's identity anchor on every screen (CUL-599).
     setActivePet(makePet({ photo_path: 'pet-1/avatar.jpg' }));
-    const { UNSAFE_getAllByType, queryByText } = render(<NyxTabBar {...makeProps()} />);
+    const { UNSAFE_getAllByType, getByText } = render(<NyxTabBar {...makeProps()} />);
     const { Image } = require('react-native');
     const uris = UNSAFE_getAllByType(Image).map((n: any) => n.props.source?.uri);
     expect(uris).toContain('https://example.test/nyx-pet-photos/pet-1/avatar.jpg');
-    // The initial is the fallback, not a companion to the photo.
-    expect(queryByText('B')).toBeNull();
+    expect(getByText('B', INSIDE_AVATAR)).toBeTruthy();
   });
 
   it('re-renders the tab when the active pet changes (AC)', () => {
@@ -176,7 +185,7 @@ describe('the Pet tab is the pet', () => {
 
     expect(getByText('Mochi')).toBeTruthy();
     expect(queryByText('Biscuit')).toBeNull();
-    expect(getByText('M')).toBeTruthy();
+    expect(getByText('M', INSIDE_AVATAR)).toBeTruthy();
   });
 
   it('keeps the configured title while no pet has loaded yet', () => {
