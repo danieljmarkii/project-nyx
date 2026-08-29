@@ -854,17 +854,57 @@ describe('momentStore — undo', () => {
     useMomentStore.getState().showNamed(namedPayload({ eventId: 'ev-9' }));
     const result = await useMomentStore.getState().undo('ev-9');
     expect(result).toBe('removed');
-    expect(reverse).toHaveBeenCalledWith('ev-9');
+    expect(reverse).toHaveBeenCalledWith('ev-9', undefined);
     const s = useMomentStore.getState();
     expect(s.removed).toBe(true);
     // Still on screen — the removal line is the point, not an instant dismiss.
     expect(s.visible).toBe(true);
   });
 
+  // ── CUL-641: the weight snapshot the card is uniquely able to restore ──────
+  //
+  // Undo is the affordance §5 built to catch a mis-typed weight, and it was the one
+  // that left the mis-typed number behind: the log write re-points pets.weight_kg and
+  // no delete path put it back, so undoing "124 lbs" left 124 on the Profile chip and
+  // in the next weigh-in's pre-fill. The card is the only surface that knows what the
+  // write displaced, so passing that value on is its half of the fix.
+  it('hands a reversed weigh-in the snapshot value its log displaced', async () => {
+    useMomentStore.getState().showNamed(namedPayload({
+      eventId: 'w-1',
+      tone: 'calm',
+      record: { kind: 'weight', weightKg: 56.25 },
+      previousSnapshotKg: 4.2,
+    }));
+    await useMomentStore.getState().undo('w-1');
+    expect(reverse).toHaveBeenCalledWith('w-1', { restoreWeightSnapshotToKg: 4.2 });
+  });
+
+  it('passes a displaced NULL through rather than treating it as "nothing to restore"', async () => {
+    // A pet with no weight on file whose FIRST weigh-in is undone. `null` here is a
+    // value to put back, and `?? null` at the read site would have made it
+    // indistinguishable from a card that never carried one — which is exactly the
+    // case that must NOT null a snapshot.
+    useMomentStore.getState().showNamed(namedPayload({
+      eventId: 'w-2',
+      record: { kind: 'weight', weightKg: 56.25 },
+      previousSnapshotKg: null,
+    }));
+    await useMomentStore.getState().undo('w-2');
+    expect(reverse).toHaveBeenCalledWith('w-2', { restoreWeightSnapshotToKg: null });
+  });
+
+  it('sends no restore value for a card that never carried one', async () => {
+    // A symptom card must not instruct a snapshot write at all. Omission is what tells
+    // the reconcile to leave an owner's profile weight alone.
+    useMomentStore.getState().showNamed(namedPayload({ eventId: 'sym-1' }));
+    await useMomentStore.getState().undo('sym-1');
+    expect(reverse).toHaveBeenCalledWith('sym-1', undefined);
+  });
+
   it('works on a meal and on a dose — one reversal for all three registers', async () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'meal-1' }));
     await useMomentStore.getState().undo('meal-1');
-    expect(reverse).toHaveBeenLastCalledWith('meal-1');
+    expect(reverse).toHaveBeenLastCalledWith('meal-1', undefined);
     expect(useMomentStore.getState().removed).toBe(true);
 
     useMomentStore.getState().showMedication(medicationPayload({ eventId: 'dose-1' }));
@@ -872,7 +912,7 @@ describe('momentStore — undo', () => {
     // would render its confirmation under the word "Removed".
     expect(useMomentStore.getState().removed).toBe(false);
     await useMomentStore.getState().undo('dose-1');
-    expect(reverse).toHaveBeenLastCalledWith('dose-1');
+    expect(reverse).toHaveBeenLastCalledWith('dose-1', undefined);
   });
 
   it('plays the rigid destructive haptic on the tap — the tap IS the confirm here', async () => {
@@ -949,7 +989,7 @@ describe('momentStore — undo', () => {
     // alert's "try again" would be silently swallowed forever.
     reverse.mockImplementation(async () => {});
     expect(await useMomentStore.getState().undo('ev-2')).toBe('removed');
-    expect(reverse).toHaveBeenLastCalledWith('ev-2');
+    expect(reverse).toHaveBeenLastCalledWith('ev-2', undefined);
   });
 
   it('does NOT stamp the removal line on a card that superseded it mid-write', async () => {
@@ -963,7 +1003,7 @@ describe('momentStore — undo', () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'new' }));
     release();
     expect(await pending).toBe('removed');
-    expect(reverse).toHaveBeenCalledWith('old');
+    expect(reverse).toHaveBeenCalledWith('old', undefined);
     const s = useMomentStore.getState();
     expect(s.removed).toBe(false);
     expect(s.payload?.eventId).toBe('new');

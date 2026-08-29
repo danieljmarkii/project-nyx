@@ -1,5 +1,15 @@
-// The reversal behind the completion card's Undo (CUL-612,
-// `docs/nyx-app-polish-requirements.md` §5).
+// The one reversal behind EVERY soft delete an owner can perform — the completion
+// card's Undo (CUL-612, `docs/nyx-app-polish-requirements.md` §5), History's
+// "Remove", and the event detail screen's "Remove".
+//
+// It started as Undo's alone, and the header below already argued that Undo and
+// Remove are the SAME reversal reached from different surfaces. CUL-641 is what
+// happened while that stayed an argument rather than a call: the weight-snapshot
+// side-effect was added to the write path and to none of the three delete paths,
+// and the three then diverged in a way nobody could see from any one of them. So
+// the shared reversal is now literally shared, and `softDeleteEvent` is the raw
+// primitive underneath it rather than something a screen reaches for directly
+// (`guards/reversePath.test.ts` fails the build on a screen that does).
 //
 // ── WHY THIS IS ONE CALL ─────────────────────────────────────────────────────
 // Undo is a SOFT DELETE of the just-written event and nothing else, because the
@@ -37,18 +47,37 @@
 
 import { softDeleteEvent } from './db';
 import { syncPendingEvents } from './sync';
+import { reconcileWeightSnapshotAfterDelete } from './weight';
 
 /**
- * Soft-delete `eventId` and queue the tombstone.
+ * Soft-delete `eventId`, settle the side-effects that removal implies, and queue
+ * the tombstone.
  *
- * Throws if the local write fails — the caller is expected to keep the card as
+ * Throws if the LOCAL write fails — the caller is expected to keep its surface as
  * it was and tell the owner, rather than showing a reversal that did not happen.
  * The sync flush is fire-and-forget by design: the tombstone is already durable
- * in SQLite with `synced = 0`, so an offline undo reverses immediately on device
- * and pushes on the next foreground/reconnect, exactly like any other edit. Undo
- * never touches sync ORDERING — it queues like the edit it is.
+ * in SQLite with `synced = 0`, so an offline reversal takes effect immediately on
+ * device and pushes on the next foreground/reconnect, exactly like any other edit.
+ * It never touches sync ORDERING — it queues like the edit it is.
+ *
+ * `restoreWeightSnapshotToKg` is for the ONE caller that knows something this
+ * function cannot re-derive: the completion card, reversing a weigh-in it just
+ * watched being written, knows the `pets.weight_kg` value that write displaced.
+ * With no reading left to fall back on, that is the only correct answer — see
+ * lib/weight.ts's delete-side header for why the alternative (nulling) loses data.
+ * Omitted by every other caller, and omission is not the same as `null`.
  */
-export async function reverseLoggedEvent(eventId: string): Promise<void> {
+export async function reverseLoggedEvent(
+  eventId: string,
+  opts?: { restoreWeightSnapshotToKg: number | null },
+): Promise<void> {
   await softDeleteEvent(eventId);
+  // CUL-641 — unconditional: the helper decides for itself whether this event was
+  // a weigh-in. Awaited, but only its local half is (the server write inside is
+  // fired and not waited on), so a reversal still resolves at local-write speed.
+  await reconcileWeightSnapshotAfterDelete(
+    eventId,
+    opts ? { restoreToKg: opts.restoreWeightSnapshotToKg } : undefined,
+  );
   syncPendingEvents().catch(console.error);
 }

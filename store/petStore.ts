@@ -116,6 +116,8 @@ interface PetState {
   addPet: (pet: Pet, options?: { select?: boolean }) => void;
   /** Patch the active pet (and its row in the list). */
   updatePet: (updates: Partial<Pet>) => void;
+  /** Patch a pet BY ID, active or not — see the implementation for why both exist. */
+  patchPetById: (petId: string, updates: Partial<Pet>) => void;
   /** Drop a pet from the active list (archive); falls back the selection if it was active. */
   removePet: (petId: string) => void;
   setOnboarded: (onboarded: boolean) => void;
@@ -160,6 +162,38 @@ export const usePetStore = create<PetState>((set, get) => ({
       return {
         activePet,
         pets: state.pets.map((p) => (p.id === activePet.id ? activePet : p)),
+      };
+    }),
+  // The by-id sibling of `updatePet`, and the distinction is load-bearing rather than
+  // stylistic (CUL-641, code review). `updatePet` can only ever patch the ACTIVE pet —
+  // it derives the target from `state.activePet` — which is right for the screens that
+  // own it (onboarding, Edit profile, the photo upload) because those edit the pet the
+  // owner is looking at. It is wrong for anything acting on a RECORD, because a record
+  // screen is reached BY ID for any pet: the day-summary spine pushes `/event/[id]` for
+  // every pet's rows, and deep links and notifications do the same (the CUL-574 rule,
+  // stated on `app/event/[id].tsx`). Removing a non-active pet's weigh-in there left
+  // that pet's `pets[]` entry holding the deleted reading — and `selectPet` repoints
+  // into the already-loaded array without refetching, so switching to that pet re-showed
+  // the number the owner had just removed.
+  //
+  // Guarding on "is it active?" and skipping otherwise is what produced that, so this
+  // does not guard: it patches by id, which is also strictly SAFER than the check it
+  // replaces — a write scoped to an id cannot land on another animal, which is the
+  // wrong-pet risk the guard existed for. `activePet` is re-pointed at the SAME object
+  // as the patched array entry when it is the one patched, and left untouched (same
+  // reference, no render churn) when it is not.
+  //
+  // A pet not in `pets` is a no-op: the list holds only non-archived pets, so a miss
+  // means an archived record's pet, and there is nothing on screen to keep in step.
+  patchPetById: (petId, updates) =>
+    set((state) => {
+      if (!state.pets.some((p) => p.id === petId)) return state;
+      const pets = state.pets.map((p) => (p.id === petId ? { ...p, ...updates } : p));
+      return {
+        pets,
+        activePet: state.activePet?.id === petId
+          ? pets.find((p) => p.id === petId)!
+          : state.activePet,
       };
     }),
   removePet: (petId) =>

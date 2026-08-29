@@ -20,8 +20,9 @@ import { useWidgetPetLink } from '../../hooks/useWidgetPetLink';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
-import { getTimeline, softDeleteEvent, TimelineRow } from '../../lib/db';
-import { syncPendingEvents, syncNow } from '../../lib/sync';
+import { getTimeline, TimelineRow } from '../../lib/db';
+import { syncNow } from '../../lib/sync';
+import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
 import { formatUtcDayShort } from '../../lib/utils';
 import {
@@ -436,8 +437,14 @@ export default function HistoryScreen() {
             setExpandedId(null);
             removeFromToday(event.id);
             try {
-              await softDeleteEvent(event.id);
-              syncPendingEvents().catch(console.error);
+              // CUL-641 — the shared reversal, not a bare softDeleteEvent: it queues
+              // the tombstone (as this line always did) AND settles the side-effects
+              // removal implies, so Remove and the card's Undo cannot drift apart.
+              // Removing a weigh-in re-points pets.weight_kg at whatever reading
+              // remains; with none left it is deliberately left alone rather than
+              // nulled, because this path cannot know what the reading displaced
+              // (lib/weight.ts, delete side).
+              await reverseLoggedEvent(event.id);
             } catch (e) {
               console.error('[history] soft delete failed:', e);
               setEvents((prev: NyxEvent[]) => {

@@ -735,6 +735,13 @@ export default function LogModal() {
     // active when the log is confirmed (the queue-then-switch edge).
     const pet = usePetStore.getState().activePet;
     if (!pet) return;
+    // CUL-641 — the snapshot this write is about to displace, read BEFORE the
+    // re-point below, so the card's Undo can put it back. Captured into its own
+    // const rather than read off `pet` at the end: `pet` is a write-time snapshot
+    // object and `updatePet` replaces the store's pet rather than mutating this
+    // one, so reading it later happens to still work — and that is exactly the
+    // kind of "happens to" a later refactor turns into the wrong number.
+    const displacedSnapshotKg = pet.weight_kg;
     const weightKg = parseWeightLbsToKg(weightLbsStr);
     // The Log button is disabled on an invalid value, so this is a belt-and-braces
     // guard — never store a 0/NaN that would corrupt a trend line.
@@ -814,6 +821,11 @@ export default function LogModal() {
         petId: pet.id,
         occurredAt: result.occurredAtIso,
         record: { kind: 'weight', weightKg },
+        // CUL-641 — what this write displaced, so Undo restores it rather than
+        // leaving a mis-typed 124 lbs as the profile weight and the next
+        // weigh-in's pre-fill. Always passed (never conditionally), so the
+        // key's PRESENCE means "the log site knew" and its value may be null.
+        previousSnapshotKg: displacedSnapshotKg,
       },
       { delayMs: 300 },
     );

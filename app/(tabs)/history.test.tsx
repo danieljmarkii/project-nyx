@@ -36,7 +36,14 @@ jest.mock('../../lib/feedingArrangements', () => ({
 }));
 jest.mock('../../lib/db', () => ({
   getTimeline: jest.fn(),
-  softDeleteEvent: jest.fn(() => Promise.resolve()),
+}));
+// Mocked for the same reason store/momentStore.test.ts mocks it: lib/undoLog pulls in
+// lib/sync and (since CUL-641) lib/weight, both of which reach lib/supabase, whose
+// import-time env guard throws under jest. lib/undoLog.test.ts owns what the reversal
+// actually writes; this suite owns the screen's half — that Remove routes through the
+// shared reversal at all, and what it does when that write fails.
+jest.mock('../../lib/undoLog', () => ({
+  reverseLoggedEvent: jest.fn(() => Promise.resolve()),
 }));
 // One STABLE object, not a fresh literal per render: the screen's loaders are
 // useCallback'd on `activePet`, so a new identity each render re-fires the
@@ -78,12 +85,15 @@ jest.mock('../../components/history/EventRow', () => {
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import HistoryScreen from './history';
-import { getTimeline, softDeleteEvent } from '../../lib/db';
+import { getTimeline } from '../../lib/db';
+import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 
 const mockGetTimeline = getTimeline as jest.Mock;
-const mockSoftDelete = softDeleteEvent as jest.Mock;
+// CUL-641 — Remove is no longer a bare softDeleteEvent; it is the SAME reversal the
+// completion card's Undo performs, so a side-effect added to one is inherited by both.
+const mockReverse = reverseLoggedEvent as jest.Mock;
 
 function row(id: string, occurredAt = '2026-08-24T09:00:00Z') {
   return {
@@ -181,7 +191,7 @@ describe('History — a delete that fails', () => {
 
   it('says so, instead of the row silently reappearing', async () => {
     const view = await renderWithOneRow();
-    mockSoftDelete.mockRejectedValueOnce(new Error('write failed'));
+    mockReverse.mockRejectedValueOnce(new Error('write failed'));
 
     fireEvent.press(view.getByTestId('delete-e1'));
     await confirmRemove();
@@ -197,7 +207,7 @@ describe('History — a delete that fails', () => {
   it('puts the event back in Today too, so Home stops hiding it', async () => {
     useEventStore.setState({ todayEvents: [e1 as unknown as NyxEvent] });
     const view = await renderWithOneRow();
-    mockSoftDelete.mockRejectedValueOnce(new Error('write failed'));
+    mockReverse.mockRejectedValueOnce(new Error('write failed'));
 
     fireEvent.press(view.getByTestId('delete-e1'));
     await confirmRemove();
@@ -209,7 +219,7 @@ describe('History — a delete that fails', () => {
 
   it('leaves Today alone when the deleted event was not in it', async () => {
     const view = await renderWithOneRow();
-    mockSoftDelete.mockRejectedValueOnce(new Error('write failed'));
+    mockReverse.mockRejectedValueOnce(new Error('write failed'));
 
     fireEvent.press(view.getByTestId('delete-e1'));
     await confirmRemove();
@@ -225,7 +235,7 @@ describe('History — a delete that fails', () => {
   it('does not restore into another pet\'s Today after a pet switch', async () => {
     useEventStore.setState({ todayEvents: [e1 as unknown as NyxEvent] });
     const view = await renderWithOneRow();
-    mockSoftDelete.mockImplementationOnce(async () => {
+    mockReverse.mockImplementationOnce(async () => {
       mockPetState = { activePet: { id: 'p2' } };
       throw new Error('write failed');
     });
@@ -240,12 +250,31 @@ describe('History — a delete that fails', () => {
 
   it('says nothing when the delete succeeds', async () => {
     const view = await renderWithOneRow();
-    mockSoftDelete.mockResolvedValueOnce(undefined);
+    mockReverse.mockResolvedValueOnce(undefined);
 
     fireEvent.press(view.getByTestId('delete-e1'));
     await confirmRemove();
 
     await waitFor(() => expect(view.queryByText('event e1')).toBeNull());
     expect(showSpy).not.toHaveBeenCalled();
+  });
+
+  it('goes through the SHARED reversal, not a delete path of its own (CUL-641)', async () => {
+    // The whole defect was that Remove and the completion card's Undo were separate
+    // delete paths, so a side-effect added to the write path (re-pointing
+    // pets.weight_kg) reached neither and nobody could see it from inside either one.
+    // Asserting the call by name is what keeps this path from quietly growing its own
+    // semantics again; `guards/reversePath.test.ts` is the build-level half.
+    //
+    // No restore value from here, and that is deliberate: this screen removes an
+    // arbitrary historical row and cannot know what snapshot it displaced. Omission is
+    // what tells the reconcile to leave an owner's profile weight alone rather than
+    // null it (lib/weight.ts, delete side).
+    const view = await renderWithOneRow();
+
+    fireEvent.press(view.getByTestId('delete-e1'));
+    await confirmRemove();
+
+    await waitFor(() => expect(mockReverse).toHaveBeenCalledWith('e1'));
   });
 });

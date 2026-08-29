@@ -5,6 +5,7 @@ import { clearWidgetTimeline } from './widgetBridge';
 import { clearRecoveryRequest } from './recoveryMarker';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
+import { useMomentStore } from '../store/momentStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
@@ -129,6 +130,16 @@ export async function wipeLocalSession(): Promise<void> {
   // in-memory pet list so the next sign-in starts clean (FR-9 parity).
   await clearPersistedActivePetId();
   usePetStore.getState().reset();
+  // CUL-641 (rls-privacy-reviewer): the completion moment is account data resting in
+  // JS memory, and the three cards are mounted in the ROOT layout — above the auth
+  // redirect — so an involuntary sign-out (a revoked refresh token, an eviction from
+  // another device) landing while a card is up leaves it rendering "Saved to {previous
+  // owner's pet}'s record" and "Weight · 26.5 lbs" over the next person's login screen.
+  // `hide()` is not enough: it clears `visible` and deliberately KEEPS the payload.
+  // Pre-existing, and named here because this issue added `previousSnapshotKg` — a
+  // second health value — to that payload. Same FR-9 parity rule as the App Group and
+  // notification wipes above: wipe every place account data rests, not just SQLite.
+  useMomentStore.setState({ visible: false, payload: null, removed: false });
   // Clear any half-finished onboarding entry (a typed pet name/type) so it can't
   // carry into the next account's onboarding on this device (B-251 PR 7).
   useOnboardingDraftStore.getState().reset();
