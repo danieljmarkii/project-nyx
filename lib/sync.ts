@@ -654,22 +654,63 @@ export async function syncPendingEvents(): Promise<void> {
   // reading until some later weigh-in happened to re-point it. Once a weight_check
   // TOMBSTONE lands, bring that pet's snapshot current.
   //
-  // KNOWN LIMIT, and the blast radius is wider than "a stale row" (adversarial pass):
-  // this can only reconcile TO a remaining reading. It cannot restore a DISPLACED value,
-  // because only the delete site ever knew it, and `reconcilePetWeightSnapshot` bails
-  // when there is no reading left. So: log a first-ever weigh-in ONLINE (server snapshot
-  // moves), lose signal, undo it. This device is correct — the store was patched inline —
-  // but the server keeps the undone reading, and every OTHER device and every reinstall
-  // pulls `pets` from the server, so they inherit it indefinitely in the chip, the
-  // pre-fill and EditPetModal. Closing it needs the displaced value stored per reading
-  // (a schema change, its own issue).
-  const tombstonedWeightPetIds = [...new Set(
-    unsyncedEvents
-      .filter((e) => e.event_type === 'weight_check' && e.deleted_at != null && landedEvents.has(e.id))
-      .map((e) => e.pet_id),
-  )];
-  for (const petId of tombstonedWeightPetIds) {
-    await reconcilePetWeightSnapshot(petId);
+  // It carries the SAME identity gate the client applied, and that is the whole point
+  // rather than a detail. The first version of this loop called
+  // `reconcilePetWeightSnapshot`, which re-points at the latest remaining reading
+  // UNCONDITIONALLY — so a delete of an unrelated older reading destroyed an
+  // owner-typed Edit-profile weight on the server, one line after the client's gate had
+  // correctly refused to touch it. The rule was enforced in one layer and skipped in
+  // the seam, which is the same shape as the defect this whole issue is about: a
+  // side-effect that exists on one path and not the one beside it.
+  //
+  // KNOWN LIMIT, stated rather than implied: this reconciles to a remaining reading or
+  // to nothing. It cannot restore a DISPLACED value, because only the delete site ever
+  // knew it — so an offline undo of a first-ever weigh-in ends with the server snapshot
+  // cleared rather than put back. That is the safe direction (no number is asserted),
+  // and CUL-694 is where restoring it exactly lives.
+  const tombstonedWeightEvents = unsyncedEvents.filter(
+    (e) => e.event_type === 'weight_check' && e.deleted_at != null && landedEvents.has(e.id),
+  );
+  for (const e of tombstonedWeightEvents) {
+    await reconcileSnapshotAfterWeightTombstone(e.id, e.pet_id);
+  }
+}
+
+// The delete-side reconcile's server half, retried (CUL-641). Mirrors
+// lib/weight.ts `reconcileWeightSnapshotAfterDelete`'s gate-2 exactly: the identity
+// question is asked of the DATABASE, in the write that depends on it, so this path
+// cannot re-point a snapshot the deleted reading never set.
+//
+// Why it is not `reconcilePetWeightSnapshot` (which the CUL-293 landed-READING loop
+// still uses, correctly — a reading that lands SHOULD re-point, same as the write
+// path): that helper is ungated by design and would destroy an owner-entered weight
+// here. It also bails when no reading remains, which is precisely the case a delete
+// needs to act on — clearing a snapshot whose only reading is gone.
+//
+// The deleted reading's own value comes from the local child, which survives the
+// parent's soft delete (weight_checks has no deleted_at of its own). A child that has
+// not hydrated yet leaves the question unanswerable, so this writes nothing rather
+// than guessing — the same call lib/weight.ts makes.
+//
+// PRECONDITION: the caller owns the Pattern 4 session-freshness check, as
+// syncPendingEvents does before reaching this loop.
+async function reconcileSnapshotAfterWeightTombstone(eventId: string, petId: string): Promise<void> {
+  try {
+    const db = getDb();
+    const child = await db.getFirstAsync<{ weight_kg: number }>(
+      `SELECT weight_kg FROM weight_checks WHERE event_id = ?`,
+      [eventId],
+    );
+    if (child?.weight_kg == null) return;
+    const latest = await db.getFirstAsync<{ weight_kg: number }>(LATEST_WEIGHT_KG_QUERY, [petId]);
+    const { error } = await supabase
+      .from('pets')
+      .update({ weight_kg: latest?.weight_kg ?? null })
+      .eq('id', petId)
+      .eq('weight_kg', child.weight_kg);
+    if (error) console.warn('[sync] weight tombstone snapshot reconcile failed:', error.message);
+  } catch (e) {
+    console.warn('[sync] weight tombstone snapshot reconcile error:', e);
   }
 }
 

@@ -37,9 +37,15 @@ jest.mock('./utils', () => ({
   uuid: () => `id-${++mockIdCounter}`,
 }));
 
-// supabase.from('pets').update({ weight_kg }).eq('id', petId) → { error } — the
-// snapshot re-point in updateWeightCheck (B-197).
-const mockPetsEq = jest.fn().mockResolvedValue({ error: null });
+// supabase.from('pets').update({ weight_kg }).eq('id', petId)[.eq('weight_kg', …)]
+// Two shapes share this mock, so the first `.eq` returns something that is BOTH
+// awaitable and chainable: `updateWeightCheck` (B-197) stops after one filter, while
+// the CUL-641 delete-side reconcile adds a second — the identity gate, evaluated by
+// the database in the write that depends on it.
+const mockPetsEqWeight = jest.fn().mockResolvedValue({ error: null });
+const mockPetsEq = jest.fn(() =>
+  Object.assign(Promise.resolve({ error: null }), { eq: mockPetsEqWeight }),
+);
 const mockPetsUpdate = jest.fn(() => ({ eq: mockPetsEq }));
 jest.mock('./supabase', () => ({
   supabase: { from: jest.fn(() => ({ update: mockPetsUpdate })) },
@@ -64,7 +70,8 @@ beforeEach(() => {
   mockWithTransactionAsync.mockClear();
   mockSyncPendingEvents.mockClear();
   mockSyncPendingWeightChecks.mockClear();
-  mockPetsEq.mockClear().mockResolvedValue({ error: null });
+  mockPetsEq.mockClear();
+  mockPetsEqWeight.mockClear().mockResolvedValue({ error: null });
   mockPetsUpdate.mockClear();
   mockIdCounter = 0;
 });
@@ -464,32 +471,39 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     usePetStore.setState({ pets: [PET], activePet: PET, isOnboarded: true });
   });
 
+  // Every server write below carries TWO filters: `.eq('id', …)` and
+  // `.eq('weight_kg', <the deleted reading's own value>)`. That second one is the
+  // identity gate, and it lives in the write rather than ahead of it — asked of the
+  // database, against the authoritative value, atomically. The first version asked the
+  // pet STORE and then acted on the server, and the adversarial pass broke it in both
+  // directions: a stale store refused a correction the server needed (permanently, when
+  // no reading remained), and permitted one the server had to refuse (a shared-credential
+  // household where the other device had typed a profile weight).
+  const gate = (kg: number) => expect(mockPetsEqWeight).toHaveBeenCalledWith('weight_kg', kg);
+
   it('re-points the snapshot at the latest REMAINING reading', async () => {
     localReads({ latestKg: 5.62 });
     const out = await reconcileWeightSnapshotAfterDelete('ev-1');
     expect(out).toEqual({ petId: 'pet-1', snapshotKg: 5.62 });
     await flush();
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
+    gate(56.25);
     expect(usePetStore.getState().activePet?.weight_kg).toBe(5.62);
   });
 
   it('restores the displaced value when NO reading remains — the first-ever weigh-in', async () => {
-    // The case option A could not reach and the whole reason the caller passes a
-    // restore value: with nothing left to reconcile TO, the profile weight this log
-    // overwrote is the only correct answer. Without it the chip keeps the mis-typed
-    // number next to a card that says no weigh-ins are logged.
+    // The case option A could not reach: with nothing left to reconcile TO, the profile
+    // weight this log overwrote is the only correct answer.
     localReads({ latestKg: null });
     const out = await reconcileWeightSnapshotAfterDelete('ev-1', { restoreToKg: 4.2 });
     expect(out).toEqual({ petId: 'pet-1', snapshotKg: 4.2 });
     await flush();
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 4.2 });
+    gate(56.25);
     expect(usePetStore.getState().activePet?.weight_kg).toBe(4.2);
   });
 
   it('restores a displaced NULL — "no weight on file" is a value, not a missing one', async () => {
-    // A pet onboarded without a weight, whose first-ever weigh-in is undone, must go
-    // back to having no weight on file. Treating the null as "nothing to do" would
-    // strand the reversed reading as the profile weight.
     localReads({ latestKg: null });
     const out = await reconcileWeightSnapshotAfterDelete('ev-1', { restoreToKg: null });
     expect(out).toEqual({ petId: 'pet-1', snapshotKg: null });
@@ -500,74 +514,77 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
 
   it('NULLS a snapshot that is the deleted reading itself, when nothing remains', async () => {
     // The History/detail Remove path on a first-ever weigh-in. The first draft left this
-    // alone, reasoning that it protected the owner's onboarding weight — but the WRITE
-    // side already destroyed that at log time, so what "leave alone" preserved was the
-    // deleted reading. `WeightTrendCard` then captions it "From {pet}'s profile." and
-    // `EditPetModal` writes it back on Save, laundering a removed weigh-in into a real
-    // profile weight. Null is the honest reading of a record holding no weigh-in — and
-    // it keeps a phantom out of the next weigh-in's pre-filled, one-tap-confirmable field.
+    // alone, reasoning it protected the owner's onboarding weight — but the WRITE side
+    // already destroyed that at log time, so what "leave alone" preserved was the deleted
+    // reading, which `WeightTrendCard` captions "From {pet}'s profile." and `EditPetModal`
+    // writes back on Save. Null is the honest reading of a record holding no weigh-in.
     localReads({ latestKg: null });
     const out = await reconcileWeightSnapshotAfterDelete('ev-1');
     expect(out).toEqual({ petId: 'pet-1', snapshotKg: null });
     await flush();
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: null });
+    gate(56.25);
     expect(usePetStore.getState().activePet?.weight_kg).toBeNull();
   });
 
   // ── The gate: a delete may only undo the snapshot write THIS reading made ───
-  it('leaves an owner-entered profile weight alone — a delete of a DIFFERENT row', async () => {
-    // The destruction vector the un-gated version introduced. The owner types a
-    // vet-measured 18.0 kg into Edit profile (snapshot = 18.0), then removes some
-    // unrelated older weigh-in. Re-pointing at the latest remaining reading would
-    // destroy the 18.0 — a value the owner entered by hand, killed by a delete of a
-    // different row, on a path that previously could not touch it at all.
+  it('cannot destroy an owner-entered profile weight — the DB refuses the write', async () => {
+    // The vector the un-gated version introduced. The owner types a vet-measured 18.0 kg
+    // into Edit profile, then removes an unrelated older weigh-in. The local store
+    // refuses the patch, and — the half that actually protects the server — the write
+    // carries `weight_kg = 10.0`, the deleted reading's value, so it matches zero rows
+    // against a snapshot holding 18.0. Asserting the FILTER rather than "no call" is the
+    // point: the protection has to survive a stale local copy.
     usePetStore.setState({ pets: [{ ...PET, weight_kg: 18.0 }], activePet: { ...PET, weight_kg: 18.0 }, isOnboarded: true });
     localReads({ deletedKg: 10.0, latestKg: 20.0 });
 
-    const out = await reconcileWeightSnapshotAfterDelete('ev-old');
+    await reconcileWeightSnapshotAfterDelete('ev-old');
 
-    expect(out).toBeNull();
     await flush();
-    expect(mockPetsUpdate).not.toHaveBeenCalled();
+    gate(10.0);
     expect(usePetStore.getState().activePet?.weight_kg).toBe(18.0);
   });
 
-  it('leaves the snapshot alone when a NEWER reading owns it', async () => {
-    // Removing an older reading that never set the snapshot. Nothing to undo.
+  it('does not patch the local store when a NEWER reading owns the snapshot', async () => {
     localReads({ deletedKg: 4.0, latestKg: 56.25 });
-    expect(await reconcileWeightSnapshotAfterDelete('ev-old')).toBeNull();
+    await reconcileWeightSnapshotAfterDelete('ev-old');
     await flush();
-    expect(mockPetsUpdate).not.toHaveBeenCalled();
+    gate(4.0);
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(56.25);
   });
 
-  it('compares at the precision the data has, not by float identity', async () => {
-    // Both sides are 2 dp by construction but arrive by different routes — the snapshot
-    // through PostgREST as a NUMERIC string, the reading out of SQLite REAL. The gate
-    // decides everything, so a representation difference below the last stored digit
-    // must not read as "a different number".
+  it('still asks the server even when the LOCAL copy says no — a stale store must not veto', async () => {
+    // The other direction the first gate got wrong, and the costlier one. `app/log.tsx`
+    // patches the store only when its server write succeeded AND the pet is still
+    // active, so the store is knowingly allowed to lag. An offline weigh-in that syncs
+    // later, or an Undo after a pet switch, leaves the store holding a value the server
+    // does not have — and a store-only gate then refuses a correction the server needs,
+    // permanently, because with no reading left nothing ever re-runs. The write goes out
+    // regardless; the database decides.
+    usePetStore.setState({ pets: [{ ...PET, weight_kg: 5.0 }], activePet: { ...PET, weight_kg: 5.0 }, isOnboarded: true });
+    localReads({ deletedKg: 56.2, latestKg: null });
+
+    await reconcileWeightSnapshotAfterDelete('ev-1');
+
+    await flush();
+    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: null });
+    gate(56.2);
+  });
+
+  it('compares the LOCAL patch at the precision the data has, not by float identity', async () => {
     usePetStore.setState({ pets: [{ ...PET, weight_kg: 0.1 + 0.2 }], activePet: { ...PET, weight_kg: 0.1 + 0.2 }, isOnboarded: true });
     localReads({ deletedKg: 0.3, latestKg: 5.62 });
 
     await reconcileWeightSnapshotAfterDelete('ev-1');
 
-    await flush();
-    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
-  });
-
-  it('leaves a pet with no weight on file alone', async () => {
-    usePetStore.setState({ pets: [{ ...PET, weight_kg: null }], activePet: { ...PET, weight_kg: null }, isOnboarded: true });
-    localReads({ deletedKg: 5.0, latestKg: 4.0 });
-    expect(await reconcileWeightSnapshotAfterDelete('ev-1')).toBeNull();
-    await flush();
-    expect(mockPetsUpdate).not.toHaveBeenCalled();
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(5.62);
   });
 
   it('treats an unhydrated child as an UNEVALUABLE weigh-in, not as a non-weigh-in', async () => {
-    // `syncPendingEvents` lands `events` before `syncPendingWeightChecks` lands their
-    // children, so on a fresh device a weight_check can exist with no child row. Scoring
-    // that as "this wasn't a weigh-in" is a logging gap read as an absence. The snapshot
-    // is still left alone (the safe direction) but the anomaly is said out loud, and the
-    // latest-reading query is never run against half-hydrated data.
+    // On the PULL path `hydrateEvents` completes before `hydrateWeightChecks`, so on a
+    // fresh install a weigh-in can render with no local child. Scoring that as "this
+    // wasn't a weigh-in" is a logging gap read as an absence — and without the child
+    // there is no value to gate on, so nothing is written either.
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     localReads({ deletedKg: null, latestKg: 5.62 });
 
@@ -581,10 +598,8 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
   });
 
   it('is a no-op for an event that is not a weigh-in', async () => {
-    // Every delete path calls this unconditionally, so the overwhelmingly common
-    // input is a vomit / meal / dose. It must cost one local read and nothing else —
-    // and must never touch the latest-reading query, which is scoped to a pet id it
-    // does not have.
+    // Every delete path calls this unconditionally, so the overwhelmingly common input
+    // is a vomit / meal / dose. One local read and nothing else.
     localReads({ eventType: 'vomit', latestKg: 9.9 });
     expect(await reconcileWeightSnapshotAfterDelete('ev-not-weight')).toBeNull();
     await flush();
@@ -592,15 +607,12 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     expect(mockPetsUpdate).not.toHaveBeenCalled();
   });
 
-  it('patches the RECORD\'s pet even when another pet is active, and only that one', async () => {
-    // The cross-pet MAINLINE, not a race (code review, CUL-641). A record screen is
-    // reached by id for any pet — the day-summary spine pushes /event/[id] for every
-    // pet's rows (CUL-574) — so removing a non-active pet's weigh-in is an ordinary
-    // thing to do. `updatePet` can only patch the ACTIVE pet, so an is-it-active guard
-    // here left the record's pet holding the deleted reading; `selectPet` repoints into
-    // the already-loaded array without refetching, and switching to that pet re-showed
-    // the number the owner had just removed. This asserts the entry in `pets`, which is
-    // where that staleness lived and which an activePet-only assertion cannot see.
+  it("patches the RECORD's pet even when another pet is active, and only that one", async () => {
+    // The cross-pet MAINLINE, not a race. A record screen is reached by id for any pet —
+    // the day-summary spine pushes /event/[id] for every pet's rows (CUL-574) — so
+    // removing a non-active pet's weigh-in is ordinary. `updatePet` can only patch the
+    // ACTIVE pet, so an is-it-active guard left the record's pet holding the deleted
+    // reading; `selectPet` repoints into the already-loaded array without refetching.
     const other = { ...PET, id: 'pet-2', name: 'Juniper', weight_kg: 3.1 } as Pet;
     usePetStore.setState({ pets: [PET, other], activePet: other, isOnboarded: true });
     localReads({ latestKg: 5.62 });
@@ -608,18 +620,13 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     await reconcileWeightSnapshotAfterDelete('ev-1');
     await flush();
 
-    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
     expect(usePetStore.getState().pets.find((p) => p.id === 'pet-1')?.weight_kg).toBe(5.62);
-    // And the OTHER animal is untouched — a by-id patch cannot land on the wrong pet,
-    // which is the risk the discarded guard existed for.
+    // The other animal is untouched — a by-id patch cannot land on the wrong pet.
     expect(usePetStore.getState().pets.find((p) => p.id === 'pet-2')?.weight_kg).toBe(3.1);
     expect(usePetStore.getState().activePet?.weight_kg).toBe(3.1);
   });
 
   it('survives a later switch to that pet — the defect was only visible after one', async () => {
-    // The step that made the cross-pet gap invisible: nothing refetches on a switch, so
-    // a stale array entry becomes the active pet's own weight, and the chip, EditPetModal
-    // and the next weigh-in's pre-fill all read it.
     const other = { ...PET, id: 'pet-2', name: 'Juniper', weight_kg: 3.1 } as Pet;
     usePetStore.setState({ pets: [PET, other], activePet: other, isOnboarded: true });
     localReads({ latestKg: 5.62 });
@@ -631,30 +638,23 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     expect(usePetStore.getState().activePet?.weight_kg).toBe(5.62);
   });
 
-  it('writes NOTHING for a record whose pet is not in the list at all', async () => {
-    // `pets` holds only non-archived pets, so a miss means an archived record's pet.
-    // There is no snapshot in hand to compare against, so the gate cannot be evaluated —
-    // and an un-gated write is exactly the unconditional re-point that destroys an
-    // owner-entered weight. Leaving it is the safe direction, and an archived pet's
-    // snapshot is on no surface. Never a fallback to "the pet currently selected": on a
-    // record-scoped operation that rung is a different, confidently-wrong answer (CUL-574).
+  it('still corrects the SERVER for a record whose pet is not in the local list', async () => {
+    // An archived pet's record. There is nothing on screen to patch, but the server
+    // snapshot is still wrong and still gated, so the correction goes out.
     usePetStore.setState({ pets: [], activePet: null, isOnboarded: true });
     localReads({ latestKg: 5.62 });
 
-    expect(await reconcileWeightSnapshotAfterDelete('ev-1')).toBeNull();
+    await reconcileWeightSnapshotAfterDelete('ev-1');
     await flush();
 
-    expect(mockPetsUpdate).not.toHaveBeenCalled();
+    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
+    gate(56.25);
     expect(usePetStore.getState().activePet).toBeNull();
   });
 
   it('patches the store even when the server write fails — the device stays right offline', async () => {
-    // The owner-visible half must not depend on the network. This is why the store
-    // patch runs BEFORE the server write and why that write is not awaited: a
-    // reversal on a plane still fixes the chip and the next pre-fill, and
-    // syncPendingEvents re-points the server on reconnect.
     localReads({ latestKg: 5.62 });
-    mockPetsEq.mockResolvedValueOnce({ error: { message: 'network' } });
+    mockPetsEqWeight.mockResolvedValueOnce({ error: { message: 'network' } });
     await expect(reconcileWeightSnapshotAfterDelete('ev-1')).resolves.toEqual({
       petId: 'pet-1', snapshotKg: 5.62,
     });

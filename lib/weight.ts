@@ -293,7 +293,14 @@ export async function updateWeightCheck(
 // One gate closes both, because both are the same mistake: acting on a snapshot
 // this reading did not set. Comparing the deleted reading's own `weight_kg` to
 // the snapshot tells "this number is the corpse" from "this number is the
-// owner's" at zero schema cost — and it is the one question that decides.
+// owner's" at zero schema cost.
+//
+// STATED LIMIT, because identity-by-value is not identity: a snapshot that merely
+// EQUALS this reading passes the gate. A pet re-weighed at the same 12.0 lb months
+// apart, whose owner then types that same 12.0 into Edit profile, has an
+// owner-entered value the gate cannot tell from the corpse — deleting the older
+// reading re-points it. Ordinary enough to name, rare enough not to buy a schema
+// column for; CUL-694 is where storing the displaced value exactly lives.
 //
 // Nulling a corpse is then not data loss: the value it displaced was already
 // destroyed at write time, so "—" and the card's designed empty state are the
@@ -351,10 +358,12 @@ export async function reconcileWeightSnapshotAfterDelete(
     const db = getDb();
     // The PARENT carries the type; the child carries the value. Reading both is what
     // tells "not a weigh-in" apart from "a weigh-in whose child has not hydrated yet"
-    // — `syncPendingEvents` lands `events` before `syncPendingWeightChecks` lands its
-    // children, so on a fresh device that window is real, and a bare child lookup
-    // scored it as "this wasn't a weigh-in". That is a logging gap read as an absence,
-    // which is the one inference this codebase does not allow itself to make.
+    // — on the PULL path `hydrateEvents` completes before `hydrateWeightChecks`, so on
+    // a fresh install a weigh-in renders in History with no local child, and a bare
+    // child lookup scored it as "this wasn't a weigh-in". That is a logging gap read as
+    // an absence, which is the one inference this codebase does not allow itself to
+    // make. (The PUSH path has no such window: `insertWeightCheck` writes parent and
+    // child in one transaction.)
     const row = await db.getFirstAsync<{
       event_type: string;
       pet_id: string;
@@ -379,47 +388,59 @@ export async function reconcileWeightSnapshotAfterDelete(
       return null;
     }
 
-    // ── THE GATE: is the snapshot THIS reading? ──────────────────────────────
-    // Read from the pet store, which is the app's own view of `pets.weight_kg` and
-    // exactly the number the chip / pre-fill / EditPetModal are showing. A pet absent
-    // from the list (archived, or the store not loaded) leaves nothing to compare and
-    // nothing on screen, so there is no decision to make — and never a fallback to the
-    // active pet, which on a record-scoped operation is a different, confidently wrong
-    // answer (CUL-574).
-    const pet = usePetStore.getState().pets.find((p) => p.id === row.pet_id);
-    if (!pet) return null;
-    if (pet.weight_kg == null || !isSameStoredWeight(pet.weight_kg, row.weight_kg)) {
-      // The snapshot is somebody else's value — an owner-entered profile weight, or a
-      // newer reading this delete does not concern. Not this delete's to move.
-      return null;
-    }
-
     const latestKg = await getLatestWeightKg(row.pet_id);
-    // Reaching here means the snapshot WAS this reading, so every branch below is
-    // undoing a write this reading made — including the null, which is honest rather
-    // than lossy (the displaced value was already gone before this delete began).
+    // What the snapshot becomes IF the gates below agree this reading owns it. The
+    // null is honest rather than lossy: the displaced value was already gone before
+    // this delete began (see the header).
     const snapshotKg = latestKg ?? (restore ? restore.restoreToKg : null);
 
-    // Patch the in-memory pet FIRST so the chip / pre-fill / EditPetModal are right
-    // on this device immediately — including offline, where the server write below
-    // cannot land.
+    // ── TWO GATES, because there are two copies of the snapshot ──────────────
+    // The identity question — "is the snapshot THIS reading's value?" — has to be
+    // asked separately of the local copy and the server row, because they are allowed
+    // to disagree and the app knows it: `app/log.tsx` patches the store only when its
+    // server write SUCCEEDED and the pet is still active, and nothing re-reads `pets`
+    // except `usePet`'s `[user]` effect. Asking the store and then acting on the
+    // server — which is what the first version of this gate did — gets it wrong in
+    // both directions, and the adversarial pass found both:
     //
-    // BY ID, not `updatePet` (code review). `updatePet` can only patch the ACTIVE
-    // pet, and a record screen is reached by id for ANY pet: the day-summary spine
-    // pushes `/event/[id]` for every pet's rows (the CUL-574 rule, stated on that
-    // screen). Removing a non-active pet's weigh-in therefore left that pet's entry
-    // in `pets` holding the deleted reading, and `selectPet` repoints into the
-    // already-loaded array without refetching — so switching to that pet re-showed
-    // the number the owner had just removed. That is this very defect, reproduced on
-    // the cross-pet path by the guard that was meant to prevent a wrong-pet write.
-    // Scoping the patch to the id gets both: it cannot land on another animal, and
-    // it cannot skip the animal it is for.
-    usePetStore.getState().patchPetById(row.pet_id, { weight_kg: snapshotKg });
+    //   · a stale store REFUSES a correction the server needs, and when no reading
+    //     remains nothing ever heals it (an offline weigh-in synced later, then
+    //     removed; or an Undo after a pet switch skipped the store patch) — the
+    //     headline defect of this very issue, reproduced through its own fix;
+    //   · a stale store PERMITS a write the server must not take — a shared-credential
+    //     household where the other device typed a profile weight this one has not
+    //     seen yet.
 
+    // Gate 1, the LOCAL view: patch the in-memory pet so the chip / pre-fill /
+    // EditPetModal are right on this device immediately, including offline. The store
+    // is the right oracle for the store. If it is stale the local patch is simply
+    // skipped or slightly wrong, and the next `usePet` fetch settles it — a cosmetic
+    // cost, never a destroyed value.
+    //
+    // BY ID, not `updatePet`: that one can only patch the ACTIVE pet, and a record
+    // screen is reached by id for ANY pet (the day-summary spine pushes `/event/[id]`
+    // for every pet's rows — CUL-574). Guarding on "is it active?" silently skipped
+    // the pet the record belonged to, and `selectPet` never refetches, so switching to
+    // that pet re-showed the number the owner had just removed.
+    const pet = usePetStore.getState().pets.find((p) => p.id === row.pet_id);
+    if (pet?.weight_kg != null && isSameStoredWeight(pet.weight_kg, row.weight_kg)) {
+      usePetStore.getState().patchPetById(row.pet_id, { weight_kg: snapshotKg });
+    }
+
+    // Gate 2, the SERVER row: `.eq('weight_kg', …)` makes the database itself answer
+    // the identity question, against the authoritative value, atomically, in the write
+    // that depends on it. No extra round trip, no oracle to go stale, and no window
+    // between deciding and acting. A snapshot that is somebody else's value — an
+    // owner-typed profile weight, or a newer reading this delete does not concern —
+    // simply matches zero rows and is left exactly as it is.
+    //
+    // This is the shape the sync-side retry uses too (lib/sync.ts), which is the point:
+    // the rule cannot be enforced in one layer and skipped in the other.
     void supabase
       .from('pets')
       .update({ weight_kg: snapshotKg })
       .eq('id', row.pet_id)
+      .eq('weight_kg', row.weight_kg)
       .then(
         ({ error }: { error: { message: string } | null }) => {
           if (error) console.warn('[weight] snapshot reconcile after delete failed:', error.message);

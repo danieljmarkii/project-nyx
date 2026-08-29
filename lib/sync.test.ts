@@ -1295,15 +1295,21 @@ describe('syncPendingEvents — weight tombstone reconcile (CUL-641)', () => {
     deleted_at: '2026-08-28T00:00:00.000Z', created_at: 't', updated_at: 't', logged_via: 'app',
   };
 
-  function wire() {
-    const petEq = jest.fn().mockResolvedValue({ error: null });
-    const petUpdate = jest.fn().mockReturnValue({ eq: petEq });
-    const evSelect = jest.fn().mockResolvedValue({ data: [{ id: 'e1' }], error: null });
+  /**
+   * The pets update is now a CHAINED filter — `.eq('id', …).eq('weight_kg', …)` — so the
+   * mock has to return a builder from the first `eq`, not a promise. That shape IS the
+   * fix: the second filter is the identity gate, evaluated by the database.
+   */
+  function wire(landedIds: string[] = ['e1']) {
+    const petEqWeight = jest.fn().mockResolvedValue({ error: null });
+    const petEqId = jest.fn().mockReturnValue({ eq: petEqWeight });
+    const petUpdate = jest.fn().mockReturnValue({ eq: petEqId });
+    const evSelect = jest.fn().mockResolvedValue({ data: landedIds.map((id) => ({ id })), error: null });
     const evUpsert = jest.fn().mockReturnValue({ select: evSelect });
     mockFrom.mockImplementation((table: string) =>
       table === 'pets' ? { update: petUpdate } : { upsert: evUpsert },
     );
-    return { petUpdate, evSelect };
+    return { petUpdate, petEqId, petEqWeight };
   }
 
   beforeEach(() => {
@@ -1314,14 +1320,54 @@ describe('syncPendingEvents — weight tombstone reconcile (CUL-641)', () => {
     mockFrom.mockReset();
   });
 
-  it('re-points the snapshot once a weight_check tombstone lands', async () => {
+  it('re-points the snapshot once a weight_check tombstone lands — GATED on the deleted value', async () => {
+    // 1st getFirstAsync = the deleted reading's own weight_kg; 2nd = the latest remaining.
     mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
-    mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.4 });
-    const { petUpdate } = wire();
+    mockGetFirstAsync
+      .mockResolvedValueOnce({ weight_kg: 6.1 })
+      .mockResolvedValueOnce({ weight_kg: 5.4 });
+    const { petUpdate, petEqId, petEqWeight } = wire();
 
     await syncPendingEvents();
 
     expect(petUpdate).toHaveBeenCalledWith({ weight_kg: 5.4 });
+    expect(petEqId).toHaveBeenCalledWith('id', 'pet-A');
+    // THE FIX. The first version of this loop called the ungated
+    // `reconcilePetWeightSnapshot`, so it re-pointed the snapshot on ANY weight
+    // tombstone — destroying an owner-typed Edit-profile weight on the server one line
+    // after the client's gate had correctly refused to touch it. This assertion is the
+    // difference: the write only lands where the snapshot IS the deleted reading, and
+    // the database decides that, in the write that depends on it.
+    expect(petEqWeight).toHaveBeenCalledWith('weight_kg', 6.1);
+  });
+
+  it('CLEARS the snapshot when the tombstoned reading was the last one', async () => {
+    // The case `reconcilePetWeightSnapshot` could not reach — it bails when no reading
+    // remains, which left a removed weigh-in standing as the server's profile weight
+    // for every other device and every reinstall. Gated, so it can only clear a
+    // snapshot the deleted reading itself set.
+    mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
+    mockGetFirstAsync
+      .mockResolvedValueOnce({ weight_kg: 6.1 })
+      .mockResolvedValueOnce(null);
+    const { petUpdate, petEqWeight } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).toHaveBeenCalledWith({ weight_kg: null });
+    expect(petEqWeight).toHaveBeenCalledWith('weight_kg', 6.1);
+  });
+
+  it('writes nothing when the deleted reading has no local child to identify it by', async () => {
+    // Partial hydration on the PULL path: the parent landed, the child has not. The
+    // identity question is unanswerable, so this guesses at nothing.
+    mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
+    mockGetFirstAsync.mockResolvedValueOnce(null);
+    const { petUpdate } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).not.toHaveBeenCalled();
   });
 
   it('ignores a weight_check event that is not a tombstone', async () => {
@@ -1362,32 +1408,23 @@ describe('syncPendingEvents — weight tombstone reconcile (CUL-641)', () => {
     expect(mockGetFirstAsync).not.toHaveBeenCalled();
   });
 
-  it('reconciles each affected pet once, not once per tombstone', async () => {
-    // A multi-pet household clearing several bad readings in one offline session
-    // flushes them together; the snapshot is per pet, so the writes are deduped.
+  it('reconciles PER TOMBSTONE, because each carries its own identity value', async () => {
+    // Deliberately not deduped per pet any more. The gate compares against the deleted
+    // READING's value, so two tombstones for the same pet are two different questions —
+    // collapsing them would drop one, and the one dropped might be the only one whose
+    // value actually matches the snapshot. Each write is gated, so the extra calls are
+    // no-ops server-side rather than repeated re-points.
     mockGetAllAsync.mockResolvedValue([
       TOMBSTONE,
       { ...TOMBSTONE, id: 'e2' },
       { ...TOMBSTONE, id: 'e3', pet_id: 'pet-B' },
     ]);
     mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.4 });
-    const petEq = jest.fn().mockResolvedValue({ error: null });
-    const petUpdate = jest.fn().mockReturnValue({ eq: petEq });
-    mockFrom.mockImplementation((table: string) =>
-      table === 'pets'
-        ? { update: petUpdate }
-        : {
-            upsert: jest.fn().mockReturnValue({
-              select: jest.fn().mockResolvedValue({
-                data: [{ id: 'e1' }, { id: 'e2' }, { id: 'e3' }], error: null,
-              }),
-            }),
-          },
-    );
+    const { petUpdate, petEqId } = wire(['e1', 'e2', 'e3']);
 
     await syncPendingEvents();
 
-    expect(petUpdate).toHaveBeenCalledTimes(2);
-    expect(petEq.mock.calls.map((c) => c[1])).toEqual(['pet-A', 'pet-B']);
+    expect(petUpdate).toHaveBeenCalledTimes(3);
+    expect(petEqId.mock.calls.map((c) => c[1])).toEqual(['pet-A', 'pet-A', 'pet-B']);
   });
 });
