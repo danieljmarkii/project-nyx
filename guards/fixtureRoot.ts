@@ -47,6 +47,20 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 /**
+ * Every root this module has handed out.
+ *
+ * `removeFixtureRoot` is an `fs.rmSync(recursive)`, which is the most destructive call
+ * in the test tree, and a containment predicate is a thin thing to hang it on: get
+ * `isInsideRepo` wrong once — or hand the function a path it never produced — and it
+ * deletes source. So provenance is checked as well as containment. The function will
+ * only ever delete a directory it created itself, which makes "can a caller reach a
+ * path it should not delete?" answerable as NO structurally, rather than as "no, so
+ * long as one predicate holds". (Entries are never removed, so a second remove of the
+ * same root stays a no-op via `force: true` rather than becoming an error.)
+ */
+const CREATED = new Set<string>();
+
+/**
  * True if `abs` lies inside the repository working tree — i.e. somewhere a guard's
  * directory walk could reach it.
  *
@@ -95,6 +109,7 @@ export function createFixtureRoot(
     );
   }
   for (const d of subdirs) fs.mkdirSync(path.join(root, d), { recursive: true });
+  CREATED.add(root);
   return root;
 }
 
@@ -106,10 +121,30 @@ export function writeFixture(root: string, rel: string, src: string): string {
   return abs;
 }
 
-/** Remove a fixture root. Safe to call twice; refuses to delete anything in-repo. */
+/**
+ * Remove a fixture root. Safe to call twice.
+ *
+ * Two independent refusals, deliberately not one: the path must be outside the repo
+ * AND must be one this module handed out. Containment alone is a single predicate in
+ * front of a recursive delete; provenance is the structural half, and it holds even
+ * if `isInsideRepo` is ever wrong.
+ *
+ * An empty string is the `let root = ''` sentinel a guard declares before its
+ * `beforeEach` runs, so it means "never created" and is a no-op. Without that, a
+ * `createFixtureRoot` failure in `beforeEach` would be followed by an `afterEach`
+ * throw (`''` resolves to the cwd, which IS the repo) — a second, louder error
+ * standing in front of the real one.
+ */
 export function removeFixtureRoot(root: string): void {
+  if (root === '') return;
   if (isInsideRepo(root)) {
     throw new Error(`removeFixtureRoot: ${root} is inside the repository — refusing to delete it.`);
+  }
+  if (!CREATED.has(root)) {
+    throw new Error(
+      `removeFixtureRoot: ${root} was not handed out by createFixtureRoot — refusing to delete it. ` +
+        `This function only ever removes a directory it created itself.`,
+    );
   }
   fs.rmSync(root, { recursive: true, force: true });
 }

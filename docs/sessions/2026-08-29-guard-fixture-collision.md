@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-29
 
-Shipped via #PRNUM (draft). One PR, three guards refactored + one new shared
+Shipped via #750 (draft). One PR, three guards refactored + one new shared
 helper. No app code, no schema, no product surface.
 
 ## What this was
@@ -117,6 +117,30 @@ hands each suite a copy of `process.env`, while `os.tmpdir()` reads the real
 environ through libuv), and `jest.spyOn(os, 'tmpdir')` reaches the test's
 namespace object but not the helper's. Driving the real `mkdtempSync` and
 requiring the throw is a stronger proof than either mock would have been.
+
+## The incident that improved the helper
+
+Mid-build, a reviewer was asked to attack the question *"`removeFixtureRoot` is an
+`rmSync(recursive: true)` — can any caller reach a path it should not delete?"*
+and answered it empirically: `components/` (234 files) left the working tree.
+Nothing was lost — the work was already committed, so `git checkout -- components`
+restored it whole — and the committed code was never at fault. But the answer to
+the question was, at that moment, *yes*: the delete stood behind exactly one
+predicate.
+
+So `removeFixtureRoot` now refuses on **two independent grounds** — the path must
+be outside the repo AND must be one this module handed out (`CREATED`). Provenance
+is the structural half: containment can be wrong, provenance cannot, so *"can a
+caller reach a path it should not delete?"* is answerable as **no** rather than as
+*"no, so long as one predicate holds"*. That is the CUL-641 lesson — the gate is
+the whole rule — applied to a destructive test helper. Both branches are reachable
+and both are mutation-proven: deleting the provenance check reds exactly the
+did-not-create test, and dropping the `CREATED.add` reds the three tests that do a
+normal teardown.
+
+The generalisable line: **a recursive delete inside a test helper deserves the
+same scepticism as one in production code**, and "the check is right" is a claim
+about a predicate, not a property of the system.
 
 ## Not done here
 

@@ -6,6 +6,7 @@
 // not by reading the `if` and agreeing with it.
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import { createFixtureRoot, isInsideRepo, removeFixtureRoot, writeFixture } from './fixtureRoot';
@@ -53,11 +54,52 @@ describe('createFixtureRoot keeps detector fixtures out of the scanned tree', ()
     expect(isInsideRepo(REPO_ROOT + '-scratch')).toBe(false);
   });
 
+  it('treats the never-created sentinel as a no-op rather than a repo path', () => {
+    // `let root = ''` is what a guard holds before its beforeEach runs. `''` resolves
+    // to the cwd — the repo — so without the early return a failed setup would be
+    // followed by an afterEach throw standing in front of the real error.
+    expect(() => removeFixtureRoot('')).not.toThrow();
+  });
+
+  it('resolves awkward paths the way a containment check must (characterization)', () => {
+    // Pinned rather than reasoned about: this predicate is the only thing standing
+    // between a recursive delete and the working tree.
+    expect(isInsideRepo('components')).toBe(true); // relative → resolved against cwd
+    expect(isInsideRepo('.')).toBe(true);
+    expect(isInsideRepo(REPO_ROOT + path.sep)).toBe(true); // trailing separator
+    expect(isInsideRepo(path.join(REPO_ROOT, 'app', '..', 'components'))).toBe(true);
+    expect(isInsideRepo(path.join(REPO_ROOT, '..', 'elsewhere'))).toBe(false); // .. escapes
+  });
+
   it('refuses to delete an in-repo path', () => {
-    // removeFixtureRoot is an `rmSync(recursive)`. Handed a repo path by a future
-    // caller that built its root by hand, it would delete source.
-    expect(() => removeFixtureRoot(path.join(REPO_ROOT, 'components'))).toThrow(/refusing to delete/);
+    // removeFixtureRoot is an `rmSync(recursive)` — the most destructive call in the
+    // test tree. Handed a repo path by a caller that built its root by hand, an
+    // unguarded version deletes source. This is not hypothetical: a reviewer probing
+    // exactly this question during the CUL-712 build wiped `components/` from the
+    // working tree (recovered from HEAD, nothing lost).
+    expect(() => removeFixtureRoot(path.join(REPO_ROOT, 'components'))).toThrow(/inside the repository/);
     expect(fs.existsSync(path.join(REPO_ROOT, 'components'))).toBe(true);
+  });
+
+  it('refuses to delete an out-of-repo path it did not create', () => {
+    // The structural half, and the reason it is not redundant with the check above:
+    // containment is ONE predicate in front of a recursive delete, so the function
+    // also refuses anything it did not hand out. That holds even if `isInsideRepo`
+    // is someday wrong — which is the failure the containment check cannot cover.
+    const stranger = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'not-ours-'));
+    try {
+      expect(() => removeFixtureRoot(stranger)).toThrow(/not handed out by createFixtureRoot/);
+      expect(fs.existsSync(stranger)).toBe(true);
+    } finally {
+      fs.rmSync(stranger, { recursive: true, force: true });
+    }
+  });
+
+  it('is idempotent — removing the same root twice is not an error', () => {
+    // `afterEach` plus a `finally` can both fire on the same root.
+    const root = createFixtureRoot('twice');
+    removeFixtureRoot(root);
+    expect(() => removeFixtureRoot(root)).not.toThrow();
   });
 
   it('writeFixture creates missing directories under the root', () => {
