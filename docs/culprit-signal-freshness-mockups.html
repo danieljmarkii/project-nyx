@@ -128,6 +128,19 @@
     background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px;
   }
   .brief .bid { font-family: var(--mono); font-size: 11px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--teal-ink); font-weight: 700; margin: 0 0 10px; }
+  .revnew {
+    margin: 20px 0 0; padding: 13px 17px; border-radius: 8px;
+    background: var(--teal-wash); border: 1px solid rgba(11,123,108,0.3);
+    font-size: 14.5px; color: var(--ink-2); line-height: 1.55;
+  }
+  .revnew b { color: var(--teal-ink); }
+  .revnew a { color: var(--teal-ink); font-weight: 600; }
+  .newchip {
+    display: inline-block; vertical-align: 2px; margin-left: 8px;
+    font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--teal-ink); background: var(--teal-wash); border: 1px solid rgba(11,123,108,0.3);
+    border-radius: 5px; padding: 1px 6px; text-transform: uppercase;
+  }
   .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
   .brief p strong { color: var(--ink); }
   .brief .rec { color: var(--teal-ink); font-weight: 600; }
@@ -219,6 +232,14 @@
       research. Nothing here is design-locked; the shipped surface's authority remains
       <code>culprit-signal-home-mockups.html</code> (round 2.1).
     </p>
+    <div class="revnew">
+      <b>Already read round 1? Rev 1.1 adds three things</b> — everything else is unchanged:
+      <a href="#f7">F7 · the companion row</a> (your F4+F6 fusion, drawn with the
+      chips-write / Ask-reads seam) · <a href="#research">the research callout</a>
+      (Oura / Whoop / Linear Pulse / Huckleberry / Bearable + the competitor trip-wire check) ·
+      <a href="#d5">D5 · the fusion ruling</a>. Same URL on purpose — rounds republish in
+      place so the link on CUL-695 never goes stale.
+    </div>
   </header>
 
   <!-- ================================================== 01 -->
@@ -295,7 +316,7 @@
         them touch detection, thresholds, or the safety register's plainness (S1 stands: safety
         faces stay austere).
       </p>
-      <div class="callout">
+      <div class="callout" id="research">
         <strong>What the research pass found (2026-08-29 — full evidence:
         <code>docs/research/2026-08-home-freshness-inspiration.md</code>):</strong> every
         best-in-class daily-open app splits <strong>time grains</strong> into separate surfaces
@@ -582,7 +603,7 @@
       </div>
 
       <!-- F7 — companion row (rev 1.1, the PM's F4+F6 fusion) -->
-      <div class="frame-slot">
+      <div class="frame-slot" id="f7">
         <div class="phone">
           <div class="notch"></div>
           <div class="appbody">
@@ -614,7 +635,7 @@
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>F7 — The companion row (F4 + F6 fused; rev 1.1, PM-suggested)</b>
+        <p class="frame-cap"><b>F7 — The companion row (F4 + F6 fused; rev 1.1, PM-suggested)<span class="newchip">New · 1.1</span></b>
           One prompt system under the cards, three verbs behind one grammar: <em>state chips</em>
           (F4's booked/been — write care state), <em>observation chips</em> (F6's how-she-seems —
           write a demeanor event), and <em>ask chips</em> (open Ask pre-scoped to the finding —
@@ -686,8 +707,8 @@
       <p><strong>Consequence:</strong> (a) keeps the momentum on the round's most-loved idea without letting it block rung 1; (c) puts unruled schema + S1 questions inside what should be a small first rung. <em>If D5 rules (a), this brief merges into that scoping round.</em></p>
     </div>
 
-    <div class="brief">
-      <p class="bid">D5 — Fuse F4 + F6 into the companion row? (rev 1.1 — from the PM's suggestion)</p>
+    <div class="brief" id="d5">
+      <p class="bid">D5 — Fuse F4 + F6 into the companion row? (rev 1.1 — from the PM's suggestion)<span class="newchip">New · 1.1</span></p>
       <p><strong>Deciding:</strong> whether F4 and F6 are one prompt system (F7) scoped together, and where the engine seam sits.</p>
       <p><strong>Options:</strong> <span class="rec">(a) yes, with the split engine — chips write deterministically, Ask reads (F7 as drawn); one scoping round replaces D3(a) + D4(a) — recommended</span> · (b) keep them separate as D3/D4 pose · (c) Ask-mediated capture (the LLM interprets free-text into record writes) — not now: it reopens the §6 read-only boundary (a D2-class T&amp;S ruling) for no capture the chips don't already get.</p>
       <p><strong>Consequence:</strong> (a) one "companion row" primitive with three chip verbs and unchanged governance gates (Dr. Chen + taxonomy own the observation chips; T&amp;S/RLS the state writes; the Ask spec the read chips); the industry evidence backs the seam — Whoop computes deterministically and lets the LLM phrase, Oura's chips were its top-requested Advisor feature, and the proactive-lane-vs-chat separation is uniform across Whoop/Oura/ChatGPT.</p>
