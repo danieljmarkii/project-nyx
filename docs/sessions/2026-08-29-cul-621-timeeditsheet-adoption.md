@@ -7,7 +7,7 @@ Finishes the strangler CUL-606 started. `MealCompletionCard` and
 time" `DateTimePicker` modal; both are deleted and both now render the shared
 `components/ui/TimeEditSheet`, which until today had exactly one caller.
 
-Shipped via #PRNUM.
+Shipped via #739.
 
 ## What the issue got wrong, and why it mattered
 
