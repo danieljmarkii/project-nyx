@@ -127,3 +127,28 @@ this sheet. Deliberately untouched.
   card's wording would erode it by habit.
 - **`0.5` → `theme.opacityDisabled`** in `TimeEditSheet` — a token violation the
   incumbents did not have, and adopting would have spread.
+
+## CLAUDE.md amendments (Tier 1, applied this session)
+
+Two generalisations from the mutation pass, both written into the manual where the
+rule they extend already lives rather than as new bullets:
+
+- **CUL-613's guard rule gains its method.** "Run it against the tree it was
+  written for" now says *prove it by MUTATION, not by inspection* — break the
+  source, one defect at a time, and watch the guard go red. Reading a test and
+  agreeing with it is not the check. Plus the direction split: a **guard** must
+  fail before the fix and pass after; a **refactor-safety** test must pass
+  **before and after**, because its job is to pin what you are preserving. One
+  that goes red pre-change is describing something else, and you have no
+  baseline.
+- **CUL-612's hit-area rule gains what the assertion must read.** A geometry
+  test reads the **rendered** value, never a token restated in the test.
+  `expect(a + b).toBeLessThanOrEqual(theme.space3)` asserts that two constants
+  the test itself names still add up; it passes forever after someone narrows
+  the real `gap`. Same failure shape as that bullet's existing `minHeight` rule,
+  one level out — there the floor rested on a metric no test *could* compute,
+  here on one the test *declined* to read.
+
+`STATUS.md` deliberately untouched: no track started or ended, no standing hold
+moved, no Build Sequence phase change, no stale pointer. The Design Polish track
+continues.
