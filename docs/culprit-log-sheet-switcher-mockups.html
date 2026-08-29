@@ -1,0 +1,445 @@
+<title>Log Sheet Switcher Rows</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Geist:wght@400..600&display=swap">
+<style>
+  :root{
+    --ground:#FAFAFA; --card:#FFFFFF; --card-subtle:#F5F5F5;
+    --ink:#0A0A0A; --ink-2:#525252; --ink-3:#737373;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --accent:#00C2A8; --accent-ink:#0B7B6C; --accent-light:#E0FBF7;
+    --rose:#F43F5E; --rose-light:#FFE4E6; --rose-ink:#BE123C;
+    --eyebrow:#0B7B6C;
+    --frame-edge:rgba(10,10,10,.14); --frame-shadow:0 10px 28px rgba(10,10,10,.10);
+    --rec:#0B7B6C; --rec-bg:#E0FBF7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+      --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+      --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+      --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+      --rose:#FB7185; --rose-light:rgba(251,113,133,.14); --rose-ink:#FB7185;
+      --eyebrow:#4FD8C4;
+      --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+      --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+    --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+    --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+    --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+    --rose:#FB7185; --rose-light:rgba(251,113,133,.14); --rose-ink:#FB7185;
+    --eyebrow:#4FD8C4;
+    --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+    --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+  }
+
+  body{background:var(--ground);color:var(--ink);font-family:'Geist',system-ui,-apple-system,sans-serif;
+       font-size:15px;line-height:1.55;margin:0;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px;}
+  a{color:var(--accent-ink);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+  .mast{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .mast svg{color:#211E4E;}
+  :root[data-theme="dark"] .mast svg{color:#F2EEE4;}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .mast svg{color:#F2EEE4;}}
+  .mast .wordmark{font-family:'Newsreader',Georgia,serif;font-size:17px;color:var(--ink-3);letter-spacing:-.3px;}
+  .roundtag{margin-left:auto;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--eyebrow);
+            border:1px solid var(--border-strong);border-radius:999px;padding:4px 10px;}
+  h1{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:clamp(30px,5vw,42px);line-height:1.12;
+     letter-spacing:-.5px;margin:6px 0 14px;text-wrap:balance;}
+  .lede{color:var(--ink-2);max-width:66ch;margin:0 0 6px;}
+  .lede b{color:var(--ink);font-weight:600;}
+  .meta{font-size:13px;color:var(--ink-3);margin:10px 0 0;}
+  .banner{border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;
+          padding:12px 16px;margin:6px 0 18px;font-size:13.5px;color:var(--ink-2);}
+  .banner b{color:var(--ink);}
+
+  .sec{margin-top:60px;}
+  .eyebrow{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--eyebrow);font-weight:600;margin:0 0 6px;}
+  h2{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:27px;letter-spacing:-.3px;margin:0 0 10px;text-wrap:balance;}
+  .sec>p{color:var(--ink-2);max-width:68ch;margin:0 0 8px;}
+  .sec>p b{color:var(--ink);font-weight:600;}
+  .row{display:flex;flex-wrap:wrap;gap:26px;margin-top:22px;align-items:flex-start;}
+
+  .fig{width:300px;max-width:100%;}
+  .fig.wide{width:340px;}
+  .opt{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+  .opt .k{font-weight:600;font-size:13px;letter-spacing:.4px;}
+  .tag{font-size:10px;letter-spacing:.7px;text-transform:uppercase;border-radius:999px;padding:3px 8px;font-weight:600;}
+  .tag.rec{color:var(--rec);background:var(--rec-bg);}
+  .tag.risk{color:var(--ink-3);border:1px solid var(--border-strong);}
+  .tag.bad{color:var(--rose-ink);background:var(--rose-light);}
+  .frame{background:#FAFAFA;border:1px solid var(--frame-edge);border-radius:22px;box-shadow:var(--frame-shadow);
+         overflow:hidden;font-size:13px;color:#0A0A0A;}
+  .frame *{box-sizing:border-box;}
+  .cap{font-size:13px;color:var(--ink-2);margin-top:10px;line-height:1.5;}
+  .cap b{color:var(--ink);font-weight:600;}
+  .capnote{font-size:12px;color:var(--ink-3);margin-top:6px;line-height:1.5;}
+
+  /* ── in-frame primitives (literal day colors — frames depict the app) ── */
+  .petav{width:30px;height:30px;border-radius:15px;background:#E0FBF7;color:#0B7B6C;font-size:12px;font-weight:600;
+         display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .petav.md{width:36px;height:36px;border-radius:18px;font-size:14px;}
+  .petav.alt{background:#FFF1E7;color:#B45309;}
+
+  /* the sheet behind, under the switcher's scrim */
+  .behind{position:relative;background:#FAFAFA;padding:0;}
+  .behind .inner{padding:12px 14px 16px;}
+  .behind .btitle{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:600;color:#0A0A0A;margin-bottom:10px;}
+  .behind .chev{color:#737373;font-weight:400;font-size:13px;}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .tile{background:#FFFFFF;border:1px solid #EFEFEF;border-radius:12px;padding:10px 6px;text-align:center;
+        font-size:11px;color:#0A0A0A;line-height:1.3;}
+  .tile .g{display:block;font-size:15px;margin-bottom:3px;}
+  .grouphd{font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:#737373;font-weight:600;margin:10px 0 6px;}
+  .scrimlayer{position:absolute;inset:0;background:rgba(10,10,10,.42);}
+
+  /* the switcher sheet itself */
+  .sheet{position:relative;background:#FFFFFF;border-radius:18px 18px 0 0;padding:10px 14px 14px;}
+  .grab{width:34px;height:4px;border-radius:2px;background:#E5E5E5;margin:0 auto 10px;}
+  .sheet .sh{font-size:15px;font-weight:600;color:#0A0A0A;margin-bottom:6px;}
+  .prow{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:12px;}
+  .prow.sel{background:#F0FDFA;}
+  .prow .pn{font-size:14px;font-weight:500;color:#0A0A0A;}
+  .prow .pi{font-size:11.5px;color:#737373;}
+  .prow .tick{margin-left:auto;color:#0B7B6C;font-weight:600;}
+  .srow{display:flex;align-items:center;gap:9px;padding:11px 8px;border-top:1px solid #F0F0F0;margin-top:6px;
+        font-size:14px;color:#525252;font-weight:500;}
+  .srow .disc{width:28px;height:28px;border-radius:14px;border:1.5px dashed #D4D4D4;color:#737373;
+              display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto;}
+  .srow.q{font-size:12.5px;color:#737373;border-top:0;padding:10px 8px 2px;justify-content:center;font-weight:400;}
+  .cut{position:relative;}
+  .cut::after{content:"";position:absolute;left:6px;right:6px;top:50%;height:2px;background:var(--rose);opacity:.8;}
+  .cut.on{opacity:.4;}
+
+  /* the add-pet screen + the landing frame */
+  .modalcard{background:#FFFFFF;padding:18px 16px 24px;min-height:186px;}
+  .modalcard h3{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:22px;margin:8px 0 6px;color:#0A0A0A;}
+  .modalcard p{font-size:12.5px;color:#525252;margin:0 0 14px;line-height:1.5;}
+  .field{border:1px solid #EAEAEA;border-radius:10px;padding:11px 12px;font-size:13px;color:#A3A3A3;background:#FCFCFC;
+         margin-bottom:9px;}
+  .cta{background:#0A0A0A;color:#fff;border-radius:10px;padding:11px;text-align:center;font-size:13px;font-weight:600;}
+  .homebody{background:#FAFAFA;padding:12px;min-height:150px;}
+  .hdr{background:#FFFFFF;border-bottom:1px solid #EAEAEA;padding:11px 14px;display:flex;align-items:center;gap:9px;}
+  .hdr .hn{font-size:16px;font-weight:600;}
+  .fcard{background:#FFFFFF;border-radius:14px;padding:13px;box-shadow:0 1px 4px rgba(0,0,0,.06);font-size:12px;color:#525252;}
+  .fcard .fl{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:#737373;font-weight:600;margin-bottom:4px;}
+  .fabdot{width:44px;height:44px;border-radius:22px;background:#0A0A0A;color:#fff;display:flex;align-items:center;
+          justify-content:center;font-size:20px;margin:14px 0 0 auto;}
+
+  /* annotations inside frames */
+  .xnote,.oknote{font-size:11.5px;padding:8px 12px;line-height:1.45;}
+  .xnote{background:#FFE4E6;color:#9F1239;}
+  .oknote{background:#E0FBF7;color:#0B7B6C;}
+
+  /* the consequence strip */
+  .strip{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:22px;}
+  .strip .step{width:212px;max-width:100%;}
+  .strip .arrow{color:var(--ink-3);font-size:20px;flex:0 0 auto;align-self:center;padding-bottom:22px;}
+  .strip .sl{font-size:11px;letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:6px;}
+
+  /* tables */
+  .doors{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-top:20px;overflow:hidden;}
+  .scroller{overflow-x:auto;}
+  .doors table{border-collapse:collapse;width:100%;font-size:13.5px;}
+  .doors th{text-align:left;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3);
+            font-weight:600;padding:11px 16px;border-bottom:1px solid var(--border);}
+  .doors td{padding:11px 16px;border-top:1px solid var(--border);color:var(--ink-2);vertical-align:top;}
+  .doors td:first-child{color:var(--ink);font-weight:600;white-space:nowrap;}
+  .doors tr:first-child td{border-top:0;}
+  .pill{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px;white-space:nowrap;}
+  .pill.sw{color:var(--rec);background:var(--rec-bg);}
+  .pill.no{color:var(--rose-ink);background:var(--rose-light);}
+  .pill.keep{color:var(--ink-3);border:1px solid var(--border-strong);}
+
+  .brief{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-top:16px;}
+  .brief .bh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .brief .bid{font-weight:600;color:var(--accent-ink);font-size:13px;letter-spacing:.3px;white-space:nowrap;}
+  .brief .bt{font-weight:600;color:var(--ink);}
+  .brief p{margin:7px 0 0;color:var(--ink-2);font-size:13.5px;line-height:1.55;}
+  .brief p b{color:var(--ink);}
+  .ledger{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:6px 18px;margin-top:16px;}
+  .ledger .lr{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid var(--border);flex-wrap:wrap;font-size:13.5px;}
+  .ledger .lr:first-child{border-top:0;}
+  .ledger .ln{font-weight:600;color:var(--ink);flex:0 0 128px;}
+  .ledger .ld{color:var(--ink-2);flex:1 1 300px;}
+  footer{margin-top:72px;border-top:1px solid var(--border);padding-top:18px;font-size:12.5px;color:var(--ink-3);max-width:74ch;line-height:1.6;}
+</style>
+
+<div class="wrap">
+  <div class="mast">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    <span class="wordmark">Culprit</span>
+    <span class="roundtag">Round 1 &middot; CUL-678</span>
+  </div>
+
+  <div class="banner">
+    <b>Ruled 2026-08-29 — this round is closed.</b> <b>D1 = (A)</b> hide both management rows on a capture host &middot; <b>D2 = (i)</b> the rule covers the FAB menu chip too. Built the same session behind one <span style="font-variant-numeric:tabular-nums;">captureSurface</span> prop, defaulting off so the Home header and the Pet tab are untouched. The frames below are the deliberation record; <b>(A&prime;), (B) and (C) are superseded</b>, kept because the ruling is only legible beside what it rejected.
+  </div>
+
+  <h1>Account management, inside a capture surface</h1>
+  <p class="lede">The log sheet&rsquo;s title opens the pet switcher, and the switcher is the Home header&rsquo;s — so it arrives carrying <b>&ldquo;Add a pet&rdquo;</b> and <b>&ldquo;Archived pets&rdquo;</b>. In the header those rows are right. Two taps from a vomit log they are lifecycle admin standing where the owner came to record something, and either one closes the sheet.</p>
+  <p class="meta">Filed from the <span style="font-variant-numeric:tabular-nums;">pm-feature-review</span> pass on CUL-662 &middot; blocks the CUL-663 pre-GA sweep &middot; downstream of CUL-618, which shipped the prerequisite</p>
+
+  <!-- ─────────────────────────────  THE FORK  ───────────────────────────── -->
+  <div class="sec">
+    <p class="eyebrow">D1 &middot; the row set</p>
+    <h2>Three ways the sheet can end</h2>
+    <p>Same household, same moment: the owner has opened <b>More events</b>, tapped the title to check which pet they are logging for, and is looking at the switcher. The only difference between these frames is what sits under the pet list.</p>
+
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">(C)</span> <span class="tag bad">Was built &mdash; superseded</span></div>
+        <div class="frame">
+          <div class="behind">
+            <div class="inner">
+              <div class="btitle">Log for Juniper <span class="chev">&#9662;</span></div>
+              <div class="grouphd">Digestion</div>
+              <div class="grid">
+                <div class="tile"><span class="g">&#9679;</span>Vomit</div>
+                <div class="tile"><span class="g">&#9679;</span>Loose stool</div>
+                <div class="tile"><span class="g">&#9679;</span>Normal stool</div>
+              </div>
+            </div>
+            <div class="scrimlayer"></div>
+          </div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sh">Your pets</div>
+            <div class="prow sel"><span class="petav md">J</span><span><span class="pn">Juniper</span><br><span class="pi">Dog &middot; 4 yrs</span></span><span class="tick">&#10003;</span></div>
+            <div class="prow"><span class="petav md alt">P</span><span><span class="pn">Pixel</span><br><span class="pi">Cat &middot; 8 yrs</span></span></div>
+            <div class="srow"><span class="disc">+</span>Add a pet</div>
+            <div class="srow q">Archived pets</div>
+          </div>
+          <div class="xnote"><b>Either row closes the sheet.</b> &ldquo;Add a pet&rdquo; also makes the new pet the active one, device-wide.</div>
+        </div>
+        <p class="cap">The switcher arrives whole, because it is the header&rsquo;s. Nothing here is a bug in isolation — every row does exactly what it says.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">(A)</span> <span class="tag rec">Ruled &mdash; built</span></div>
+        <div class="frame">
+          <div class="behind">
+            <div class="inner">
+              <div class="btitle">Log for Juniper <span class="chev">&#9662;</span></div>
+              <div class="grouphd">Digestion</div>
+              <div class="grid">
+                <div class="tile"><span class="g">&#9679;</span>Vomit</div>
+                <div class="tile"><span class="g">&#9679;</span>Loose stool</div>
+                <div class="tile"><span class="g">&#9679;</span>Normal stool</div>
+              </div>
+            </div>
+            <div class="scrimlayer"></div>
+          </div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sh">Your pets</div>
+            <div class="prow sel"><span class="petav md">J</span><span><span class="pn">Juniper</span><br><span class="pi">Dog &middot; 4 yrs</span></span><span class="tick">&#10003;</span></div>
+            <div class="prow"><span class="petav md alt">P</span><span><span class="pn">Pixel</span><br><span class="pi">Cat &middot; 8 yrs</span></span></div>
+          </div>
+          <div class="oknote"><b>Every row switches and returns.</b> Nothing in the sheet can leave it.</div>
+        </div>
+        <p class="cap">One question, one answer set. The sheet becomes what its title already claimed: <b>whose record does this go to.</b></p>
+        <p class="capnote">Cost, stated: an owner who genuinely wants to add a pet mid-log closes the sheet and uses the Home header or the Pet tab. Both already carry the row.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">(A&prime;)</span> <span class="tag risk">Rejected</span></div>
+        <div class="frame">
+          <div class="behind">
+            <div class="inner">
+              <div class="btitle">Log for Juniper <span class="chev">&#9662;</span></div>
+              <div class="grouphd">Digestion</div>
+              <div class="grid">
+                <div class="tile"><span class="g">&#9679;</span>Vomit</div>
+                <div class="tile"><span class="g">&#9679;</span>Loose stool</div>
+                <div class="tile"><span class="g">&#9679;</span>Normal stool</div>
+              </div>
+            </div>
+            <div class="scrimlayer"></div>
+          </div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sh">Your pets</div>
+            <div class="prow sel"><span class="petav md">J</span><span><span class="pn">Juniper</span><br><span class="pi">Dog &middot; 4 yrs</span></span><span class="tick">&#10003;</span></div>
+            <div class="prow"><span class="petav md alt">P</span><span><span class="pn">Pixel</span><br><span class="pi">Cat &middot; 8 yrs</span></span></div>
+            <div class="srow q">Archived pets</div>
+          </div>
+          <div class="xnote">Still closes the sheet — it just no longer changes the pet on the way out.</div>
+        </div>
+        <p class="cap">Drops only the row that changes the active pet. It keeps the cheaper half of the defect and leaves the surface half-pure, so it is drawn to be rejected rather than chosen.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────  WHAT IS ACTUALLY LOST  ───────────────────── -->
+  <div class="sec">
+    <p class="eyebrow">Correction 1 &middot; the size of the loss</p>
+    <h2>The mis-tap eats the sheet, not a draft</h2>
+    <p>The issue reads &ldquo;throws away the log you were in the middle of.&rdquo; The code is narrower, and the difference matters to how hard this should be fought: <b>the switcher only exists on the grid step</b> — once a type is picked, the title is gone and there is nothing to open. So there is never a half-filled confirm behind it: no photo, no note, no time. CUL-612&rsquo;s discard guard covers that stage and is not reachable from here.</p>
+    <p>What is lost is the <b>open sheet</b> — the owner&rsquo;s place in the flow — and, on the completed-add path, the active pet.</p>
+
+    <div class="strip">
+      <div class="step">
+        <div class="sl">Tap</div>
+        <div class="frame">
+          <div class="sheet" style="border-radius:0;">
+            <div class="sh">Your pets</div>
+            <div class="prow sel"><span class="petav md">J</span><span class="pn">Juniper</span><span class="tick">&#10003;</span></div>
+            <div class="prow"><span class="petav md alt">P</span><span class="pn">Pixel</span></div>
+            <div class="srow" style="background:#FFE4E6;border-radius:10px;"><span class="disc">+</span>Add a pet</div>
+          </div>
+        </div>
+      </div>
+      <div class="arrow">&rarr;</div>
+      <div class="step">
+        <div class="sl">A form appears</div>
+        <div class="frame">
+          <div class="modalcard">
+            <div class="grab"></div>
+            <h3>Add a pet.</h3>
+            <p>Just a name and species to start.</p>
+            <div class="field">Name</div>
+            <div class="field">Dog &nbsp;/&nbsp; Cat</div>
+            <div class="cta">Add pet</div>
+          </div>
+        </div>
+      </div>
+      <div class="arrow">&rarr;</div>
+      <div class="step">
+        <div class="sl">Back out &mdash; or finish</div>
+        <div class="frame">
+          <div class="hdr"><span class="petav">J</span><span class="hn">Juniper</span></div>
+          <div class="homebody">
+            <div class="fcard"><div class="fl">Today</div>Nothing logged yet.</div>
+            <div class="fabdot">+</div>
+          </div>
+          <div class="xnote">The sheet is gone either way. Start again from the FAB.</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="cap" style="max-width:68ch;"><b>Two different endings, and the accidental one is the likelier.</b> Back out of the form and nothing changed except that the log is gone — a pure loss, no compensating action. Finish the form and the sheet is gone <em>and</em> the app is now about the new pet, on every surface, until the owner notices. The next capture surface does name the pet (&ldquo;Log for&hellip;&rdquo;, &ldquo;Logging for&hellip;&rdquo;), so it is silent at the moment rather than silent forever.</p>
+  </div>
+
+  <!-- ────────────────────────────  THE SCOPE  ───────────────────────────── -->
+  <div class="sec">
+    <p class="eyebrow">Correction 2 &middot; D2, the scope</p>
+    <h2>The same rows are one tap away, already in production</h2>
+    <p>The FAB menu leads with a <b>&ldquo;Logging for {pet}&rdquo;</b> chip that opens the same switcher — multi-pet spec &sect;3.3, shipped since June and <b>not</b> behind the <span style="font-variant-numeric:tabular-nums;">log_picker_v2</span> beta flag. It is a capture surface too: the rows under it are the quick-log taps that write a meal in one press.</p>
+
+    <div class="row">
+      <div class="fig wide">
+        <div class="opt"><span class="k">FAB menu</span> <span class="tag rec">D2 = (i) &mdash; covered</span></div>
+        <div class="frame">
+          <div class="behind">
+            <div class="inner" style="padding:14px;">
+              <div class="prow" style="border:1px solid #EFEFEF;background:#fff;"><span class="petav md">J</span><span><span class="pi">Logging for</span><br><span class="pn">Juniper</span></span><span class="chev" style="margin-left:auto;">&#9662;</span></div>
+              <div class="grouphd">Recent foods</div>
+              <div class="tile" style="text-align:left;padding:10px 12px;margin-bottom:6px;">Hill&rsquo;s i/d Chicken &amp; Rice</div>
+              <div class="tile" style="text-align:left;padding:10px 12px;">Purina Pro Plan Salmon</div>
+            </div>
+            <div class="scrimlayer"></div>
+          </div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sh">Your pets</div>
+            <div class="prow sel"><span class="petav md">J</span><span class="pn">Juniper</span><span class="tick">&#10003;</span></div>
+            <div class="prow"><span class="petav md alt">P</span><span class="pn">Pixel</span></div>
+            <div class="srow"><span class="disc">+</span>Add a pet</div>
+            <div class="srow q">Archived pets</div>
+          </div>
+        </div>
+        <p class="cap">Cheaper than the log sheet — the menu survives the trip, so nothing is lost. The active-pet change is <b>identical</b>, and here it lands on a surface whose next row writes a meal in one tap.</p>
+        <p class="capnote">Partly self-announcing: the recent-food list re-queries on the switch, so a brand-new pet renders &ldquo;No foods logged yet&rdquo; and the one-tap writes disappear on their own. The chip renames too.</p>
+      </div>
+
+      <div class="fig wide">
+        <div class="opt"><span class="k">Home header</span> <span class="tag rec">Rows belong here</span></div>
+        <div class="frame">
+          <div class="behind">
+            <div class="inner" style="padding:0;">
+              <div class="hdr"><span class="petav">J</span><span class="hn">Juniper</span><span class="chev">&#9662;</span></div>
+              <div class="homebody" style="min-height:96px;"><div class="fcard"><div class="fl">Signal</div>Two loose stools in three days.</div></div>
+            </div>
+            <div class="scrimlayer"></div>
+          </div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sh">Your pets</div>
+            <div class="prow sel"><span class="petav md">J</span><span class="pn">Juniper</span><span class="tick">&#10003;</span></div>
+            <div class="prow"><span class="petav md alt">P</span><span class="pn">Pixel</span></div>
+            <div class="srow"><span class="disc">+</span>Add a pet</div>
+            <div class="srow q">Archived pets</div>
+          </div>
+          <div class="oknote"><b>Unchanged under every option.</b> Nothing is being taken away — only moved out of the two places you cannot afford to lose.</div>
+        </div>
+        <p class="cap">Here the rows read as what they are: the household&rsquo;s roster, edited from the screen that is about the household. Adding a pet and landing on that pet is coherent.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────  THE DOORS  ──────────────────────────── -->
+  <div class="sec">
+    <p class="eyebrow">The check that makes (A) safe</p>
+    <h2>Nothing gets orphaned</h2>
+    <p>CUL-618&rsquo;s round found that <b>CUL-678 could not be resolved by deletion</b> — at the time, <span style="font-variant-numeric:tabular-nums;">/add-pet</span> and <span style="font-variant-numeric:tabular-nums;">/archived-pets</span> were reachable from exactly one file, so pulling the rows out of the sheet had nowhere to put them. <b>That prerequisite shipped on 2026-08-29</b> (CUL-618 gave the Pet tab a switcher and a stated &ldquo;Add a pet&rdquo;; CUL-704 kept the single-pet Home header&rsquo;s). Verified against the current tree:</p>
+
+    <div class="doors">
+      <div class="scroller">
+      <table>
+        <thead><tr><th>Door</th><th>One active pet</th><th>Two or more</th><th>Under option (A)</th></tr></thead>
+        <tbody>
+          <tr><td>Home header</td><td><span class="pill sw">Switcher</span></td><td><span class="pill sw">Switcher</span></td><td><span class="pill keep">Unchanged</span></td></tr>
+          <tr><td>Pet tab</td><td>Stated &ldquo;Add a pet&rdquo;</td><td><span class="pill sw">Switcher</span> on the name</td><td><span class="pill keep">Unchanged</span></td></tr>
+          <tr><td>FAB menu chip</td><td>&mdash; (renders at 2+ only)</td><td><span class="pill sw">Switcher</span></td><td><b>D2 decides</b></td></tr>
+          <tr><td>Log sheet title</td><td>&mdash; (renders at 2+ only)</td><td><span class="pill sw">Switcher</span></td><td><span class="pill no">Rows hidden</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <p class="capnote" style="margin-top:12px;">So under (A) — even applied to both capture surfaces — every household keeps a route to both destinations from the Home header alone, and a second from the Pet tab. &ldquo;Archived pets&rdquo; still renders only when there is at least one archived pet, as today.</p>
+  </div>
+
+  <!-- ─────────────────────────────  (B)  ──────────────────────────── -->
+  <div class="sec">
+    <p class="eyebrow">Correction 3 &middot; option (B) is bigger than it looks</p>
+    <h2>&ldquo;Return to the sheet afterwards&rdquo; is not a routing change</h2>
+    <p>The issue prices (B) as &ldquo;a return path through an unrelated route plus its own QA.&rdquo; It is more than that, and the reason is the thing that caused CUL-662: <b>a pushed screen renders behind an RN Modal.</b> The add-pet form cannot appear over the log sheet — the sheet has to close for it to be seen at all. So (B) is not routing; it is <b>sheet-state restoration across a native modal</b>: the FAB would have to remember that the sheet was open, at which stage, for which pet, and re-present it on return.</p>
+    <p>That is real work on the exact seam that wedged the app for every multi-pet account last week, bought to make a rare path two taps shorter. It is drawn nowhere in this round because there is nothing to <em>see</em> — the frames would be identical to (C), and the whole cost is invisible.</p>
+  </div>
+
+  <!-- ─────────────────────────────  BRIEFS  ──────────────────────────── -->
+  <div class="sec">
+    <p class="eyebrow">Decisions</p>
+    <h2>Two rulings</h2>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">D1</span><span class="bt">Do the management rows render inside a capture surface?</span></div>
+      <p><b>Deciding:</b> whether &ldquo;Add a pet&rdquo; and &ldquo;Archived pets&rdquo; appear when the switcher is hosted by a logging surface.</p>
+      <p><b>Options:</b> <b>(A) hide both — recommended.</b> One optional prop on the panel; the surface becomes single-purpose at the moment of capture, and every door survives elsewhere. &middot; <b>(A&prime;) hide only &ldquo;Add a pet&rdquo;</b> — keeps the sheet-loss, drops only the pet change; half a rule is harder to hold than a whole one. &middot; <b>(B) keep them and restore the sheet on return</b> — see above; not a routing change. &middot; <b>(C) keep as built</b> — defensible only if the mis-tap is rare enough to accept, now that the loss is known to be the sheet rather than a draft.</p>
+      <p><b>Consequence:</b> (A) ships this week and unblocks the CUL-663 flow-2 sign-off. It also makes CUL-662&rsquo;s <span style="font-variant-numeric:tabular-nums;">onNavigateAway</span> wiring unreachable on its only consumer — kept, with the reason written down, so the next layer host does not rediscover the defect.</p>
+    </div>
+
+    <div class="brief">
+      <div class="bh"><span class="bid">D2</span><span class="bt">Does the ruling cover the FAB menu too?</span></div>
+      <p><b>Deciding:</b> whether D1 is a fix to one beta surface or a rule about capture surfaces.</p>
+      <p><b>Options:</b> <b>(i) both — recommended.</b> The FAB chip is a capture surface by the same test, its active-pet change is identical, and shipping the rule to one of two switchers a tap apart is the inconsistency that gets refiled as a bug later. &middot; <b>(ii) log sheet only.</b> Narrower diff, and the FAB case is genuinely cheaper — the menu survives the trip and partly announces the switch itself. The cost is that the app then has two switchers with different row sets and no visible reason.</p>
+      <p><b>Consequence:</b> (i) touches one more file (<span style="font-variant-numeric:tabular-nums;">FAB.tsx</span>) and edits a shipped, unflagged surface, so it wants the device pass. (ii) leaves that surface as-is and the inconsistency filed as its own issue.</p>
+      <p><b>Ruled (i).</b> Both surfaces. The FAB menu is unflagged, so this half reaches every multi-pet account on the next build rather than only the beta cohort &mdash; it is the one part of this change that wants the device pass.</p>
+    </div>
+
+    <div class="ledger">
+      <div class="lr"><span class="ln">Not in scope</span><span class="ld">The Home header, the Pet tab, and the archived-pets screen itself. Nothing is being removed from the app — only from two surfaces.</span></div>
+      <div class="lr"><span class="ln">No schema</span><span class="ld">No migration, no Edge Function, no RLS or Storage path. Presentation only.</span></div>
+      <div class="lr"><span class="ln">Blocks</span><span class="ld">CUL-663&rsquo;s pre-GA sweep should not sign off flow 2 until D1 is ruled.</span></div>
+    </div>
+  </div>
+
+  <footer>
+    Round 1 &middot; CUL-678 &middot; drawn 2026-08-29. Frames depict the day ground; the switcher has no night variant built. Sources read for this round: <span style="font-variant-numeric:tabular-nums;">components/pet/PetSwitcherSheet.tsx</span>, <span style="font-variant-numeric:tabular-nums;">components/log/EventTypeSheet.tsx</span>, <span style="font-variant-numeric:tabular-nums;">components/log/FAB.tsx</span>, <span style="font-variant-numeric:tabular-nums;">app/add-pet.tsx</span>, <span style="font-variant-numeric:tabular-nums;">app/(tabs)/profile.tsx</span>, <span style="font-variant-numeric:tabular-nums;">docs/nyx-multi-pet-requirements.md</span> &sect;3.1&ndash;3.3, and the CUL-618 session record. Re-publish future rounds over this same URL.
+  </footer>
+</div>

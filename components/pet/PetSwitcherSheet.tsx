@@ -19,6 +19,12 @@ import { PetAvatar } from './PetAvatar';
 interface PetSwitcherSheetProps {
   visible: boolean;
   onClose: () => void;
+  // The host exists to CAPTURE (the log sheet's title, the FAB menu's "Logging
+  // for" chip) rather than to manage the household. Drops the two management rows
+  // — see the rule on the panel below. Named for what the HOST is, not for what it
+  // hides, so a new host declares itself and inherits the rule instead of
+  // re-deciding it.
+  captureSurface?: boolean;
 }
 
 interface PetSwitcherPanelProps extends PetSwitcherSheetProps {
@@ -26,6 +32,11 @@ interface PetSwitcherPanelProps extends PetSwitcherSheetProps {
   // pets). A host that is itself a Modal must use this to dismiss too: an RN
   // Modal renders above the whole app window, so a pushed screen would otherwise
   // land invisibly behind it — the owner taps "Add a pet" and nothing happens.
+  //
+  // No row fires this under captureSurface, since the only rows that leave are the
+  // ones it hides. It stays wired on those hosts anyway: it is the contract for a
+  // Modal host that shows the rows, and a future one that arrives without it
+  // rediscovers CUL-662 invisibly.
   onNavigateAway?: () => void;
   // Animate the panel in. Off for the Modal wrapper below (the Modal already
   // slides); on for an in-Modal layer, which has no presentation of its own.
@@ -56,8 +67,24 @@ const RISE = theme.space3;
 // row per active pet (tap switches + dismisses — selection is device-local, spec
 // §2), then "Add a pet", then a quiet "Archived pets" link that renders only when
 // at least one archived pet exists.
+//
+// THE MANAGEMENT ROWS ARE HOST-DEPENDENT (CUL-678, PM ruling D1 = A / D2 = i).
+// On the Home header and the Pet tab they are right: that is the household's
+// roster, edited from a screen about the household, and adding a pet then landing
+// on that pet is coherent. On a CAPTURE surface they are account admin standing
+// where the owner came to record something, and both of them leave — the host
+// closes, and "Add a pet" additionally makes the new pet active device-wide
+// (`app/add-pet.tsx` → `addPet(data, { select: true })`). So one mis-tap two taps
+// from a vomit log costs the log, and if the form is completed it silently
+// re-points every surface in the app at a different pet.
+//
+// The rule hides ADMIN, never a pet: the switcher still answers the one question
+// its title asks. Nothing is removed from the app either — every household keeps a
+// route to both destinations from the Home header, and a second from the Pet tab
+// (CUL-618 shipped that door, which is what made this deletable at all; before it,
+// `/add-pet` and `/archived-pets` were reachable from this file alone).
 export function PetSwitcherPanel({
-  visible, onClose, onNavigateAway, animated = false, style,
+  visible, onClose, onNavigateAway, captureSurface = false, animated = false, style,
 }: PetSwitcherPanelProps) {
   const { pets, activePet, selectPet } = usePetStore();
   const user = useAuthStore((s) => s.user);
@@ -100,8 +127,12 @@ export function PetSwitcherPanel({
   // The store only holds ACTIVE pets, so the archived-pets link needs its own
   // (cheap, head-only) count. Fetched per open; any failure just hides the
   // link — a quiet entry point degrading to quiet absence, never an error.
+  //
+  // Skipped entirely on a capture surface: the link is the only consumer, so with
+  // it hidden this would be a network round-trip whose answer nothing can read —
+  // and one made at the moment the owner is trying to log something.
   useEffect(() => {
-    if (!visible || !user) return;
+    if (!visible || !user || captureSurface) return;
     let cancelled = false;
     (async () => {
       try {
@@ -120,7 +151,7 @@ export function PetSwitcherPanel({
     return () => {
       cancelled = true;
     };
-  }, [visible, user]);
+  }, [visible, user, captureSurface]);
 
   function handleSelect(petId: string) {
     // Light impact, NOT a commit pattern: switching pets writes nothing to the record.
@@ -192,19 +223,24 @@ export function PetSwitcherPanel({
           })}
         </ScrollView>
 
-        <TouchableOpacity
-          style={styles.addRow}
-          onPress={handleAddPet}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-        >
-          <View style={styles.addDisc}>
-            <Plus size={16} color={theme.colorTextTertiary} strokeWidth={1.75} />
-          </View>
-          <ThemedText style={styles.addLabel}>Add a pet</ThemedText>
-        </TouchableOpacity>
+        {/* The management rows — see the rule above the component. Both are absent
+            on a capture host, so nothing in the sheet can leave the surface the
+            owner is mid-log on. */}
+        {!captureSurface && (
+          <TouchableOpacity
+            style={styles.addRow}
+            onPress={handleAddPet}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <View style={styles.addDisc}>
+              <Plus size={16} color={theme.colorTextTertiary} strokeWidth={1.75} />
+            </View>
+            <ThemedText style={styles.addLabel}>Add a pet</ThemedText>
+          </TouchableOpacity>
+        )}
 
-        {hasArchived && (
+        {!captureSurface && hasArchived && (
           <TouchableOpacity
             onPress={handleArchived}
             activeOpacity={0.7}
@@ -222,13 +258,19 @@ export function PetSwitcherPanel({
 }
 
 // The switcher as its own presentation, for hosts that are NOT already inside a
-// Modal — the home header and the FAB menu (an in-tree overlay, not a Modal). This
-// is the shipped surface and its behaviour is unchanged; the split above only moved
-// the content out so EventTypeSheet can render it without a second presentation.
-export function PetSwitcherSheet({ visible, onClose }: PetSwitcherSheetProps) {
+// Modal — the home header, the Pet tab (CUL-618), and the FAB menu (an in-tree
+// overlay, not a Modal). The CUL-662 split only moved the content out so
+// EventTypeSheet can render it without a second presentation; presentation here is
+// unchanged.
+//
+// Which host it is still matters, though, and the wrapper is not a shortcut past
+// that: the FAB menu passes captureSurface and the other two do not. Presenting from
+// the root and managing the household are independent facts, so the prop is
+// forwarded rather than assumed either way.
+export function PetSwitcherSheet({ visible, onClose, captureSurface }: PetSwitcherSheetProps) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <PetSwitcherPanel visible={visible} onClose={onClose} />
+      <PetSwitcherPanel visible={visible} onClose={onClose} captureSurface={captureSurface} />
     </Modal>
   );
 }

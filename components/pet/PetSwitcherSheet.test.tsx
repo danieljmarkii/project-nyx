@@ -20,16 +20,19 @@ jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: jest.fn(() 
 
 // The archived-pets link needs a real (head-only) count to render, so the two rows
 // that navigate away can both be exercised. Chainable, resolving to one archived pet.
+// `from` is spied rather than bare so a capture host can assert the query is never
+// made at all — not merely that its result went unrendered.
+const mockFrom = jest.fn();
 jest.mock('../../lib/supabase', () => {
   const chain: Record<string, unknown> = {};
   chain.select = () => chain;
   chain.eq = () => chain;
   chain.then = (resolve: (v: unknown) => unknown) => resolve({ count: 1, error: null });
-  return { supabase: { from: () => chain } };
+  return { supabase: { from: (...args: unknown[]) => { mockFrom(...args); return chain; } } };
 });
 
 import { Modal } from 'react-native';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { Animated } from 'react-native';
 import { theme } from '../../constants/theme';
@@ -53,9 +56,13 @@ const settled = (view: ReturnType<typeof render>) =>
 
 beforeEach(() => {
   (router.push as jest.Mock).mockClear();
+  mockFrom.mockClear();
   (useReducedMotion as jest.Mock).mockReturnValue(false);
   seed();
 });
+
+/** Let a pending archived-count fetch settle, so "no row" means it never came. */
+const flush = () => act(async () => {});
 
 describe('PetSwitcherPanel', () => {
   it('renders NO Modal of its own — it is a layer, for hosts already presenting one', async () => {
@@ -102,6 +109,53 @@ describe('PetSwitcherPanel', () => {
 
     expect(order).toEqual(['close', 'navigateAway', 'push']);
     expect(router.push).toHaveBeenCalledWith(route);
+  });
+});
+
+// ── captureSurface (CUL-678 · PM ruling D1 = A, D2 = i) ──────────────────────
+//
+// The same panel is hosted by surfaces that exist to CAPTURE — the log sheet's
+// title and the FAB menu's "Logging for" chip. There the two management rows are
+// account admin standing where the owner came to record something, and BOTH leave:
+// the host closes, and "Add a pet" additionally makes the new pet active
+// device-wide (`addPet(data, { select: true })`). So a mis-tap two taps from a
+// vomit log costs the log — and, if the form is completed, silently re-points the
+// whole app at a different pet.
+//
+// What is asserted here is the shape of the answer, not just the absence: the pet
+// rows are untouched. This hides admin, never a pet — a switcher that dropped a pet
+// on a capture surface would be the wrong-pet class (CUL-574) wearing this fix.
+describe('PetSwitcherPanel — captureSurface', () => {
+  it('keeps every pet and drops both management rows', async () => {
+    const view = render(<PetSwitcherPanel visible captureSurface onClose={jest.fn()} />);
+
+    expect(view.getByText('Your pets')).toBeTruthy();
+    expect(view.getByLabelText('Switch to Nyx')).toBeTruthy();
+    expect(view.getByLabelText('Switch to Mochi')).toBeTruthy();
+
+    await flush();
+    expect(view.queryByText('Add a pet')).toBeNull();
+    expect(view.queryByText('Archived pets')).toBeNull();
+  });
+
+  // The archived link is the only reason the panel reaches the network. With the
+  // row gone the query has no consumer, so not making it is the honest state — and
+  // asserting the CALL rather than the row is what tells "never asked" apart from
+  // "asked, and hid the answer".
+  it('never asks whether an archived pet exists', async () => {
+    render(<PetSwitcherPanel visible captureSurface onClose={jest.fn()} />);
+    await flush();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  // The management hosts are the point of the default: the Home header and the Pet
+  // tab are where these rows read as the household's roster rather than as admin in
+  // the way, and nothing about them changed.
+  it('is off by default, so the header and Pet tab are untouched', async () => {
+    const view = render(<PetSwitcherPanel visible onClose={jest.fn()} />);
+    await settled(view);
+    expect(view.getByText('Add a pet')).toBeTruthy();
+    expect(mockFrom).toHaveBeenCalledWith('pets');
   });
 });
 
@@ -172,5 +226,15 @@ describe('PetSwitcherSheet', () => {
     expect(view.UNSAFE_getAllByType(Modal).filter((m) => m.props.visible)).toHaveLength(1);
     expect(view.getByText('Your pets')).toBeTruthy();
     await settled(view);
+  });
+
+  // The FAB menu is a capture surface that presents from the root, so it needs the
+  // wrapper AND the capture rule — the two are independent, and the wrapper is the
+  // only path to the panel it has.
+  it('carries captureSurface through to the panel, for the FAB menu', async () => {
+    const view = render(<PetSwitcherSheet visible captureSurface onClose={jest.fn()} />);
+    expect(view.getByText('Your pets')).toBeTruthy();
+    await flush();
+    expect(view.queryByText('Add a pet')).toBeNull();
   });
 });
