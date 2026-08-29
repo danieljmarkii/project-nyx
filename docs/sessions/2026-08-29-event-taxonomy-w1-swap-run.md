@@ -1,7 +1,7 @@
 # Event taxonomy — W1: the deploy, the swap, and the reconciliation (CUL-676, CUL-677)
 
 **Date:** 2026-08-29
-**Shipped via #736.** _(Branch `claude/w1-pr4-other-row-swap-bqqy1f`, restarted from `main` after #735 merged.)_
+**Shipped via #737.** _(Branch `claude/w1-pr4-other-row-swap-bqqy1f`, restarted from `main` after #735 merged.)_
 
 The day W1 stopped being a mechanism and became a change to the record.
 
