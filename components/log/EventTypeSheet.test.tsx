@@ -308,23 +308,30 @@ describe('EventTypeSheet', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  // A pushed screen renders BEHIND an RN Modal. Before CUL-662 the switcher never
-  // presented at all, so its two navigating rows were unreachable; making it
-  // present is what exposes them — reach one without dismissing the sheet and the
-  // owner taps "Add a pet" onto a screen they cannot see.
-  it('Add a pet dismisses the whole sheet before navigating', () => {
-    const onClose = jest.fn();
+  // CUL-678 (PM ruling D1 = A) — this sheet exists to CAPTURE, so the switcher it
+  // hosts carries no account management. Both rows leave the surface: the sheet
+  // closes, and "Add a pet" additionally makes the new pet active device-wide, so a
+  // mis-tap two taps from a vomit log costs the log and re-points the whole app. The
+  // rows are not deleted from the app — they live on the Home header and the Pet
+  // tab, where they read as the household's roster rather than as admin in the way.
+  //
+  // SUPERSEDES 'Add a pet dismisses the whole sheet before navigating' (CUL-662).
+  // That test's subject was the dismiss-before-push ORDER, and it is not lost: it is
+  // still pinned on the panel itself (PetSwitcherSheet.test), which remains the
+  // contract for any future in-Modal host that does show the rows. This sheet is no
+  // longer such a host, so the assertion moved rather than went away.
+  it('hosts the switcher with no account management in it', async () => {
     seedPets(2);
-    const view = render(<EventTypeSheet visible onClose={onClose} />);
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
     fireEvent.press(view.getByLabelText('Log for Nyx — switch pet'));
-    fireEvent.press(view.getByText('Add a pet'));
 
-    expect(onClose).toHaveBeenCalled();
-    expect(router.push).toHaveBeenCalledWith('/add-pet');
+    expect(view.getByText('Your pets')).toBeTruthy();
+    expect(view.getByLabelText('Switch to Mochi')).toBeTruthy(); // the pets, yes
+    await act(async () => {});
+    expect(view.queryByText('Add a pet')).toBeNull();            // the admin, no
+    expect(view.queryByText('Archived pets')).toBeNull();
+    expect(router.push).not.toHaveBeenCalled();
   });
-  // "Archived pets" is the same wiring on a row that needs an archived pet to
-  // render at all, so it is pinned where the panel's own behaviour is —
-  // PetSwitcherSheet.test — rather than faked into existence here.
 
   it('shows the pet-switcher affordance only for multi-pet households', () => {
     const single = render(<EventTypeSheet visible onClose={jest.fn()} />);

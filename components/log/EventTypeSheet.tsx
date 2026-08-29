@@ -263,15 +263,24 @@ export function EventTypeSheet({ visible, onClose }: Props) {
         </View>
 
         {/* The pet switcher, as the top LAYER of this Modal — never a second one.
-            onNavigateAway dismisses the whole sheet because "Add a pet" and
-            "Archived pets" push a screen, and a pushed screen renders BEHIND an RN
-            Modal: without this the owner taps Add a pet and nothing appears to
-            happen. It goes straight to onClose rather than requestClose — the
-            switcher is only reachable from the grid title, so there is never a
-            half-filled confirm to guard here. */}
+
+            captureSurface (CUL-678) drops its "Add a pet" / "Archived pets" rows:
+            this sheet exists to record something, and both of those leave it — the
+            sheet closes, and "Add a pet" additionally makes the new pet active
+            device-wide, so a mis-tap costs the log AND re-points the app. Both rows
+            still live on the Home header and the Pet tab.
+
+            onNavigateAway stays wired even though no row can now fire it. It is the
+            contract for a Modal host that DOES show those rows — a pushed screen
+            renders BEHIND an RN Modal, so without it the owner taps a navigating row
+            and nothing appears to happen — and re-showing the rows here without
+            re-adding this would bring CUL-662 back invisibly. It goes straight to
+            onClose rather than requestClose: the switcher is only reachable from the
+            grid title, so there is never a half-filled confirm to guard here. */}
         <PetSwitcherPanel
           visible={switcherVisible}
           animated
+          captureSurface
           style={StyleSheet.absoluteFill}
           onClose={() => setSwitcherVisible(false)}
           onNavigateAway={onClose}

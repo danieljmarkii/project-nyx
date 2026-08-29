@@ -177,7 +177,7 @@
   </div>
 
   <div class="banner">
-    <b>Open — two rulings needed (D1, D2 at the foot of the page).</b> Nothing here is built. The frames draw the fork the issue names, plus two corrections the code turned up: what a mis-tap actually costs is <b>smaller</b> than the issue says, and the surface it happens on is <b>not the only one</b>.
+    <b>Ruled 2026-08-29 — this round is closed.</b> <b>D1 = (A)</b> hide both management rows on a capture host &middot; <b>D2 = (i)</b> the rule covers the FAB menu chip too. Built the same session behind one <span style="font-variant-numeric:tabular-nums;">captureSurface</span> prop, defaulting off so the Home header and the Pet tab are untouched. The frames below are the deliberation record; <b>(A&prime;), (B) and (C) are superseded</b>, kept because the ruling is only legible beside what it rejected.
   </div>
 
   <h1>Account management, inside a capture surface</h1>
@@ -192,7 +192,7 @@
 
     <div class="row">
       <div class="fig">
-        <div class="opt"><span class="k">(C)</span> <span class="tag bad">As built</span></div>
+        <div class="opt"><span class="k">(C)</span> <span class="tag bad">Was built &mdash; superseded</span></div>
         <div class="frame">
           <div class="behind">
             <div class="inner">
@@ -220,7 +220,7 @@
       </div>
 
       <div class="fig">
-        <div class="opt"><span class="k">(A)</span> <span class="tag rec">Recommended</span></div>
+        <div class="opt"><span class="k">(A)</span> <span class="tag rec">Ruled &mdash; built</span></div>
         <div class="frame">
           <div class="behind">
             <div class="inner">
@@ -247,7 +247,7 @@
       </div>
 
       <div class="fig">
-        <div class="opt"><span class="k">(A&prime;)</span> <span class="tag risk">Considered, not recommended</span></div>
+        <div class="opt"><span class="k">(A&prime;)</span> <span class="tag risk">Rejected</span></div>
         <div class="frame">
           <div class="behind">
             <div class="inner">
@@ -333,7 +333,7 @@
 
     <div class="row">
       <div class="fig wide">
-        <div class="opt"><span class="k">FAB menu</span> <span class="tag risk">Ships today</span></div>
+        <div class="opt"><span class="k">FAB menu</span> <span class="tag rec">D2 = (i) &mdash; covered</span></div>
         <div class="frame">
           <div class="behind">
             <div class="inner" style="padding:14px;">
@@ -429,6 +429,7 @@
       <p><b>Deciding:</b> whether D1 is a fix to one beta surface or a rule about capture surfaces.</p>
       <p><b>Options:</b> <b>(i) both — recommended.</b> The FAB chip is a capture surface by the same test, its active-pet change is identical, and shipping the rule to one of two switchers a tap apart is the inconsistency that gets refiled as a bug later. &middot; <b>(ii) log sheet only.</b> Narrower diff, and the FAB case is genuinely cheaper — the menu survives the trip and partly announces the switch itself. The cost is that the app then has two switchers with different row sets and no visible reason.</p>
       <p><b>Consequence:</b> (i) touches one more file (<span style="font-variant-numeric:tabular-nums;">FAB.tsx</span>) and edits a shipped, unflagged surface, so it wants the device pass. (ii) leaves that surface as-is and the inconsistency filed as its own issue.</p>
+      <p><b>Ruled (i).</b> Both surfaces. The FAB menu is unflagged, so this half reaches every multi-pet account on the next build rather than only the beta cohort &mdash; it is the one part of this change that wants the device pass.</p>
     </div>
 
     <div class="ledger">

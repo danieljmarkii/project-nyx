@@ -331,8 +331,18 @@ export function FAB() {
         </TouchableOpacity>
       </View>
 
+      {/* The Modal WRAPPER, not the in-Modal layer: this menu is an in-tree overlay,
+          so nothing is presented when the switcher opens and the panel needs a
+          presentation of its own (CUL-662's split is for hosts that are themselves a
+          Modal — copying its shape here would leave the switcher unpresented).
+
+          captureSurface (CUL-678 D2) drops the management rows: the rows under this
+          chip write a meal in one press, so "Add a pet" would hand the owner back a
+          one-tap logging menu that is now about a different pet. Same rule as the
+          log sheet — the surface class decides, not which of the two it is. */}
       <PetSwitcherSheet
         visible={switcherVisible}
+        captureSurface
         onClose={() => setSwitcherVisible(false)}
       />
 
