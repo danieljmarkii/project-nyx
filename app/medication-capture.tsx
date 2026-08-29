@@ -21,7 +21,7 @@
 //    from the authed uid — the per-user RLS prefix is never hand-rolled here.
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, StyleSheet, TouchableOpacity, TextInput, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
   Animated, Image, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -470,7 +470,12 @@ export default function MedicationCaptureScreen() {
     return (
       <View style={styles.completeContainer}>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <ThemedText style={styles.checkMark}>✓</ThemedText>
+          {/* geist-ok: Icon glyph, not copy — stays a raw <Text> so it keeps the system face.
+              These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and
+              Geist's cmap carries no ✓ / ✕ / ＋ at all, so forcing the body family here buys
+              nothing and hands the render to OS fallback. CUL-654 reconciles this with PR 4's
+              sweep; the shape rule is `is this copy?`, so the arrows below stay raw too. */}
+          <Text style={styles.checkMark}>✓</Text>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
           Added
@@ -719,7 +724,8 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
     <View style={styles.header}>
       {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.headerSide} hitSlop={10}>
-          <ThemedText style={styles.headerBack}>←</ThemedText>
+          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-654). */}
+          <Text style={styles.headerBack}>←</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSide} />
@@ -727,7 +733,8 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
       <ThemedText style={styles.headerTitle}>{title}</ThemedText>
       {onClose ? (
         <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-          <ThemedText style={styles.headerClose}>✕</ThemedText>
+          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-654). */}
+          <Text style={styles.headerClose}>✕</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSide} />

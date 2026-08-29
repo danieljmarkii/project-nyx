@@ -10,7 +10,7 @@ import {
 } from '../../lib/completionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
-import { usePetStore } from '../../store/petStore';
+import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { getDoubleDoseFlag, getEventSource, updateDoseAdherence, updateDoseHowGiven, updateEvent } from '../../lib/db';
 import { syncPendingMedicationAdministrations, syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
@@ -64,7 +64,7 @@ export function MedicationCompletionCard() {
     patchDoubleDose, rescheduleHide, pauseDwell, resumeDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
-  const { activePet, pets } = usePetStore();
+  const { pets } = usePetStore();
 
   const translateY = useRef(new Animated.Value(80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -248,14 +248,16 @@ export function MedicationCompletionCard() {
   const subLabel = isCombo
     ? `${payload.drugName} · with ${payload.pairedFoodName}`
     : formatTime(occurredDate);
-  const petName = activePet?.name ?? 'your pet';
-  // The removal line names the DOSE's pet, resolved from the payload — the
-  // queue-then-switch guard the meal and named cards already carry. (The adherence
-  // prompt above still reads the ACTIVE pet; that is a pre-existing gap on this
-  // card, filed separately rather than widened into here.)
-  const notice = removed
-    ? removedNoticeCopy(pets.find((p) => p.id === payload.petId)?.name ?? petName)
-    : null;
+  // ONE name on this card, and it is the DOSE's (CUL-626). The card outlives a pet
+  // switch — it is queued against the pet captured at write time and the store can
+  // move under it — so reading `activePet` here asked whether the OTHER cat still
+  // got it, over a record that is this one's. `resolveRecordPetName` also drops the
+  // `?? activePet` rung the removal line carried: on an archived-pet miss that
+  // fallback names whichever pet is now active, which is the same defect wearing a
+  // fallback's clothes. A clinical prompt naming the wrong animal is worse than one
+  // naming none — see store/petStore.ts for the full argument.
+  const petName = resolveRecordPetName(pets, payload.petId);
+  const notice = removed ? removedNoticeCopy(petName) : null;
 
   // B-156 PR B3 — the intake → adherence safety coupling on the card. A combo dose
   // whose linked vehicle was NOT finished (refused/picked) lands UNCONFIRMED (adherence

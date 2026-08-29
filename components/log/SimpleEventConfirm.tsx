@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   View, StyleSheet, TouchableOpacity, TextInput, Image, Alert, Platform, ScrollView,
 } from 'react-native';
+import type { Insets } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { ChevronLeft, Clock, Camera, Pencil } from 'lucide-react-native';
@@ -417,8 +418,8 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
               withholding the affordance is cheap; a lying one is not. */}
           {!witnessedOnly && (
             <View style={styles.chipPair} testID="confirm-chip-pair">
-              <SawFoundChip testID="chip-saw" label="Saw it" active={timeMode === 'saw'} onPress={() => handleModeChange('saw')} />
-              <SawFoundChip testID="chip-found" label="Found it" active={timeMode === 'found'} onPress={() => handleModeChange('found')} />
+              <SawFoundChip testID="chip-saw" label="Saw it" hitSlop={HITSLOP_CHIP_LEFT} active={timeMode === 'saw'} onPress={() => handleModeChange('saw')} />
+              <SawFoundChip testID="chip-found" label="Found it" hitSlop={HITSLOP_CHIP_RIGHT} active={timeMode === 'found'} onPress={() => handleModeChange('found')} />
             </View>
           )}
         </View>
@@ -444,13 +445,21 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
             'window' either way. */}
         {timeMode === 'found' && windowOpen && (
           <View style={styles.windowPanel}>
-            <TouchableOpacity style={styles.radioRow} onPress={() => handleFoundModeChange('before')} hitSlop={8} accessibilityRole="radio" accessibilityState={{ selected: foundMode === 'before' }}>
+            {/* These two rows carry NO hitSlop, deliberately (CUL-688). They used to
+                be minHeight 40 + hitSlop 8, so the slop was carrying the 44pt floor —
+                but it carried it sideways too, 8pt from each row into the 4pt gap the
+                panel puts between them, leaving a 12pt band where a tap resolved by
+                z-order rather than by intent. `radioRow` is minHeight 44 now, so the
+                floor is true by construction and there is nothing left to claim.
+                Asserting the absence in the test, because the instinct on reading
+                "44pt floor" is to add the slop back. */}
+            <TouchableOpacity style={styles.radioRow} onPress={() => handleFoundModeChange('before')} accessibilityRole="radio" accessibilityState={{ selected: foundMode === 'before' }}>
               <View style={[styles.radio, foundMode === 'before' && styles.radioOn]}>
                 {foundMode === 'before' && <View style={styles.radioDot} />}
               </View>
               <ThemedText style={styles.radioLabel}>Sometime before</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.radioRow} onPress={() => handleFoundModeChange('between')} hitSlop={8} accessibilityRole="radio" accessibilityState={{ selected: foundMode === 'between' }}>
+            <TouchableOpacity style={styles.radioRow} onPress={() => handleFoundModeChange('between')} accessibilityRole="radio" accessibilityState={{ selected: foundMode === 'between' }}>
               <View style={[styles.radio, foundMode === 'between' && styles.radioOn]}>
                 {foundMode === 'between' && <View style={styles.radioDot} />}
               </View>
@@ -583,19 +592,68 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
   );
 }
 
+// ── The Saw it / Found it chips' hit geometry (CUL-688) ──
+//
+// Both chips used to carry a flat hitSlop 8, which put 8pt of reach from each of
+// them into the pair's 4pt gap: a 12pt band down the middle of the top-level
+// witnessed-vs-discovered classifier, resolved by z-order. Same arithmetic as the
+// radio rows above, but NOT the same fix, because the geometry is not the same
+// (CUL-579 — pick the tool by the geometry, not by habit).
+//
+// The chip is a 32pt pill, the design-locked FilterChip register the round-4 mock
+// fixed. So its VERTICAL slop is load-bearing: it is what carries the 44pt floor
+// (32 + 8 + 8), deleting it drops the control under the floor, and growing the box
+// to 44 would change the register. That leaves asymmetry — each chip keeps its
+// vertical and outward reach and yields only the edge that faces a neighbour.
+//
+// Facing: half the pair's gap each, so the two meet at the midpoint and never
+// cross. Derived from the one gap constant rather than restated, so the arithmetic
+// cannot drift apart from the layout it describes.
+//
+// The VERTICAL reach is derived for the same reason, and it is bounded on BOTH
+// sides — which is why it is computed rather than chosen. It must be at least 6,
+// or the 32pt pill stops clearing the 44pt floor; and at most `timeRow`'s rowGap,
+// because in the wrapped AC-CHIP state (the pair drops to its own line) that gap
+// is the whole of what separates these chips from the Change-time control above
+// them. Written as two independent 8s those bounds held by coincidence, and a
+// later narrowing of the row's gap would have reopened this very defect in the
+// wrapped state alone, silently. Both bounds are now guarded, so a token change
+// that makes them incompatible fails the build instead of quietly picking a side.
+//
+// The LEFT chip's outward edge is the part that is easy to get wrong: it looks
+// free, and it is not. `timeMain` is flexGrow:1, so it consumes the row's slack and
+// `chipPair`'s `marginLeft: 'auto'` resolves to zero — the two ABUT. Its neighbour
+// there is the Change-time control, which carries no slop of its own to yield back,
+// so a flush boundary gets no reach at all: 8pt of a control that opens the time
+// picker was resolving to a control that reclassifies the event.
+const CHIP_PAIR_GAP = theme.space0_5;
+const CHIP_ROW_GAP = theme.space1;      // timeRow's rowGap — the wrapped-state separation
+const CHIP_REACH = CHIP_ROW_GAP;        // the tighter of the two vertical bounds
+const CHIP_GAP_HALF = CHIP_PAIR_GAP / 2;
+
+/** The LEFT chip — Saw it. Flush with Change time, so it yields its left edge whole. */
+const HITSLOP_CHIP_LEFT = {
+  top: CHIP_REACH, bottom: CHIP_REACH, left: 0, right: CHIP_GAP_HALF,
+} as const;
+
+/** The RIGHT chip — Found it. Yields only the edge facing its sibling. */
+const HITSLOP_CHIP_RIGHT = {
+  top: CHIP_REACH, bottom: CHIP_REACH, left: CHIP_GAP_HALF, right: CHIP_REACH,
+} as const;
+
 // The Saw it / Found it chip — the shipped FilterChip 'default' register (teal
 // outline + tinted fill when active) with the AC-CHIP contract made explicit: the
 // label is single-line and the chip never shrinks, so it can only ever drop to its
 // own row (handled by the parent's flexWrap), never squeeze or truncate. Built
 // inline rather than reusing FilterChip because that component doesn't expose
 // numberOfLines/flexShrink, which AC-CHIP requires.
-function SawFoundChip({ label, active, onPress, testID }: { label: string; active: boolean; onPress: () => void; testID?: string }) {
+function SawFoundChip({ label, active, onPress, hitSlop, testID }: { label: string; active: boolean; onPress: () => void; hitSlop: Insets; testID?: string }) {
   return (
     <TouchableOpacity
       testID={testID}
       style={[styles.chip, active && styles.chipActive]}
       onPress={onPress}
-      hitSlop={8}
+      hitSlop={hitSlop}
       activeOpacity={0.7}
       accessibilityRole="radio"
       accessibilityState={{ selected: active }}
@@ -695,7 +753,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space1,
     paddingVertical: theme.space1,
     minHeight: 56,
-    rowGap: theme.space1,
+    // The chips' vertical hitSlop is derived from this (CUL-688) — it is the only
+    // thing between them and the Change-time control once the pair wraps.
+    rowGap: CHIP_ROW_GAP,
   },
   timeMain: {
     flexGrow: 1,
@@ -713,7 +773,9 @@ const styles = StyleSheet.create({
   chipPair: {
     flexShrink: 0,             // never squeeze — drop to the next line instead
     flexDirection: 'row',
-    gap: theme.space0_5,
+    // The chips' facing hitSlop is derived from this (CUL-688) — narrowing it
+    // narrows their reach with it, instead of silently opening a shared band.
+    gap: CHIP_PAIR_GAP,
     marginLeft: 'auto',
   },
 
@@ -755,7 +817,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    minHeight: 40,
+    // The 44pt floor lives in the box, not in hitSlop (CUL-688) — see the rows.
+    minHeight: 44,
   },
   radio: {
     width: 18, height: 18, borderRadius: theme.radiusFull,
