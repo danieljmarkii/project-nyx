@@ -168,6 +168,17 @@ about a predicate, not a property of the system — and a test whose failure mod
 predicate most likely to be mid-regression when the suite runs is precisely the
 one the test is about.
 
+## Residual, filed
+
+**CUL-714 (Low).** The helper closes the trap for a guard that *calls* it; a
+future guard can still hand-roll `fs.writeFileSync(path.join(ROOT, 'components',
+…))` and reintroduce the defect. That is the same "the next guard has to
+remember" shape this issue rejected option B for — much weaker here (a helper
+that throws, three converted precedents, and a written rule are real friction,
+and bypassing an affordance is a bigger step than not knowing about a
+neighbour), but it is not zero. Closing it is a source scan over `guards/` in
+the `ownerFacingCopy` shape.
+
 ## Not done here
 
 The fixtures also keep their `components/` / `app/` **shape** inside the temp
