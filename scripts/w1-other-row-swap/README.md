@@ -19,9 +19,19 @@ The gates below are unmet as of 2026-08-28 and the swap is not due yet.
 > owner". Anyone else's `other` rows wait for the future product re-type flow — which
 > is a separate, D2-class product decision with its own T&S review, not this.
 
-That is not a convention here, it is a precondition the SQL enforces: every statement
-carries `pet_id IN (SELECT id FROM pets WHERE user_id = <the reviewing owner>)`, and a
-`DO` prelude `RAISE`s before any write if even one reviewed id falls outside it.
+That is not a convention here, it is a precondition the code and the SQL both enforce.
+**The account is pinned in code** — `SWAP_OWNER_EMAIL` / `SWAP_OWNER_USER_ID` in
+`emitSwapSql.ts` — so a list naming anyone else is refused at emit time, and the prelude
+asserts the same pin again at run time. Every statement carries
+`pet_id IN (SELECT id FROM pets WHERE user_id = <the reviewing owner>)`, and the prelude
+`RAISE`s before any write if even one reviewed id falls outside it.
+
+The pin exists because the red-team broke the earlier version without it: the account
+came from `reviewed-ids.json`, so **one edited field produced a fully-scoped,
+self-consistent live script aimed at another account** — and every validator, every test
+and the prelude passed, because each only ever checked internal *consistency*. Changing
+those constants is not configuration; it is the D3 consent decision being re-taken for a
+different person, which this script is not cleared for.
 
 **Why the predicate and not the review.** This runs on the service-role path, which
 sees every account. Verified live on 2026-08-28: the QA mirror account holds **16
@@ -38,7 +48,7 @@ RLS does not backstop a service-role write.
 |---|---|---|
 | 1 | **PR-3b deployed** — `generate-signal` carries cough's ⑦ enrolment | ✗ `pending` in `deploy-manifest.json`, blocked on the client gate (CUL-676) |
 | 2 | **Device build floor** — every device on the account renders the new types (§11 step 0) | ✗ installed build is 1.1.0 (35), which predates the enum migration |
-| 3 | **`rls-privacy-reviewer` pass** over the emitted SQL + this runbook | see PR #735 — required before the first live run |
+| 3 | **`rls-privacy-reviewer` pass** over the emitted SQL + this runbook | ran on PR #735 → **FAIL**, 9 findings; F1–F5/F7 closed in that PR. **A re-review on the closing diff is owed before the first live run.** |
 | 4 | **Sync quiescence** — every device's outbound queue empty | check on the day |
 
 Gates 1 and 2 are release-cadence items. Nothing in this directory should be run live
@@ -183,6 +193,20 @@ Run `swap.live.sql` whole, in one statement. Paste the before/after table into
 `run-log.md`. The **total must be unchanged** — a swap moves rows between types, it
 never creates or destroys one. (The SQL asserts this itself and rolls back if not.)
 
+**5a. Two checks the repo cannot make for you** (named by the `rls-privacy-reviewer`
+as unverifiable from source — do them on the day):
+
+- **The MCP really runs this as one transaction.** The whole dry-run guarantee assumes
+  `execute_sql` honours the trailing `ROLLBACK;` and that a mid-batch `RAISE` aborts
+  everything. After the dry run, confirm
+  `SELECT count(*) FROM events WHERE event_type = 'cough'` returns **0** *before* going
+  live. If it does not, the tool split the batch into autocommit statements and the
+  swap has already happened.
+- **The reviewer's address is unique in `auth.users`.**
+  `SELECT count(*) FROM auth.users WHERE email = '<owner>';` → expect exactly 1.
+  (Verified 1 on 2026-08-28.) The prelude's `SELECT … INTO` is non-`STRICT` and would
+  silently take the first row.
+
 **6. Verify.**
 
 - Re-open each device; the rows should arrive at the next hydration and render as
@@ -192,6 +216,8 @@ never creates or destroys one. (The SQL asserts this itself and rolls back if no
 - Expect Home to get **quieter**, by design: a chronic course blanks that pet's ③
   reflection layer for unrelated signs too (HR-26). Not a regression.
 - Expect **two** chronicity cards, not one (R4 "both stated").
+- **Delete `predict-input.json`.** It is a dump of the pet's symptom stream — gitignored,
+  but there is no reason for it to sit in the working tree after the run.
 
 **Rollback.** `emit.deno.ts --rollback --live` re-keys the swapped ids back to
 `other`. It restores the *type* only, and it bumps `updated_at` again on purpose —

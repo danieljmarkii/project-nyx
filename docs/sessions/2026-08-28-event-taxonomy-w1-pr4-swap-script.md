@@ -120,6 +120,70 @@ Its own comment predicts this exact forgetting ("excluded by name, which the nex
 script would forget") — the suffix was carrying its half of the contract, the glob was
 not, and the first `.deno.ts` in a subdirectory landed back in the app's tsc run.
 
+## The `rls-privacy-reviewer` pass returned FAIL — and the two breaks were the same mistake
+
+Worth recording in full, because the shape generalises. Attacks 1–4 and 9–11 **held**:
+every emitted statement owner-scoped, the prelude exact and fail-closed (`events.id` is
+a PK and duplicates are rejected, so the count check means *exactly* "all N are
+owner-scoped, un-deleted `other` rows"), and every injection attempt through the email
+and uuid validators rejected — including the JS-vs-Python `$`-anchor bypass, and with
+`$` absent from every character class so the dollar-quoting cannot be closed.
+
+The failures were all in **enforcement**, not in the SQL:
+
+**F1 (HIGH) — the target account was data, not a constant.** Every safety property here
+is *relative* to whichever account the emitted SQL names, and that name came from
+`reviewed-ids.json`. The reviewer edited one field, fixed the counts, and got a
+**fully-scoped, self-consistent live script pointed at another account** — with all 18
+tests passing and the prelude raising no objection, because each check only ever tested
+internal *consistency*. The precedent had this and the copy dropped it:
+`scripts/demo/emitSeedSql.ts` pins `DEMO_EMAIL` in code. The tell was an asymmetry
+sitting in plain sight — the two **read-only** files hardcoded the owner, and the one
+file that **writes** took it from data.
+
+This is the file's own argument turned one level up. Its header says a per-row human
+review "cannot substitute for the predicate". Correct — and a human rule about which
+email goes in a JSON file cannot substitute for a constant either. The stop rule in the
+README and the warning in `candidates.sql` are both instructions to a person.
+
+**F2 (MED-HIGH) — `generatedOn` was interpolated unvalidated into a header comment that
+sits ABOVE `BEGIN;`.** A newline closes the comment and lands a statement *outside* the
+transaction — unscoped, un-preluded, and beyond a dry run's `ROLLBACK`. Not reachable
+from today's one caller (which passes `toISOString().slice(0,10)`), but this is an
+exported API whose header claims safety by construction, and the obvious next edit is a
+`--generated-on=` flag.
+
+**F4 (MED) — the "carries no note text" test was a tautology.** It asserted the key set
+of the test's *own fixture*, so it could not fail for any value of the production code —
+while standing in as the proof that the T&S rule held by construction. The reviewer put
+verbatim note text into `hold[].reason` plus two new top-level keys and all 18 passed.
+`reason` is the one free-text field a human fills in, on a form whose subject is health
+notes, in a file that gets committed.
+
+**F3/F5/F7** were parity and snapshot gaps: the rollback dropped the replication-role,
+trigger, soft-delete and total-invariant checks while both it and the runbook claimed
+parity; the UPDATE re-asserted ownership but not `event_type`/`deleted_at`, leaving a
+READ-COMMITTED window; and the rollback collapsed both leaves into one `IN (...)` test,
+so an owner's cough↔sneeze correction on one of our rows would be silently flattened.
+
+All of F1–F5 and F7 are closed in this PR, each with a test, and F1/F2/F3 were
+red-checked against a deliberately broken emitter. **A re-review on the closing diff is
+owed before the first live run** — the runbook's gate 3 says so.
+
+Two findings went elsewhere: **F8** (delete `predict-input.json` after the run) became a
+runbook step, and **F9** became **CUL-696** — `scripts/export-pet-timeline.sql` selects
+its subject with `WHERE name = 'Nyx' LIMIT 1`, no account scope, no `ORDER BY`, on the
+service-role path, against a database with **two** pets named Nyx. Non-deterministic
+which account it exports. Pre-existing, and the nearest neighbour to the file just
+hardened — i.e. the thing a maintainer would copy.
+
+**The process lesson, which cost real time:** the reviewer was launched twice and died
+silently both times (lost across a session restart), and on the strength of having
+*launched* it I had already written "✓ run on this PR" into the runbook and the PR body.
+The reviewer independently flagged that ✓ as its own finding (F6) — "the class that makes
+a reviewer believe a check happened when it did not". A gate is discharged by a verdict,
+never by a dispatch.
+
 ## Verification
 
 - Emitted dry run against production inside a transaction that **rolled back**:
@@ -127,8 +191,12 @@ not, and the first `.deno.ts` in a subdirectory landed back in the app's tsc run
   (975/975). Post-run state re-checked — nothing persisted.
 - Reviewed list audited against live rows: 34/34 present, all still `other`, none
   soft-deleted, all owner-scoped, zero cough/sneeze mis-assignments.
-- 18 new tests; full suite 276 suites / 6016 cases green; `tsc` clean; `deno check`
-  clean on both `.deno.ts` entry points. CI green on all three jobs.
+- 39 tests (18 originally, then 21 more closing the review's findings); `tsc` clean;
+  `deno check` clean on both `.deno.ts` entry points; CI green on all three jobs.
+- Re-ran the full dry run against production after the hardening (the prelude gained a
+  pinned user-id assertion and both UPDATEs gained two predicates): identical result,
+  rolled back.
+- F1/F2/F3 red-checked — each goes red when its guard is removed.
 
 ## Open / next
 
