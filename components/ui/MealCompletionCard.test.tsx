@@ -63,6 +63,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
 import type { LogTimeTrialFlag } from '../../lib/trialContaminant';
 import { reverseLoggedEvent } from '../../lib/undoLog';
+import { updateEvent } from '../../lib/db';
 
 const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
   kind: 'off_trial_list',
@@ -339,5 +340,83 @@ describe('MealCompletionCard — the dwell pause is actually wired (CUL-614)', (
     fireEvent(card, 'touchCancel');
     act(() => { jest.advanceTimersByTime(5001); });
     expect(useMomentStore.getState().visible).toBe(false);
+  });
+});
+
+// ── The "Change time" sheet (CUL-621) ────────────────────────────────────────
+// This card carried its own inline copy of the picker modal and had NO coverage
+// of it at all — so the adoption of the shared <TimeEditSheet/> would have been a
+// blind swap on the app's best-loved surface. These pin the behaviour that must
+// survive the swap (the question asked, the three fields written, cancel writing
+// nothing) plus the one thing the shared sheet adds: a real button role on its
+// two actions, which the inline copy never had.
+describe('MealCompletionCard — Change time', () => {
+  function openPicker(view: ReturnType<typeof render>) {
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+  }
+
+  it('asks about OCCURRENCE — a meal is witnessed by construction', () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    view.getByText('When did this happen?');
+  });
+
+  it('writes the moved time, stamps manual, and re-asserts witnessed', async () => {
+    // The meal card's deliberate divergence from the named card: it RE-ASSERTS
+    // confidence witnessed rather than omitting the key, because a meal is
+    // witnessed by construction (CUL-606's split — this must not generalize).
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    // The picker opens on THIS record's time. Asserted before any change event,
+    // because a `change` overrides the seed — so every assertion downstream of one
+    // passes just as happily when the card seeds the sheet from the wrong value
+    // (a stale closure, the wrong field, another pet's payload). The write path is
+    // covered by the eventId check below; this covers the read path.
+    expect(view.UNSAFE_getByType('DateTimePicker' as never).props.value)
+      .toEqual(new Date('2026-06-07T14:00:00.000Z'));
+    const moved = new Date(2026, 5, 7, 9, 30);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, moved);
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    const [id, fields] = (updateEvent as jest.Mock).mock.calls[0];
+    expect(id).toBe('e1');
+    expect(fields.occurred_at).toBe(moved.toISOString());
+    expect(fields.occurred_at_source).toBe('manual');
+    expect(fields.confidence).toEqual({ value: 'witnessed', earliest: null, latest: null });
+    // Save is its own confirmation — the card goes rather than lingering.
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('Cancel writes nothing and leaves the card standing', async () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Cancel')); });
+
+    expect(updateEvent as jest.Mock).not.toHaveBeenCalled();
+    expect(useMomentStore.getState().visible).toBe(true);
+    // …and the sheet is GONE. Without this line the test passes with `onCancel`
+    // wired to a no-op — Cancel becomes a dead button, the sheet sticks open over
+    // the card, and "writes nothing / card still standing" are both still true.
+    // Found by the code-reviewer's mutation pass on this very suite.
+    expect(view.queryByText('When did this happen?')).toBeNull();
+  });
+
+  // The inline copy's Cancel/Save were bare TouchableOpacitys — reachable by
+  // sight, announced by VoiceOver as plain text. The shared sheet declares the
+  // role, so adoption is an assistive-tech fix as well as a de-duplication.
+  it('announces its two actions as buttons', () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    view.getByRole('button', { name: 'Cancel' });
+    view.getByRole('button', { name: 'Save' });
   });
 });
