@@ -68,7 +68,7 @@ Requiring the field does not stop a future caller writing a **wrong literal** to
 
 ### What the merge cost, and why it was not mechanical
 
-`main` was merged into this branch (never rebased). One conflict, on the CLAUDE.md CUL-576 bullet both sessions appended to — and it could not be resolved by keeping both sides. CUL-701's passage ended by naming *this* trapdoor as still open:
+`main` was merged into this branch twice (never rebased), as siblings kept landing. The second was clean; the first conflicted on the CLAUDE.md CUL-576 bullet both sessions appended to — and that one could not be resolved by keeping both sides. CUL-701's passage ended by naming *this* trapdoor as still open:
 
 > **And the trap one layer down: `updateEvent` defaults a missing `occurred_at_source` to `'manual'`** … pass the key explicitly until CUL-708 settles what silence should mean.
 
