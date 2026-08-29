@@ -147,6 +147,16 @@ The FAB half is the part that wants it: that surface is **unflagged**, so unlike
 reaches every multi-pet account on the next build rather than a beta cohort. jest renders Modals
 happily — the CUL-662 lesson — so "the switcher still presents from the FAB" is not proven here.
 
+## Note on the branch
+
+`main` moved during the wrap — two siblings landed: **CUL-708** (`occurred_at_source` required on
+`updateEvent`, not defaulted) and **CUL-712** (guard detector fixtures move out of the tree the
+guards scan). Merged in rather than rebased. No conflicts; CLAUDE.md auto-merged, all three
+sessions' convention bullets coexisting. CUL-712 rewrote the guard scanners, so the combined tree
+was re-validated rather than assumed: `tsc` clean, **282 suites / 6153 tests green**. Neither
+sibling touches this diff's files — the one adjacency worth checking was CUL-712's
+fixture-outside-the-scanned-tree rule, and this session's new test writes no fixtures.
+
 ## Not folded in
 
 CUL-679, CUL-680, CUL-617, CUL-628 read and left alone. No new issue was needed: D2 absorbed the
