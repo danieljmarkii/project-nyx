@@ -182,13 +182,27 @@ permutations, wrong-pet *writes*, the retry-vs-restore null race, presence-vs-`n
 
 ## Residuals, stated rather than implied
 
-1. **Removing the only remaining reading from History/detail keeps the old number.** That path
-   cannot know what the reading displaced. Closing it needs the displaced value stored per
-   reading — a schema change, and its own issue.
+1. **Removing the only remaining reading from History/detail nulls the snapshot** rather than
+   restoring the owner's earlier profile weight — that path never knew it, and the write path had
+   already destroyed it at log time. Null is the honest outcome; recovering the value needs it
+   stored per reading (CUL-694).
 2. **An offline undo of a first-ever weigh-in leaves the *server* snapshot stale.** The tombstone
    reconcile can reconcile *to* a remaining reading but cannot restore a displaced value; only
-   the delete site ever knew it. The device the owner is holding is correct either way. Written
-   into `lib/sync.ts` as a named limit beside the code that has it.
+   the delete site ever knew it. The device the owner is holding is correct — but the review was
+   right that the blast radius is wider than "a stale row": every **other** device and every
+   reinstall pulls `pets` from the server and inherits it. Written into `lib/sync.ts` as a named
+   limit beside the code that has it.
+
+## Filed rather than folded in
+
+Out-of-scope work the reviews surfaced, all with a plain-English TL;DR per the 2026-08-26 PM directive:
+
+| Issue | | |
+|---|---|---|
+| **CUL-691** | High | `markSynced` can swallow a tombstone inside the Undo window. `syncPendingEvents` has no in-flight lock and `markSynced` no `updated_at` guard, so an in-flight push can mark a row synced *after* Undo set `synced = 0` — the tombstone never reaches the server. Pre-existing, but this fix's retry leans on that path, and it is **the one route by which a soft-deleted weigh-in reaches the vet report.** |
+| **CUL-692** | Medium | Widget `outbox.revoked` ids are unvalidated App-Group input driving a soft delete. What keeps a `weight_check` id out of that loop is the writer's convention, not a reader-side check — and this session's `reverse-path-ok` exemption newly asserts the path is safe. |
+| **CUL-693** | Low | A stale `generate-report` comment claims the report renders `pets.weight_kg` as signalment. It does not — the field is mapped and read by nothing. Wrong in the *permissive* direction. Deliberately not touched here: that function is under the CUL-19 deploy hold and the manifest is CI-guarded. |
+| **CUL-694** | Low | Store the displaced snapshot per reading so *any* delete path restores exactly. Much smaller than this issue implied once the identity gate landed; carries the derive-at-read end state below as its better-but-larger alternative. |
 
 ## Not taken
 
@@ -212,3 +226,10 @@ reversal's second argument is now part of the asserted contract — a non-weight
 
 `code-reviewer`, `adversarial-reviewer` and `rls-privacy-reviewer` (the deletion path is never
 "mechanical") dispatched against the diff; findings land on #734.
+
+## Close-out
+
+CI green on the head across all three jobs (incl. the non-UTC-timezone job), `mergeable_state: clean`,
+no review threads. PR left as a **draft** pending the on-device pass — the cross-pet step and the two
+gate steps in the PR body are the ones that need a real device, since they are exactly the cases a
+static read got wrong twice.
