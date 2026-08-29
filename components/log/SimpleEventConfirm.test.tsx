@@ -476,3 +476,171 @@ describe('witnessed-by-construction leaves (D10 — cough / sneeze)', () => {
     expect(getByText('Add a photo')).toBeTruthy();
   });
 });
+
+// ── CUL-688 — two adjacent-control pairs in this sheet claimed reach into each other. ──
+//
+// Both are the witnessed-vs-discovered classifier (B-448), one nested inside the
+// other: the chips choose Saw it / Found it, and the radios refine a Found window
+// into open-ended vs two-sided. A boundary tap resolving by z-order files one
+// confidence class as another, and the vet report prints the difference.
+//
+// The CLAUDE.md CUL-612 arithmetic is `gap >= facing(a) + facing(b)`. Both pairs
+// sat in a 4pt gap carrying 8pt of facing slop each — a 12pt shared band, twice.
+// The two fixes differ because the geometry differs (the CUL-579 rule: pick the
+// tool by the geometry, not by habit), so each is asserted on its own terms.
+//
+// Every assertion reads the RENDERED geometry and walks up from the label to its
+// owning touchable. Restating the tokens in the test would assert only that two
+// constants the test itself names still add up (CUL-621), and `fireEvent.press`
+// cannot prove any of this — it can reach a handler by DESCENDING from an
+// enclosing composite, so it goes green on the unfixed tree (CUL-613, learned
+// the hard way in TimeConfidenceField.test.tsx).
+
+/** The nearest ancestor host element with responder handlers — the touchable that
+ *  actually owns a node — or null if the node sits in no button at all. */
+function owningTouchable(node: any): any {
+  let n = node;
+  while (n) {
+    if (n.props?.accessible && typeof n.props?.onStartShouldSetResponder === 'function') return n;
+    n = n.parent;
+  }
+  return null;
+}
+
+/** The nearest ancestor containing BOTH nodes — i.e. whichever element the two are
+ *  siblings in, derived from the tree rather than reached by a fixed number of
+ *  `.parent` hops, so it cannot quietly start measuring some other element. */
+function commonAncestor(a: any, b: any): any {
+  const chain = new Set<any>();
+  for (let n = a; n; n = n.parent) chain.add(n);
+  for (let n = b; n; n = n.parent) if (chain.has(n)) return n;
+  return null;
+}
+
+/** Facing reach toward a neighbour, from a rendered `hitSlop` prop. A number is
+ *  reach on all four edges; an object yields per-edge; absent is no reach at all. */
+function facing(node: any, edge: 'top' | 'bottom' | 'left' | 'right'): number {
+  const slop = node?.props?.hitSlop;
+  if (slop == null) return 0;
+  return typeof slop === 'number' ? slop : (slop[edge] ?? 0);
+}
+
+function flat(node: any): Record<string, number | undefined> {
+  return (StyleSheet.flatten(node?.props?.style) ?? {}) as Record<string, number | undefined>;
+}
+
+/** Open Found it → Adjust window, where the two radio rows live. */
+function openWindowEditor() {
+  const utils = renderConfirm();
+  fireEvent.press(utils.getByText('Found it'));
+  fireEvent.press(utils.getByTestId('confirm-time-main'));
+  return utils;
+}
+
+const RADIO_LABELS = ['Sometime before', 'Between two times'] as const;
+
+describe('CUL-688 — the found-mode radio rows', () => {
+  // The fix here is to GROW THE BOX. The rows were minHeight 40 — under the 44pt
+  // floor — so unlike the CUL-579/CUL-657 pairs the slop was doing real vertical
+  // work and could not simply be deleted. Taking the row to 44 clears the floor by
+  // construction and removes the overlap in the same edit, which is the shape
+  // `menuAction` and `logForChip` already use.
+  it('each row carries the 44pt floor in its own box, not in slop', () => {
+    const { getByText } = openWindowEditor();
+    for (const label of RADIO_LABELS) {
+      const row = owningTouchable(getByText(label));
+      expect(row).not.toBeNull();
+      expect(flat(row).minHeight).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  // Asserting the ABSENCE, because the instinct on reading "44pt floor" is to add
+  // it back — the same reason TimeConfidenceField pins its three rows.
+  it('neither row claims reach into the other', () => {
+    const { getByText } = openWindowEditor();
+    for (const label of RADIO_LABELS) {
+      expect(owningTouchable(getByText(label)).props.hitSlop).toBeUndefined();
+    }
+  });
+
+  // Pins the geometry the rule rests on: the panel's gap is small (4pt), which is
+  // precisely why no slop fits in it. If a redesign opens that gap up, this is the
+  // line that makes re-deriving the rule a decision rather than an accident.
+  it('the panel gap is never crossed — facing reach fits inside it', () => {
+    const { getByText } = openWindowEditor();
+    const before = owningTouchable(getByText('Sometime before'));
+    const between = owningTouchable(getByText('Between two times'));
+    expect(before).not.toBe(between);
+
+    const panel = commonAncestor(before, between);
+    const gap = flat(panel).rowGap ?? flat(panel).gap ?? 0;
+    expect(facing(before, 'bottom') + facing(between, 'top')).toBeLessThanOrEqual(gap);
+  });
+
+  it('each row still selects the found-mode it names', () => {
+    const { getByText, queryByText } = openWindowEditor();
+    // "Sometime before" is the default, so drive the one that changes state and
+    // read the mode back off the surface the owner actually sees.
+    fireEvent.press(getByText('Between two times'));
+    expect(queryByText('Found it by')).toBeNull();
+    expect(getByText('From')).toBeTruthy();
+    expect(getByText('To')).toBeTruthy();
+
+    fireEvent.press(getByText('Sometime before'));
+    expect(getByText('Found it by')).toBeTruthy();
+    expect(queryByText('From')).toBeNull();
+  });
+});
+
+describe('CUL-688 — the Saw it / Found it chips', () => {
+  // The fix here is the OPPOSITE tool, because the geometry is the opposite. The
+  // chip is a 32pt pill (the design-locked FilterChip register), so its vertical
+  // slop is what carries the 44pt floor and deleting it would drop the control
+  // below the floor. Growing it to 44 would change the register the round-4 mock
+  // fixed. So each chip keeps its vertical and OUTWARD reach and yields only the
+  // edge facing its neighbour — the lib/completionCard HITSLOP_ACTION_* shape.
+  it('each chip still clears the 44pt floor through its vertical reach', () => {
+    const { getByTestId } = renderConfirm();
+    for (const id of ['chip-saw', 'chip-found']) {
+      const chip = getByTestId(id);
+      const box = flat(chip).minHeight ?? 0;
+      expect(box + facing(chip, 'top') + facing(chip, 'bottom')).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  it('the pair yields the facing edge — the gap between them is never crossed', () => {
+    const { getByTestId } = renderConfirm();
+    const saw = getByTestId('chip-saw');
+    const found = getByTestId('chip-found');
+    const gap = flat(getByTestId('confirm-chip-pair')).columnGap
+      ?? flat(getByTestId('confirm-chip-pair')).gap ?? 0;
+
+    expect(facing(saw, 'right') + facing(found, 'left')).toBeLessThanOrEqual(gap);
+  });
+
+  // The pair's OUTWARD left edge is not free space: `timeMain` is flexGrow:1, so it
+  // eats the row's slack and the chipPair's `marginLeft: 'auto'` resolves to zero —
+  // the two abut. The Change-time control carries no slop of its own, so every
+  // point the chip claims there is taken from a control that opens the picker.
+  // Flush neighbours get no slop at all (CUL-579): there is no gap to spend.
+  it('the left chip claims nothing from the flush Change-time control', () => {
+    const { getByTestId } = renderConfirm();
+    const row = getByTestId('confirm-time-row');
+    const rowGap = flat(row).columnGap ?? flat(row).gap ?? 0;
+    const timeMain = getByTestId('confirm-time-main');
+
+    expect(facing(getByTestId('chip-saw'), 'left') + facing(timeMain, 'right'))
+      .toBeLessThanOrEqual(rowGap);
+  });
+
+  it('each chip still selects its own mode', () => {
+    const { getByText, getByTestId, queryByTestId } = renderConfirm();
+    fireEvent.press(getByText('Found it'));
+    fireEvent.press(getByTestId('confirm-time-main'));
+    expect(getByText('Sometime before')).toBeTruthy();
+
+    fireEvent.press(getByText('Saw it'));
+    expect(queryByTestId('confirm-chip-pair')).not.toBeNull();
+    expect(getByText(/^Vomit · today at /)).toBeTruthy();
+  });
+});
