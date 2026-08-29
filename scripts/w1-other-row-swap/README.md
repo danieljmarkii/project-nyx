@@ -38,7 +38,7 @@ RLS does not backstop a service-role write.
 |---|---|---|
 | 1 | **PR-3b deployed** — `generate-signal` carries cough's ⑦ enrolment | ✗ `pending` in `deploy-manifest.json`, blocked on the client gate (CUL-676) |
 | 2 | **Device build floor** — every device on the account renders the new types (§11 step 0) | ✗ installed build is 1.1.0 (35), which predates the enum migration |
-| 3 | **`rls-privacy-reviewer` pass** over the emitted SQL + this runbook | ✓ run on this PR |
+| 3 | **`rls-privacy-reviewer` pass** over the emitted SQL + this runbook | see PR #735 — required before the first live run |
 | 4 | **Sync quiescence** — every device's outbound queue empty | check on the day |
 
 Gates 1 and 2 are release-cadence items. Nothing in this directory should be run live
