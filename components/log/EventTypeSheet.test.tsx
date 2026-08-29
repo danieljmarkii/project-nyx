@@ -562,3 +562,97 @@ describe('EventTypeSheet — the event_types_v2 expansion gate', () => {
     expect(getByText('beat:calm')).toBeTruthy();
   });
 });
+
+
+// ── CUL-681: NO PET TO LOG FOR ───────────────────────────────────────────────
+//
+// The reported defect: with no active pet, tapping a tile called `onClose()` and
+// returned — the sheet vanished, nothing was written and nothing was said. That is
+// CUL-575's rule ("a failed write is always said") applied to a write that never
+// starts, and it is the app looking broken at the moment someone is trying to
+// record something.
+//
+// The state is reachable for a real window, not only in theory: the FAB mounts
+// unconditionally in the tabs layout, while pets hydrate from a NETWORK read
+// (hooks/usePet.ts) that only runs once the session restores — and on a failed
+// double-read that hook deliberately leaves the store as-is. So every cold start
+// has a no-pet window, and an offline one can hold.
+//
+// The ruled shape (PM, 2026-08-29) is the issue's second option plus its first: the
+// grid does not accept taps at all, because it is not rendered — the sheet says why
+// instead. That one gate also closes the Meal/Medication/Weight half, which never
+// reached handleSelect's guard: it closed the sheet and pushed /log, whose pickers
+// are themselves gated on activePet, so it landed on an empty screen.
+//
+// Verified red against the pre-fix tree (tiles present and tappable, no copy) before
+// being trusted green — the CUL-613 rule.
+describe('EventTypeSheet — no pet to log for (CUL-681)', () => {
+  beforeEach(() => {
+    (router.push as jest.Mock).mockClear();
+    mockTaxonomyEligible = false;
+    mockTaxonomyOptedIn = false;
+    usePetStore.setState({ pets: [], activePet: null });
+  });
+
+  it('renders no tiles at all — there is nothing to tap into a vanish', () => {
+    const { queryByText, queryByLabelText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    // One from each half of the old defect: an in-sheet confirm tile and a
+    // routes-out tile. Neither may exist while there is no pet to write for.
+    expect(queryByText('Vomit')).toBeNull();
+    expect(queryByText('Meal')).toBeNull();
+    expect(queryByLabelText('Log vomit')).toBeNull();
+  });
+
+  it('says why, in place — the sheet stays open and speaks', () => {
+    const onClose = jest.fn();
+    const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
+    expect(getByText('No pet to log for yet')).toBeTruthy();
+    // Forward-looking, per Principle 5 / nyx-voice Pattern 3, and true for each
+    // way an owner reaches this state. The connection clause is pinned because it
+    // carries the COMMON case: the dominant cause is a pets read that has not
+    // landed, and an owner who already has a pet must not be told to add one as
+    // the first instruction.
+    expect(getByText(/check your connection/)).toBeTruthy();
+    expect(getByText(/Pet tab/)).toBeTruthy();
+    // The vanish is the defect. The sheet is still up, un-dismissed.
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('drops the "Log for your pet" placeholder title — it would contradict the copy', () => {
+    const { queryByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(queryByText(/^Log for/)).toBeNull();
+  });
+
+  it('swaps back to the grid the moment pets hydrate — no reopen needed', () => {
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(view.queryByText('Vomit')).toBeNull();
+    act(() => { seedPets(1); });
+    expect(view.getByText('Log for Nyx')).toBeTruthy();
+    expect(view.getByText('Vomit')).toBeTruthy();
+    expect(view.queryByText('No pet to log for yet')).toBeNull();
+  });
+
+  it('and back again if the store is wiped under an open sheet', () => {
+    seedPets(1);
+    const onClose = jest.fn();
+    const view = render(<EventTypeSheet visible onClose={onClose} />);
+    expect(view.getByText('Vomit')).toBeTruthy();
+    act(() => { usePetStore.setState({ pets: [], activePet: null }); });
+    // The surface speaks for itself — which is why handleSelect's residual
+    // write-time guard is silent rather than alerting.
+    expect(view.getByText('No pet to log for yet')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  // CUL-678 — management rows leave a capture surface, and a push from inside a
+  // Modal renders BEHIND it (CUL-662), so a door offered here would appear to do
+  // nothing. The copy points at the Pet tab; it does not offer the door.
+  // (nyx-voice Pattern 4 is not re-asserted here — guards/ownerFacingCopy.test.ts
+  // already fails the build on a rendered owner-facing string carrying a '!'.)
+  it('offers no way OUT of the sheet — it names where to go, it does not navigate', () => {
+    const { queryByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(queryByText('Add a pet')).toBeNull();
+    expect(queryByText('Archived pets')).toBeNull();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+});
