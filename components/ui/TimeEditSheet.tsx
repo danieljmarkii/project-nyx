@@ -4,22 +4,26 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 
-// The "Change time" bottom sheet, extracted (CUL-606).
+// The "Change time" bottom sheet, extracted (CUL-606) and now the ONLY one: the
+// meal and dose cards' inline copies were deleted in favour of this (CUL-621), so
+// all three completion surfaces ask the question the same way. The strangler is
+// finished — do not re-inline a fourth.
 //
-// MealCompletionCard and MedicationCompletionCard each carry their own inline copy
-// of this modal. Rather than land a THIRD, the named card takes this shared one and
-// the two incumbents adopt it in a follow-up (filed) — a strangler, not a rewrite:
-// touching the app's best-loved surface is not this PR's job.
+// The `title` prop is REQUIRED, deliberately — see its doc comment. The meal and
+// dose cards each edit a witnessed point, so they pass their own question about
+// it ("When did this happen?" / "When was this dose given?").
 //
-// The `title` prop is REQUIRED, deliberately — see its doc comment. The two
-// incumbents both edit a witnessed point, so they pass the original question.
+// Two details are load-bearing and neither is visible in a diff. The empty-onPress
+// Pressable around the sheet: without it a tap on the title or the whitespace falls
+// through to the absolute-positioned backdrop and silently dismisses the picker
+// mid-edit. And `maximumDate` pins to the mount time rather than a live clock — a
+// "now" that advances while the wheel is open would let a scrub land a second in
+// the future. Both are pinned by TimeEditSheet.test.tsx, which was mutation-checked
+// against each defect rather than trusted for being green.
 //
-// Two details worth keeping when the others migrate. The empty-onPress Pressable
-// around the sheet is load-bearing: without it a tap on the title or the whitespace
-// falls through to the absolute-positioned backdrop and silently dismisses the
-// picker mid-edit. And `maximumDate` pins to the mount time rather than a live
-// clock — a "now" that advances while the wheel is open would let a scrub land a
-// second in the future.
+// CALLERS MOUNT THIS CONDITIONALLY (`{open && <TimeEditSheet …/>}`) — `visible` is
+// hardcoded on the Modal, and the mount is what pins `maximumDate` to open-time.
+// A caller that renders it unconditionally would pin the maximum to card-mount.
 interface Props {
   /** The value the picker opens on. */
   value: Date;
@@ -124,6 +128,6 @@ const styles = StyleSheet.create({
     color: theme.colorAccentInk,
   },
   saveDisabled: {
-    opacity: 0.5,
+    opacity: theme.opacityDisabled,
   },
 });

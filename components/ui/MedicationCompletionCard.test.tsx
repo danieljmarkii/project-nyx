@@ -41,6 +41,7 @@ import { Alert } from 'react-native';
 import { MedicationCompletionCard } from './MedicationCompletionCard';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useMomentStore } from '../../store/momentStore';
+import { updateEvent } from '../../lib/db';
 import { usePetStore } from '../../store/petStore';
 
 const CONFLICT = { conflict: true, otherEventId: 'm0', gapMinutes: 95 };
@@ -290,5 +291,66 @@ describe('MedicationCompletionCard — the dwell pause is actually wired (CUL-61
     fireEvent(card, 'touchCancel');
     act(() => { jest.advanceTimersByTime(5001); });
     expect(useMomentStore.getState().visible).toBe(false);
+  });
+});
+
+// ── The "Change time" sheet (CUL-621) ────────────────────────────────────────
+// Same rationale as the meal card's block: this card carried its own inline copy
+// of the picker modal with no coverage of it, so adopting the shared
+// <TimeEditSheet/> would have been a blind swap. Pins the question asked, the
+// three fields written, cancel writing nothing, and the button role the inline
+// copy never declared. The combo path's WITHHOLDING is covered above.
+describe('MedicationCompletionCard — Change time', () => {
+  function openPicker(view: ReturnType<typeof render>) {
+    fireEvent.press(view.getByLabelText('Change time of this dose'));
+  }
+
+  it('asks about the DOSE, not a generic "when did this happen"', () => {
+    // The sheet's title names the field being written (CUL-606's required-title
+    // rule). A dose is a witnessed point in time, so the question is about it.
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    view.getByText('When was this dose given?');
+    expect(view.queryByText('When did this happen?')).toBeNull();
+  });
+
+  it('writes the moved time, stamps manual, and re-asserts witnessed', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    const moved = new Date(2026, 5, 7, 9, 30);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, moved);
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    const [id, fields] = (updateEvent as jest.Mock).mock.calls[0];
+    expect(id).toBe('m1');
+    expect(fields.occurred_at).toBe(moved.toISOString());
+    expect(fields.occurred_at_source).toBe('manual');
+    expect(fields.confidence).toEqual({ value: 'witnessed', earliest: null, latest: null });
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('Cancel writes nothing and leaves the card standing', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Cancel')); });
+
+    expect(updateEvent as jest.Mock).not.toHaveBeenCalled();
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('announces its two actions as buttons', () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    view.getByRole('button', { name: 'Cancel' });
+    view.getByRole('button', { name: 'Save' });
   });
 });
