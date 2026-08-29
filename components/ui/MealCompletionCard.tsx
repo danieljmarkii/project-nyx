@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import { useMomentStore } from '../../store/momentStore';
 import {
@@ -11,7 +12,7 @@ import {
 } from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
-import { updateEvent, updateMealIntake } from '../../lib/db';
+import { updateEvent, updateMealIntake, getEventSource } from '../../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
@@ -183,9 +184,32 @@ export function MealCompletionCard() {
     setSaving(true);
     try {
       const iso = next.toISOString();
-      // Touching the picker means the user explicitly chose a time → flip
-      // provenance from 'now' to 'manual' so the vet report and correlation
-      // engine can distinguish witnessed-now from owner-backfilled later.
+      // Provenance MOVES ONLY WHEN THE TIME MOVES (CUL-701). Save is live the
+      // moment the sheet opens, so a peek that scrubs nothing is a real gesture —
+      // and this used to answer it by writing 'manual' unconditionally, asserting
+      // the owner chose a time the app had stamped itself. occurred_at_source is
+      // how the vet report and the correlation engine tell a witnessed-now log
+      // from an owner backfill, so that is a record-fidelity defect even though
+      // nothing on screen changes.
+      //
+      // On this card it also DESTROYED data, which the medication card's copy of
+      // the bug did not: insertMeal takes the source as a parameter, and both
+      // photo paths pass 'exif' off the food photo's own EXIF stamp (app/log.tsx
+      // handlePickFood, app/food-capture.tsx). A peek dropped that attribution.
+      //
+      // sourceAfterPointEdit is the shared predicate every other time-editing
+      // surface already routes through (app/log.tsx, app/edit-event.tsx,
+      // components/log/SimpleEventConfirm.tsx, and the named card) — B-448's
+      // "re-selecting the current value is not a new claim", applied to the point.
+      // The key is passed rather than omitted deliberately: updateEvent defaults a
+      // missing occurred_at_source to 'manual', so silence here is not neutral.
+      //
+      // Compared by INSTANT, not by ISO text: the sheet hands back the very Date
+      // it was seeded with on a peek, and comparing instants cannot be fooled by a
+      // payload whose string is a non-canonical spelling of the same moment. This
+      // is the idiom the four surfaces above already use.
+      const changed = next.getTime() !== new Date(payload.occurredAt).getTime();
+      const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
       // Re-assert 'witnessed' — meals are always witnessed (you see yourself put
       // the bowl down; the B-010 found path never applies), and this card only
       // ever edits a meal insertMeal just wrote as witnessed. Restating it is a
@@ -195,7 +219,7 @@ export function MealCompletionCard() {
         occurred_at: iso,
         severity: null,
         notes: null,
-        occurred_at_source: 'manual',
+        occurred_at_source: source,
         confidence: { value: 'witnessed', earliest: null, latest: null },
       });
       patchInToday(payload.eventId, { occurred_at: iso });

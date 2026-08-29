@@ -19,7 +19,15 @@
 // stubbed so the sheet renders without the analytics/day-math chain (its real
 // output is covered by lib/trialFoodsScreen.test.ts + AddTrialFoodSheet.test.tsx).
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
-jest.mock('../../lib/db', () => ({ updateEvent: jest.fn(), updateMealIntake: jest.fn() }));
+// getEventSource defaults to 'exif' so the provenance assertions below are
+// meaningful: insertMeal takes occurred_at_source as a PARAMETER, and both photo
+// paths pass 'exif' (app/log.tsx handlePickFood, app/food-capture.tsx), so a meal
+// reaching this card really can carry a photo's own stamp. beforeEach re-arms it.
+jest.mock('../../lib/db', () => ({
+  updateEvent: jest.fn(),
+  updateMealIntake: jest.fn(),
+  getEventSource: jest.fn(),
+}));
 jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../lib/sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
@@ -63,7 +71,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
 import type { LogTimeTrialFlag } from '../../lib/trialContaminant';
 import { reverseLoggedEvent } from '../../lib/undoLog';
-import { updateEvent } from '../../lib/db';
+import { updateEvent, getEventSource } from '../../lib/db';
 
 const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
   kind: 'off_trial_list',
@@ -111,6 +119,7 @@ beforeEach(() => {
   useMomentStore.getState().hide();
   useMomentStore.setState({ payload: null, removed: false });
   (reverseLoggedEvent as jest.Mock).mockResolvedValue(undefined);
+  (getEventSource as jest.Mock).mockResolvedValue('exif');
 });
 
 afterEach(() => {
@@ -389,6 +398,45 @@ describe('MealCompletionCard — Change time', () => {
     expect(fields.confidence).toEqual({ value: 'witnessed', earliest: null, latest: null });
     // Save is its own confirmation — the card goes rather than lingering.
     expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  // ── Provenance on a peek-and-save (CUL-701) ────────────────────────────────
+  // Save is live the moment the sheet opens, so "tap Change time, look, tap Save"
+  // is a real gesture that scrubs nothing — and this card used to answer it by
+  // writing occurred_at_source: 'manual' unconditionally. That column is how the
+  // vet report and the correlation engine tell an app-stamped time from an
+  // owner-chosen one, so the write asserted a human decision nobody made.
+  //
+  // On THIS card the cost is worse than a false claim. insertMeal takes the
+  // source as a parameter and both photo paths pass 'exif' (app/log.tsx
+  // handlePickFood; app/food-capture.tsx), so a meal logged from a photo carries
+  // that photo's own stamp — and the peek destroyed it. Same data loss the named
+  // card's adversarial pass found, on the surface meals actually use.
+  it('preserves EXIF provenance on a peek-and-save', async () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    expect(getEventSource).toHaveBeenCalledWith('e1');
+    const fields = (updateEvent as jest.Mock).mock.calls[0][1];
+    expect(fields.occurred_at_source).toBe('exif');
+    // The save still HAPPENED — this is a provenance rule, not a refusal to write.
+    expect(fields.occurred_at).toBe('2026-06-07T14:00:00.000Z');
+  });
+
+  // The issue's headline case: the one-tap meal, auto-stamped 'now' at insert.
+  // Nothing owner-authored is destroyed here, but the record still gains a claim
+  // the owner never made — CUL-576's rule ("a defaulted timestamp is the app's
+  // claim") read back off the column instead of into it.
+  it("preserves an auto-stamped 'now' on a peek-and-save", async () => {
+    (getEventSource as jest.Mock).mockResolvedValue('now');
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    expect((updateEvent as jest.Mock).mock.calls[0][1].occurred_at_source).toBe('now');
   });
 
   it('Cancel writes nothing and leaves the card standing', async () => {

@@ -212,11 +212,18 @@ export function buildTimeFields(input: {
 // edit on a now-sourced row kept source='now'; a live row proves it (a vomit set
 // to a round 09:00:00 whose source stayed 'now'). The column exists so the vet
 // report and correlation engine can tell a witnessed-now log from an owner-
-// backfilled one, so a picker-set time still reading 'now' is quietly wrong. This
-// mirrors the completion cards, which write 'manual' on any picker save.
+// backfilled one, so a picker-set time still reading 'now' is quietly wrong.
 //
 // A PEEK that changes nothing preserves the stored provenance — critically
 // 'exif', whose photo attribution must not be dropped merely by opening the picker.
+//
+// EVERY point-time edit in the app routes through here (CUL-701): the four capture
+// and edit surfaces, and all three completion cards. The cards were the holdouts —
+// they wrote 'manual' unconditionally, and because their Save is live the moment
+// the sheet opens, a peek-and-save was enough to stamp it. The named card was
+// fixed at CUL-606; the meal and dose cards followed at CUL-701, where the meal
+// card turned out to be losing 'exif' rather than merely mis-claiming, insertMeal
+// taking the source as a parameter that both photo paths fill from EXIF.
 export function sourceAfterPointEdit(
   current: 'manual' | 'exif' | 'now',
   changed: boolean,
