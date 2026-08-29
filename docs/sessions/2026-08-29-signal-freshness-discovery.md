@@ -171,3 +171,37 @@ benchmarks (G6/G7), points/rewards (Zoetis), check-in-as-homework (Bearable).
 same artifact URL); the research brief + README index row; CUL-695 title/description updated
 to D1–D5 with the F7 direction and research reference; the rev-1.1 addendum comment; this
 Part 2. All on PR #736.
+
+---
+
+## Part 3 — rev 1.2 (same day): the PM's second push — free text, and a corrected D5
+
+The PM pushed back on rev 1.1's chips-only F7: *"Linear agent. Free text entry. Why doesn't
+that show through here. Like an ask ai [with] pre-searched options."* The push was right, and
+the correction is recorded with its reasoning (CUL-695 comment, 2026-08-29):
+
+- **Rev 1.1 conflated two things.** Free-text *asking* was never excluded (Ask is a shipped
+  free-text surface; chips are its scaffold — chips-first, not chips-only; the frame simply
+  failed to draw the input). And free-text *capture* is not the boundary either — **the
+  unconfirmed write is.** The under-weighted precedent: this codebase already ships
+  AI-assisted capture with owner confirmation (photo → `extract-food-from-photo` → confirm →
+  deterministic write). Typed text is that pattern's sibling, not a new boundary class.
+- **F7 redrawn as the omnibox** (mock round 1.2, same URL): a real input + pre-shown prompt
+  chips; typed input routes by intent — question-shaped → Ask's read-only loop (shipped);
+  capture-shaped → an `extract-event-from-text` *proposal* landing in the standard confirm
+  register (B-745: the summary pill IS the save). The AI proposes; the owner's tap writes;
+  nothing lands silently. Ask's §6 intact (capture never rides its tool loop).
+- **D5 rewritten:** (a) chips-only = the conservative floor · **(b) the omnibox — recommended,
+  phased** (the ask half exists today; the capture half is one new Edge Function + routing) ·
+  (c) unconfirmed LLM writes — off the table; the confirm step is what keeps (b) on the right
+  side of the actual boundary.
+- **Gates named, not waived:** typed health text rides the CUL-552 AI-consent state exactly as
+  photos do (same 5.1.2(i) disclosure class); clinical-guardrails on anything the parse says
+  back (it structures, never diagnoses or reassures); `ai_usage` caps on the model half while
+  chip taps stay free by construction; taxonomy + occurred-at-confidence rules on every
+  proposal (a typed "this morning" lands *estimated*, never witnessed — B-448/B-576 applied
+  to parsed text).
+
+Also this revision cycle: the mock gained a top **"what's new" banner with anchors** after the
+PM re-opened the same-URL republish and read it as unchanged — the revision-legibility fix the
+track's own subject demanded (rev additions had all landed deep in the page).

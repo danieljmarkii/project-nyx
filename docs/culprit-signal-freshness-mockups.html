@@ -141,6 +141,17 @@
     color: var(--teal-ink); background: var(--teal-wash); border: 1px solid rgba(11,123,108,0.3);
     border-radius: 5px; padding: 1px 6px; text-transform: uppercase;
   }
+  .askfield {
+    display: flex; align-items: center; gap: 8px; margin-top: 10px;
+    background: #F7F6FA; border: 1px solid #E4E2EE; border-radius: 12px;
+    padding: 9px 12px; font-size: 12.5px; color: #8B87A8;
+  }
+  .askdot { width: 7px; height: 7px; border-radius: 50%; background: #00C2A8; flex-shrink: 0; }
+  .typed { font-size: 12.5px; color: #1A1A24; background: #F0EFF5; border-radius: 12px 12px 12px 4px; padding: 8px 11px; margin-top: 9px; display: inline-block; }
+  .proposal { margin-top: 9px; border: 1px solid rgba(11,123,108,0.3); background: #ECFDF9; border-radius: 10px; padding: 9px 11px; }
+  .proposal .ppill { font-size: 12.5px; font-weight: 600; color: #1A1A24; }
+  .proposal .pnote { font-size: 10.5px; color: #5F5C7A; margin-top: 3px; }
+  .proposal .pact { display: flex; gap: 7px; margin-top: 8px; }
   .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
   .brief p strong { color: var(--ink); }
   .brief .rec { color: var(--teal-ink); font-weight: 600; }
@@ -217,8 +228,8 @@
 
   <header class="mast">
     <p class="eyebrow">
-      <span class="roundtag">Round 1.1 — exploratory</span>
-      <span>Signal freshness discovery · 2026-08-29 (rev. same day: F7 + D5 + the research pass)</span>
+      <span class="roundtag">Round 1.2 — exploratory</span>
+      <span>Signal freshness discovery · 2026-08-29 (rev 1.1: F7 + D5 + research · rev 1.2: F7 → omnibox)</span>
       <span>Sibling of B-721 (shipped, GA'd) — supersedes nothing</span>
     </p>
     <h1>The Living Signal</h1>
@@ -227,18 +238,21 @@
       The cache is fresh — it regenerates daily — but the <em>content</em> is standing truth,
       and standing truth doesn't move. This round separates the Signal's two jobs —
       <strong>what is true</strong> and <strong>what changed</strong> — and draws six ways to
-      give the second job a surface. Revision 1.1 adds <strong>F7</strong> (the PM's
-      F4+F6-fusion suggestion, drawn with its engine seam) and the competitive/inspiration
-      research. Nothing here is design-locked; the shipped surface's authority remains
+      give the second job a surface. Rev 1.1 added <strong>F7</strong> (the PM's F4+F6-fusion
+      suggestion) and the competitive/inspiration research; rev 1.2 redraws F7 as a true
+      <strong>omnibox</strong> — free text plus pre-shown prompts — after the PM's push.
+      Nothing here is design-locked; the shipped surface's authority remains
       <code>culprit-signal-home-mockups.html</code> (round 2.1).
     </p>
     <div class="revnew">
-      <b>Already read round 1? Rev 1.1 adds three things</b> — everything else is unchanged:
-      <a href="#f7">F7 · the companion row</a> (your F4+F6 fusion, drawn with the
-      chips-write / Ask-reads seam) · <a href="#research">the research callout</a>
+      <b>Already read round 1? What's new since:</b>
+      <a href="#f7">F7 · the companion surface</a> — your F4+F6 fusion, redrawn in rev 1.2 as a
+      true omnibox (free text + pre-shown prompts; typed capture routes to propose-and-confirm,
+      the photo-extraction shape) · <a href="#research">the research callout</a>
       (Oura / Whoop / Linear Pulse / Huckleberry / Bearable + the competitor trip-wire check) ·
-      <a href="#d5">D5 · the fusion ruling</a>. Same URL on purpose — rounds republish in
-      place so the link on CUL-695 never goes stale.
+      <a href="#d5">D5 · the companion-surface ruling</a>, rewritten with the omnibox as the
+      recommendation. F1–F6 and D1–D4 are unchanged from round 1. Same URL on purpose — rounds
+      republish in place so the link on CUL-695 never goes stale.
     </div>
   </header>
 
@@ -614,39 +628,48 @@
                 <div class="ibody">
                   <p class="lead compact">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
                   <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                  <div class="askfield"><span class="askdot"></span><span>Ask about this — or tell me what happened…</span></div>
                   <div class="chiprow">
                     <span class="chip">Visit booked</span>
                     <span class="chip">She's seemed off today</span>
                     <span class="chip quiet">What should I tell the vet? ›</span>
                   </div>
-                  <div class="annot ok">one row, three verbs — writes commit deterministically; the › chip opens Ask, scoped to this card</div>
+                  <div class="annot ok">a real input, Linear-agent style — chips are the pre-shown prompts, the field takes anything</div>
                 </div>
               </div>
             </div>
             <div class="acard">
-              <div class="seclabel">Ask · opened from the card</div>
+              <div class="seclabel">Typed free text · capture-shaped → a proposal, never a silent write</div>
               <div class="irow">
                 <div class="rail insight"></div>
                 <div class="ibody">
-                  <p class="lead compact" style="font-size:13.5px">What should I tell the vet about Nyx's vomiting?</p>
-                  <div class="ackline">Context attached: the chronicity finding, 14 episodes, the timing pattern. The vet-visit rundown is one tap away.</div>
+                  <span class="typed">threw up again right after breakfast, small, mostly food</span>
+                  <div class="proposal">
+                    <div class="ppill">Vomit · this morning, after a meal · food, small amount</div>
+                    <div class="pnote">Read from what you typed — check it before it lands.</div>
+                    <div class="pact"><span class="chip">Save to Nyx's record</span><span class="chip quiet">Edit</span></div>
+                  </div>
+                  <div class="annot ok">the photo→food extraction shape, extended to text: AI proposes, the confirm register writes</div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>F7 — The companion row (F4 + F6 fused; rev 1.1, PM-suggested)<span class="newchip">New · 1.1</span></b>
-          One prompt system under the cards, three verbs behind one grammar: <em>state chips</em>
-          (F4's booked/been — write care state), <em>observation chips</em> (F6's how-she-seems —
-          write a demeanor event), and <em>ask chips</em> (open Ask pre-scoped to the finding —
-          the shipped A5 rundown becomes a doorway). The seam that makes it buildable today:
-          <strong>chips write through the same deterministic path as the FAB; Ask never writes</strong>
-          — the LLM stays read-only, so the T&amp;S boundary is untouched and G5 Timeline-parity
-          holds. Prompts are computed from record state (Linear-agents energy), never generated
-          free-text. The Bearable lesson bounds cadence: prompts appear when the record warrants
-          one, never as daily homework. If this direction is ruled in, D3 + D4 collapse into one
-          scoping round — §05 D5.
-          <span class="cost">one chip-row primitive · three governance gates unchanged · Ask stays read-only</span>
+        <p class="frame-cap"><b>F7 — The companion surface (F4 + F6 fused; rev 1.2 — now an omnibox, per the PM's push)<span class="newchip">Revised · 1.2</span></b>
+          The full Linear-agent shape: <strong>a real input plus pre-shown prompts</strong>, not
+          chips alone. The chips stay (state writes one tap away; scoped-Ask doorways); the field
+          takes anything, and <strong>typed input routes by intent</strong> — question-shaped goes
+          to Ask's shipped read-only Q&amp;A loop; capture-shaped goes to an
+          <em>extract-event-from-text</em> proposal that lands in the same confirm register as
+          every capture (B-745: the summary pill IS the save). That's the shipped
+          photo→food-extraction pattern extended to text — <strong>the AI proposes, the owner's
+          tap writes, nothing lands silently</strong> — so Ask's §6 read-only boundary is intact
+          (capture never rides its tool loop) and the only thing still off the table is an
+          unconfirmed LLM write. Gates that come with it: the CUL-552 AI-consent state covers
+          typed health text like photos; clinical-guardrails screens anything the parse says
+          back; ai_usage caps apply; the proposal obeys taxonomy + occurred-at-confidence rules
+          ("this morning" lands estimated, never stamped witnessed).
+          <span class="cost">omnibox + intent routing + extract-event-from-text fn · confirm register reused · Ask untouched</span>
         </p>
       </div>
 
@@ -708,10 +731,10 @@
     </div>
 
     <div class="brief" id="d5">
-      <p class="bid">D5 — Fuse F4 + F6 into the companion row? (rev 1.1 — from the PM's suggestion)<span class="newchip">New · 1.1</span></p>
-      <p><strong>Deciding:</strong> whether F4 and F6 are one prompt system (F7) scoped together, and where the engine seam sits.</p>
-      <p><strong>Options:</strong> <span class="rec">(a) yes, with the split engine — chips write deterministically, Ask reads (F7 as drawn); one scoping round replaces D3(a) + D4(a) — recommended</span> · (b) keep them separate as D3/D4 pose · (c) Ask-mediated capture (the LLM interprets free-text into record writes) — not now: it reopens the §6 read-only boundary (a D2-class T&amp;S ruling) for no capture the chips don't already get.</p>
-      <p><strong>Consequence:</strong> (a) one "companion row" primitive with three chip verbs and unchanged governance gates (Dr. Chen + taxonomy own the observation chips; T&amp;S/RLS the state writes; the Ask spec the read chips); the industry evidence backs the seam — Whoop computes deterministically and lets the LLM phrase, Oura's chips were its top-requested Advisor feature, and the proactive-lane-vs-chat separation is uniform across Whoop/Oura/ChatGPT.</p>
+      <p class="bid">D5 — The companion surface: fuse F4 + F6, and how far does the input go? (rev 1.2)<span class="newchip">Revised · 1.2</span></p>
+      <p><strong>Deciding:</strong> whether F4 and F6 fuse into one companion surface (yes was uncontested), and — the live half after the PM's push — whether it takes <em>free text</em>, not just pre-shown prompts.</p>
+      <p><strong>Options:</strong> (a) chips only (rev 1.1's drawing) — the conservative floor · <span class="rec">(b) the omnibox — chips + free text, routed by intent: questions → Ask's shipped read-only loop; capture-shaped text → AI-proposes / owner-confirms through the standard confirm register (the shipped photo→food-extraction shape, extended to text) — recommended, phased: the ask half ships today, the text-capture half is one new Edge Function + routing</span> · (c) unconfirmed LLM writes (typed text lands in the record with no confirm) — off the table; that is the actual boundary, and the confirm step is what keeps this on the right side of it.</p>
+      <p><strong>Consequence:</strong> (b) makes F7 the true Linear-agent surface the PM named. The rev-1.1 recommendation under-weighted a shipped precedent — <em>AI-assisted capture with owner confirmation is already sanctioned in this codebase</em> (photo → extraction → confirm → deterministic write); text is its sibling, not a new boundary class. Gates named, not waived: CUL-552 AI-consent covers typed health text; clinical-guardrails on anything the parse says back; ai_usage caps; taxonomy + confidence rules on every proposal; Ask's §6 untouched (capture never rides its tool loop). One scoping round replaces D3(a) + D4(a) either way.</p>
     </div>
   </section>
 
@@ -720,9 +743,9 @@
     <div class="sec-head"><span class="sec-num">06</span><h2>Round status</h2></div>
     <div class="col">
       <p>
-        <strong>Round 1.1 · exploratory · 2026-08-29.</strong> Produced by the signal-freshness
-        discovery session; revised the same day on the PM's fusion suggestion — rev 1.1 adds F7,
-        D5, and the research callout (evidence:
+        <strong>Round 1.2 · exploratory · 2026-08-29.</strong> Produced by the signal-freshness
+        discovery session; revised twice the same day on the PM's reactions — rev 1.1 added F7,
+        D5, and the research callout; rev 1.2 redrew F7 as the omnibox and rewrote D5 (evidence:
         <code>docs/research/2026-08-home-freshness-inspiration.md</code>; live production
         queries; the shipped specs' own rulings; session record
         <code>docs/sessions/2026-08-29-signal-freshness-discovery.md</code>).
