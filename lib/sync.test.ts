@@ -1281,3 +1281,150 @@ describe('syncPendingWeightChecks — snapshot reconcile wiring (CUL-293)', () =
     expect(mockGetFirstAsync).not.toHaveBeenCalled();
   });
 });
+
+// CUL-641 — the RETRY half of the delete-side snapshot reconcile. Removing a weigh-in
+// re-points pets.weight_kg through a direct write that simply cannot land offline, and
+// the CUL-293 loop above never covers it: that one fires on a landed weight_checks ROW,
+// and a soft delete writes its tombstone on the parent EVENT, so no weight row is ever
+// queued. This is the hook that lets the server snapshot self-heal on reconnect.
+describe('syncPendingEvents — weight tombstone reconcile (CUL-641)', () => {
+  const TOMBSTONE = {
+    id: 'e1', pet_id: 'pet-A', event_type: 'weight_check', occurred_at: 't',
+    severity: null, notes: null, source: 'manual', occurred_at_source: 'manual',
+    occurred_at_confidence: null, occurred_at_earliest: null, occurred_at_latest: null,
+    deleted_at: '2026-08-28T00:00:00.000Z', created_at: 't', updated_at: 't', logged_via: 'app',
+  };
+
+  /**
+   * The pets update is now a CHAINED filter — `.eq('id', …).eq('weight_kg', …)` — so the
+   * mock has to return a builder from the first `eq`, not a promise. That shape IS the
+   * fix: the second filter is the identity gate, evaluated by the database.
+   */
+  function wire(landedIds: string[] = ['e1']) {
+    const petEqWeight = jest.fn().mockResolvedValue({ error: null });
+    const petEqId = jest.fn().mockReturnValue({ eq: petEqWeight });
+    const petUpdate = jest.fn().mockReturnValue({ eq: petEqId });
+    const evSelect = jest.fn().mockResolvedValue({ data: landedIds.map((id) => ({ id })), error: null });
+    const evUpsert = jest.fn().mockReturnValue({ select: evSelect });
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets' ? { update: petUpdate } : { upsert: evUpsert },
+    );
+    return { petUpdate, petEqId, petEqWeight };
+  }
+
+  beforeEach(() => {
+    mockGetSession.mockReset().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } });
+    mockGetAllAsync.mockReset();
+    mockGetFirstAsync.mockReset();
+    mockRunAsync.mockReset().mockResolvedValue(undefined);
+    mockFrom.mockReset();
+  });
+
+  it('re-points the snapshot once a weight_check tombstone lands — GATED on the deleted value', async () => {
+    // 1st getFirstAsync = the deleted reading's own weight_kg; 2nd = the latest remaining.
+    mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
+    mockGetFirstAsync
+      .mockResolvedValueOnce({ weight_kg: 6.1 })
+      .mockResolvedValueOnce({ weight_kg: 5.4 });
+    const { petUpdate, petEqId, petEqWeight } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).toHaveBeenCalledWith({ weight_kg: 5.4 });
+    expect(petEqId).toHaveBeenCalledWith('id', 'pet-A');
+    // THE FIX. The first version of this loop called the ungated
+    // `reconcilePetWeightSnapshot`, so it re-pointed the snapshot on ANY weight
+    // tombstone — destroying an owner-typed Edit-profile weight on the server one line
+    // after the client's gate had correctly refused to touch it. This assertion is the
+    // difference: the write only lands where the snapshot IS the deleted reading, and
+    // the database decides that, in the write that depends on it.
+    expect(petEqWeight).toHaveBeenCalledWith('weight_kg', 6.1);
+  });
+
+  it('CLEARS the snapshot when the tombstoned reading was the last one', async () => {
+    // The case `reconcilePetWeightSnapshot` could not reach — it bails when no reading
+    // remains, which left a removed weigh-in standing as the server's profile weight
+    // for every other device and every reinstall. Gated, so it can only clear a
+    // snapshot the deleted reading itself set.
+    mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
+    mockGetFirstAsync
+      .mockResolvedValueOnce({ weight_kg: 6.1 })
+      .mockResolvedValueOnce(null);
+    const { petUpdate, petEqWeight } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).toHaveBeenCalledWith({ weight_kg: null });
+    expect(petEqWeight).toHaveBeenCalledWith('weight_kg', 6.1);
+  });
+
+  it('writes nothing when the deleted reading has no local child to identify it by', async () => {
+    // Partial hydration on the PULL path: the parent landed, the child has not. The
+    // identity question is unanswerable, so this guesses at nothing.
+    mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
+    mockGetFirstAsync.mockResolvedValueOnce(null);
+    const { petUpdate } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).not.toHaveBeenCalled();
+  });
+
+  it('ignores a weight_check event that is not a tombstone', async () => {
+    // An ordinary weigh-in syncing for the first time is the CUL-293 path's business,
+    // reached from its own landed ROW. Reconciling here too would fire a second
+    // redundant pets write on every single weigh-in.
+    mockGetAllAsync.mockResolvedValue([{ ...TOMBSTONE, deleted_at: null }]);
+    const { petUpdate } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).not.toHaveBeenCalled();
+    expect(mockGetFirstAsync).not.toHaveBeenCalled();
+  });
+
+  it('ignores a tombstone for any other event type', async () => {
+    mockGetAllAsync.mockResolvedValue([{ ...TOMBSTONE, event_type: 'vomit' }]);
+    const { petUpdate } = wire();
+
+    await syncPendingEvents();
+
+    expect(petUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does NOT reconcile when the tombstone itself failed to land', async () => {
+    // Success-with-0-rows: pushRows leaves an RLS-blocked row out of `landed`. The
+    // server still holds the event as live, so re-pointing its pet's snapshot would
+    // assert a removal the server never accepted.
+    mockGetAllAsync.mockResolvedValue([TOMBSTONE]);
+    mockFrom.mockImplementation((table: string) =>
+      table === 'pets'
+        ? { update: jest.fn() }
+        : { upsert: jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValue({ data: [], error: null }) }) },
+    );
+
+    await syncPendingEvents();
+
+    expect(mockGetFirstAsync).not.toHaveBeenCalled();
+  });
+
+  it('reconciles PER TOMBSTONE, because each carries its own identity value', async () => {
+    // Deliberately not deduped per pet any more. The gate compares against the deleted
+    // READING's value, so two tombstones for the same pet are two different questions —
+    // collapsing them would drop one, and the one dropped might be the only one whose
+    // value actually matches the snapshot. Each write is gated, so the extra calls are
+    // no-ops server-side rather than repeated re-points.
+    mockGetAllAsync.mockResolvedValue([
+      TOMBSTONE,
+      { ...TOMBSTONE, id: 'e2' },
+      { ...TOMBSTONE, id: 'e3', pet_id: 'pet-B' },
+    ]);
+    mockGetFirstAsync.mockResolvedValue({ weight_kg: 5.4 });
+    const { petUpdate, petEqId } = wire(['e1', 'e2', 'e3']);
+
+    await syncPendingEvents();
+
+    expect(petUpdate).toHaveBeenCalledTimes(3);
+    expect(petEqId.mock.calls.map((c) => c[1])).toEqual(['pet-A', 'pet-A', 'pet-B']);
+  });
+});

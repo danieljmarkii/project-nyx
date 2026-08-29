@@ -368,7 +368,7 @@ describe('NamedCompletionCard — Undo', () => {
     const view = render(<NamedCompletionCard />);
     seed();
     await pressUndo(view);
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1');
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
     view.getByText('Removed');
     view.getByText('Taken out of Biscuit’s record');
   });

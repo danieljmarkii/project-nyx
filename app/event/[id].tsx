@@ -17,7 +17,6 @@ import {
   getMealForEvent,
   getDoseForEvent,
   getDoubleDoseFlag,
-  softDeleteEvent,
   updateMealIntake,
   updateDoseAdherence,
   updateDoseHowGiven,
@@ -28,7 +27,8 @@ import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/at
 import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
 import { foodFormatTag } from '../../lib/food';
 import { supabase } from '../../lib/supabase';
-import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
+import { syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
+import { reverseLoggedEvent } from '../../lib/undoLog';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
@@ -399,9 +399,11 @@ export default function EventDetailScreen() {
             // while the owner can still back out.
             destructiveConfirm();
             try {
-              await softDeleteEvent(event.id);
+              // CUL-641 — the shared reversal (see History's Remove and
+              // lib/undoLog.ts): tombstone + the side-effects removal implies,
+              // so this path cannot drift from the other two.
+              await reverseLoggedEvent(event.id);
               removeFromToday(event.id);
-              syncPendingEvents().catch(console.error);
               router.back();
             } catch (e) {
               console.error('[event-detail] delete failed:', e);

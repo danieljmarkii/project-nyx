@@ -26,6 +26,7 @@ import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingWeightChecks } from './sync';
 import { uuid } from './utils';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
+import { usePetStore } from '../store/petStore';
 
 // ── Unit conversion ─────────────────────────────────────────────────────────
 // Owners enter and read pounds; kilograms is the canonical storage unit
@@ -242,6 +243,220 @@ export async function updateWeightCheck(
   // meals + weight_checks), exactly as it already does for a meal edit; that
   // ordering is what lets the child land right after its re-synced parent.
   return { petId: row.pet_id, snapshotKg };
+}
+
+// ── Delete side (CUL-641) ────────────────────────────────────────────────────
+//
+// The write side re-points `pets.weight_kg` at the latest reading (app/log.tsx's
+// handleConfirmWeight) and so does the edit side (updateWeightCheck above). No
+// DELETE path had a counterpart, and `reconcilePetWeightSnapshot` (lib/sync.ts)
+// could not stand in for one: it fires only from syncPendingWeightChecks, over
+// `weight_checks` rows with `synced = 0`, and a soft delete writes its tombstone
+// on the PARENT event — so no weight row is ever queued, the reconcile never
+// runs, and the snapshot sits on the deleted reading indefinitely.
+//
+// What that costs is worst on UNDO, which is the affordance §5 built to catch a
+// mis-typed weight: the owner types 12.4 as 124, reads "Weight · 124 lbs" on the
+// card, taps Undo — and the Profile chip, the next weigh-in's pre-fill and
+// EditPetModal all go on offering 124 for good. The reading itself drops out of
+// every soft-delete-filtered read correctly, so the chip ends up contradicting
+// WeightTrendCard on the same screen, whose own prop comment says the two agree
+// by construction.
+//
+// ── THE RULE, IN ONE SENTENCE ────────────────────────────────────────────────
+// A delete may only ever undo the snapshot write THIS reading made. So: if the
+// snapshot is not this reading's value, leave it entirely alone; if it is, it
+// becomes the latest REMAINING reading, else the value this reading displaced if
+// the caller knows it, else null.
+//
+// ── WHY THE GATE, AND WHY THE FIRST DRAFT WITHOUT IT WAS WRONG ───────────────
+// The first version had no gate: it re-pointed at the latest remaining reading
+// whenever one existed, and otherwise "left the snapshot alone" — justified as
+// protecting the owner's onboarding / Edit-profile weight, which also lives in
+// this column and has no other home. The adversarial pass falsified BOTH halves.
+//
+//   · "Leaving it loses nothing" was FALSE on the ordinary path. Onboarding 5.0
+//     kg, then a first-ever weigh-in of 4.2 — the WRITE side already destroyed
+//     the 5.0 at log time. Remove that reading from History an hour later and
+//     "leave it alone" preserves 4.2: the deleted reading itself, not a profile
+//     weight. `WeightTrendCard` then renders it captioned "From {pet}'s
+//     profile." — an affirmative, false provenance claim about a weigh-in the
+//     owner removed — and `EditPetModal` pre-fills it and writes it back on
+//     Save, laundering the corpse into a genuine owner-entered profile weight,
+//     permanently indistinguishable.
+//   · And re-pointing UNCONDITIONALLY introduced a new destruction vector for
+//     the very value the rule claimed to protect: type a vet-measured 18.0 into
+//     Edit profile, then remove some unrelated OLDER weigh-in, and the snapshot
+//     is re-pointed to the latest reading — the owner's 18.0 gone, destroyed by
+//     a delete of a different row.
+//
+// One gate closes both, because both are the same mistake: acting on a snapshot
+// this reading did not set. Comparing the deleted reading's own `weight_kg` to
+// the snapshot tells "this number is the corpse" from "this number is the
+// owner's" at zero schema cost.
+//
+// STATED LIMIT, because identity-by-value is not identity: a snapshot that merely
+// EQUALS this reading passes the gate. A pet re-weighed at the same 12.0 lb months
+// apart, whose owner then types that same 12.0 into Edit profile, has an
+// owner-entered value the gate cannot tell from the corpse — deleting the older
+// reading re-points it. Ordinary enough to name, rare enough not to buy a schema
+// column for; CUL-694 is where storing the displaced value exactly lives.
+//
+// Nulling a corpse is then not data loss: the value it displaced was already
+// destroyed at write time, so "—" and the card's designed empty state are the
+// honest reading of a record that now holds no weigh-in. It also matters at the
+// PRE-FILL (app/log.tsx `seedWeightPrefill`): Principle 2 has trained this owner
+// to confirm rather than type, so a stale-high phantom sitting in the field is
+// one tap from being confirmed into `weight_checks` as a real reading — biased
+// toward the older, heavier value, which is the direction that masks loss. A
+// blank field asks for a real number.
+//
+// ── WHY ONE HELPER, CALLED UNCONDITIONALLY ───────────────────────────────────
+// It decides FOR ITSELF whether the event was a weigh-in, so a delete site never
+// has to know what it just removed. Four hand-rolled "was this a weight check?"
+// checks is precisely the shape that produced this bug — three delete paths each
+// silently missing a side-effect the write path performs.
+
+// Are these the same stored weight? An exact `===` would be reading two DOUBLES as if
+// they were the decimal they represent. Both sides are 2 dp by construction
+// (`lbsToKg` rounds, the column is NUMERIC(5,2)) but they arrive by different routes —
+// the snapshot through PostgREST as a NUMERIC string, the reading out of SQLite REAL —
+// and the whole gate turns on the comparison, so it is made at the precision the data
+// actually has: half of the last stored digit.
+const STORED_WEIGHT_EPSILON_KG = 0.005;
+
+function isSameStoredWeight(a: number, b: number): boolean {
+  return Math.abs(a - b) < STORED_WEIGHT_EPSILON_KG;
+}
+
+/**
+ * Re-point `pets.weight_kg` after an event has been soft-deleted. A no-op for
+ * every event that is not a weight check.
+ *
+ * PRECONDITION: the parent event is ALREADY soft-deleted. The latest-reading read
+ * is soft-delete filtered, so calling this first would just re-select the row
+ * being removed and change nothing.
+ *
+ * `restore` is presence-distinguished on purpose: `{ restoreToKg: null }` is a
+ * meaningful instruction (put the snapshot back to "no weight on file", which is
+ * the correct outcome for a first-ever weigh-in on a pet with no profile weight),
+ * and it must not be confusable with "the caller doesn't know".
+ *
+ * Best-effort by contract — it never throws, mirroring the inline snapshot writes
+ * it completes. The LOCAL half (resolve + patch the pet store) is awaited, because
+ * that is what the owner sees on this device; the SERVER write is fired without
+ * awaiting so an Undo tap never waits on a network round trip to show its removal
+ * line — a flaky connection would otherwise leave the card frozen on the state the
+ * owner just reversed. `syncPendingEvents` picks the server half back up on
+ * reconnect (see the tombstone reconcile in lib/sync.ts).
+ */
+export async function reconcileWeightSnapshotAfterDelete(
+  eventId: string,
+  restore?: { restoreToKg: number | null },
+): Promise<{ petId: string; snapshotKg: number | null } | null> {
+  try {
+    const db = getDb();
+    // The PARENT carries the type; the child carries the value. Reading both is what
+    // tells "not a weigh-in" apart from "a weigh-in whose child has not hydrated yet"
+    // — on the PULL path `hydrateEvents` completes before `hydrateWeightChecks`, so on
+    // a fresh install a weigh-in renders in History with no local child, and a bare
+    // child lookup scored it as "this wasn't a weigh-in". That is a logging gap read as
+    // an absence, which is the one inference this codebase does not allow itself to
+    // make. (The PUSH path has no such window: `insertWeightCheck` writes parent and
+    // child in one transaction.)
+    const row = await db.getFirstAsync<{
+      event_type: string;
+      pet_id: string;
+      weight_kg: number | null;
+    }>(
+      `SELECT e.event_type AS event_type, e.pet_id AS pet_id, wc.weight_kg AS weight_kg
+         FROM events e
+         LEFT JOIN weight_checks wc ON wc.event_id = e.id
+        WHERE e.id = ?`,
+      [eventId],
+    );
+    // Not a weigh-in — the common case, since every other event type calls here too.
+    if (!row || row.event_type !== 'weight_check') return null;
+    if (row.weight_kg == null) {
+      // A weigh-in we cannot evaluate, NOT a non-weigh-in. Say so: the snapshot is
+      // left as it is, which is the safe direction, but silence here would be the
+      // partial-hydration window passing itself off as the common case.
+      console.warn(
+        '[weight] weight_check %s has no local child row (partial hydration?) — snapshot left as is',
+        eventId,
+      );
+      return null;
+    }
+
+    const latestKg = await getLatestWeightKg(row.pet_id);
+    // What the snapshot becomes IF the gates below agree this reading owns it. The
+    // null is honest rather than lossy: the displaced value was already gone before
+    // this delete began (see the header).
+    const snapshotKg = latestKg ?? (restore ? restore.restoreToKg : null);
+
+    // ── TWO GATES, because there are two copies of the snapshot ──────────────
+    // The identity question — "is the snapshot THIS reading's value?" — has to be
+    // asked separately of the local copy and the server row, because they are allowed
+    // to disagree and the app knows it: `app/log.tsx` patches the store only when its
+    // server write SUCCEEDED and the pet is still active, and nothing re-reads `pets`
+    // except `usePet`'s `[user]` effect. Asking the store and then acting on the
+    // server — which is what the first version of this gate did — gets it wrong in
+    // both directions, and the adversarial pass found both:
+    //
+    //   · a stale store REFUSES a correction the server needs, and when no reading
+    //     remains nothing ever heals it (an offline weigh-in synced later, then
+    //     removed; or an Undo after a pet switch skipped the store patch) — the
+    //     headline defect of this very issue, reproduced through its own fix;
+    //   · a stale store PERMITS a write the server must not take — a shared-credential
+    //     household where the other device typed a profile weight this one has not
+    //     seen yet.
+
+    // Gate 1, the LOCAL view: patch the in-memory pet so the chip / pre-fill /
+    // EditPetModal are right on this device immediately, including offline. The store
+    // is the right oracle for the store. If it is stale the local patch is simply
+    // skipped or slightly wrong, and the next `usePet` fetch settles it — a cosmetic
+    // cost, never a destroyed value.
+    //
+    // BY ID, not `updatePet`: that one can only patch the ACTIVE pet, and a record
+    // screen is reached by id for ANY pet (the day-summary spine pushes `/event/[id]`
+    // for every pet's rows — CUL-574). Guarding on "is it active?" silently skipped
+    // the pet the record belonged to, and `selectPet` never refetches, so switching to
+    // that pet re-showed the number the owner had just removed.
+    const pet = usePetStore.getState().pets.find((p) => p.id === row.pet_id);
+    if (pet?.weight_kg != null && isSameStoredWeight(pet.weight_kg, row.weight_kg)) {
+      usePetStore.getState().patchPetById(row.pet_id, { weight_kg: snapshotKg });
+    }
+
+    // Gate 2, the SERVER row: `.eq('weight_kg', …)` makes the database itself answer
+    // the identity question, against the authoritative value, atomically, in the write
+    // that depends on it. No extra round trip, no oracle to go stale, and no window
+    // between deciding and acting. A snapshot that is somebody else's value — an
+    // owner-typed profile weight, or a newer reading this delete does not concern —
+    // simply matches zero rows and is left exactly as it is.
+    //
+    // This is the shape the sync-side retry uses too (lib/sync.ts), which is the point:
+    // the rule cannot be enforced in one layer and skipped in the other.
+    void supabase
+      .from('pets')
+      .update({ weight_kg: snapshotKg })
+      .eq('id', row.pet_id)
+      .eq('weight_kg', row.weight_kg)
+      .then(
+        ({ error }: { error: { message: string } | null }) => {
+          if (error) console.warn('[weight] snapshot reconcile after delete failed:', error.message);
+        },
+        // A REJECTION, not a returned `{ error }` — a transport-layer throw. Handled
+        // rather than left to the platform because this function's contract is that it
+        // never throws, and an un-caught rejection from a fire-and-forget cosmetic
+        // write is exactly the kind of noise that gets a real one ignored.
+        (e: unknown) => console.warn('[weight] snapshot reconcile after delete threw:', e),
+      );
+
+    return { petId: row.pet_id, snapshotKg };
+  } catch (e) {
+    console.warn('[weight] snapshot reconcile after delete error:', e);
+    return null;
+  }
 }
 
 // ── Trend read (B-186 PR 3) ──────────────────────────────────────────────────
