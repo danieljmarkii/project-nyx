@@ -2,7 +2,11 @@
 
 **Date:** 2026-08-29 · **Mode:** DISCOVERY, then BUILD after the same-day ruling · **Track:** Aug. 2026 Design Polish
 
-Deliverable: a mock round + three decision briefs. **No app code changed.** The issue names a
+Shipped via #738. Ruled mid-session, so this record covers both halves: the decision round, then
+the build it authorised. `app/(tabs)/profile.tsx` + one new test file; no schema, no migration, no
+Edge Function, no RLS/Storage path.
+
+The round's deliverable was a mock + three decision briefs. The issue names a
 PM fork, and CLAUDE.md's "mock what you change" rule requires options that differ visually to be
 drawn side by side rather than described — so the round is the deliverable, not a preamble to one.
 
@@ -141,8 +145,25 @@ proof that the sheet presents (jest renders Modals happily — the CUL-662 lesso
 
 ## Not folded in
 
-CUL-679, CUL-680, CUL-678, CUL-617, CUL-628 all read and left alone. **(d) is filed as its own
-issue** rather than ridden along, per R3's recommendation — its prerequisite is now satisfied.
+CUL-679, CUL-680, CUL-678, CUL-617, CUL-628 all read and left alone. **(d) is filed as CUL-704**
+rather than ridden along, per R3's recommendation — its prerequisite is now satisfied, so it needs
+a ruling rather than a rebuild.
+
+## Manual updated
+
+One Tier-1 CLAUDE.md addition, appended to the existing CUL-612/CUL-579 tap-geometry bullet: **growing
+a box can spend the gap the adjacency rule needs.** The two halves of that bullet interact, and this
+session hit the interaction — folding a neighbour's `marginTop` into a new `minHeight` box is the
+natural way to keep a card's rhythm, and it silently subtracts that margin from the gap the
+arithmetic depends on. Nothing was broken (abutting is not overlapping) and no test would have
+failed, which is what makes it worth writing down: the only visible symptom was an in-place comment
+that had quietly become false.
+
+## Note on the branch
+
+`main` moved mid-session — a sibling landed CUL-621 (completion cards → the shared `TimeEditSheet`).
+Merged in rather than rebased; files are disjoint (`components/ui/` vs `app/(tabs)/`) and the merge
+was clean. The combined tree was re-validated before push: `tsc` clean, **279 suites / 6099 tests**.
 
 ## Not folded in
 
