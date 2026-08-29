@@ -32,6 +32,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
+
 const ROOT = path.resolve(__dirname, '..');
 const SCAN_DIR = 'components';
 
@@ -74,31 +76,42 @@ const ALWAYS_SCANNED = [
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;
 const EXEMPTION = /\/\/\s*haptics-guard-ok:\s*\S+/;
 
-function walk(dir: string, out: string[] = []): string[] {
+// `root` is threaded through every scanner below rather than read from the module
+// constant, so this guard's own detector fixtures can live in a temp tree instead of
+// inside `components/`, where a PARALLEL guard's scan would pick them up (CUL-712).
+// It is a required parameter, not a defaulted one: a default silently re-points a
+// forgetful self-test at the real working tree, which is the failure being removed.
+function walk(dir: string, root: string, out: string[] = []): string[] {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, ent.name);
     if (ent.isDirectory()) {
       if (ent.name === 'node_modules' || ent.name === '__snapshots__') continue;
-      walk(full, out);
+      walk(full, root, out);
     } else if (ent.name.endsWith('.tsx') && !ent.name.includes('.test.')) {
-      out.push(path.relative(ROOT, full));
+      out.push(path.relative(root, full));
     }
   }
   return out;
 }
 
-/** The derived safety-surface set, plus the always-scanned five. */
+/** The marker-derived safety-surface set under `root`. */
+function derivedSafetySurfaces(root: string): string[] {
+  return walk(path.join(root, SCAN_DIR), root)
+    .filter((rel) => {
+      const src = fs.readFileSync(path.join(root, rel), 'utf8');
+      return MARKERS.some((m) => src.includes(m));
+    })
+    .sort();
+}
+
+/** The repo's derived set, plus the always-scanned five. */
 function safetySurfaces(): string[] {
-  const derived = walk(path.join(ROOT, SCAN_DIR)).filter((rel) => {
-    const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    return MARKERS.some((m) => src.includes(m));
-  });
-  return Array.from(new Set([...derived, ...ALWAYS_SCANNED])).sort();
+  return Array.from(new Set([...derivedSafetySurfaces(ROOT), ...ALWAYS_SCANNED])).sort();
 }
 
 /** Lines importing `lib/haptics` that carry no exemption comment. */
-function unexemptedHapticImports(rel: string): string[] {
-  const lines = fs.readFileSync(path.join(ROOT, rel), 'utf8').split('\n');
+function unexemptedHapticImports(rel: string, root: string): string[] {
+  const lines = fs.readFileSync(path.join(root, rel), 'utf8').split('\n');
   const hits: string[] = [];
   lines.forEach((line, i) => {
     if (!HAPTICS_IMPORT.test(line)) return;
@@ -124,34 +137,45 @@ describe('D7 — silence on safety is enforced, not remembered', () => {
   });
 
   it('no safety surface imports lib/haptics', () => {
-    const findings = safetySurfaces().flatMap(unexemptedHapticImports);
+    const findings = safetySurfaces().flatMap((rel) => unexemptedHapticImports(rel, ROOT));
     expect(findings).toEqual([]);
   });
 });
 
 describe('the detector itself', () => {
-  const tmp = path.join(ROOT, 'components', '__haptics_guard_fixture__.tsx');
+  // The fixture lives OUTSIDE the repo (CUL-712). It used to be written to
+  // `components/__haptics_guard_fixture__.tsx` — inside the tree `geistRollout` scans
+  // — so a parallel worker either read it mid-delete (ENOENT) or reported this
+  // deliberately non-compliant file as a real violation. Its own `haptics-guard-ok`
+  // marker was no protection: markers are per-guard.
+  //
+  // It keeps its `components/` SHAPE inside that root, so the walk → marker-filter →
+  // read path under test is the same one the live scan runs.
+  const REL = 'components/HapticsFixture.tsx';
+  let root = '';
+  const write = (src: string) => writeFixture(root, REL, src);
+
+  beforeEach(() => {
+    root = createFixtureRoot('haptics', [SCAN_DIR]);
+  });
   afterEach(() => {
-    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    removeFixtureRoot(root);
   });
 
   it('FLAGS a haptic import in a file carrying a safety marker', () => {
-    fs.writeFileSync(
-      tmp,
+    write(
       [
         "import { commitRoutine } from '../lib/haptics';",
         "const x: string = 'priorityClass';",
         'export function Fixture() { commitRoutine(); return null; }',
       ].join('\n'),
     );
-    const rel = path.relative(ROOT, tmp);
-    expect(safetySurfaces()).toContain(rel);
-    expect(unexemptedHapticImports(rel).length).toBe(1);
+    expect(derivedSafetySurfaces(root)).toContain(REL);
+    expect(unexemptedHapticImports(REL, root).length).toBe(1);
   });
 
   it('SPARES an import carrying a reasoned exemption comment', () => {
-    fs.writeFileSync(
-      tmp,
+    write(
       [
         '// haptics-guard-ok: renders a safety card but the tap here is a nav gesture',
         "import { openMenu } from '../lib/haptics';",
@@ -159,17 +183,16 @@ describe('the detector itself', () => {
         'export function Fixture() { openMenu(); return null; }',
       ].join('\n'),
     );
-    expect(unexemptedHapticImports(path.relative(ROOT, tmp))).toEqual([]);
+    expect(unexemptedHapticImports(REL, root)).toEqual([]);
   });
 
   it('SPARES a component with no safety marker (a haptic there is fine)', () => {
-    fs.writeFileSync(
-      tmp,
+    write(
       [
         "import { selectChip } from '../lib/haptics';",
         'export function Fixture() { selectChip(); return null; }',
       ].join('\n'),
     );
-    expect(safetySurfaces()).not.toContain(path.relative(ROOT, tmp));
+    expect(derivedSafetySurfaces(root)).not.toContain(REL);
   });
 });
