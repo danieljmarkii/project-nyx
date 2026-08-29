@@ -712,7 +712,12 @@ export default function EditEventModal() {
                         <ThemedText style={[styles.foodItemBrand, isSelected && styles.foodItemBrandSelected]}>
                           {item.brand}
                         </ThemedText>
-                        {isSelected ? <ThemedText style={styles.foodItemCheck}>✓</ThemedText> : null}
+                        {/* geist-ok: Icon glyph, not copy — stays a raw <Text> so it keeps the
+                            system face. These stand in for vector glyphs (the B-745 GlyphSvg
+                            migration owns them), and Geist's cmap carries no ✓ / ✕ / ＋ at all,
+                            so forcing the body family here buys nothing and hands the render to
+                            OS fallback. CUL-654 reconciles this with PR 4's sweep. */}
+                        {isSelected ? <Text style={styles.foodItemCheck}>✓</Text> : null}
                       </TouchableOpacity>
                     );
                   })}

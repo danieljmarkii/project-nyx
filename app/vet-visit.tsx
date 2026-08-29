@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  View, StyleSheet, TouchableOpacity, TextInput,
+  View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Animated, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -184,7 +184,12 @@ export default function VetVisitModal() {
     return (
       <View style={styles.completeContainer}>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <ThemedText style={styles.checkMark}>✓</ThemedText>
+          {/* geist-ok: Icon glyph, not copy — stays a raw <Text> so it keeps the system face.
+              These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and
+              Geist's cmap carries no ✓ / ✕ / ＋ at all, so forcing the body family here buys
+              nothing and hands the render to OS fallback. CUL-654 reconciles this with PR 4's
+              sweep; the shape rule is `is this copy?`, so the arrow below stays raw too. */}
+          <Text style={styles.checkMark}>✓</Text>
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>Vet visit logged</Animated.Text>
       </View>
@@ -199,7 +204,8 @@ export default function VetVisitModal() {
         <View style={styles.header}>
           <ThemedText style={styles.headerTitle}>Vet visit</ThemedText>
           <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} hitSlop={8}>
-            <ThemedText style={styles.closeBtnText}>✕</ThemedText>
+            {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-654). */}
+            <Text style={styles.closeBtnText}>✕</Text>
           </TouchableOpacity>
         </View>
 
@@ -245,7 +251,8 @@ export default function VetVisitModal() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setStep('photo')} style={styles.backBtn} hitSlop={8}>
-          <ThemedText style={styles.backBtnText}>←</ThemedText>
+          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-654). */}
+          <Text style={styles.backBtnText}>←</Text>
         </TouchableOpacity>
         <ThemedText style={styles.headerTitle}>Vet visit details</ThemedText>
         <View style={styles.headerSpacer} />
