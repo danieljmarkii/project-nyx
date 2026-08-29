@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-29
 
-Shipped via **#744** (draft). Aug. 2026 Design Polish; sibling of CUL-612 / CUL-579 / CUL-657.
+Shipped via **#744**. Aug. 2026 Design Polish; sibling of CUL-612 / CUL-579 / CUL-657.
 Files: `components/log/SimpleEventConfirm.tsx`, `components/log/SimpleEventConfirm.test.tsx`. No schema.
 
 ## What the issue asked for, and what it turned out to be
