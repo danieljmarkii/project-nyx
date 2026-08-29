@@ -75,15 +75,19 @@ function seed(
   confidence: string | null,
   earliest: string | null = null,
   latest: string | null = null,
+  // The row's stored provenance. Defaults to 'now' — the app's own clock
+  // assumption (CUL-576) — because that is the value every fresh log carries and
+  // the one a wrong default would overwrite.
+  source: 'manual' | 'exif' | 'now' = 'now',
 ) {
   db.prepare(
     `INSERT INTO events
        (id, pet_id, event_type, occurred_at, notes, source, occurred_at_source,
         occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
         created_at, updated_at, synced)
-     VALUES ('e1', 'p1', 'vomit', ?, 'original note', 'manual', 'now', ?, ?, ?,
+     VALUES ('e1', 'p1', 'vomit', ?, 'original note', 'manual', ?, ?, ?, ?,
              '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z', 1)`,
-  ).run('2026-07-01T04:00:00.000Z', confidence, earliest, latest);
+  ).run('2026-07-01T04:00:00.000Z', source, confidence, earliest, latest);
 }
 
 function read(db: RawDb): StoredEvent {
@@ -282,5 +286,101 @@ describe('updateEvent — severity and notes are written only when named (CUL-60
     const row = read(db);
     expect(row.occurred_at_confidence).toBe('window');
     expect(row.occurred_at_latest).toBe('2026-07-01T04:00:00.000Z');
+  });
+});
+
+// ── CUL-708 — occurred_at_source is REQUIRED, and deliberately not like its
+// neighbours ────────────────────────────────────────────────────────────────
+//
+// `severity`, `notes` and `confidence` are optional-by-omission (CUL-606, B-448
+// above): silence preserves, because none of them describes the field this call
+// always writes. `occurred_at_source` does. It describes WHO produced the
+// `occurred_at` that every updateEvent call overwrites — so on omission there is
+// no safe thing for it to mean, in either direction:
+//
+//   • defaulting to 'manual' (the pre-CUL-708 `?? 'manual'`) asserts the OWNER
+//     chose this timestamp on a save that may have changed nothing — CUL-701,
+//     which is that defect arriving via a literal instead of via silence.
+//   • preserving the stored value is worse, not better: a caller that omits the
+//     key while MOVING the time leaves a clock-stamped row still claiming 'now'
+//     over an owner-chosen point. That is B-525, and it is not hypothetical —
+//     sourceAfterPointEdit's docstring cites the live row it was found on.
+//
+// So the field is required. Every caller writes `occurred_at`, so every caller
+// has an answer by construction, and the compiler asks for it. That matters
+// because the alternative on offer was a comment, and CUL-613 and CUL-701 are
+// both records of a comment not holding.
+describe('updateEvent — occurred_at_source is required, not defaulted (CUL-708)', () => {
+  const TIME_ONLY = { occurred_at: '2026-07-01T09:30:00.000Z' };
+
+  // THE GUARD, half one: the type. Pre-fix this directive is UNUSED — omitting
+  // the key type-checked fine — so `tsc --noEmit` fails with TS2578 and the CI
+  // `App (typecheck + jest)` job goes red. That is the whole enforcement
+  // mechanism, and it is why this is written as a @ts-expect-error rather than
+  // asserted in prose.
+  //
+  // THE GUARD, half two: no silent runtime fallback stands behind the type. A
+  // caller that evades it (JS, a cast) must fail loudly rather than quietly
+  // stamp a provenance nobody claimed — the write is refused and the stored
+  // value is left exactly as it was.
+  it('cannot reach the column by omission — no type escape, no runtime default', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed', null, null, 'exif');
+
+    await expect(
+      // @ts-expect-error — omitting occurred_at_source is the defect under test.
+      updateEvent('e1', TIME_ONLY, adapter(db)),
+    ).rejects.toThrow();
+
+    const row = read(db);
+    // Nothing was written: not the provenance, and not the time either.
+    expect(row.occurred_at_source).toBe('exif');
+    expect(row.occurred_at).toBe('2026-07-01T04:00:00.000Z');
+  });
+
+  // Refactor-safety, not a guard: these pass on BOTH sides of the change. They
+  // pin the behaviour being preserved — a stated source still lands verbatim —
+  // so a later "simplification" that re-introduces a default has something to
+  // break other than the two assertions above.
+  it('writes a stated exif provenance verbatim — a peek does not become a claim', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed', null, null, 'exif');
+
+    // The named card's peek-and-save: sourceAfterPointEdit returned the stored
+    // value because nothing moved, and updateEvent must not second-guess it.
+    // Stamping 'manual' here drops a photo's EXIF attribution off the record.
+    await updateEvent(
+      'e1',
+      { occurred_at: '2026-07-01T04:00:00.000Z', occurred_at_source: 'exif' },
+      adapter(db),
+    );
+
+    expect(read(db).occurred_at_source).toBe('exif');
+  });
+
+  it('writes a stated manual provenance over a clock-stamped row', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed');
+
+    // The other direction: the owner actually moved the point, so the app's
+    // 'now' assumption is superseded by the owner's choice (B-525).
+    await updateEvent('e1', { ...TIME_ONLY, occurred_at_source: 'manual' }, adapter(db));
+
+    const row = read(db);
+    expect(row.occurred_at_source).toBe('manual');
+    expect(row.occurred_at).toBe('2026-07-01T09:30:00.000Z');
+  });
+
+  it('leaves a stated "now" alone — the app may keep its own assumption', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed');
+
+    await updateEvent(
+      'e1',
+      { occurred_at: '2026-07-01T04:00:00.000Z', occurred_at_source: 'now' },
+      adapter(db),
+    );
+
+    expect(read(db).occurred_at_source).toBe('now');
   });
 });
