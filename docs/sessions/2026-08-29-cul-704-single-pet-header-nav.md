@@ -2,8 +2,9 @@
 
 **Date:** 2026-08-29 · **Mode:** DISCOVERY · **Track:** Aug. 2026 Design Polish
 
-**Outcome: ruled (b) — leave it. No code changed.** This session's deliverable is a ruling and
-one verified finding; the only committed file is this record. CUL-704 closed as a known limit.
+**Outcome: ruled (b) — leave it. No code changed.** Shipped via #742. This session's deliverable is
+a ruling and one verified finding; the only committed file is this record. CUL-704 closed as a
+known limit.
 
 ## The question
 
