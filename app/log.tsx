@@ -965,6 +965,13 @@ export default function LogModal() {
             earliest: tf.earliest ? tf.earliest.toISOString() : null,
             latest: tf.latest ? tf.latest.toISOString() : null,
           },
+          // CUL-645 — this is the ONLY log path in the app where a photo and an
+          // Undo coexist, so it is the only one that passes this. The card gates
+          // its Undo behind a confirm when it is true: the event is re-loggable
+          // from what the owner still knows, but the photo is of the thing itself
+          // and cannot be taken again. Same line the discard guard draws one step
+          // earlier in this very flow — guard what cannot be recreated.
+          hasAttachment: !!attachmentUri,
         },
         { delayMs: 300 },
       );

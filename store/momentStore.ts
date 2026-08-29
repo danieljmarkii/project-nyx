@@ -83,6 +83,22 @@ export interface NamedPayload {
   // `null` is "it was genuinely unset" — so this is read with an explicit
   // `undefined` check, never `?? null`.
   previousSnapshotKg?: number | null;
+  // CUL-645 — whether this record carries a photo, so the card can gate Undo
+  // behind a confirm that NAMES what is about to go (§ the ruling on this issue).
+  //
+  // Here and not on `LoggedRecord`, for the same reason `previousSnapshotKg` is:
+  // that type is the SENTENCE source and carries only what the row says (CUL-606's
+  // shape rule). An attachment is not part of the sentence — "Vomit · found by
+  // 5:33 PM" is the same sentence with or without a photo — and putting it there
+  // would make it reachable by `summarizeLoggedRecord`, which has no business
+  // knowing it.
+  //
+  // Optional because only ONE log path can produce it. A weigh-in has no attach
+  // affordance, and neither does the meal or dose card's path (food-capture and
+  // medication-capture shoot to `nyx-food-photos` / drug-label extraction, never
+  // `event_attachments`), so absent and `false` mean the same thing here — unlike
+  // `previousSnapshotKg`, where the key's PRESENCE is itself the fact.
+  hasAttachment?: boolean;
 }
 
 export interface MealPayload {
