@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-29
 
-CUL-717. Event Taxonomy Expansion project — the sibling defect CUL-681 filed rather than folded in, one layer up from the log sheet. No schema, no migration, no Edge Function.
+Shipped via **#755** (CUL-717). Event Taxonomy Expansion project — the sibling defect CUL-681 filed rather than folded in, one layer up from the log sheet. No schema, no migration, no Edge Function.
 
 ## The defect
 
