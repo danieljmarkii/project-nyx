@@ -61,15 +61,38 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const CREATED = new Set<string>();
 
 /**
+ * Resolve symlinks where the path exists, falling back to a lexical resolve where it
+ * does not. `createFixtureRoot` already does this to its base — macOS reaches
+ * `os.tmpdir()` through `/var` → `/private/var` — and the containment test needs the
+ * same treatment or it compares a logical path against a real one and answers about
+ * neither.
+ *
+ * Documented residual: for a path that does not exist, this is lexical, so a symlink
+ * in a non-existent path's ancestry is not followed. That cannot produce a wrong
+ * DELETE, because `removeFixtureRoot` also requires provenance — it is only ever a
+ * wrong verdict about a path nothing is about to remove.
+ */
+function realResolve(p: string): string {
+  const resolved = path.resolve(p);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+/**
  * True if `abs` lies inside the repository working tree — i.e. somewhere a guard's
  * directory walk could reach it.
  *
- * Compares resolved absolute paths, and requires a separator after the prefix so a
- * sibling directory (`/home/user/project-nyx-scratch`) is not mistaken for a child.
+ * Compares symlink-resolved absolute paths, and requires a separator after the prefix
+ * so a sibling directory (`/home/user/project-nyx-scratch`) is not mistaken for a
+ * child.
  */
 export function isInsideRepo(abs: string): boolean {
-  const resolved = path.resolve(abs);
-  return resolved === REPO_ROOT || resolved.startsWith(REPO_ROOT + path.sep);
+  const root = realResolve(REPO_ROOT);
+  const resolved = realResolve(abs);
+  return resolved === root || resolved.startsWith(root + path.sep);
 }
 
 /**
@@ -87,11 +110,11 @@ export function isInsideRepo(abs: string): boolean {
  * because macOS resolves `os.tmpdir()` through a symlink (`/var` → `/private/var`),
  * and an unresolved path would make the containment test answer about the wrong path.
  *
- * `baseDir` is where the temp root is created; it defaults to the OS temp directory,
- * which is the only value any guard should pass. It is a parameter so this file's own
- * proof can drive the rejection branch with a REAL in-repo base rather than mocking
- * `os.tmpdir()` — the check that makes every other guard safe is not one to leave
- * green-by-inspection.
+ * `baseDir` is **@internal — this file's own tests only**. It defaults to the OS temp
+ * directory, which is the value every guard should use by omitting the argument. It
+ * exists so the proof can drive the rejection branch with a REAL in-repo base rather
+ * than mocking `os.tmpdir()` — the check that makes every other guard safe is not one
+ * to leave green-by-inspection. A guard passing it explicitly is a mistake.
  */
 export function createFixtureRoot(
   prefix: string,

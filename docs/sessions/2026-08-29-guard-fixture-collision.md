@@ -138,9 +138,35 @@ and both are mutation-proven: deleting the provenance check reds exactly the
 did-not-create test, and dropping the `CREATED.add` reds the three tests that do a
 normal teardown.
 
+The `code-reviewer` pass, run in parallel and unaware of any of this, filed the
+same thing as its one **fix-before-merge**: the test proving the refusal was
+aiming that `rmSync` at the app's real `components/`, so the predicate under test
+was the only thing standing between a routine suite run and the source tree. Its
+fix is better than mine and both now hold — the test uses a **disposable in-repo
+probe** (`.guard-fixture-probe-delete/`, a directory created and removed by the
+test), so it proves the identical invariant with no blast radius. It still
+discriminates: with containment broken, provenance throws a *different* message,
+the regex fails, and nothing is deleted either way.
+
+Replaying the reviewer's exact mutation — `isInsideRepo` returning `false`
+unconditionally, the one that destroyed 234 files — now reds four tests and
+deletes nothing.
+
+Two smaller findings from the same pass, both taken: `isInsideRepo` now resolves
+symlinks on both sides (`createFixtureRoot` already realpath'd its base for the
+macOS `/var` → `/private/var` case, so comparing a logical path against a real one
+answered about neither), with the residual documented — a non-existent path is
+compared lexically, which can only ever be a wrong *verdict*, never a wrong
+delete, because provenance is the second gate. And `baseDir` is marked
+`@internal — this file's own tests only`, since nothing in a three-argument call
+shape tells a future author it is not for them.
+
 The generalisable line: **a recursive delete inside a test helper deserves the
-same scepticism as one in production code**, and "the check is right" is a claim
-about a predicate, not a property of the system.
+same scepticism as one in production code** — "the check is right" is a claim
+about a predicate, not a property of the system — and a test whose failure mode is
+*"the working tree is gone"* is not proving safety, it is spending it. The
+predicate most likely to be mid-regression when the suite runs is precisely the
+one the test is about.
 
 ## Not done here
 

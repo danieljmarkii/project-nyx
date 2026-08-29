@@ -72,13 +72,29 @@ describe('createFixtureRoot keeps detector fixtures out of the scanned tree', ()
   });
 
   it('refuses to delete an in-repo path', () => {
-    // removeFixtureRoot is an `rmSync(recursive)` — the most destructive call in the
-    // test tree. Handed a repo path by a caller that built its root by hand, an
-    // unguarded version deletes source. This is not hypothetical: a reviewer probing
-    // exactly this question during the CUL-712 build wiped `components/` from the
-    // working tree (recovered from HEAD, nothing lost).
-    expect(() => removeFixtureRoot(path.join(REPO_ROOT, 'components'))).toThrow(/inside the repository/);
-    expect(fs.existsSync(path.join(REPO_ROOT, 'components'))).toBe(true);
+    // A DISPOSABLE in-repo probe, never a real source directory.
+    //
+    // The first version of this test aimed `removeFixtureRoot` at the app's actual
+    // `components/`, relying on the very predicate under test to intercept the
+    // `rmSync(recursive)` before it ran. A reviewer doing the CUL-613 mutation proof
+    // broke `isInsideRepo` and the suite deleted 234 real files (recovered from HEAD;
+    // nothing lost, because the work was committed first). A test whose failure mode
+    // is "the working tree is gone" is not proving safety, it is spending it — and a
+    // regression in this predicate is exactly the thing most likely to be in flight
+    // when the suite runs.
+    //
+    // The probe proves the identical invariant with no blast radius, and it still
+    // discriminates: with the containment check broken the provenance check throws a
+    // DIFFERENT message, so the regex fails and nothing is deleted either way.
+    const probe = path.join(REPO_ROOT, '.guard-fixture-probe-delete');
+    fs.mkdirSync(probe, { recursive: true });
+    fs.writeFileSync(path.join(probe, 'keep.txt'), 'must survive\n', 'utf8');
+    try {
+      expect(() => removeFixtureRoot(probe)).toThrow(/inside the repository/);
+      expect(fs.existsSync(path.join(probe, 'keep.txt'))).toBe(true);
+    } finally {
+      fs.rmSync(probe, { recursive: true, force: true });
+    }
   });
 
   it('refuses to delete an out-of-repo path it did not create', () => {
