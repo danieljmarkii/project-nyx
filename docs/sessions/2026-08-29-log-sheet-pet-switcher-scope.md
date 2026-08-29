@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-29
 
-Shipped via #TBD. One-file copy change plus tests; no schema, no migration, no deploy.
+Shipped via #752. One-file copy change plus tests; no schema, no migration, no deploy.
 
 ## The problem
 
