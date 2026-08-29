@@ -20,10 +20,12 @@ interface PetSwitcherSheetProps {
   visible: boolean;
   onClose: () => void;
   // The host exists to CAPTURE (the log sheet's title, the FAB menu's "Logging
-  // for" chip) rather than to manage the household. Drops the two management rows
-  // — see the rule on the panel below. Named for what the HOST is, not for what it
-  // hides, so a new host declares itself and inherits the rule instead of
-  // re-deciding it.
+  // for" chip) rather than to manage the household. Two consequences, both on the
+  // panel below: it drops the management rows (CUL-678), and it adds the scope
+  // disclosure (CUL-680) — because a capture host is exactly the one that frames
+  // this switcher as being about a single log. Named for what the HOST is, not for
+  // what it toggles, so a new host declares itself and inherits both rules instead
+  // of re-deciding them one at a time.
   captureSurface?: boolean;
 }
 
@@ -192,7 +194,37 @@ export function PetSwitcherPanel({
         ]}
       >
         <View style={styles.grabber} />
-        <ThemedText style={styles.header}>Your pets</ThemedText>
+        <ThemedText style={[styles.header, captureSurface && styles.headerTight]}>Your pets</ThemedText>
+
+        {/* THE SCOPE DISCLOSURE (CUL-680, PM ruling A1 — copy only).
+
+            A capture host frames this switcher in SCOPED language — the log sheet's
+            title is "Log for {pet}", the FAB menu's chip is "Logging for {pet}" — and
+            the switch is not scoped: `handleSelect` calls `selectPet`, which persists
+            the choice to disk (`persistActivePetId`) and re-points Home, Signal,
+            Today, Trend, History and the Pet tab until it is changed again. So an
+            owner logging one hairball for the other cat lands back on THAT cat's
+            Home, having never asked to move there, and switching back is an act she
+            has to remember unprompted.
+
+            The ruling was to keep the switch global (multi-pet §1.5 / §3.3 — the flip
+            IS the app's pet, made before logging) and stop implying otherwise. This
+            line is that: it names the app-wide effect at the moment of decision, where
+            "Your pets" alone said nothing about scope.
+
+            Capture hosts only. On the Home header and the Pet tab the scope is already
+            self-evident — the surface the owner is looking at changes under them as
+            they tap — and nothing there framed the switch as being about one log.
+
+            It names the CONTRAST ("the whole app … not just this log") rather than
+            enumerating surfaces: Trend is a zone on Home rather than a tab of its own,
+            so a list reading "Home, Trend and History" would ship a surface name the
+            app does not have, and any such list dates the moment the tabs move. */}
+        {captureSurface && (
+          <ThemedText style={styles.scopeCaption}>
+            Switching changes the whole app to that pet, not just this log.
+          </ThemedText>
+        )}
 
         <ScrollView style={styles.list} bounces={false}>
           {pets.map((pet) => {
@@ -305,6 +337,16 @@ const styles = StyleSheet.create({
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
+    marginBottom: theme.space1,
+  },
+  // The caption owns the gap to the list when it is present, so the header pulls in
+  // to sit with the line it belongs to rather than floating between the two.
+  headerTight: {
+    marginBottom: 2,
+  },
+  scopeCaption: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
     marginBottom: theme.space1,
   },
   // Cap so a many-pet household scrolls inside the sheet instead of pushing

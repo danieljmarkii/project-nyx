@@ -157,6 +157,35 @@ describe('PetSwitcherPanel — captureSurface', () => {
     expect(view.getByText('Add a pet')).toBeTruthy();
     expect(mockFrom).toHaveBeenCalledWith('pets');
   });
+
+  // ── The scope disclosure (CUL-680 · PM ruling A1) ──────────────────────────
+  //
+  // A capture host frames the switcher in scoped language ("Log for {pet}",
+  // "Logging for {pet}") over an action that is not scoped: the tap persists the
+  // selection and re-points the whole app. The ruling kept the switch global and
+  // required the panel to SAY so, so this asserts the sentence is on the surface
+  // that makes the false promise — and only there.
+  it('names the app-wide effect on a capture host', async () => {
+    const view = render(<PetSwitcherPanel visible captureSurface onClose={jest.fn()} />);
+    await flush();
+    expect(
+      view.getByText('Switching changes the whole app to that pet, not just this log.'),
+    ).toBeTruthy();
+  });
+
+  // Not a blanket disclaimer. On the Home header and the Pet tab the scope is
+  // self-evident — the screen being read changes under the tap — and neither ever
+  // framed the switch as being about one log, so the line would be noise on a
+  // surface that never mis-stated anything.
+  //
+  // Settled with `flush` rather than `settled`: this asserts an ABSENCE, so waiting
+  // on the archived link would bind it to a 1s waitFor it has no stake in — a cold
+  // run then reds it for a reason unrelated to the thing under test.
+  it('stays off the management hosts, which never implied a scope', async () => {
+    const view = render(<PetSwitcherPanel visible onClose={jest.fn()} />);
+    await flush();
+    expect(view.queryByText(/not just this log/)).toBeNull();
+  });
 });
 
 // B-284 §1.5's motion budget: every animated component defines a static frame and
@@ -236,5 +265,9 @@ describe('PetSwitcherSheet', () => {
     expect(view.getByText('Your pets')).toBeTruthy();
     await flush();
     expect(view.queryByText('Add a pet')).toBeNull();
+    // Both halves of what the prop means reach the panel through the wrapper — the
+    // FAB menu is a capture host too, and its chip makes the same scoped promise the
+    // log sheet's title does (CUL-680).
+    expect(view.queryByText(/not just this log/)).toBeTruthy();
   });
 });
