@@ -43,12 +43,13 @@ The **Build Sequence** (`CLAUDE.md`) is done end to end: steps 1–8 complete; *
 | **Event Taxonomy Expansion** | New (2026-08-26). Broadening event capture beyond the GI core — cough/sneeze first, the safety trio behind (B-756/CUL-509). Scoping ratified + hard-reviewed same day; the decision queue is cleared; **the project description carries the PR-by-PR run order**; every wave is its own PM greenlight (D5), and W1's GA queues behind the `log_picker_v2` host gate (CUL-662 → CUL-663). |
 | **Legacy Backlog** | The migrated `B-NNN` rows. Not a track — a holding project. |
 
-### Two standing holds
+### Three standing holds
 
-Both gate more than one track, so they are named here rather than left to be rediscovered:
+Each gates more than one track, so they are named here rather than left to be rediscovered:
 
 - **`generate-report` is not deployed** — live is v13 (Jul 18) while `main` carries PR 7 and everything after it. **CUL-19** owns the deploy and the constraint that rides it (do not ship an app build carrying B-417 PR 6 to a device before it runs). Blocks the prod visibility of CUL-64, CUL-45, CUL-50, CUL-564, CUL-479.
 - **The per-incident AI functions owe a redeploy** — `analyze-vomit` / `analyze-stool` / `ask`, in that order, and the order is load-bearing. **CUL-557** owns it. Not under the `generate-report` hold.
+- **`generate-signal` owes a behaviour-changing redeploy, gated on a client build** (new 2026-08-28, W1-PR-3b). It carries cough's ⑦ enrolment, the per-species floors and the ⑦ both-stated fix, and it must not deploy until a live TestFlight build carries #730's client mirrors — the installed build (1.1.0/35) predates the enum migration. **CUL-676** owns the gate. Not under the `generate-report` hold; blocks the prod visibility of all W1 cough work.
 
 The ledger of what is deployed versus what is on `main` is `supabase/functions/deploy-manifest.json`, guarded in CI.
 

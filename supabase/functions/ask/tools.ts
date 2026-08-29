@@ -80,6 +80,14 @@ export const ASK_SYMPTOM_TYPES = [
   'scratch',
   'skin_reaction',
   'lethargy',
+  // W1 (CUL-676 PR-3b) — the mirror half of PR-3a's SYMPTOM_EVENT_TYPES edit, kept in the
+  // same order. G5 Timeline-parity is the whole reason this list is a mirror: History and
+  // the Patterns grid started showing cough/sneeze rows in 3a, so without these two an Ask
+  // count would quietly disagree with the record the owner is looking at while answering —
+  // the failure this list's docstring exists to prevent. Deploy rides the held CUL-557
+  // ask-redeploy chain, never its own.
+  'cough',
+  'sneeze',
 ] as const
 export type AskSymptomType = (typeof ASK_SYMPTOM_TYPES)[number]
 

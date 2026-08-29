@@ -156,13 +156,21 @@ export const SYMPTOM_TYPE_UNIVERSE = [
 ] as const
 export type SymptomType = (typeof SYMPTOM_TYPE_UNIVERSE)[number]
 
-/** Symptom event types the engine FETCHES (schema reference query [2]). */
+/** Symptom event types the engine FETCHES (schema reference query [2]).
+ *
+ *  `cough` joined in W1-PR-3b session 2 (CUL-676) — for ⑦ ONLY. Membership here buys a
+ *  type exactly two things: the DB fetch, and (by construction, R3) a place in the
+ *  logged-day/density denominators. It buys NO lane; every lane reads its own cell in
+ *  LANE_SYMPTOM_TYPES below, which is what keeps the food↔cough card §9 forbids by name
+ *  unreachable. `sneeze` stays OUT (data-only at W1, §9 row) — it is typed and rendered
+ *  everywhere the client mirrors reach, and the engine simply does not read it yet. */
 export const CORRELATION_SYMPTOM_TYPES = [
   'vomit',
   'diarrhea',
   'itch',
   'scratch',
   'skin_reaction',
+  'cough',
 ] as const satisfies readonly SymptomType[]
 
 /** The five pre-taxonomy types every list-driven lane consumed before the split.
@@ -183,14 +191,72 @@ export const LANE_SYMPTOM_TYPES = {
   correlation: PRE_TAXONOMY_LANE_TYPES,
   /** ③ reflection + ④ worsening (one shared stats loop feeds both). cough: no at W1 (§9 row). */
   symptomDelta: PRE_TAXONOMY_LANE_TYPES,
-  /** ⑦ chronicity. cough joins HERE in 3b session 2 — ⑦-only, with its own perType floors (B-755, Dr. Chen). */
-  chronicity: PRE_TAXONOMY_LANE_TYPES,
+  /** ⑦ chronicity — the ONE lane cough enrols in (§9 cough row; W1-PR-3b session 2).
+   *  Its floors are per-type (config.chronicity.perType below): a respiratory sign has no
+   *  benign base rate to out-count, so the GI episode floor is the wrong instrument for it. */
+  chronicity: [...PRE_TAXONOMY_LANE_TYPES, 'cough'] as readonly SymptomType[],
   /** L4 gap-shortening. cough: NO at W1 (R1, PM 2026-08-28 — acceleration is a future ④ question, not L4's). */
   gapShortening: PRE_TAXONOMY_LANE_TYPES,
   /** The staple-washout / diet-churn symptom-evidence floor. cough: NEVER (R2, PM 2026-08-28 —
    *  a respiratory sign must never satisfy a food-attribution card's symptom gate). */
   diagnosticsFloor: PRE_TAXONOMY_LANE_TYPES,
 } as const satisfies Record<string, readonly SymptomType[]>
+
+/**
+ * The two denominator predicates (W1-PR-3b session 2, CUL-676 — R3 as ruled, then re-ruled
+ * 2026-08-28 after the adversarial pass).
+ *
+ * `isFetchedSymptom` — is this a row the engine actually FETCHES? The logged-day denominators
+ * count "any logged event", and the module documents `denominator set == fetch union`. That
+ * invariant was true only because both callers happen to filter; a test fed the module a
+ * `sneeze` row and moved the denominator. Production was never wrong, but "correct because
+ * every caller remembers to filter" is the shape HR-1 was, so the denominators enforce it.
+ *
+ * `countsTowardComparisonGate` — the NARROWER one, and the reason there are two.
+ *
+ * THE RULE, stated once so no future leaf has to re-derive it: A GATE WHOSE FAILURE
+ * DIRECTION IS REASSURANCE READS ITS LANE'S CELL; A GATE WHOSE FAILURE DIRECTION IS
+ * ESCALATION KEEPS FULL COVERAGE.
+ *
+ * The PM ruling stands — "activity is activity; logging a cough is logging" — and a cough day
+ * still counts as a logged day everywhere COVERAGE is the question: ⑦'s own span-halves
+ * eligibility (below), the report's C5/§7 density lines, the day summary, the trial coverage
+ * lines. Nothing is excluded from the record.
+ *
+ * But two of these consumers are not coverage measures, they are COMPARABILITY GATES: they
+ * decide whether a FALLING comparison about one symptom can be published at all
+ * (`densityComparable` for ③'s week-over-week, `trialLoggingFraction` for the trial strip).
+ * There, the denominator is not asking "how much was logged" — it is asking "did the owner's
+ * attention to THIS sign hold steady?", and a cough log cannot answer that. The adversarial
+ * pass built the consequence: 12 cough-only days inside a trial era flipped
+ * `densityComparable` false→true and published a 5× apparent vomiting reduction the guard had
+ * correctly withheld; on the reflection lane, 120 cough logs turned a withheld "3 this week"
+ * into "3 this week, down from 5 last week" — the app made MORE confident that vomiting is
+ * improving by the very evidence that something new is wrong, while ⑦ could not yet speak
+ * about the cough at all.
+ *
+ * The mechanism is specific to symptom substitution and not a general worry about meals: meal
+ * logging is pet-state-INDEPENDENT, so it is noise in that denominator (the known B-733
+ * residual the density copy already hedges). Cough logging is pet-state-DEPENDENT and
+ * anti-correlated with attention to the other sign — an owner starts logging coughs exactly
+ * when watching for vomiting lapses — so it does not merely add noise, it systematically
+ * substitutes for the observation that stopped.
+ *
+ * And the displayed number settles which way this had to go: `densityDisclosureLine` renders
+ * these counts to the owner ONLY when the comparison is published, as the evidence backing
+ * it. A number offered as the receipt for a claim about vomiting must count the days that
+ * could have shown vomiting.
+ *
+ * Both gates belong to the ③/④ lane's window (`computeWindowedStats` / SR-4) or to the trial
+ * lane, whose pre-taxonomy denominator was exactly that cell — so this is BYTE-IDENTICAL to
+ * the pre-cough engine for every existing type, and removes only cough's contribution.
+ */
+const FETCHED_SYMPTOM_SET: ReadonlySet<string> = new Set(CORRELATION_SYMPTOM_TYPES)
+const isFetchedSymptom = (s: { type: string }): boolean => FETCHED_SYMPTOM_SET.has(s.type)
+
+const COMPARISON_GATE_SYMPTOM_SET: ReadonlySet<string> = new Set(LANE_SYMPTOM_TYPES.symptomDelta)
+const countsTowardComparisonGate = (s: { type: string }): boolean =>
+  COMPARISON_GATE_SYMPTOM_SET.has(s.type)
 
 /** WSAVA 5-point owner-reported intake scale (migration 011). */
 export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all'
@@ -1105,6 +1171,20 @@ export interface SymptomChronicityFinding extends FindingBase {
   windowDays: number
   /** Hard marker for the phrasing layer + reviewers: duration/frequency only, never causal. */
   associationalOnly: true
+  /**
+   * Set on the LEADING chronicity finding when this pet has BOTH a chronic cough course and
+   * a chronic vomiting course in the same window (§9's cough↔vomit adjacency rule). A fact
+   * about the COMPOSED set, so it is attached in the composition layer like the firm-tier
+   * inheritance — never derivable by a detector looking at one symptom.
+   *
+   * Why it exists: post-tussive gagging can end in actual vomiting, and the asthmatic cough
+   * posture is routinely misread as "trying to bring up a hairball" — so the two records
+   * cross-contaminate in BOTH directions. Stating the two courses side by side without
+   * saying so would present them as independent problems, which is the one thing §9 says
+   * these lanes must not do. It discloses the overlap; it never nets the counts down, and
+   * it never explains either sign away (that direction would be reassurance-by-mechanism).
+   */
+  coughVomitAdjacent?: true
 }
 
 /**
@@ -1898,7 +1978,28 @@ export interface DetectionConfig {
           minActiveWeeks: number
           ongoingRecencyDays: number
           firmSpanDays: number
-        }>
+        }> & {
+          /**
+           * Feline override, resolved LAST (Dr. Chen ruling, 2026-08-28, CUL-687). Mirrors
+           * the shipped intake-decline precedent (`cfg.cat.consecutiveDaysBelowBaseline`,
+           * :3555) in both shape and spirit: the base value is the general one, and `cat`
+           * raises sensitivity where feline disease warrants it.
+           *
+           * WHY COUGH NEEDS THIS AND THE GI SIGNS DID NOT — the ruling's finding, not a
+           * convenience: the `perType` map assumes the relevant clinical unit is the SIGN.
+           * For a respiratory sign it is SIGN × SPECIES, because dogs have a common benign
+           * confounder cats do not (reverse sneezing — paroxysmal, recurrent, and named
+           * "coughing" by nearly every owner), and there is no `reverse_sneeze` leaf for it
+           * to land in. That asymmetry is the whole reason the episode floor splits.
+           */
+          cat?: Partial<{
+            minSpanDays: number
+            minEpisodes: number
+            minActiveWeeks: number
+            ongoingRecencyDays: number
+            firmSpanDays: number
+          }>
+        }
       >
     >
   }
@@ -2263,6 +2364,113 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     minActiveWeeks: 3,
     ongoingRecencyDays: 14,
     firmSpanDays: 42,
+    // ── Per-type floors (B-755 contract; W1-PR-3b session 2, CUL-676) ──────────
+    //
+    // RULED by the Dr. Chen lens, 2026-08-28 (CUL-687) — the verdict on the build session's
+    // own set was NOT DEFENSIBLE AS-IS, and two of its values were reversed. What follows is
+    // the ruling, not a proposal. The lens was run in ISOLATION for the reason this project
+    // runs adversarial review out-of-context at all: the session that set these floors then
+    // argued for them, so it was the wrong lens to grade them.
+    //
+    // OWNED CALIBRATION, NOT GUIDELINE AUTHORITY. The 2026-08-14 verification pass
+    // searched for a numeric veterinary chronic-cough threshold and found none: the
+    // widely-quoted "≥4 weeks" is HUMAN PAEDIATRIC guidance, and the veterinary
+    // chronic-bronchitis convention (~2 months) is a DIAGNOSTIC label, not an
+    // ask-the-owner-to-call-someone boundary. So the copy must never cite a guideline.
+
+    //
+    // Why cough differs from the globals at all: the global floors were calibrated
+    // against a noise model for signs that have a real BENIGN BASE RATE — an occasional
+    // vomit is noise you have to out-count, which is what `minEpisodes: 6` buys (the
+    // 20k-trial sweep that raised it 4→6). A cough has no such base rate; a recurring
+    // cough is never normal in either species, and in cats it is airway disease until
+    // proven otherwise. Applying a floor built to out-count benign vomiting to a sign
+    // with no benign version is not conservatism, it is the wrong instrument — and its
+    // error lands on silence, which is the direction a SAFETY lane must not fail in.
+    perType: {
+      cough: {
+        // 6 → 5, with cats at 4 (Dr. Chen ruling Q2). The split is the ruling's central
+        // finding: this does not floor COUGH, it floors THE COUGH BUTTON, and in dogs that
+        // button also collects REVERSE SNEEZING — paroxysmal, recurrent by nature, called
+        // "coughing/honking/choking" by nearly every owner, and clinically nothing. It
+        // produces exactly the 4-episodes-across-3-weeks phenotype this floor is tuned to
+        // catch, and there is no `reverse_sneeze` leaf for it to land in instead. So dogs
+        // DO have a benign base rate for this key and cats effectively do not (the dominant
+        // feline error runs the other way — a real cough logged as hairball retching, which
+        // makes the key cleaner than the truth, not dirtier).
+        //
+        // 5 is the smallest concession that kills the reverse-sneezing counterexample; 6
+        // was rejected as over-corrected for a species where cough is the presenting
+        // cardiac sign (it costs ~13 points of recall at moderate logging density, measured).
+        minEpisodes: 5,
+        // 42 → 28, KEPT after the ruling (Q3), and 42 was rejected for both species: four
+        // weeks of recurring cough is a workup (heartworm test, thoracic radiographs), and
+        // six weeks of cough in a dog with a murmur is six weeks of unmedicated CHF.
+        //
+        // This floor carries more weight for cough than for any other symptom, and the
+        // reason is structural: ④ is excluded from cough's lane cell, so
+        // `suppressWorseningWhenChronic`'s firm-INHERITANCE arm is UNREACHABLE here. For
+        // vomit a severe-but-short course still gets lifted to firm by that arm; for cough
+        // the tier is purely span-driven, so a higher value would make "book a visit"
+        // unreachable before six weeks under any severity.
+        firmSpanDays: 28,
+        // 14 → 28 (Dr. Chen ruling Q4 — the strongest finding in the set, and it reverses
+        // the build session's value). A recency floor asks "has this resolved?", and for a
+        // RELAPSING-REMITTING airway disease a fortnight of silence answers nothing:
+        // inter-flare intervals of weeks are the normal course of UNTREATED feline asthma,
+        // and canine chronic bronchitis and collapsing trachea wax and wane the same way.
+        //
+        // The failure was not a marginal miss. On an 8-bout/39-day cat whose last bout was
+        // 16 days ago — clearing every other floor by a wide margin — the lane went SILENT
+        // while withholding the strongest card it can produce, at exactly the moment an
+        // owner concludes "it went away". And because `isChronic` gates the ③ valve, day 15
+        // simultaneously stopped naming the cough AND unblanked the reflection layer: two
+        // defensible pieces composing into a calm surface over documented airway disease.
+        // That is reassurance-by-absence wearing an honesty costume.
+        //
+        // The honesty argument, CORRECTED (adversarial pass, same day). It originally read
+        // "the word 'ongoing' is not used" — true of THIS module's copy (phrasing.ts) and of
+        // the client expand, and FALSE at two seams that render the same finding: the vet
+        // report's bold lead safety line said "has been ongoing 28 days … most recent 27
+        // days ago", and the owner's read-aloud receipt put "Ongoing since May" directly
+        // above "Most recent — 27 days ago". Widening this floor is what made those
+        // self-contradictions reachable, so both were rewritten to state span and recency
+        // once each (render.ts, lib/signalCopy.ts). The module comment was right about the
+        // module and wrong about the seam — the recurring shape here.
+        //
+        // Priced cost, accepted: a resolved kennel cough keeps a calm `standard` card for up
+        // to 28 days instead of 14. 28 is one full inter-flare interval — long enough to span
+        // real quiescence, short enough not to nag for two months about a settled problem.
+        ongoingRecencyDays: 28,
+        cat: {
+          // Cats keep 4: no common benign feline phenotype produces 4+ distinct cough
+          // events distributed across 3+ weeks and still going, and `minActiveWeeks: 3`
+          // already excludes the one-off gag.
+          minEpisodes: 4,
+        },
+      },
+      // DELIBERATELY UNCHANGED for cough:
+      //   • minSpanDays (21) — KEPT, but its rationale is CORRECTED (Dr. Chen Q5a). It was
+      //     credited here with excluding the self-limiting course; measured, it moves the
+      //     noise rate by 0.2 points (9.44% → 9.63% at 14 or 10 days), because the null's
+      //     events are spread over 56 days and span is essentially always satisfied once
+      //     there are enough of them. Its real and only measurable effect is at the TOP
+      //     end — excluding SHORT, DENSE, RECENT courses. Do not lower it (that genuinely
+      //     would fire on the resolving course) and do not credit it with specificity it
+      //     does not provide.
+      //   • minActiveWeeks (3) is what stops the episode floor being reachable inside one
+      //     bad week: the episodes must be DISTRIBUTED, not a single bout logged N times.
+      //   • windowDays is not overridable by construction (see the type above).
+      //
+      // THE KNOWN GAP THIS SET DOES NOT CLOSE (Dr. Chen Q5b, routed to CUL-686): because
+      // minSpanDays excludes short dense courses AND cough enrols in no other lane, a cat
+      // coughing 6×/day is SILENT through 126 logged events and speaks only on day 22.
+      // The ruling's preferred fix is a density OR-arm (≥10 symptom-days inside any 14-day
+      // stretch, ongoing) which it priced at 0/200,000 on the null and which would rescue
+      // that cat from day 10 — but that is a NEW FIRE PATH on a safety detector, not a
+      // calibration, so it is not smuggled in here. The ruling's own sanctioned fallback
+      // is taken: ship, and carry the gap as a named defect.
+    },
   },
   // B-078 detector ⑤ (postprandial timing) floors. The window is science-anchored
   // (§9.2: no canonical clinical cutoff; 30 min operationalizes the literature's
@@ -3567,6 +3775,10 @@ interface WindowedStats {
 function loggingDaysInWindow(input: DetectionInput, startMs: number, endMs: number): number {
   const days = new Set<number>()
   for (const s of input.symptomEvents) {
+    // COMPARISON-GATE scoped, not fetch-scoped — both consumers of this function (③/④'s
+    // eligibility floor and SR-4's density gate) decide whether a FALLING comparison may be
+    // published, and both belong to the symptomDelta lane. See countsTowardComparisonGate.
+    if (!countsTowardComparisonGate(s)) continue
     const ms = Date.parse(s.occurredAt)
     if (Number.isFinite(ms) && ms >= startMs && ms < endMs) days.add(Math.floor(ms / MS_PER_DAY))
   }
@@ -3674,8 +3886,18 @@ export function detectReflections(
   // logging-eligibility guard; detectChronicity gates on the same conjunction) — so "③ goes
   // silent ⟺ ⑦ speaks" holds by construction and the valve cannot drift, the same provably-
   // closed architecture as ④'s shared `isWorsening`.
+  //
+  // DECLARED CONSEQUENCE OF WIDENING THE ⑦ LANE (HR-26; W1-PR-3b session 2, CUL-676).
+  // Because this gate is pet-wide, a chronic COUGH now blanks this pet's reflection layer
+  // for every OTHER sign too — the itch that is genuinely settling stops getting its calm
+  // card, on a pet whose Home visibly gets quieter the moment cough enrols. That is the
+  // designed outcome, not a regression: the whole point of a global valve is that the app
+  // never renders a soothing sentence about one sign over a pet with an unresolved problem
+  // somewhere else, and "the cough is unrelated to the itch" is a clinical judgement the
+  // engine is not entitled to make. Written down here, next to the code that does it, so
+  // the next reader of a suddenly-quiet Home finds the reason instead of filing a bug.
   const chronicityStats = computeChronicityStats(input, config)
-  if (chronicityStats?.some((s) => isChronic(s, config.chronicity) && s.loggingEligible)) {
+  if (chronicityStats?.some((s) => isChronic(s, input.pet.species, config.chronicity) && s.loggingEligible)) {
     return []
   }
 
@@ -3982,7 +4204,12 @@ function computeChronicityStats(
   const windowStart = nowMs - cfg.windowDays * MS_PER_DAY
 
   const allEventMs = [
-    ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
+    // FULL COVERAGE (fetch union), deliberately NOT comparison-gate scoped: this feeds ⑦'s
+    // span-halves "was the first half dark?" guard, which is a genuine coverage question — a
+    // cough log in the middle of a vomiting course IS evidence the owner was engaged and
+    // would plausibly have logged. And its failure direction is ESCALATION: inflating it lets
+    // the safety lane SPEAK, never silences it. That is the side of the rule this sits on.
+    ...input.symptomEvents.filter(isFetchedSymptom).map((s) => Date.parse(s.occurredAt)),
     ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
   ].filter((ms) => Number.isFinite(ms))
 
@@ -4042,8 +4269,12 @@ function computeChronicityStats(
  * per-symptom logging-eligibility guard lives on the ChronicityStat (computeChronicityStats);
  * detectChronicity gates on `isChronic(s) && s.loggingEligible`, and PR 2's valve must too.
  */
-export function isChronic(s: ChronicityStat, cfg: DetectionConfig['chronicity']): boolean {
-  const floors = chronicityFloorsFor(s.symptomType, cfg)
+export function isChronic(
+  s: ChronicityStat,
+  species: Species,
+  cfg: DetectionConfig['chronicity'],
+): boolean {
+  const floors = chronicityFloorsFor(s.symptomType, species, cfg)
   return (
     s.spanDays >= floors.minSpanDays &&
     s.episodeCount >= floors.minEpisodes &&
@@ -4067,16 +4298,40 @@ export function isChronic(s: ChronicityStat, cfg: DetectionConfig['chronicity'])
  * undefined floor is treated exactly like an absent one, and the pin lives in
  * laneMembership.test.ts.
  */
+/** The only keys a per-type override may set. `windowDays` is deliberately absent: the
+ *  card's "{N} weeks" denominator and the weekly distribution buckets are one shared window,
+ *  so a per-type window would be a different lane, not a different floor. */
+const CHRONICITY_FLOOR_KEYS = [
+  'minSpanDays',
+  'minEpisodes',
+  'minActiveWeeks',
+  'ongoingRecencyDays',
+  'firmSpanDays',
+] as const
+
 export function chronicityFloorsFor(
   symptomType: SymptomType,
+  species: Species,
   cfg: DetectionConfig['chronicity'],
 ): DetectionConfig['chronicity'] {
   const over = cfg.perType?.[symptomType]
   if (!over) return cfg
   const resolved = { ...cfg }
-  for (const [k, v] of Object.entries(over)) {
-    if (v !== undefined) (resolved as Record<string, unknown>)[k] = v
+  // ALLOWLIST, not a denylist (adversarial pass, 2026-08-28). This used to copy every key
+  // except `cat`, which let two things through that two separate comments claimed were
+  // impossible: a `windowDays` override (documented as "not overridable by construction",
+  // and asserted as such in laneMembership.test.ts — but only the TypeScript type was
+  // stopping it, which is not "by construction"), and any future non-floor key added to the
+  // override shape. Naming the five floors is the version that makes both comments true.
+  const apply = (src: Record<string, unknown> | undefined): void => {
+    if (!src) return
+    for (const k of CHRONICITY_FLOOR_KEYS) {
+      const v = src[k]
+      if (v !== undefined) (resolved as Record<string, unknown>)[k] = v
+    }
   }
+  apply(over as Record<string, unknown>)
+  if (species === 'cat') apply(over.cat as Record<string, unknown> | undefined)
   return resolved
 }
 
@@ -4088,9 +4343,12 @@ export function chronicityFloorsFor(
  */
 function resolveChronicityTier(
   s: ChronicityStat,
+  species: Species,
   cfg: DetectionConfig['chronicity'],
 ): ChronicityTier {
-  return s.spanDays >= chronicityFloorsFor(s.symptomType, cfg).firmSpanDays ? 'firm' : 'standard'
+  return s.spanDays >= chronicityFloorsFor(s.symptomType, species, cfg).firmSpanDays
+    ? 'firm'
+    : 'standard'
 }
 // NOTE: the §4.6 firm-tier INHERITANCE arm (firm when the same symptom is also worsening
 // week-over-week) is applied downstream in suppressWorseningWhenChronic, not here — that fact
@@ -4107,11 +4365,40 @@ export function detectChronicity(
 
   // Fire only on the §4.3 conjunction AND the per-symptom logging-eligibility guard (a
   // dark half of the span means a manufactured, not sustained, course — §10 #4).
-  const chronic = stats.filter((s) => isChronic(s, cfg) && s.loggingEligible)
+  const chronic = stats.filter((s) => isChronic(s, input.pet.species, cfg) && s.loggingEligible)
   if (chronic.length === 0) return []
 
-  // One card only — the MOST chronic symptom: longest span, then most episodes, then
-  // symptom-type order. Calm safety surface over completeness (§4.5 tie-break, §5).
+  // EVERY chronic course is stated — one card per symptom type (R4 "both stated", PM
+  // 2026-08-28, option (i); W1-PR-3b session 2). The order is the old tie-break, now
+  // deciding which course LEADS rather than which one survives: longest span, then most
+  // episodes, then the lane cell's own order (a total order, so the surface never
+  // reorders between re-runs on equal stats).
+  //
+  // THIS REPLACES A ONE-CARD CAP, and the cap was a silent DELETION of a safety
+  // statement. `return [chronic[0]]` meant a longer-span, MILDER course erased a denser,
+  // more urgent one from Home AND from the vet report — and the sort made "longer" the
+  // winner, which is not the same as "worse". The 2026-08-27 review found it with cough
+  // (a 52-day mild cough deleting a 24-day 8-episode vomiting course, the acceptance
+  // fixture below), but the defect was never cough-specific: chronic vomiting has been
+  // able to delete chronic itching since ⑦ shipped. Widening the lane is what made it
+  // reachable often enough to find.
+  //
+  // Nothing downstream needed changing to carry the second card, which is the argument
+  // for this shape over a composed one-card payload: `curateFindings` keeps EVERY safety
+  // finding (never dropped for the cap), `rankFindings` already orders co-firing safety
+  // cards, and the client renders the ranked list without deduplicating by type — so both
+  // courses reach the owner on the ALREADY-SHIPPED client. A composed card naming both
+  // courses would have needed a new payload field, a new client renderer, and therefore a
+  // second App Store release before it could say anything (lib/signalCopy.ts composes this
+  // card's sentence from the payload — the server does not send prose). Same reason the
+  // per-FAMILY variant was not taken: it still drops a course (two chronic GI signs), for
+  // a bound we do not need. The shipped precedent for co-firing same-type safety cards is
+  // two incident_red_flags (B-364) — see the tie-break in rankFindings.
+  //
+  // The calm surface is protected by the FLOORS, not by a cap: reaching N cards takes N
+  // independently sustained, still-ongoing courses, and a pet with that many is one the
+  // app must not be quiet about (Principle 3 — safety insights are never dropped to honor
+  // a layout cap).
   chronic.sort((a, b) => {
     if (b.spanDays !== a.spanDays) return b.spanDays - a.spanDays
     if (b.episodeCount !== a.episodeCount) return b.episodeCount - a.episodeCount
@@ -4121,23 +4408,20 @@ export function detectChronicity(
     )
   })
 
-  const s = chronic[0]
-  return [
-    {
-      type: 'symptom_chronicity',
-      priorityClass: 'safety',
-      symptomType: s.symptomType,
-      episodeCount: s.episodeCount,
-      spanDays: s.spanDays,
-      activeWeeks: s.activeWeeks,
-      symptomDays: s.symptomDays,
-      daysSinceLastEpisode: s.daysSinceLastEpisode,
-      firstOnsetIso: new Date(s.firstOnsetMs).toISOString(),
-      tier: resolveChronicityTier(s, cfg),
-      windowDays: cfg.windowDays,
-      associationalOnly: true,
-    },
-  ]
+  return chronic.map((s) => ({
+    type: 'symptom_chronicity',
+    priorityClass: 'safety',
+    symptomType: s.symptomType,
+    episodeCount: s.episodeCount,
+    spanDays: s.spanDays,
+    activeWeeks: s.activeWeeks,
+    symptomDays: s.symptomDays,
+    daysSinceLastEpisode: s.daysSinceLastEpisode,
+    firstOnsetIso: new Date(s.firstOnsetMs).toISOString(),
+    tier: resolveChronicityTier(s, input.pet.species, cfg),
+    windowDays: cfg.windowDays,
+    associationalOnly: true,
+  }))
 }
 
 // ── Detector ⑤: postprandial timing (B-078 — descriptive lane Phase 1) ──────
@@ -4934,6 +5218,10 @@ export function detectTrialResponse(
   const loggedDaysIn = (pred: (di: number | null) => boolean): number => {
     const days = new Set<number>()
     for (const s of input.symptomEvents) {
+      // COMPARISON-GATE scoped: these counts drive `trialLoggingFraction` /
+      // `densityComparable`, i.e. whether the trial strip may publish a falling vomiting
+      // comparison at all. A cough day cannot vouch for vomit observation.
+      if (!countsTowardComparisonGate(s)) continue
       const di = dayIndexOf(Date.parse(s.occurredAt))
       if (pred(di)) days.add(di as number)
     }
@@ -6109,6 +6397,21 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
         }
         return order[x.trigger] - order[y.trigger]
       }
+      // Two chronicity cards (R4 both-stated, CUL-676) — the same shape as the two
+      // red-flags above, and stated EXPLICITLY for the same reason: the detector already
+      // emits them in this order, but relying on Array#sort's stability to preserve it
+      // would make the surface's card order an untested consequence of a language
+      // guarantee rather than a decision. Longest span leads, then most episodes, then
+      // the lane cell's order — a total order over the cell, so a re-run never reorders
+      // Home. Neither is dropped; this only decides which one leads.
+      if (x.type === 'symptom_chronicity' && y.type === 'symptom_chronicity') {
+        if (y.spanDays !== x.spanDays) return y.spanDays - x.spanDays
+        if (y.episodeCount !== x.episodeCount) return y.episodeCount - x.episodeCount
+        return (
+          LANE_SYMPTOM_TYPES.chronicity.indexOf(x.symptomType) -
+          LANE_SYMPTOM_TYPES.chronicity.indexOf(y.symptomType)
+        )
+      }
     }
 
     // Same-band, different insight types (e.g. a correlation + a postprandial-timing
@@ -6296,6 +6599,34 @@ function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
 }
 
 /**
+ * §9's cough↔vomit adjacency disclosure (W1-PR-3b session 2, CUL-676). When BOTH courses
+ * are chronic, mark the leading card so its copy says the two can overlap.
+ *
+ * Only reachable because R4 stopped ⑦ collapsing to one card — under the old cap these two
+ * courses could never be on screen together, so the rule had nothing to bind. Marking only
+ * the LEADER (the findings arrive in the detector's rank order) keeps the note to one place
+ * on Home and one line in the report, rather than repeating it on every chronicity card.
+ *
+ * Lives in the composition layer for the same reason the firm-tier inheritance does: it is a
+ * fact about the composed set, and keeping it out of the detectors leaves each one pure and
+ * independently testable.
+ */
+function discloseCoughVomitAdjacency(findings: Finding[]): Finding[] {
+  const chronicTypes = new Set(
+    findings
+      .filter((f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity')
+      .map((f) => f.symptomType),
+  )
+  if (!chronicTypes.has('cough') || !chronicTypes.has('vomit')) return findings
+  let marked = false
+  return findings.map((f) => {
+    if (f.type !== 'symptom_chronicity' || marked) return f
+    marked = true
+    return { ...f, coughVomitAdjacent: true as const }
+  })
+}
+
+/**
  * Signals v2 (CUL-7 review finding ②; extended by CUL-9) — the internal onset arrays
  * (`rapidEpisodeOnsets` / `longEpisodeOnsets` / `clusterEpisodeOnsets`, and the copy L1's onsets ride
  * on inside a merged `timing_story` at `long.longEpisodeOnsets`) exist ONLY to feed two post-detection
@@ -6373,5 +6704,5 @@ export function detectSignals(
   // the lone empty_stomach card. suppressWorseningWhenChronic (⑦→④, B-182) is a disjoint type pair
   // from the timing lane, so its position is free.
   const composed = composeTimingStory(suppressTimeOfDayWhenPostprandial(findings, config))
-  return rankFindings(suppressWorseningWhenChronic(composed), input.pet)
+  return rankFindings(discloseCoughVomitAdjacency(suppressWorseningWhenChronic(composed)), input.pet)
 }

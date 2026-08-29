@@ -359,7 +359,11 @@ Deno.test('chronicity flag → safety band leads, mono-prominent, escalates on p
   const html = renderReport(base({ safetyFlags: [flag] }))
   assert.ok(html.includes('class="safetyband"'), 'safety band present')
   assert.ok(/ongoing/i.test(html), 'chronicity reads as ongoing')
-  assert.ok(html.includes('Vomiting has been ongoing'))
+  // "spans", not "has been ongoing" (CUL-687): the lead safety line stated a continuing
+  // state in the same sentence that dated the most recent episode, and cough's widened
+  // recency floor made that pairing reachable. Span and recency are each stated once now.
+  assert.ok(html.includes('Vomiting spans'))
+  assert.ok(!/has been ongoing/.test(html), 'the contradicting continuation claim is gone')
 })
 
 Deno.test('present_blood flag → "Possible blood" leads the safety band', () => {
@@ -1647,7 +1651,9 @@ Deno.test('R2-2 — no-trial At-a-glance: since-onset + trajectory + treats tile
 
 Deno.test('R2-2 ADVERSARIAL — the days-since-last-episode tile never reads as recovery; the caveat scales with the gap', () => {
   const html = renderReport(monitoringSnap())
-  assert.ok(/Since the most recent episode/.test(html), 'days-since tile present')
+  // HR-7 (CUL-676): "entry" — this tile's day count comes from the last deduped ROW, not a
+  // chained episode, so it no longer borrows the chronicity flag's noun.
+  assert.ok(/Since the most recent entry/.test(html), 'days-since tile present')
   // 9 days since, only 2 of them logged → the coverage is disclosed AND framed "not recovery".
   assert.ok(/2 of the last <span class="num">9<\/span> days logged/.test(html) || /of the last .*9.* days logged/.test(html), 'sparse-gap coverage disclosed')
   assert.ok(/not recovery/i.test(html), 'a gap is never allowed to read as recovery')
@@ -3709,7 +3715,9 @@ Deno.test('B-532 COLD⑦ — an unobserved week is never drawn as a zero week', 
   assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week nobody logged')
   assert.ok(!/class="nub"/.test(html), 'and no measured-zero nub, because no week here was a measured zero')
   assert.ok(
-    /nothing logged that week \(not a week without episodes\)/.test(plain(html)),
+    // HR-7 (CUL-676): "entries" — this marker annotates the §3.5 weekly buckets, which
+    // count minute-deduped entries, not chained episodes.
+    /nothing logged that week \(not a week without entries\)/.test(plain(html)),
     'the marker is defined on the same sheet it appears on',
   )
   assert.ok(/not logged/.test(html), 'and the alt text draws the same distinction the bars do')

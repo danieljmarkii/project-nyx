@@ -1026,6 +1026,21 @@ async function readStandingNote(
  * looser denominator than the server, breaking the parity the standing line depends on
  * (adversarial-reviewer + code-reviewer, CUL-13). Kept in sync with detection.ts's
  * `CORRELATION_SYMPTOM_TYPES`; the vomit count itself is filtered from these rows.
+ *
+ * `cough` is deliberately NOT here, and that is a ruling rather than an oversight (R3,
+ * PM 2026-08-28, re-ruled the same day; CUL-676). This set mirrors the engine's
+ * COMPARISON-GATE denominator (`countsTowardComparisonGate`), which is narrower than its
+ * fetch union.
+ *
+ * Why the two differ: this is a POOLED denominator whose numerator is vomiting only, and it
+ * gates `densityComparable` — whether the strip may publish a trial-vs-baseline comparison at
+ * all. Counting cough days here raises the trial era's logged-day count without raising its
+ * vomit count, which pushes the fraction OVER the gate: the adversarial pass reproduced a
+ * withheld comparison becoming a published 5× apparent reduction on the wedge's most-visible
+ * surface. A cough log is genuine coverage and counts as a logged day wherever coverage is
+ * the question — it simply cannot vouch for vomit observation, which is the only thing this
+ * denominator is for. `guards/loggedDayParity.test.ts` pins this set against the engine's
+ * gate set in both directions.
  */
 const TRIAL_RESPONSE_LOGGED_DAY_TYPES = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'meal'] as const;
 

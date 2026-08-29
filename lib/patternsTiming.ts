@@ -65,6 +65,19 @@ export const CORRELATION_SYMPTOM_TYPES = [
   'itch',
   'scratch',
   'skin_reaction',
+  // NOT cough — and the omission is the decision, so it is written down here (R3 as ruled
+  // 2026-08-28, re-ruled the same day after the adversarial pass; CUL-676).
+  //
+  // This mirrors the engine's COMPARISON-GATE set (detection.ts `countsTowardComparisonGate`),
+  // not its fetch union. The two diverged the moment cough joined the fetch: a cough log is
+  // real coverage and counts as a logged day wherever coverage is the question, but this
+  // denominator gates whether a falling VOMITING comparison may be published — and a cough
+  // day cannot vouch for vomit observation. Counting it here flipped `densityComparable`
+  // false→true on a live-shaped record and published a 5× apparent reduction the guard was
+  // correctly withholding.
+  //
+  // So the parity this list owes the server is parity with the GATE set. `guards/
+  // loggedDayParity.test.ts` asserts exactly that, in both directions.
 ] as const;
 
 // ── Render geometry (presentation only — NOT timing math) ─────────────────────

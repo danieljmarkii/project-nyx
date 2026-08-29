@@ -99,16 +99,16 @@ const WALK: WalkRow[] = [
   },
   {
     list: 'CORRELATION_SYMPTOM_TYPES (generate-signal/detection.ts)',
-    governs: 'the engine FETCH union + (by construction, R3) the logged-day denominators — the lanes now read LANE_SYMPTOM_TYPES (3b-s1, #731)',
+    governs: 'the engine FETCH union + the COVERAGE denominators (⑦ span-halves eligibility). NOT the comparison gates — those read LANE_SYMPTOM_TYPES.symptomDelta (R3 re-ruling, 2026-08-28)',
     read: () => scan('supabase/functions/generate-signal/detection.ts',
       'export const CORRELATION_SYMPTOM_TYPES', '] as const'),
     cough: {
-      now: false,
-      decision: 'YES for ⑦ only — lands in PR-3b AFTER the per-lane map + per-type floor exist '
-        + '(§9: ① NEVER — no attribution window, post-tussive adjacency disclosed; ⑤ NEVER — '
-        + 'its template would time a respiratory sign against a feeding; ⑥/③/④ no at W1). '
-        + 'Adding it to this one-list-drives-five-lanes shape today would emit the food↔cough '
-        + 'card §9 forbids by name — which is exactly why this row must stay red until 3b.',
+      now: true,
+      decision: 'YES — LANDED in 3b session 2. Membership here buys exactly two things: the DB '
+        + 'fetch and the logged-day denominators (R3). It buys no lane — LANE_SYMPTOM_TYPES.chronicity '
+        + 'is the only cell that moved, pinned by laneMembership.test.ts. §9 unchanged: ① NEVER '
+        + '(no attribution window; the post-tussive adjacency is DISCLOSED instead, on the ⑦ card '
+        + 'and the report flag); ⑤/⑥ structurally N/A (vomit-only constants); ③/④ and L4 no at W1.',
     },
     sneeze: { now: false, decision: 'NO at W1 — data-only (§9); joins by explicit config when density warrants' },
   },
@@ -118,12 +118,18 @@ const WALK: WalkRow[] = [
     read: () => scan('supabase/functions/generate-report/report.ts',
       'export const REPORT_SYMPTOM_TYPES', '] as const'),
     cough: {
-      now: false,
-      decision: 'YES — lands in PR-3b, in the SAME PR as the lane change (§10.5: a lane-membership '
-        + 'change is report work; the report must never print a chronicity safety flag about a sign '
-        + 'its own frequency table never counts). Rides the held CUL-19 redeploy for prod visibility.',
+      now: true,
+      decision: 'YES — LANDED in 3b session 2, the same PR as the lane change (§10.5 / HR-3). It had '
+        + 'to: buildDetectionInput filters on CORRELATION_SYMPTOM_TYPES, so the report now runs ⑦ over '
+        + 'cough, and without this row it would print a chronicity flag about a sign its own frequency '
+        + 'table never counts. Rides the held CUL-19 redeploy for prod visibility.',
     },
-    sneeze: { now: false, decision: 'YES — lands in PR-3b (§10.2: shipped symptom leaves join the frequency section)' },
+    sneeze: {
+      now: true,
+      decision: 'YES — LANDED in 3b session 2 on §10.2\u2019s own ground (a symptom the owner logs and a vet '
+        + 'wants counted, exactly like lethargy). NOT via detection: sneeze is not in the engine fetch, '
+        + 'so this list feeds counting only.',
+    },
   },
   {
     list: 'TREND_SYMPTOM_TYPES (lib/trendSummary.ts)',
@@ -152,11 +158,14 @@ const WALK: WalkRow[] = [
     governs: 'Ask’s G5 Timeline-parity — Ask must count the rows the owner can see',
     read: () => scan('supabase/functions/ask/tools.ts', 'export const ASK_SYMPTOM_TYPES', '] as const'),
     cough: {
-      now: false,
-      decision: 'YES — server list, edited with PR-3b’s server work (it mirrors SYMPTOM_EVENT_TYPES '
-        + 'by its own doc). Deploy rides the held CUL-557 ask-redeploy chain, never its own.',
+      now: true,
+      decision: 'YES — LANDED in 3b session 2, exactly where this decision said it would. It mirrors '
+        + 'SYMPTOM_EVENT_TYPES by its own doc, and that list gained the pair in 3a — so leaving this '
+        + 'stale would make an Ask count disagree with the History the owner is reading while asking, '
+        + 'which is the G5 parity this list exists for. Deploy rides the held CUL-557 ask-redeploy '
+        + 'chain, never its own.',
     },
-    sneeze: { now: false, decision: 'YES — same landing as cough' },
+    sneeze: { now: true, decision: 'YES — same landing as cough (same mirror, same order)' },
   },
   {
     list: 'CORRELATION_SYMPTOM_TYPES client mirror (lib/patternsTiming.ts)',
@@ -164,12 +173,15 @@ const WALK: WalkRow[] = [
     read: () => scan('lib/patternsTiming.ts', 'export const CORRELATION_SYMPTOM_TYPES', '] as const'),
     cough: {
       now: false,
-      decision: 'DECIDED AT PR-3b, WITH the engine edit — the mirror must match whatever set '
-        + 'loggedDaysIn reads once the per-lane map exists (it may become a per-lane subset, not '
-        + 'the fetch union). Whichever way 3b lands, this row flips in the SAME PR or the '
-        + 'denominators drift — that drift is the reason this row exists.',
+      decision: 'NO — and the omission is the RULING, not a lag. R3 was re-ruled 2026-08-28 after the '
+        + 'adversarial pass: this list mirrors the engine COMPARISON-GATE set '
+        + '(countsTowardComparisonGate = LANE_SYMPTOM_TYPES.symptomDelta), not the fetch union. A cough '
+        + 'day is real coverage and counts wherever coverage is the question, but this denominator gates '
+        + 'whether a falling VOMITING comparison may be published, and a cough day cannot vouch for vomit '
+        + 'observation — counting it flipped densityComparable false→true and published a 5× apparent '
+        + 'reduction the guard was withholding. guards/loggedDayParity.test.ts pins it in both directions.',
     },
-    sneeze: { now: false, decision: 'NO at W1 — follows the engine (sneeze is data-only)' },
+    sneeze: { now: false, decision: 'NO — not fetched at W1, and not in the gate cell either' },
   },
   {
     list: 'SYMPTOM_NOUN + SYMPTOM_CHIP_ORDER (lib/daySummary.ts)',
@@ -241,14 +253,22 @@ const WALK: WalkRow[] = [
     read: () => scan('lib/dietTrialFacts.ts', 'const TRIAL_RESPONSE_LOGGED_DAY_TYPES', '] as const'),
     cough: {
       now: false,
-      decision: 'RULED (b) — PM, 2026-08-28 ("activity is activity — logging a cough is logging"): '
-        + 'cough COUNTS as a logged day. Flips at 3b IN THE SAME PR as the engine’s denominator '
-        + 'edit, with a before/after fixture + a client==server parity fixture — never here alone, '
-        + 'or client and server drift. The adversarial dissent (trial-lane drift toward '
-        + 'reassurance) is recorded on CUL-676; the C5/§7 density disclosures are the honesty '
-        + 'instrument for it.',
+      decision: 'NO — the adversarial dissent this row recorded was UPHELD and R3 re-ruled 2026-08-28. '
+        + 'The drift was not merely a lower rate: cough-only logged days pushed trialLoggingFraction '
+        + 'over its gate and PUBLISHED a comparison the guard was withholding (reproduced: a silent '
+        + 'trial lane became "8 in the trial\u2019s 60 days · 41 in the 49 before", a 5× apparent '
+        + 'reduction) — i.e. it disabled the very C5/§7 instrument named as its own counterweight. '
+        + 'This set now mirrors the engine COMPARISON-GATE cell. Cough still counts as a logged day '
+        + 'wherever coverage is the question; it just cannot vouch for vomit observation.',
     },
-    sneeze: { now: false, decision: 'Follows the same ruling at 3b (a sneeze log is logging too); data-only for every per-type lane' },
+    sneeze: {
+      now: false,
+      decision: 'NO — and this row previously said the opposite ("a sneeze log is logging too"), which '
+        + 'would have BROKEN the parity it exists to protect. The set mirrors the engine FETCH, and '
+        + 'sneeze is not fetched at W1 — so a sneeze day is not a logged day on the server, and adding '
+        + 'it here would make the client read a looser denominator than detectTrialResponse. Corrected '
+        + 'in 3b session 2. It flips only when sneeze joins the fetch.',
+    },
   },
   // ── Rows 16–18: the engine-side lists 3b session 1 created or flipped (#731).
   // Registered here because the discovery guard is FILE-keyed — a second list added
@@ -269,12 +289,13 @@ const WALK: WalkRow[] = [
     read: () => scan('supabase/functions/generate-signal/detection.ts',
       'export const LANE_SYMPTOM_TYPES', '} as const'),
     cough: {
-      now: false,
-      decision: 'JOINS the chronicity cell ONLY, in 3b session 2 (⑦-only, the ruled row; R1 L4-no + R2 floor-exclude '
-        + 'are structural NEVER-cells with paired fixtures in laneMembership.test.ts). This row flips when the cell '
-        + 'gains its first cough literal.',
+      now: true,
+      decision: 'YES — JOINED THE CHRONICITY CELL, AND ONLY THAT CELL, in 3b session 2. Pinned two ways in '
+        + 'laneMembership.test.ts: a per-cell deepEqual, and an assertion that the set of lanes containing '
+        + 'cough is exactly ["chronicity"]. R1 (L4 no) and R2 (diagnostics-floor exclude) are structural '
+        + 'NEVER-cells with paired positive-control fixtures. Floors: perType, minEpisodes 4 / firmSpanDays 28.',
     },
-    sneeze: { now: false, decision: 'NO cell at W1 — data-only (§9)' },
+    sneeze: { now: false, decision: 'NO cell at W1 — data-only (§9), and not fetched either' },
   },
   {
     list: 'server SYMPTOM_LABEL (generate-signal/phrasing.ts)',
@@ -284,11 +305,30 @@ const WALK: WalkRow[] = [
     cough: {
       now: true,
       decision: 'YES — landed in 3b session 1 (#731), compile-forced by the universe; matches the client mirror. '
-        + 'UNREACHABLE through any lane today. The known consequence to rule at session 2: once the FETCH carries '
-        + 'cough, the month summary names it through this map with no lane cell — summary membership is session 2’s '
-        + 'explicit decision, never an inheritance.',
+        + 'SESSION-2 RULING on the naming gate this map drives (summary.ts’s month summary): cough is IN, on the '
+        + 'same "activity is activity" ground as R3 — the clause is a descriptive count of the owner’s own logs, '
+        + 'and excluding it would print a "most-logged" claim that omits the most-logged sign. Ruled explicitly '
+        + 'at the gate, not inherited. HR-7 fixed alongside: the clause counts RAW ROWS, so it now says "logged '
+        + 'coughing 14 times", never "14 episodes".',
     },
-    sneeze: { now: true, decision: 'YES — same landing, same session-2 rule' },
+    sneeze: {
+      now: true,
+      decision: 'YES in the map — but UNREACHABLE in the summary: the gate only ever sees fetched rows, and sneeze '
+        + 'is not fetched at W1. The label exists so a fixture can name it and so the day it IS fetched, the copy '
+        + 'already exists.',
+    },
+  },
+  {
+    list: 'symptomLabel switch (generate-report/render.ts)',
+    governs: 'every symptom NAME the vet report prints — the §3.5 table, the chronicity safety flag, the trend chart aria',
+    read: () => scan('supabase/functions/generate-report/render.ts', 'function symptomLabel', 'function speciesLabel'),
+    cough: {
+      now: true,
+      decision: 'YES — landed in 3b session 2. Found by the guards/symptomLists.test.ts scan (#730), not by review. '
+        + 'The `default` branch humanised it to "cough", which is safe but wrong in REGISTER: every other entry is '
+        + 'the clinical noun a vet scans for, so cough renders as "Coughing".',
+    },
+    sneeze: { now: true, decision: 'YES — same landing, same reason ("Sneezing"); it reaches the report via REPORT_SYMPTOM_TYPES' },
   },
   {
     list: 'signalWatching gap row (lib/signalWatching.ts)',
@@ -324,7 +364,7 @@ describe('W1 membership walk (HR-6) — every list decided, current state == dec
     // + SYMPTOM_TYPE_UNIVERSE + LANE_SYMPTOM_TYPES + server SYMPTOM_LABEL (3b-s1, #731 —
     // the adversarial pass caught the label map flipping with no row; the discovery
     // guard is file-keyed and cannot see a second list in a registered file).
-    expect(WALK).toHaveLength(18);
+    expect(WALK).toHaveLength(19);
   });
 });
 

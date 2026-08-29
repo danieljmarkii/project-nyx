@@ -782,24 +782,63 @@ Deno.test('templateChronicity — anchors the first onset by month ("since {mont
 // safety finding, so never reassures, never dismissive, never causal/mechanism, no "!".
 Deno.test('every chronicity template — never reassures/dismissive/causal/mechanism, no "!"', () => {
   const tiers: ChronicityTier[] = ['standard', 'firm']
-  const types: SymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction']
+  // `cough` joined in W1-PR-3b session 2 (CUL-676) — and the `adjacent` axis with it.
+  // BOTH were missing when this scan said "EVERY chronicity string the function can emit",
+  // and the adjacency arm was the one that FAILED the scan's own validatePhrasing assertion
+  // (382 chars against a 320 cap). A scan that claims exhaustiveness has to be widened by
+  // the same PR that widens what the function can emit — otherwise the claim in its name
+  // is what makes it look covered.
+  const types: SymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough']
   for (const tier of tiers) {
     for (const symptomType of types) {
       for (const daysSinceLastEpisode of [0, 1, 7]) {
-        const t = templateChronicity(
-          chronicity({ tier, symptomType, daysSinceLastEpisode, episodeCount: 8, activeWeeks: 4 }),
-          'Nyx',
-        )
-        assert.equal(REASSURE.test(t), false, `reassurance in: ${t}`)
-        assert.equal(DISMISSIVE.test(t), false, `dismissive in: ${t}`)
-        assert.equal(CAUSAL.test(t), false, `causal in: ${t}`)
-        assert.equal(MECHANISM.test(t), false, `mechanism in: ${t}`)
-        assert.equal(FOOD.test(t), false, `food in: ${t}`)
-        assert.equal(t.includes('!'), false, `exclamation in: ${t}`)
-        assert.ok(validatePhrasing(t, chronicity({ tier, symptomType })), `validation failed: ${t}`)
+        for (const adjacent of [undefined, true as const]) {
+          const f = chronicity({
+            tier,
+            symptomType,
+            daysSinceLastEpisode,
+            episodeCount: 8,
+            activeWeeks: 4,
+            ...(adjacent ? { coughVomitAdjacent: adjacent } : {}),
+          })
+          const t = templateChronicity(f, 'Nyx')
+          assert.equal(REASSURE.test(t), false, `reassurance in: ${t}`)
+          assert.equal(DISMISSIVE.test(t), false, `dismissive in: ${t}`)
+          assert.equal(CAUSAL.test(t), false, `causal in: ${t}`)
+          assert.equal(MECHANISM.test(t), false, `mechanism in: ${t}`)
+          assert.equal(FOOD.test(t), false, `food in: ${t}`)
+          assert.equal(t.includes('!'), false, `exclamation in: ${t}`)
+          assert.ok(validatePhrasing(t, f), `validation failed (${t.length} chars): ${t}`)
+        }
       }
     }
   }
+})
+
+Deno.test('the adjacency arm fits the phrasing cap on a deliberately worst-case finding', () => {
+  // The length break was invisible to the scan above because its fixture is short. This
+  // pins the WORST case the composer can reach — the longest tier ask, a long pet name and
+  // three-digit counts — so a future edit to the clause fails here rather than shipping a
+  // sentence the contract rejects. (It ships regardless today, because chronicity is
+  // template-only and phraseFinding returns before validating — which is exactly why the
+  // template has to hold the line itself.)
+  const t = templateChronicity(
+    chronicity({
+      tier: 'firm',
+      symptomType: 'cough',
+      episodeCount: 137,
+      activeWeeks: 8,
+      daysSinceLastEpisode: 0,
+      coughVomitAdjacent: true,
+    }),
+    'Bartholomew',
+  )
+  assert.ok(t.length <= 320, `composed to ${t.length} chars, over the 320 cap: ${t}`)
+  assert.ok(validatePhrasing(t, chronicity({ tier: 'firm', symptomType: 'cough' })))
+  // It names CONFUSION (misattribution), never overlap/double-counting — the deflationary
+  // reading the adversarial pass rejected on a safety card.
+  assert.ok(/easily confused/.test(t), `must name misattribution, not overlap: ${t}`)
+  assert.ok(!/same moments|overlap/i.test(t), `must not suggest either count is merely inflated: ${t}`)
 })
 
 // Fixture 15 (§7) — validatePhrasing rejects causal / reassurance / mechanism / food drift on a

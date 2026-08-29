@@ -1267,7 +1267,10 @@ Deno.test('a FALL in symptom counts over a sparsely-logged later window is cavea
   input.events.push(symptom('2026-06-15', 'vomit'))
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(/later window sparsely logged/.test(text))
-  assert.ok(/a fall here may be less logging, not fewer episodes/.test(text))
+  // HR-7 (CUL-676): the §3.5 trend counts minute-deduped ENTRIES, so its caveat says
+  // "entries". "Episodes" is reserved for the 3-hour-chained count the chronicity flag
+  // prints one page away — the two never share a bare word.
+  assert.ok(/a fall here may be less logging, not fewer entries/.test(text))
 })
 
 Deno.test('the challenge-window marker discloses its own base rate', () => {
