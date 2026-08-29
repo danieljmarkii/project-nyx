@@ -14,6 +14,12 @@
      STAY LIGHT IN BOTH THEMES ON PURPOSE — capture surfaces live in
      the daylight register (brand spec §1.2).
 
+     ROUND 5 (2026-08-29, §06) amends ONE element of the locked
+     design: the stage-1 title row gains the pet's avatar (CUL-679).
+     Rounds 1–4 are otherwise untouched; §03's stage-1 frame still
+     shows the round-4 text-only title and is annotated as such, so
+     the two readings stay side by side until the fork is ruled.
+
      Frame values are the real tokens from constants/theme.ts.
      ============================================================ */
 
@@ -230,6 +236,55 @@
   .brief dd { margin: 0 0 6px; }
   .brief .rec { color: var(--teal-ink); font-weight: 600; }
 
+
+  /* ── ROUND 5 — the title row (CUL-679) ────────────────────────
+     .pa is the real PetAvatar: a colorAccentLight disc carrying the
+     name's first CODE POINT at a 0.4 size ratio, with the photo
+     layered over it when there is one. The disc is the FLOOR, not a
+     fallback branch — so both states below are live states, not
+     "designed" vs "degraded". */
+  .pa {
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; background: #E0FBF7; color: #0A0A0A; font-weight: 600;
+    overflow: hidden; position: relative;
+  }
+  .pa.ph::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background:
+      radial-gradient(circle at 34% 30%, #F7D9A8 0 22%, transparent 23%),
+      radial-gradient(circle at 66% 32%, #F7D9A8 0 22%, transparent 23%),
+      linear-gradient(160deg, #C98B4B 0%, #8A5A2B 62%, #6B421E 100%);
+  }
+
+  .drow { display: flex; align-items: center; gap: 8px; padding: 12px 20px; min-height: 44px; }
+  .drow .dt2 { font-size: 17px; font-weight: 600; color: #0A0A0A; letter-spacing: -0.01em; }
+  .drow .chev { color: #737373; font-size: 13px; font-weight: 400; }
+
+  .dcard {
+    width: 320px; max-width: 100%; background: #FFFFFF; border: 1px solid #EAEAEA;
+    border-radius: 20px 20px 12px 12px; color-scheme: light; overflow: hidden;
+  }
+  .dcard .grab { margin: 10px auto 2px; }
+  .dstep {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-3); display: flex; align-items: center; gap: 8px; margin: 10px 0;
+  }
+  .dstep::before { content: ""; height: 1px; width: 18px; background: var(--ink-3); flex-shrink: 0; }
+
+  /* What actually changed, called out under each pair. */
+  .verd {
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em;
+    border-radius: 3px; padding: 3px 8px; display: inline-block;
+  }
+  .verd.bad  { background: var(--rose-wash); color: var(--rose-ink); }
+  .verd.good { background: var(--teal-wash); color: var(--teal-ink); }
+
+  .optlab {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 8px;
+  }
+  .optlab b { color: var(--teal-ink); font-weight: 600; }
+
   /* Build-plan table */
   .tablewrap { overflow-x: auto; margin-top: 26px; }
   table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14.5px; }
@@ -242,8 +297,8 @@
 
   <header class="mast">
     <p class="eyebrow">
-      <span>B-745 · FAB → More events</span><span>Round 4 — convergence</span><span>2026-08-13</span>
-      <span class="round-chip">Design-locked — F1 confirmed</span>
+      <span>B-745 · FAB → More events</span><span>Round 4 — convergence · 2026-08-13</span><span>Round 5 — the title row · 2026-08-29</span>
+      <span class="round-chip">Round 5 open — §06 awaits a call</span>
     </p>
     <h1>One surface, in daylight colours</h1>
     <p class="standfirst">
@@ -251,8 +306,10 @@
       The splat is ruled in (G1b). Stage 2 sheds the black form — tinted circles, light pills, and the
       app's shipped <strong>teal confirm register</strong> carry it instead, with the capture bar's parse-preview
       pill reborn as the save affordance: a live summary sentence with <em>Log it</em> on it. The predictive
-      engine stays parked; only its clothes came over. <em>This page supersedes rounds 1–3 at this URL.
-      On F1 confirm it is the design-locked build spec.</em>
+      engine stays parked; only its clothes came over. <em>This page supersedes rounds 1–3 at this URL,
+      and round 4 is the design-locked build spec (F1).</em>
+      <strong>Round 5 (§06) is open:</strong> the sheet title gains the pet's avatar (CUL-679), with one
+      fork for the PM. Everything above §06 is round 4, unchanged and still current.
     </p>
   </header>
 
@@ -386,7 +443,9 @@
         <figcaption><b>1 · The picker</b>
         The confirmed grid as a sheet over Home: C groups, split stool (the sub-step deleted), splat
         and swirl in place, pet switcher on the title. Meal, Medication, and Weight still route to
-        their own screens; symptoms and Other never leave the sheet.</figcaption>
+        their own screens; symptoms and Other never leave the sheet.
+        <em>The title row is amended in round 5 (§06) — this frame shows the round-4 text-only
+        version.</em></figcaption>
       </figure>
 
       <!-- STAGE 2 — SAW IT -->
@@ -560,9 +619,167 @@
 
   </section>
 
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Round 5 — the title row carries the pet</h2></div>
+
+    <div class="col">
+      <p>Round 4 drew the sheet title as plain text plus a chevron. Everything else in the app that
+      names the active pet <strong>leads with the photo</strong> — the Home header, the FAB's
+      <em>Logging for</em> chip (whose own comment calls the name &ldquo;the wrong-pet safeguard&rdquo;),
+      and every row of the switcher the owner just tapped. This is the one surface where the wrong
+      answer writes a health row, and it is the one without the photo.</p>
+
+      <p>The reason it bites <em>here</em> and not on Home: the eight tiles are pet-independent, so
+      they do not move. After a switch the only thing on screen that changed is one word, at the top
+      of the sheet, with the finger still resting where the switcher row used to be.</p>
+    </div>
+
+    <div class="compare">
+
+      <figure>
+        <div class="optlab">A · Today — round 4</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="dt2">Log for Nyx</span><span class="chev">&#9662;</span></div>
+        </div>
+        <div class="dstep">tap &ldquo;Mochi&rdquo; in the switcher</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="dt2">Log for Mochi</span><span class="chev">&#9662;</span></div>
+        </div>
+        <figcaption><b>One word</b>
+        Four characters change, 300pt from the finger, with no transition. Sam:
+        <em>&ldquo;I tapped Miso. The list disappeared. Did it take? The grid looks exactly the same.&rdquo;</em>
+        <div style="margin-top:8px;"><span class="verd bad">Fails a glance-check</span></div></figcaption>
+      </figure>
+
+      <figure>
+        <div class="optlab">B · Proposed — avatar-led</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="pa" style="width:30px;height:30px;font-size:12px;">N</span><span class="dt2">Log for Nyx</span><span class="chev">&#9662;</span></div>
+        </div>
+        <div class="dstep">tap &ldquo;Mochi&rdquo; in the switcher</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="pa ph" style="width:30px;height:30px;"></span><span class="dt2">Log for Mochi</span><span class="chev">&#9662;</span></div>
+        </div>
+        <figcaption><b>A face, then a word</b>
+        The same 30pt disc the Home header uses. The switcher rows the owner just scanned were
+        avatar-led, so the thing they tapped and the thing that confirms it now look alike.
+        <div style="margin-top:8px;"><span class="verd good">Reads at a glance</span></div></figcaption>
+      </figure>
+
+      <figure>
+        <div class="optlab">The honest limit</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="pa" style="width:30px;height:30px;font-size:12px;">M</span><span class="dt2">Log for Milo</span><span class="chev">&#9662;</span></div>
+        </div>
+        <div class="dstep">tap &ldquo;Mochi&rdquo; in the switcher</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="pa" style="width:30px;height:30px;font-size:12px;">M</span><span class="dt2">Log for Mochi</span><span class="chev">&#9662;</span></div>
+        </div>
+        <figcaption><b>Two photo-less pets, same initial</b>
+        The disc is identical and the delta is back to one word — the exact stress case the issue
+        names. The avatar never makes this <em>worse</em>, but it does not fix it either. Worth
+        knowing before we call the glance-check closed; a distinguishing cue for photo-less
+        households is its own question, not this change.</figcaption>
+      </figure>
+
+    </div>
+
+    <div class="col" style="margin-top:34px;">
+      <p><strong>The disc is a live state either way.</strong> <code>PetAvatar</code> renders the tinted
+      initial as its floor and layers the photo over it, so a pet with no photo, a cold start, and a
+      404 all land on the same designed disc rather than an empty circle. Nothing here is a fallback
+      branch.</p>
+    </div>
+
+    <div class="sec-head" style="margin-top:44px;"><span class="sec-num">06.1</span><h2>The one fork — does a single-pet household see the disc?</h2></div>
+
+    <div class="col">
+      <p>The multi-pet spec &sect;3.1 suppresses multi-pet chrome for single-pet owners — but it names
+      the <strong>chevron</strong>, not the avatar, and the Home header already draws the disc for a
+      one-pet account. The frames below are the two readings.</p>
+    </div>
+
+    <div class="compare">
+
+      <figure>
+        <div class="optlab">D1-A · Multi-pet only</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="dt2">Log for Nyx</span></div>
+        </div>
+        <div class="dstep">then tap Vomit — stage 2</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="circ rose" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span><span class="dt2">Vomit &mdash; Nyx</span></div>
+        </div>
+        <figcaption><b>The title jumps</b>
+        Stage 2 <em>always</em> has a leading 30pt disc. With no disc in stage 1, the header slides
+        38pt sideways on every log a single-pet owner makes — a jump nobody chose, on the app's
+        most-used two-step.
+        <div style="margin-top:8px;"><span class="verd bad">38pt shift, every log</span></div></figcaption>
+      </figure>
+
+      <figure>
+        <div class="optlab">D1-B · <b>Always — recommended</b></div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="pa" style="width:30px;height:30px;font-size:12px;">N</span><span class="dt2">Log for Nyx</span></div>
+        </div>
+        <div class="dstep">then tap Vomit — stage 2</div>
+        <div class="dcard">
+          <div class="grab"></div>
+          <div class="drow"><span class="circ rose" style="width:30px;height:30px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span><span class="dt2">Vomit &mdash; Nyx</span></div>
+        </div>
+        <figcaption><b>The disc stays, the glyph swaps</b>
+        Stage 1 and stage 2 already share the row: 30pt disc, 8pt gap, 17pt semibold, 44pt tall,
+        24pt gutters. Matching the disc turns the transition into a swap in place. No chevron
+        either way — that is the multi-pet chrome &sect;3.1 suppresses.
+        <div style="margin-top:8px;"><span class="verd good">No jump</span></div></figcaption>
+      </figure>
+
+    </div>
+
+    <div class="brief">
+      <div class="bid">R5-1 &middot; The single-pet disc &mdash; PM call</div>
+      <div class="bq">Does the &ldquo;Log for {pet}&rdquo; row show the avatar when the household has one pet?</div>
+      <dl>
+        <dt>Deciding</dt>
+        <dd>One conditional in <code>EventTypeSheet</code>. Multi-pet accounts get the disc either
+        way — this is only about the one-pet case.</dd>
+        <dt>Options</dt>
+        <dd><span class="rec">B — always (recommended).</span> Matches the Home header, which already
+        draws the disc for one pet, and keeps stage 1 and stage 2 on the same 30pt leading disc, so
+        the header stops sliding 38pt on every single-pet log. &sect;3.1 suppresses the
+        <em>chevron</em>, which stays multi-pet-only under both options.</dd>
+        <dd>A — multi-pet only. Mirrors the FAB chip, which renders nothing at all for one pet.
+        Cheapest read of &ldquo;no multi-pet chrome&rdquo;, but buys the stage-1&rarr;stage-2 jump.</dd>
+        <dt>Consequence</dt>
+        <dd>B closes the header jump for free and needs no follow-up. A leaves it, and the fix
+        would then be a separate change to stage 2 instead.</dd>
+      </dl>
+    </div>
+
+    <div class="col" style="margin-top:26px;">
+      <p><strong>Out of scope, deliberately.</strong> The copy split (<em>Logging for</em> on the FAB
+      chip vs <em>Log for</em> here) and the single-pet row's VoiceOver &ldquo;dimmed&rdquo;
+      announcement are CUL-682, which needs a device check first. The switcher's dismissal stays
+      instant and un-animated — that is a ruled choice, so the retitled row is revealed immediately
+      rather than behind a fade.</p>
+    </div>
+
+  </section>
+
   <footer>
-    Source of truth: <code>docs/culprit-more-events-mockups.html</code>, round 4 — the convergence,
-    <strong>design-locked 2026-08-13 (F1)</strong>; supersedes rounds 1–3, same artifact URL throughout.
+    Source of truth: <code>docs/culprit-more-events-mockups.html</code>. Round 4 — the convergence,
+    <strong>design-locked 2026-08-13 (F1)</strong>; supersedes rounds 1–3. Round 5 (§06, 2026-08-29)
+    amends the title row only and is <strong>open</strong>. Same artifact URL throughout.
     Build contract: <code>docs/nyx-more-events-picker-requirements.md</code>. Frame values are copied
     from <code>constants/theme.ts</code>; the splat/swirl customs are mock drafts the build refines at
     24px master size.
