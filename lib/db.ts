@@ -539,6 +539,36 @@ export async function updateEvent(
   eventId: string,
   fields: {
     occurred_at: string;
+    // REQUIRED, and deliberately NOT optional-by-omission like the three fields
+    // below it (CUL-708). It looks like it belongs to that group and behaves as
+    // the opposite of it, so the reason is written down here rather than left to
+    // be inferred from the shape.
+    //
+    // The difference is that `occurred_at` above is written on EVERY call, and
+    // this column describes who produced the value being written. `severity`,
+    // `notes` and `confidence` are all independent of that — silence can safely
+    // mean "leave it alone". Here silence has no safe meaning in either
+    // direction:
+    //
+    //   • Defaulting to 'manual' (what this did until CUL-708, via a `??`)
+    //     asserts the OWNER chose this timestamp — on a save where they may have
+    //     opened a picker, scrubbed nothing, and confirmed. That is CUL-701,
+    //     which is the same defect arriving through a literal rather than
+    //     through silence.
+    //   • Defaulting to "preserve the stored value" is not the safer mirror of
+    //     that, it is a second defect: a caller that omits the key while MOVING
+    //     the time leaves a clock-stamped row still claiming 'now' over an
+    //     owner-chosen point. That is B-525, and it shipped — see the live row
+    //     cited in sourceAfterPointEdit's docstring (lib/eventTimeEdit.ts).
+    //
+    // So the caller answers. Every one of them writes `occurred_at`, so every
+    // one of them HAS an answer by construction, and requiring it costs nothing:
+    // all four existing callers already pass it. There is no runtime fallback
+    // behind the type on purpose — a default here would be the trapdoor this
+    // removed, rebuilt one layer down, and a comment asking the next author not
+    // to add one is exactly the enforcement CUL-613 and CUL-701 both record
+    // failing. What to pass is `sourceAfterPointEdit`, the one shared predicate.
+    occurred_at_source: 'manual' | 'exif' | 'now';
     // OPTIONAL-BY-OMISSION, for the same reason `confidence` below is (CUL-606).
     // These were required, and always written — so a caller that only wanted to
     // move a timestamp had no way to say so and silently wiped the row's note.
@@ -553,7 +583,6 @@ export async function updateEvent(
     // unaffected.
     severity?: number | null;
     notes?: string | null;
-    occurred_at_source?: 'manual' | 'exif' | 'now';
     // B-010 — re-classifying confidence on edit. OMIT this key to leave the
     // three confidence columns exactly as stored (B-448).
     //
@@ -575,9 +604,7 @@ export async function updateEvent(
 ): Promise<void> {
   const now = new Date().toISOString();
   const sets = ['occurred_at = ?', 'occurred_at_source = ?'];
-  const params: (string | number | null)[] = [
-    fields.occurred_at, fields.occurred_at_source ?? 'manual',
-  ];
+  const params: (string | number | null)[] = [fields.occurred_at, fields.occurred_at_source];
   // `!== undefined`, NOT `in`. With exactOptionalPropertyTypes off (it is),
   // `{ notes: undefined }` type-checks against `notes?: string | null` — so an
   // `in` test would treat a caller writing `notes: draft.notes` (where draft.notes

@@ -201,8 +201,10 @@ export function MealCompletionCard() {
       // surface already routes through (app/log.tsx, app/edit-event.tsx,
       // components/log/SimpleEventConfirm.tsx, and the named card) — B-448's
       // "re-selecting the current value is not a new claim", applied to the point.
-      // The key is passed rather than omitted deliberately: updateEvent defaults a
-      // missing occurred_at_source to 'manual', so silence here is not neutral.
+      // The key is passed because updateEvent REQUIRES it (CUL-708). It was
+      // optional-and-defaulted-to-'manual' when this fix was written, so silence
+      // was not neutral; it is now a type error instead, which is the same
+      // protection with the compiler holding it rather than this comment.
       //
       // Compared by INSTANT, not by ISO text: the sheet hands back the very Date
       // it was seeded with on a peek, and comparing instants cannot be fooled by a
