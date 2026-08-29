@@ -152,3 +152,37 @@ rule they extend already lives rather than as new bullets:
 `STATUS.md` deliberately untouched: no track started or ended, no standing hold
 moved, no Build Sequence phase change, no stale pointer. The Design Polish track
 continues.
+
+## The code-reviewer found the same disease one file over
+
+The mutation discipline above was applied to `TimeEditSheet.test.tsx` — the new
+file, whose tests are guards — and **not** to the four tests added to each card's
+suite. The `code-reviewer` pass mutated those, and two of them were vacuous:
+
+- `onCancel={() => {}}` — Cancel becomes a dead button, the sheet sticks open over
+  the card — and *"Cancel writes nothing and leaves the card standing"* still
+  passed, because both things it asserts remain true.
+- `value={new Date(0)}` — the sheet seeded from the wrong time — and *"writes the
+  moved time"* still passed, because the test fires a `change` event first and
+  that overrides whatever the seed was. Every assertion downstream of a synthetic
+  `change` is blind to the read path.
+
+Both closed in this PR rather than deferred: Cancel now asserts the sheet's title
+is gone, and the move test asserts the picker's `value` **before** any change
+event. Re-mutated; four failures where there were none.
+
+This is worth recording plainly, because the session had just finished writing
+*prove it by mutation* into CLAUDE.md and then shipped two unmutated tests two
+files away. The discipline is cheap and it was not applied uniformly — the tell
+was that the new *file* felt like the risky part, so it got the scrutiny, while
+tests appended to a long-standing suite inherited that suite's credibility
+without earning it. **A test's assurance comes from what it was run against, not
+from the file it lives in.**
+
+The reviewer's other conclusions, recorded because they were traced rather than
+assumed: the dwell/auto-dismiss machinery is **unchanged** by the swap (the sheet
+sits outside the `pauseDwell`/`resumeDwell` wrapper in both the old and new code,
+and `hide()` never nulls `payload`, so the sheet cannot be orphaned); the
+wrong-record risk on the *write* path is covered (`expect(id).toBe('e1')` fails
+correctly when mutated); and no `adversarial-reviewer` pass is owed, since the
+diff touches no detection, escalation, or report logic.

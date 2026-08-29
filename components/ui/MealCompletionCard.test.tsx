@@ -369,6 +369,13 @@ describe('MealCompletionCard — Change time', () => {
     seedMeal();
     const view = render(<MealCompletionCard />);
     openPicker(view);
+    // The picker opens on THIS record's time. Asserted before any change event,
+    // because a `change` overrides the seed — so every assertion downstream of one
+    // passes just as happily when the card seeds the sheet from the wrong value
+    // (a stale closure, the wrong field, another pet's payload). The write path is
+    // covered by the eventId check below; this covers the read path.
+    expect(view.UNSAFE_getByType('DateTimePicker' as never).props.value)
+      .toEqual(new Date('2026-06-07T14:00:00.000Z'));
     const moved = new Date(2026, 5, 7, 9, 30);
     await act(async () => {
       fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, moved);
@@ -395,6 +402,11 @@ describe('MealCompletionCard — Change time', () => {
 
     expect(updateEvent as jest.Mock).not.toHaveBeenCalled();
     expect(useMomentStore.getState().visible).toBe(true);
+    // …and the sheet is GONE. Without this line the test passes with `onCancel`
+    // wired to a no-op — Cancel becomes a dead button, the sheet sticks open over
+    // the card, and "writes nothing / card still standing" are both still true.
+    // Found by the code-reviewer's mutation pass on this very suite.
+    expect(view.queryByText('When did this happen?')).toBeNull();
   });
 
   // The inline copy's Cancel/Save were bare TouchableOpacitys — reachable by
