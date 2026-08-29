@@ -106,10 +106,12 @@ describe('FAB — the "Logging for" switcher', () => {
 // show its spinner) or pushed into /log, which is gated on a pet it does not
 // have. The gate is that the rows do not render, so there is nothing to tap.
 //
-// These are GUARDS: every one was run against the pre-fix tree and confirmed red
-// before being trusted green (CUL-613). The two marked as regression guards are
-// the opposite direction — they must pass before AND after, because their job is
-// to pin behaviour the gate must not break.
+// Four of the five below are GUARDS: run against the pre-fix tree and confirmed
+// red before being trusted green (CUL-613). The one marked a regression guard is
+// the opposite direction — it must pass before AND after, because its job is to
+// pin behaviour the gate must not break. Each test states which it is, and the
+// run is what decided: two of these labels were written wrong and corrected by
+// it, one in each direction (see the notes on tests 3 and 5).
 
 const { getRecentFoods } = require('../../lib/db') as { getRecentFoods: jest.Mock };
 

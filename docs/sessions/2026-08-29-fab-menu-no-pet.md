@@ -61,6 +61,24 @@ Six added (five on the menu, one on the copy). Every one was run against the pre
 
 Final: four guards red-then-green, one regression guard green-then-green, one copy test.
 
+## The two reviews, and what they moved
+
+`code-reviewer` returned **ship-ready** — no correctness bugs. It independently mutation-tested all six new tests against `cb685d7` and confirmed the split, and it verified the gate against the store's own invariant rather than taking it on trust: `resolveActivePet` (`store/petStore.ts:99-102`) makes `activePet` null **iff** `pets` is empty, so `!activePet` is equivalent to `pets.length === 0` and there is no reachable state where pets exist but the gate hides the rows. Two nits: a preface comment in the test file miscounted the regression guards (fixed here — it was written before the run corrected two labels and not updated after), and `recentFoods` never clears on a pet A→B flip, which is pre-existing and now **CUL-723**.
+
+`pm-feature-review` returned SHIP-SHAPED on the three shape calls — the gate itself, dropping `More events`, and leaving the FAB ungated (*"I would push back on any proposal to change it"*). It returned **NEEDS-WORK on the copy's recovery advice**, and both halves survived my own check of the source:
+
+- **`check your connection` recovers nothing.** `usePet`'s effect keys on `[user]` and retries once at 600ms, then leaves the store as-is. No focus effect, no reconnect listener, no foreground refetch, and nothing else in the app calls the pets read. The state holds until a token refresh or a force-quit. The in-code comment at `hooks/usePet.ts:88` claims *"a later auth refresh / screen focus re-fetch recovers"* — **the screen-focus refetch it names does not exist.**
+- **`add a pet from the Pet tab` lands on a Pet tab with no add-a-pet control.** `app/(tabs)/profile.tsx:847` returns early on `!activePet` with an actionless `EmptyState`; the real button is at `:1370`, below the return. `HomeHeader` returns null too, taking the switcher — *"the only 'Add a pet' door"* by its own comment — with it.
+
+The copy is CUL-681's, shipped, and reused here **verbatim and deliberately**: the fix is to make the advice true, not to soften the words to match broken behaviour. Filed as **CUL-722**.
+
+It also surfaced the root cause, which is worth stating plainly: **pets are the only network-only entity in an offline-first app.** Events, meals, medications, weights, foods and attachments all live in local SQLite; the one fact required before any of them can be written is fetched over the network every launch. That is why the no-pet window exists at all, and why an offline one holds open. **CUL-721**, High.
+
+Two findings it raised that I deliberately did **not** act on:
+
+- **The reactive swap lands one-tap write rows under a resting finger** — CUL-612's hit-area reasoning rotated into the time dimension. Real in principle; I cannot judge its likelihood from source, and the obvious mitigation (delay the swap) would undermine the reactive property that is most of why this shape is right. Needs a device recording before anyone changes it.
+- **The title asserts the least likely cause.** The clause-order principle was applied to the body and not the title: *"No pet to log for yet"* reads as *the app lost my dog*, which is the arrival the body is ordered to de-emphasise. A load-state framing would be honest for all three. It is a shared string that moves both surfaces, so it is a PM call, raised rather than taken.
+
 ## DoD
 
 | Check | |
@@ -72,3 +90,6 @@ Final: four guards red-then-green, one regression guard green-then-green, one co
 | Secrets Register | N/A |
 | Adversarial review | Not owed — no clinical or statistical logic, nothing feeds the vet report. |
 | Future-self | Not a new pattern; applies CUL-681's ruling to the surface above it. The copy-module placement is new and carries its reason in place. |
+| Persona sign-off | Designer ✓ (Principles 1, 5) — Engineer ✓ (`code-reviewer`: ship-ready; gate verified against `resolveActivePet`'s own invariant) — QA ✓ (six tests mutation-proved; two labels corrected by the run) — Pet Owner/Sam ✓ (`pm-feature-review`: SHIP-SHAPED on all three shape calls, NEEDS-WORK on the inherited copy → CUL-722) — Data N/A — Dr. Chen N/A |
+| Dev Handoff | ✓ Runtime B — see the PR |
+| PM Action Items | CUL-717 (on-device pass) · CUL-720 (`/log` ungated, + the widget's three deep links) · CUL-721 (pet-roster cache) · CUL-722 (the copy's advice is not actionable) · CUL-723 (stale recent foods on a pet flip) · CUL-724 (FAB menu a11y) · one open PM decision: the shared title's framing |
