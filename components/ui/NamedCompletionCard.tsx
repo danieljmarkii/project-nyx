@@ -65,7 +65,10 @@ const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
 // cannot drift from the row the owner finds tomorrow. That module's header
 // carries the full rule.
 export function NamedCompletionCard() {
-  const { visible, payload, removed, hide, undo, patchOccurredAt, patchRecord } = useMomentStore();
+  const {
+    visible, payload, removed, hide, undo, patchOccurredAt, patchRecord,
+    pauseDwell, resumeDwell,
+  } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { pets, activePet } = usePetStore();
   const reduced = useReducedMotion();
@@ -171,14 +174,84 @@ export function NamedCompletionCard() {
     }
   }
 
-  async function handleUndo() {
-    // 'ignored' is a no-op the owner never hears about (a second tap, a card that
-    // has already gone). Only a real failure gets a word — and it names the other
-    // way in, because the row is still there to remove.
-    if (!payload) return;
-    if ((await undo(payload.eventId)) === 'failed') {
+  // The reversal, once it is going to happen. `confirmed` says whether the owner
+  // passed through the attachment gate below, which changes what a no-op means.
+  async function runUndo(eventId: string, confirmed: boolean) {
+    const result = await undo(eventId);
+    if (result === 'failed') {
       Alert.alert('Could not remove that log', 'Try again, or remove it from History.');
+    } else if (result === 'ignored' && confirmed) {
+      // 'ignored' is SILENT on the bare tap — a second tap or an already-gone card
+      // did nothing wrong, and an error there teaches the owner Undo is unreliable
+      // (momentStore's own reasoning). After an explicit confirm it is the opposite:
+      // the owner asked for a removal and none happened, and saying nothing is the
+      // one thing UndoResult's contract calls out as reading like "removed".
+      Alert.alert(
+        'That log is still saved',
+        'Too much time passed to remove it here. You can still remove it from History.',
+      );
     }
+    // A card that is still on screen has a hide to re-arm: only the 'removed' path
+    // arms its own (the removal dwell, which clears the pause through armHide).
+    if (result !== 'removed') resumeDwell();
+  }
+
+  async function handleUndo() {
+    // Narrowed, not asserted: `hasAttachment` is a NamedPayload field, and this
+    // control only ever renders over one. Same guard shape as handleSaveTime.
+    if (!payload || payload.kind !== 'named') return;
+
+    // ── THE ATTACHMENT GATE (CUL-645) ─────────────────────────────────────────
+    // Undo is one tap because the tap IS the destructive confirm (§5.6), and that
+    // holds for everything this card can remove EXCEPT a record carrying a photo.
+    // The event itself is re-loggable — the owner still knows what they saw — but
+    // the photo is of the thing itself, at 2am, and it does not exist anywhere
+    // else. No surface in the app exposes a soft-deleted event, so an accidental
+    // tap is the last time that photo is reachable.
+    //
+    // The dialog is not friction bought for its own sake, and it is deliberately
+    // NOT the generic "Are you sure?" the other three destructive actions use.
+    // After CUL-612's asymmetric hitSlop the mistouch mechanism is closed; what is
+    // left is a COMPREHENSION failure — an owner reversing a mis-logged event with
+    // no idea the photo goes too. So the body's job is to say the one thing they
+    // do not know. The extra tap is the price of delivering it, not the point.
+    if (payload.hasAttachment) {
+      // Hold the card open across the dialog. Without this the gate is worse than
+      // no gate: this card never wired the dwell pause (only the chip-bearing meal
+      // and dose cards did), so the 5s runs from the REVEAL and is not reset by the
+      // Undo tap — an owner who taps at 4.5s and reads the dialog for a second is
+      // confirming against a card that has already dismissed. `undo()` then refuses
+      // on `!visible`, returns 'ignored', and the log silently survives a removal
+      // the owner explicitly authorised. runUndo says so if it happens anyway (the
+      // pause has a ~20s ceiling by design); this is what makes it not happen.
+      pauseDwell();
+      Alert.alert(
+        'Remove this log?',
+        'The photo you attached will be removed with it.',
+        [
+          { text: 'Keep it', style: 'cancel', onPress: resumeDwell },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            // No destructiveConfirm() here: undo() fires it internally, which puts
+            // the rigid tap on THIS press — the confirm — exactly where History and
+            // the detail screen put theirs. Their shared reason is that a haptic
+            // beside a live Cancel would say something was destroyed while the
+            // owner can still back out, and this path now has that live Cancel. The
+            // store's guards return 'ignored' before the haptic, so a confirm that
+            // arrives too late does not buzz either.
+            onPress: () => { void runUndo(payload.eventId, true); },
+          },
+        ],
+        // Android's back-button / scrim dismissal never reaches the cancel button's
+        // onPress, and a pause left hanging would strand the card for the ceiling's
+        // full 20s. resumeDwell is idempotent, so double-firing with Cancel is safe.
+        { cancelable: true, onDismiss: resumeDwell },
+      );
+      return;
+    }
+
+    void runUndo(payload.eventId, false);
   }
 
   // Keep rendering through the dismiss fade (hide() preserves the payload), but

@@ -41,6 +41,7 @@ import { theme } from '../../constants/theme';
 import { formatTime } from '../../lib/utils';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { reverseLoggedEvent } from '../../lib/undoLog';
+import { destructiveConfirm } from '../../lib/haptics';
 import { Alert } from 'react-native';
 
 // Minimal structural stand-in for react-test-renderer's ReactTestInstance:
@@ -455,9 +456,11 @@ describe('NamedCompletionCard — Undo', () => {
 });
 
 
-// The touch-target rule (CUL-612). Undo has no confirming dialog — the tap IS the
-// destructive confirm — so a mistouch aimed at Change time must not be able to
-// resolve to it. Found by code review: symmetric hitSlop wide enough to be
+// The touch-target rule (CUL-612). On every record but one, Undo has no confirming
+// dialog — the tap IS the destructive confirm — so a mistouch aimed at Change time
+// must not be able to resolve to it. (CUL-645 later gated the one record that
+// carries a photo; the geometry still has to hold, because the other records did
+// not gain a dialog and a mistouch on them is still immediate.) Found by code review: symmetric hitSlop wide enough to be
 // comfortable reached across the 8pt gap from both sides, and the winner was
 // z-order. Asserted structurally rather than left to a device pass, because an
 // overlap is invisible in a screenshot.
@@ -475,5 +478,147 @@ describe('NamedCompletionCard — the action pair cannot overlap', () => {
     expect(change.right).toBeGreaterThanOrEqual(12);
     expect(undo.top).toBeGreaterThanOrEqual(12);
     expect(change.bottom).toBeGreaterThanOrEqual(12);
+  });
+});
+
+
+// ── The attachment gate (CUL-645) ────────────────────────────────────────────
+//
+// Undo stays one tap for everything the owner can simply log again. A record
+// carrying a PHOTO is the exception: the event is re-loggable from what the owner
+// still knows, the photo is not, and no surface in the app exposes a soft-deleted
+// event. So the gate is scoped to exactly that record, and this block owns the
+// four things that make it a safety net rather than ceremony — it fires only on an
+// attachment, it SAYS what is being lost, the haptic waits for the confirm, and the
+// card survives long enough for the confirm to land.
+describe('NamedCompletionCard — Undo asks first when a photo rides along', () => {
+  function tapUndo(view: ReturnType<typeof render>) {
+    return act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+  }
+  // The dialog's buttons, as presented. Driving these rather than a synthetic press
+  // is the only way to assert WHICH branch does what.
+  function buttonsFrom(alert: jest.SpyInstance) {
+    return (alert.mock.calls[0][2] ?? []) as { text?: string; onPress?: () => void }[];
+  }
+  function press(alert: jest.SpyInstance, label: string) {
+    const btn = buttonsFrom(alert).find((b) => b.text === label);
+    if (!btn) throw new Error(`no "${label}" button in the dialog`);
+    return act(async () => { btn.onPress?.(); });
+  }
+
+  it('does not remove anything on the tap alone — the tap opens the question', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true });
+    await tapUndo(view);
+    expect(reverseLoggedEvent).not.toHaveBeenCalled();
+    // And the card is untouched underneath: no premature removal line.
+    expect(view.queryByText('Removed')).toBeNull();
+    view.getByText(`Vomit · today at ${formatTime(OCCURRED)}`);
+    alert.mockRestore();
+  });
+
+  // The reason this gate is not the generic "Are you sure?" the other destructive
+  // actions use. After CUL-612's asymmetric hitSlop the mistouch is closed; what is
+  // left is an owner reversing a mis-logged event with no idea the photo goes too.
+  // The body carrying that fact IS the feature — an extra tap alone would be pure
+  // friction, and this assertion is what stops it decaying into one.
+  it('names the photo, so the dialog delivers the one fact the owner lacks', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true });
+    await tapUndo(view);
+    expect(alert.mock.calls[0][0]).toBe('Remove this log?');
+    expect(alert.mock.calls[0][1]).toContain('photo');
+    alert.mockRestore();
+  });
+
+  it('removes it once the owner confirms', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true });
+    await tapUndo(view);
+    await press(alert, 'Remove');
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    view.getByText('Removed');
+    alert.mockRestore();
+  });
+
+  it('leaves the log in the record on "Keep it"', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true });
+    await tapUndo(view);
+    await press(alert, 'Keep it');
+    expect(reverseLoggedEvent).not.toHaveBeenCalled();
+    expect(view.queryByText('Removed')).toBeNull();
+    view.getByText(`Vomit · today at ${formatTime(OCCURRED)}`);
+    alert.mockRestore();
+  });
+
+  // The 95% path is untouched — this is what keeps the gate from being option D.
+  it('still removes on ONE tap when the record carries no photo', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await tapUndo(view);
+    expect(alert).not.toHaveBeenCalled();
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    view.getByText('Removed');
+    alert.mockRestore();
+  });
+
+  // §5.6 puts the rigid tap on the destructive CONFIRM. On the ungated path the tap
+  // is the confirm, so it fires there; here a live "Keep it" is on screen, and a
+  // haptic beside it would say something was destroyed while the owner can still
+  // back out — the same reason History and the detail screen withhold theirs until
+  // the alert's confirm.
+  it('holds the rigid haptic until the confirm, not the tap that opens the dialog', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true });
+    await tapUndo(view);
+    expect(destructiveConfirm).not.toHaveBeenCalled();
+    await press(alert, 'Remove');
+    expect(destructiveConfirm).toHaveBeenCalledTimes(1);
+    alert.mockRestore();
+  });
+
+  // THE TRAP THIS GATE WOULD OTHERWISE CREATE. This card never wired the dwell
+  // pause (only the chip-bearing meal and dose cards did), so its 5s runs from the
+  // REVEAL and the Undo tap does not reset it. Without an explicit hold, an owner
+  // who taps at 4.5s and reads the dialog for a second confirms against a card that
+  // has already dismissed — undo() refuses on `!visible` and the log silently
+  // survives a removal the owner authorised. A gate that loses the removal is worse
+  // than no gate.
+  it('holds the card open while the dialog is up, so a slow confirm still lands', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true });
+    await tapUndo(view);
+    // Well past the 5s dwell the card was revealed with.
+    await act(async () => { jest.advanceTimersByTime(12000); });
+    await press(alert, 'Remove');
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    view.getByText('Removed');
+    alert.mockRestore();
+  });
+
+  // And if it ever does time out anyway (the pause carries a ~20s ceiling by
+  // design), the owner is told. 'ignored' is deliberately silent on a bare tap —
+  // a second tap did nothing wrong — but after an explicit confirm, silence is the
+  // one thing UndoResult's contract says must never read as "removed".
+  it('speaks up if the confirm arrives after the card is gone', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true });
+    await tapUndo(view);
+    // Force the timeout the ceiling would eventually produce.
+    act(() => { useMomentStore.getState().hide(); });
+    await press(alert, 'Remove');
+    expect(reverseLoggedEvent).not.toHaveBeenCalled();
+    expect(alert.mock.calls[1][0]).toBe('That log is still saved');
+    expect(alert.mock.calls[1][1]).toContain('History');
+    alert.mockRestore();
   });
 });
