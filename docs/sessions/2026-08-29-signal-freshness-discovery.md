@@ -115,3 +115,59 @@ surface, not dashboard).
   iterate directly on the GA'd surface — decide at the rung-1 PR, not blocking D1–D4.
 - No CLAUDE.md or STATUS.md changes: no ruling landed this session; the track boundary is new
   but lives in Linear (CUL-695) per the pointer-card discipline.
+
+---
+
+## Part 2 — rev 1.1 (same day): the PM's fusion suggestion + the research pass
+
+The PM reacted mid-session: **(1)** F4 could probably combine with F6 — "if Ask AI was the
+underlying engine, these could be pre-shown prompts" (tentative, offered as a suggestion);
+**(2)** research the competition — direct competitors *and* design-inspiration companies;
+**(3)** what else can this space / Home more broadly do.
+
+**The fusion, analyzed → F7 + D5.** The team's position: yes at the interaction layer, split
+at the engine. One "companion row" primitive under Signal cards with three chip verbs —
+*state* (F4's booked/been → care-state write), *observation* (F6's how-she-seems → demeanor
+event write), *ask* (opens Ask pre-scoped to the finding; the shipped A5 rundown becomes a
+doorway). The seam that keeps it buildable now: **chips write through the FAB's deterministic
+path; Ask never writes** — the Ask §6 read-only boundary, G5 Timeline-parity, and the T&S
+posture untouched; prompts are computed from record state (the Linear-agents shape), never
+LLM-generated. Drawn as **F7** in mock rev 1.1; ruled by **D5** (recommended (a): fuse, with
+the split engine — one scoping round replacing D3(a)+D4(a); option (c), Ask-mediated capture,
+recommended against now as a D2-class boundary reopen). Prior evidence anticipated the shape:
+the ask-UX brief's scaffolded-chips pattern (Oura's top-requested Advisor feature), Whoop's
+compute-deterministic/LLM-phrases split, and the uniform proactive-lane-vs-chat separation.
+
+**The research pass → `docs/research/2026-08-home-freshness-inspiration.md`** (indexed in the
+research README). Headlines: every best-in-class daily-open app splits **time grains** into
+separate surfaces and reserves the hero for the fastest-changing one (Oura's 2025-10 redesign
+— "one big thing" + a time-of-day-varying "Daily highlight"; Whoop's 2025-10 home revamp +
+Daily Outlook, where the generated brief *replaced* a chatbot); **Linear Pulse** is the
+"what changed while you were away" pattern productized (delta feed + AI daily digest);
+**Huckleberry SweetSpot** keeps a home fresh by answering *what's next* (the deterministic
+care-forecast shape Culprit's widget already ships as the Up-next tile); **Bearable** — the
+closest human analog — documents the check-in failure mode ("overwhelming and slow, 2–3
+check-ins a day"). Competitor trip-wire check vs the June refresh: **none fired** (PerkyPet
+still pre-launch; CompanAIn GA'd 2026-02, vet portal + wellness marketplace, no raise found;
+Zoetis Pack still insight-less; Digitail chronic trackers still unshipped) — and no pet
+competitor runs an intelligence-surface home at all; the bar is Oura/Whoop/Linear.
+
+**Mechanics verified directly** (the Part-1 background sweep was lost to a session pause):
+chronicity's still-ongoing gate is `ongoingRecencyDays` = 14 — a settled course goes *silent*,
+never "resolved," so the standing card's endgame is a wordless disappearance (F5 is the one
+register that could say the ending as a count); and **no owner-facing seen/fold/acknowledge
+state exists anywhere** (client or server) — rung 1's fold state is a green field. Still owed
+to the rung-1 kickoff: client fetch cadence, Patterns entry points.
+
+**Four round-2 candidates recorded on CUL-695** (offered for reaction, not new D's): the
+hero-register rule (fastest-changing grain that has something to say → change → cadence →
+standing, never dropping, only compressing); time-of-day awareness (the parked rung-3
+briefing, re-arriving with outside evidence); the deterministic care-forecast tile (Home
+inheriting the widget's Up-next grammar); the away-digest over rung-2's fingerprint memory.
+Anti-patterns confirmed so round 2 doesn't relitigate: content/stories feeds (Flo), population
+benchmarks (G6/G7), points/rewards (Zoetis), check-in-as-homework (Bearable).
+
+**Deliverables (rev 1.1):** mock updated to round 1.1 (F7 frame + D5 brief + research callout;
+same artifact URL); the research brief + README index row; CUL-695 title/description updated
+to D1–D5 with the F7 direction and research reference; the rev-1.1 addendum comment; this
+Part 2. All on PR #736.

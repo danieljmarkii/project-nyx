@@ -204,8 +204,8 @@
 
   <header class="mast">
     <p class="eyebrow">
-      <span class="roundtag">Round 1 — exploratory</span>
-      <span>Signal freshness discovery · 2026-08-29</span>
+      <span class="roundtag">Round 1.1 — exploratory</span>
+      <span>Signal freshness discovery · 2026-08-29 (rev. same day: F7 + D5 + the research pass)</span>
       <span>Sibling of B-721 (shipped, GA'd) — supersedes nothing</span>
     </p>
     <h1>The Living Signal</h1>
@@ -213,9 +213,11 @@
       The Signal is Home's hero, and for six weeks it has opened on the same two cards.
       The cache is fresh — it regenerates daily — but the <em>content</em> is standing truth,
       and standing truth doesn't move. This round separates the Signal's two jobs —
-      <strong>what is true</strong> and <strong>what changed</strong> — and draws five ways to
-      give the second job a surface. Nothing here is design-locked; the shipped surface's
-      authority remains <code>culprit-signal-home-mockups.html</code> (round 2.1).
+      <strong>what is true</strong> and <strong>what changed</strong> — and draws six ways to
+      give the second job a surface. Revision 1.1 adds <strong>F7</strong> (the PM's
+      F4+F6-fusion suggestion, drawn with its engine seam) and the competitive/inspiration
+      research. Nothing here is design-locked; the shipped surface's authority remains
+      <code>culprit-signal-home-mockups.html</code> (round 2.1).
     </p>
   </header>
 
@@ -293,6 +295,21 @@
         them touch detection, thresholds, or the safety register's plainness (S1 stands: safety
         faces stay austere).
       </p>
+      <div class="callout">
+        <strong>What the research pass found (2026-08-29 — full evidence:
+        <code>docs/research/2026-08-home-freshness-inspiration.md</code>):</strong> every
+        best-in-class daily-open app splits <strong>time grains</strong> into separate surfaces
+        and reserves the hero for the fastest-changing one — Oura's 2025 redesign (a
+        time-of-day-varying "Daily highlight" over a "one big thing" lead), Whoop's home revamp
+        (long-term metrics moved to their own tab; a generated morning brief that replaced a
+        chatbot), Linear Pulse (the "what changed while you were away" feed + AI daily digest),
+        Huckleberry's SweetSpot (a forecast tile — fresh because it answers <em>what's next</em>).
+        Bearable — the closest human analog to this exact surface — is the cautionary tale: its
+        dominant complaint is "overwhelming and slow, 2–3 check-ins a day." And the pet category
+        still has <em>no</em> intelligence-surface home at all (trip-wire check: PerkyPet still
+        pre-launch, CompanAIn un-funded, Zoetis Pack insight-less, Digitail trackers unshipped)
+        — the bar here is Oura/Whoop/Linear, not any pet app.
+      </div>
     </div>
   </section>
 
@@ -301,9 +318,10 @@
     <div class="sec-head"><span class="sec-num">03</span><h2>The frames</h2></div>
     <div class="col">
       <p>
-        F1 is today, as shipped. F2–F6 are five directions, drawn on Nyx's real record.
+        F1 is today, as shipped. F2–F7 are six directions, drawn on Nyx's real record.
         They compose — F2 is near-term, F3 layers on it, F4 and F5 are the two bigger bets,
-        F6 is the capture-side idea. Exploratory copy is marked; every string would still pass
+        F6 is the capture-side idea, and F7 (rev 1.1) is the PM's suggestion that F4 and F6
+        fuse into one prompt system. Exploratory copy is marked; every string would still pass
         the <code>nyx-voice</code> + guardrail screens before build.
       </p>
     </div>
@@ -563,6 +581,54 @@
         </p>
       </div>
 
+      <!-- F7 — companion row (rev 1.1, the PM's F4+F6 fusion) -->
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow">
+                <div class="rail safety"></div>
+                <div class="ibody">
+                  <p class="lead compact">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                  <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                  <div class="chiprow">
+                    <span class="chip">Visit booked</span>
+                    <span class="chip">She's seemed off today</span>
+                    <span class="chip quiet">What should I tell the vet? ›</span>
+                  </div>
+                  <div class="annot ok">one row, three verbs — writes commit deterministically; the › chip opens Ask, scoped to this card</div>
+                </div>
+              </div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Ask · opened from the card</div>
+              <div class="irow">
+                <div class="rail insight"></div>
+                <div class="ibody">
+                  <p class="lead compact" style="font-size:13.5px">What should I tell the vet about Nyx's vomiting?</p>
+                  <div class="ackline">Context attached: the chronicity finding, 14 episodes, the timing pattern. The vet-visit rundown is one tap away.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F7 — The companion row (F4 + F6 fused; rev 1.1, PM-suggested)</b>
+          One prompt system under the cards, three verbs behind one grammar: <em>state chips</em>
+          (F4's booked/been — write care state), <em>observation chips</em> (F6's how-she-seems —
+          write a demeanor event), and <em>ask chips</em> (open Ask pre-scoped to the finding —
+          the shipped A5 rundown becomes a doorway). The seam that makes it buildable today:
+          <strong>chips write through the same deterministic path as the FAB; Ask never writes</strong>
+          — the LLM stays read-only, so the T&amp;S boundary is untouched and G5 Timeline-parity
+          holds. Prompts are computed from record state (Linear-agents energy), never generated
+          free-text. The Bearable lesson bounds cadence: prompts appear when the record warrants
+          one, never as daily homework. If this direction is ruled in, D3 + D4 collapse into one
+          scoping round — §05 D5.
+          <span class="cost">one chip-row primitive · three governance gates unchanged · Ask stays read-only</span>
+        </p>
+      </div>
+
     </div>
   </section>
 
@@ -617,7 +683,14 @@
       <p class="bid">D4 — The care thread's next step</p>
       <p><strong>Deciding:</strong> how far F4 advances now.</p>
       <p><strong>Options:</strong> <span class="rec">(a) scoping round next — frames + schema sketch + S1-compatibility ruling, recommended</span> · (b) park until after rung 1 ships · (c) fold its chips into rung 1 now.</p>
-      <p><strong>Consequence:</strong> (a) keeps the momentum on the round's most-loved idea without letting it block rung 1; (c) puts unruled schema + S1 questions inside what should be a small first rung.</p>
+      <p><strong>Consequence:</strong> (a) keeps the momentum on the round's most-loved idea without letting it block rung 1; (c) puts unruled schema + S1 questions inside what should be a small first rung. <em>If D5 rules (a), this brief merges into that scoping round.</em></p>
+    </div>
+
+    <div class="brief">
+      <p class="bid">D5 — Fuse F4 + F6 into the companion row? (rev 1.1 — from the PM's suggestion)</p>
+      <p><strong>Deciding:</strong> whether F4 and F6 are one prompt system (F7) scoped together, and where the engine seam sits.</p>
+      <p><strong>Options:</strong> <span class="rec">(a) yes, with the split engine — chips write deterministically, Ask reads (F7 as drawn); one scoping round replaces D3(a) + D4(a) — recommended</span> · (b) keep them separate as D3/D4 pose · (c) Ask-mediated capture (the LLM interprets free-text into record writes) — not now: it reopens the §6 read-only boundary (a D2-class T&amp;S ruling) for no capture the chips don't already get.</p>
+      <p><strong>Consequence:</strong> (a) one "companion row" primitive with three chip verbs and unchanged governance gates (Dr. Chen + taxonomy own the observation chips; T&amp;S/RLS the state writes; the Ask spec the read chips); the industry evidence backs the seam — Whoop computes deterministically and lets the LLM phrase, Oura's chips were its top-requested Advisor feature, and the proactive-lane-vs-chat separation is uniform across Whoop/Oura/ChatGPT.</p>
     </div>
   </section>
 
@@ -626,9 +699,12 @@
     <div class="sec-head"><span class="sec-num">06</span><h2>Round status</h2></div>
     <div class="col">
       <p>
-        <strong>Round 1 · exploratory · 2026-08-29.</strong> Produced by the signal-freshness
-        discovery session (evidence: live production queries + the shipped specs' own rulings;
-        session record <code>docs/sessions/2026-08-29-signal-freshness-discovery.md</code>).
+        <strong>Round 1.1 · exploratory · 2026-08-29.</strong> Produced by the signal-freshness
+        discovery session; revised the same day on the PM's fusion suggestion — rev 1.1 adds F7,
+        D5, and the research callout (evidence:
+        <code>docs/research/2026-08-home-freshness-inspiration.md</code>; live production
+        queries; the shipped specs' own rulings; session record
+        <code>docs/sessions/2026-08-29-signal-freshness-discovery.md</code>).
         <strong>Linear: CUL-695</strong> carries the full brief, the convening record, and the
         PM rulings as they land. On reaction, round 2 republishes to this same URL —
         superseded frames will say so in place.
