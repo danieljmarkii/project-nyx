@@ -1,6 +1,6 @@
 # 2026-08-30 — CUL-62 / B-613: the out-of-window symptom guard names the sign, and fires on a preset trial crop
 
-**Mode:** BUILD · **Branch:** `claude/vet-report-symptom-guard-ihc47m` · **Outcome:** shipped via #TBD (draft)
+**Mode:** BUILD · **Branch:** `claude/vet-report-symptom-guard-ihc47m` · **Outcome:** shipped via #772 (draft)
 
 ## What the issue asked for
 
