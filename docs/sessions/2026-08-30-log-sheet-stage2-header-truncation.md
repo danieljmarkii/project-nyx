@@ -156,6 +156,39 @@ It was caught by reading the diff adversarially before pushing, which is the onl
 that could have caught it. *A refactor that splits a styled node has to be checked for
 what the split dropped, not only for what it added* — and the test now pins it.
 
+## Two things that happened on the way out
+
+**The base went stale mid-session, and the conflict was worth resolving properly.**
+`main` moved two commits ahead (#757, #759) while this was in flight, and the ruleset
+requires branches be up to date. The merge conflicted in `CLAUDE.md` — because
+**#759 (CUL-728) had rewritten the very CUL-682 entry this branch was correcting.**
+
+Both edits were real, so neither side was taken wholesale: CUL-728's text is kept whole
+(every known `disabled`-as-suppression site closed, the third one its 85-site sweep
+missed, and the *read the branch, not the disagreement* rule), and this branch's
+correction is applied onto it — the clause claiming a truncated stop "reads the
+*ellipsed* text" struck, with a pointer to the rule that falsified it.
+
+They are also **the same principle from opposite directions**, which is why they are now
+cross-linked rather than left as two unrelated findings: CUL-728 found that a touchable
+becoming a `View` silently fragments one announcement into several; this session's fix
+does the same by splitting one `Text` into two. That is exactly why the split needs a
+label. *Two sessions found one rule from either end on the same day; the manual should
+say it once.*
+
+**Three pushes produced no CI run at all.** `7819194` (the code) and `9e6e30c` never
+got a workflow run, while sibling branches ran normally throughout — including one at
+12:24, between the two silent pushes. The merge push finally triggered one, which passed.
+No cause found: `ci.yml`'s bare `pull_request:` trigger should fire `synchronize` on
+every push, and nothing about those pushes differed from the ones that ran.
+
+It is recorded because of what it costs rather than what it is: **CI is this repo's only
+enforced gate, and a run that is never created looks exactly like one that has not
+finished yet.** Reporting green off the last completed run would have described a commit
+two behind the code. The habit that caught it — check which *sha* the green belongs to,
+not just that something is green — is the transferable part. If it recurs, it is worth a
+real investigation rather than a shrug.
+
 ## Decisions
 
 | # | Decision |
@@ -166,12 +199,17 @@ what the split dropped, not only for what it added* — and the test now pins it
 | 4 | B and C are not composable as stated; the composition is AC-CHIP's wrap + `flexShrink: 0`, reusing an in-file precedent rather than inventing one. |
 | 5 | §03's stage-2 frames stay on the round-4 header. Not a deferral in the end: at "Vomit — Nyx" the split renders *identically*, and it only shows itself when the row would otherwise have cut the name. The page says so. |
 | 6 | **R6-1 = P1** (wrap, dash rides with the type) and **R6-2 = accept** — PM, same day. The "only if it would otherwise be lost" qualifier needs no enforcement: a wrapping row grows only when one line cannot hold it. |
+| 7 | The `CLAUDE.md` merge with CUL-728 resolved on **meaning, not by picking a side** — both edits kept, the falsified clause struck, the two findings cross-linked as one principle. |
+| 8 | `docs/nyx-more-events-picker-requirements.md` deliberately **not** edited. It is the v1.0 build contract for PRs 0–3, all shipped; round 5 (CUL-679) amended the same design-locked frame without touching it, so the precedent is that post-ship mock rounds live in the mock and in Linear. Flagged as a Tier-2 proposal instead of written. |
 
 ## Residuals
 
 - **CUL-726** — done pending the device look. The one thing a static pass cannot
   settle is how the wrapped two-line header sits against the pills below it at a real
   accessibility text size; it batches with #751's outstanding device checks.
+- **CI run creation** — three pushes on this branch produced no workflow run (above).
+  Not chased; worth a real look if it happens again, because it degrades the only
+  enforced gate silently.
 - **CUL-682** — its label's stated rationale is falsified; the label itself stands.
   Noted, not reopened.
 - **`accessibilityRole="header"`** — this header has none, and only 4 sites app-wide
