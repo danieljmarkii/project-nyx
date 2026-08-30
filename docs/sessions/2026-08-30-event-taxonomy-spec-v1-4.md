@@ -1,7 +1,7 @@
 # 2026-08-30 — Event Taxonomy: spec v1.4, the §9b silence-on-the-sick findings closed (CUL-684)
 
 **Mode:** DISCOVERY (a spec writing pass — the deliverable is a committed doc). No code, no schema, no build.
-**Outcome:** shipped via #PR — `docs/nyx-event-taxonomy-requirements.md` v1.3 → **v1.4**; §9a rewritten, §9b deleted, D16–D19 recorded. **The W2 gate on CUL-667 is lifted.**
+**Outcome:** shipped via #764 — `docs/nyx-event-taxonomy-requirements.md` v1.3 → **v1.4**; §9a rewritten against four PM rulings, D16–D19 recorded. **The W2 gate on CUL-667 is NOT lifted:** the mandatory adversarial pass on the rewrite returned **FAIL — 22 findings, six still silent on the sick** — recorded as a new §9b. CUL-684 stays open, `Waiting on PM`.
 
 ## What this session was for
 
@@ -46,9 +46,19 @@ That mattered beyond this rule. §10 gains **3a**: the report's generic observat
 
 **D16** the §9b gate closes on rule 0 · **D17** de-dup by capture surface, not by time · **D18** multi-cat pooling at the ask tier only · **D19** §9b is deleted, not annotated — a spec that accumulates dead warning blocks becomes the thing nobody reads, which is the failure mode that made the old `STATUS.md` unreadable.
 
+## The adversarial pass: FAIL again, and the finding that matters most
+
+Run on the rewrite **before** it landed — the discipline whose absence created this issue. **22 findings, six silent-on-the-sick.** Its load-bearing code claims were re-verified here before being accepted: `useSubmitGuard`'s latch is a **ref** (`hooks/useSubmitGuard.ts:30–42`), not the `disabled={submitting}` prop the spec had cited — two taps in one tick both pass a prop waiting on a state flush, so the citation was corrected; `SheetLogBeat.tsx:88` really does call `commitSymptom()`; and rule 10 really does read "in a cat" three lines above a bound naming the CHF dog as its target patient.
+
+**The pass's structural observation is the one to carry forward: every high-severity finding is in mechanism v1.4 *added*, or in a seam between two v1.4 closures** — rule 3 × rule 5, rule 3 × rule 13, rule 3 × rule 15, rule 13 × CUL-614, D17 × §10.3a. That is §9a's own maintenance rule coming true on the pass that wrote it down. Three passes have now each broken the closures the pass before it wrote.
+
+**And the sharpest finding is against rule 0, the ruling this session was convened to adopt.** Rule 0 lets a guard set "the wording **and the tier**". Two of the six silence defects use exactly that permission — they do not silence the patient, they cap them one tier below the emergency, with the lid on the litter box as the only difference between a band and "mention it in the next day or two". Rule 0 as drafted licenses that. It is still the right rule; it is not yet a tight one.
+
+**Not fixed here, deliberately.** Writing 22 unreviewed closures in the session that received them is precisely how rules 2 and 13 failed twice and how v1.3's closures failed once — and the PM's own ruling on brief 1 (re-open as a *scoped, adversarially-reviewed* pass) is the endorsed precedent for not doing it. Only three things changed after the verdict: the overclaim that the gate was lifted was corrected in the spec and CLAUDE.md, the `useSubmitGuard` citation was fixed, and §9b was written.
+
 ## Persona / review
 
-Adversarial pass run on the rewrite **before** it landed — the discipline whose absence created this issue in the first place. Verdict and the counterexamples attempted are in the PR body and on CUL-684.
+`adversarial-reviewer` — FAIL, verdict and counterexamples in §9b, on the PR and on CUL-684. Dr. Chen's brief-2 execution constraint (the can't-settle finding stays out of the sleeping series) was honoured in rule 11(a) and is *itself* now challenged by F17, which says the excluded counts then never reach the vet at all — a genuine tension for the next ruling, not a drafting slip.
 
 ## Not done here, deliberately
 
