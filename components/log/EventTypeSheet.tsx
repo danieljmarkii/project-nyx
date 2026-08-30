@@ -63,6 +63,47 @@ function routesOut(type: EventTypeKey): boolean {
   return type === 'meal' || type === 'medication' || type === 'weight_check';
 }
 
+// The title row's CONTENT — the pet's disc and the sentence naming it. One
+// definition, two hosts (CUL-682): the multi-pet switch control and the single-pet
+// plain View. Shared rather than duplicated so the switchable and the inert row
+// cannot drift apart — the only thing that should differ between them is the
+// affordance, never the identity.
+//
+// CUL-679 — the pet's face leads the row, as it does everywhere else the app names
+// the active pet (Home header, the FAB's "Logging for" chip, every row of the
+// switcher the owner just tapped).
+//
+// It matters HERE and not on Home because the eight tiles below are pet-independent:
+// nothing else on screen moves, so without this the entire confirmation of a switch
+// is four characters changing at the top of the sheet, with the finger still resting
+// where the switcher row was. Two similarly-named pets and that fails a glance-check
+// on the one surface where the wrong answer writes a health row.
+//
+// Rendered for a SINGLE-pet household too (R5-1, PM-ruled 2026-08-29). Multi-pet
+// §3.1 suppresses the CHEVRON — the switch affordance — not the pet's identity, and
+// the Home header already draws the disc for a one-pet account. It also keeps this
+// row and the confirm's header on the same leading disc, so stage 1 → stage 2 swaps
+// the disc's contents instead of sliding the title 38pt sideways.
+//
+// Takes the name and photo as values rather than the pet, because both callers have
+// already narrowed `activePet` to non-null — the grid does not render without a pet
+// (CUL-681), and re-admitting an optional pet here would re-open the "your pet"
+// fallback that rendered a confident "Y" disc for a pet that was not there.
+function TitleRowContent({ name, photoPath }: { name: string; photoPath: string | null }) {
+  return (
+    <>
+      <PetAvatar name={name} photoPath={photoPath} size={SHEET_HEADER_DISC} />
+      {/* numberOfLines + the style's flexShrink let a long name ellipse rather than
+          push the chevron off the end. Both hosts spell the full name into an
+          accessibilityLabel, so what is cut here is never cut from the record of
+          which pet this sheet writes to. */}
+      <ThemedText style={styles.title} numberOfLines={1}>
+        Log for {name}
+      </ThemedText>
+    </>
+  );
+}
+
 export function EventTypeSheet({ visible, onClose }: Props) {
   const { pets, activePet } = usePetStore();
   const insets = useSafeAreaInsets();
@@ -260,50 +301,55 @@ export function EventTypeSheet({ visible, onClose }: Props) {
 
           {stage === 'grid' && activePet && (
             <>
-              <TouchableOpacity
-                style={styles.titleRow}
-                onPress={() => setSwitcherVisible(true)}
-                disabled={!multiPet}
-                activeOpacity={0.7}
-                accessibilityRole={multiPet ? 'button' : undefined}
-                accessibilityLabel={multiPet ? `Log for ${activePet.name} — switch pet` : undefined}
-              >
-                {/* CUL-679 — the pet's face leads the row, as it does everywhere else
-                    the app names the active pet (Home header, the FAB's "Logging for"
-                    chip, every row of the switcher the owner just tapped).
+              {/* ── ONE ROW, TWO HOSTS (CUL-682) ──────────────────────────────
+                  Multi-pet wraps the content in the switch control; single-pet
+                  wraps it in a plain View. It used to be ONE TouchableOpacity with
+                  `disabled={!multiPet}`, which is a different claim than it looks:
+                  RN propagates `disabled` into `accessibilityState.disabled`
+                  (TouchableOpacity.js) and iOS maps that to
+                  UIAccessibilityTraitNotEnabled (RCTViewComponentView.mm), which
+                  VoiceOver speaks as "dimmed". So a one-pet household was told a
+                  control was unavailable on a row where there is no control at all
+                  — and the row stayed a focusable responder while being inert.
 
-                    It matters HERE and not on Home because the eight tiles below are
-                    pet-independent: nothing else on screen moves, so without this the
-                    entire confirmation of a switch is four characters changing at the
-                    top of the sheet, with the finger still resting where the switcher
-                    row was. Two similarly-named pets and that fails a glance-check on
-                    the one surface where the wrong answer writes a health row.
+                  The VISUAL suppression was always right (no chevron, no chrome —
+                  multi-pet §3.1/§7.8 keeps multi-pet chrome away from a one-pet
+                  account); only the announcement was wrong. Suppressing chrome is
+                  not the same act as claiming a control exists but is off, and one
+                  prop was doing both.
 
-                    Rendered for a SINGLE-pet household too (R5-1, PM-ruled 2026-08-29).
-                    Multi-pet §3.1 suppresses the CHEVRON below — the switch affordance
-                    — not the pet's identity, and the Home header already draws the disc
-                    for a one-pet account. It also keeps this row and the confirm's
-                    header on the same leading disc, so stage 1 → stage 2 swaps the
-                    disc's contents instead of sliding the title 38pt sideways.
-
-                    Unguarded because the branch above narrows it: this row cannot
-                    render without a pet. It used to carry its own `activePet &&`
-                    check, because the title's `petName` fell back to "your pet" and
-                    an avatar built from that renders a confident "Y" disc for a pet
-                    that isn't there. CUL-681 removed the fallback rather than the
-                    disc — the surface says what it means instead. */}
-                <PetAvatar
-                  name={activePet.name}
-                  photoPath={activePet.photo_path}
-                  size={SHEET_HEADER_DISC}
-                />
-                <ThemedText style={styles.title} numberOfLines={1}>
-                  Log for {activePet.name}
-                </ThemedText>
-                {multiPet && (
+                  The single-pet row carries its own label rather than leaning on
+                  the text, because CUL-679's `flexShrink: 1` (which the avatar's
+                  38pt makes necessary) means a long name now ELLIPSES here — and
+                  with no label the full name had nowhere to survive. Multi-pet
+                  never had that problem: its label already spells the name out.
+                  `accessible` is what makes the View one node the label applies to;
+                  without it the label is inert and the disc + text stay separate
+                  stops. */}
+              {multiPet ? (
+                <TouchableOpacity
+                  style={styles.titleRow}
+                  onPress={() => setSwitcherVisible(true)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Log for ${activePet.name} — switch pet`}
+                >
+                  <TitleRowContent name={activePet.name} photoPath={activePet.photo_path} />
                   <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
-                )}
-              </TouchableOpacity>
+                </TouchableOpacity>
+              ) : (
+                <View
+                  style={styles.titleRow}
+                  // One node, one announcement: "Log for Nyx", no role and no
+                  // disabled trait. `accessible` is load-bearing — without it the
+                  // label never applies and the disc and the sentence stay two
+                  // separate stops, the second of which reads the ellipsed text.
+                  accessible
+                  accessibilityLabel={`Log for ${activePet.name}`}
+                >
+                  <TitleRowContent name={activePet.name} photoPath={activePet.photo_path} />
+                </View>
+              )}
               <ScrollView style={styles.gridScroll} showsVerticalScrollIndicator={false}>
                 {/* species reads the store's active pet reactively, so a switch in
                     the panel above re-filters the grid before the next tap (§3). */}

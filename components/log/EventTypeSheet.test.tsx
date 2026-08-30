@@ -404,6 +404,74 @@ describe('EventTypeSheet', () => {
     const multi = render(<EventTypeSheet visible onClose={jest.fn()} />);
     expect(multi.getByLabelText('Log for Nyx — switch pet')).toBeTruthy();
   });
+
+  // ── CUL-682 item 1: the row must not ANNOUNCE a control it does not have ────
+  //
+  // The row was one TouchableOpacity with `disabled={!multiPet}`. That reads as a
+  // visual suppression and is not one: RN copies `disabled` into
+  // `accessibilityState.disabled` (TouchableOpacity.js), and iOS turns that into
+  // UIAccessibilityTraitNotEnabled (RCTViewComponentView.mm) — VoiceOver's
+  // "dimmed". A one-pet household was told the switch was unavailable on a row
+  // that has no switch at all.
+  //
+  // Asserted on the STATE rather than through a press: `fireEvent.press` on a
+  // disabled touchable is silent either way, so it cannot tell "inert" from
+  // "inert and announced as unavailable" — and the announcement is the whole
+  // defect. Both assertions were confirmed red against the pre-fix tree.
+  const ancestors = (node: any) => {
+    const out: any[] = [];
+    let n = node;
+    while (n) { out.push(n); n = n.parent; }
+    return out;
+  };
+
+  it('the single-pet title row carries no disabled state to announce', () => {
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    const chain = ancestors(view.getByText('Log for Nyx'));
+    expect(chain.some((n) => n.props?.accessibilityState?.disabled)).toBe(false);
+    // And it is not a phantom button either — no role was ever set here, but the
+    // rival fix (keep the touchable, drop only `disabled`) would leave a row that
+    // focuses and responds while doing nothing.
+    expect(chain.some((n) => typeof n.props?.onStartShouldSetResponder === 'function')).toBe(false);
+  });
+
+  // The second reason, from CUL-679's handoff: the avatar's 38pt forced
+  // `flexShrink: 1` onto the title, so a long name now ellipses HERE. Multi-pet
+  // was always fine — its label spells the name out — but the single-pet row had
+  // no label, so the cut name had nowhere to survive. On the one surface whose
+  // whole job is naming which pet a health row lands on.
+  it('a single-pet long name survives the truncation in the label', () => {
+    usePetStore.setState({
+      pets: [{ id: 'p1', name: 'Bartholomew Fitzgerald III' }] as never,
+      activePet: { id: 'p1', name: 'Bartholomew Fitzgerald III' } as never,
+    });
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(view.getByLabelText('Log for Bartholomew Fitzgerald III')).toBeTruthy();
+  });
+
+  // The label only means anything if the row is ONE node. An accessibilityLabel on
+  // a View that is not `accessible` is inert: the disc and the sentence stay two
+  // separate stops and the second one reads the ellipsed text — the exact defect,
+  // with a label sitting next to it looking like a fix.
+  it('the single-pet row is one accessible node, not a labelled container', () => {
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    const labelled = view.getByLabelText('Log for Nyx');
+    expect(labelled.props.accessible).toBe(true);
+    // The disc is inside that node, so the announcement covers the whole row.
+    expect(ancestors(view.UNSAFE_getAllByType(PetAvatar)[0])).toContain(labelled);
+  });
+
+  // Multi-pet keeps every announcement it had: a real button, the full name, and
+  // no disabled trait. Pinned because the fix touches this branch too (it lost the
+  // `disabled` prop and its conditional role/label), and a regression here is a
+  // switch control that stops announcing itself as one.
+  it('the multi-pet row still announces a real, enabled switch', () => {
+    seedPets(2);
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    const row = view.getByLabelText('Log for Nyx — switch pet');
+    expect(row.props.accessibilityRole).toBe('button');
+    expect(row.props.accessibilityState?.disabled).toBeFalsy();
+  });
 });
 
 
