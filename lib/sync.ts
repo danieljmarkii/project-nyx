@@ -1083,9 +1083,22 @@ async function drainEventsQueue(): Promise<void> {
   //
   // KNOWN LIMIT, stated rather than implied: this reconciles to a remaining reading or
   // to nothing. It cannot restore a DISPLACED value, because only the delete site ever
-  // knew it — so an offline undo of a first-ever weigh-in ends with the server snapshot
-  // cleared rather than put back. That is the safe direction (no number is asserted),
-  // and CUL-694 is where restoring it exactly lives.
+  // knew it — so where no reading remains, this CLEARS the server snapshot rather than
+  // putting the displaced number back. CUL-694 is where restoring it exactly lives.
+  //
+  // WHAT TRIGGERS IT is broader than "offline" — which is how this limit was first
+  // written, and the correction is the whole of CUL-699. `reverseLoggedEvent` calls the
+  // client-side reconcile and THEN syncPendingEvents, so every Undo of a weigh-in puts
+  // two writes on the wire carrying the SAME `.eq('weight_kg', …)` filter and different
+  // values: the client's `restore.restoreToKg`, and this retry's `latest ?? null`. They
+  // disagree on exactly one set — no reading remains AND a restore was supplied, which
+  // is the mis-typed first-ever weigh-in CUL-641 was filed about. Normally the client
+  // wins and this write matches zero rows, because the snapshot is no longer the deleted
+  // reading's value. But that client write is fire-and-forget behind a console.warn, so
+  // ANY failure to land hands the outcome to this one — and a 401 in the token-expiry
+  // window is reachable online, since the getSession() above is what refreshes. Offline
+  // is the obvious trigger, not the only one, and a limit that under-scopes its own
+  // trigger is how the next reviewer skips it.
   const tombstonedWeightEvents = unsyncedEvents.filter(
     (e) => e.event_type === 'weight_check' && e.deleted_at != null && landedEvents.has(e.id),
   );
@@ -1109,6 +1122,27 @@ async function drainEventsQueue(): Promise<void> {
 // parent's soft delete (weight_checks has no deleted_at of its own). A child that has
 // not hydrated yet leaves the question unanswerable, so this writes nothing rather
 // than guessing — the same call lib/weight.ts makes.
+//
+// SECOND KNOWN LIMIT (CUL-699), the mirror image of that one and NOT closed here: the
+// LATEST REMAINING reading is read from the local mirror too, and there a null is
+// ambiguous in a way the deleted reading's own value is not. `hydrateEvents` runs
+// eleven steps ahead of `hydrateWeightChecks`, and a failed page skips that table until
+// the next foreground — so on a reinstall or a second device, "no reading remains" can
+// mean "this device has not pulled them yet". Log a weigh-in in that window and remove
+// it: the gate legitimately matches (this device DID set the snapshot) while the account
+// still holds other readings, so pets.weight_kg is cleared over a record that is not
+// empty. That is CUL-575's rule — a read that has not answered is never an empty record
+// — arriving in the sync layer. Left stated rather than fixed because the exposure
+// predates this loop and is shared by the client reconcile and app/log.tsx's write path,
+// so a fix belongs in one place across all three; CUL-694 largely absorbs it, since a
+// stored displaced value is what the null then falls through to.
+//
+// Nothing heals it in the meantime — the CUL-293 reconcile fires only when a READING
+// lands — and running that reconcile after hydrateWeightChecks is NOT the fix, though it
+// looks like one: `reconcilePetWeightSnapshot` is ungated by design, so it would
+// re-point every pet's snapshot on every pull and destroy an owner-typed profile weight
+// newer than the latest reading. That is precisely the defect this loop's gate exists to
+// prevent, re-opened one layer out to close a narrower case (CUL-745).
 //
 // PRECONDITION: the caller owns the Pattern 4 session-freshness check, as
 // syncPendingEvents does before reaching this loop.
