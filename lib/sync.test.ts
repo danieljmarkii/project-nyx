@@ -90,7 +90,11 @@ const T2 = '2026-08-30T10:00:02.000Z';
 
 type SqliteDb = {
   exec(sql: string): void;
-  prepare(sql: string): { run(...params: unknown[]): void; all(): unknown[] };
+  prepare(sql: string): {
+    run(...params: unknown[]): void;
+    all(): unknown[];
+    get(): unknown;
+  };
   close(): void;
 };
 
@@ -1279,6 +1283,40 @@ describe('pushRows — poison-pill isolation and the retry budget (B-398)', () =
     expect(sql).toContain('updated_at IS ?');
   });
 
+  // THE SEAM. The markSynced tests execute their SQL against real SQLite; the eleven
+  // pushRows writers were only ever checked through the mock, via markedIds — which
+  // reads params[0], the id, and DISCARDS the guard value. So nothing anywhere
+  // asserted that the value pushRows binds is the value the row actually holds, and
+  // two mutations shipped green through the whole 6199-case suite: binding
+  // `new Date().toISOString()`, and binding `r.created_at` (the copy-paste shape).
+  //
+  // Neither is a swallow — both are a TOTAL WEDGE. The guard never matches, so
+  // nothing on any LWW queue is ever marked synced: every row re-pushed every cycle
+  // forever, permanently occupying the LIMIT-100 window, with applyFailurePolicy
+  // unreachable on a success so nothing quarantines it either.
+  //
+  // Closed by joining the two layers: replay the batch path's real capture against a
+  // real row. `created_at` is deliberately DIFFERENT from `updated_at` in the fixture
+  // — evt()'s are equal, which would let the created_at mutation pass.
+  // (adversarial-reviewer, CUL-691.)
+  it('binds the row\'s OWN updated_at, so the batch path actually flips it', async () => {
+    const db = realDbWithEvents();
+    insertEvent(db, 'e1', T0);
+    mockGetAllAsync.mockResolvedValue([
+      { ...evt('e1'), created_at: '2026-01-01T00:00:00.000Z', updated_at: T0 },
+    ]);
+    selectSpy.mockResolvedValue({ data: [{ id: 'e1' }], error: null });
+
+    mockRunAsync.mockClear();
+    await syncPendingEvents();
+    replay(db, marks() as [string, unknown[]][]);
+
+    // Fails if the bound guard is the clock, `created_at`, or anything but the row's
+    // own version — in every one of those cases the UPDATE matches nothing.
+    expect(readEvents(db)[0].synced).toBe(1);
+    db.close();
+  });
+
   it('quarantines at the cap and NOT before, against a real SQLite', async () => {
     // The boundary is expressed as one CASE inside the UPDATE (SQLite reads the
     // pre-update value on both sides), so an off-by-one here is either a row parked
@@ -1415,6 +1453,53 @@ describe('file-bearing writers charge a thrown upload failure (B-586)', () => {
     expect(String(parks()[0][0])).toContain('UPDATE vet_documents SET sync_error = ?');
     expect(parks()[0][1]).toEqual(['upload-413: Payload too large', 'd1', expect.any(String)]);
     expect(marks()).toHaveLength(0);
+  });
+
+  // The SUCCESS path on this queue had no test at all, before or after — on the
+  // queue whose stated failure mode is "a deletion that reports success and does not
+  // delete" (B-478 VF-6, found by rls-privacy-reviewer). CUL-691 moved that guard
+  // out of this loop and into the shared helper, annotating the site "it is now
+  // markSynced's own behaviour rather than this loop's" — which makes an
+  // innocent-looking refactor of this call site the plausible regression, and until
+  // now nothing held it. Executed against a real row, so reverting to
+  // `SET synced = 1 WHERE id = ?` is caught rather than read.
+  // (adversarial-reviewer, CUL-691.)
+  it('vet document: marks the row on success, and ONLY at the version it pushed', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(':memory:') as SqliteDb;
+    db.exec(`CREATE TABLE vet_documents (
+      id TEXT PRIMARY KEY, updated_at TEXT, deleted_at TEXT,
+      synced INTEGER NOT NULL DEFAULT 0, sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error TEXT)`);
+    db.prepare('INSERT INTO vet_documents (id, updated_at, synced) VALUES (?, ?, 0)')
+      .run('d1', VET_DOC.updated_at);
+
+    mockGetAllAsync.mockResolvedValue([VET_DOC]);
+    mockFrom.mockReturnValue({
+      upsert: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue({ data: [{ id: 'd1' }], error: null }),
+      }),
+    });
+
+    await syncPendingVetDocuments();
+    const emitted = marks() as [string, unknown[]][];
+    expect(emitted).toHaveLength(1);
+
+    // The owner renamed or deleted the document during the upload — the exact
+    // window B-478 VF-6 exists for. The mark must no-op.
+    db.prepare('UPDATE vet_documents SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?')
+      .run(T2, T2, 'd1');
+    replay(db, emitted);
+    const afterRewrite = db.prepare('SELECT synced FROM vet_documents').get() as { synced: number };
+    expect(afterRewrite.synced).toBe(0);
+
+    // …and against the version it actually pushed, it marks. Both directions, or
+    // this test could not tell a working guard from a broken mark.
+    db.prepare('UPDATE vet_documents SET updated_at = ? WHERE id = ?').run(VET_DOC.updated_at, 'd1');
+    replay(db, emitted);
+    expect((db.prepare('SELECT synced FROM vet_documents').get() as { synced: number }).synced).toBe(1);
+    db.close();
   });
 
   it('vet document: an undecodable image spends the budget (rejected), not an immediate park', async () => {

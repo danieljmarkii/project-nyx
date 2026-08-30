@@ -455,6 +455,22 @@ function sourceLines(): { file: string; line: number; text: string }[] {
   return out;
 }
 
+type SourceLine = { file: string; line: number; text: string };
+
+/** A WRITE that re-queues a row: `synced = 0` in a SET clause or a pushed SET list. */
+function requeueWrites(lines: SourceLine[]): SourceLine[] {
+  return lines.filter(
+    (l) => /\bsynced\s*=\s*0\b/.test(l.text) && (/\bSET\b/.test(l.text) || /\.push\(/.test(l.text)),
+  );
+}
+
+/** The matched line plus the two after it — enough to span a SET list broken over
+ *  lines, and short enough not to swallow a neighbouring statement. */
+function statementWindow(lines: SourceLine[], at: SourceLine): string {
+  const i = lines.findIndex((l) => l.file === at.file && l.line === at.line);
+  return lines.slice(Math.max(0, i - 1), i + 3).map((l) => l.text).join('\n');
+}
+
 describe('every local mutation clears the quarantine (B-398 write-path contract)', () => {
   // WHY THIS IS A TEST AND NOT A CONVENTION. A quarantined row is skipped by the
   // push queue, so the ONLY way back in is an owner-visible edit clearing
@@ -469,6 +485,33 @@ describe('every local mutation clears the quarantine (B-398 write-path contract)
       // 0` queue read is not a mutation and must not be flagged.
       .filter((l) => /\bsynced\s*=\s*0\b/.test(l.text) && (/\bSET\b/.test(l.text) || /\.push\(/.test(l.text)))
       .filter((l) => !/sync_error\s*=\s*NULL/.test(l.text) || !/sync_attempts\s*=\s*0/.test(l.text))
+      .map((l) => `${l.file}:${l.line}`);
+    expect(offenders).toEqual([]);
+  });
+
+  // ── The invariant the CUL-691 guard RESTS ON, made a test for the same reason ──
+  //
+  // markSynced marks a row only if its `updated_at` still matches the one the push
+  // sent. That is only a guard if a re-queueing mutation always MOVES `updated_at`;
+  // where one does not, the stale push's version still matches and the guard waves
+  // it through — CUL-691, re-opened, on that write path alone.
+  //
+  // Green today on every site, which is exactly why it is worth writing down now:
+  // it holds the line for the next writer at zero cost. Proved necessary by
+  // mutation — deleting `updated_at = ?` from softDeleteEvent re-opens CUL-691 in
+  // full and leaves all 6199 tests green. The comment in lib/sync.ts used to call
+  // the same-millisecond case the guard's only gap; it is not, it is one instance
+  // of this. (adversarial-reviewer, CUL-691.)
+  it('never sets `synced = 0` without also moving `updated_at`', () => {
+    const lines = sourceLines();
+    const offenders = requeueWrites(lines)
+      // The statement, not the line: lib/dietTrialSetup.ts splits its SET list
+      // across lines, so a single-line test would read a false offender.
+      .filter((l) => !/updated_at/.test(statementWindow(lines, l)))
+      // The two insert-only queues have no `updated_at` to move, by design — their
+      // rows are written once and never edited (SYNC_QUEUES). Exempt by NAMING
+      // them, so a future LWW table cannot fall through the same hole.
+      .filter((l) => !/event_attachments|vet_visit_attachments/.test(statementWindow(lines, l)))
       .map((l) => `${l.file}:${l.line}`);
     expect(offenders).toEqual([]);
   });

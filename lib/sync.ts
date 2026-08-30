@@ -234,12 +234,35 @@ const MARK_SYNCED_CHUNK = 400;
 // re-pushed. Only the reverse (marked but unsent) is lossy, and neither shape can
 // produce it.
 //
-// KNOWN LIMIT, stated rather than implied: the guard cannot see a mutation that
-// lands in the same millisecond as the write the push read, since both stamp the
-// same ISO timestamp. That requires a local edit to fall inside the same
-// millisecond as a previous local write AND after the queue read — orders of
-// magnitude narrower than the window this closes, and no worse than the unguarded
-// behaviour it replaces.
+// WHAT THE GUARD RESTS ON, and it is not what the first draft of this comment
+// claimed. That version called the same-millisecond collision the only gap; it is
+// one instance of the real precondition, which is: A RE-QUEUEING MUTATION ALWAYS
+// MOVES `updated_at`. Where one does not, the stale push's version still matches
+// and the guard waves it through — CUL-691 re-opened on that write path alone.
+// Deleting the `updated_at = ?` from softDeleteEvent proves it: the tombstone then
+// carries the insert's timestamp, the guard matches, and the row is marked without
+// the tombstone ever travelling.
+//
+// That class is empty today across all sixteen `synced = 0` write sites, but it was
+// empty by CONVENTION, which is exactly the shape syncQueue.test.ts already refuses
+// for the other half of the same contract. It is now scanned there too
+// ('never sets `synced = 0` without also moving `updated_at`').
+//
+// The shape to watch for is already in the tree: adoptVetDocumentLocalUri
+// (lib/vetDocumentDetail.ts) writes `vet_documents.local_uri` and deliberately does
+// NOT move `updated_at`. That is safe only because vetDocumentRowToRemote omits
+// `local_uri` from the push payload — two facts in two files with nothing tying
+// them, so adding that column to the payload would silently un-guard it.
+//
+// The residual same-millisecond case is real but genuinely narrow: it needs a local
+// edit inside the same millisecond as a previous local write AND after the queue
+// read. Orders of magnitude narrower than the window this closes, and no worse than
+// the unguarded behaviour it replaces.
+//
+// The other half of "the row stays queued" TERMINATING rather than wedging is
+// hydration: all thirteen of its upserts carry `WHERE <table>.synced = 1`, so it
+// structurally cannot rewrite a queued row's version out from under an in-flight
+// push. Load-bearing, and previously unstated. (adversarial-reviewer, CUL-691.)
 export async function markSynced(
   db: Db,
   table: LwwQueueTable,
