@@ -683,6 +683,40 @@ Deno.test('§6 cherry-pick guard — a custom window discloses out-of-window sym
   assert.equal(vomit!.count, 2) // only the in-window incidents counted
 })
 
+Deno.test('B-613 — assembly carries the TYPE of the most recent out-of-window event', () => {
+  // ⚠️ THIS TEST EXISTS BECAUSE ITS RENDER-SIDE SIBLING DID NOT DISCRIMINATE. That one
+  // sets `outOfWindowMostRecentType` on a snapshot fixture, so it proves the renderer
+  // spends the field and is BLIND to the assembly dropping it — which is precisely the
+  // defect B-613 was filed for (the type was read one line above the counter and thrown
+  // away). Deleting the capture in `assembleReport` left the whole B-613 suite green
+  // until this was added. The guard has to start where the fact does.
+  const events = [
+    makeEvent({ type: 'vomit', occurredAt: at('2026-05-01') }), // before the window
+    makeEvent({ type: 'itch', occurredAt: at('2026-06-10') }), // inside
+    makeEvent({ type: 'diarrhea', occurredAt: at('2026-06-28') }), // AFTER — the most recent
+  ]
+  const snap = assembleReport(
+    baseInput({ events, requestedWindow: { startDate: '2026-06-05', endDate: '2026-06-20' } }),
+  )
+  assert.equal(snap.scope.outOfWindowSymptomCount, 2)
+  assert.equal(snap.scope.outOfWindowMostRecent, at('2026-06-28'))
+  // Not the May 1 vomit, and not the in-window itch: the type belongs to the instant
+  // beside it, and a report that named the wrong sign here would be worse than silent.
+  assert.equal(snap.scope.outOfWindowMostRecentType, 'diarrhea')
+})
+
+Deno.test('B-613 — no out-of-window events ⇒ no type (never a stale or invented one)', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-10') })],
+      requestedWindow: { startDate: '2026-06-05', endDate: '2026-06-20' },
+    }),
+  )
+  assert.equal(snap.scope.outOfWindowSymptomCount, 0)
+  assert.equal(snap.scope.outOfWindowMostRecent, null)
+  assert.equal(snap.scope.outOfWindowMostRecentType, null)
+})
+
 Deno.test('medication adherence — a co-started drug is a concurrent change; a zero-dose regimen is NOT "compliant"', () => {
   // The Data Scientist's named counterexample (spec §15): a metronidazole regimen
   // co-started inside the symptom window must surface as a concurrent change so the

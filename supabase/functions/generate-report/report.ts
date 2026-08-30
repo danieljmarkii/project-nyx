@@ -585,6 +585,20 @@ export interface ReportInput {
    * absent ⇒ no incident photos (an empty Appendix E, which simply does not render).
    */
   attachments?: ReportAttachmentInput[]
+  /**
+   * B-613 — the instant `events` was pulled from (`index.ts`'s `computeLookbackIso`).
+   *
+   * Assembly needs it for exactly one question: is the trial-crop symptom count a total
+   * or a floor? The pull floor is the only reason that count can be short, and this module
+   * otherwise has no way to tell "no symptoms were logged in the cropped days" apart from
+   * "the cropped days were never fetched" — the CUL-575 class, in a clinical count.
+   *
+   * Optional so every pre-B-613 fixture keeps compiling; ABSENT ⇒ the extent is unknown ⇒
+   * the count is treated as a floor. That is the direction that cannot mislead: an "at
+   * least N" over a complete count understates a disclosure, while a total over an
+   * incomplete one is a false negative on the axis the guard exists for.
+   */
+  eventsSinceIso?: string | null
 }
 
 // ── Date / window helpers (tz-aware calendar-day math) ───────────────────────
@@ -1005,6 +1019,21 @@ export interface ScopeInfo extends ReportScope {
   outOfWindowSymptomCount: number
   outOfWindowMostRecent: string | null
   /**
+   * B-613 — WHAT THE MOST RECENT EXCLUDED EVENT WAS, not just when.
+   *
+   * The type is read one line above in the counting loop and used to be dropped there.
+   * Two cold reads (rounds 14 + 15) ranked its absence the top non-blocking item both
+   * times, on the same reasoning: "5 symptom events fall outside this window (most
+   * recent May 28)" over a completed trial is read as bookkeeping, while "most recent:
+   * loose stool, May 28" is read as a relapse in the final week. The count says the
+   * window is incomplete; the type says whether the incompleteness matters.
+   *
+   * Scoped to the MOST RECENT excluded event only, deliberately — not a per-type
+   * breakdown. The guard is a pointer to appendix A, not a second symptom table, and
+   * the recent tail is the part a cropped window hides that the reader cannot infer.
+   */
+  outOfWindowMostRecentType: ReportSymptomType | null
+  /**
    * The cherry-pick count, SPLIT (B-600, cold read round 11).
    *
    * A one-ended crop is adequately served by a scalar — everything excluded is on the
@@ -1022,6 +1051,70 @@ export interface ScopeInfo extends ReportScope {
    */
   outOfWindowBefore: number
   outOfWindowAfter: number
+  /**
+   * B-613 — THE TRIAL-CROP HALF OF THE GUARD, which the fields above cannot reach.
+   *
+   * Everything above is gated on `isCustomOverride`, because the question it answers is
+   * "did the owner crop to a good week?" — an owner's question about an owner's choice.
+   * But `since_visit` truncates a long trial BY CONSTRUCTION (it is the second report of
+   * any trial, the one sent at or after a recheck), and there the app picked the window,
+   * so no cherry-pick reading applies and none was offered: the trial block said "42
+   * trial days fall before it, outside this report's window" and nothing anywhere said
+   * what was logged in those 42 days.
+   *
+   * That is B-494's rule arriving one section down. The block ADVERTISES the crop, and an
+   * advertised guard reads as a complete one — a reader told exactly how much of the trial
+   * is missing, and never told the missing part holds six vomits, has been handed the
+   * shape of a disclosure with the disclosure taken out.
+   *
+   * `null` ⇒ there is no trial, or this window covers all of it (the first report of any
+   * trial, and every client surface). Non-null ⇒ the block's truncation sentence carries
+   * this clause. Counted over the TRIAL's elapsed span minus this report's window, never
+   * over all history: outside the trial is outside this block's subject.
+   */
+  trialCropSymptoms: {
+    count: number
+    mostRecentIso: string | null
+    mostRecentType: ReportSymptomType | null
+    /**
+     * THE MIX, not just the most recent (cold read round 16). On a GI-indication trial,
+     * "5 vomits" and "3 vomits and 2 itch" are different patients, and the loop holds
+     * every type already — naming one and dropping four was the same withholding this
+     * field exists to end, one notch smaller. Descending by count, then by type name so
+     * the same record always renders in the same order.
+     */
+    byType: Array<{ type: ReportSymptomType; count: number }>
+    /**
+     * THE DENOMINATOR (cold read round 16, BLOCKING). "5 symptom events over 42 days" is
+     * a rate if those days were logged and an unknown if they were not, and nothing said
+     * which — while the report's own legend promises "a count is never read without
+     * knowing how long and how completely it was tracked". An advertised rule the page
+     * then breaks for the one count a reader most needs it on is worse than no rule,
+     * because it stops them looking for the qualifier.
+     *
+     * MEAL-logged days, not any-logged days, on the C5 precedent: "days with any log" on a
+     * real record IS largely the symptom series, so it would circle back on the very count
+     * it is qualifying and inflate toward "well tracked" exactly when symptoms are dense.
+     */
+    cropDays: number
+    mealLoggedDaysInCrop: number
+    /**
+     * The count is a FLOOR — the event pull did not reach back to the trial's start, so
+     * cropped days exist that nothing counted. Rendered as "at least N", never as a total.
+     *
+     * It is not decoration: `computeLookbackIso` floors the pull at
+     * `min(windowStart - 90d, now - 180d)`, and a `since_visit` report on a long-running
+     * elimination can crop more than that off the trial's head. Printing the short count
+     * as a total would be the same failure this field exists to close, one layer further
+     * in — an incomplete answer wearing a complete one's clothes.
+     *
+     * TRUE WHEN THE PULL EXTENT IS UNKNOWN (`ReportInput.eventsSinceIso` absent). Silence
+     * about the floor is not evidence of completeness, and this report may not claim a
+     * total it cannot support (CUL-708's shape: where a value describes what the call
+     * unconditionally writes, absence has no safe reading).
+     */
+    countIsFloor: boolean
+  } | null
 }
 
 export type ClinicalQuestionType = 'diet_trial_working' | 'symptom_monitoring'
@@ -3929,6 +4022,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // ── Cherry-pick guard (§6) — custom window only ──────────────────────────────
   let outOfWindowSymptomCount = 0
   let outOfWindowMostRecent: string | null = null
+  let outOfWindowMostRecentType: ReportSymptomType | null = null
   let outOfWindowBefore = 0
   let outOfWindowAfter = 0
   if (scope.isCustomOverride) {
@@ -3944,7 +4038,126 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       // after it", and the second is the one that matters on a completed trial.
       if (dn < scope.startDayNum) outOfWindowBefore++
       else outOfWindowAfter++
-      if (outOfWindowMostRecent === null || e.occurredAt > outOfWindowMostRecent) outOfWindowMostRecent = e.occurredAt
+      if (outOfWindowMostRecent === null || e.occurredAt > outOfWindowMostRecent) {
+        outOfWindowMostRecent = e.occurredAt
+        // B-613 — the type travels WITH the instant, assigned in the same branch, so the
+        // pair can never describe two different events. Held apart in two independent
+        // `if`s they drift the moment either condition gains a clause, and the failure is
+        // silent: a date from one incident under a noun from another, on the line a vet
+        // reads to decide whether the crop matters.
+        outOfWindowMostRecentType = e.type as ReportSymptomType
+      }
+    }
+  }
+
+  // ── B-613 — the trial-crop half: what the window hides OF THE TRIAL ──────────
+  //
+  // Deliberately a SECOND loop rather than a branch inside the one above, because the two
+  // answer different questions over different spans and must not share a bound. The guard
+  // above asks "what did this hand-picked window leave out of the RECORD?" and ranges over
+  // all fetched history. This asks "what did this window leave out of the TRIAL this block
+  // describes?" and is bounded by the trial's own elapsed span — outside the trial is
+  // outside this block's subject, and counting it here would put a symptom from three
+  // months before the diet started into a sentence about the diet.
+  //
+  // Fires on ANY basis, which is the whole point: the case that produced it is a preset
+  // `since_visit` window, where nothing was gated on and nothing was disclosed.
+  let trialCropSymptoms: ScopeInfo['trialCropSymptoms'] = null
+  if (
+    trialBlock !== null &&
+    trialBlock.trialDaysOutsideRange.before + trialBlock.trialDaysOutsideRange.after > 0
+  ) {
+    let count = 0
+    let mostRecentIso: string | null = null
+    let mostRecentType: ReportSymptomType | null = null
+    const tally = new Map<ReportSymptomType, number>()
+    // The cropped days themselves, so the count above can be read as a rate. Collected in
+    // the SAME pass and with the same two predicates, so the numerator and its denominator
+    // can never describe different spans.
+    const cropDayNums = new Set<number>()
+    const mealDayNums = new Set<number>()
+    for (
+      let dn = trialBlock.elapsedStartDayIndex;
+      dn <= trialBlock.elapsedEndDayIndex;
+      dn++
+    ) {
+      if (dn < scope.startDayNum || dn > scope.endDayNum) cropDayNums.add(dn)
+    }
+    for (const e of dedupedAll) {
+      const dn = eventDayNumber(e.occurredAt, tz)
+      if (dn === null) continue
+      // Inside the trial…
+      if (dn < trialBlock.elapsedStartDayIndex || dn > trialBlock.elapsedEndDayIndex) continue
+      // …and outside this report. ONE window predicate, shared with the guard above and
+      // with every other section — a second definition of "in this report" is how two
+      // sentences on one page come to disagree about the same event (the B-532 class).
+      if (inWindow(e.occurredAt)) continue
+      if (e.type === 'meal') {
+        // NON-TREAT ONLY, matching `computeTrialFacts`'s coverage predicate exactly
+        // (`lib/dietTrial.ts`: "on live data 82% of feedings are treats, so a 'days with
+        // food logged' count is clearable entirely by treat data"). Both reviewers broke
+        // the treat-inclusive first cut on the same input: 42 cropped days holding one
+        // dental chew each and not one meal of the prescribed diet rendered as fully
+        // tracked, in the same words, twelve words from a coverage line built the other
+        // way — one row, two scales, on the larger half of the trial. §5.3.
+        //
+        // ⚠️ `e.meal &&` IS LOAD-BEARING, NOT DEFENSIVE. A `type === 'meal'` row whose
+        // joined child did not hydrate arrives with `meal: null` (`index.ts`:
+        // `event_type === 'meal' && meal ? mapMealDetail(meal) : null`), and the
+        // optional-chained form `e.meal?.foodType !== 'treat'` reads `undefined !==
+        // 'treat'` — TRUE — so every such day scored as tracked and silenced the
+        // un-logged sentence entirely. The window side already drops those rows
+        // (`windowMeals` filters `&& e.meal`, and `buildTrialBlock` is handed
+        // `meals.filter(e => e.meal)`), so the two predicates disagreed in OPPOSITE
+        // directions: the window under-counts tracked days, which is safe, and this
+        // under-counted UN-logged days, which reads as a better-tracked record than the
+        // report holds. The one direction this sentence may not fail in.
+        if (e.meal && e.meal.foodType !== 'treat') mealDayNums.add(dn)
+        continue
+      }
+      if (!REPORT_SYMPTOM_SET.has(e.type)) continue
+      const t = e.type as ReportSymptomType
+      count++
+      tally.set(t, (tally.get(t) ?? 0) + 1)
+      if (mostRecentIso === null || e.occurredAt > mostRecentIso) {
+        mostRecentIso = e.occurredAt
+        mostRecentType = t
+      }
+    }
+    const byType = [...tally.entries()]
+      .map(([type, n]) => ({ type, count: n }))
+      .sort((a, b) => b.count - a.count || (a.type < b.type ? -1 : a.type > b.type ? 1 : 0))
+    // IS THIS COUNT A TOTAL OR A FLOOR? Only the HEAD can be short: the pull carries no
+    // upper bound (`.gte` only, index.ts), so everything from the floor to `now` is in
+    // hand and a tail crop is always fully counted. The head is bounded by
+    // `computeLookbackIso`, which a long trial can outrun.
+    //
+    // The comparison is day-granular and rounded TOWARD "floor" on the boundary day: the
+    // pull floor is an instant while the trial's start is a local day, so a floor landing
+    // anywhere inside that first day leaves part of it unfetched. Saying "at least" over a
+    // day that happened to be complete costs a word; saying "N" over a day that was not
+    // costs the disclosure.
+    const pullFloorDayNum =
+      typeof input.eventsSinceIso === 'string' ? eventDayNumber(input.eventsSinceIso, tz) : null
+    const headCropped = trialBlock.trialDaysOutsideRange.before > 0
+    const countIsFloor =
+      headCropped && (pullFloorDayNum === null || pullFloorDayNum >= trialBlock.elapsedStartDayIndex)
+    trialCropSymptoms = {
+      count,
+      mostRecentIso,
+      mostRecentType,
+      byType,
+      cropDays: cropDayNums.size,
+      // `mealDayNums` ALREADY holds only cropped days, and provably so rather than by
+      // habit: `inWindow` is `dn >= startDayNum && dn <= endDayNum` over the very
+      // `eventDayNumber` computed above (report.ts `inWindowDay`), so the loop's two
+      // filters — inside the trial span, not in the window — are exactly the predicate
+      // `cropDayNums` is built from. An intersection here would be dead code that reads
+      // as a safety net, which is worse than none: it tells the next reader there is a
+      // case it handles. The boundary behaviour it would have covered is pinned by test
+      // instead, so a change to `inWindow`'s granularity fails loudly.
+      mealLoggedDaysInCrop: mealDayNums.size,
+      countIsFloor,
     }
   }
 
@@ -4037,7 +4250,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   return {
     generatedAt: input.now,
     timezone: tz,
-    scope: { ...scope, outOfWindowSymptomCount, outOfWindowMostRecent, outOfWindowBefore, outOfWindowAfter },
+    scope: {
+      ...scope,
+      outOfWindowSymptomCount,
+      outOfWindowMostRecent,
+      outOfWindowMostRecentType,
+      outOfWindowBefore,
+      outOfWindowAfter,
+      trialCropSymptoms,
+    },
     signalment,
     clinicalQuestion,
     safetyFlags,
