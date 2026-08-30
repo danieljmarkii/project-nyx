@@ -484,7 +484,7 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
   it('re-points the snapshot at the latest REMAINING reading', async () => {
     localReads({ latestKg: 5.62 });
     const out = await reconcileWeightSnapshotAfterDelete('ev-1');
-    expect(out).toEqual({ petId: 'pet-1', snapshotKg: 5.62 });
+    expect(out).toEqual({ petId: 'pet-1', intendedSnapshotKg: 5.62 });
     await flush();
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 5.62 });
     gate(56.25);
@@ -496,7 +496,7 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     // weight this log overwrote is the only correct answer.
     localReads({ latestKg: null });
     const out = await reconcileWeightSnapshotAfterDelete('ev-1', { restoreToKg: 4.2 });
-    expect(out).toEqual({ petId: 'pet-1', snapshotKg: 4.2 });
+    expect(out).toEqual({ petId: 'pet-1', intendedSnapshotKg: 4.2 });
     await flush();
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 4.2 });
     gate(56.25);
@@ -506,7 +506,7 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
   it('restores a displaced NULL — "no weight on file" is a value, not a missing one', async () => {
     localReads({ latestKg: null });
     const out = await reconcileWeightSnapshotAfterDelete('ev-1', { restoreToKg: null });
-    expect(out).toEqual({ petId: 'pet-1', snapshotKg: null });
+    expect(out).toEqual({ petId: 'pet-1', intendedSnapshotKg: null });
     await flush();
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: null });
     expect(usePetStore.getState().activePet?.weight_kg).toBeNull();
@@ -520,7 +520,7 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     // writes back on Save. Null is the honest reading of a record holding no weigh-in.
     localReads({ latestKg: null });
     const out = await reconcileWeightSnapshotAfterDelete('ev-1');
-    expect(out).toEqual({ petId: 'pet-1', snapshotKg: null });
+    expect(out).toEqual({ petId: 'pet-1', intendedSnapshotKg: null });
     await flush();
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: null });
     gate(56.25);
@@ -539,6 +539,28 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     localReads({ deletedKg: 10.0, latestKg: 20.0 });
 
     await reconcileWeightSnapshotAfterDelete('ev-old');
+
+    await flush();
+    gate(10.0);
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(18.0);
+  });
+
+  it('returns the INTENDED value even when both gates refuse — never a report of what landed', async () => {
+    // CUL-699 residual 3. The same setup as the test above: the local gate refuses (the
+    // store holds an owner-typed 18.0) and the server write carries the deleted
+    // reading's 10.0, so it matches zero rows too. Nothing is written anywhere, and the
+    // return is still `{ petId, intendedSnapshotKg: 20.0 }` — which is the honest shape,
+    // because the server gate's verdict is a row count on a write this function
+    // deliberately never awaits (an Undo tap must not wait on a round trip). The field
+    // name is what carries that: it says INTENT, so a caller cannot read it as state.
+    // Returning null on the local gate's refusal alone would be the opposite false
+    // claim, since the two gates are independent and one says nothing about the other.
+    usePetStore.setState({ pets: [{ ...PET, weight_kg: 18.0 }], activePet: { ...PET, weight_kg: 18.0 }, isOnboarded: true });
+    localReads({ deletedKg: 10.0, latestKg: 20.0 });
+
+    await expect(reconcileWeightSnapshotAfterDelete('ev-old')).resolves.toEqual({
+      petId: 'pet-1', intendedSnapshotKg: 20.0,
+    });
 
     await flush();
     gate(10.0);
@@ -656,7 +678,7 @@ describe('reconcileWeightSnapshotAfterDelete (CUL-641)', () => {
     localReads({ latestKg: 5.62 });
     mockPetsEqWeight.mockResolvedValueOnce({ error: { message: 'network' } });
     await expect(reconcileWeightSnapshotAfterDelete('ev-1')).resolves.toEqual({
-      petId: 'pet-1', snapshotKg: 5.62,
+      petId: 'pet-1', intendedSnapshotKg: 5.62,
     });
     await flush();
     expect(usePetStore.getState().activePet?.weight_kg).toBe(5.62);

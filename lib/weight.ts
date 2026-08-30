@@ -349,11 +349,21 @@ function isSameStoredWeight(a: number, b: number): boolean {
  * line — a flaky connection would otherwise leave the card frozen on the state the
  * owner just reversed. `syncPendingEvents` picks the server half back up on
  * reconnect (see the tombstone reconcile in lib/sync.ts).
+ *
+ * RETURNS the value the snapshot is INTENDED to take, never a report of what it
+ * now holds — hence `intendedSnapshotKg` rather than `snapshotKg` (CUL-699). Both
+ * gates below may refuse and this still returns a number, which is the honest shape
+ * rather than a looser one: the server gate's verdict is a row count on a write this
+ * function deliberately does not await, so "did anything change?" is not knowable by
+ * the time it answers. Returning null on the LOCAL gate's refusal alone would be a
+ * different false claim in the other direction — the two gates are independent by
+ * design, and a refused store patch says nothing about the server write beside it.
+ * A caller that needs the value must therefore treat it as an intent.
  */
 export async function reconcileWeightSnapshotAfterDelete(
   eventId: string,
   restore?: { restoreToKg: number | null },
-): Promise<{ petId: string; snapshotKg: number | null } | null> {
+): Promise<{ petId: string; intendedSnapshotKg: number | null } | null> {
   try {
     const db = getDb();
     // The PARENT carries the type; the child carries the value. Reading both is what
@@ -388,11 +398,22 @@ export async function reconcileWeightSnapshotAfterDelete(
       return null;
     }
 
+    // KNOWN LIMIT (CUL-699/CUL-745), and the mirror image of the child read above:
+    // this one reads the LOCAL mirror, where null is ambiguous in a way the deleted
+    // reading's own value is not. `hydrateEvents` runs eleven steps ahead of
+    // `hydrateWeightChecks` and a failed page skips that table until the next
+    // foreground, so on a reinstall or a second device "no reading remains" can mean
+    // "this device has not pulled them yet" — and the snapshot is then cleared over a
+    // record the server knows is not empty. CUL-575's rule (a read that has not
+    // answered is never an empty record) reaching the sync layer. Stated rather than
+    // fixed here because app/log.tsx's write path and lib/sync.ts's retry share the
+    // same read, so the discrimination belongs in one place across all three; CUL-694
+    // largely absorbs it by giving the null a stored displaced value to fall through to.
     const latestKg = await getLatestWeightKg(row.pet_id);
-    // What the snapshot becomes IF the gates below agree this reading owns it. The
-    // null is honest rather than lossy: the displaced value was already gone before
-    // this delete began (see the header).
-    const snapshotKg = latestKg ?? (restore ? restore.restoreToKg : null);
+    // What the snapshot becomes IF the gates below agree this reading owns it — the
+    // INTENT, which is all this function ever returns. The null is honest rather than
+    // lossy: the displaced value was already gone before this delete began (header).
+    const intendedSnapshotKg = latestKg ?? (restore ? restore.restoreToKg : null);
 
     // ── TWO GATES, because there are two copies of the snapshot ──────────────
     // The identity question — "is the snapshot THIS reading's value?" — has to be
@@ -424,7 +445,7 @@ export async function reconcileWeightSnapshotAfterDelete(
     // that pet re-showed the number the owner had just removed.
     const pet = usePetStore.getState().pets.find((p) => p.id === row.pet_id);
     if (pet?.weight_kg != null && isSameStoredWeight(pet.weight_kg, row.weight_kg)) {
-      usePetStore.getState().patchPetById(row.pet_id, { weight_kg: snapshotKg });
+      usePetStore.getState().patchPetById(row.pet_id, { weight_kg: intendedSnapshotKg });
     }
 
     // Gate 2, the SERVER row: `.eq('weight_kg', …)` makes the database itself answer
@@ -438,7 +459,7 @@ export async function reconcileWeightSnapshotAfterDelete(
     // the rule cannot be enforced in one layer and skipped in the other.
     void supabase
       .from('pets')
-      .update({ weight_kg: snapshotKg })
+      .update({ weight_kg: intendedSnapshotKg })
       .eq('id', row.pet_id)
       .eq('weight_kg', row.weight_kg)
       .then(
@@ -452,7 +473,7 @@ export async function reconcileWeightSnapshotAfterDelete(
         (e: unknown) => console.warn('[weight] snapshot reconcile after delete threw:', e),
       );
 
-    return { petId: row.pet_id, snapshotKg };
+    return { petId: row.pet_id, intendedSnapshotKg };
   } catch (e) {
     console.warn('[weight] snapshot reconcile after delete error:', e);
     return null;
