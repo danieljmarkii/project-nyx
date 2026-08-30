@@ -15,6 +15,8 @@
 
 import { strict as assert } from 'node:assert'
 import { renderReport } from './render.ts'
+import { LANE_SYMPTOM_TYPES } from '../generate-signal/detection.ts'
+import { REPORT_SYMPTOM_TYPES } from './report.ts'
 import type {
   ReportSnapshot,
   SafetyFlag,
@@ -353,6 +355,7 @@ Deno.test('chronicity flag → safety band leads, mono-prominent, escalates on p
     symptomDays: 8,
     daysSinceLastEpisode: 2,
     firstOnsetIso: '2026-05-20T14:00:00Z',
+    firstLoggedIso: '2026-05-20T14:00:00Z',
     tier: 'standard',
     windowDays: 56,
   }
@@ -1433,6 +1436,7 @@ Deno.test('chronicity flag copy — no engine "across N weeks"; episodes-on-days
     symptomDays: 19,
     daysSinceLastEpisode: 4,
     firstOnsetIso: '2026-05-14T14:00:00Z',
+    firstLoggedIso: '2026-05-14T14:00:00Z',
     tier: 'standard',
     windowDays: 56,
   }
@@ -3448,6 +3452,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             symptomDays: 16,
             daysSinceLastEpisode: 7,
             firstOnsetIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
+            firstLoggedIso: '2026-04-06T14:00:00Z',
             tier: 'standard',
             windowDays: 91,
           },
@@ -3472,6 +3477,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             symptomDays: 16,
             daysSinceLastEpisode: 7,
             firstOnsetIso: '2026-05-20T14:00:00Z', // seven weeks into the window — genuinely observed
+            firstLoggedIso: '2026-05-20T14:00:00Z',
             tier: 'standard',
             windowDays: 91,
           },
@@ -3480,6 +3486,551 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
     ),
   )
   assert.ok(!/is a floor/.test(observed), 'and NOT a floor when the record actually saw the start')
+})
+
+Deno.test('CUL-69 — the flag dates the record\'s first log, not the detector\'s lookback edge', () => {
+  // The 90-day report window strictly CONTAINS the 56-day chronicity lookback, so on the
+  // default report the detector's first onset is pinned to the lookback edge for any course
+  // that predates it — while appendix A, one page later, prints the earlier entries.
+  const t = plain(renderReport(base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 14,
+            spanDays: 53,
+            activeWeeks: 6,
+            symptomDays: 11,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z', // the lookback edge: 56d before Jul 2
+            firstLoggedIso: '2026-04-10T09:00:00Z', // the record's own first entry, 28d earlier
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })))
+  assert.ok(/first logged Apr 10/.test(t), 'the date is the record\'s first entry')
+  assert.ok(!/first logged May 8/.test(t), 'never the lookback edge, which is a fact about the window')
+})
+
+Deno.test('CUL-69 — the SPAN stays the engine\'s; a stale entry never lengthens a course', () => {
+  // The adversarial pass (2026-08-30) broke the first draft here, and this is the guard for it.
+  // Extending the span by the record that precedes the lookback re-opens §10 #4 — the "two
+  // distant data points" break the engine closes with `loggingEligible`, `countDistributionWeeks`
+  // and the minSpan/minEpisodes conjunction. One stale vomit before a real weekly course printed
+  // "spans 335 days · 7 episodes": the duration ran toward alarm and was false, and the DENSITY
+  // a vet triages on ran toward reassurance. A record-anchored DATE is free; a DURATION is not.
+  const t = plain(renderReport(base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 7,
+            spanDays: 42,
+            activeWeeks: 7,
+            symptomDays: 7,
+            daysSinceLastEpisode: 14,
+            firstOnsetIso: '2026-05-08T14:00:00Z', // the real course
+            firstLoggedIso: '2026-04-04T14:00:00Z', // one stale entry, 34 days earlier
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })))
+  assert.ok(/spans 42 days/.test(t), 'the engine\'s guarded span, unmodified')
+  assert.ok(!/spans 76 days/.test(t), 'the stale entry never manufactures a longer course')
+  // …and the span must not read as running from the record's first entry, which is what the
+  // "(first logged X)" parenthetical asserts when glued to it.
+  assert.ok(!/spans 42 days \(first logged/.test(t), 'the parenthetical drops rather than dating the span')
+  assert.ok(/was first logged Apr 4/.test(t), 'the record date is still stated, in its own sentence')
+  assert.ok(/these counts begin at May 8/.test(t), 'and the counts name where they actually start')
+})
+
+Deno.test('CUL-69 — the disclosure names a DATE, never a day count that can exceed the span', () => {
+  // Adversarial finding 3: the first draft printed "counts cover the most recent 56 days of that
+  // span" over a 43-day span. 56 > 43 reads as "nothing is missing" — the exact inverse of the
+  // warning. The lookback runs back from the window END, so it is never a portion of the span.
+  const t = plain(renderReport(base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 7,
+            spanDays: 42,
+            activeWeeks: 7,
+            symptomDays: 7,
+            daysSinceLastEpisode: 14,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-05-07T14:00:00Z', // one day before the lookback edge
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })))
+  assert.ok(!/56 days of that span/.test(t), 'no scope claim wider than the span it modifies')
+  assert.ok(!/most recent 56 days/.test(t), 'the lookback length is not a portion of the span')
+  assert.ok(/these counts begin at May 8/.test(t), 'the counts state their start date instead')
+})
+
+Deno.test('CUL-69 — the disclosure gate is instant-granular, and never names one date twice', () => {
+  // Adversarial finding 4 (pass 1): the lookback cuts at an INSTANT, so entries earlier on the
+  // same local day as the first counted onset are excluded from the counts too. A local-day gate
+  // said "nothing is missing" while 3 of 10 episodes sat outside the counts.
+  //
+  // Adversarial finding 3 (pass 2): fixing that with an instant gate, while both DATES render as
+  // local days, made this very fixture print "was first logged May 7; these counts begin at
+  // May 7" — a sentence promising earlier entries and naming nothing they are earlier than. The
+  // first version of this test asserted only that the disclosure fired, so it was green over the
+  // defect it created; it now asserts the sentence is coherent.
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 7,
+            spanDays: 42,
+            activeWeeks: 7,
+            symptomDays: 7,
+            daysSinceLastEpisode: 14,
+            firstOnsetIso: '2026-05-08T16:00:00Z', // 12:00 local
+            firstLoggedIso: '2026-05-08T09:00:00Z', // 05:00 local — SAME local day, still uncounted
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/first logged May 8/.test(t), 'a same-local-day truncation is still disclosed')
+  assert.ok(/these counts begin later that day/.test(t), 'and says WHERE they begin without re-naming the date')
+  assert.ok(!/these counts begin at May 8/.test(t), 'never "first logged May 8 … begin at May 8"')
+})
+
+Deno.test('CUL-69 — a span the lookback fully covers is unchanged, and states no disclosure', () => {
+  // Refactor-safety direction: this must hold BEFORE and AFTER. When the lookback reaches the
+  // record's first entry there is nothing bounded and nothing to disclose, so the sentence keeps
+  // exactly the shape CUL-687 settled — parenthetical included.
+  const t = plain(renderReport(base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 8,
+            spanDays: 40,
+            activeWeeks: 5,
+            symptomDays: 8,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-20T14:00:00Z',
+            firstLoggedIso: '2026-05-20T14:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })))
+  assert.ok(/spans 40 days \(first logged May 20\)/.test(t), 'CUL-687\'s wording is untouched')
+  assert.ok(!/these counts begin at/.test(t), 'no disclosure where there is nothing to disclose')
+  assert.ok(!/was first logged/.test(t), 'and no second date sentence')
+})
+
+Deno.test('CUL-69 — the left-censor fires on the RECORD anchor, and states no floor it cannot defend', () => {
+  // Two disjoint cases, because two different boundaries can bind.
+  //
+  // BOTH bind (the record starts at the window edge AND the counts start later still): no single
+  // number is the floor. `spanDays` counts the course and understates — measured at a median 32
+  // days short over dense chronic records, in the reassuring direction B-494 forbids — while the
+  // record's own extent is two logged rows, so stating THAT as a duration is the §10 #4 break the
+  // first adversarial pass caught. The window fact is stated with no duration attached.
+  const both = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'itch',
+            episodeCount: 16,
+            spanDays: 35,
+            activeWeeks: 5,
+            symptomDays: 16,
+            daysSinceLastEpisode: 7,
+            firstOnsetIso: '2026-05-08T14:00:00Z', // the lookback edge, mid-window
+            firstLoggedIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/was first logged Apr 6/.test(both), 'the record anchor is stated')
+  assert.ok(
+    /This window opens Apr 3, 2026, so the record cannot show how long the sign predates it/.test(both),
+    'the window fact still lands, and its date carries the year the rest of the row does',
+  )
+  assert.ok(!/This window opens Apr 3, so/.test(both), 'never the single bare date on a year-stamped row')
+  assert.ok(!/35 days is a floor/.test(both), 'no floor understated by the record the same paragraph cites')
+  assert.ok(!/67 days is a floor/.test(both), 'and no record extent restated as a measured duration')
+  assert.ok(!/is a floor/.test(both), 'no floor number at all where none is defensible')
+
+  // ONLY the window binds (the lookback covers the whole record, so the counts start where the
+  // record does): `spanDays` is both the course and the record's extent, and B-532's sentence is
+  // exactly right. Unchanged from before CUL-69.
+  const windowOnly = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'itch',
+            episodeCount: 16,
+            spanDays: 35,
+            activeWeeks: 5,
+            symptomDays: 16,
+            daysSinceLastEpisode: 7,
+            firstOnsetIso: '2026-04-06T14:00:00Z',
+            firstLoggedIso: '2026-04-06T14:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/35 days is a floor/.test(windowOnly), "B-532's floor is untouched where it is defensible")
+  assert.ok(/first logged Apr 6/.test(windowOnly))
+  assert.ok(/This window opens Apr 3, so/.test(windowOnly), 'and its dates stay bare, exactly as B-532 shipped them')
+  assert.ok(!/Apr 3, 2026/.test(windowOnly), 'no year appears where the row never leaves the window')
+})
+
+Deno.test('CUL-69 — a record anchor outside the window\'s year carries its year', () => {
+  // Year-less rendering ("Mon D") was safe BY CONSTRUCTION while the only date printed here was
+  // the detector's onset, structurally within the lookback of the window end. Repointing it at the
+  // record anchor removed that construction: `since_visit` and stale-active `diet_trial` windows
+  // have no clamp, so the anchor can be years old. Rendered year-less it read as this year — a
+  // 27-month-old sign as a two-month-old one, toward reassurance (adversarial pass 3).
+  const snap = base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-10T14:00:00Z',
+            firstLoggedIso: '2024-03-10T14:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })
+  snap.scope = { ...snap.scope, basis: 'since_visit', startDate: '2024-03-01', startDayNum: 19783, windowDays: 854 }
+  const t = plain(renderReport(snap))
+  assert.ok(/first logged Mar 10, 2024/.test(t), 'an out-of-year anchor names its year')
+  assert.ok(!/first logged Mar 10;/.test(t), 'never bare, which reads as the window\'s own year')
+  // ALL-OR-NOTHING. The conditional version stamped only the out-of-year date — structurally
+  // always the FIRST of the pair, since firstLogged <= firstOnset — and a bare date following a
+  // stamped one inherits its year in ordinary English, which reversed the pair on 236/236 of them.
+  assert.ok(/these counts begin at May 10, 2026/.test(t), 'the second date is stamped too, never left to inherit')
+  assert.ok(!/begin at May 10 /.test(t), 'no bare date beside a stamped one')
+})
+
+Deno.test('CUL-69 — a cross-year pair never renders the counts beginning before the first log', () => {
+  // The loud half of the same defect: on a window straddling New Year, both dates year-less
+  // rendered "first logged Nov 23; these counts begin at Jan 1" — the counts appearing to start ten
+  // months BEFORE the first log, immediately followed by a clause asserting record "before then".
+  // 11% of generation days on a plain 90-day fallback.
+  const snap = base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2025-11-23T14:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })
+  snap.scope = { ...snap.scope, startDate: '2025-11-01', startDayNum: 20393, windowDays: 244 }
+  const t = plain(renderReport(snap))
+  // ASSERTED ON THE DATES, NOT ON DOCUMENT ORDER. The first version of this compared indexOf()
+  // offsets of the two clauses, which is trivially true for two halves of one sentence — it
+  // asserted the sentence's word order and shipped an instance of the defect as its expected
+  // output (adversarial pass 4). Read the two rendered dates back and compare them as dates.
+  const pair = /first logged ([A-Z][a-z]{2} \d{1,2}, \d{4}); these counts begin at ([A-Z][a-z]{2} \d{1,2}, \d{4})/.exec(t)
+  assert.ok(pair, `both dates render fully qualified; got: ${t.slice(t.indexOf('was first logged'), t.indexOf('was first logged') + 120)}`)
+  const [, loggedDay, beginDay] = pair as RegExpExecArray
+  assert.equal(loggedDay, 'Nov 23, 2025')
+  assert.equal(beginDay, 'May 8, 2026')
+  assert.ok(
+    Date.parse(loggedDay) < Date.parse(beginDay),
+    `the counts must not begin before the first log (${loggedDay} → ${beginDay})`,
+  )
+})
+
+Deno.test('CUL-69 — the counts-begin date carries its year too when it falls outside the window\'s', () => {
+  // The counts-begin date is structurally within the lookback of the window end, so it is only
+  // ever one year boundary away — but a report generated in January reaches back into the previous
+  // year, and both dates in this sentence are read together. A year on one and not the other, on a
+  // record whose anchor is older still, is the same ambiguity one clause over.
+  const snap = base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2025-12-05T14:00:00Z', // inside the lookback, previous year
+            firstLoggedIso: '2024-03-10T14:00:00Z', // older still
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })
+  snap.scope = { ...snap.scope, basis: 'since_visit', startDate: '2024-03-01', endDate: '2026-01-15', startDayNum: 19783, endDayNum: 20468, windowDays: 686 }
+  const t = plain(renderReport(snap))
+  assert.ok(/first logged Mar 10, 2024/.test(t), 'the record anchor names its year')
+  assert.ok(/these counts begin at Dec 5, 2025/.test(t), 'and so does the counts-begin date')
+  assert.ok(!/begin at Dec 5 /.test(t), 'never bare beside a stamped anchor')
+})
+
+Deno.test('CUL-69 — the censor claims nothing about WHERE the first entry sits', () => {
+  // CHRONICITY_LEFT_CENSOR_DAYS is a 7-day tolerance, so "the record's first entry sits at that
+  // edge" asserted an exactness it does not have and contradicted the date in the sentence before
+  // it by up to a week — on 29 of 156 disclosed flags (adversarial pass 3). B-532's original clause
+  // claimed nothing of the kind.
+  const t = plain(renderReport(base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-04-09T14:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })))
+  assert.ok(/first logged Apr 9/.test(t), 'the entry is six days inside the window')
+  assert.ok(/This window opens Apr 3, 2026, so the record cannot show how long the sign predates it/.test(t))
+  assert.ok(!/sits at that edge/.test(t), 'no exactness claim the tolerance cannot support')
+})
+
+Deno.test('CUL-69 — the disclosure tail never pluralises over a count this layer does not hold', () => {
+  // Both branches are number-agnostic: the stale-singleton case really is one entry, and the
+  // render layer is not told how many there are.
+  const sameDay = plain(renderReport(base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T16:00:00Z',
+            firstLoggedIso: '2026-05-08T09:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })))
+  assert.ok(/begin later that day — appendix A lists this window/.test(sameDay), 'same-day branch takes the shared tail')
+  assert.ok(!/the earlier entries are in/.test(sameDay), 'never a plural over a possible single entry')
+  // NOT an unrestricted universal: appendix A holds in-window rows only, and on the default
+  // cascade there is no out-of-window disclosure at all, so "anything logged before then is in
+  // appendix A" was false for any record older than the window — and contradicted the censor
+  // sentence outright wherever both fire (adversarial pass 4).
+  assert.ok(!/anything logged before then is in appendix/.test(sameDay), 'no claim about records outside the window')
+
+  const otherDay = plain(renderReport(base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-04-10T09:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+  ] })))
+  assert.ok(/appendix A lists this window's entries, including those before then/.test(otherDay), 'and the same tail')
+  assert.ok(!/the record before then is in appendix/.test(otherDay), 'the differing-day branch drops the universal too')
+})
+
+Deno.test('CUL-69 — the §9 adjacency caveat leads the window mechanics, not the other way round', () => {
+  // Principle 6: the flag row grew by up to two sentences, and the cough↔vomit caveat ("either
+  // count may be understated as readily as overstated") is clinically load-bearing while the
+  // window-mechanics sentences are not. It reads first.
+  const t = plain(renderReport(base({ safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-04-10T09:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+            coughVomitAdjacent: true,
+          },
+  ] })))
+  const caveat = t.indexOf('understated as readily as overstated')
+  const mechanics = t.indexOf('these counts begin at')
+  assert.ok(caveat >= 0 && mechanics >= 0, 'both render')
+  assert.ok(caveat < mechanics, 'the clinical caveat is not demoted behind the window mechanics')
+})
+
+Deno.test('CUL-69 — every chronicity symptom really is in appendix A, as the copy promises', () => {
+  // The flag now tells a vet the earlier entries "are in appendix A". That was prose in the §13a
+  // membership walk and is now owner-facing copy, so it is asserted: appendix A is built from
+  // REPORT_SYMPTOM_TYPES, the chronicity lane is its own list, and a leaf joining one and not the
+  // other would make the report point at a table that does not carry the rows.
+  for (const t of LANE_SYMPTOM_TYPES.chronicity) {
+    assert.ok(
+      (REPORT_SYMPTOM_TYPES as readonly string[]).includes(t),
+      `chronicity lane member ${t} is missing from REPORT_SYMPTOM_TYPES, so appendix A would not list it`,
+    )
+  }
+})
+
+Deno.test('CUL-69 — one safety band renders the window-open date exactly one way', () => {
+  // A band carrying two chronic courses — one reaching back past its counts, one not — decided the
+  // year PER ROW and so printed the same window-open date two ways, two lines apart. That is the
+  // B-532/HR-7 "one page, two renders of one fact" class (adversarial pass 5, reachable at a ~57–64
+  // day window). The switch is band-scoped: a row gaining a year it did not need is merely more
+  // explicit, while a page disagreeing with itself about a date is the defect.
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 48,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-04-05T14:00:00Z', // reaches back past its counts
+            tier: 'standard',
+            windowDays: 56,
+          },
+          {
+            kind: 'chronicity',
+            symptomType: 'cough',
+            episodeCount: 12,
+            spanDays: 48,
+            activeWeeks: 6,
+            symptomDays: 12,
+            daysSinceLastEpisode: 3,
+            firstOnsetIso: '2026-04-06T14:00:00Z',
+            firstLoggedIso: '2026-04-06T14:00:00Z', // does not
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  const renders = [...t.matchAll(/This window opens ([A-Z][a-z]{2} \d{1,2}(?:, \d{4})?)/g)].map((m) => m[1])
+  assert.ok(renders.length >= 2, `both censor sentences render; got ${renders.length}`)
+  assert.equal(new Set(renders).size, 1, `one date, one rendering; got ${JSON.stringify(renders)}`)
+})
+
+Deno.test('CUL-69 — the year is decided once for the row, never per date', () => {
+  // The `/^\d{4}$/` guard was evaluated per date, so a key Intl does not zero-pad could pass for
+  // one date and fail for the other — splitting exactly the pair the switch exists to keep
+  // together ("Mar 10" beside "May 20, 2026"). Unreachable from a timestamptz, but the comment
+  // claimed an invariant the code did not enforce, which is the shape that cost this arm four
+  // review rounds (adversarial pass 5).
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-20T14:00:00Z',
+            firstLoggedIso: '0001-03-10T14:00:00Z', // Intl renders the year unpadded
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  const stamped = /first logged [A-Z][a-z]{2} \d{1,2}, \d{4}/.test(t)
+  const beginStamped = /these counts begin at [A-Z][a-z]{2} \d{1,2}, \d{4}/.test(t)
+  assert.equal(stamped, beginStamped, 'both dates carry a year or neither does — never one of the two')
+})
+
+Deno.test('CUL-69 — the band states the exclusion without needing the legend', () => {
+  // B-494: the safety band must stand on its own. When the unrestricted universal was removed, the
+  // "not in the numbers above" contrast rode out with it, leaving the sentence ending on
+  // "including" where the fact is exclusion (adversarial pass 5 nit).
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-04-10T09:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  const band = t.slice(t.indexOf('Vomiting spans'), t.indexOf('Vomiting spans') + 400)
+  assert.ok(/they are not in the numbers above/.test(band), 'the exclusion is stated in the band itself')
+  assert.ok(/appendix A lists this window's entries/.test(band), 'and the pointer survives beside it')
+})
+
+Deno.test('CUL-69 — the legend explains the second window, and only when one is on the report', () => {
+  // The HR-7 "Entries vs episodes" precedent: where two measures diverge on purpose, the report
+  // says so. Without it the available inference — that the engine judged the earlier entries
+  // unrelated — runs toward reassurance. Gated like the incident-photos entry, for B-599's
+  // reason: a legend entry describing a line the report does not carry is a dangling reference.
+  const flag = (firstLoggedIso: string): SafetyFlag => ({
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 7,
+    spanDays: 42,
+    activeWeeks: 7,
+    symptomDays: 7,
+    daysSinceLastEpisode: 14,
+    firstOnsetIso: '2026-05-08T14:00:00Z',
+    firstLoggedIso,
+    tier: 'standard',
+    windowDays: 56,
+  })
+  const withGap = plain(renderReport(base({ safetyFlags: [flag('2026-04-10T09:00:00Z')] })))
+  assert.ok(/Where the chronicity counts begin/.test(withGap), 'explained when the flag carries a second window')
+  assert.ok(/not.{0,3} judged unrelated/.test(withGap), 'and the reassuring inference is closed off explicitly')
+
+  const noGap = plain(renderReport(base({ safetyFlags: [flag('2026-05-08T14:00:00Z')] })))
+  assert.ok(!/Where the chronicity counts begin/.test(noGap), 'and absent when there is no second window')
 })
 
 Deno.test('B-532/B-502 — with no photographed incident, the block collapses to a line and the caveat survives', () => {
