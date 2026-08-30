@@ -353,6 +353,7 @@ Deno.test('chronicity flag → safety band leads, mono-prominent, escalates on p
     symptomDays: 8,
     daysSinceLastEpisode: 2,
     firstOnsetIso: '2026-05-20T14:00:00Z',
+    firstLoggedIso: '2026-05-20T14:00:00Z',
     tier: 'standard',
     windowDays: 56,
   }
@@ -1433,6 +1434,7 @@ Deno.test('chronicity flag copy — no engine "across N weeks"; episodes-on-days
     symptomDays: 19,
     daysSinceLastEpisode: 4,
     firstOnsetIso: '2026-05-14T14:00:00Z',
+    firstLoggedIso: '2026-05-14T14:00:00Z',
     tier: 'standard',
     windowDays: 56,
   }
@@ -3448,6 +3450,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             symptomDays: 16,
             daysSinceLastEpisode: 7,
             firstOnsetIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
+            firstLoggedIso: '2026-04-06T14:00:00Z',
             tier: 'standard',
             windowDays: 91,
           },
@@ -3472,6 +3475,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             symptomDays: 16,
             daysSinceLastEpisode: 7,
             firstOnsetIso: '2026-05-20T14:00:00Z', // seven weeks into the window — genuinely observed
+            firstLoggedIso: '2026-05-20T14:00:00Z',
             tier: 'standard',
             windowDays: 91,
           },
@@ -3480,6 +3484,122 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
     ),
   )
   assert.ok(!/is a floor/.test(observed), 'and NOT a floor when the record actually saw the start')
+})
+
+Deno.test('CUL-69 — the flag dates the record\'s first log, not the detector\'s lookback edge', () => {
+  // The 90-day report window strictly CONTAINS the 56-day chronicity lookback, so on the
+  // default report the detector's first onset is pinned to the lookback edge for any course
+  // that predates it — while appendix A, one page later, prints the earlier entries.
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 14,
+            spanDays: 53,
+            activeWeeks: 6,
+            symptomDays: 11,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z', // the lookback edge: 56d before Jul 2
+            firstLoggedIso: '2026-04-10T09:00:00Z', // the record's own first entry, 28d earlier
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/first logged Apr 10/.test(t), 'the date is the record\'s first entry')
+  assert.ok(!/first logged May 8/.test(t), 'never the lookback edge, which is a fact about the window')
+  assert.ok(/spans 81 days/.test(t), 'the span runs from the record\'s first entry, not the lookback edge')
+  assert.ok(!/spans 53 days/.test(t), 'the lookback-bounded span is not stated as the record\'s extent')
+})
+
+Deno.test('CUL-69 — counts that cannot span the whole span say so', () => {
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 14,
+            spanDays: 53,
+            activeWeeks: 6,
+            symptomDays: 11,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-04-10T09:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/counts cover the most recent 56 days/.test(t), 'the counts disclose their own window')
+  assert.ok(/appendix A/.test(t), 'and point at the log that carries the rest')
+})
+
+Deno.test('CUL-69 — a span the lookback fully covers is unchanged, and states no count scope', () => {
+  // Refactor-safety direction: this must hold BEFORE and AFTER. When the detector's
+  // lookback reaches the record's first entry there is nothing bounded and nothing to
+  // disclose, so the sentence keeps exactly the shape CUL-687 settled.
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 8,
+            spanDays: 40,
+            activeWeeks: 5,
+            symptomDays: 8,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-20T14:00:00Z',
+            firstLoggedIso: '2026-05-20T14:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/spans 40 days/.test(t), 'the engine span stands when nothing precedes it')
+  assert.ok(/first logged May 20/.test(t))
+  assert.ok(!/counts cover the most recent/.test(t), 'no disclosure where there is nothing to disclose')
+})
+
+Deno.test('CUL-69 — the left-censor floor tests the RECORD anchor, not the detector onset', () => {
+  // B-532's floor fires when the record starts at the window edge. Pre-CUL-69 it read
+  // `firstOnsetIso`, which on the default report sits ~34 days inside the window by
+  // construction — so the floor stayed silent on exactly the reports that needed it.
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'itch',
+            episodeCount: 16,
+            spanDays: 35,
+            activeWeeks: 5,
+            symptomDays: 16,
+            daysSinceLastEpisode: 7,
+            firstOnsetIso: '2026-05-08T14:00:00Z', // mid-window: the lookback edge
+            firstLoggedIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/first logged Apr 6/.test(t))
+  assert.ok(/67 days is a floor/.test(t), 'the widened span is stated as a floor at the window edge')
 })
 
 Deno.test('B-532/B-502 — with no photographed incident, the block collapses to a line and the caveat survives', () => {

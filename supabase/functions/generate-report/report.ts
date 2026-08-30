@@ -1119,7 +1119,23 @@ export type SafetyFlag =
       activeWeeks: number
       symptomDays: number
       daysSinceLastEpisode: number
+      /** BELIEF anchor: the first onset the DETECTOR saw, bounded by its own `windowDays`
+       *  lookback. Kept because every count beside it is measured from here. Never rendered
+       *  as the record's start — see `firstLoggedIso` (CUL-69). */
       firstOnsetIso: string
+      /**
+       * EVIDENCE anchor: the earliest logged entry of this symptom in the REPORT window —
+       * the same rows appendix A prints. Separate from `firstOnsetIso` for the reason
+       * `TrialFacts.exposureRange` is separate from `range`: one bounds what the engine
+       * counted, the other bounds what the record holds, and rendering the first as the
+       * second understates a course by the gap between the two windows (CUL-69).
+       *
+       * REQUIRED, not optional-by-omission: it describes the very value the flag always
+       * states, so silence here would be a claim about the record (the CUL-708 rule). The
+       * one producer answers it; a fixture that omits it fails to compile rather than
+       * quietly re-inheriting the lookback edge.
+       */
+      firstLoggedIso: string
       tier: SymptomChronicityFinding['tier']
       windowDays: number
       /** §9 cough↔vomit adjacency — set on the leading flag when both courses are chronic
@@ -3509,6 +3525,40 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     const localSymptomDays = episodeSetMatches ? localDayNums.size : f.symptomDays
     const localDaysSince =
       episodeSetMatches && lastLocalDay !== null ? Math.max(0, endDayNum - lastLocalDay) : f.daysSinceLastEpisode
+    // EVIDENCE vs BELIEF (CUL-69 / B-700). Everything the engine returned — the onset, the
+    // span, and every count — is bounded at the DETECTOR's own `windowDays` lookback,
+    // measured back from the window end (computeChronicityStats filters onsets to
+    // `ms >= now - windowDays`). The report's window is WIDER by construction on the default
+    // artifact — buildDetectionInput's own contract says so ("90-day fallback ⊃ 56d
+    // chronicity window") — so for any course that predates the lookback, the detector's
+    // first onset lands ~34 days INSIDE the window while appendix A, one page later, prints
+    // the earlier entries. Rendering that onset as "first logged" therefore contradicts the
+    // report's own log AND understates the duration: a cat vomiting since May 20 was dated
+    // Jun 13, three weeks short, on the axis a vet reads a chronicity flag FOR. On a safety
+    // flag that error runs toward reassurance, which is the one direction this band may not
+    // fail in (B-494).
+    //
+    // So the record's own first entry is carried SEPARATELY rather than replacing the
+    // engine's anchor: the same split as `TrialFacts.exposureRange` vs `range`, for the same
+    // reason — one bounds what the engine counted, the other bounds what the record holds,
+    // and the counts below are only interpretable against the first. Read off `occurredAt`,
+    // like-for-like with the detector, which saw these same deduped rows.
+    let firstLoggedMs: number | null = null
+    for (const e of windowEvents) {
+      if (e.type !== f.symptomType) continue
+      const ms = Date.parse(e.occurredAt)
+      if (!Number.isFinite(ms)) continue
+      if (firstLoggedMs === null || ms < firstLoggedMs) firstLoggedMs = ms
+    }
+    // The detector saw only in-window rows, so its onset can never precede the record's
+    // first entry; the `min` is belt-and-braces, and an unparseable-row fallback to the
+    // engine's anchor keeps the flag stating a date it can defend rather than none.
+    const firstLoggedIso =
+      firstLoggedMs === null
+        ? f.firstOnsetIso
+        : new Date(
+            Number.isFinite(firstOnsetMs) ? Math.min(firstLoggedMs, firstOnsetMs) : firstLoggedMs,
+          ).toISOString()
     safetyFlags.push({
       kind: 'chronicity',
       symptomType: f.symptomType,
@@ -3518,6 +3568,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       symptomDays: localSymptomDays,
       daysSinceLastEpisode: localDaysSince,
       firstOnsetIso: f.firstOnsetIso,
+      firstLoggedIso,
       tier: f.tier,
       windowDays: f.windowDays,
       ...(f.coughVomitAdjacent ? { coughVomitAdjacent: true as const } : {}),
