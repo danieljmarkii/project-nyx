@@ -2009,23 +2009,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
         ? `owner-confirmed protein &middot; recorded on day ${num(prov.confirmedDay)}`
         : 'owner-confirmed protein'
       : 'protein read from the trial diet&rsquo;s label'
-  const identity: string[] = [
-    // THE JOIN NEEDS ITS OWN PUNCTUATION (cold read round 10, all four artifacts). The
-    // phrase was concatenated straight onto the next clause, and on an ended trial that
-    // produces a FALSE COMPOUND: "of a 42-day window Jun 1 – Jun 19 · stopped early"
-    // asserts a 42-day window spanning nineteen days. A later sentence corrects each
-    // one, which is why no artifact was blocked by it — and why one delimiter fixes it
-    // on all four.
-    protein
-      ? `Elimination diet trial &mdash; <b>${h(capProtein(protein))}</b> &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`
-      : `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays)}.`,
-  ]
-  // The food labels + provenance sub-line, only when the lead named the protein instead
-  // of the labels (else the labels already lead and this would repeat them). The labels
-  // ALWAYS ride this line so they never vanish; the provenance word rides it only when
-  // present (it always is in production — provenance travels with the resolved protein —
-  // but a display-only fixture may omit it, so no dangling delimiter either way).
-  if (protein) identity.push(`${labels}${provWord ? ` &middot; ${provWord}` : ''}.`)
+  // (declared above `identity` so the day phrase can take the same decision)
   // THE TRIAL'S OWN DATES TAKE THE BAND'S YEAR DECISION TOO (CUL-746 pass 4). These sit
   // twelve words from the Allowed list and the exposure clause, so leaving them bare is
   // the same one-band-two-renderings defect one row up: a stale trial rendered "Started
@@ -2034,6 +2018,27 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // applied to them (see `permissionDatesNeedYear`) — a trial starting before the window
   // is the ordinary shape of every mid-trial report.
   const identityDay = permissionDatesNeedYear(t) ? fmtDayYear : fmtDay
+  const identity: string[] = [
+    // THE JOIN NEEDS ITS OWN PUNCTUATION (cold read round 10, all four artifacts). The
+    // phrase was concatenated straight onto the next clause, and on an ended trial that
+    // produces a FALSE COMPOUND: "of a 42-day window Jun 1 – Jun 19 · stopped early"
+    // asserts a 42-day window spanning nineteen days. A later sentence corrects each
+    // one, which is why no artifact was blocked by it — and why one delimiter fixes it
+    // on all four.
+    protein
+      ? `Elimination diet trial &mdash; <b>${h(capProtein(protein))}</b> &middot; ${trialDayPhrase(
+          t,
+          t.targetDurationDays,
+          identityDay === fmtDayYear,
+        )}.`
+      : `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays, identityDay === fmtDayYear)}.`,
+  ]
+  // The food labels + provenance sub-line, only when the lead named the protein instead
+  // of the labels (else the labels already lead and this would repeat them). The labels
+  // ALWAYS ride this line so they never vanish; the provenance word rides it only when
+  // present (it always is in production — provenance travels with the resolved protein —
+  // but a display-only fixture may omit it, so no dangling delimiter either way).
+  if (protein) identity.push(`${labels}${provWord ? ` &middot; ${provWord}` : ''}.`)
   identity.push(
     t.status === 'active'
       ? `Started ${h(identityDay(t.startedAt))}.`
@@ -2756,7 +2761,7 @@ function articleFor(n: number): string {
   return String(n)[0] === '8' || n === 11 || n === 18 ? 'an' : 'a'
 }
 
-function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string {
+function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number, withYear = false): string {
   if (!t) return `${num(targetDays)}-day window`
   // ── IT IS A POSITION AS OF THE WINDOW'S END, AND SAYS SO WHEN THAT IS THE PAST ──
   //
@@ -2774,8 +2779,18 @@ function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string 
   // "the only figure here that counts the trial" — endorsing the stale number by
   // reference having just removed it by arithmetic. The pointer is gone; the label is
   // what was actually needed.
+  // THE AS-OF TAKES THE BAND'S YEAR DECISION (CUL-746 pass 5). It renders inside the
+  // SAME paragraph as `Started {date}`, so leaving it bare while that one is stamped is
+  // the one-band-two-renderings defect the stamp exists to remove — and the fix's own
+  // comment quoted "Started Nov 15 … beside day 463 as of Feb 20" as the defect while
+  // repairing only the first half of that sentence. The chronicity band set the
+  // precedent: its year is decided once for the row and `censorBit`'s window-open date
+  // follows the same switch, "or it becomes the single bare date on an otherwise fully
+  // year-stamped page".
   const asOf =
-    t.trialDaysOutsideRange.after > 0 ? ` as of ${h(fmtDay(t.evidenceEndDate))}` : ''
+    t.trialDaysOutsideRange.after > 0
+      ? ` as of ${h(withYear ? fmtDayYear(t.evidenceEndDate) : fmtDay(t.evidenceEndDate))}`
+      : ''
   // ── AND THE OVERRUN IS A FACT ABOUT NOW, WHICH THE AS-OF POSITION CANNOT CARRY ──
   //
   // `daysPastTarget` is derived from `dayCounter`, so on a window that closed in the
@@ -2913,7 +2928,14 @@ function permissionDatesNeedYear(t: NonNullable<ReportSnapshot['trial']>): boole
     [yearOfDay(t.evidenceStartDate), yearOfDay(t.evidenceEndDate)].filter((y): y is number => y !== null),
   )
 
-  // ── THE DECISION READS EVERY DATE THE BAND RENDERS (CUL-746 pass 4) ─────────
+  // ── THE DECISION READS EVERY DATE IT GOVERNS (CUL-746 pass 4/5) ────────────
+  //
+  // It governs four renderings: the page-1 exposure clause, appendix C's Why and Dates
+  // columns, the Allowed list, and the trial identity line INCLUDING its "as of" day
+  // phrase. Deliberately NOT "every date on the page": the medication-overlap row and
+  // the out-of-window crop clause hand-roll their own bare dates and are pre-existing
+  // (CUL-763) — this comment says what the decision reaches, because the previous
+  // version claimed the whole band and was false about its own row.
   //
   // The first cut scanned `exposures.items[].permittedLaterFrom` and applied the answer
   // to the Allowed list, which renders `permittedFoods[].allowedFrom/allowedUntil` — a

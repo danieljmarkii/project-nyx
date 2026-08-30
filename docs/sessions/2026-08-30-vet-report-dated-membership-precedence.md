@@ -134,7 +134,14 @@ the part worth keeping:
 | 1 | FAIL | 3 | — (in the original change) |
 | 2 | FAIL | 6 | 5 |
 | 3 | FAIL | 6 | 5 |
-| 4 | (on the reverted core) | | |
+| 4 | FAIL | 2 real + 3 low | 0 — **the core held completely** |
+| 5 | FAIL | 1 new + 3 pre-existing | 1 |
+
+**The rate broke exactly when the additions came out.** Passes 1–3 averaged five
+regressions per round; pass 4, run on the reverted core, found none in it — both its
+findings were in the year predicate, the one piece of net-new logic. Pass 5 found one
+more there and nothing else. That is the strongest evidence available that the revert
+was a correction rather than a retreat.
 
 **All six of pass 3's findings were in one family** — the additions that tried to make
 page 1 name WHICH food a dated-membership row was, and characterise whether it was a
@@ -168,6 +175,14 @@ The commit message quoted the contradiction it had left in place.
 **A per-row rule and an all-or-nothing rule are not "one rule, two consumers."** Pass 2
 gave appendix C a per-row register while page 1 kept `early.every(...)`. That is the
 same duplication this issue exists to delete, re-created by the fix meant to close it.
+
+**A guard's own vacuity is the commonest thing mutation catches.** Five of this
+session's thirty mutations red-lighted a *guard* rather than the source: a `.*` that
+bridged 400 characters into a different sentence; a `Started Nov 15, 2024` assertion
+matching appendix B's copy three pages from the one under test; a withdrawal fixture
+whose trial-food date disqualified the row anyway; a prefix fixture that never made the
+caps bite; and a year fixture whose permit dates were out-of-year regardless. Every one
+was written by someone who knew exactly what the defect was.
 
 **And the stopping rule, which is written down and I nearly missed.** CLAUDE.md's
 event-taxonomy row says a pass that writes many closures at once returns findings at an

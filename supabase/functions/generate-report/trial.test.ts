@@ -2272,6 +2272,12 @@ Deno.test('CUL-746 — a permit that ENDED before the window opened cannot read 
   // three pages away. Mutation caught it; reading it did not (CUL-613).
   const page1 = text.slice(0, text.indexOf('Appendix A'))
   assert.ok(/Started Nov 15, 2024/.test(page1), `the trial line read: ${page1.slice(page1.indexOf('Started'), page1.indexOf('Started') + 80)}`)
+  // …AND THE "AS OF" IN THE SAME PARAGRAPH. Pass 5's finding: the fix repaired
+  // "Started Nov 15" and left "day 463 as of Feb 20" bare — the two halves of the very
+  // sentence its own comment quoted as the defect, joined by a space into one paragraph.
+  const trialRow = page1.slice(page1.indexOf('Elimination diet trial'), page1.indexOf('Indication'))
+  assert.ok(!/as of Feb 20 /.test(trialRow), 'a bare as-of inherits the stamped year beside it')
+  assert.ok(/as of Feb 20, 2026/.test(trialRow), `the trial row read: ${trialRow}`)
 })
 
 Deno.test('CUL-746 — the trial\u2019s own start carries the year when IT is the only out-of-year date', () => {
