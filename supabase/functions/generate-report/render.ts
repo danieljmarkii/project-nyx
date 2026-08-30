@@ -1437,24 +1437,6 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // sharing the "spans N days (first logged X)" phrasing, whose parenthetical reads as the
       // span's start.
       const firstLoggedKey = localDayKeyOf(f.firstLoggedIso, tz)
-      // YEAR-LESS WAS SAFE BY CONSTRUCTION, AND THIS CHANGE REMOVED THE CONSTRUCTION (adversarial
-      // pass 3). `fmtLocalDay` prints "Mon D" with no year, which was unambiguous while the only
-      // date here was `firstOnsetIso` — structurally within `windowDays` of the window end. The
-      // record anchor is bounded only by the report WINDOW, and that window is unbounded on rung 1
-      // (`since_visit` has no clamp) and on rung 2 (a stale `active` trial, which CLAUDE.md calls
-      // the steady state — B-594). So "first logged Mar 10; these counts begin at May 10" rendered
-      // a 27-month-old sign as a two-month-old one, and on a plain 90-day fallback 11% of
-      // generation days rendered a REVERSED pair ("first logged Nov 23; these counts begin at
-      // Jan 1"). Both read toward reassurance on the axis this flag exists for.
-      //
-      // The year is added only when it is not the window's, so an ordinary same-year report is
-      // unchanged and the year carries signal wherever it appears.
-      const scopeEndYear = snap.scope.endDate.slice(0, 4)
-      const dayInScope = (iso: string): string => {
-        const y = localDayKeyOf(iso, tz).slice(0, 4)
-        return y === scopeEndYear ? fmtLocalDay(iso, tz) : `${fmtLocalDay(iso, tz)}, ${y}`
-      }
-      const onsetDay = dayInScope(f.firstLoggedIso)
       // INSTANT-granular, not day-granular. The lookback cuts at an instant, so entries earlier on
       // the SAME local day as the first counted onset are excluded from the counts too — three
       // morning episodes dropping out of a ten-episode record while a local-day comparison read
@@ -1463,6 +1445,35 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const firstOnsetMs = Date.parse(f.firstOnsetIso)
       const hasUncountedRecord =
         Number.isFinite(firstLoggedMs) && Number.isFinite(firstOnsetMs) && firstLoggedMs < firstOnsetMs
+      // YEAR-LESS WAS SAFE BY CONSTRUCTION, AND CUL-69 REMOVED THE CONSTRUCTION. `fmtLocalDay`
+      // prints "Mon D" with no year, which was unambiguous while the only date on this line was
+      // `firstOnsetIso` — structurally within `windowDays` of the window end. The record anchor is
+      // bounded only by the report WINDOW, and that window is unbounded on rung 1 (`since_visit`
+      // has no clamp) and rung 2 (a stale `active` trial, the B-594 steady state), so a 2024 anchor
+      // beside a 2026 count start read as a two-month-old sign where the record holds 27 months.
+      //
+      // ALL-OR-NOTHING, NOT CONDITIONAL (adversarial pass 4, which broke the conditional version).
+      // Stamping only the out-of-year date is worse than stamping none: `firstLoggedIso` is always
+      // <= `firstOnsetIso`, so the stamped one is structurally always the FIRST of the pair, and in
+      // ordinary English a bare date following a year-stamped one INHERITS that year. "first logged
+      // Nov 23, 2025; these counts begin at May 8" then reads as May 8 2025 — six months BEFORE the
+      // anchor, the reversed pair the year was added to remove, now asserted with more confidence.
+      // Measured at 236/236 of such pairs on a plain 90-day fallback. So the year is decided ONCE
+      // for the whole row: present whenever the record anchor is in play, absent otherwise — and
+      // when it is absent the row's only dates are within the lookback of the window end, exactly
+      // as B-532 and CUL-687 shipped them. The window-open date in `censorBit` follows the same
+      // switch, or it becomes the single bare date on an otherwise fully year-stamped page.
+      const withYear = hasUncountedRecord
+      const day = (iso: string): string => {
+        const bare = fmtLocalDay(iso, tz)
+        const y = localDayKeyOf(iso, tz).slice(0, 4)
+        // The year is appended only when it really is one: `localDayKeyOf` falls back to the raw
+        // ISO prefix on an unparseable input, and `renderReport` is exported, so a garbage anchor
+        // must degrade to the bare render rather than to "not-a-date, not-".
+        return withYear && /^\d{4}$/.test(y) ? `${bare}, ${y}` : bare
+      }
+      const onsetDay = day(f.firstLoggedIso)
+      const scopeStartDay = withYear ? fmtDayYear(snap.scope.startDate) : fmtDay(snap.scope.startDate)
       // B-532's floor now tests the RECORD anchor. Against `firstOnsetIso` it was testing the
       // boundary that was not binding: on the default report that onset sits ~34 days inside the
       // window by construction, so the floor read "genuinely observed" and stayed silent on
@@ -1500,8 +1511,8 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           // 156 disclosed flags (adversarial pass 3). B-532's original clause claimed nothing about
           // where the entry sits; this is that clause with the indefensible number removed, and
           // nothing else added.
-          ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record cannot show how long the sign predates it.`
-          : ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
+          ? ` This window opens ${h(scopeStartDay)}, so the record cannot show how long the sign predates it.`
+          : ` This window opens ${h(scopeStartDay)}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
       // DISCLOSURE BESIDE THE NUMBER, never a re-derivation (the C5 logging-density precedent).
       // It names the date the counts actually begin at, never a day COUNT: the lookback is measured
       // back from the window END, so "the most recent 56 days" is not a portion of a 43-day span —
@@ -1513,19 +1524,28 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // date twice — "was first logged May 7; these counts begin at May 7" — a sentence promising
       // earlier entries while naming nothing they are earlier than. Reachable on ~5% of flags for
       // a boundary-edge cough course logged several times a day, which is the shape cough's floors
-      // were tuned for. The tail is number-agnostic ("the record before then", "the earlier
-      // entries") so it does not pluralise over a count this layer does not hold — the stale-
-      // singleton case really is one entry.
-      const engineOnsetDay = dayInScope(f.firstOnsetIso)
+      // were tuned for.
+      //
+      // The tail is SHARED by both shapes and says what appendix A HOLDS, rather than claiming
+      // where every earlier entry is (adversarial pass 4). "anything logged before then is in
+      // appendix A" is an unrestricted universal the report cannot honour — appendix A carries
+      // in-window rows only, and on the default cascade there is no out-of-window disclosure at
+      // all — so for a record older than the window it was false in the "you are seeing the whole
+      // history" direction, and it flatly contradicted the censor sentence wherever both fire
+      // (reachable at a ~57–64 day window: a vet visit eight weeks ago, the canonical recheck
+      // interval). It is also number-agnostic, so it does not pluralise over a count this layer
+      // does not hold — the stale-singleton case really is one entry.
+      const engineOnsetDay = day(f.firstOnsetIso)
+      const appendixTail = ' &mdash; appendix&nbsp;A lists this window&rsquo;s entries, including those before then.'
       const recordBit = !hasUncountedRecord
         ? ''
         : firstLoggedKey === localDayKeyOf(f.firstOnsetIso, tz)
           ? ` ${h(symptomLabel(f.symptomType))} was first logged ${h(
               onsetDay,
-            )}; these counts begin later that day, so anything logged before then is in appendix&nbsp;A but not in the numbers above.`
+            )}; these counts begin later that day${appendixTail}`
           : ` ${h(symptomLabel(f.symptomType))} was first logged ${h(
               onsetDay,
-            )}; these counts begin at ${h(engineOnsetDay)}, so the record before then is in appendix&nbsp;A but not in the numbers above.`
+            )}; these counts begin at ${h(engineOnsetDay)}${appendixTail}`
       // §9 cough↔vomit adjacency (CUL-676) — the clinical register of the same fact the
       // Signal card states to the owner. Post-tussive vomiting and the cough-mistaken-for-
       // -hairball error make these two owner-logged streams cross-contaminate in BOTH

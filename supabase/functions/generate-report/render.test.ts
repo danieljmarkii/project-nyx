@@ -3657,9 +3657,10 @@ Deno.test('CUL-69 — the left-censor fires on the RECORD anchor, and states no 
   )
   assert.ok(/was first logged Apr 6/.test(both), 'the record anchor is stated')
   assert.ok(
-    /This window opens Apr 3, so the record cannot show how long the sign predates it/.test(both),
-    'the window fact still lands',
+    /This window opens Apr 3, 2026, so the record cannot show how long the sign predates it/.test(both),
+    'the window fact still lands, and its date carries the year the rest of the row does',
   )
+  assert.ok(!/This window opens Apr 3, so/.test(both), 'never the single bare date on a year-stamped row')
   assert.ok(!/35 days is a floor/.test(both), 'no floor understated by the record the same paragraph cites')
   assert.ok(!/67 days is a floor/.test(both), 'and no record extent restated as a measured duration')
   assert.ok(!/is a floor/.test(both), 'no floor number at all where none is defensible')
@@ -3690,6 +3691,8 @@ Deno.test('CUL-69 — the left-censor fires on the RECORD anchor, and states no 
   )
   assert.ok(/35 days is a floor/.test(windowOnly), "B-532's floor is untouched where it is defensible")
   assert.ok(/first logged Apr 6/.test(windowOnly))
+  assert.ok(/This window opens Apr 3, so/.test(windowOnly), 'and its dates stay bare, exactly as B-532 shipped them')
+  assert.ok(!/Apr 3, 2026/.test(windowOnly), 'no year appears where the row never leaves the window')
 })
 
 Deno.test('CUL-69 — a record anchor outside the window\'s year carries its year', () => {
@@ -3717,8 +3720,11 @@ Deno.test('CUL-69 — a record anchor outside the window\'s year carries its yea
   const t = plain(renderReport(snap))
   assert.ok(/first logged Mar 10, 2024/.test(t), 'an out-of-year anchor names its year')
   assert.ok(!/first logged Mar 10;/.test(t), 'never bare, which reads as the window\'s own year')
-  assert.ok(/these counts begin at May 10, so /.test(t), 'the in-year date renders')
-  assert.ok(!/begin at May 10, 20/.test(t), 'and stays bare, so a printed year always carries signal')
+  // ALL-OR-NOTHING. The conditional version stamped only the out-of-year date — structurally
+  // always the FIRST of the pair, since firstLogged <= firstOnset — and a bare date following a
+  // stamped one inherits its year in ordinary English, which reversed the pair on 236/236 of them.
+  assert.ok(/these counts begin at May 10, 2026/.test(t), 'the second date is stamped too, never left to inherit')
+  assert.ok(!/begin at May 10 /.test(t), 'no bare date beside a stamped one')
 })
 
 Deno.test('CUL-69 — a cross-year pair never renders the counts beginning before the first log', () => {
@@ -3743,10 +3749,19 @@ Deno.test('CUL-69 — a cross-year pair never renders the counts beginning befor
   ] })
   snap.scope = { ...snap.scope, startDate: '2025-11-01', startDayNum: 20393, windowDays: 244 }
   const t = plain(renderReport(snap))
-  assert.ok(/first logged Nov 23, 2025/.test(t), 'the earlier date is disambiguated')
-  const logged = t.indexOf('first logged Nov 23, 2025')
-  const begin = t.indexOf('these counts begin at May 8')
-  assert.ok(logged >= 0 && begin > logged, 'and the pair still reads in order')
+  // ASSERTED ON THE DATES, NOT ON DOCUMENT ORDER. The first version of this compared indexOf()
+  // offsets of the two clauses, which is trivially true for two halves of one sentence — it
+  // asserted the sentence's word order and shipped an instance of the defect as its expected
+  // output (adversarial pass 4). Read the two rendered dates back and compare them as dates.
+  const pair = /first logged ([A-Z][a-z]{2} \d{1,2}, \d{4}); these counts begin at ([A-Z][a-z]{2} \d{1,2}, \d{4})/.exec(t)
+  assert.ok(pair, `both dates render fully qualified; got: ${t.slice(t.indexOf('was first logged'), t.indexOf('was first logged') + 120)}`)
+  const [, loggedDay, beginDay] = pair as RegExpExecArray
+  assert.equal(loggedDay, 'Nov 23, 2025')
+  assert.equal(beginDay, 'May 8, 2026')
+  assert.ok(
+    Date.parse(loggedDay) < Date.parse(beginDay),
+    `the counts must not begin before the first log (${loggedDay} → ${beginDay})`,
+  )
 })
 
 Deno.test('CUL-69 — the counts-begin date carries its year too when it falls outside the window\'s', () => {
@@ -3773,7 +3788,7 @@ Deno.test('CUL-69 — the counts-begin date carries its year too when it falls o
   const t = plain(renderReport(snap))
   assert.ok(/first logged Mar 10, 2024/.test(t), 'the record anchor names its year')
   assert.ok(/these counts begin at Dec 5, 2025/.test(t), 'and so does the counts-begin date')
-  assert.ok(!/begin at Dec 5, so/.test(t), 'never bare across a year boundary')
+  assert.ok(!/begin at Dec 5 /.test(t), 'never bare beside a stamped anchor')
 })
 
 Deno.test('CUL-69 — the censor claims nothing about WHERE the first entry sits', () => {
@@ -3797,7 +3812,7 @@ Deno.test('CUL-69 — the censor claims nothing about WHERE the first entry sits
           },
   ] })))
   assert.ok(/first logged Apr 9/.test(t), 'the entry is six days inside the window')
-  assert.ok(/This window opens Apr 3, so the record cannot show how long the sign predates it/.test(t))
+  assert.ok(/This window opens Apr 3, 2026, so the record cannot show how long the sign predates it/.test(t))
   assert.ok(!/sits at that edge/.test(t), 'no exactness claim the tolerance cannot support')
 })
 
@@ -3819,11 +3834,13 @@ Deno.test('CUL-69 — the disclosure tail never pluralises over a count this lay
             windowDays: 56,
           },
   ] })))
-  assert.ok(/anything logged before then/.test(sameDay), 'same-day branch is number-agnostic')
-  assert.ok(
-    !/begin later that day, so the earlier entries/.test(sameDay),
-    'never a plural over a possible single entry (the legend\'s generic prose is a separate sentence)',
-  )
+  assert.ok(/begin later that day — appendix A lists this window/.test(sameDay), 'same-day branch takes the shared tail')
+  assert.ok(!/the earlier entries are in/.test(sameDay), 'never a plural over a possible single entry')
+  // NOT an unrestricted universal: appendix A holds in-window rows only, and on the default
+  // cascade there is no out-of-window disclosure at all, so "anything logged before then is in
+  // appendix A" was false for any record older than the window — and contradicted the censor
+  // sentence outright wherever both fire (adversarial pass 4).
+  assert.ok(!/anything logged before then is in appendix/.test(sameDay), 'no claim about records outside the window')
 
   const otherDay = plain(renderReport(base({ safetyFlags: [
           {
@@ -3840,7 +3857,8 @@ Deno.test('CUL-69 — the disclosure tail never pluralises over a count this lay
             windowDays: 56,
           },
   ] })))
-  assert.ok(/the record before then/.test(otherDay), 'differing-day branch likewise')
+  assert.ok(/appendix A lists this window's entries, including those before then/.test(otherDay), 'and the same tail')
+  assert.ok(!/the record before then is in appendix/.test(otherDay), 'the differing-day branch drops the universal too')
 })
 
 Deno.test('CUL-69 — the §9 adjacency caveat leads the window mechanics, not the other way round', () => {
