@@ -39,6 +39,7 @@ import {
   NO_PATTERN_SUB,
   WATCHING_SUB,
   ackUpdatingCopy,
+  arrivalAnnouncementCopy,
   buildingDayCount,
   buildingHeadline,
   buildingHeadlineLead,
@@ -134,11 +135,13 @@ interface ArrivalMoment {
  */
 function useArrivalMoment({
   petId,
+  petName,
   settledState,
   findingCount,
   hasSafetyFinding,
 }: {
   petId: string | null;
+  petName: string;
   settledState: DisplayState | null;
   findingCount: number;
   hasSafetyFinding: boolean;
@@ -177,6 +180,11 @@ function useArrivalMoment({
   reduced.current = reducedMotion;
   const activePet = useRef(petId);
   activePet.current = petId;
+  // CUL-636's announcement names a pet, so the name joins the read-at-start refs rather
+  // than the dependency list: a rename must not re-run the transition effect, and the
+  // name spoken belongs to the pet whose moment this is.
+  const name = useRef(petName);
+  name.current = petName;
 
   // The last SETTLED state, with the pet it belonged to. Pairing the two is what stops
   // a pet switch reading as a transition: leaving pet A mid-build and landing on pet B
@@ -280,10 +288,32 @@ function useArrivalMoment({
 
       // The tap runs on its own timer rather than off an animation callback, so it lands
       // at 900ms whether or not the sweep is drawn — §4: under reduced motion the haptic
-      // still fires, because touch is not motion.
+      // still fires, because touch is not motion. The same is true of speech, so the
+      // announcement below rides this beat too.
+      const arrivedFor = name.current;
       run.current.timer = setTimeout(() => {
         run.current.timer = null;
         insightArrival();
+        // CUL-636 — THE TAP GETS ITS SENTENCE. Without this the moment is, for a blind
+        // owner, one unexplained congratulatory buzz: everything that says "something
+        // arrived" is in pixels. Three reasons it lives on this timer rather than in an
+        // effect keyed on `playing`:
+        //   • It inherits every gate the moment already has — safety-class, marker-once,
+        //     empty-set, latency, pet-switch — instead of minting a second predicate that
+        //     could drift from the first (the one-predicate rule).
+        //   • `halt()` clears this timer, so an arrival cut short by a pet switch, an
+        //     unmount, or a blur goes quiet on BOTH channels, with no separate guard. A
+        //     0ms announcement would need its own `appActive` check to match.
+        //   • The crossfade has landed by now, so the utterance is not competing with the
+        //     screen-change notification the frame swap posts.
+        // BOTH PLATFORMS, deliberately — and this is where it parts from the two announce
+        // sites above it. `AckLine` and `TextField` gate to `Platform.OS === 'ios'`
+        // because each pairs with an `accessibilityLiveRegion` node that already covers
+        // Android; announcing there too would double-speak. The arrival has no such node,
+        // so an iOS gate copied from them would ship this exact defect on Android. The
+        // call is a no-op when no screen reader is running, so the cost of being right on
+        // both is nil. Do not "restore" the platform check.
+        AccessibilityInfo.announceForAccessibility(arrivalAnnouncementCopy(arrivedFor));
       }, ARRIVAL.hapticAtMs);
 
       const seq = Animated.parallel(steps);
@@ -562,6 +592,7 @@ export function SignalZone({
 
   const { playing: arriving, moment } = useArrivalMoment({
     petId,
+    petName,
     settledState,
     findingCount: renderableCount,
     hasSafetyFinding,
