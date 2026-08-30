@@ -46,17 +46,19 @@
 -- single-account tool, and nothing here authorises exporting
 -- someone else's record.
 --
--- Which means ZERO ROWS NEVER MEANS "this pet has no events".
--- It means that, or that the pair did not resolve. Tell them
--- apart by running the target_pet block below on its own —
--- select it as written, and append:
+-- Which means ZERO ROWS HAS THREE CAUSES, and "this pet has
+-- no events" is only one of them: the pair did not resolve,
+-- the date filter below excludes everything, or every event in
+-- range is soft-deleted. Settle the first before concluding
+-- anything — run the target_pet block below on its own, as
+-- written, and append:
 --
 --   SELECT * FROM target_pet;
 --
--- One row: the pair resolves, so the range really is empty.
--- No rows: the pair is wrong, and nothing was exported. Do not
--- re-type the id or email to check — a second copy that drifts
--- from target_pet answers a question you did not ask.
+-- No rows: the pair is wrong, and nothing was exported at all.
+-- One row: the pair resolves, so look to the other two causes.
+-- Do not re-type the id or email to check — a second copy that
+-- drifts from target_pet answers a question you did not ask.
 -- ─────────────────────────────────────────────────────────────
 -- ============================================================
 
@@ -70,13 +72,18 @@ WITH target_pet AS (
 )
 
 SELECT
-  -- The subject, on every row: the export is pasted into an AI
-  -- chat detached from this file, and with two same-named cats
-  -- in the database the name cannot disambiguate — the uuid is
-  -- the only thing that can. Check it against target_pet above.
-  -- The owner's email is deliberately NOT exported; the id is
-  -- what identifies the record, and the address is not needed
-  -- downstream.
+  -- The export's SUBJECT, on every row, so a CSV read detached
+  -- from this file still names the pet it came from — the two
+  -- cats called "Nyx" cannot be told apart by name, and two
+  -- exports cannot be told apart at all without this.
+  --
+  -- Be clear what it does NOT do: it is tp.id by construction,
+  -- so it restates the pair above and can never contradict it.
+  -- It is not an audit of the pair, and it says nothing about
+  -- where the joined food/medication columns came from — see
+  -- the join note below. The owner's email is deliberately not
+  -- exported; the id identifies the record and the address is
+  -- not needed downstream.
   e.pet_id                      AS pet_id,
   e.id                          AS event_id,
   e.event_type,
@@ -128,6 +135,19 @@ SELECT
 
 FROM events e
 JOIN target_pet tp           ON tp.id = e.pet_id
+-- KNOWN LIMIT, recorded by the CUL-696 rls-privacy-reviewer pass and
+-- tracked as CUL-736: the joins below are keyed on ids alone.
+-- `meals.food_item_id` and `medication_administrations.medication_id`
+-- are bare FKs with no same-account guard — unlike `paired_event_id`,
+-- `diet_trial_id` and `vet_visit_id`, which got BEFORE triggers in
+-- migrations 023/041/044 precisely because service-role callers bypass
+-- RLS, which is this script's execution context. So a row referencing
+-- another account's food or medication would export that row's brand or
+-- drug name under this pet's pet_id, and nothing in the output would
+-- show it. Verified against production 2026-08-30: ZERO such references
+-- exist, repo-wide across every account, so this has never fired. The
+-- fix belongs in the schema, not here — one trigger covers every
+-- consumer, this file is only the one that noticed.
 LEFT JOIN meals m             ON m.event_id = e.id
 LEFT JOIN food_items f        ON f.id = m.food_item_id
 LEFT JOIN medication_administrations ma ON ma.event_id = e.id
