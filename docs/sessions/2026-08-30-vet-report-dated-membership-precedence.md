@@ -2,6 +2,7 @@
 
 **Mode:** BUILD · **Branch:** `claude/vet-report-diet-compliance-29wukr` · **Outcome:** shipped via #778 (draft)
 **Issues:** CUL-746 (fixed) · CUL-757, CUL-758, CUL-759 (filed) · rides CUL-19
+**Reviews:** `adversarial-reviewer` ×4 · `code-reviewer` ×1 · `vet-report-cold-read` ×2
 
 ---
 
@@ -122,6 +123,57 @@ re-fingerprinted at `hold`, **B-494/CUL-19 unchanged**.
    blocking, on the same computation as the prose.
 3. **Record-gap register** applied to the primary-diet case only.
 4. **CUL-757 / CUL-758 filed** rather than folded in.
+
+## The three-pass arc, and why it ended in a revert
+
+The falsification pass ran **four** times. It is the whole story of the session, so it is
+the part worth keeping:
+
+| Pass | Verdict | Findings | Caused by the previous round's fix |
+|---|---|---|---|
+| 1 | FAIL | 3 | — (in the original change) |
+| 2 | FAIL | 6 | 5 |
+| 3 | FAIL | 6 | 5 |
+| 4 | (on the reverted core) | | |
+
+**All six of pass 3's findings were in one family** — the additions that tried to make
+page 1 name WHICH food a dated-membership row was, and characterise whether it was a
+departure. The core (precedence, the shared predicate, the partition, the group key, the
+clamp, the tile's span) held untouched through every pass.
+
+**Why the additions could not be made to work, which is the durable finding.**
+`diet_trial_foods.allowed_from` records when a row was **entered**. Nothing in the record
+distinguishes *"the app's record started late"* from *"the vet switched the diet"* from
+*"the vet withdrew it"*. Each attempt asserted one of the three and was falsified by
+another:
+
+- a **mid-trial primary-diet switch** made the noun false — on those days the trial diet
+  was the *other* food, and the same page tallied this one's protein as one the trial
+  diet does not contain;
+- an **explicitly withdrawn** earlier diet made the record-gap register false;
+- a **mixed set** made page 1 and appendix C disagree about which reading applied, which
+  is this issue's own defect in reduced form.
+
+So the clause states the one thing true in every shape, in the same words appendix C
+uses, and the characterisation goes to CUL-758 as a Dr. Chen ruling. The mid-trial-switch
+counterexample is kept as a standing guard: re-adding any characterisation reds eight
+tests.
+
+**Two rules from the arc.**
+
+**A closure can fail by moving the defect one word left.** Pass 2 fixed the *clause* the
+mid-trial switch falsified and kept the *noun* — and the noun was the exonerating half.
+The commit message quoted the contradiction it had left in place.
+
+**A per-row rule and an all-or-nothing rule are not "one rule, two consumers."** Pass 2
+gave appendix C a per-row register while page 1 kept `early.every(...)`. That is the
+same duplication this issue exists to delete, re-created by the fix meant to close it.
+
+**And the stopping rule, which is written down and I nearly missed.** CLAUDE.md's
+event-taxonomy row says a pass that writes many closures at once returns findings at an
+undiminished rate, and the PR rules say that when a reviewer's findings *stop converging*
+— each fix drawing a new or reshaped one — you stop pushing and raise it once. Three
+rounds at 3 → 6 → 6 is that signal. The right move was not a fourth patch.
 
 ## Documentation updates
 
