@@ -1,6 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { ArrowDown, ArrowUp, Minus } from 'lucide-react-native';
+import { ArrowDown, ArrowUp, ChevronRight, Minus } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
 import { describeWeightDelta, formatWeightDate, WeightTrend } from '../../lib/weight';
@@ -34,9 +34,13 @@ interface Props {
   trend: WeightTrend;
   /** Raw active-pet name; resolves to "your pet" when absent (nyx-voice Pattern 1). */
   petName?: string;
+  /** Whose readings the tap-through opens. Passed explicitly rather than read from
+   *  activePet inside the screen it lands on, so the list is scoped to the pet whose
+   *  card was tapped (CUL-574). */
+  petId: string;
 }
 
-export function WeightCard({ trend, petName }: Props) {
+export function WeightCard({ trend, petName, petId }: Props) {
   const name = petNameOrYours(petName);
   const hasReadings = trend.readingCount > 0;
 
@@ -63,9 +67,7 @@ export function WeightCard({ trend, petName }: Props) {
         // back-dated or onboarding figure (it's the only number, with no series for context).
         <View style={styles.body}>
           <BigNumber lbs={trend.latestLbs!} />
-          {trend.latestOccurredAt && (
-            <ThemedText style={styles.note}>Last weighed {formatWeightDate(trend.latestOccurredAt)}</ThemedText>
-          )}
+          <ReadingsLink trend={trend} petId={petId} />
           <ThemedText style={styles.note}>
             One reading so far. Log another after {name}'s next weigh-in to see the trend.
           </ThemedText>
@@ -80,21 +82,18 @@ export function WeightCard({ trend, petName }: Props) {
 
           <DeltaLine trend={trend} />
 
-          {trend.latestOccurredAt && (
-            <ThemedText style={styles.note}>
-              Last weighed {formatWeightDate(trend.latestOccurredAt)}
-              {trend.readingCount > 1 ? ` · ${trend.readingCount} readings` : ''}
-            </ThemedText>
-          )}
+          <ReadingsLink trend={trend} petId={petId} />
         </View>
       )}
 
       {/* Primary action, every state — logging the next reading is always the wanted
           next step. Weight is the one event whose value IS the entry, so this can't be a
           one-tap; it opens the numeric quick-log step (pre-filled with the last reading). */}
+      {/* No hitSlop: already a 44pt box, so slop buys no reach and only reaches UP into
+          the readings row above — the CUL-612 overlap (CUL-579: grow the box, or delete
+          the slop; never both). */}
       <Pressable
         onPress={() => router.push('/log?type=weight_check')}
-        hitSlop={8}
         style={styles.action}
         accessibilityRole="button"
         accessibilityLabel={`Log a weigh-in for ${name}`}
@@ -102,6 +101,35 @@ export function WeightCard({ trend, petName }: Props) {
         <ThemedText style={styles.actionText}>Log a weigh-in</ThemedText>
       </Pressable>
     </View>
+  );
+}
+
+// "Last weighed {date} · N readings" — the line that names the record, now the way into
+// it (CUL-223). Identical to the Profile card's, deliberately: the two weight surfaces
+// phrase a trend the same way, and one of them growing a door the other lacks would be
+// the drift describeWeightDelta exists to prevent.
+//
+// A button only where there is a reading to open — at zero readings the empty state
+// renders instead and this is never reached, so no `disabled` touchable claims an
+// unavailable control that does not exist in that state (CUL-682).
+function ReadingsLink({ trend, petId }: { trend: WeightTrend; petId: string }) {
+  if (!trend.latestOccurredAt) return null;
+  const line = `Last weighed ${formatWeightDate(trend.latestOccurredAt)}${
+    trend.readingCount > 1 ? ` · ${trend.readingCount} readings` : ''
+  }`;
+
+  return (
+    <Pressable
+      style={styles.readingsLink}
+      onPress={() => router.push({ pathname: '/weight-history', params: { petId } })}
+      accessibilityRole="button"
+      accessibilityLabel={`${line}. See all readings.`}
+    >
+      <ThemedText style={[styles.note, styles.readingsLinkText]} numberOfLines={1}>
+        {line}
+      </ThemedText>
+      <ChevronRight size={14} color={theme.colorTextTertiary} strokeWidth={2} />
+    </Pressable>
   );
 }
 
@@ -183,6 +211,24 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
     lineHeight: theme.lineHeightXS,
+  },
+  // minHeight, not hitSlop — it sits directly above the "Log a weigh-in" action, and
+  // slop on either of two adjacent controls is what puts one's hit area inside the
+  // other (CUL-612). A real 44pt box takes nothing from its neighbour.
+  readingsLink: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  // The line yields, the chevron does not. Without the shrink the row sizes to the
+  // text and pushes the chevron out of the card at the longest phrasing a real record
+  // reaches — "Last weighed Nov 23, 2025 · 20 readings" at a large type setting, where
+  // the year stamp and a three-digit count arrive together. Truncating costs nothing
+  // here: a screen reader still announces the whole string (CUL-726), and the count is
+  // restated as the destination's own subtitle.
+  readingsLinkText: {
+    flexShrink: 1,
   },
   emptyText: {
     fontSize: theme.textSM,

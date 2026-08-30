@@ -36,6 +36,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { insertMedicationDose } from '../../lib/medicationDose';
 import { useSyncStore } from '../../store/syncStore';
 import type { MedStripModel } from '../../lib/medStrip';
+import { profileFocusHref } from '../../lib/profileFocus';
 
 // §9 state 10 — the optimistic confirmation line (locked at M5, `nyx-voice` +
 // `clinical-guardrails`): a calm statement about the RECORD, never a verdict about
@@ -190,7 +191,17 @@ export function MedStrip({ model, onPress, onConfirm }: Props) {
     // write from ever navigating (AC #9).
     <Card>
       <Pressable
-        onPress={onPress ?? (() => router.push('/(tabs)/profile'))}
+        // CUL-170 — the door opens ON this med's row. `model.key` is the strip's own
+        // identity, so the screen resolves the row from the same key that deduped the
+        // strip; a course with no active regimen behind it (ad-hoc) resolves to null
+        // there and lands on the medications section, which is the honest answer.
+        onPress={
+          onPress ??
+          (() =>
+            router.push(
+              profileFocusHref({ focus: 'medications', medKey: model.key, nowMs: Date.now() }),
+            ))
+        }
         accessibilityRole="button"
         accessibilityLabel={`${a11yLabel}. Open medications.`}
         testID="med-strip"

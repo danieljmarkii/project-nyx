@@ -512,6 +512,78 @@ export async function getWeightHistory(petId: string, limit = 12): Promise<Weigh
     .reverse();
 }
 
+// One reading as the history SCREEN needs it: the trend's pair plus the parent
+// event's id, which is the row's tap target (CUL-223). getWeightHistory deliberately
+// does not carry the id — it feeds a sparkline, and a chart point has nowhere to go —
+// so the screen gets its own read rather than widening the trend's shape with a field
+// only one caller uses.
+export interface WeightReadingRow extends WeightReading {
+  eventId: string;
+  // The parent event's B-010 time-confidence fields. A weight check is witnessed by
+  // construction (insertWeightCheck hardcodes it — you read the scale), so these are
+  // 'witnessed'/null on every row this app writes. They are carried anyway so the list
+  // renders a legacy or hand-edited row through the SAME describeOccurredAt path
+  // History and the detail screen use, rather than printing an exact time over a row
+  // that doesn't hold one.
+  confidence: 'witnessed' | 'estimated' | 'window' | null;
+  earliest: string | null;
+  latest: string | null;
+}
+
+// EVERY reading for a pet, NEWEST-FIRST — the order a history list is read in, and the
+// opposite of getWeightHistory's chronological sparkline order.
+//
+// Deliberately UNLIMITED, unlike the 12-reading trend window. The card's window exists
+// so a long history shows its latest shape; this screen exists to answer "which
+// readings?", and a list that silently stops at 12 cannot answer it — the reading an
+// owner came to correct is exactly as likely to be the oldest one. Weigh-ins are a
+// low-volume event type (a handful a year), so the whole set is a small read.
+export async function getWeightReadings(petId: string): Promise<WeightReadingRow[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{
+    event_id: string;
+    weight_kg: number;
+    occurred_at: string;
+    occurred_at_confidence: 'witnessed' | 'estimated' | 'window' | null;
+    occurred_at_earliest: string | null;
+    occurred_at_latest: string | null;
+  }>(
+    `SELECT wc.event_id AS event_id, wc.weight_kg AS weight_kg, e.occurred_at AS occurred_at,
+            e.occurred_at_confidence, e.occurred_at_earliest, e.occurred_at_latest
+       FROM weight_checks wc
+       JOIN events e ON e.id = wc.event_id
+      WHERE wc.pet_id = ? AND e.deleted_at IS NULL
+      ORDER BY e.occurred_at DESC`,
+    [petId],
+  );
+  return (rows ?? []).map((r) => ({
+    eventId: r.event_id,
+    weightKg: r.weight_kg,
+    occurredAt: r.occurred_at,
+    confidence: r.occurred_at_confidence ?? null,
+    earliest: r.occurred_at_earliest ?? null,
+    latest: r.occurred_at_latest ?? null,
+  }));
+}
+
+// How many readings a pet actually has — the whole record, not the trend window.
+//
+// This exists because the cards render "N readings" as a fact about the RECORD while
+// computing it from a window capped at 12 (CUL-223): a pet with 20 weigh-ins read
+// "12 readings", and the tap-through this count now labels opens all 20. Same filters
+// as the reads above, so the number and the list can never disagree.
+export async function getWeightReadingCount(petId: string): Promise<number> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n
+       FROM weight_checks wc
+       JOIN events e ON e.id = wc.event_id
+      WHERE wc.pet_id = ? AND e.deleted_at IS NULL`,
+    [petId],
+  );
+  return row?.n ?? 0;
+}
+
 // The trend card's view model — derived purely from a pet's readings.
 //
 // CLINICAL GUARDRAIL (carried from migration 024 / this file's header): this holds
@@ -521,6 +593,11 @@ export async function getWeightHistory(petId: string, limit = 12): Promise<Weigh
 // wellness colour, no "improving", no reassurance). v1 deliberately ships no loss
 // flag; that's a separate spec with a mandatory adversarial pass.
 export interface WeightTrend {
+  /** How many readings the pet HAS — the whole record, not the shown window.
+   *  It is rendered as a fact about the record ("· 12 readings") and now labels a
+   *  tap-through to all of them (CUL-223), so it must count what that list will
+   *  hold. Falls back to the window's own length when no total is supplied, which
+   *  is correct for any caller reading unlimited. */
   readingCount: number;
   seriesLbs: number[]; // oldest-first, rounded 0.1 — the sparkline + delta basis
   latestLbs: number | null;
@@ -534,27 +611,52 @@ export interface WeightTrend {
 // unit) so the delta equals latest − earliest of the numbers actually drawn — no
 // rounding mismatch between the chart points and the caption. Defensive sort: the
 // query returns chronological, but a pure fn shouldn't trust its caller.
-export function computeWeightTrend(readings: WeightReading[]): WeightTrend {
+//
+// `totalCount` is how many readings the pet HAS, when the caller read a capped
+// window. The two numbers answer different questions and the surface asks both: the
+// SERIES is deliberately the latest 12 (a long history shows its current shape, never
+// an ancient prefix), while the COUNT is spoken as a fact about the record and now
+// labels a tap-through to every reading. Conflating them made a 20-weigh-in pet read
+// "12 readings" (CUL-223). Omit it and the window is the record — correct for an
+// uncapped caller, and the reason this is a defaulted parameter rather than a required
+// one the sparkline's caller would have to invent a value for.
+export function computeWeightTrend(readings: WeightReading[], totalCount?: number): WeightTrend {
   const sorted = [...readings].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   const seriesLbs = sorted.map((r) => kgToLbsNum(r.weightKg));
-  const count = seriesLbs.length;
 
-  if (count === 0) {
+  // TWO counts, and keeping them apart is the whole point of `totalCount`. `window`
+  // is how many readings were actually READ, so it is the only thing that may index
+  // the arrays. `count` is how many the pet HAS, so it is the only thing that may be
+  // spoken. Reusing one for both is what produced the defect: as an index a total of
+  // 20 over a 12-reading window reads seriesLbs[19] — undefined, and sorted[19]
+  // throws — and as a spoken number a window of 12 over 20 readings is a false claim
+  // about the record.
+  const window = seriesLbs.length;
+  // A total can only ever be >= what was read. A smaller one means the two reads
+  // raced (a reading logged between them); Math.max keeps the card from printing a
+  // count below the list the owner is about to open.
+  const count = Math.max(window, totalCount ?? 0);
+
+  // Keyed on the WINDOW, not the count: with nothing read there is no value to show,
+  // and a "20 readings" caption over a blank card would be a claim the surface cannot
+  // back. The empty state is the honest render of "we have nothing here".
+  if (window === 0) {
     return {
       readingCount: 0, seriesLbs: [], latestLbs: null, latestOccurredAt: null,
       earliestOccurredAt: null, deltaLbs: null, direction: null,
     };
   }
 
-  const latestLbs = seriesLbs[count - 1];
-  const latestOccurredAt = sorted[count - 1].occurredAt;
+  const latestLbs = seriesLbs[window - 1];
+  const latestOccurredAt = sorted[window - 1].occurredAt;
   const earliestOccurredAt = sorted[0].occurredAt;
 
   // A single reading is a point, not a trend — no delta, no direction (n=1 says
   // nothing about movement). The card shows the value and invites another reading.
-  if (count === 1) {
+  // Keyed on the window for the same reason: a delta needs two points IN HAND.
+  if (window === 1) {
     return {
-      readingCount: 1, seriesLbs, latestLbs, latestOccurredAt,
+      readingCount: count, seriesLbs, latestLbs, latestOccurredAt,
       earliestOccurredAt, deltaLbs: null, direction: null,
     };
   }

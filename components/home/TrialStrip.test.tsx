@@ -13,9 +13,14 @@ import { join } from 'path';
 jest.mock('../../lib/feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn().mockResolvedValue([]),
 }));
+// CUL-170 — the DEFAULT press is the thing under test below. Every other press
+// assertion in this file injects `onPress`, which is exactly how the bare
+// `/(tabs)/profile` push survived: the door was never the thing being tested.
+jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
+import { router } from 'expo-router';
 import { TrialStrip } from './TrialStrip';
 import { resolveTrialStrip, type TrialCardInput } from '../../lib/dietTrialCard';
 
@@ -149,5 +154,21 @@ describe('TrialStrip', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(tree.getByTestId('trial-strip').props.accessibilityLabel)
       .toBe('Diet trial · day 23 of 56. Open the diet trial.');
+  });
+
+  // CUL-170. The label has promised "Open the diet trial" since PR 4; the push
+  // behind it opened the top of the Pet tab, above the photo, the conditions and
+  // every med card. This asserts the untouched default, not an injected handler.
+  it('by default lands ON the trial card, not at the top of the Pet tab', () => {
+    (router.push as jest.Mock).mockClear();
+    const tree = render(<TrialStrip model={resolveTrialStrip(input())} />);
+    fireEvent.press(tree.getByTestId('trial-strip'));
+
+    expect(router.push).toHaveBeenCalledTimes(1);
+    const href = (router.push as jest.Mock).mock.calls[0][0];
+    expect(href.pathname).toBe('/(tabs)/profile');
+    expect(href.params.focus).toBe('trial');
+    // The nonce is what makes a SECOND tap re-fire on an already-mounted tab.
+    expect(href.params.ts).toEqual(expect.any(String));
   });
 });

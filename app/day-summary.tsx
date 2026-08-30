@@ -33,6 +33,7 @@ import { NotificationPrimer } from '../components/notifications/NotificationPrim
 import { useDaySummary } from '../hooks/useDaySummary';
 import { useDailyRecapOffer } from '../hooks/useDailyRecapOffer';
 import { isNotificationArrival } from '../lib/dailyRecapOffer';
+import { profileFocusHref } from '../lib/profileFocus';
 import { useSyncStore } from '../store/syncStore';
 import {
   DAY_SUMMARY_ZERO_LOG,
@@ -103,7 +104,18 @@ export default function DaySummaryScreen() {
   // Pet tab's cards (which own every trial/med reading) — the same targets the Home
   // strips use. None of these is the §4.2 "second door": the recap writes nothing.
   const logEvent = useCallback(() => router.push('/log'), []);
-  const openProfile = useCallback(() => router.push('/(tabs)/profile'), []);
+  // CUL-170 — each strip opens ON its own card, not at the top of the Pet tab.
+  // Same doorway the Home strips use, from the same builder, so the two surfaces
+  // cannot drift into naming different targets for the same strip.
+  const openTrial = useCallback(
+    () => router.push(profileFocusHref({ focus: 'trial', nowMs: Date.now() })),
+    [],
+  );
+  const openMed = useCallback(
+    (medKey: string) =>
+      router.push(profileFocusHref({ focus: 'medications', medKey, nowMs: Date.now() })),
+    [],
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -131,7 +143,7 @@ export default function DaySummaryScreen() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <ThemedText style={styles.dateLabel}>{dayLabel(state.anchorMs)}</ThemedText>
           {state.model.petCount === 1 ? (
-            <SinglePetRecap model={state.model} onOpenTrial={openProfile} onOpenMed={openProfile} />
+            <SinglePetRecap model={state.model} onOpenTrial={openTrial} onOpenMed={openMed} />
           ) : (
             // Multi-pet: one screen, sectioned per pet, active first — plain per-pet
             // spines (the lead/chips/strips are the single-pet experience, mock §2).
@@ -174,7 +186,8 @@ function SinglePetRecap({
 }: {
   model: DaySummaryModel;
   onOpenTrial: () => void;
-  onOpenMed: () => void;
+  /** Takes the tapped strip's key so the Pet tab can land on THAT med's row. */
+  onOpenMed: (medKey: string) => void;
 }) {
   const section = model.sections[0];
   return (
@@ -202,7 +215,7 @@ function SinglePetRecap({
           title={med.title}
           fact={med.fact}
           isConcern={med.isConcern}
-          onPress={onOpenMed}
+          onPress={() => onOpenMed(med.key)}
           accessibilityLabel={`${med.title}${med.fact ? `. ${med.fact}` : ''}. Open medications.`}
         />
       ))}

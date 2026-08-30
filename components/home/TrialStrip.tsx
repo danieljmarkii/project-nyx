@@ -15,6 +15,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
+import { profileFocusHref } from '../../lib/profileFocus';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
 import type { TrialStripModel } from '../../lib/dietTrialCard';
@@ -30,7 +31,14 @@ export function TrialStrip({ model, onPress }: Props) {
 
   return (
     <Pressable
-      onPress={onPress ?? (() => router.push('/(tabs)/profile'))}
+      // CUL-170 — the door opens ON the trial card, not at the top of the Pet tab.
+      // The strip is the only place a wedge owner meets their trial daily, so an
+      // arrival that makes them scroll past the photo and the med cards to find it
+      // spends the whole reason this strip exists.
+      onPress={
+        onPress ??
+        (() => router.push(profileFocusHref({ focus: 'trial', nowMs: Date.now() })))
+      }
       accessibilityRole="button"
       // The Pressable's explicit label overrides its children for VoiceOver, so the standing
       // vomit-count line (CUL-13) is folded in when present — otherwise a screen-reader owner would

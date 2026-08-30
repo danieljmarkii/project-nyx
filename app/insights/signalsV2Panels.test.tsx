@@ -41,6 +41,10 @@ jest.mock('../../lib/analytics', () => {
 });
 jest.mock('../../lib/weight', () => ({
   getWeightHistory: jest.fn().mockResolvedValue([]),
+  // The count is read alongside the 12-reading window (CUL-223): the card speaks it as
+  // a fact about the record and it labels the tap-through to every reading, so it can
+  // no longer be derived from the capped series.
+  getWeightReadingCount: jest.fn().mockResolvedValue(0),
   computeWeightTrend: () => ({
     readingCount: 0, seriesLbs: [], latestLbs: null,
     latestOccurredAt: null, earliestOccurredAt: null, deltaLbs: null, direction: null,

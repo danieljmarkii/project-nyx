@@ -17,7 +17,10 @@
 // ── NO SECOND DOOR ───────────────────────────────────────────────────────────
 // §4.2: "The card carries no 'Log a meal' action. Logging is the FAB. A second
 // door to the same room is not a feature."
-import { Pressable, StyleSheet, TouchableOpacity, View, type ViewStyle } from 'react-native';
+import {
+  Pressable, StyleSheet, TouchableOpacity, View,
+  type LayoutChangeEvent, type ViewStyle,
+} from 'react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { PrimaryButton } from '../ui/PrimaryButton';
@@ -52,9 +55,13 @@ interface Props {
    *  stops a slow write earning a second tap and a double extension. */
   busyAction?: TrialCardActionId | null;
   style?: ViewStyle;
+  /** Measure the card's top within the Pet tab's scroll content — CUL-170's trial
+   *  doorway. A passthrough to `Card`, not a wrapper View at the call site, so the
+   *  anchor cannot move the thing it measures. */
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
-export function DietTrialCard({ model, actions, onManage, busyAction, style }: Props) {
+export function DietTrialCard({ model, actions, onManage, busyAction, style, onLayout }: Props) {
   // The header affordance's label, or null to hide it. The resolver owns the
   // per-state judgement (`trialManageLabel`: running → "Replace", empty/abandoned
   // → suppressed since the body already carries a Start CTA, completed → "+ Start"),
@@ -69,7 +76,7 @@ export function DietTrialCard({ model, actions, onManage, busyAction, style }: P
   const busyId = busyAction ?? null;
 
   return (
-    <Card style={style}>
+    <Card style={style} onLayout={onLayout}>
       <View style={styles.headerRow}>
         <ThemedText style={styles.kicker}>{model.kicker}</ThemedText>
         {onManage && manageLabel !== null && (

@@ -18,6 +18,9 @@ jest.mock('expo-router', () => {
   const React = require('react');
   return {
     router: { push: jest.fn() },
+    // No doorway params in this suite — the CUL-170 focus path is exercised in
+    // `profile.focus.test.tsx`, which owns the mocks that drive it.
+    useLocalSearchParams: () => ({}),
     useFocusEffect: (cb: () => void | (() => void)) => {
       React.useEffect(() => cb(), []);
     },

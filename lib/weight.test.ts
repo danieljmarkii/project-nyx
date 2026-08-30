@@ -54,7 +54,8 @@ jest.mock('./supabase', () => ({
 import {
   kgToLbs, kgToLbsNum, lbsToKg, parseWeightLbsToKg, MAX_WEIGHT_LBS,
   insertWeightCheck, getLatestWeightKg, getWeightKgForEvent, updateWeightCheck,
-  getWeightHistory, computeWeightTrend, reconcileWeightSnapshotAfterDelete,
+  getWeightHistory, getWeightReadings, getWeightReadingCount,
+  computeWeightTrend, reconcileWeightSnapshotAfterDelete,
   describeWeightDelta, formatWeightDate, type WeightTrend,
 } from './weight';
 import { usePetStore, type Pet } from '../store/petStore';
@@ -299,6 +300,112 @@ describe('getWeightHistory', () => {
   it('returns [] when there are no readings', async () => {
     mockGetAllAsync.mockResolvedValueOnce([]);
     expect(await getWeightHistory('pet-1')).toEqual([]);
+  });
+});
+
+describe('getWeightReadings (CUL-223 — the history screen\'s read)', () => {
+  it('carries the parent event id, which is the row\'s tap target', async () => {
+    mockGetAllAsync.mockResolvedValueOnce([
+      { event_id: 'e2', weight_kg: 4.3, occurred_at: '2026-06-20T08:00:00.000Z',
+        occurred_at_confidence: 'witnessed', occurred_at_earliest: null, occurred_at_latest: null },
+    ]);
+    const rows = await getWeightReadings('pet-1');
+    expect(rows[0].eventId).toBe('e2');
+  });
+
+  it('returns NEWEST-first — the order a history list is read in', async () => {
+    // The opposite of getWeightHistory, which reverses to chronological for the
+    // sparkline. Sharing one order would put either the chart or the list backwards.
+    mockGetAllAsync.mockResolvedValueOnce([
+      { event_id: 'newest', weight_kg: 4.3, occurred_at: '2026-06-20T08:00:00.000Z',
+        occurred_at_confidence: 'witnessed', occurred_at_earliest: null, occurred_at_latest: null },
+      { event_id: 'oldest', weight_kg: 4.7, occurred_at: '2026-06-01T08:00:00.000Z',
+        occurred_at_confidence: 'witnessed', occurred_at_earliest: null, occurred_at_latest: null },
+    ]);
+    const rows = await getWeightReadings('pet-1');
+    expect(rows.map((r) => r.eventId)).toEqual(['newest', 'oldest']);
+  });
+
+  it('is UNLIMITED, scoped by pet, and drops soft-deleted readings', async () => {
+    // No LIMIT by design: the screen answers "which readings?", and a list that
+    // silently stops at the card's 12 cannot — the reading an owner opened it to
+    // correct is exactly as likely to be the oldest one.
+    await getWeightReadings('pet-1');
+    const [sql, args] = mockGetAllAsync.mock.calls[0];
+    expect(sql).toMatch(/JOIN events e ON e\.id = wc\.event_id/);
+    expect(sql).toMatch(/e\.deleted_at IS NULL/);
+    expect(sql).toMatch(/ORDER BY e\.occurred_at DESC/);
+    expect(sql).not.toMatch(/LIMIT/);
+    expect(args).toEqual(['pet-1']);
+  });
+});
+
+describe('getWeightReadingCount (CUL-223 — the count the cards SPEAK)', () => {
+  it('counts under the same filters as the list, so the two cannot disagree', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ n: 20 });
+    expect(await getWeightReadingCount('pet-1')).toBe(20);
+    const [sql, args] = mockGetFirstAsync.mock.calls[0];
+    expect(sql).toMatch(/COUNT\(\*\)/);
+    expect(sql).toMatch(/JOIN events e ON e\.id = wc\.event_id/);
+    expect(sql).toMatch(/e\.deleted_at IS NULL/);
+    expect(args).toEqual(['pet-1']);
+  });
+
+  it('reads 0 rather than null when the pet has no readings', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce(null);
+    expect(await getWeightReadingCount('pet-1')).toBe(0);
+  });
+});
+
+describe('computeWeightTrend — the window is not the record (CUL-223)', () => {
+  const r = (weightKg: number, occurredAt: string) => ({ weightKg, occurredAt });
+  // A 12-reading window read from a pet who has 20.
+  const window12 = Array.from({ length: 12 }, (_, i) =>
+    r(4.0 + i * 0.1, `2026-06-${String(i + 1).padStart(2, '0')}T08:00:00.000Z`));
+
+  it('SPEAKS the total, not the size of the window it was handed', () => {
+    // The defect: both cards render readingCount as a fact about the record while
+    // deriving it from a window capped at 12, so a 20-weigh-in pet read "12 readings"
+    // — and that count now labels a tap-through to all 20.
+    expect(computeWeightTrend(window12, 20).readingCount).toBe(20);
+  });
+
+  it('INDEXES the window, not the total — the latest reading is the last one READ', () => {
+    // The other half, and the one that crashes rather than lying: a total used as an
+    // index reads seriesLbs[19] (undefined) and sorted[19] (throws) over a 12-row
+    // window. Pinned on the values so a re-conflation cannot pass by returning
+    // undefined quietly.
+    const t = computeWeightTrend(window12, 20);
+    expect(t.seriesLbs).toHaveLength(12);
+    expect(t.latestLbs).toBe(kgToLbsNum(4.0 + 11 * 0.1));
+    expect(t.latestOccurredAt).toBe('2026-06-12T08:00:00.000Z');
+    expect(t.earliestOccurredAt).toBe('2026-06-01T08:00:00.000Z');
+    expect(t.deltaLbs).not.toBeNull();
+  });
+
+  it('falls back to the window when no total is given (an uncapped caller)', () => {
+    expect(computeWeightTrend(window12).readingCount).toBe(12);
+  });
+
+  it('never speaks a count BELOW the list it labels, if the two reads raced', () => {
+    // A reading logged between the count query and the history query. Math.max keeps
+    // the card from printing a number smaller than the list about to open.
+    expect(computeWeightTrend(window12, 3).readingCount).toBe(12);
+  });
+
+  it('renders the EMPTY shape when nothing was read, whatever the total claims', () => {
+    // Keyed on the window: with no values in hand there is nothing to show, and a
+    // "20 readings" caption over a blank card is a claim the surface cannot back.
+    const t = computeWeightTrend([], 20);
+    expect(t.readingCount).toBe(0);
+    expect(t.latestLbs).toBeNull();
+  });
+
+  it('keeps a lone reading a point, not a trend', () => {
+    const t = computeWeightTrend([r(4.5, '2026-06-10T08:00:00.000Z')], 1);
+    expect(t.readingCount).toBe(1);
+    expect(t.deltaLbs).toBeNull();
+    expect(t.direction).toBeNull();
   });
 });
 
