@@ -13,7 +13,7 @@ jest.mock('../../lib/feedingArrangements', () => ({
 }));
 
 import { fireEvent, render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { DietTrialCard } from './DietTrialCard';
 import { resolveTrialCard, type TrialCardInput } from '../../lib/dietTrialCard';
 import { getDietTrialProgress } from '../../lib/analytics';
@@ -283,5 +283,19 @@ describe('the safety register renders as one block, not as body text', () => {
       />,
     );
     expect(tree.getByText(/left most of her food for 3 days/)).toBeTruthy();
+  });
+});
+
+// CUL-170 — the Pet tab measures this card's top to land the Home/recap trial strip
+// on it. A passthrough rather than a wrapper View at the call site, so the anchor
+// cannot move the thing it is measuring; that only holds if it reaches the Card.
+describe('the scroll anchor (CUL-170)', () => {
+  it('forwards onLayout to the card itself, so the measured top IS the card top', () => {
+    const onLayout = jest.fn();
+    const tree = render(<DietTrialCard model={resolveTrialCard(input())} onLayout={onLayout} />);
+    // The outermost host view IS the Card — there is no wrapper between them, which
+    // is the property under test as much as the callback firing.
+    const root = tree.UNSAFE_getByType(View);
+    expect(root.props.onLayout).toBe(onLayout);
   });
 });

@@ -134,3 +134,53 @@ describe('DaySummaryScreen — four-state wiring', () => {
     expect(getByText('Nothing in Mochi’s record today.')).toBeTruthy();
   });
 });
+
+// ── CUL-170 — the strips are doors, and they land ON their card ────────────────
+// Both strips pushed the bare `/(tabs)/profile`, which arrives above the photo, the
+// conditions and every other card, so the tap ended in a scroll hunt for the thing
+// the owner had just tapped. The recap's own copy ("Open medications") had been
+// promising otherwise since DR-1.
+describe('the strips deep-link to their own card', () => {
+  const ready = (over: Partial<DaySummaryModel>) => ({
+    status: 'ready' as const,
+    anchorMs: Date.parse('2026-08-15T21:00:00Z'),
+    model: model({
+      petCount: 1,
+      sections: [section({ petId: 'p1', petName: 'Biscuit', isZeroLog: false, rows: [spineRow('e1', 'Whitefish')] as never })],
+      ...over,
+    }),
+  });
+
+  it('the trial strip opens the trial card', () => {
+    mockState.mockReturnValue(
+      ready({ trialStrip: { title: 'Whitefish trial', fact: 'Day 12 of 28' } }),
+    );
+    const { getByText } = render(<DaySummaryScreen />);
+    fireEvent.press(getByText('Whitefish trial'));
+
+    const href = (router.push as jest.Mock).mock.calls[0][0];
+    expect(href.pathname).toBe('/(tabs)/profile');
+    expect(href.params.focus).toBe('trial');
+  });
+
+  it('each med strip carries ITS OWN key, not the first one on the screen', () => {
+    // The failure this pins is a shared handler closing over the wrong strip — the
+    // shape the pre-fix code had by construction, since one `openProfile` served
+    // every strip and there was nothing to get wrong. Two strips, second tapped.
+    mockState.mockReturnValue(
+      ready({
+        medStrips: [
+          { key: 'item-amox', title: 'Amoxicillin · day 5 of 14', fact: null, isConcern: false },
+          { key: 'regimen:reg-free', title: 'Compounded thing · 1 dose logged today', fact: null, isConcern: false },
+        ],
+      }),
+    );
+    const { getByText } = render(<DaySummaryScreen />);
+    fireEvent.press(getByText('Compounded thing · 1 dose logged today'));
+
+    const href = (router.push as jest.Mock).mock.calls[0][0];
+    expect(href.pathname).toBe('/(tabs)/profile');
+    expect(href.params.focus).toBe('medications');
+    expect(href.params.med).toBe('regimen:reg-free');
+  });
+});
