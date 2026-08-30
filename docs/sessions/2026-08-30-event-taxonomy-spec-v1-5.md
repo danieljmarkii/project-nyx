@@ -1,7 +1,7 @@
 # 2026-08-30 — Event Taxonomy: spec v1.5, five rulings, and a fifth FAIL (CUL-684)
 
 **Mode:** DISCOVERY→BUILD hybrid, docs only. No code, no schema, no build.
-**Outcome:** shipped via #765 — `docs/nyx-event-taxonomy-requirements.md` v1.4 → **v1.5**; §9a rewritten against five PM rulings (D20–D24). **The W2 gate is NOT lifted:** the mandatory adversarial pass on the rewrite returned **FAIL — 18 findings, five silent on the sick** — recorded as a new §9b. CUL-684 stays open, `Waiting on PM`. CUL-667's greenlight is not mine to recommend.
+**Outcome:** shipped via #767 — `docs/nyx-event-taxonomy-requirements.md` v1.4 → **v1.5**; §9a rewritten against five PM rulings (D20–D24). **The W2 gate is NOT lifted:** the mandatory adversarial pass on the rewrite returned **FAIL — 18 findings, five silent on the sick** — recorded as a new §9b. CUL-684 stays open, `Waiting on PM`. CUL-667's greenlight is not mine to recommend.
 
 ## What this session was for
 
