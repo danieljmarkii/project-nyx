@@ -53,6 +53,14 @@ None. This pass rules nothing; it verifies. Every edit is a status or an attribu
 - **Product Owner** — a competitive sweep has a half-life. This one was stale on one row on the day it was committed, which is an argument for re-verify-at-use over re-verify-on-a-schedule.
 - **Trust & Safety** — nothing touched. No data path, no query run this session (the re-query was already done and scoped).
 
+## Documentation updates
+
+**CLAUDE.md (Tier 1, applied inline).** The living-vs-frozen paragraph gained the missing half: it said frozen briefs are *not* edited in place, but never said how to correct one. Now it does — a dated `§V` addendum **plus** inline ⚠ pointers, both halves load-bearing (the addendum alone is unread by anyone who scrolls to the claim; an in-place rewrite destroys the record the freeze exists to keep). With the corollary this session paid for: on a **competitor** brief, re-verify **at use, not at citation**.
+
+**`docs/nyx-event-taxonomy-requirements.md`** — `Last Updated` bumped to 2026-08-30 (living doc, material §17 edit); version stays 1.3, since nothing in the spec's content moved.
+
+**`STATUS.md` — deliberately untouched.** No track started or ended, no standing hold changed, no build phase moved, no pointer went stale. Event Taxonomy Expansion is already named there and its state is in Linear. Per `/wrap` 3b, this session had nothing to write here.
+
 ## Files
 
 - `docs/research/2026-08-event-taxonomy-evidence.md` — §V addendum + 10 inline ⚠ pointers + a header pointer
