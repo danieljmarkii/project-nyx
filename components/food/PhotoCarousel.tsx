@@ -46,20 +46,58 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   }, [photoPaths.join('|')]);
 
   if (photoPaths.length === 0) {
+    // B-062 — Lucide Camera (was a 📷 emoji) so the photo affordances are all
+    // vector glyphs. The trailing "＋ Add another" slide stays a plain glyph —
+    // it's a plus, not a camera, and never renders alongside this empty state.
+    const glyph = <Camera size={36} color={theme.colorTextTertiary} strokeWidth={1.5} />;
+
+    // ── ONE HERO, TWO HOSTS (CUL-728) ────────────────────────────────────────
+    //
+    // This was one TouchableOpacity with `disabled={!onAddPhoto}`, no role and no
+    // label. RN copies `disabled` into `accessibilityState.disabled`
+    // (TouchableOpacity.js) and iOS maps that to UIAccessibilityTraitNotEnabled,
+    // which VoiceOver speaks as "dimmed" — so a hero with nothing to tap
+    // announced a control that is unavailable. The copy swap beside it is the
+    // tell: one prop was choosing the sentence AND claiming a control exists.
+    //
+    // Not the shape CUL-728 assumed, and worth stating because it is the reason
+    // this is still the right fix: the one caller (`app/food/[id].tsx`) drops
+    // `onAddPhoto` only WHILE AN UPLOAD RUNS, not because it is a read-only host.
+    // From in here those are the same absent prop, and the caller renders its own
+    // "Adding photo…" row beside this hero — which is where a transient status
+    // belongs. A hero that stops being a control is not a control that is off.
+    //
+    // `accessible` is load-bearing on the inert branch: without it the label is
+    // inert and the Camera glyph can take a focus of its own beside the text.
+    // No `accessibilityRole` — unlike RundownTileRow's sibling fix, there was
+    // never an author decision here to preserve, and `text` would only restate
+    // what a labelled, roleless node already announces.
+    if (!onAddPhoto) {
+      return (
+        <View
+          style={[styles.hero, styles.heroEmpty]}
+          accessible
+          accessibilityLabel="No photos yet"
+        >
+          {glyph}
+          <ThemedText style={styles.emptyText}>No photos yet</ThemedText>
+        </View>
+      );
+    }
+
     return (
       <TouchableOpacity
         style={[styles.hero, styles.heroEmpty]}
         onPress={onAddPhoto}
-        activeOpacity={onAddPhoto ? 0.7 : 1}
-        disabled={!onAddPhoto}
+        activeOpacity={0.7}
+        // The mirror of the same defect: a real button that never said it was
+        // one. No `accessibilityLabel` — the visible line is the right
+        // announcement, and an invented label is a string Voice Control cannot
+        // match against what the owner can actually read on screen.
+        accessibilityRole="button"
       >
-        {/* B-062 — Lucide Camera (was a 📷 emoji) so the photo affordances are all
-            vector glyphs. The trailing "＋ Add another" slide stays a plain glyph —
-            it's a plus, not a camera, and never renders alongside this empty state. */}
-        <Camera size={36} color={theme.colorTextTertiary} strokeWidth={1.5} />
-        <ThemedText style={styles.emptyText}>
-          {onAddPhoto ? 'Tap to add a photo' : 'No photos yet'}
-        </ThemedText>
+        {glyph}
+        <ThemedText style={styles.emptyText}>Tap to add a photo</ThemedText>
       </TouchableOpacity>
     );
   }
@@ -113,6 +151,13 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
               style={[styles.image, styles.addSlide]}
               onPress={onAddPhoto}
               activeOpacity={0.7}
+              // Same affordance as the empty hero above, so it announces the same
+              // way. This one does carry a label, because its visible line leads
+              // with a ＋ glyph that would otherwise be read out as part of the
+              // sentence; the label is the same words minus the glyph, so Voice
+              // Control still matches what is on screen.
+              accessibilityRole="button"
+              accessibilityLabel="Add another photo"
             >
               {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face. Geist's
                   cmap has no U+FF0B at all, so sweeping this one would buy nothing and
