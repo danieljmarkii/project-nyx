@@ -60,6 +60,7 @@ jest.mock('./medications', () => ({
 import { MAX_SYNC_ATTEMPTS, SYNC_QUEUES, pushGuardColumn } from './syncQueue';
 import {
   INSERT_ONLY_QUEUE_TABLES,
+  QUEUE_PUSH_WAIT_CEILING_MS,
   markSynced,
   markSyncedInsertOnly,
   prepareAttachmentUpload,
@@ -1844,5 +1845,318 @@ describe('syncPendingEvents — weight tombstone reconcile (CUL-641)', () => {
 
     expect(petUpdate).toHaveBeenCalledTimes(3);
     expect(petEqId.mock.calls.map((c) => c[1])).toEqual(['pet-A', 'pet-A', 'pet-B']);
+  });
+});
+
+// ── CUL-622 — ONE PUSH PER QUEUE AT A TIME ───────────────────────────────────
+//
+// The half of the in-flight window CUL-691 did not close. That fix made the MARK
+// version-guarded, so a response cannot flag a row it did not send; it says
+// nothing about the ORDER two concurrent requests reach the server in, which is
+// the variant CUL-622 names in one line ("#1's request simply lands after #2's").
+//
+// The path is the ordinary completion-card flow, not a corner: insertSimpleEvent
+// fires syncPendingEvents(), the card's "Change time" fires it again two seconds
+// later, and nothing serialized the two — syncCycleInFlight guards only syncNow
+// and flushPendingForSignOut. Both versions of the row are then on the wire at
+// once and the LATER-ARRIVING request decides what the server keeps.
+//
+// If the pre-correction push arrives last, every downstream guard still reads
+// clean: the correction's own mark is legitimate, so the row goes synced = 1 and
+// nothing re-queues it. And because set_updated_at() re-stamps the server row
+// with the server's clock on the conflict-update, the stale copy is NEWER by
+// hydration's `remoteT > localT` — so the next pull writes the pre-correction
+// time back over the correction on the device too.
+//
+// These tests are about the WIRE, not the SQL: what matters is that a second
+// request is never issued while the first is outstanding, and that the last
+// payload to leave the device is the corrected one.
+describe('one push per queue at a time (CUL-622)', () => {
+  let upsertSpy: jest.Mock;
+  let selectSpy: jest.Mock;
+
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+  // Every deferred is released in afterEach, whether or not its test got that far.
+  // The serializer's state is module-level, so a test that fails mid-flight would
+  // otherwise leave its queue slot held and every later test in this block would
+  // queue behind it forever — a cascade of red that names the wrong defect.
+  let pending: (() => void)[] = [];
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => { resolve = res; });
+    pending.push(() => resolve({ data: [{ id: 'e1' }], error: null } as T));
+    return { promise, resolve };
+  }
+
+  const T0 = '2026-08-30T08:00:00.000Z';
+  const T2 = '2026-08-30T08:00:02.000Z';
+  const evt = (occurredAt: string, updatedAt: string) => ({
+    id: 'e1', pet_id: 'p1', event_type: 'vomit', occurred_at: occurredAt,
+    severity: null, notes: null, source: 'manual', occurred_at_source: 'now',
+    occurred_at_confidence: null, occurred_at_earliest: null, occurred_at_latest: null,
+    deleted_at: null, created_at: T0, updated_at: updatedAt, logged_via: 'app',
+  });
+
+  // What the LOCAL row currently is, as the queue read would see it. The test moves
+  // it to stand in for the owner's edit, exactly as updateEvent would.
+  let localRow: ReturnType<typeof evt> | null;
+  const queueReads = () =>
+    mockGetAllAsync.mock.calls.filter(([sql]) => String(sql).includes('FROM events'));
+  const sentOccurredAt = () =>
+    upsertSpy.mock.calls.map(([rows]) => (rows as { occurred_at: string }[])[0].occurred_at);
+
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    mockFrom.mockReset();
+    mockRunAsync.mockReset();
+    mockGetAllAsync.mockReset();
+    localRow = evt(T0, T0);
+    mockGetAllAsync.mockImplementation(async (sql: string) =>
+      String(sql).includes('FROM events') && localRow ? [localRow] : []);
+    selectSpy = jest.fn().mockResolvedValue({ data: [{ id: 'e1' }], error: null });
+    upsertSpy = jest.fn().mockReturnValue({ select: selectSpy });
+    mockFrom.mockReturnValue({ upsert: upsertSpy });
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(async () => {
+    pending.forEach((release) => release());
+    pending = [];
+    await tick();
+    jest.restoreAllMocks();
+  });
+
+  it('THE DEFECT: a correction made mid-flight is the LAST thing on the wire', async () => {
+    const inFlight = deferred<{ data: unknown; error: null }>();
+    selectSpy.mockReturnValueOnce(inFlight.promise);
+
+    // t=0 — the insert's push reads the row and sends it. It does not come back yet.
+    const insertPush = syncPendingEvents();
+    await tick();
+    expect(sentOccurredAt()).toEqual([T0]);
+
+    // t=2 — the owner corrects the time on the completion card, and the card fires
+    // its own push while the first is still outstanding.
+    localRow = evt('2026-08-30T05:33:00.000Z', T2);
+    const editPush = syncPendingEvents();
+    await tick();
+
+    // The whole fix, in one assertion: the correction is NOT put on the wire beside
+    // a request that is still in the air. Before this change both were, and which
+    // one the server kept was decided by the network.
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    expect(queueReads()).toHaveLength(1);
+
+    inFlight.resolve({ data: [{ id: 'e1' }], error: null });
+    await Promise.all([insertPush, editPush]);
+
+    // The trailing run reads the queue AFTER the first push has finished with it, so
+    // the version that reaches the server last is the corrected one. (The row is
+    // still queued to be read at all because CUL-691's guard refused to mark a
+    // version that had moved — the two halves compose.)
+    expect(sentOccurredAt()).toEqual([T0, '2026-08-30T05:33:00.000Z']);
+  });
+
+  it('coalesces every caller that arrives during a run into ONE trailing run', async () => {
+    const inFlight = deferred<{ data: unknown; error: null }>();
+    selectSpy.mockReturnValueOnce(inFlight.promise);
+
+    const active = syncPendingEvents();
+    await tick();
+    // Three writes land while the first push is out — the AI-read path, the card,
+    // a foreground cycle. One follow-up run reads the queue for all of them.
+    const joiners = [syncPendingEvents(), syncPendingEvents(), syncPendingEvents()];
+    await tick();
+
+    inFlight.resolve({ data: [{ id: 'e1' }], error: null });
+    await Promise.all([active, ...joiners]);
+
+    expect(queueReads()).toHaveLength(2);
+  });
+
+  it('releases the trailing slot when that run STARTS, not when it finishes', async () => {
+    // Otherwise a write landing after the trailing run's queue read would join a run
+    // that structurally cannot see it, and resolve without sending it.
+    const first = deferred<{ data: unknown; error: null }>();
+    const second = deferred<{ data: unknown; error: null }>();
+    selectSpy.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const a = syncPendingEvents();
+    await tick();
+    const b = syncPendingEvents();
+    await tick();
+
+    first.resolve({ data: [{ id: 'e1' }], error: null });
+    await tick();
+    // b is now the active run and has already read the queue.
+    expect(queueReads()).toHaveLength(2);
+
+    const c = syncPendingEvents();
+    await tick();
+    second.resolve({ data: [{ id: 'e1' }], error: null });
+    await Promise.all([a, b, c]);
+
+    expect(queueReads()).toHaveLength(3);
+  });
+
+  it('a failed run releases the queue, and its failure is not charged to the next caller', async () => {
+    mockGetSession
+      .mockRejectedValueOnce(new Error('token refresh failed'))
+      .mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+
+    const failing = syncPendingEvents();
+    const following = syncPendingEvents();
+
+    await expect(failing).rejects.toThrow('token refresh failed');
+    // The caller behind it still has an unsent write; the previous run's error is
+    // not theirs, and a wedged queue would be the worse failure by far.
+    await expect(following).resolves.toBeUndefined();
+    expect(queueReads()).toHaveLength(1);
+  });
+
+  it('goes anyway past the ceiling — a stalled request never holds the queue for good', async () => {
+    // The objection CUL-691 recorded against serialising at all (CUL-733): supabase-js
+    // sets no request timeout, so an unbounded wait lets one hung upsert hold its queue
+    // for the life of the process — and the correction behind it never goes up at all,
+    // which is worse than the race. Past the ceiling the queue falls back to exactly the
+    // concurrent behaviour it had before this change: the old failure mode, not a new one.
+    //
+    // Fired through the callback the code actually armed, rather than through fake
+    // timers: the RN preset installs its own timer implementation, so advancing jest's
+    // clock does not reach this one — and a ceiling test that silently never fires would
+    // pass against an unbounded wait, which is the exact defect it is here to refuse.
+    const timers = jest.spyOn(global, 'setTimeout');
+    const hung = deferred<{ data: unknown; error: null }>();
+    selectSpy.mockReturnValueOnce(hung.promise);
+
+    const stalled = syncPendingEvents();
+    await tick();
+    localRow = evt('2026-08-30T05:33:00.000Z', T2);
+    const waiting = syncPendingEvents();
+    await tick();
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+
+    const ceiling = timers.mock.calls.find(([, ms]) => ms === QUEUE_PUSH_WAIT_CEILING_MS);
+    expect(ceiling).toBeDefined();
+    (ceiling![0] as () => void)();
+    await tick();
+
+    // It went — carrying the correction, which is the whole reason not to drop it.
+    expect(sentOccurredAt()).toEqual([T0, '2026-08-30T05:33:00.000Z']);
+
+    hung.resolve({ data: [{ id: 'e1' }], error: null });
+    await Promise.all([stalled, waiting]);
+  });
+
+  it('a caller arriving DURING the trailing run waits too — the slot is claimed, not borrowed', async () => {
+    // Test 3 above asserts the trailing slot is released at the run's start, and it
+    // does so by counting queue READS — which is 3 either way, so it cannot see a
+    // trailing run that starts without claiming the in-flight slot. `return drain()`
+    // in place of `startDrain(...)` is a one-token tidy-up that does exactly that,
+    // and it puts two versions of one row on the wire again: the whole defect, back.
+    // What discriminates is the upsert count AT THE MOMENT the third caller arrives.
+    // (adversarial-reviewer + code-reviewer, CUL-622 — this mutation survived all six
+    // of the original tests and the whole 96-case file.)
+    const first = deferred<{ data: unknown; error: null }>();
+    const second = deferred<{ data: unknown; error: null }>();
+    selectSpy.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const a = syncPendingEvents();
+    await tick();
+    const b = syncPendingEvents();
+    await tick();
+
+    first.resolve({ data: [{ id: 'e1' }], error: null });
+    await tick();
+    expect(upsertSpy).toHaveBeenCalledTimes(2); // the trailing run is on the wire
+
+    localRow = evt('2026-08-30T05:33:00.000Z', T2);
+    const c = syncPendingEvents();
+    await tick();
+    expect(upsertSpy).toHaveBeenCalledTimes(2); // c waited; it did not push beside b
+
+    second.resolve({ data: [{ id: 'e1' }], error: null });
+    await Promise.all([a, b, c]);
+    expect(upsertSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('a stale run settling does not release the slot a ceiling-started run owns', async () => {
+    // The identity check in startDrain's `.finally`. Past the ceiling a newer run owns
+    // the slot while the old one is still outstanding, so the old one's completion must
+    // not clear it — a bare `delete` there lets the next caller start beside the run
+    // that is genuinely active. The in-place comment calls this load-bearing and
+    // nothing tested it; both reviews found the mutation green across the whole file,
+    // and it is the line most likely to read as needless defensiveness and be removed.
+    const timers = jest.spyOn(global, 'setTimeout');
+    const hung = deferred<{ data: unknown; error: null }>();
+    const afterCeiling = deferred<{ data: unknown; error: null }>();
+    selectSpy.mockReturnValueOnce(hung.promise).mockReturnValueOnce(afterCeiling.promise);
+
+    const stalled = syncPendingEvents();
+    await tick();
+    const waiting = syncPendingEvents();
+    await tick();
+
+    const ceiling = timers.mock.calls.find(([, ms]) => ms === QUEUE_PUSH_WAIT_CEILING_MS);
+    (ceiling![0] as () => void)();
+    await tick();
+    expect(upsertSpy).toHaveBeenCalledTimes(2);
+
+    // The original request finally comes back, while the run that replaced it is
+    // still outstanding.
+    hung.resolve({ data: [{ id: 'e1' }], error: null });
+    await tick();
+    await tick();
+
+    localRow = evt('2026-08-30T05:33:00.000Z', T2);
+    const third = syncPendingEvents();
+    await tick();
+    expect(upsertSpy).toHaveBeenCalledTimes(2); // queued behind the live run, not beside it
+
+    afterCeiling.resolve({ data: [{ id: 'e1' }], error: null });
+    await Promise.all([stalled, waiting, third]);
+  });
+
+  it('closes the handoff gap — a continuation of the active run cannot start beside its trailing run', async () => {
+    // The active run's `.finally` clears the in-flight slot several microtask jobs
+    // before the trailing run starts. A caller landing in that window used to see both
+    // maps empty and start its own drain, which the pending trailing run then joined
+    // on the wire. Microtask-only, so nothing a person does can land there — it needs a
+    // continuation of the active run's own promise that re-calls the same queue, which
+    // no call site does today (every `.then` chain in the app crosses queues). Closed
+    // by checking the trailing slot first. (adversarial-reviewer, CUL-622 — reproduced
+    // on unmutated source.)
+    const first = deferred<{ data: unknown; error: null }>();
+    selectSpy.mockReturnValueOnce(first.promise);
+
+    const a = syncPendingEvents();
+    await tick();
+    const b = syncPendingEvents();
+    const c = a.then(() => syncPendingEvents());
+    await tick();
+
+    first.resolve({ data: [{ id: 'e1' }], error: null });
+    await Promise.all([a, b, c]);
+
+    // Two: the active run, and the one trailing run that both waiters share.
+    expect(upsertSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not serialize ACROSS queues — a slow events push never stalls meals', async () => {
+    // Direction note: this one must pass before and after the change. It pins the
+    // scope of the lock rather than the defect — a single global push lock would
+    // close CUL-622 too, and would make every write path wait behind an unrelated
+    // queue's network round trip.
+    const inFlight = deferred<{ data: unknown; error: null }>();
+    selectSpy.mockReturnValueOnce(inFlight.promise);
+
+    const events = syncPendingEvents();
+    await tick();
+    await expect(syncPendingMeals()).resolves.toBeUndefined();
+
+    inFlight.resolve({ data: [{ id: 'e1' }], error: null });
+    await events;
   });
 });
