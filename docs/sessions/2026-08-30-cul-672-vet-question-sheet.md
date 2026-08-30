@@ -1,7 +1,7 @@
 # 2026-08-30 — CUL-672: the §15 vet question sheet, made send-ready
 
 **Mode:** DISCOVERY. **Issue:** CUL-672 (`Waiting on PM`, project Event Taxonomy Expansion).
-**Outcome:** `docs/vet-question-sheet.md` + a published artifact; three additions proposed for PM ruling. Shipped via #TBD.
+**Outcome:** `docs/vet-question-sheet.md` + a published artifact; three additions proposed for PM ruling. Shipped via #765.
 
 ## What the issue asked
 
