@@ -3532,17 +3532,25 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // artifact — buildDetectionInput's own contract says so ("90-day fallback ⊃ 56d
     // chronicity window") — so for any course that predates the lookback, the detector's
     // first onset lands ~34 days INSIDE the window while appendix A, one page later, prints
-    // the earlier entries. Rendering that onset as "first logged" therefore contradicts the
-    // report's own log AND understates the duration: a cat vomiting since May 20 was dated
-    // Jun 13, three weeks short, on the axis a vet reads a chronicity flag FOR. On a safety
-    // flag that error runs toward reassurance, which is the one direction this band may not
-    // fail in (B-494).
+    // the earlier entries. Rendering that onset as "first logged" is therefore a FALSE DATE that
+    // this report's own appendix contradicts: a cat vomiting since May 20 was dated Jun 13, three
+    // weeks short, on the axis a vet reads a chronicity flag FOR. A reader who takes it at face
+    // value gets a five-week problem where the record holds a four-month one — the B-532 finding,
+    // arriving through a boundary B-532's own left-censor does not test.
     //
-    // So the record's own first entry is carried SEPARATELY rather than replacing the
-    // engine's anchor: the same split as `TrialFacts.exposureRange` vs `range`, for the same
-    // reason — one bounds what the engine counted, the other bounds what the record holds,
-    // and the counts below are only interpretable against the first. Read off `occurredAt`,
-    // like-for-like with the detector, which saw these same deduped rows.
+    // So the record's own first entry is carried SEPARATELY rather than replacing the engine's
+    // anchor: the same split as `TrialFacts.exposureRange` vs `range`, for the same reason — one
+    // bounds what the engine counted, the other bounds what the record holds. The render layer
+    // states the date from this and the SPAN from the engine, and the reason that split is not
+    // squeamishness is in render.ts: a duration is an inference the engine guards with three
+    // floors, and widening it here re-opens §10 #4. Read off `occurredAt`, like-for-like with the
+    // detector, which saw these same deduped rows.
+    //
+    // Computed unconditionally, deliberately unlike `localSymptomDays`/`localDaysSince` above,
+    // which fall back to the engine when `episodeSetMatches` is false. That guard asks whether the
+    // report's episode SET matches the engine's, because those two are recounts of the engine's
+    // own numbers. This is not a recount of anything — it is a fact about the record, answerable
+    // whether or not the counts reconcile.
     let firstLoggedMs: number | null = null
     for (const e of windowEvents) {
       if (e.type !== f.symptomType) continue
@@ -3550,9 +3558,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (!Number.isFinite(ms)) continue
       if (firstLoggedMs === null || ms < firstLoggedMs) firstLoggedMs = ms
     }
-    // The detector saw only in-window rows, so its onset can never precede the record's
-    // first entry; the `min` is belt-and-braces, and an unparseable-row fallback to the
-    // engine's anchor keeps the flag stating a date it can defend rather than none.
+    // The `min` is inert by construction, not merely by expectation: `buildDetectionInput` builds
+    // `symptomEvents` from these same `windowEvents`, and `toEpisodeOnsets` returns an ACTUAL
+    // member instant of a chain rather than a synthesised one, so the engine's onset is always one
+    // of the rows scanned above. Kept anyway because the invariant lives in another module, and
+    // the unparseable-row fallback keeps the flag stating a date it can defend rather than none.
     const firstLoggedIso =
       firstLoggedMs === null
         ? f.firstOnsetIso

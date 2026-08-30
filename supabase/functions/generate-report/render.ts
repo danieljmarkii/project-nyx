@@ -1412,46 +1412,59 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // edge — the same vocabulary the exposure counts use, for the same reason. Not
       // suppressed and not softened: the flag still fires, still leads, and still says the
       // pattern is sustained. It simply stops asserting a start date it cannot know.
-      // THE DATE IS THE RECORD'S, NOT THE DETECTOR'S (CUL-69). `firstOnsetIso` is the first
-      // onset inside the engine's own lookback; `firstLoggedIso` is the first entry in the
-      // report's window — the same rows appendix A prints. The two diverge by construction on
-      // the default artifact, where the 90-day window strictly contains the 56-day lookback,
-      // and the old code stated the former as the latter: a course predating the lookback was
-      // dated ~34 days late, contradicting this report's own appendix and understating the
-      // duration in the reassuring direction.
+      // THE DATE IS THE RECORD'S; THE SPAN IS THE ENGINE'S (CUL-69, after the adversarial pass).
+      // `firstOnsetIso` is the first onset inside the engine's own lookback; `firstLoggedIso` is
+      // the first entry in the report's window — the same rows appendix A prints. The two diverge
+      // by construction on the default artifact, where the 90-day window strictly contains the
+      // 56-day lookback, and the old code stated the former as the latter: a course predating the
+      // lookback was dated ~34 days late, contradicting this report's own appendix.
       //
-      // The span moves with the anchor. Stating a lookback-bounded span beside a record-anchored
-      // date would be a NEW self-contradiction on the same line CUL-687 just de-contradicted, so
-      // the engine's span is extended by the measured record that precedes its window.
+      // THE SPAN DOES NOT MOVE WITH THE DATE, and that is the whole lesson here. The first draft
+      // extended `spanDays` by the gap so the two numbers would agree — and re-opened §10 #4, the
+      // "two distant data points" break the engine spends three floors closing (`loggingEligible`
+      // over both halves of the span, `countDistributionWeeks`' B-188 anti-barbell packing, and
+      // the `minSpanDays`/`minEpisodes` conjunction). One stale vomit ten months before a real
+      // six-week course printed "spans 335 days · 7 episodes": the duration ran toward alarm and
+      // was false, while the DENSITY a vet actually triages on ran toward reassurance — one
+      // episode every seven weeks, over a record holding weekly vomiting. Cough was worse, its
+      // 28-day recency floor letting a long-quiet course fire and maximising the gap. B-494 names
+      // that direction as the one this band may not fail in.
+      //
+      // So: the earliest logged entry is a FACT ABOUT THE RECORD and free to state; a duration is
+      // an INFERENCE the engine guards, and any layer that widens it inherits those guards or must
+      // not widen it. This layer does not widen it. Where the record reaches back further than the
+      // counts, that is said in its own sentence instead — which is also why the two facts stop
+      // sharing the "spans N days (first logged X)" phrasing, whose parenthetical reads as the
+      // span's start.
       const firstLoggedKey = localDayKeyOf(f.firstLoggedIso, tz)
       const onsetDay = fmtLocalDay(f.firstLoggedIso, tz)
-      const rawLeadDays = daysBetweenDayKeys(firstLoggedKey, localDayKeyOf(f.firstOnsetIso, tz))
-      // Zero whenever the lookback already reaches the record's first entry — which is every
-      // window no longer than the lookback (a short custom or since-visit report), so this whole
-      // branch is inert there. An unparseable key degrades to the engine's own span rather than
-      // to Infinity: a number the report cannot defend is worse than a conservative one.
-      const leadDays = Number.isFinite(rawLeadDays) ? Math.max(0, rawLeadDays) : 0
-      const spanDays = f.spanDays + leadDays
+      // INSTANT-granular, not day-granular. The lookback cuts at an instant, so entries earlier on
+      // the SAME local day as the first counted onset are excluded from the counts too — three
+      // morning episodes dropping out of a ten-episode record while a local-day comparison read
+      // "nothing is missing". The rendered DATE is still a local day; only this gate is not.
+      const firstLoggedMs = Date.parse(f.firstLoggedIso)
+      const firstOnsetMs = Date.parse(f.firstOnsetIso)
+      const hasUncountedRecord =
+        Number.isFinite(firstLoggedMs) && Number.isFinite(firstOnsetMs) && firstLoggedMs < firstOnsetMs
       // B-532's floor now tests the RECORD anchor. Against `firstOnsetIso` it was testing the
       // boundary that was not binding: on the default report that onset sits ~34 days inside the
       // window by construction, so the floor read "genuinely observed" and stayed silent on
-      // exactly the reports whose start really was truncated.
+      // exactly the reports whose start really was truncated. The new predicate is IMPLIED by the
+      // old one (`firstLoggedIso <= firstOnsetIso` always), so this can only ever fire more often.
       const leftCensored = daysBetweenDayKeys(snap.scope.startDate, firstLoggedKey) <= CHRONICITY_LEFT_CENSOR_DAYS
       const censorBit = leftCensored
-        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
+        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
         : ''
       // DISCLOSURE BESIDE THE NUMBER, never a re-derivation (the C5 logging-density precedent).
-      // The counts stay the engine's — re-deriving them over the wider span here would fork the
-      // report off the ONE statistical source buildDetectionInput exists to preserve, and make
-      // this flag disagree with the Signal card for the same pet on the same day. So the span is
-      // corrected and the counts state their own window, which is what stops a reader dividing
-      // one by the other and reading a density the record does not support.
-      const countScopeBit =
-        leadDays > 0
-          ? ` Episode and day counts cover the most recent ${num(
-              f.windowDays,
-            )} days of that span; appendix&nbsp;A carries the full log.`
-          : ''
+      // It names the date the counts actually begin at, never a day COUNT: the lookback is measured
+      // back from the window END, so "the most recent 56 days" is not a portion of a 43-day span —
+      // it can exceed the span outright, and then reads as the exact inverse of the warning it
+      // exists to deliver. A date cannot overstate how much of the span was counted.
+      const recordBit = hasUncountedRecord
+        ? ` ${h(symptomLabel(f.symptomType))} was first logged ${h(onsetDay)}; these counts begin at ${h(
+            fmtLocalDay(f.firstOnsetIso, tz),
+          )}, so earlier entries are in appendix&nbsp;A but not in the numbers above.`
+        : ''
       // §9 cough↔vomit adjacency (CUL-676) — the clinical register of the same fact the
       // Signal card states to the owner. Post-tussive vomiting and the cough-mistaken-for-
       // -hairball error make these two owner-logged streams cross-contaminate in BOTH
@@ -1473,13 +1486,16 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         // about the RECORD's extent; whether the sign is current is the recency clause's job,
         // and it is right there. Stating each once removes the contradiction without dropping
         // anything a reader needs.
-        `<b>${h(symptomLabel(f.symptomType))} spans ${num(spanDays)} day${
-          spanDays === 1 ? '' : 's'
-        }</b> (first logged ${h(onsetDay)}): ${num(f.episodeCount)} episode${
+        // The "(first logged …)" parenthetical is dropped where the record reaches back past the
+        // counts: glued to "spans N days" it reads as the span's start, so it would assert a
+        // duration nobody measured. `recordBit` then carries both dates in their own sentence.
+        `<b>${h(symptomLabel(f.symptomType))} spans ${num(f.spanDays)} day${
+          f.spanDays === 1 ? '' : 's'
+        }</b>${hasUncountedRecord ? '' : ` (first logged ${h(onsetDay)})`}: ${num(f.episodeCount)} episode${
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
-        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${countScopeBit}${censorBit}${adjacencyBit}`,
+        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${recordBit}${censorBit}${adjacencyBit}`,
       )
     }
     case 'symptom_worsening': {
