@@ -4,7 +4,7 @@
 **Issue:** CUL-663 (DISCOVERY; the device sitting itself is still owed)
 **Also covers:** CUL-729 (merged into one script)
 **Filed:** CUL-755, CUL-756
-**Outcome:** shipped via #775
+**Outcome:** shipped via #776
 
 ---
 
