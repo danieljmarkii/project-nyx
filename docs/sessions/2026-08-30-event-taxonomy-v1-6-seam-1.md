@@ -95,7 +95,30 @@ cold-start after an app kill (the hydration tick fires in `useSync`'s `finally`)
 lead-canvas register, the arrival/haptic gate, the type-system guard, both
 fail-toward-firing directions, and F-A's non-adjudication.
 
-**Round 2 (on the corrected seam): [recorded below when complete].**
+**Round 2 (on the corrections): FAIL — 8 findings (S2-1…S2-8), three high** — and the
+round-1 pattern repeated exactly: the deletions held, the added mechanism did not. The
+big three: (S2-1) the derive-only model could not express rule 3's
+never-stands-down-to-nothing card — the owner who sleeps thirteen hours on a
+twelve-hour window past an unacknowledged band woke to an *empty zone*; closed by the
+two-sources derivation rule (marker + member rows, both already persisted). (S2-2) the
+fixture's marker-unset pin contradicted rule 3's own write side (a delivered band sets
+the marker) and gave back the discrimination S1-3 was filed for — a marker-gated build
+passed the whole fixture while reproducing the basement flat. (S2-3) the banner bullet
+had named two of at least six fail-quiet gates on its path (`validateBannerPhrasing`
+fail-safes to silence on exactly this leaf's emergency vocabulary; the banner is
+single-slot and rank-ordered; `bannerCopy` is name-first against D23; and nothing had
+ever said detection *evaluates* a non-active pet).
+
+**And the round's structural finding redraws the seam map: F-C's closure cannot be made
+fully binding while F-G stands.** Three independent findings across two rounds (S1-4,
+S2-2, S2-4) hit the same wall — every fully-discriminating fixture and every coherence
+invariant either contradicts rule 3's write side or quietly asserts rule 1's half of
+the marker contradiction. Rather than dodge a third time, the residue is **held**:
+fixture 12(e)/(f) (the basement-flat discriminator and the F7 persistence clause) sit
+un-binding beside rule 1's pinned test, becoming binding the day F-G resolves — and
+the verdicts block records the consequence in place: **seam 2 should be F-G.**
+
+**Round 3 (on the round-2 corrections): [recorded when complete].**
 
 ## Why one seam only
 
@@ -110,7 +133,16 @@ takes no side.
 
 ## Next
 
-Seam 2. Recommended: **F-A** (the unacknowledged band-tier cluster permanently silent —
-the worst open silence defect, and it lives in the rule 3 × 13 × acknowledgement seam),
-or **F-G** first if the PM prefers to clear the contradiction the F-A closure must be
-written against. Kickoff prompt on CUL-684 / in the session summary.
+**Seam 2 = F-G, and this is no longer a preference — it is the seam pass's own
+evidence.** Three findings across two re-attack rounds (S1-4, S2-2, S2-4) showed every
+load-bearing piece of the durable-card architecture is gated on the rule 1 × rule 3
+marker contradiction: the fourth exit's backstop, the fixture's discrimination, and the
+coherence invariant each either die under rule 3's scope sentence or silently assert
+rule 1's. Fixture 12(e)/(f) and rule 1's pinned test sit held un-binding until it
+resolves. The evidence also points at the resolution (recorded as a recommendation,
+not an adjudication): rule 3's own F7 and F12 paragraphs — the card as undelivered
+message, the card as *current state* rather than an arrival event — already side
+against its scope sentence's card clause, which reads as the "consistency fix" rule 1
+warns against, shipped as a definitional sentence. F-A follows naturally as seam 3
+(its closure must be written against a settled F-G). Kickoff prompt on CUL-684 / in
+the session summary.
