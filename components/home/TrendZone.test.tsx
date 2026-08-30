@@ -19,8 +19,10 @@ jest.mock('../../store/petStore', () => ({
 }));
 
 import { render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { TrendZone } from './TrendZone';
 import type { TrendData } from '../../hooks/useTrend';
+import { theme } from '../../constants/theme';
 
 /** 14 UTC day keys ending today, matching `buildBuckets`' key space. */
 function buckets(fill: (i: number) => { symptomCount: number; mealCount: number }) {
@@ -242,5 +244,63 @@ describe('TrendZone never states an absence (B-067)', () => {
     expect(tree.queryByText(/none/i)).toBeNull();
     // The symptom is still named; the chart's empty right half is the only statement.
     expect(tree.getByText('Vomit')).toBeTruthy();
+  });
+});
+
+// ── CUL-578 ─────────────────────────────────────────────────────────────────────
+//
+// Three accent-coloured text nodes on this card sit on the white Card ground, where
+// the brand teal is 2.26:1 — well under AA, and the identical defect CUL-27 already
+// fixed one card up on TodayZone's "Full day ›" door. The fix is the ink token; the
+// ratios are pinned in constants/theme.contrast.test.ts, and these assert that the
+// nodes reach for it.
+//
+// Read off the rendered tree, not the StyleSheet: the sublabel's colour arrives via a
+// conditional style array, so the thing worth asserting is what actually lands on the
+// node in the state that triggers it.
+describe('TrendZone accent text uses the ink on the white Card (CUL-578)', () => {
+  const flatColor = (node: { props: { style?: unknown } }) =>
+    (StyleSheet.flatten(node.props.style) as { color?: string })?.color;
+
+  it('renders the "All patterns" door in accent ink', () => {
+    mockUseTrend.mockReturnValue({ data: trendData(), isLoading: false });
+    const tree = render(<TrendZone />);
+    const door = tree.getByText('All patterns ›');
+    expect(flatColor(door)).toBe(theme.colorAccentInk);
+    expect(flatColor(door)).not.toBe(theme.colorAccent);
+  });
+
+  it('renders the trial-start marker label in accent ink', () => {
+    const b = buckets(() => ({ symptomCount: 1, mealCount: 1 }));
+    mockUseTrend.mockReturnValue({
+      data: trendData({ buckets: b, trialStartDayKey: b[3].date }),
+      isLoading: false,
+    });
+    const tree = render(<TrendZone />);
+    const marker = tree.getByText(/^Trial diet started /);
+    expect(flatColor(marker)).toBe(theme.colorAccentInk);
+    expect(flatColor(marker)).not.toBe(theme.colorAccent);
+  });
+
+  it('renders the feeding sublabel in accent ink in its highlighted state', () => {
+    // thisWeekMealDays === 7 is the one state that swaps the sublabel off the muted
+    // secondary colour onto the accent — i.e. the only state where this can fail.
+    mockUseTrend.mockReturnValue({
+      data: trendData({ mode: 'feeding', thisWeekMealDays: 7, lastWeekMealDays: 5 }),
+      isLoading: false,
+    });
+    const tree = render(<TrendZone />);
+    const sub = tree.getByText('Every day this week');
+    expect(flatColor(sub)).toBe(theme.colorAccentInk);
+    expect(flatColor(sub)).not.toBe(theme.colorAccent);
+  });
+
+  it('leaves the sublabel on the muted secondary colour in every other state', () => {
+    mockUseTrend.mockReturnValue({
+      data: trendData({ mode: 'feeding', thisWeekMealDays: 5, lastWeekMealDays: 5 }),
+      isLoading: false,
+    });
+    const tree = render(<TrendZone />);
+    expect(flatColor(tree.getByText('Same as last week'))).toBe(theme.colorTextSecondary);
   });
 });
