@@ -19,24 +19,60 @@ interface Props {
 
 export function RundownTileRow({ tile, onPress, isLast = false }: Props) {
   const tappable = onPress != null && tile.tap != null;
+  const label = `${tile.label}: ${tile.value}${tile.detail ? `, ${tile.detail}` : ''}`;
+  // The text is the same in both hosts; only the chevron and the host differ, so
+  // it lives here rather than being written twice and drifting.
+  const text = (
+    <View style={styles.textCol}>
+      <Text style={styles.label}>{tile.label}</Text>
+      <Text style={[styles.value, tile.empty && styles.valueEmpty]}>{tile.value}</Text>
+      {tile.detail ? <Text style={styles.detail}>{tile.detail}</Text> : null}
+    </View>
+  );
+
+  // ── ONE ROW, TWO HOSTS (CUL-728) ───────────────────────────────────────────
+  //
+  // It used to be one TouchableOpacity carrying `disabled={!tappable}` next to
+  // `accessibilityRole={tappable ? 'button' : 'text'}`. The role switch says the
+  // intent outright — when it does not tap, it is text — and `disabled`
+  // contradicted it on the same element: RN copies `disabled` into
+  // `accessibilityState.disabled` (TouchableOpacity.js) and iOS maps that to
+  // UIAccessibilityTraitNotEnabled, which VoiceOver speaks as "dimmed". So a
+  // plain data row announced "…, text, dimmed" — a control that is unavailable —
+  // on the surface whose whole job is being read aloud in a consult room.
+  //
+  // `disabled` is a claim (this control exists, and is off right now), not a way
+  // to make a row inert. Where the control does not exist for that state, the
+  // inert branch is a plain View — no responder, no trait, nothing to dim.
+  //
+  // `accessible` is load-bearing on that View. The row is two or three separate
+  // Text nodes that only ever merged into one announcement because a touchable
+  // is `accessible` by default; without it here the label goes inert and the
+  // eyebrow, the value and the detail become three unrelated stops.
+  if (!tappable) {
+    return (
+      <View
+        style={[styles.row, isLast && styles.rowLast]}
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={label}
+      >
+        {text}
+      </View>
+    );
+  }
+
   // ~50pt min tap target (44pt floor + padding) for the 3am-in-a-consult-room owner.
   return (
     <TouchableOpacity
       style={[styles.row, isLast && styles.rowLast]}
       onPress={onPress}
-      disabled={!tappable}
       activeOpacity={0.6}
-      accessibilityRole={tappable ? 'button' : 'text'}
-      accessibilityLabel={`${tile.label}: ${tile.value}${tile.detail ? `, ${tile.detail}` : ''}`}
+      accessibilityRole="button"
+      accessibilityLabel={label}
     >
-      <View style={styles.textCol}>
-        <Text style={styles.label}>{tile.label}</Text>
-        <Text style={[styles.value, tile.empty && styles.valueEmpty]}>{tile.value}</Text>
-        {tile.detail ? <Text style={styles.detail}>{tile.detail}</Text> : null}
-      </View>
-      {tappable ? (
-        <ChevronRight size={18} color={theme.colorTextTertiary} style={styles.chev} />
-      ) : null}
+      {text}
+      <ChevronRight size={18} color={theme.colorTextTertiary} style={styles.chev} />
     </TouchableOpacity>
   );
 }

@@ -38,6 +38,7 @@ import {
   formatUploadError,
   withUnsentSuffix,
   MAX_SYNC_ATTEMPTS,
+  pushGuardColumn,
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
   type SyncFailureClass,
@@ -123,13 +124,49 @@ type QueueTable =
   | 'diet_trial_foods'
   | 'notification_preferences';
 
+// The queues whose rows CANNOT CHANGE between the moment a push reads them and the
+// moment its response lands: an attachment row is written once and never edited in
+// place (neither table carries `updated_at`, by design — see SYNC_QUEUES). They are
+// therefore the only queues that may be marked on the strength of an id alone, and
+// naming them is what makes that a decision rather than an omission.
+//
+// A RUNTIME ARRAY the type is derived from, not a bare type union, because a type
+// asserts nothing a test can read. Written as a union first, this list was the one
+// place the CUL-691 guard could be switched off in silence: moving `vet_documents`
+// into it and pointing its writer at markSyncedInsertOnly re-opened the exact
+// B-478 VF-6 bug on the exact queue that bug was found on, with `tsc` clean and all
+// 6194 tests green — because nothing anywhere asserted what the union contained.
+// The guard was one-directional: markSynced fails closed when the REGISTRY says a
+// table is unguarded, and was blind to this list claiming it. syncQueue.test.ts now
+// pins this array against the schema-derived null set, so the two halves check each
+// other in both directions. (rls-privacy-reviewer, CUL-691.)
+export const INSERT_ONLY_QUEUE_TABLES = ['event_attachments', 'vet_visit_attachments'] as const;
+type InsertOnlyQueueTable = (typeof INSERT_ONLY_QUEUE_TABLES)[number];
+
+// Everything else is last-write-wins: a row an owner can rewrite — edit, soft
+// delete, re-rate — while its own push is still in the air. Derived by exclusion on
+// purpose, so a queue added to QueueTable lands here by DEFAULT and inherits the
+// CUL-691 guard, instead of needing someone to remember it.
+type LwwQueueTable = Exclude<QueueTable, InsertOnlyQueueTable>;
+
+// What a push actually SENT: the row's identity and — on an LWW queue — the version
+// of it that went on the wire. BOTH halves of the response key on this, the mark
+// (markSynced) and the refusal (applyFailurePolicy), because both are acting on a
+// row the owner may have rewritten in the meantime. `updated_at` is optional only so
+// the insert-only queues can share the implementation; the exported wrappers are
+// OVERLOADED so an LWW caller cannot omit it. There is deliberately no runtime
+// default behind that — a default there is the same trapdoor one layer down.
+type PushedRow = { id: string; updated_at?: string };
+
 // SQLite's compiled variable limit is 999 on older builds; 400 keeps a chunk well
-// clear of it and matches loadLocalRowMeta's chunking above. Every writer below
-// caps its queue read at 100, so today this loops exactly once — the chunking is
-// here so a future writer that raises its LIMIT can't quietly hit the ceiling.
+// clear of it and matches loadLocalRowMeta's chunking above. Only the insert-only
+// sweep below still batches (the guarded sweep is per row, for the reason given
+// there), and all three of its call sites pass a single id — the chunking is here
+// so a future writer that marks a whole batch of attachments can't quietly hit the
+// ceiling.
 const MARK_SYNCED_CHUNK = 400;
 
-// Flip `synced = 1` for the rows that were just pushed (B-125).
+// The shared `synced = 1` sweep (B-125), GUARDED (CUL-691).
 //
 // Every writer used to build this UPDATE by string-interpolating its own id list
 // (`WHERE id IN ('a','b',…)`). There was no live injection surface — the ids are
@@ -139,12 +176,141 @@ const MARK_SYNCED_CHUNK = 400;
 // `?` placeholders make the query correct by construction instead of by luck, and
 // lifting it here means the next writer inherits that for free rather than
 // copying the seventh instance of the interpolated form.
+//
 // B-398: the sweep also RESETS THE QUARANTINE STATE. A row that just landed has
 // no history worth keeping — leaving a stale `sync_attempts` behind would mean a
 // row that failed 24 times, succeeded, was edited and failed once more would be
 // quarantined on that single failure. The budget is per unsent change, not per
 // row for the life of the install.
-export async function markSynced(db: Db, table: QueueTable, ids: string[]): Promise<void> {
+//
+// ── WHY IT TAKES ROWS AND NOT IDS (CUL-691) ──────────────────────────────────
+//
+// A push reads its rows, goes to the network, and marks them synced when the
+// response lands. An id is not enough to close that gap, because it does not say
+// WHICH VERSION of the row was sent:
+//
+//   t=0.0  insertWeightCheck writes the event and fires syncPendingEvents();
+//          the push reads the row (updated_at = T0) and sends it.
+//   t=2.0  the owner taps Undo on the completion card — which lives 5000ms, so
+//          this is the ordinary case, not a corner. softDeleteEvent stamps
+//          deleted_at + updated_at = T2 and sets synced = 0.
+//   t=2.1  the in-flight response from t=0 lands and marks the row synced.
+//
+// The tombstone is now flagged as pushed and was never sent. Nothing re-queues it
+// (the row reads synced = 1) and hydration will not correct it (local updated_at
+// is newer, so last-write-wins keeps the local state), so the server keeps a live
+// row the owner removed — permanently. For a weigh-in that is the one route by
+// which a soft-deleted reading reaches the vet report, whose `mapWeightRows` drops
+// on `events.deleted_at` and would read NULL server-side.
+//
+// Undo does fire its own push, so the usual outcome is that the tombstone goes up
+// a moment later anyway. What makes this a real defect rather than a theoretical
+// one is the window BETWEEN the two: `reverseLoggedEvent` awaits the local delete,
+// awaits the snapshot reconcile, and then the new push awaits `getSession()` — a
+// call that can do a network token refresh. An in-flight response landing anywhere
+// in that stretch marks the row synced before the second push's queue read ever
+// runs, and the second push then finds nothing to send.
+//
+// So the mark is conditional on the row still carrying the `updated_at` that was
+// actually pushed. If it moved, the row is a different, unsent change: the UPDATE
+// matches nothing, the row stays queued, and the next cycle sends the real state.
+//
+// PER ROW, not one chunked statement, because each row carries its own guard
+// value. A `(id, updated_at) IN (VALUES …)` row-value form would fit in one
+// statement but compares with `=` semantics, so a legacy row whose `updated_at` is
+// NULL could never match — and a row that can never be marked synced is re-pushed
+// every cycle forever, which is the wedge B-398 exists to prevent. `IS` is
+// SQLite's null-safe equality and has no such hole. The cost is ≤100 local UPDATEs
+// per table per cycle (the queue reads are LIMIT 100), which is noise beside the
+// network round trip that precedes them, and it is the shape applyFailurePolicy
+// already uses.
+//
+// It also changes the ATOMICITY GRANULARITY, which is worth stating rather than
+// discovering: the old chunked statement marked 400 rows or none, so a throw
+// mid-sweep (SQLite busy, disk full) lost the whole chunk's marks; this marks
+// row-at-a-time, so a throw leaves the rows before it marked and the rest queued.
+// That is the better direction — partial progress survives — and it is safe in
+// both shapes for the same reason: an unmarked row is queued, and a queued row is
+// re-pushed. Only the reverse (marked but unsent) is lossy, and neither shape can
+// produce it.
+//
+// WHAT THE GUARD RESTS ON, and it is not what the first draft of this comment
+// claimed. That version called the same-millisecond collision the only gap; it is
+// one instance of the real precondition, which is: A RE-QUEUEING MUTATION ALWAYS
+// MOVES `updated_at`. Where one does not, the stale push's version still matches
+// and the guard waves it through — CUL-691 re-opened on that write path alone.
+// Deleting the `updated_at = ?` from softDeleteEvent proves it: the tombstone then
+// carries the insert's timestamp, the guard matches, and the row is marked without
+// the tombstone ever travelling.
+//
+// That class is empty today across all sixteen `synced = 0` write sites, but it was
+// empty by CONVENTION, which is exactly the shape syncQueue.test.ts already refuses
+// for the other half of the same contract. It is now scanned there too
+// ('never sets `synced = 0` without also moving `updated_at`').
+//
+// The shape to watch for is already in the tree: adoptVetDocumentLocalUri
+// (lib/vetDocumentDetail.ts) writes `vet_documents.local_uri` and deliberately does
+// NOT move `updated_at`. That is safe only because vetDocumentRowToRemote omits
+// `local_uri` from the push payload — two facts in two files with nothing tying
+// them, so adding that column to the payload would silently un-guard it.
+//
+// The residual same-millisecond case is real but genuinely narrow: it needs a local
+// edit inside the same millisecond as a previous local write AND after the queue
+// read. Orders of magnitude narrower than the window this closes, and no worse than
+// the unguarded behaviour it replaces.
+//
+// The other half of "the row stays queued" TERMINATING rather than wedging is
+// hydration: all thirteen of its upserts carry `WHERE <table>.synced = 1`, so it
+// structurally cannot rewrite a queued row's version out from under an in-flight
+// push. Load-bearing, and previously unstated. (adversarial-reviewer, CUL-691.)
+export async function markSynced(
+  db: Db,
+  table: LwwQueueTable,
+  rows: readonly { id: string; updated_at: string }[],
+): Promise<void> {
+  // Read the column from the queue registry rather than spelling it here, so the
+  // guard and the "which tables have updated_at" fact cannot drift apart.
+  const guard = pushGuardColumn(table);
+  if (guard === null) {
+    // Unreachable through the type system — LwwQueueTable is derived by excluding
+    // the insert-only pair. It is checked anyway because the two halves are
+    // enforced by DIFFERENT things (a union here, the schema-derived registry
+    // there), and marking rows synced UNGUARDED on a disagreement is the exact
+    // outcome this function exists to prevent. Refusing is the safe direction: the
+    // rows stay queued and re-push.
+    console.warn(`[sync] ${table} has no push guard column — refusing to mark synced`);
+    return;
+  }
+  for (const row of rows) {
+    await db.runAsync(
+      `UPDATE ${table} SET synced = 1, sync_attempts = 0, sync_error = NULL
+        WHERE id = ? AND ${guard} IS ?`,
+      [row.id, row.updated_at ?? null],
+    );
+  }
+}
+
+// The same sweep for the two queues that need no guard, because their rows cannot
+// change under a push (see InsertOnlyQueueTable). Separate function rather than an
+// optional argument on markSynced: the table unions make picking the wrong one a
+// COMPILE error in both directions, and the name says at every call site which of
+// the two claims is being made.
+export async function markSyncedInsertOnly(
+  db: Db,
+  table: InsertOnlyQueueTable,
+  ids: readonly string[],
+): Promise<void> {
+  // The mirror of markSynced's fail-closed arm, and deliberately a SECOND,
+  // INDEPENDENT check rather than a restatement of the list above: this function
+  // makes the stronger claim — "this table has no version to compare" — so it is
+  // the one that must not be taken on trust. A table that turns out to have a guard
+  // column is refused rather than marked unguarded; the rows stay queued and
+  // re-push, which is the safe direction. (CUL-641's rule: the gate is the whole
+  // rule, so it does not rest on a single predicate.)
+  if (pushGuardColumn(table) !== null) {
+    console.warn(`[sync] ${table} has a push guard column — refusing to mark it unguarded`);
+    return;
+  }
   for (let i = 0; i < ids.length; i += MARK_SYNCED_CHUNK) {
     const chunk = ids.slice(i, i + MARK_SYNCED_CHUNK);
     const placeholders = chunk.map(() => '?').join(',');
@@ -181,18 +347,49 @@ export async function markSynced(db: Db, table: QueueTable, ids: string[]): Prom
 // HTTP status or a local encode throw — but the three OUTCOMES and the columns they
 // touch are identical, so the policy lives once here rather than being copied with
 // one word changed. `reason` is the pre-formatted sync_error text.
+//
+// VERSION-GUARDED, for the same reason markSynced is (CUL-691). This is the FAILURE
+// half of the very same in-flight response, and it was keyed on `id` alone — so the
+// Undo window strands a row here too, harder:
+//
+//   • the terminal arm writes `sync_error` onto the freshly-written tombstone, and
+//     the queue read is `synced = 0 AND sync_error IS NULL` — so the row leaves
+//     EVERY queue for the life of the install. That is worse than being mismarked:
+//     nothing retries it, and only an owner edit to a row they have already deleted
+//     could clear it.
+//   • the rejected arm spends an attempt against a payload that was never sent.
+//     softDeleteEvent resets `sync_attempts = 0` precisely because "the budget is
+//     per unsent change" (above); an in-flight response silently un-does that.
+//
+// Guarding it makes the code do what that sentence already promised: a refusal is
+// recorded against the VERSION that was refused, and a row rewritten since the push
+// keeps a clean budget and is simply re-sent. Both arms carry the guard — a partial
+// fix here would just move the strand from one arm to the other.
+//
+// Latent rather than live today: the reviewer could not reach a terminal SQLSTATE on
+// any table that also has a client soft-delete path. It becomes live the moment one
+// is reachable — a client shipping a new `event_type` leaf ahead of its enum
+// migration is `22P02` on `events`, which is a table with a tombstone path.
+// (rls-privacy-reviewer, CUL-691.)
 async function applyFailurePolicy(
   db: Db,
   table: QueueTable,
-  id: string,
+  row: PushedRow,
   failure: SyncFailureClass,
   reason: string,
 ): Promise<void> {
   if (failure === 'transient') return;
 
+  // Same derivation as markSynced's, so the two halves of one response cannot
+  // disagree about what a row's version is.
+  const guard = pushGuardColumn(table);
+  const versioned = guard !== null;
+  const where = versioned ? `id = ? AND ${guard} IS ?` : 'id = ?';
+  const key = versioned ? [row.id, row.updated_at ?? null] : [row.id];
+
   if (failure === 'terminal') {
-    console.warn(`[sync] ${table} ${id} rejected permanently: ${reason}`);
-    await db.runAsync(`UPDATE ${table} SET sync_error = ? WHERE id = ?`, [reason, id]);
+    console.warn(`[sync] ${table} ${row.id} rejected permanently: ${reason}`);
+    await db.runAsync(`UPDATE ${table} SET sync_error = ? WHERE ${where}`, [reason, ...key]);
     return;
   }
 
@@ -204,18 +401,25 @@ async function applyFailurePolicy(
     `UPDATE ${table}
         SET sync_attempts = sync_attempts + 1,
             sync_error = CASE WHEN sync_attempts + 1 >= ? THEN ? ELSE sync_error END
-      WHERE id = ?`,
-    [MAX_SYNC_ATTEMPTS, withUnsentSuffix(reason), id],
+      WHERE ${where}`,
+    [MAX_SYNC_ATTEMPTS, withUnsentSuffix(reason), ...key],
   );
 }
 
+type PushError = { code?: string | null; message?: string | null };
+async function recordPushFailure(
+  db: Db, table: LwwQueueTable, row: { id: string; updated_at: string }, error: PushError,
+): Promise<void>;
+async function recordPushFailure(
+  db: Db, table: InsertOnlyQueueTable, row: { id: string }, error: PushError,
+): Promise<void>;
 async function recordPushFailure(
   db: Db,
   table: QueueTable,
-  id: string,
-  error: { code?: string | null; message?: string | null },
+  row: PushedRow,
+  error: PushError,
 ): Promise<void> {
-  await applyFailurePolicy(db, table, id, classifySyncFailure(error), formatSyncError(error));
+  await applyFailurePolicy(db, table, row, classifySyncFailure(error), formatSyncError(error));
 }
 
 // B-586 — the object-upload half of the three file-bearing writers fails by
@@ -227,12 +431,18 @@ async function recordPushFailure(
 // offline case) still costs nothing. `error` is `unknown` because it comes from a
 // `catch`, not from a supabase-js result object.
 async function recordUploadFailure(
+  db: Db, table: LwwQueueTable, row: { id: string; updated_at: string }, error: unknown,
+): Promise<void>;
+async function recordUploadFailure(
+  db: Db, table: InsertOnlyQueueTable, row: { id: string }, error: unknown,
+): Promise<void>;
+async function recordUploadFailure(
   db: Db,
   table: QueueTable,
-  id: string,
+  row: PushedRow,
   error: unknown,
 ): Promise<void> {
-  await applyFailurePolicy(db, table, id, classifyUploadFailure(error), formatUploadError(error));
+  await applyFailurePolicy(db, table, row, classifyUploadFailure(error), formatUploadError(error));
 }
 
 // The payload shape every row mapper produces. Deliberately `object` and not
@@ -281,9 +491,12 @@ type RemoteUpsertRow = object;
 //    stuck, which is normally one row.
 //
 // 3. A GIVE-UP, via recordPushFailure. See there for the policy.
-async function pushRows<L extends { id: string }>(
+async function pushRows<L extends { id: string; updated_at: string }>(
   db: Db,
-  table: QueueTable,
+  // LWW only: every batch writer in this file pushes a table an owner can rewrite,
+  // and `updated_at` on L is what markSynced needs to prove the row did not change
+  // under the push (CUL-691). The two insert-only queues have their own loops.
+  table: LwwQueueTable,
   rows: L[],
   toRemote: (row: L) => RemoteUpsertRow,
   // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
@@ -313,17 +526,19 @@ async function pushRows<L extends { id: string }>(
         .upsert([toRemote(row)], { onConflict: 'id' })
         .select('id');
       if (rowError) {
-        await recordPushFailure(db, table, row.id, rowError);
+        await recordPushFailure(db, table, row, rowError);
         continue;
       }
       if (!((one ?? []) as { id: string }[]).some((r) => r.id === row.id)) {
         console.warn(`[sync] ${table} row ${row.id} returned no id (RLS-blocked?) — left queued`);
-        await recordPushFailure(db, table, row.id, RLS_FILTERED_ERROR);
+        await recordPushFailure(db, table, row, RLS_FILTERED_ERROR);
         continue;
       }
       landed.add(row.id);
+      // Marked per row rather than after the loop: `row` is in hand here, and the
+      // guard needs the exact `updated_at` that was just pushed (CUL-691).
+      await markSynced(db, table, [row]);
     }
-    if (landed.size > 0) await markSynced(db, table, [...landed]);
     return landed;
   }
 
@@ -336,10 +551,10 @@ async function pushRows<L extends { id: string }>(
       `[sync] ${table}: ${blocked.length} row(s) returned no id (RLS-blocked?) — left queued`,
     );
     for (const row of blocked) {
-      await recordPushFailure(db, table, row.id, RLS_FILTERED_ERROR);
+      await recordPushFailure(db, table, row, RLS_FILTERED_ERROR);
     }
   }
-  if (landed.size > 0) await markSynced(db, table, [...landed]);
+  if (landed.size > 0) await markSynced(db, table, rows.filter((r) => landed.has(r.id)));
   return landed;
 }
 
@@ -762,10 +977,10 @@ export async function syncPendingVetVisits(): Promise<void> {
       // quarantines instead of occupying one of the 20 slots forever.
       if (error) {
         console.warn('[sync] vet_visit_attachment upsert failed:', error.message);
-        await recordPushFailure(db, 'vet_visit_attachments', att.id, error);
+        await recordPushFailure(db, 'vet_visit_attachments', att, error);
         continue;
       }
-      await markSynced(db, 'vet_visit_attachments', [att.id]);
+      await markSyncedInsertOnly(db, 'vet_visit_attachments', [att.id]);
     } catch (e) {
       // B-586 — an upload that THROWS (a 413 on the object, a 415, an image the
       // manipulator cannot decode, a missing local file) has no SQLSTATE, so it
@@ -773,7 +988,7 @@ export async function syncPendingVetVisits(): Promise<void> {
       // occupying one of the 20 slots. Classify the throw so a permanent failure
       // spends the budget and quarantines while a network throw stays free.
       console.warn('[sync] vet_visit_attachment upload failed:', e);
-      await recordUploadFailure(db, 'vet_visit_attachments', att.id, e);
+      await recordUploadFailure(db, 'vet_visit_attachments', att, e);
     }
   }
 }
@@ -867,15 +1082,18 @@ export async function syncPendingVetDocuments(): Promise<void> {
       // and vet-visit attachments). Leave synced = 0 so the queue retries.
       if (error) {
         console.warn('[sync] vet_document upsert failed:', error.message);
-        await recordPushFailure(db, 'vet_documents', doc.id, error);
+        await recordPushFailure(db, 'vet_documents', doc, error);
         continue;
       }
       if (!((data ?? []) as { id: string }[]).some((r) => r.id === doc.id)) {
         console.warn(`[sync] vet_document ${doc.id} returned no id (RLS-blocked?) — left queued`);
-        await recordPushFailure(db, 'vet_documents', doc.id, RLS_FILTERED_ERROR);
+        await recordPushFailure(db, 'vet_documents', doc, RLS_FILTERED_ERROR);
         continue;
       }
-      // ⚠ CONDITIONAL ON `updated_at`, and that guard is load-bearing.
+      // GUARDED on `updated_at`, and that guard is load-bearing — it is now
+      // markSynced's own behaviour rather than this loop's (CUL-691 generalised it
+      // to every LWW queue), so the argument is kept here because this is where it
+      // was first paid for.
       //
       // `doc` was read at the top of this loop, and the upload above can take tens
       // of seconds (a 15 MB PDF on cellular). An owner who soft-deletes or renames
@@ -889,19 +1107,8 @@ export async function syncPendingVetDocuments(): Promise<void> {
       // `deleted_at IS NULL` so it cannot even be re-issued. A deletion that reports
       // success and does not delete is the one failure mode this path must not have.
       //
-      // Matching on the `updated_at` we actually pushed makes the mark a no-op in
-      // exactly that case, so the row stays queued and the next cycle pushes the
-      // real state. (B-478 VF-6, found by rls-privacy-reviewer, executed.)
-      //
-      // Deliberately NOT markSynced(): that helper matches on id alone, which
-      // would defeat the guard above. The quarantine reset it performs is
-      // reproduced inline instead — a row that just landed carries no attempt
-      // history worth keeping (B-398).
-      await db.runAsync(
-        `UPDATE vet_documents SET synced = 1, sync_attempts = 0, sync_error = NULL
-          WHERE id = ? AND updated_at = ?`,
-        [doc.id, doc.updated_at],
-      );
+      // (B-478 VF-6, found by rls-privacy-reviewer, executed.)
+      await markSynced(db, 'vet_documents', [doc]);
     } catch (e) {
       // B-586 — the upload half throws (prepareVetDocumentUpload re-encodes with
       // NO original-fallback, so an undecodable image throws here; uploadPhoto
@@ -910,7 +1117,7 @@ export async function syncPendingVetDocuments(): Promise<void> {
       // window. Classify it: a permanent failure quarantines, a network throw is
       // free.
       console.warn('[sync] vet_document upload failed:', e);
-      await recordUploadFailure(db, 'vet_documents', doc.id, e);
+      await recordUploadFailure(db, 'vet_documents', doc, e);
     }
   }
 }
@@ -963,17 +1170,17 @@ export async function syncPendingAttachments(): Promise<void> {
       // read them back. supabase-js returns errors, it does not throw.
       if (error) {
         console.warn('[sync] event_attachment upsert failed:', error.message);
-        await recordPushFailure(db, 'event_attachments', att.id, error);
+        await recordPushFailure(db, 'event_attachments', att, error);
         continue;
       }
-      await markSynced(db, 'event_attachments', [att.id]);
+      await markSyncedInsertOnly(db, 'event_attachments', [att.id]);
     } catch (e) {
       // B-586 — a thrown upload (413/415/undecodable/missing file) carries no
       // SQLSTATE, so it never reached recordPushFailure and re-uploaded forever,
       // permanently holding one of the 20 slots. Classify the throw so a permanent
       // failure quarantines while a network throw stays free.
       console.warn('[sync] event_attachment upload failed:', e);
-      await recordUploadFailure(db, 'event_attachments', att.id, e);
+      await recordUploadFailure(db, 'event_attachments', att, e);
     }
   }
 }
@@ -1015,10 +1222,10 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
     }, { onConflict: 'id' });
     if (error) {
       console.warn('[sync] ensureEventAttachmentsSynced upsert failed:', error.message);
-      await recordPushFailure(db, 'event_attachments', att.id, error);
+      await recordPushFailure(db, 'event_attachments', att, error);
       continue;
     }
-    await markSynced(db, 'event_attachments', [att.id]);
+    await markSyncedInsertOnly(db, 'event_attachments', [att.id]);
   }
 }
 

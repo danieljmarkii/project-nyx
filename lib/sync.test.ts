@@ -57,9 +57,11 @@ jest.mock('./medications', () => ({
   administrationRowToRemote: jest.fn(),
 }));
 
-import { MAX_SYNC_ATTEMPTS } from './syncQueue';
+import { MAX_SYNC_ATTEMPTS, SYNC_QUEUES, pushGuardColumn } from './syncQueue';
 import {
+  INSERT_ONLY_QUEUE_TABLES,
   markSynced,
+  markSyncedInsertOnly,
   prepareAttachmentUpload,
   reapStalePendingFoods,
   reconcilePetWeightSnapshot,
@@ -76,16 +78,387 @@ import {
   syncPendingWeightChecks,
 } from './sync';
 
-// B-125 — the post-push `synced = 1` sweep every writer shares.
+// ── Real-SQLite scaffolding for the sweep tests ──────────────────────────────
 //
-// The bug class this closes is structural rather than live: the seven writers
-// each interpolated their own id list into `WHERE id IN (…)`, which is safe only
-// because device-minted UUIDs cannot carry a quote. The tests below pin the two
-// properties that make the query correct regardless of what the ids are — the
-// ids travel as BOUND params, and the statement never grows past SQLite's
-// variable ceiling — plus one real-SQLite execution so "bound" means the row
-// actually updates, not just that the string looks right.
-describe('markSynced (B-125)', () => {
+// The statements under test are RUN, not read: every assertion below executes the
+// SQL + params markSynced actually emitted (captured from the mock), so a change to
+// the production statement is exercised rather than a copy of it. That is what lets
+// the Undo-window test discriminate — the pre-CUL-691 statement, replayed here,
+// flips the tombstone and fails it.
+const T0 = '2026-08-30T10:00:00.000Z';
+const T2 = '2026-08-30T10:00:02.000Z';
+
+type SqliteDb = {
+  exec(sql: string): void;
+  prepare(sql: string): {
+    run(...params: unknown[]): void;
+    all(): unknown[];
+    get(): unknown;
+  };
+  close(): void;
+};
+
+function realDbWithMeals(): SqliteDb {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(':memory:') as SqliteDb;
+  db.exec(`CREATE TABLE meals (
+    id TEXT PRIMARY KEY,
+    updated_at TEXT,
+    synced INTEGER NOT NULL DEFAULT 0,
+    sync_attempts INTEGER NOT NULL DEFAULT 0,
+    sync_error TEXT
+  )`);
+  return db;
+}
+
+function insertMeal(
+  db: SqliteDb,
+  id: string,
+  updatedAt: string | null,
+  quarantine?: { attempts: number; error: string },
+): void {
+  db.prepare(
+    'INSERT INTO meals (id, updated_at, synced, sync_attempts, sync_error) VALUES (?, ?, 0, ?, ?)',
+  ).run(id, updatedAt, quarantine?.attempts ?? 0, quarantine?.error ?? null);
+}
+
+type MealRow = {
+  id: string;
+  updated_at: string | null;
+  synced: number;
+  sync_attempts: number;
+  sync_error: string | null;
+};
+
+function readMeals(db: SqliteDb): MealRow[] {
+  return db
+    .prepare('SELECT id, updated_at, synced, sync_attempts, sync_error FROM meals ORDER BY id')
+    .all() as MealRow[];
+}
+
+/**
+ * The ids a captured sweep actually marked. The guarded statement binds
+ * `[id, updated_at]` per row (CUL-691), so a test that reads `params` whole is
+ * asserting the statement's SHAPE; these tests are pinning WHICH ROWS LANDED, which
+ * is the behaviour that must survive the change.
+ */
+function markedIds(calls: unknown[][]): string[] {
+  return calls.map((c) => {
+    const params = c[1] as unknown[];
+    // Fails LOUD on a capture from markSyncedInsertOnly, whose chunked
+    // `IN (?,?,?)` binds N ids — reading params[0] there would silently assert on
+    // one id out of N and pass. The constraint is invisible in the name, so it is
+    // checked rather than written down.
+    if (params.length !== 2) {
+      throw new Error(
+        `markedIds expects the guarded [id, updated_at] binding, got ${params.length} params`,
+      );
+    }
+    return params[0] as string;
+  });
+}
+
+function realDbWithEvents(): SqliteDb {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(':memory:') as SqliteDb;
+  db.exec(`CREATE TABLE events (
+    id TEXT PRIMARY KEY,
+    deleted_at TEXT,
+    updated_at TEXT,
+    synced INTEGER NOT NULL DEFAULT 0,
+    sync_attempts INTEGER NOT NULL DEFAULT 0,
+    sync_error TEXT
+  )`);
+  return db;
+}
+
+function insertEvent(db: SqliteDb, id: string, updatedAt: string): void {
+  db.prepare('INSERT INTO events (id, updated_at, synced) VALUES (?, ?, 0)').run(id, updatedAt);
+}
+
+type EventRow = {
+  id: string; updated_at: string | null; synced: number;
+  sync_attempts: number; sync_error: string | null;
+};
+
+function readEvents(db: SqliteDb): EventRow[] {
+  return db
+    .prepare('SELECT id, updated_at, synced, sync_attempts, sync_error FROM events ORDER BY id')
+    .all() as EventRow[];
+}
+
+/** Run the production sweep against the mock and hand back what it emitted. */
+async function captureEmitted(run: () => Promise<void>): Promise<[string, unknown[]][]> {
+  mockRunAsync.mockClear();
+  await run();
+  return mockRunAsync.mock.calls as [string, unknown[]][];
+}
+
+/** Land the captured push response on the real database. */
+function replay(db: SqliteDb, calls: [string, unknown[]][]): void {
+  for (const [sql, params] of calls) db.prepare(sql).run(...params);
+}
+
+// B-125 / CUL-691 — the post-push `synced = 1` sweep every writer shares.
+//
+// Two bug classes meet here. The FIRST is structural: the seven writers each
+// interpolated their own id list into `WHERE id IN (…)`, safe only because
+// device-minted UUIDs cannot carry a quote. The SECOND is live and is the reason
+// the sweep now takes rows rather than ids — a push reads its rows, goes to the
+// network, and marks them when the response lands, and on an LWW table the owner
+// can rewrite the row inside that gap. The completion card's Undo is designed to
+// be used in exactly those seconds.
+describe('markSynced (B-125, guarded by CUL-691)', () => {
+  const fakeDb = { runAsync: (...args: unknown[]) => mockRunAsync(...args) } as never;
+
+  beforeEach(() => {
+    mockRunAsync.mockReset();
+    mockRunAsync.mockResolvedValue(undefined);
+  });
+
+  it('binds the id and the guard as params — neither is ever interpolated', async () => {
+    // A hostile id: the whole point of binding is that the quote/`--` cannot reach
+    // the statement, so an id that WOULD break the old interpolated form is the
+    // honest case to assert on.
+    const rows = [
+      { id: '9f3b-0001', updated_at: '2026-08-30T10:00:00.000Z' },
+      { id: "9f3b'); DROP TABLE meals; --", updated_at: '2026-08-30T10:00:01.000Z' },
+    ];
+    await markSynced(fakeDb, 'meals', rows);
+
+    expect(mockRunAsync).toHaveBeenCalledTimes(2);
+    for (const [i, [sql, params]] of (
+      mockRunAsync.mock.calls as [string, unknown[]][]
+    ).entries()) {
+      expect(sql.replace(/\s+/g, ' ')).toBe(
+        'UPDATE meals SET synced = 1, sync_attempts = 0, sync_error = NULL ' +
+          'WHERE id = ? AND updated_at IS ?',
+      );
+      expect(params).toEqual([rows[i].id, rows[i].updated_at]);
+    }
+    // The property that matters: no id fragment reaches the SQL at all.
+    expect((mockRunAsync.mock.calls as [string][]).map(([sql]) => sql).join('')).not.toMatch(
+      /9f3b|DROP/,
+    );
+  });
+
+  it('is a no-op on an empty list — never emits a bare UPDATE', async () => {
+    await markSynced(fakeDb, 'vet_visits', []);
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it('actually flips only the named rows, against a real SQLite', async () => {
+    const db = realDbWithMeals();
+    // m1 carries a spent budget and a parked reason (B-398): a row that lands
+    // must come back to a CLEAN slate, or a later single failure on an edited row
+    // would quarantine it on the strength of history it already outlived.
+    insertMeal(db, 'm1', T0, { attempts: 24, error: '23503: parent missing' });
+    insertMeal(db, 'm2', T0);
+    insertMeal(db, 'm3', T0);
+
+    replay(
+      db,
+      await captureEmitted(() =>
+        markSynced(fakeDb, 'meals', [
+          { id: 'm1', updated_at: T0 },
+          { id: 'm3', updated_at: T0 },
+        ]),
+      ),
+    );
+
+    expect(readMeals(db)).toEqual([
+      { id: 'm1', updated_at: T0, synced: 1, sync_attempts: 0, sync_error: null },
+      { id: 'm2', updated_at: T0, synced: 0, sync_attempts: 0, sync_error: null },
+      { id: 'm3', updated_at: T0, synced: 1, sync_attempts: 0, sync_error: null },
+    ]);
+    db.close();
+  });
+
+  // THE REGRESSION. This is the Undo window, reduced to its mechanism: the push
+  // read the row at T0; the owner soft-deleted it at T2 (fresh updated_at,
+  // synced = 0) while the request was still in the air; the response then lands.
+  //
+  // Unguarded, the tombstone is flagged as pushed and was never sent — nothing
+  // re-queues it, hydration will not correct it (local updated_at is newer, so LWW
+  // keeps the local state), and the server keeps a live row the owner removed. On
+  // a weigh-in that is the one route by which a soft-deleted reading reaches the
+  // vet report.
+  it('REFUSES to mark a row that changed under the push — the Undo window', async () => {
+    const db = realDbWithMeals();
+    insertMeal(db, 'm1', T0);
+    insertMeal(db, 'm2', T0);
+
+    // The push read both rows at T0 and sent them…
+    const emitted = await captureEmitted(() =>
+      markSynced(fakeDb, 'meals', [
+        { id: 'm1', updated_at: T0 },
+        { id: 'm2', updated_at: T0 },
+      ]),
+    );
+    // …and m1 was soft-deleted mid-flight, exactly as softDeleteEvent writes it.
+    db.prepare(
+      'UPDATE meals SET updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = ?',
+    ).run(T2, 'm1');
+    // …and only now does the response land.
+    replay(db, emitted);
+
+    const rows = readMeals(db);
+    expect(rows.find((r) => r.id === 'm1')).toEqual({
+      id: 'm1',
+      updated_at: T2,
+      synced: 0, // ← still queued: the tombstone has never been sent
+      sync_attempts: 0,
+      sync_error: null,
+    });
+    // The rest of the batch is untouched by one row's reprieve — a guard that
+    // stranded the innocent rows would trade one defect for a wedged queue.
+    expect(rows.find((r) => r.id === 'm2')?.synced).toBe(1);
+    db.close();
+  });
+
+  it('marks a legacy row whose updated_at is NULL — `IS`, not `=`', async () => {
+    // meals.updated_at arrived by ALTER with a backfill, so a NULL is not supposed
+    // to exist. If one did, `= ?` could never match it: the row would be re-pushed
+    // every cycle forever, which is the wedge B-398 exists to prevent. `IS` is
+    // SQLite's null-safe equality and has no such hole.
+    const db = realDbWithMeals();
+    insertMeal(db, 'm1', null);
+
+    replay(
+      db,
+      await captureEmitted(() =>
+        markSynced(fakeDb, 'meals', [{ id: 'm1', updated_at: null as unknown as string }]),
+      ),
+    );
+
+    expect(readMeals(db)[0].synced).toBe(1);
+    db.close();
+  });
+
+  it('refuses rather than marking when a table has no guard column', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // Reachable only if the LwwQueueTable union and the schema-derived registry
+    // disagree. Refusing is the safe direction — the rows stay queued and re-push;
+    // marking them UNGUARDED is the outcome the guard exists to prevent.
+    await markSynced(fakeDb, 'event_attachments' as never, [{ id: 'a1', updated_at: T0 }]);
+    expect(mockRunAsync).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+// The union in this file is the OTHER half of the CUL-691 guard, and it was the half
+// nothing checked. `markSynced` fails closed when the REGISTRY says a table is
+// unguarded; it was blind to the UNION claiming a table is unguarded, which is the
+// direction that ships an unguarded mark. Proven by mutation before this existed:
+// moving `vet_documents` into the insert-only set and pointing its writer at
+// markSyncedInsertOnly re-opened the exact B-478 VF-6 bug, with tsc clean and all
+// 6194 tests green. (rls-privacy-reviewer, CUL-691.)
+//
+// syncQueue.test.ts holds the REGISTRY to the real schema; this holds the UNION to
+// the registry. Together the two directions are closed, and neither suite has to
+// import what the other one can see — lib/syncQueue.ts is deliberately free of the
+// supabase/expo import graph, so it cannot reach lib/sync at all.
+// The FAILURE half of the same in-flight response (CUL-691). markSynced was fixed
+// first; applyFailurePolicy was still keyed on `id` alone, and the strand it caused
+// is the harder one — a `sync_error` written onto a fresh tombstone drops the row out
+// of every queue read (`synced = 0 AND sync_error IS NULL`) for the life of the
+// install, where a wrong mark at least leaves the row visible.
+describe('applyFailurePolicy is version-guarded too (CUL-691)', () => {
+  const evt = (id: string, updatedAt: string) => ({
+    id, pet_id: 'p1', event_type: 'vomit', occurred_at: '2026-07-01T08:00:00.000Z',
+    severity: null, notes: null, source: 'manual', occurred_at_source: 'manual',
+    occurred_at_confidence: null, occurred_at_earliest: null, occurred_at_latest: null,
+    deleted_at: null, created_at: '2026-07-01T08:00:00.000Z',
+    updated_at: updatedAt, logged_via: 'app',
+  });
+
+  beforeEach(() => {
+    mockRunAsync.mockReset();
+    mockRunAsync.mockResolvedValue(undefined);
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+  });
+
+  const runRefusal = async (code: string) => {
+    mockGetAllAsync.mockResolvedValue([evt('e1', T0)]);
+    const select = jest.fn().mockResolvedValue({ data: null, error: { code, message: 'refused' } });
+    mockFrom.mockReturnValue({ upsert: () => ({ select }) });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await syncPendingEvents();
+    warn.mockRestore();
+    return mockRunAsync.mock.calls.filter(([sql]) =>
+      String(sql).includes('sync_error')) as [string, unknown[]][];
+  };
+
+  it('parks a TERMINAL refusal against the version that was refused, not the row', async () => {
+    const db = realDbWithEvents();
+    insertEvent(db, 'e1', T0);
+    const emitted = await runRefusal('22P02');
+    // The owner soft-deleted mid-flight, exactly as softDeleteEvent writes it.
+    db.prepare(
+      'UPDATE events SET deleted_at = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = ?',
+    ).run(T2, T2, 'e1');
+    replay(db, emitted);
+
+    const row = readEvents(db)[0];
+    // Unguarded, sync_error lands here and the queue read — synced = 0 AND
+    // sync_error IS NULL — never sees this row again.
+    expect(row.sync_error).toBeNull();
+    expect(row.synced).toBe(0); // still queued, so the tombstone still goes up
+    db.close();
+  });
+
+  it('does not spend the budget softDeleteEvent just reset', async () => {
+    // The reachable-today arm: RLS_FILTERED_ERROR is synthesised locally on ANY
+    // zero-row write, so this one does not need an exotic SQLSTATE. softDeleteEvent
+    // resets sync_attempts to 0 because "the budget is per unsent change"; an
+    // in-flight response must not quietly un-do that.
+    const db = realDbWithEvents();
+    insertEvent(db, 'e1', T0);
+    const emitted = await runRefusal('42501');
+    db.prepare('UPDATE events SET updated_at = ?, synced = 0, sync_attempts = 0 WHERE id = ?')
+      .run(T2, 'e1');
+    replay(db, emitted);
+
+    expect(readEvents(db)[0].sync_attempts).toBe(0);
+    db.close();
+  });
+
+  it('still records the refusal when the row did NOT change — the guard discriminates', async () => {
+    // A guard that refused everything would be indistinguishable from a broken
+    // failure path, and would strand every genuinely-bad row in the queue forever.
+    const db = realDbWithEvents();
+    insertEvent(db, 'e1', T0);
+    replay(db, await runRefusal('22P02'));
+
+    expect(readEvents(db)[0].sync_error).toContain('22P02');
+    db.close();
+  });
+});
+
+describe('INSERT_ONLY_QUEUE_TABLES agrees with the queue registry (CUL-691)', () => {
+  it('names exactly the queues the registry says carry no version', () => {
+    const unguardedByRegistry = SYNC_QUEUES
+      .map((q) => q.table)
+      .filter((t) => pushGuardColumn(t) === null);
+    // If this fails: the named table can be marked synced WITHOUT the version check
+    // — CUL-691 re-opened on that queue, silently, since nothing else in the build
+    // disagrees.
+    expect([...INSERT_ONLY_QUEUE_TABLES].sort()).toEqual([...unguardedByRegistry].sort());
+  });
+
+  it('is not vacuous — the registry does guard the rest', () => {
+    // Without this, the assertion above would still pass if pushGuardColumn started
+    // returning null for everything.
+    expect(
+      SYNC_QUEUES.map((q) => q.table).filter((t) => pushGuardColumn(t) === 'updated_at').length,
+    ).toBeGreaterThan(5);
+  });
+});
+
+describe('markSyncedInsertOnly — the two queues whose rows cannot change (CUL-691)', () => {
   const fakeDb = { runAsync: (...args: unknown[]) => mockRunAsync(...args) } as never;
 
   beforeEach(() => {
@@ -94,25 +467,22 @@ describe('markSynced (B-125)', () => {
   });
 
   it('binds the ids as params — no id is ever interpolated into the SQL', async () => {
-    // A hostile id alongside two ordinary ones: the whole point of binding is
-    // that the quote/`--` cannot reach the statement, so an id that WOULD break
-    // the old interpolated form is the honest case to assert on.
-    const ids = ['9f3b-0001', "9f3b'); DROP TABLE meals; --", '9f3b-0002'];
-    await markSynced(fakeDb, 'meals', ids);
+    const ids = ['9f3b-0001', "9f3b'); DROP TABLE event_attachments; --", '9f3b-0002'];
+    await markSyncedInsertOnly(fakeDb, 'event_attachments', ids);
 
     expect(mockRunAsync).toHaveBeenCalledTimes(1);
     const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
     expect(sql.replace(/\s+/g, ' ')).toBe(
-      'UPDATE meals SET synced = 1, sync_attempts = 0, sync_error = NULL WHERE id IN (?,?,?)',
+      'UPDATE event_attachments SET synced = 1, sync_attempts = 0, sync_error = NULL ' +
+        'WHERE id IN (?,?,?)',
     );
     expect(params).toEqual(ids);
-    // The property that matters: no id fragment reaches the SQL at all.
     expect(sql).not.toMatch(/9f3b|DROP/);
   });
 
   it('chunks past SQLite\'s variable limit instead of emitting one huge statement', async () => {
     const ids = Array.from({ length: 950 }, (_, i) => `id-${i}`);
-    await markSynced(fakeDb, 'events', ids);
+    await markSyncedInsertOnly(fakeDb, 'vet_visit_attachments', ids);
 
     // 950 ids at a 400 chunk → 400 / 400 / 150, and every chunk stays under the
     // 999-variable ceiling an older SQLite build compiles with.
@@ -128,45 +498,8 @@ describe('markSynced (B-125)', () => {
   });
 
   it('is a no-op on an empty id list — never emits a `WHERE id IN ()`', async () => {
-    await markSynced(fakeDb, 'vet_visits', []);
+    await markSyncedInsertOnly(fakeDb, 'event_attachments', []);
     expect(mockRunAsync).not.toHaveBeenCalled();
-  });
-
-  it('actually flips only the named rows, against a real SQLite', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { DatabaseSync } = require('node:sqlite');
-    const db = new DatabaseSync(':memory:');
-    db.exec(`CREATE TABLE meals (
-      id TEXT PRIMARY KEY,
-      synced INTEGER NOT NULL DEFAULT 0,
-      sync_attempts INTEGER NOT NULL DEFAULT 0,
-      sync_error TEXT
-    )`);
-    // m1 carries a spent budget and a parked reason (B-398): a row that lands
-    // must come back to a CLEAN slate, or a later single failure on an edited row
-    // would quarantine it on the strength of history it already outlived.
-    db.prepare(
-      "INSERT INTO meals (id, synced, sync_attempts, sync_error) VALUES ('m1', 0, 24, '23503: parent missing')",
-    ).run();
-    for (const id of ['m2', 'm3']) {
-      db.prepare('INSERT INTO meals (id, synced) VALUES (?, 0)').run(id);
-    }
-
-    // Run the real SQL + params markSynced emits (captured from the mock, so a
-    // change to the production statement is exercised — not a copy of it).
-    await markSynced(fakeDb, 'meals', ['m1', 'm3']);
-    const [sql, params] = mockRunAsync.mock.calls[0] as [string, string[]];
-    db.prepare(sql).run(...params);
-
-    const rows = db
-      .prepare('SELECT id, synced, sync_attempts, sync_error FROM meals ORDER BY id')
-      .all() as { id: string; synced: number; sync_attempts: number; sync_error: string | null }[];
-    expect(rows).toEqual([
-      { id: 'm1', synced: 1, sync_attempts: 0, sync_error: null },
-      { id: 'm2', synced: 0, sync_attempts: 0, sync_error: null },
-      { id: 'm3', synced: 1, sync_attempts: 0, sync_error: null },
-    ]);
-    db.close();
   });
 });
 
@@ -624,8 +957,7 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
     await syncPendingDietTrials();
 
     const marks = mockRunAsync.mock.calls.filter(([sql]) => String(sql).includes('synced = 1'));
-    expect(marks).toHaveLength(1);
-    expect(marks[0][1]).toEqual(['t1']); // t2 stays queued — it never landed
+    expect(markedIds(marks)).toEqual(['t1']); // t2 stays queued — it never landed
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RLS-blocked'));
   });
 
@@ -690,7 +1022,7 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
     const bump = mockRunAsync.mock.calls.find(([sql]) =>
       String(sql).includes('sync_attempts = sync_attempts + 1'));
     expect(bump).toBeDefined();
-    expect(bump![1]).toEqual([MAX_SYNC_ATTEMPTS, expect.stringContaining('42501'), 't1']);
+    expect(bump![1]).toEqual([MAX_SYNC_ATTEMPTS, expect.stringContaining('42501'), 't1', expect.any(String)]);
   });
 
   it('quarantines a 23505 row instead of retrying it forever — and never flags it synced', async () => {
@@ -706,7 +1038,7 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
 
     const quarantine = mockRunAsync.mock.calls.find(([sql]) => String(sql).includes('SET sync_error'));
     expect(quarantine).toBeDefined();
-    expect(quarantine![1]).toEqual(['23505: duplicate key value', 't1']);
+    expect(quarantine![1]).toEqual(['23505: duplicate key value', 't1', expect.any(String)]);
     // Never flagged synced — the row genuinely is not on the server.
     expect(mockRunAsync.mock.calls.some(([sql]) => String(sql).includes('synced = 1'))).toBe(false);
   });
@@ -724,12 +1056,11 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
 
     expect(mockRunAsync).toHaveBeenCalledWith(
       expect.stringContaining('SET sync_error'),
-      ['23505: dup', 't1'],
+      ['23505: dup', 't1', expect.any(String)],
     );
-    expect(mockRunAsync).toHaveBeenCalledWith(
-      expect.stringContaining('synced = 1'),
-      ['t2'],
-    );
+    expect(
+      markedIds(mockRunAsync.mock.calls.filter(([sql]) => String(sql).includes('synced = 1'))),
+    ).toEqual(['t2']);
   });
 
   it('isolates on a non-terminal ROW rejection too, but never quarantines on the first', async () => {
@@ -812,7 +1143,7 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
 
     expect(mockRunAsync).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE diet_trial_foods SET sync_error'),
-      ['23505: dup membership', 'df1'],
+      ['23505: dup membership', 'df1', expect.any(String)],
     );
   });
 });
@@ -882,10 +1213,10 @@ describe('pushRows — poison-pill isolation and the retry budget (B-398)', () =
     await syncPendingEvents();
 
     // Before B-398 this expectation was [] — nothing at all was marked, forever.
-    expect(marks().flatMap(([, p]) => p as string[]).sort()).toEqual(['e1', 'e3']);
+    expect(markedIds(marks()).sort()).toEqual(['e1', 'e3']);
     // And the poison row is parked with its reason rather than re-sent every cycle.
     expect(parks()).toHaveLength(1);
-    expect(parks()[0][1]).toEqual(['22P02: bad enum', 'e2']);
+    expect(parks()[0][1]).toEqual(['22P02: bad enum', 'e2', expect.any(String)]);
   });
 
   it('never flags a refused row synced — quarantine records, it does not lie', async () => {
@@ -895,7 +1226,7 @@ describe('pushRows — poison-pill isolation and the retry budget (B-398)', () =
     await syncPendingEvents();
 
     expect(marks()).toHaveLength(0);
-    expect(parks()[0][1]).toEqual(['23505: dup', 'e1']);
+    expect(parks()[0][1]).toEqual(['23505: dup', 'e1', expect.any(String)]);
     // A terminal failure spends no budget — there is nothing to wait for.
     expect(bumps()).toHaveLength(0);
   });
@@ -931,7 +1262,7 @@ describe('pushRows — poison-pill isolation and the retry budget (B-398)', () =
 
     await syncPendingEvents();
 
-    expect(marks()[0][1]).toEqual(['e1']);
+    expect(markedIds(marks())).toEqual(['e1']);
     expect(bumps().map(([, p]) => (p as unknown[])[2])).toEqual(['e2']);
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RLS-blocked'));
   });
@@ -943,10 +1274,47 @@ describe('pushRows — poison-pill isolation and the retry budget (B-398)', () =
     await syncPendingEvents();
 
     expect(upsertSpy).toHaveBeenCalledTimes(1); // no isolation on the happy path
-    const [sql, params] = marks()[0] as [string, string[]];
-    expect(params.sort()).toEqual(['e1', 'e2']);
+    expect(markedIds(marks()).sort()).toEqual(['e1', 'e2']);
+    const [sql] = marks()[0] as [string];
     expect(sql).toContain('sync_attempts = 0');
     expect(sql).toContain('sync_error = NULL');
+    // The mark carries the `updated_at` the push actually sent, so a row rewritten
+    // mid-flight is not swept up with the batch (CUL-691).
+    expect(sql).toContain('updated_at IS ?');
+  });
+
+  // THE SEAM. The markSynced tests execute their SQL against real SQLite; the eleven
+  // pushRows writers were only ever checked through the mock, via markedIds — which
+  // reads params[0], the id, and DISCARDS the guard value. So nothing anywhere
+  // asserted that the value pushRows binds is the value the row actually holds, and
+  // two mutations shipped green through the whole 6199-case suite: binding
+  // `new Date().toISOString()`, and binding `r.created_at` (the copy-paste shape).
+  //
+  // Neither is a swallow — both are a TOTAL WEDGE. The guard never matches, so
+  // nothing on any LWW queue is ever marked synced: every row re-pushed every cycle
+  // forever, permanently occupying the LIMIT-100 window, with applyFailurePolicy
+  // unreachable on a success so nothing quarantines it either.
+  //
+  // Closed by joining the two layers: replay the batch path's real capture against a
+  // real row. `created_at` is deliberately DIFFERENT from `updated_at` in the fixture
+  // — evt()'s are equal, which would let the created_at mutation pass.
+  // (adversarial-reviewer, CUL-691.)
+  it('binds the row\'s OWN updated_at, so the batch path actually flips it', async () => {
+    const db = realDbWithEvents();
+    insertEvent(db, 'e1', T0);
+    mockGetAllAsync.mockResolvedValue([
+      { ...evt('e1'), created_at: '2026-01-01T00:00:00.000Z', updated_at: T0 },
+    ]);
+    selectSpy.mockResolvedValue({ data: [{ id: 'e1' }], error: null });
+
+    mockRunAsync.mockClear();
+    await syncPendingEvents();
+    replay(db, marks() as [string, unknown[]][]);
+
+    // Fails if the bound guard is the clock, `created_at`, or anything but the row's
+    // own version — in every one of those cases the UPDATE matches nothing.
+    expect(readEvents(db)[0].synced).toBe(1);
+    db.close();
   });
 
   it('quarantines at the cap and NOT before, against a real SQLite', async () => {
@@ -958,9 +1326,12 @@ describe('pushRows — poison-pill isolation and the retry budget (B-398)', () =
     const { DatabaseSync } = require('node:sqlite');
     const db = new DatabaseSync(':memory:');
     db.exec(`CREATE TABLE events (
-      id TEXT PRIMARY KEY, synced INTEGER NOT NULL DEFAULT 0,
+      id TEXT PRIMARY KEY, updated_at TEXT, synced INTEGER NOT NULL DEFAULT 0,
       sync_attempts INTEGER NOT NULL DEFAULT 0, sync_error TEXT)`);
-    db.prepare("INSERT INTO events (id, sync_attempts) VALUES ('e1', 0)").run();
+    // The version must match evt()'s, because the emitted statement now keys on it
+    // (CUL-691): a refusal is recorded against the version that was refused.
+    db.prepare("INSERT INTO events (id, updated_at, sync_attempts) VALUES ('e1', ?, 0)")
+      .run('2026-07-01T08:00:00.000Z');
 
     mockGetAllAsync.mockResolvedValue([evt('e1')]);
     selectSpy.mockResolvedValue({ data: null, error: { code: '23503', message: 'fk' } });
@@ -1080,8 +1451,55 @@ describe('file-bearing writers charge a thrown upload failure (B-586)', () => {
 
     expect(parks()).toHaveLength(1);
     expect(String(parks()[0][0])).toContain('UPDATE vet_documents SET sync_error = ?');
-    expect(parks()[0][1]).toEqual(['upload-413: Payload too large', 'd1']);
+    expect(parks()[0][1]).toEqual(['upload-413: Payload too large', 'd1', expect.any(String)]);
     expect(marks()).toHaveLength(0);
+  });
+
+  // The SUCCESS path on this queue had no test at all, before or after — on the
+  // queue whose stated failure mode is "a deletion that reports success and does not
+  // delete" (B-478 VF-6, found by rls-privacy-reviewer). CUL-691 moved that guard
+  // out of this loop and into the shared helper, annotating the site "it is now
+  // markSynced's own behaviour rather than this loop's" — which makes an
+  // innocent-looking refactor of this call site the plausible regression, and until
+  // now nothing held it. Executed against a real row, so reverting to
+  // `SET synced = 1 WHERE id = ?` is caught rather than read.
+  // (adversarial-reviewer, CUL-691.)
+  it('vet document: marks the row on success, and ONLY at the version it pushed', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(':memory:') as SqliteDb;
+    db.exec(`CREATE TABLE vet_documents (
+      id TEXT PRIMARY KEY, updated_at TEXT, deleted_at TEXT,
+      synced INTEGER NOT NULL DEFAULT 0, sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error TEXT)`);
+    db.prepare('INSERT INTO vet_documents (id, updated_at, synced) VALUES (?, ?, 0)')
+      .run('d1', VET_DOC.updated_at);
+
+    mockGetAllAsync.mockResolvedValue([VET_DOC]);
+    mockFrom.mockReturnValue({
+      upsert: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue({ data: [{ id: 'd1' }], error: null }),
+      }),
+    });
+
+    await syncPendingVetDocuments();
+    const emitted = marks() as [string, unknown[]][];
+    expect(emitted).toHaveLength(1);
+
+    // The owner renamed or deleted the document during the upload — the exact
+    // window B-478 VF-6 exists for. The mark must no-op.
+    db.prepare('UPDATE vet_documents SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?')
+      .run(T2, T2, 'd1');
+    replay(db, emitted);
+    const afterRewrite = db.prepare('SELECT synced FROM vet_documents').get() as { synced: number };
+    expect(afterRewrite.synced).toBe(0);
+
+    // …and against the version it actually pushed, it marks. Both directions, or
+    // this test could not tell a working guard from a broken mark.
+    db.prepare('UPDATE vet_documents SET updated_at = ? WHERE id = ?').run(VET_DOC.updated_at, 'd1');
+    replay(db, emitted);
+    expect((db.prepare('SELECT synced FROM vet_documents').get() as { synced: number }).synced).toBe(1);
+    db.close();
   });
 
   it('vet document: an undecodable image spends the budget (rejected), not an immediate park', async () => {
@@ -1094,7 +1512,7 @@ describe('file-bearing writers charge a thrown upload failure (B-586)', () => {
     await syncPendingVetDocuments();
 
     expect(bumps()).toHaveLength(1);
-    expect(bumps()[0][1]).toEqual([MAX_SYNC_ATTEMPTS, expect.stringContaining('upload:'), 'd1']);
+    expect(bumps()[0][1]).toEqual([MAX_SYNC_ATTEMPTS, expect.stringContaining('upload:'), 'd1', expect.any(String)]);
     expect(parks()).toHaveLength(0);
     expect(marks()).toHaveLength(0);
     expect(mockUploadPhoto).not.toHaveBeenCalled(); // the throw was before the upload

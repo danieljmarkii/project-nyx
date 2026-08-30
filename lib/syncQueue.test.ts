@@ -23,6 +23,7 @@ const { DatabaseSync } = require('node:sqlite');
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  pushGuardColumn,
   SYNC_QUEUES,
   QUARANTINE_COLUMNS,
   MAX_SYNC_ATTEMPTS,
@@ -308,6 +309,49 @@ describe('SYNC_QUEUES covers the real schema (B-398, the B-424 shape)', () => {
         .toEqual({ table: q.table, has: true });
     }
   });
+
+  // ── The CUL-691 guard's own fail-closed check ──────────────────────────────
+  //
+  // markSynced reads pushGuardColumn to decide whether to compare `updated_at`
+  // before flipping a row synced. That decision is only correct if `pendingSince`
+  // and "does this table carry updated_at" are THE SAME FACT — a table that has the
+  // column but declares `created_at` would be marked UNGUARDED at runtime while the
+  // type system believes it is guarded, which is the silent-unguarded outcome the
+  // whole mechanism exists to prevent.
+  it('declares pendingSince = updated_at for EVERY table that has one', () => {
+    const withUpdatedAt = TABLES_WITH_COLUMN(db, 'updated_at');
+    const mismatched = SYNC_QUEUES.filter(
+      (q) => withUpdatedAt.includes(q.table) && q.pendingSince !== 'updated_at',
+    ).map((q) => q.table);
+    // If this fails: the named queue can be rewritten by an owner while its own
+    // push is in flight, and markSynced would flip it synced without checking —
+    // stranding that change forever (a soft delete included).
+    expect(mismatched).toEqual([]);
+  });
+
+  it('guards exactly the queues whose rows can change, and no others', () => {
+    const withUpdatedAt = TABLES_WITH_COLUMN(db, 'updated_at');
+    expect(
+      SYNC_QUEUES.map((q) => [q.table, pushGuardColumn(q.table)] as const),
+    ).toEqual(
+      SYNC_QUEUES.map(
+        (q) => [q.table, withUpdatedAt.includes(q.table) ? 'updated_at' : null] as const,
+      ),
+    );
+    // The insert-only pair is the whole of the unguarded set, stated rather than
+    // implied: an attachment row is written once and never edited, so there is no
+    // version of it to compare. Anything else appearing here is a new queue that
+    // slipped past the check above.
+    expect(SYNC_QUEUES.filter((q) => pushGuardColumn(q.table) === null).map((q) => q.table))
+      .toEqual(['event_attachments', 'vet_visit_attachments']);
+  });
+
+  it('answers null for a table it has never heard of — never a default guard', () => {
+    // A caller reaching it with an unregistered table gets "no guard", which
+    // markSynced turns into a refusal to mark. The safe direction: the rows stay
+    // queued and re-push, rather than being flipped on an assumption.
+    expect(pushGuardColumn('brand_new_mirror')).toBeNull();
+  });
 });
 
 describe('the badge queries, against a real database', () => {
@@ -411,6 +455,22 @@ function sourceLines(): { file: string; line: number; text: string }[] {
   return out;
 }
 
+type SourceLine = { file: string; line: number; text: string };
+
+/** A WRITE that re-queues a row: `synced = 0` in a SET clause or a pushed SET list. */
+function requeueWrites(lines: SourceLine[]): SourceLine[] {
+  return lines.filter(
+    (l) => /\bsynced\s*=\s*0\b/.test(l.text) && (/\bSET\b/.test(l.text) || /\.push\(/.test(l.text)),
+  );
+}
+
+/** The matched line plus the two after it — enough to span a SET list broken over
+ *  lines, and short enough not to swallow a neighbouring statement. */
+function statementWindow(lines: SourceLine[], at: SourceLine): string {
+  const i = lines.findIndex((l) => l.file === at.file && l.line === at.line);
+  return lines.slice(Math.max(0, i - 1), i + 3).map((l) => l.text).join('\n');
+}
+
 describe('every local mutation clears the quarantine (B-398 write-path contract)', () => {
   // WHY THIS IS A TEST AND NOT A CONVENTION. A quarantined row is skipped by the
   // push queue, so the ONLY way back in is an owner-visible edit clearing
@@ -425,6 +485,33 @@ describe('every local mutation clears the quarantine (B-398 write-path contract)
       // 0` queue read is not a mutation and must not be flagged.
       .filter((l) => /\bsynced\s*=\s*0\b/.test(l.text) && (/\bSET\b/.test(l.text) || /\.push\(/.test(l.text)))
       .filter((l) => !/sync_error\s*=\s*NULL/.test(l.text) || !/sync_attempts\s*=\s*0/.test(l.text))
+      .map((l) => `${l.file}:${l.line}`);
+    expect(offenders).toEqual([]);
+  });
+
+  // ── The invariant the CUL-691 guard RESTS ON, made a test for the same reason ──
+  //
+  // markSynced marks a row only if its `updated_at` still matches the one the push
+  // sent. That is only a guard if a re-queueing mutation always MOVES `updated_at`;
+  // where one does not, the stale push's version still matches and the guard waves
+  // it through — CUL-691, re-opened, on that write path alone.
+  //
+  // Green today on every site, which is exactly why it is worth writing down now:
+  // it holds the line for the next writer at zero cost. Proved necessary by
+  // mutation — deleting `updated_at = ?` from softDeleteEvent re-opens CUL-691 in
+  // full and leaves all 6199 tests green. The comment in lib/sync.ts used to call
+  // the same-millisecond case the guard's only gap; it is not, it is one instance
+  // of this. (adversarial-reviewer, CUL-691.)
+  it('never sets `synced = 0` without also moving `updated_at`', () => {
+    const lines = sourceLines();
+    const offenders = requeueWrites(lines)
+      // The statement, not the line: lib/dietTrialSetup.ts splits its SET list
+      // across lines, so a single-line test would read a false offender.
+      .filter((l) => !/updated_at/.test(statementWindow(lines, l)))
+      // The two insert-only queues have no `updated_at` to move, by design — their
+      // rows are written once and never edited (SYNC_QUEUES). Exempt by NAMING
+      // them, so a future LWW table cannot fall through the same hole.
+      .filter((l) => !/event_attachments|vet_visit_attachments/.test(statementWindow(lines, l)))
       .map((l) => `${l.file}:${l.line}`);
     expect(offenders).toEqual([]);
   });
