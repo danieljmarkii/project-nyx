@@ -104,19 +104,80 @@ got hardened, which makes it the thing a future maintainer copies."* Repo-wide, 
   artifacts, and the schema file's are commented `:pet_id` *placeholders*. The frozen-artifact
   protocol says don't edit in place. Left alone deliberately.
 
+## The RLS red-team returned FAIL — on a surface I had not planned for
+
+`rls-privacy-reviewer` did not read the diff; it stood up a throwaway Postgres 16, rebuilt the
+two-account "two cats named Nyx" situation from the live migrations, and ran the file verbatim.
+
+**Everything the fix actually targets held**, several of them loudly:
+
+| attack | result |
+|---|---|
+| QA pet id + owner email | 0 rows |
+| owner pet id + QA email | 0 rows |
+| email case / trailing whitespace variance | 0 rows |
+| duplicate `auth.users` email — reachable, GoTrue's unique index is **partial** (`WHERE is_sso_user = false`) | fails **loud**, SQLSTATE 21000; never silently picks |
+| pre-fix `name='Nyx' LIMIT 1` under two physical row orderings | returned **two different pets** — the defect is real |
+
+The scalar `=` subquery turning a duplicate email into a hard error is the best property of the
+fix, and it is inherited from `candidates.sql` rather than invented — an `IN (…)` form would
+have matched silently.
+
+**But it broke the file on a surface the issue never mentioned.** Running verbatim, with the
+*correct* owner pair, the export contained a `food_brand` from a `food_items` row owned by the
+other account and a `medication_drug_name` from a `medications` row belonging to the other
+account's pet — every row's `pet_id` reading the owner's uuid. `meals.food_item_id` and
+`medication_administrations.medication_id` are bare FKs; `meals_owner` and
+`medication_administrations_owner` are `FOR ALL USING (pet_id IN …)`, so the derived
+`WITH CHECK` constrains `pet_id` and nothing else. This repo has closed that exact class three
+times — migrations 023, 041, 044/045 — each with a BEFORE trigger, and 041 says why in as many
+words: *"service-role callers bypass RLS entirely."* Which is this script's execution context.
+
+**The part that lands on my own change:** `pet_id` is `tp.id` by construction, so it is
+tautological — it identifies the export's *subject* and can never contradict the pair. The
+provenance of the joined cells is not exported, so the leak is invisible in the CSV. Net effect,
+before this was corrected: the file now *asserted* whose record it was over columns that could
+be another account's. The comment even instructed the reader to "check it against target_pet
+above" — a check structurally incapable of failing.
+
+**Live verification settled the severity.** Six probes against production, repo-wide across
+every account, not just the owner's: cross-account food refs **0**, cross-pet med refs **0**,
+cross-account med-item refs **0**, duplicate emails **0**, soft-deleted users **0**. The path is
+real and reproducible; it has never fired. Latent, not active — the good time to close it.
+
+The reviewer also flagged the zero-rows guard as advisory where `emitSeedSql.ts`'s precedent
+`RAISE`s, and reported a trap worth keeping: its first single-statement guard attempt
+(`… CROSS JOIN (SELECT CASE WHEN EXISTS … ELSE 1/0 END)`) **returned 0 rows instead of raising**,
+because an empty left side short-circuits it. That is the shape anyone reaches for first, and it
+fails green — CUL-613's rule earning its keep in a second language.
+
 ## Filed, not folded in
 
-- **CUL-734** — `scripts/w1-other-row-swap/predict-export.sql` repeats the id+email pair **three
-  times in executable SQL** (raised by `code-reviewer`). The scoping is correct; the risk is a
+- **CUL-736** — the bare FKs. The fix belongs in the schema: one trigger per FK covers every
+  consumer at once (`generate-report`, `ask`, this script, anything future) rather than each
+  caller re-deriving the check. Recorded in the file as a known limit, with the production
+  counts, so the next reader knows it is a live path that has not fired rather than a
+  hypothetical.
+- **CUL-737** — `scripts/w1-other-row-swap/predict-export.sql` repeats the id+email pair **three
+  times in executable SQL** (raised by `code-reviewer`). Its scoping is correct; the risk is a
   partial retarget, which there produces a **silently mixed** export — pet metadata from one
-  account, symptom rows from another. That is worse than CUL-696's failure, because the output
-  is neither empty nor obviously wrong. Same fix: hoist the pair into one CTE.
-- **CUL-735** — a guard for this rule. The repo's own CUL-613 lesson is that a rule living in a
-  comment drifts (the completion-card rule sat correct and prominent in two files for months
-  while both capture screens violated it). Filed rather than built because every existing guard
-  is a jest AST scan over TypeScript; a regex-over-SQL scanner is a new shape, and a weak guard
-  on a security-shaped rule reads as coverage it does not provide. That trade is the issue's
-  open question.
+  account, symptom rows from another, fed straight into `predictChronicity`. That is worse than
+  CUL-696's failure, which was loudly empty. Same fix: hoist the pair into one CTE.
+- **CUL-739** — a guard for this rule, raised independently by both reviewers, filed as a
+  decision rather than a task. The CUL-613 lesson says a rule in a comment drifts, and this file
+  is the proof: the safe form sat in a comment two lines above the defect for months. Against
+  that: every existing guard parses a TypeScript AST, a SQL guard is regex over stripped text,
+  and a weak guard on a security-shaped rule reads as coverage it does not provide. Three
+  options in the issue, recommendation marked.
+
+## What I got wrong, beyond the preflight
+
+I planned two surfaces — the subject predicate and the output's legibility — and shipped both
+correctly. The joins were a third surface I did not think to look at, and the only reason they
+are documented now is that the mandated review is adversarial by construction and ran the file
+instead of reading it. The DoD's insistence on a named falsification attempt rather than a ✓ is
+what produced this; a reviewer that had only read the diff would have passed it, because on the
+diff's own terms it is correct.
 
 ## Notes for next time
 
