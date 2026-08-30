@@ -1209,6 +1209,29 @@ function safetyBandThumbs(snap: ReportSnapshot, eventIds: string[]): string {
   } in appendix&nbsp;${photosAppendixLetter(snap)} (incident photos).</span></div>`
 }
 
+/**
+ * Does ANY chronicity flag on this report reach back past its own counts (CUL-69)? ONE predicate,
+ * read by the flag row's year switch AND appendix F's legend gate — they must agree, or the page
+ * explains a line it does not carry, or carries one it does not explain (the §5.3 one-predicate
+ * rule, and the reason the legend gate is not a second copy of this test).
+ *
+ * BAND-scoped rather than row-scoped, which is what the year switch needs. Scoped per row, a band
+ * carrying two chronic courses — one reaching back, one not — printed the SAME window-open date
+ * two ways two lines apart ("This window opens May 7, 2026" above "This window opens May 7"),
+ * reachable on a ~57–64 day window. That is the B-532/HR-7 "one page, two renders of one fact"
+ * class, which this report has paid for before; a row gaining a year it did not need is merely
+ * more explicit.
+ */
+function chronicityRecordPrecedesCounts(snap: ReportSnapshot): boolean {
+  return snap.safetyFlags.some(
+    (f) =>
+      f.kind === 'chronicity' &&
+      Number.isFinite(Date.parse(f.firstLoggedIso)) &&
+      Number.isFinite(Date.parse(f.firstOnsetIso)) &&
+      Date.parse(f.firstLoggedIso) < Date.parse(f.firstOnsetIso),
+  )
+}
+
 function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
   const tz = snap.timezone
   switch (f.kind) {
@@ -1463,17 +1486,19 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // when it is absent the row's only dates are within the lookback of the window end, exactly
       // as B-532 and CUL-687 shipped them. The window-open date in `censorBit` follows the same
       // switch, or it becomes the single bare date on an otherwise fully year-stamped page.
-      const withYear = hasUncountedRecord
-      const day = (iso: string): string => {
-        const bare = fmtLocalDay(iso, tz)
-        const y = localDayKeyOf(iso, tz).slice(0, 4)
-        // The year is appended only when it really is one: `localDayKeyOf` falls back to the raw
-        // ISO prefix on an unparseable input, and `renderReport` is exported, so a garbage anchor
-        // must degrade to the bare render rather than to "not-a-date, not-".
-        return withYear && /^\d{4}$/.test(y) ? `${bare}, ${y}` : bare
-      }
+      const withYear = chronicityRecordPrecedesCounts(snap)
+      // RESOLVED ONCE FOR THE ROW, not per date — the invariant the paragraph above states, made
+      // true rather than asserted. `localDayKeyOf` falls back to the raw ISO prefix on unparseable
+      // input and `Intl` does not zero-pad a sub-1000 year, so a per-date guard could pass for one
+      // date and fail for the other and split exactly the pair this switch exists to keep together.
+      // Not reachable from a `timestamptz`, but a comment claiming an invariant the code does not
+      // enforce is the shape that has cost this arm four review rounds already.
+      const yearOf = (iso: string): string => localDayKeyOf(iso, tz).slice(0, 4)
+      const yearsUsable = [f.firstLoggedIso, f.firstOnsetIso].every((iso) => /^\d{4}$/.test(yearOf(iso)))
+      const day = (iso: string): string =>
+        withYear && yearsUsable ? `${fmtLocalDay(iso, tz)}, ${yearOf(iso)}` : fmtLocalDay(iso, tz)
       const onsetDay = day(f.firstLoggedIso)
-      const scopeStartDay = withYear ? fmtDayYear(snap.scope.startDate) : fmtDay(snap.scope.startDate)
+      const scopeStartDay = withYear && yearsUsable ? fmtDayYear(snap.scope.startDate) : fmtDay(snap.scope.startDate)
       // B-532's floor now tests the RECORD anchor. Against `firstOnsetIso` it was testing the
       // boundary that was not binding: on the default report that onset sits ~34 days inside the
       // window by construction, so the floor read "genuinely observed" and stayed silent on
@@ -1536,7 +1561,12 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // interval). It is also number-agnostic, so it does not pluralise over a count this layer
       // does not hold — the stale-singleton case really is one entry.
       const engineOnsetDay = day(f.firstOnsetIso)
-      const appendixTail = ' &mdash; appendix&nbsp;A lists this window&rsquo;s entries, including those before then.'
+      // Ends on the EXCLUSION, not on the pointer. The falsified clause was the unrestricted
+      // universal, and the "not in the numbers above" contrast rode out with it — but B-494's
+      // ruling is that the safety band must stand without the legend, and this sentence's whole job
+      // is to say what the counts leave out.
+      const appendixTail =
+        ' &mdash; appendix&nbsp;A lists this window&rsquo;s entries, including those before then; they are not in the numbers above.'
       const recordBit = !hasUncountedRecord
         ? ''
         : firstLoggedKey === localDayKeyOf(f.firstOnsetIso, tz)
@@ -5657,13 +5687,7 @@ function appendixF(snap: ReportSnapshot): string {
   // episodes" entry is the precedent — where two measures diverge on purpose, the report says so
   // rather than leaving the reader to infer a cause, and the inference available here (that the
   // engine judged the earlier entries unrelated) runs toward reassurance.
-  const chronicityWindowDt = snap.safetyFlags.some(
-    (f) =>
-      f.kind === 'chronicity' &&
-      Number.isFinite(Date.parse(f.firstLoggedIso)) &&
-      Number.isFinite(Date.parse(f.firstOnsetIso)) &&
-      Date.parse(f.firstLoggedIso) < Date.parse(f.firstOnsetIso),
-  )
+  const chronicityWindowDt = chronicityRecordPrecedesCounts(snap)
     ? `<dt>Where the chronicity counts begin</dt><dd>The chronicity flag reads a fixed recent window, which can be shorter than this report's range. Where it is, the flag says where its counts begin and names the date the sign was <b>first logged</b> &mdash; the earlier entries are real and are listed in appendix&nbsp;A; they are outside the counted window, <b>not</b> judged unrelated. Read the flag's day counts against the window it names, and the sign's extent against appendix&nbsp;A.</dd>`
     : ''
   const photoDt = hasIncidentPhotos(snap)

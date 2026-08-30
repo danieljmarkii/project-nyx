@@ -3900,6 +3900,113 @@ Deno.test('CUL-69 — every chronicity symptom really is in appendix A, as the c
   }
 })
 
+Deno.test('CUL-69 — one safety band renders the window-open date exactly one way', () => {
+  // A band carrying two chronic courses — one reaching back past its counts, one not — decided the
+  // year PER ROW and so printed the same window-open date two ways, two lines apart. That is the
+  // B-532/HR-7 "one page, two renders of one fact" class (adversarial pass 5, reachable at a ~57–64
+  // day window). The switch is band-scoped: a row gaining a year it did not need is merely more
+  // explicit, while a page disagreeing with itself about a date is the defect.
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 48,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-04-05T14:00:00Z', // reaches back past its counts
+            tier: 'standard',
+            windowDays: 56,
+          },
+          {
+            kind: 'chronicity',
+            symptomType: 'cough',
+            episodeCount: 12,
+            spanDays: 48,
+            activeWeeks: 6,
+            symptomDays: 12,
+            daysSinceLastEpisode: 3,
+            firstOnsetIso: '2026-04-06T14:00:00Z',
+            firstLoggedIso: '2026-04-06T14:00:00Z', // does not
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  const renders = [...t.matchAll(/This window opens ([A-Z][a-z]{2} \d{1,2}(?:, \d{4})?)/g)].map((m) => m[1])
+  assert.ok(renders.length >= 2, `both censor sentences render; got ${renders.length}`)
+  assert.equal(new Set(renders).size, 1, `one date, one rendering; got ${JSON.stringify(renders)}`)
+})
+
+Deno.test('CUL-69 — the year is decided once for the row, never per date', () => {
+  // The `/^\d{4}$/` guard was evaluated per date, so a key Intl does not zero-pad could pass for
+  // one date and fail for the other — splitting exactly the pair the switch exists to keep
+  // together ("Mar 10" beside "May 20, 2026"). Unreachable from a timestamptz, but the comment
+  // claimed an invariant the code did not enforce, which is the shape that cost this arm four
+  // review rounds (adversarial pass 5).
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-20T14:00:00Z',
+            firstLoggedIso: '0001-03-10T14:00:00Z', // Intl renders the year unpadded
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  const stamped = /first logged [A-Z][a-z]{2} \d{1,2}, \d{4}/.test(t)
+  const beginStamped = /these counts begin at [A-Z][a-z]{2} \d{1,2}, \d{4}/.test(t)
+  assert.equal(stamped, beginStamped, 'both dates carry a year or neither does — never one of the two')
+})
+
+Deno.test('CUL-69 — the band states the exclusion without needing the legend', () => {
+  // B-494: the safety band must stand on its own. When the unrestricted universal was removed, the
+  // "not in the numbers above" contrast rode out with it, leaving the sentence ending on
+  // "including" where the fact is exclusion (adversarial pass 5 nit).
+  const t = plain(
+    renderReport(
+      base({
+        safetyFlags: [
+          {
+            kind: 'chronicity',
+            symptomType: 'vomit',
+            episodeCount: 18,
+            spanDays: 51,
+            activeWeeks: 7,
+            symptomDays: 18,
+            daysSinceLastEpisode: 2,
+            firstOnsetIso: '2026-05-08T14:00:00Z',
+            firstLoggedIso: '2026-04-10T09:00:00Z',
+            tier: 'standard',
+            windowDays: 56,
+          },
+        ],
+      }),
+    ),
+  )
+  const band = t.slice(t.indexOf('Vomiting spans'), t.indexOf('Vomiting spans') + 400)
+  assert.ok(/they are not in the numbers above/.test(band), 'the exclusion is stated in the band itself')
+  assert.ok(/appendix A lists this window's entries/.test(band), 'and the pointer survives beside it')
+})
+
 Deno.test('CUL-69 — the legend explains the second window, and only when one is on the report', () => {
   // The HR-7 "Entries vs episodes" precedent: where two measures diverge on purpose, the report
   // says so. Without it the available inference — that the engine judged the earlier entries
