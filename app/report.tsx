@@ -454,7 +454,7 @@ const styles = StyleSheet.create({
   dateChangeText: {
     fontFamily: theme.fontBody,
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   pickerToolbar: {
     flexDirection: 'row',
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fontBodyMedium,
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   rangeResolved: {
     fontFamily: theme.fontBody,

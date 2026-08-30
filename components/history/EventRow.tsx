@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
   },
   crossLinkText: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
   },
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
   },
   editBtnText: {
     fontSize: 14,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
   },
   deleteBtn: {

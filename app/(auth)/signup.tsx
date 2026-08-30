@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     marginTop: theme.space2,
   },
   tosLink: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     textDecorationLine: 'underline',
   },
   loginLink: {
@@ -559,7 +559,7 @@ const styles = StyleSheet.create({
   // The tappable half of the prompt carries the teal accent so it reads as a link
   // (matching the accented Terms/Privacy line above and login's Sign-up prompt).
   loginTextAccent: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
   // ── Verify state ──

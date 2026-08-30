@@ -1,5 +1,7 @@
 import { render, fireEvent } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { FilterChip } from './FilterChip';
+import { theme } from '../../constants/theme';
 
 type Node = { type: unknown; props: Record<string, any>; parent: Node | null };
 type A11yState = { selected?: boolean; checked?: boolean } | undefined;
@@ -70,5 +72,51 @@ describe('FilterChip', () => {
     fireEvent.press(getByText('Lab result'));
     expect(onPress).not.toHaveBeenCalled();
     expect((chipState(getByText, 'Lab result') as { disabled?: boolean })?.disabled).toBe(true);
+  });
+});
+
+// CUL-744 — the ACTIVE default chip renders text on the accent tint, which is the
+// Badge defect exactly (2.08:1 at this 13px size). This chip is the highest-traffic
+// instance of the class: it appears on History, Foods and the dashboard, so the same
+// two-token pair was failing on three surfaces at once.
+//
+// Reads the flattened style off the rendered tree rather than re-stating the StyleSheet
+// (the Badge.test.tsx idiom), so a variant wired to the wrong style key fails here even
+// though its style block would still look correct in a diff. The two dark variants are
+// asserted alongside because the inversion is the whole reason CUL-744 was a walk and
+// not a sweep — repointing them would be the same defect, mirrored.
+describe('FilterChip — the active label is legible on its own fill (CUL-744)', () => {
+  const flat = (node: { props: { style?: unknown } }) =>
+    StyleSheet.flatten(node.props.style) as { color?: string; backgroundColor?: string };
+
+  /** The active chip's label colour, paired with the fill it has to clear. */
+  function activePair(variant: 'default' | 'filled' | 'onDark') {
+    const { getByText, toJSON } = render(
+      <FilterChip label="Prescription" active variant={variant} onPress={() => {}} />,
+    );
+    return {
+      color: flat(getByText('Prescription') as never).color,
+      backgroundColor: flat(toJSON() as never).backgroundColor,
+    };
+  }
+
+  it('renders the default variant in accent INK on the accent tint', () => {
+    const { color, backgroundColor } = activePair('default');
+    expect(backgroundColor).toBe(theme.colorAccentLight);
+    expect(color).toBe(theme.colorAccentInk);
+    // Named, so the bright teal here reads as the defect rather than a near-miss.
+    expect(color).not.toBe(theme.colorAccent);
+  });
+
+  it('keeps white on the filled variant, whose fill is dark', () => {
+    const { color, backgroundColor } = activePair('filled');
+    expect(backgroundColor).toBe(theme.colorNeutralDark);
+    expect(color).toBe(theme.colorTextOnDark);
+  });
+
+  it('keeps white on the onDark variant, whose fill is the solid accent', () => {
+    const { color, backgroundColor } = activePair('onDark');
+    expect(backgroundColor).toBe(theme.colorAccent);
+    expect(color).toBe(theme.colorTextOnDark);
   });
 });

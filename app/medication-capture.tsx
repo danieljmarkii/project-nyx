@@ -879,7 +879,7 @@ const styles = StyleSheet.create({
   },
   linkBtnText: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
 
   loadingContainer: {

@@ -845,7 +845,7 @@ const styles = StyleSheet.create({
   saveBtnText: {
     fontSize: 16,
     fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   form: {
     padding: theme.space3,
@@ -869,7 +869,7 @@ const styles = StyleSheet.create({
   },
   changeLabel: {
     fontSize: 14,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
   },
   exifAttribution: {

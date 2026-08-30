@@ -5,8 +5,8 @@
 // later siblings), because the bright category colours are GLYPH tints — tuned for
 // the 3:1 non-text target — and fall well short of AA when they carry small TEXT.
 // The theme file says so in prose at :51-58 and :237-242; prose is not a check, and
-// the same defect has now been found twice by audit (CUL-27 on TodayZone's door,
-// CUL-578 on TrendZone's and the Badge tint pairs).
+// the same defect has now been found three times by audit (CUL-27 on TodayZone's door,
+// CUL-578 on TrendZone's and the Badge tint pairs, CUL-744 on the residual 76).
 //
 // So this file pins BOTH halves of the reason the ink tokens exist:
 //   • every ink clears WCAG AA for normal text (4.5:1) on the ground it is for, and
@@ -15,9 +15,12 @@
 // back to the brand accent is a green one-token edit. With it, that edit red-lights
 // and has to argue with the ratio.
 //
-// Consumption is asserted where it renders (Badge.test.tsx, TrendZone.test.tsx read
-// the flattened style off the tree). This file is deliberately only about the
-// tokens — it is the other end of that chain, not a restatement of it.
+// Consumption is asserted where it renders (Badge.test.tsx, TrendZone.test.tsx,
+// FilterChip.test.tsx and ScopeMenu.test.tsx read the flattened style off the tree),
+// and the CLASS is held by guards/accentOnLight.test.ts, which fails the build on an
+// accent-coloured text node that has not had its ground decided either way. This file
+// is deliberately only about the tokens — it is one end of that chain, not a
+// restatement of the others.
 
 import { theme } from './theme';
 
@@ -87,5 +90,38 @@ describe('the bright category colours do NOT clear AA as text on light', () => {
     expect(contrastRatio(theme.colorAccentInk, theme.colorSurface)).toBeCloseTo(5.17, 2);
     expect(contrastRatio(theme.colorAccentInk, theme.colorAccentLight)).toBeCloseTo(4.75, 2);
     expect(contrastRatio(theme.colorEventSymptomInk, theme.colorEventSymptomLight)).toBeCloseTo(6.68, 2);
+  });
+});
+
+describe('and on a DARK ground the pairing INVERTS — which is why the sweep was a walk', () => {
+  // CUL-744 repointed 76 of the 81 accent-as-text sites to the ink and deliberately left
+  // five alone. This block is why those five are correct rather than missed.
+  //
+  // The ink is not "the safer teal". It is the teal for a LIGHT ground, and on a dark one
+  // it is the failing half of the pair — so a mechanical repoint of all 81 sites would
+  // have shipped a WORSE defect than the one being fixed, on the night surfaces, under a
+  // green diff and a green test run. Pinning the inversion here is what stops a later
+  // "simplify to one accent token" pass from looking free.
+  const darkGrounds: ReadonlyArray<[label: string, ground: string]> = [
+    ['the snackbar / dark-button ground', theme.colorNeutralDark],
+    ['the brand night ground (Landing, Day Summary)', theme.colorBrandNight],
+    ['the elevated brand night (the recap offer card)', theme.colorBrandNightElevated],
+  ];
+
+  it.each(darkGrounds)('%s — the bright accent CLEARS AA there', (_label, ground) => {
+    expect(contrastRatio(theme.colorAccent, ground)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+
+  it.each(darkGrounds)('%s — and the ink DOES NOT', (_label, ground) => {
+    expect(contrastRatio(theme.colorAccentInk, ground)).toBeLessThan(AA_NORMAL_TEXT);
+  });
+
+  it('records the measured ratios behind the five keeps', () => {
+    expect(contrastRatio(theme.colorAccent, theme.colorNeutralDark)).toBeCloseTo(8.75, 2);
+    expect(contrastRatio(theme.colorAccent, theme.colorBrandNight)).toBeCloseTo(8.09, 2);
+    expect(contrastRatio(theme.colorAccent, theme.colorBrandNightElevated)).toBeCloseTo(6.57, 2);
+    // The counterfactual, so the cost of a blind sweep is a number and not an adjective.
+    expect(contrastRatio(theme.colorAccentInk, theme.colorNeutralDark)).toBeCloseTo(3.83, 2);
+    expect(contrastRatio(theme.colorAccentInk, theme.colorBrandNightElevated)).toBeCloseTo(2.88, 2);
   });
 });

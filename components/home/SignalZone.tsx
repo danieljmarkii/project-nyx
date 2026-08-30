@@ -1105,15 +1105,21 @@ const styles = StyleSheet.create({
   patternsLinkText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   // SR-3 receded chrome (§5.2) — the doorway drops to the SAME tertiary tier as the
   // label. The mock dims it to a lighter teal, but a lighter teal on white fails AA
-  // (≈1.6:1) — worse than the shipped accent footer — and there is no teal that both
-  // recedes AND clears AA on white. So the doorway recedes as the label does (grey,
-  // ≥4.5:1), extending the team's label-contrast override of the mock to the footer.
-  // pm-feature-review flagged the teal path as the sole-doorway AA failure; teal is the
-  // interactive FILL colour, not a link requirement, and the whole row is a button.
+  // (≈1.6:1), and there is no teal that both recedes AND clears AA on white. So the
+  // doorway recedes as the label does (grey, ≥4.5:1), extending the team's
+  // label-contrast override of the mock to the footer. pm-feature-review flagged the
+  // teal path as the sole-doorway AA failure; teal is the interactive FILL colour, not
+  // a link requirement, and the whole row is a button.
+  //
+  // CUL-744 note: this comment used to rank the dimmed teal as "worse than the shipped
+  // accent footer", which was true and conceded too much — the footer it was measured
+  // against was BRIGHT teal at 2.26:1, i.e. also failing, just less. The base state is
+  // now colorAccentInk (5.17:1), so the comparison is gone and only the reason the
+  // RECEDED state is grey survives. Both states clear AA now; they always should have.
   patternsLinkTextReceded: {
     color: theme.colorTextTertiary,
   },
