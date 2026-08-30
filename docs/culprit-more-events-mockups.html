@@ -1,5 +1,6 @@
 <title>Culprit — Log event picker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" />
 <style>
   /* ============================================================
      The log event picker ("More events" → Log for {pet}) — ROUND 4,
@@ -19,6 +20,19 @@
      R5-1 was ruled B (avatar for every household size) on
      2026-08-29, so §03's stage-1 frame now carries it; §06 keeps
      the comparison frames as the record of how it was decided.
+
+     ROUND 6 (2026-08-30, §07) amends one more: the STAGE-2 header,
+     which cut the pet's name and never the event type (CUL-726).
+     R6-1 was ruled P1 and R6-2 ruled ACCEPT on 2026-08-30, and both
+     are BUILT. §07 keeps the P1/P2/P3 comparison as the record of
+     how it was decided. §03's stage-2 frames are unchanged on
+     purpose: at "Vomit — Nyx" the split renders identically to the
+     undivided string — it only shows itself when the row would
+     otherwise have cut the name.
+
+     §07's frames are 1:1 at 390pt and load real Geist, unlike the
+     320px device frames elsewhere — this round is about where a
+     string runs out of room, so the metrics have to be honest.
 
      Frame values are the real tokens from constants/theme.ts.
      ============================================================ */
@@ -291,14 +305,72 @@
   th, td { text-align: left; vertical-align: top; padding: 13px 16px 13px 0; border-bottom: 1px solid var(--rule-soft); }
   th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; border-bottom-color: var(--rule); padding-top: 0; }
   td:first-child { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; padding-right: 22px; }
+
+  /* ── ROUND 6 — the stage-2 header (CUL-726) ───────────────────
+     These frames are 1:1, unlike the 320px device frames above:
+     the row is drawn at a real 390pt width with the real gutters
+     (24 + 24 padding, 16 gap, 20 chevron, 30 disc, 8 gap), so the
+     text column is 268px BY LAYOUT rather than by a magic number,
+     and the ellipsis lands where it lands on the device. Geist is
+     loaded for the same reason — the system face has different
+     metrics, and this round's whole claim is about where a string
+     runs out of room. */
+  .hdrD {
+    width: 390px; max-width: 100%; background: #FFFFFF; border: 1px solid #EAEAEA;
+    border-radius: 16px; color-scheme: light; overflow: hidden;
+    font-family: "Geist", var(--sans); padding: 7px 0;
+  }
+  .hdrD .hrow {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 0 24px; min-height: 44px;
+  }
+  .hdrD .htitle { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .hdrD .hdisc {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; background: #FFE4E6;
+  }
+  /* The text column. font-size is driven per-frame by --fs so one markup
+     shape can be shown at Large / xxLarge / AX1 without duplication. */
+  .hdrD .hstack {
+    min-width: 0; font-size: var(--fs, 17px); font-weight: 600;
+    letter-spacing: -0.3px; color: #0A0A0A; line-height: 1.22;
+  }
+  .hdrD .hchev { color: #737373; flex-shrink: 0; display: flex; }
+
+  /* A — today: one string, one line, ellipsis at the tail. */
+  .hstack.one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* P3 — one string, two lines. */
+  .hstack.two {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* P1 / P2 — two spans in a wrapping row: the type may shrink and ellipse,
+     the name never shrinks and drops to its own line whole. The AC-CHIP
+     pattern from the time row one step below, pointed at the header. */
+  .hstack.split { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; row-gap: 1px; }
+  .hstack.split .ty { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hstack.split .nm {
+    flex: 0 0 auto; max-width: 100%; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .hstack.split.eyebrow .ty { font-size: 0.72em; font-weight: 500; color: #737373; letter-spacing: 0.04em; text-transform: uppercase; flex-basis: 100%; }
+
+  .fslab {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+    color: var(--ink-3); margin-bottom: 6px; display: flex; gap: 8px; align-items: center;
+  }
+  .fslab b { color: var(--ink-2); font-weight: 600; }
+  .fslab .cut { color: var(--rose-ink); font-weight: 600; }
+  .fslab .ok  { color: var(--teal-ink); font-weight: 600; }
+  .stack-frames { display: flex; flex-direction: column; gap: 14px; }
 </style>
 
 <div class="wrap">
 
   <header class="mast">
     <p class="eyebrow">
-      <span>B-745 · FAB → More events</span><span>Round 4 — convergence · 2026-08-13</span><span>Round 5 — the title row · 2026-08-29</span>
-      <span class="round-chip">Round 5 ruled — R5-1 = B, shipped</span>
+      <span>B-745 · FAB → More events</span><span>Round 4 — convergence · 2026-08-13</span><span>Round 5 — the title row · 2026-08-29</span><span>Round 6 — the stage-2 header · 2026-08-30</span>
+      <span class="round-chip">Round 6 ruled — P1 + accept, shipped</span>
     </p>
     <h1>One surface, in daylight colours</h1>
     <p class="standfirst">
@@ -493,7 +565,10 @@
         <figcaption><b>2 · The confirm — Saw it</b>
         No form, no black surfaces: light pills with tinted circles, the ChipGroup teal selection, and
         the summary pill as the save — a live sentence in the confirm register with the one dark
-        Log-it mark (the FAB's echo). What the pill says is exactly what gets written.</figcaption>
+        Log-it mark (the FAB's echo). What the pill says is exactly what gets written.
+        <em>The header carries round 6's split (§07) as of 2026-08-30; at a name this short it renders
+        exactly as drawn, which is the point — it only shows itself when the row would otherwise have
+        cut the pet's name.</em></figcaption>
       </figure>
 
       <!-- STAGE 2 — FOUND IT -->
@@ -772,9 +847,333 @@
     <div class="col" style="margin-top:26px;">
       <p><strong>Out of scope, deliberately.</strong> The copy split (<em>Logging for</em> on the FAB
       chip vs <em>Log for</em> here) and the single-pet row's VoiceOver &ldquo;dimmed&rdquo;
-      announcement are CUL-682, which needs a device check first. The switcher's dismissal stays
+      announcement were CUL-682 &mdash; <strong>since ruled and shipped</strong> (2026-08-30): the copy
+      split stays, and the single-pet row is now a plain labelled <code>View</code> rather than a
+      disabled control. Stage 2's header is round 6, &sect;07 below. The switcher's dismissal stays
       instant and un-animated — that is a ruled choice, so the retitled row is revealed immediately
       rather than behind a fade.</p>
+    </div>
+
+  </section>
+
+  <!-- ================================================================ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>Round 6 &mdash; what yields when the header runs out of room</h2></div>
+
+    <div class="col">
+      <p>Stage 2&rsquo;s header is one string, one line: <code>{type} &mdash; {pet}</code> with the ellipsis
+      at the tail. So <strong>it is always the pet&rsquo;s name that gets cut, never the event.</strong>
+      This is the last surface before a health row is written, and the name on it is the write-time
+      identity &mdash; the sheet has no switcher here, so what this row says is what the record gets.</p>
+
+      <div class="callout">
+        <strong>CUL-726 filed this as an accessibility defect. That half is not one</strong> &mdash; checked
+        against the shipped source rather than assumed. A truncated React Native <code>Text</code> still
+        hands the <em>whole</em> string to the screen reader: on iOS
+        <code>RCTParagraphComponentAccessibilityProvider.mm:60&ndash;68</code> builds the first element&rsquo;s
+        label from the full attributed string (its own comment: <em>&ldquo;in order to read out the whole
+        text&rdquo;</em>), and on Android <code>numberOfLines</code> is <code>setMaxLines</code> +
+        <code>setEllipsize</code>, which never touch the <code>Spanned</code> that TalkBack reads. Adding an
+        <code>accessibilityLabel</code> here would have been a placebo &mdash; visible in the diff, inert on
+        the device. <strong>What is real is the visual cut</strong>, and it is worse than the issue assumed.
+      </div>
+
+      <p><strong>The asymmetry that decides this.</strong> On this surface the <em>type</em> is stated three
+      times &mdash; the tinted disc, this header, and the summary pill that <em>is</em> the save
+      (&ldquo;Vomit &middot; today at 5:33&nbsp;PM&rdquo;). The <em>pet</em> is stated exactly once. The
+      ellipsis currently eats the only one of the two that is said once.</p>
+    </div>
+
+    <div class="sec-head" style="margin-top:44px;"><span class="sec-num">07.1</span><h2>It is not a long-name problem &mdash; it is a text-size problem</h2></div>
+
+    <div class="col">
+      <p>Nothing on this surface sets <code>allowFontScaling={false}</code> (deliberately &mdash; only the tab
+      bar does), so the header scales with the owner&rsquo;s system text size. Measured from the shipped
+      Geist SemiBold, against the 268px column a 390pt phone actually gives it:</p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Header string</th><th>17px &mdash; default</th><th>21px &mdash; xxLarge</th><th>28px &mdash; AX1</th></tr></thead>
+        <tbody>
+          <tr><td>Vomit &mdash; Buddy</td><td>122 &check;</td><td>151 &check;</td><td>203 &check;</td></tr>
+          <tr><td>Vomit &mdash; Bartholomew</td><td>178 &check;</td><td>222 &check;</td><td><strong>297 &mdash; cut</strong></td></tr>
+          <tr><td>Itch/Scratch &mdash; Bartholomew</td><td>233 &check;</td><td><strong>290 &mdash; cut</strong></td><td><strong>389 &mdash; cut</strong></td></tr>
+          <tr><td>Vomit &mdash; Bartholomew Fitzgerald</td><td><strong>264 &mdash; fits at 390pt, cuts at 375pt</strong></td><td><strong>cut</strong></td><td><strong>cut</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col" style="margin-top:22px;">
+      <p>One notch above default &mdash; xxLarge, an ordinary comfort setting, not an accessibility one
+      &mdash; an <strong>eleven-character name on the longest label already cuts</strong>. The frames below
+      are 1:1 at 390pt, so the ellipsis falls where it falls on the phone.</p>
+    </div>
+
+    <div class="stack-frames" style="margin-top:26px;">
+      <div>
+        <div class="fslab"><b>A &middot; TODAY</b> &mdash; 17px, default <span class="ok">fits</span></div>
+        <div class="hdrD">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack one">Itch/Scratch &mdash; Bartholomew</div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="fslab"><b>A &middot; TODAY</b> &mdash; 21px, xxLarge <span class="cut">the name is cut</span></div>
+        <div class="hdrD" style="--fs:21px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack one">Itch/Scratch &mdash; Bartholomew</div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="fslab"><b>A &middot; TODAY</b> &mdash; 28px, AX1 <span class="cut">the name is gone</span></div>
+        <div class="hdrD" style="--fs:28px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack one">Itch/Scratch &mdash; Bartholomew</div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-head" style="margin-top:44px;"><span class="sec-num">07.2</span><h2>The ruling, and the one fork inside it</h2></div>
+
+    <div class="col">
+      <p>The call was <strong>two lines, and the type yields before the name does</strong>. Drawing it
+      surfaced something worth knowing: <strong>those two are not directly composable.</strong> Wrapping to a
+      second line needs the whole header to be <em>one</em> paragraph; making the type shrink first needs it
+      to be <em>two</em> flex children. You cannot have both in one string.</p>
+
+      <p>The shape that delivers both intents is already shipped one row below this header &mdash; it is
+      <strong>AC-CHIP</strong>. The time row wraps, and the chip pair is <code>flexShrink: 0</code>, so the
+      chips drop to their own line <em>whole</em> rather than squeezing. Pointed at the header: the row
+      wraps, the type may shrink and ellipse, and <strong>the pet&rsquo;s name never shrinks &mdash; it drops
+      to its own line intact.</strong> Same pattern, same file, no new idea.</p>
+
+      <p>What was left was a fork only looking could settle &mdash; <strong>what the wrapped state
+      looks like</strong>. <strong>Ruled P1</strong> (2026-08-30); the other two stay as the record of
+      how it was decided. All three are drawn at 21px, where the old header already cut.</p>
+    </div>
+
+    <div class="compare">
+
+      <figure>
+        <div class="optlab"><b>P1 &mdash; RULED, shipped</b> &middot; wrap, dash stays with the type</div>
+        <div class="hdrD" style="--fs:21px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack split"><span class="ty">Itch/Scratch &mdash;</span><span class="nm">Bartholomew</span></div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+        <figcaption><b>Nothing is cut</b>
+        The smallest change: the composition is still &ldquo;Type &mdash; Pet&rdquo;, it just gets a second
+        line when it needs one. The cost is a <strong>dangling em-dash</strong> at the end of line one,
+        which is a punctuation mark doing no work once the two halves are already on separate lines.</figcaption>
+      </figure>
+
+      <figure>
+        <div class="optlab"><b>P2</b> &middot; wrap, type becomes an eyebrow</div>
+        <div class="hdrD" style="--fs:21px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack split eyebrow"><span class="ty">Itch/Scratch</span><span class="nm">Bartholomew</span></div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+        <figcaption><b>The name becomes the title</b>
+        No dash to dangle, and the hierarchy now matches what the surface is for: the pet is the
+        headline, the type is the label above it &mdash; the <code>rowLabel</code> / <code>rowSub</code>
+        idiom already used by every pill below. The cost is that it <strong>reads as a different
+        composition</strong>, not as the locked one degrading gracefully.</figcaption>
+      </figure>
+
+      <figure>
+        <div class="optlab"><b>P3</b> &middot; two lines, one string</div>
+        <div class="hdrD" style="--fs:21px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack two">Itch/Scratch &mdash; Bartholomew</div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+        <figcaption><b>One prop, and the dash sits mid-line</b>
+        <code>numberOfLines={2}</code> and nothing else &mdash; the smallest possible diff. At this size it
+        is <em>indistinguishable</em> from P1, and that is the honest read: two lines alone already fixes
+        the common cases. The difference shows only at the limit &mdash; at AX3 this string needs 559px
+        against two 268px lines, and because the name is still the tail, <strong>the name is what gets
+        cut</strong>. P1 cuts the type there instead. That is the whole of the second half of the ruling.
+        <div style="margin-top:8px;"><span class="verd bad">Cuts the name at the limit</span></div></figcaption>
+      </figure>
+
+    </div>
+
+    <div class="sec-head" style="margin-top:44px;"><span class="sec-num">07.3</span><h2>The whole ladder, measured</h2></div>
+
+    <div class="col">
+      <p>Two lines buys a lot of room, but not infinite room. P1 gives way in a fixed order, and every
+      rung below is the measured Geist width against the 268px column &mdash; not an impression of one.</p>
+      <ol class="notes" style="list-style:none;">
+        <li><strong>1 &middot; Both fit</strong> &rarr; one line, exactly today&rsquo;s header.</li>
+        <li><strong>2 &middot; Together too wide</strong> &rarr; the name drops to its own line, whole.</li>
+        <li><strong>3 &middot; The type alone too wide</strong> &rarr; the type ellipses. The name is still whole.</li>
+        <li><strong>4 &middot; The name alone too wide</strong> &rarr; the name ellipses &mdash; but against the
+        <em>entire</em> column rather than the leftovers after the type.</li>
+      </ol>
+      <p>Rung 3 is the one the ruling was actually about, and it is worth seeing how far out it sits:
+      <code>Itch/Scratch &mdash;</code> is 203px at AX1, so it does <strong>not</strong> ellipse there. It
+      takes AX3 (40px) before the type gives anything up. Rung 4 is the floor nothing can lift.</p>
+    </div>
+
+    <div class="stack-frames" style="margin-top:26px;">
+      <div>
+        <div class="fslab"><b>RUNG 2 &middot; 21px, xxLarge</b> &mdash; together 291px &gt; 268 <span class="ok">name drops to its own line, whole</span></div>
+        <div class="hdrD" style="--fs:21px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack split"><span class="ty">Itch/Scratch &mdash;</span><span class="nm">Bartholomew</span></div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="fslab"><b>RUNG 2 &middot; 28px, AX1</b> &mdash; type 203px, name 180px, both fit their own lines <span class="ok">still nothing cut</span></div>
+        <div class="hdrD" style="--fs:28px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack split"><span class="ty">Itch/Scratch &mdash;</span><span class="nm">Bartholomew</span></div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="fslab"><b>RUNG 3 &middot; 40px, AX3</b> &mdash; type 290px &gt; 268 <span class="cut">the type ellipses</span> <span class="ok">the name does not</span></div>
+        <div class="hdrD" style="--fs:40px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack split"><span class="ty">Itch/Scratch &mdash;</span><span class="nm">Bartholomew</span></div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="fslab"><b>RUNG 4 &middot; 28px</b> &mdash; the name alone is 322px <span class="cut">the name ellipses</span> &mdash; against all 268px, not the remainder</div>
+        <div class="hdrD" style="--fs:28px;">
+          <div class="hrow">
+            <div class="htitle">
+              <span class="hdisc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c1 0 1.6.9 2.4 1.2.9.3 2-.2 2.6.5.6.7.1 1.7.5 2.6.4.9 1.5 1.3 1.5 2.2 0 .9-1.1 1.4-1.4 2.2-.3.9.3 1.9-.4 2.6-.7.7-1.7.3-2.6.6-.8.3-1.4 1.1-2.4 1.1s-1.6-.8-2.4-1.1c-.9-.3-2 .1-2.6-.6-.7-.7-.1-1.7-.4-2.6-.3-.8-1.4-1.3-1.4-2.2 0-.9 1.1-1.3 1.5-2.2.4-.9-.1-1.9.5-2.6.6-.7 1.7-.2 2.6-.5.8-.3 1.4-1.2 2.4-1.2Z"/></svg></span>
+              <div class="hstack split"><span class="ty">Vomit &mdash;</span><span class="nm">Bartholomew Fitzgerald</span></div>
+            </div>
+            <span class="hchev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" style="margin-top:22px;">
+      <p><strong>Today, for the same four rows, the name is the casualty every time</strong> &mdash; because
+      there is only ever one line and the name is always the tail. That is the whole delta.</p>
+    </div>
+
+    <div class="col" style="margin-top:30px;">
+      <p><strong>The honest limits</strong>, so they are ruled on rather than discovered later:</p>
+      <ul class="notes">
+        <li><strong>The header grows.</strong> A wrapped header is taller, and the sheet is height-capped
+        (<code>maxHeight: 80%</code>). It only grows in the cases that were going to lose the name anyway,
+        and it pushes the pills down rather than clipping them &mdash; but it is a real change to the
+        locked frame&rsquo;s proportions.</li>
+        <li><strong>A single very long name still ellipses.</strong> If the name alone exceeds the column,
+        nothing can save it. P1 and P2 push that point much further out than today; they do not remove it.</li>
+        <li><strong>Nothing here changes what a screen reader says</strong> &mdash; that was already correct.
+        This round is entirely about what a sighted owner can read at their chosen text size.</li>
+        <li><strong>Stage 1 is untouched.</strong> The grid title (&ldquo;Log for {pet}&rdquo;) has no type
+        label competing with the name, so it has no yielding problem to solve. CUL-682&rsquo;s label there
+        stays &mdash; it groups the row correctly &mdash; but its stated <em>reason</em> rested on the same
+        wrong premise, which is now on the record.</li>
+      </ul>
+    </div>
+
+    <div class="brief">
+      <div class="bid">R6-1 &middot; the wrapped state &mdash; RULED P1, 2026-08-30</div>
+      <div class="bq">Which shape does the header take when it runs out of room?</div>
+      <dl>
+        <dt>Deciding</dt>
+        <dd>How &ldquo;two lines + the type yields&rdquo; actually renders. The intent is ruled; the three
+        drawings above are the same intent with different manners.</dd>
+        <dt>Options</dt>
+        <dd><span class="rec">P1 &mdash; wrap, dash stays with the type. RULED.</span> Closest to the
+        locked composition; the dangling em-dash is the accepted cost.<br />
+        <strong>P2</strong> &mdash; wrap, type becomes an eyebrow above the name. Cleanest reading and best
+        hierarchy for what this surface is <em>for</em>; reads as a new composition rather than the locked
+        one flexing.<br />
+        <strong>P3</strong> &mdash; two lines only. One prop, but it does not deliver the second half of the
+        ruling, so it is listed to be rejected rather than chosen.</dd>
+        <dt>Consequence</dt>
+        <dd>P1 or P2 is one PR against <code>SimpleEventConfirm.tsx</code> &mdash; the header row and its
+        styles, plus guards pinning that the name never shrinks and never wraps. No schema, no copy change,
+        no flag. It amends the design-locked round-4 frame in one element, the way round 5 did.</dd>
+      </dl>
+    </div>
+
+    <div class="brief" style="margin-top:20px;">
+      <div class="bid">R6-2 &middot; the growth &mdash; RULED ACCEPT, 2026-08-30</div>
+      <div class="bq">Is a header that can become two lines acceptable on this sheet?</div>
+      <dl>
+        <dt>Deciding</dt>
+        <dd>Whether the sheet&rsquo;s header may change height, or must stay one line at all costs.</dd>
+        <dt>Options</dt>
+        <dd><span class="rec">Accept &mdash; only where the name would otherwise be lost. RULED.</span>
+        That condition is not a rule anyone has to keep: a wrapping row grows only when one line
+        cannot hold it, so &ldquo;only if it would otherwise be lost&rdquo; is what the mechanism
+        already does.<br />
+        <strong>Veto</strong> &mdash; keep one line and take the cut; the ruling then collapses to
+        &ldquo;the type yields&rdquo; alone, which still moves the ellipsis off the name.</dd>
+        <dt>Consequence</dt>
+        <dd>A veto is a smaller diff and keeps the frame&rsquo;s proportions exactly; it gives up the
+        &ldquo;nothing is cut at xxLarge&rdquo; result the table above is measuring.</dd>
+      </dl>
+    </div>
+
+    <div class="col" style="margin-top:34px;">
+      <div class="callout">
+        <strong>Built the same day</strong> (#758). One row in <code>SimpleEventConfirm.tsx</code>: the
+        header string split in two, the row given <code>flexWrap</code>, the type
+        <code>flexShrink: 1</code>, the pet <code>flexShrink: 0</code> + <code>maxWidth: '100%'</code>.
+        Two details the drawing settled that the ruling could not: the inter-half gap is
+        <strong>4px, not the 6 first drawn</strong> &mdash; Geist SemiBold&rsquo;s space is 4.0px at
+        <code>textLG</code>, so 4 restores the undivided string&rsquo;s spacing exactly; and the split
+        needed an <code>accessibilityLabel</code> after all, though <em>not</em> for the reason CUL-726
+        gave. A truncated <code>Text</code> already announced its full string; two Texts do not, so the
+        label exists to pay for the split rather than to rescue the ellipsis. Five guards, each proved
+        by mutation &mdash; breaking one property reds exactly one test.
+      </div>
     </div>
 
   </section>
@@ -783,7 +1182,9 @@
     Source of truth: <code>docs/culprit-more-events-mockups.html</code>. Round 4 — the convergence,
     <strong>design-locked 2026-08-13 (F1)</strong>; supersedes rounds 1–3. Round 5 (§06, 2026-08-29)
     amends the title row only — <strong>R5-1 ruled B and shipped</strong>; §03's stage-1 frame carries
-    it. Same artifact URL throughout.
+    it. Round 6 (§07, 2026-08-30) amends the stage-2 header — <strong>R6-1 ruled P1, R6-2 ruled
+    accept, both shipped</strong>; §03's stage-2 frames are unchanged because at their short strings
+    the split renders identically. Same artifact URL throughout.
     Build contract: <code>docs/nyx-more-events-picker-requirements.md</code>. Frame values are copied
     from <code>constants/theme.ts</code>; the splat/swirl customs are mock drafts the build refines at
     24px master size.
