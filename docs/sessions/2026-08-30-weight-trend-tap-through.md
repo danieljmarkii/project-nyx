@@ -99,3 +99,17 @@ not provide; the mocks were extended, not the check weakened.
 Every new guard was proved by mutating the source it protects — 11 mutations across
 `computeWeightTrend`, the year band, the screen's `loaded` flag and pet scoping, both
 cards' geometry, and the detail screen's value.
+
+## Base drift at merge time
+
+Four sibling PRs landed on `main` during the session (#773–#776). `origin/main` was
+merged into the branch before merge — clean, no conflicts — and re-verified at 6345/6345
+(295 suites) plus a UTC+14 pass.
+
+One overlap is worth naming because it is invisible in this PR's own diff: **CUL-744
+(#774), the accent-on-light AA sweep, repointed `colorAccent` → `colorAccentInk` in
+both weight cards and the event detail screen** — the same three files this session
+edited. Git composed the two cleanly (their colour repoint, this session's
+`ReadingsLink` and `weightValue` additions), and #774's new build-failing guard
+`guards/accentOnLight.test.ts` passes over the merged result. So the `colorAccentInk`
+in these cards is theirs, not this session's; nothing here chose it.
