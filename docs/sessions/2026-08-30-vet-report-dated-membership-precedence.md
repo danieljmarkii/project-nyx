@@ -122,3 +122,20 @@ re-fingerprinted at `hold`, **B-494/CUL-19 unchanged**.
    blocking, on the same computation as the prose.
 3. **Record-gap register** applied to the primary-diet case only.
 4. **CUL-757 / CUL-758 filed** rather than folded in.
+
+## Documentation updates
+
+**CLAUDE.md — applied inline (Tier 1).** New Code Conventions entry: *"Two counts over ONE population,
+described as independent, are a claim — and PRECEDENCE is the only honest resolution"*, carrying the four
+rules above plus the two testing rules (the `.*` guard, and that a review subagent shares your working
+tree).
+
+**`STATUS.md` — deliberately untouched.** No track started or ended, no standing hold changed, no Build
+Sequence phase moved, no pointer went stale. The CUL-19 / B-494 hold is named there already and is
+unchanged by this session.
+
+**`/docs/` — no edits proposed.** This is a defect fix against rules `docs/nyx-vet-report-requirements.md`
+§5.2/§5.3 and the diet-trial spec §7 already state correctly; nothing in either doc was wrong, so neither
+gets a version bump.
+
+**Project Brief (Claude.ai) — no change needed.**
