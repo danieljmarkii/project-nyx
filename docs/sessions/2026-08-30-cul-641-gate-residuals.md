@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-30
 
-Shipped via **#XXX** (draft). Follow-up to CUL-641 (#734).
+Shipped via **#770** (draft). Follow-up to CUL-641 (#734).
 No schema, no Edge Function, neither held deploy involved — and `lib/sync.ts` / `lib/weight.ts`
 are outside every Edge closure (`grep -rho '\.\./\.\./\.\./lib/[a-zA-Z]*\.ts' supabase/functions`),
 so no deploy fingerprint moved.
