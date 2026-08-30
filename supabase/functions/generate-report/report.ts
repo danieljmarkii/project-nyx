@@ -1119,7 +1119,23 @@ export type SafetyFlag =
       activeWeeks: number
       symptomDays: number
       daysSinceLastEpisode: number
+      /** BELIEF anchor: the first onset the DETECTOR saw, bounded by its own `windowDays`
+       *  lookback. Kept because every count beside it is measured from here. Never rendered
+       *  as the record's start — see `firstLoggedIso` (CUL-69). */
       firstOnsetIso: string
+      /**
+       * EVIDENCE anchor: the earliest logged entry of this symptom in the REPORT window —
+       * the same rows appendix A prints. Separate from `firstOnsetIso` for the reason
+       * `TrialFacts.exposureRange` is separate from `range`: one bounds what the engine
+       * counted, the other bounds what the record holds, and rendering the first as the
+       * second understates a course by the gap between the two windows (CUL-69).
+       *
+       * REQUIRED, not optional-by-omission: it describes the very value the flag always
+       * states, so silence here would be a claim about the record (the CUL-708 rule). The
+       * one producer answers it; a fixture that omits it fails to compile rather than
+       * quietly re-inheriting the lookback edge.
+       */
+      firstLoggedIso: string
       tier: SymptomChronicityFinding['tier']
       windowDays: number
       /** §9 cough↔vomit adjacency — set on the leading flag when both courses are chronic
@@ -3509,6 +3525,50 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     const localSymptomDays = episodeSetMatches ? localDayNums.size : f.symptomDays
     const localDaysSince =
       episodeSetMatches && lastLocalDay !== null ? Math.max(0, endDayNum - lastLocalDay) : f.daysSinceLastEpisode
+    // EVIDENCE vs BELIEF (CUL-69 / B-700). Everything the engine returned — the onset, the
+    // span, and every count — is bounded at the DETECTOR's own `windowDays` lookback,
+    // measured back from the window end (computeChronicityStats filters onsets to
+    // `ms >= now - windowDays`). The report's window is WIDER by construction on the default
+    // artifact — buildDetectionInput's own contract says so ("90-day fallback ⊃ 56d
+    // chronicity window") — so for any course that predates the lookback, the detector's
+    // first onset lands ~34 days INSIDE the window while appendix A, one page later, prints
+    // the earlier entries. Rendering that onset as "first logged" is therefore a FALSE DATE that
+    // this report's own appendix contradicts: a cat vomiting since May 20 was dated Jun 13, three
+    // weeks short, on the axis a vet reads a chronicity flag FOR. A reader who takes it at face
+    // value gets a five-week problem where the record holds a four-month one — the B-532 finding,
+    // arriving through a boundary B-532's own left-censor does not test.
+    //
+    // So the record's own first entry is carried SEPARATELY rather than replacing the engine's
+    // anchor: the same split as `TrialFacts.exposureRange` vs `range`, for the same reason — one
+    // bounds what the engine counted, the other bounds what the record holds. The render layer
+    // states the date from this and the SPAN from the engine, and the reason that split is not
+    // squeamishness is in render.ts: a duration is an inference the engine guards with three
+    // floors, and widening it here re-opens §10 #4. Read off `occurredAt`, like-for-like with the
+    // detector, which saw these same deduped rows.
+    //
+    // Computed unconditionally, deliberately unlike `localSymptomDays`/`localDaysSince` above,
+    // which fall back to the engine when `episodeSetMatches` is false. That guard asks whether the
+    // report's episode SET matches the engine's, because those two are recounts of the engine's
+    // own numbers. This is not a recount of anything — it is a fact about the record, answerable
+    // whether or not the counts reconcile.
+    let firstLoggedMs: number | null = null
+    for (const e of windowEvents) {
+      if (e.type !== f.symptomType) continue
+      const ms = Date.parse(e.occurredAt)
+      if (!Number.isFinite(ms)) continue
+      if (firstLoggedMs === null || ms < firstLoggedMs) firstLoggedMs = ms
+    }
+    // The `min` is inert by construction, not merely by expectation: `buildDetectionInput` builds
+    // `symptomEvents` from these same `windowEvents`, and `toEpisodeOnsets` returns an ACTUAL
+    // member instant of a chain rather than a synthesised one, so the engine's onset is always one
+    // of the rows scanned above. Kept anyway because the invariant lives in another module, and
+    // the unparseable-row fallback keeps the flag stating a date it can defend rather than none.
+    const firstLoggedIso =
+      firstLoggedMs === null
+        ? f.firstOnsetIso
+        : new Date(
+            Number.isFinite(firstOnsetMs) ? Math.min(firstLoggedMs, firstOnsetMs) : firstLoggedMs,
+          ).toISOString()
     safetyFlags.push({
       kind: 'chronicity',
       symptomType: f.symptomType,
@@ -3518,6 +3578,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       symptomDays: localSymptomDays,
       daysSinceLastEpisode: localDaysSince,
       firstOnsetIso: f.firstOnsetIso,
+      firstLoggedIso,
       tier: f.tier,
       windowDays: f.windowDays,
       ...(f.coughVomitAdjacent ? { coughVomitAdjacent: true as const } : {}),

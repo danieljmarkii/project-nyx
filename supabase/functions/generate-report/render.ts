@@ -1209,6 +1209,29 @@ function safetyBandThumbs(snap: ReportSnapshot, eventIds: string[]): string {
   } in appendix&nbsp;${photosAppendixLetter(snap)} (incident photos).</span></div>`
 }
 
+/**
+ * Does ANY chronicity flag on this report reach back past its own counts (CUL-69)? ONE predicate,
+ * read by the flag row's year switch AND appendix F's legend gate — they must agree, or the page
+ * explains a line it does not carry, or carries one it does not explain (the §5.3 one-predicate
+ * rule, and the reason the legend gate is not a second copy of this test).
+ *
+ * BAND-scoped rather than row-scoped, which is what the year switch needs. Scoped per row, a band
+ * carrying two chronic courses — one reaching back, one not — printed the SAME window-open date
+ * two ways two lines apart ("This window opens May 7, 2026" above "This window opens May 7"),
+ * reachable on a ~57–64 day window. That is the B-532/HR-7 "one page, two renders of one fact"
+ * class, which this report has paid for before; a row gaining a year it did not need is merely
+ * more explicit.
+ */
+function chronicityRecordPrecedesCounts(snap: ReportSnapshot): boolean {
+  return snap.safetyFlags.some(
+    (f) =>
+      f.kind === 'chronicity' &&
+      Number.isFinite(Date.parse(f.firstLoggedIso)) &&
+      Number.isFinite(Date.parse(f.firstOnsetIso)) &&
+      Date.parse(f.firstLoggedIso) < Date.parse(f.firstOnsetIso),
+  )
+}
+
 function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
   const tz = snap.timezone
   switch (f.kind) {
@@ -1412,11 +1435,147 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // edge — the same vocabulary the exposure counts use, for the same reason. Not
       // suppressed and not softened: the flag still fires, still leads, and still says the
       // pattern is sustained. It simply stops asserting a start date it cannot know.
-      const onsetDay = fmtLocalDay(f.firstOnsetIso, tz)
-      const leftCensored = daysBetweenDayKeys(snap.scope.startDate, localDayKeyOf(f.firstOnsetIso, tz)) <= CHRONICITY_LEFT_CENSOR_DAYS
-      const censorBit = leftCensored
-        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
-        : ''
+      // THE DATE IS THE RECORD'S; THE SPAN IS THE ENGINE'S (CUL-69, after the adversarial pass).
+      // `firstOnsetIso` is the first onset inside the engine's own lookback; `firstLoggedIso` is
+      // the first entry in the report's window — the same rows appendix A prints. The two diverge
+      // by construction on the default artifact, where the 90-day window strictly contains the
+      // 56-day lookback, and the old code stated the former as the latter: a course predating the
+      // lookback was dated ~34 days late, contradicting this report's own appendix.
+      //
+      // THE SPAN DOES NOT MOVE WITH THE DATE, and that is the whole lesson here. The first draft
+      // extended `spanDays` by the gap so the two numbers would agree — and re-opened §10 #4, the
+      // "two distant data points" break the engine spends three floors closing (`loggingEligible`
+      // over both halves of the span, `countDistributionWeeks`' B-188 anti-barbell packing, and
+      // the `minSpanDays`/`minEpisodes` conjunction). One stale vomit ten months before a real
+      // six-week course printed "spans 335 days · 7 episodes": the duration ran toward alarm and
+      // was false, while the DENSITY a vet actually triages on ran toward reassurance — one
+      // episode every seven weeks, over a record holding weekly vomiting. Cough was worse, its
+      // 28-day recency floor letting a long-quiet course fire and maximising the gap. B-494 names
+      // that direction as the one this band may not fail in.
+      //
+      // So: the earliest logged entry is a FACT ABOUT THE RECORD and free to state; a duration is
+      // an INFERENCE the engine guards, and any layer that widens it inherits those guards or must
+      // not widen it. This layer does not widen it. Where the record reaches back further than the
+      // counts, that is said in its own sentence instead — which is also why the two facts stop
+      // sharing the "spans N days (first logged X)" phrasing, whose parenthetical reads as the
+      // span's start.
+      const firstLoggedKey = localDayKeyOf(f.firstLoggedIso, tz)
+      // INSTANT-granular, not day-granular. The lookback cuts at an instant, so entries earlier on
+      // the SAME local day as the first counted onset are excluded from the counts too — three
+      // morning episodes dropping out of a ten-episode record while a local-day comparison read
+      // "nothing is missing". The rendered DATE is still a local day; only this gate is not.
+      const firstLoggedMs = Date.parse(f.firstLoggedIso)
+      const firstOnsetMs = Date.parse(f.firstOnsetIso)
+      const hasUncountedRecord =
+        Number.isFinite(firstLoggedMs) && Number.isFinite(firstOnsetMs) && firstLoggedMs < firstOnsetMs
+      // YEAR-LESS WAS SAFE BY CONSTRUCTION, AND CUL-69 REMOVED THE CONSTRUCTION. `fmtLocalDay`
+      // prints "Mon D" with no year, which was unambiguous while the only date on this line was
+      // `firstOnsetIso` — structurally within `windowDays` of the window end. The record anchor is
+      // bounded only by the report WINDOW, and that window is unbounded on rung 1 (`since_visit`
+      // has no clamp) and rung 2 (a stale `active` trial, the B-594 steady state), so a 2024 anchor
+      // beside a 2026 count start read as a two-month-old sign where the record holds 27 months.
+      //
+      // ALL-OR-NOTHING, NOT CONDITIONAL (adversarial pass 4, which broke the conditional version).
+      // Stamping only the out-of-year date is worse than stamping none: `firstLoggedIso` is always
+      // <= `firstOnsetIso`, so the stamped one is structurally always the FIRST of the pair, and in
+      // ordinary English a bare date following a year-stamped one INHERITS that year. "first logged
+      // Nov 23, 2025; these counts begin at May 8" then reads as May 8 2025 — six months BEFORE the
+      // anchor, the reversed pair the year was added to remove, now asserted with more confidence.
+      // Measured at 236/236 of such pairs on a plain 90-day fallback. So the year is decided ONCE
+      // for the whole row: present whenever the record anchor is in play, absent otherwise — and
+      // when it is absent the row's only dates are within the lookback of the window end, exactly
+      // as B-532 and CUL-687 shipped them. The window-open date in `censorBit` follows the same
+      // switch, or it becomes the single bare date on an otherwise fully year-stamped page.
+      const withYear = chronicityRecordPrecedesCounts(snap)
+      // RESOLVED ONCE FOR THE ROW, not per date — the invariant the paragraph above states, made
+      // true rather than asserted. `localDayKeyOf` falls back to the raw ISO prefix on unparseable
+      // input and `Intl` does not zero-pad a sub-1000 year, so a per-date guard could pass for one
+      // date and fail for the other and split exactly the pair this switch exists to keep together.
+      // Not reachable from a `timestamptz`, but a comment claiming an invariant the code does not
+      // enforce is the shape that has cost this arm four review rounds already.
+      const yearOf = (iso: string): string => localDayKeyOf(iso, tz).slice(0, 4)
+      const yearsUsable = [f.firstLoggedIso, f.firstOnsetIso].every((iso) => /^\d{4}$/.test(yearOf(iso)))
+      const day = (iso: string): string =>
+        withYear && yearsUsable ? `${fmtLocalDay(iso, tz)}, ${yearOf(iso)}` : fmtLocalDay(iso, tz)
+      const onsetDay = day(f.firstLoggedIso)
+      const scopeStartDay = withYear && yearsUsable ? fmtDayYear(snap.scope.startDate) : fmtDay(snap.scope.startDate)
+      // B-532's floor now tests the RECORD anchor. Against `firstOnsetIso` it was testing the
+      // boundary that was not binding: on the default report that onset sits ~34 days inside the
+      // window by construction, so the floor read "genuinely observed" and stayed silent on
+      // exactly the reports whose start really was truncated. The new predicate is IMPLIED by the
+      // old one (`firstLoggedIso <= firstOnsetIso` always), so this can only ever fire more often.
+      const leftCensored = daysBetweenDayKeys(snap.scope.startDate, firstLoggedKey) <= CHRONICITY_LEFT_CENSOR_DAYS
+      // WHICH NUMBER IS THE FLOOR DEPENDS ON WHICH BOUNDARY BINDS (adversarial pass 2). The split
+      // keys on `hasUncountedRecord` ITSELF — the condition it is about — never on a comparison of
+      // the two window lengths, and that distinction is load-bearing rather than pedantic: a pass-3
+      // sweep falsified the tempting shorthand. "hasUncountedRecord entails the report window is
+      // longer than the lookback" is FALSE at exactly `windowDays === 56` (the ACVIM skin-trial
+      // length, and the natural "8 weeks" custom pick), because the window opens at LOCAL midnight
+      // while the lookback opens at `detectionNow − 56d` and `detectionNowFor` stamps a past-ending
+      // custom window at UTC end-of-day — up to 14h of exposure at UTC+14. Harmless today (a row in
+      // that sliver lands on `scope.startDate`, which forces `leftCensored` and selects the same
+      // branch), but it must not be written down as an invariant for whoever next edits
+      // `detectionNowFor`, `CHRONICITY_LEFT_CENSOR_DAYS` or `windowDays`.
+      //
+      //   • Neither, or only leftCensored → the WINDOW is what truncates the span, `f.spanDays`
+      //     is both the course and the record's extent, and B-532's sentence is exactly right.
+      //   • Both → the window truncates the RECORD while the lookback truncates the COUNTS, and
+      //     no single number is the floor. `f.spanDays` understates it (it counts the course, and
+      //     the paragraph above has just cited an earlier entry — measured at a median 32 days
+      //     short over dense chronic records, in the reassuring direction B-494 forbids), while
+      //     the record's own extent is two logged rows rather than a measured course, so stating
+      //     THAT as a duration is first-pass finding 1 arriving through the censor. The window
+      //     fact is stated without attaching any duration to it — which is also the honest
+      //     reading, since what the window edge bounds here is the record, not the span.
+      const censorBit = !leftCensored
+        ? ''
+        : hasUncountedRecord
+          // NOT "the record's first entry sits at that edge" — CHRONICITY_LEFT_CENSOR_DAYS is a
+          // 7-day TOLERANCE, so that phrasing asserted an exactness it does not have and
+          // contradicted the date in the sentence immediately before it by up to a week, on 29 of
+          // 156 disclosed flags (adversarial pass 3). B-532's original clause claimed nothing about
+          // where the entry sits; this is that clause with the indefensible number removed, and
+          // nothing else added.
+          ? ` This window opens ${h(scopeStartDay)}, so the record cannot show how long the sign predates it.`
+          : ` This window opens ${h(scopeStartDay)}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
+      // DISCLOSURE BESIDE THE NUMBER, never a re-derivation (the C5 logging-density precedent).
+      // It names the date the counts actually begin at, never a day COUNT: the lookback is measured
+      // back from the window END, so "the most recent 56 days" is not a portion of a 43-day span —
+      // it can exceed the span outright, and then reads as the exact inverse of the warning it
+      // exists to deliver. A date cannot overstate how much of the span was counted.
+      //
+      // Two shapes, because the gate is an instant and the rendered dates are local days: when the
+      // two anchors straddle the lookback edge WITHIN one local day, naming both prints the same
+      // date twice — "was first logged May 7; these counts begin at May 7" — a sentence promising
+      // earlier entries while naming nothing they are earlier than. Reachable on ~5% of flags for
+      // a boundary-edge cough course logged several times a day, which is the shape cough's floors
+      // were tuned for.
+      //
+      // The tail is SHARED by both shapes and says what appendix A HOLDS, rather than claiming
+      // where every earlier entry is (adversarial pass 4). "anything logged before then is in
+      // appendix A" is an unrestricted universal the report cannot honour — appendix A carries
+      // in-window rows only, and on the default cascade there is no out-of-window disclosure at
+      // all — so for a record older than the window it was false in the "you are seeing the whole
+      // history" direction, and it flatly contradicted the censor sentence wherever both fire
+      // (reachable at a ~57–64 day window: a vet visit eight weeks ago, the canonical recheck
+      // interval). It is also number-agnostic, so it does not pluralise over a count this layer
+      // does not hold — the stale-singleton case really is one entry.
+      const engineOnsetDay = day(f.firstOnsetIso)
+      // Ends on the EXCLUSION, not on the pointer. The falsified clause was the unrestricted
+      // universal, and the "not in the numbers above" contrast rode out with it — but B-494's
+      // ruling is that the safety band must stand without the legend, and this sentence's whole job
+      // is to say what the counts leave out.
+      const appendixTail =
+        ' &mdash; appendix&nbsp;A lists this window&rsquo;s entries, including those before then; they are not in the numbers above.'
+      const recordBit = !hasUncountedRecord
+        ? ''
+        : firstLoggedKey === localDayKeyOf(f.firstOnsetIso, tz)
+          ? ` ${h(symptomLabel(f.symptomType))} was first logged ${h(
+              onsetDay,
+            )}; these counts begin later that day${appendixTail}`
+          : ` ${h(symptomLabel(f.symptomType))} was first logged ${h(
+              onsetDay,
+            )}; these counts begin at ${h(engineOnsetDay)}${appendixTail}`
       // §9 cough↔vomit adjacency (CUL-676) — the clinical register of the same fact the
       // Signal card states to the owner. Post-tussive vomiting and the cough-mistaken-for-
       // -hairball error make these two owner-logged streams cross-contaminate in BOTH
@@ -1438,13 +1597,16 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         // about the RECORD's extent; whether the sign is current is the recency clause's job,
         // and it is right there. Stating each once removes the contradiction without dropping
         // anything a reader needs.
+        // The "(first logged …)" parenthetical is dropped where the record reaches back past the
+        // counts: glued to "spans N days" it reads as the span's start, so it would assert a
+        // duration nobody measured. `recordBit` then carries both dates in their own sentence.
         `<b>${h(symptomLabel(f.symptomType))} spans ${num(f.spanDays)} day${
           f.spanDays === 1 ? '' : 's'
-        }</b> (first logged ${h(onsetDay)}): ${num(f.episodeCount)} episode${
+        }</b>${hasUncountedRecord ? '' : ` (first logged ${h(onsetDay)})`}: ${num(f.episodeCount)} episode${
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
-        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${censorBit}${adjacencyBit}`,
+        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
       )
     }
     case 'symptom_worsening': {
@@ -5520,6 +5682,14 @@ function appendixF(snap: ReportSnapshot): string {
       `<dt>Safety flags</dt><dd>Shown only when present, above the fold. Nothing is printed here when no flag fired &mdash; and that is <b>not</b> an &ldquo;all clear&rdquo;: it means no detector fired, which is not the same as nothing being wrong.</dd>`
   // PR 7 — the incident-photos legend entry only renders when photos exist (so the legend never
   // points at an appendix that isn't there — the dangling-appendix class the meals appendix hit).
+  // Gated exactly like `photoDt` below, for the B-599 reason stated there: a legend entry
+  // describing a line the report does not carry is a dangling reference. The HR-7 "Entries vs
+  // episodes" entry is the precedent — where two measures diverge on purpose, the report says so
+  // rather than leaving the reader to infer a cause, and the inference available here (that the
+  // engine judged the earlier entries unrelated) runs toward reassurance.
+  const chronicityWindowDt = chronicityRecordPrecedesCounts(snap)
+    ? `<dt>Where the chronicity counts begin</dt><dd>The chronicity flag reads a fixed recent window, which can be shorter than this report's range. Where it is, the flag says where its counts begin and names the date the sign was <b>first logged</b> &mdash; the earlier entries are real and are listed in appendix&nbsp;A; they are outside the counted window, <b>not</b> judged unrelated. Read the flag's day counts against the window it names, and the sign's extent against appendix&nbsp;A.</dd>`
+    : ''
   const photoDt = hasIncidentPhotos(snap)
     ? `<dt>Incident photos</dt><dd>Every photographed incident in the window is in appendix&nbsp;${photosAppendixLetter(
         snap,
@@ -5537,6 +5707,7 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed — a one-sided account renders as &ldquo;before/after&rdquo; that bound &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>
     <dt>Duplicate logs</dt><dd>A <span class="conf">N logs</span> tag marks the same incident logged more than once (a re-log or sync retry). It is counted once everywhere in this report; the duplicate count is disclosed rather than hidden.</dd>
     <dt>Photo analysis</dt><dd>For photographed incidents, structured fields (colour, contents, blood, foreign material) are read automatically from the photo the owner took. These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
+    ${chronicityWindowDt}
     ${photoDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>

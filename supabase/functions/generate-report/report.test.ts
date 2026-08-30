@@ -1633,6 +1633,49 @@ Deno.test('chronicity flag — symptomDays recounted in LOCAL days (the 18-vs-19
   assert.equal(chron.symptomDays, 23, 'days are LOCAL days (24 UTC days would over-count vs appendix A)')
 })
 
+Deno.test('CUL-69 — firstLoggedIso reaches BEFORE the detector lookback; firstOnsetIso does not', () => {
+  // The real geometry, end to end: the 90-day fallback window opens Apr 3, the chronicity
+  // lookback opens ~May 7 (56d back from the Jul 2 window end). An entry between those two
+  // dates is IN the report — appendix A prints it — and OUT of the detector's reach, so the
+  // two anchors must disagree. Before CUL-69 the flag rendered the detector's anchor as the
+  // record's, dating the course a month late on the report's lead safety line.
+  const input = buildNyxInput()
+  input.events.push(makeEvent({ type: 'vomit', occurredAt: '2026-04-15T14:00:00Z' }))
+  const snap = assembleReport(input)
+  const chron = snap.safetyFlags.find((f) => f.kind === 'chronicity')
+  assert.ok(chron && chron.kind === 'chronicity', 'chronicity fires')
+  assert.equal(chron.firstLoggedIso.slice(0, 10), '2026-04-15', 'the record anchor is the earliest in-window entry')
+  assert.ok(
+    Date.parse(chron.firstOnsetIso) > Date.parse(chron.firstLoggedIso),
+    `the detector anchor stays at its lookback edge (got ${chron.firstOnsetIso})`,
+  )
+  // The evidence anchor must agree with the log the report prints one page later — the
+  // contradiction CUL-69 was filed on. Read off appendix A, not off the flag. Compared as
+  // INSTANTS: the flag's anchor is re-serialized (…T14:00:00.000Z) while appendix A carries
+  // the row's own string, so a string compare would fail on formatting and say nothing.
+  const firstInAppendixA = snap.provenance.symptomLog
+    .filter((e) => e.type === 'vomit')
+    .map((e) => Date.parse(e.occurredAt))
+    .sort((a, b) => a - b)[0]
+  assert.equal(
+    Date.parse(chron.firstLoggedIso),
+    firstInAppendixA,
+    'flag and appendix A cannot disagree about the record\'s start',
+  )
+  // And the counts are untouched: an entry outside the lookback is evidence of EXTENT, never
+  // a number the engine counted (the exposureRange-vs-range split, kept honest).
+  assert.equal(chron.episodeCount, 23, 'the pre-lookback entry does not enter the engine\'s counts')
+})
+
+Deno.test('CUL-69 — with nothing before the lookback the two anchors coincide', () => {
+  // Refactor-safety direction: passes before and after. The dry-run's own course starts
+  // inside the lookback, so the fix must be inert on it.
+  const snap = assembleReport(buildNyxInput())
+  const chron = snap.safetyFlags.find((f) => f.kind === 'chronicity')
+  assert.ok(chron && chron.kind === 'chronicity', 'chronicity fires')
+  assert.equal(chron.firstLoggedIso, chron.firstOnsetIso, 'no divergence where the record has nothing earlier')
+})
+
 Deno.test('chronicity under a narrow custom window — no partial-set fabrication; cropped episodes disclosed', () => {
   // Detection runs over the report window (its sub-windows nest inside it), so a
   // custom 10-day window means chronicity evaluates only the in-window slice — it
