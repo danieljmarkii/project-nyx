@@ -51,7 +51,6 @@ import {
   mayClaimAllMatched,
   mayStateRecordClean,
   narrowTrialFoodRole,
-  allowedFoodsOn,
   trialEffectiveEndDayIndex,
   trialFoodKey,
   CHALLENGE_WINDOW_DAYS,
@@ -306,14 +305,6 @@ export interface TrialExposure {
    * diet itself. Read off the same re-classification as `permittedLaterFrom`, never a
    * second lookup, so the two can never name different allowed rows.
    */
-  permittedLaterRole: TrialFoodRole | null
-  /**
-   * A `primary_diet` row was in force on this feeding's own day (CUL-746). The
-   * report's record-gap register may only be used when this is FALSE for every row
-   * it covers — otherwise the trial WAS defined that day and the feeding departed
-   * from it, which is the mid-trial-switch case the register would exonerate.
-   */
-  primaryDietInForce: boolean
 }
 
 export interface TrialBlock {
@@ -993,37 +984,9 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // precisely the duplication this PR exists to delete, so instead the same
       // feeding is re-classified as if fed on each later `allowedFrom` date and the
       // predicate's own verdict is read back. Distinct dates are a handful at most.
-      // AND THE ROLE THAT PERMISSION CARRIED, because page 1 has to say WHICH food
-      // (CUL-746). Appendix C names the row's item in its own column, so the date
-      // alone is enough there; the page-1 sentence has no item column and, once the
-      // dated-membership clause LEADS rather than trailing as an "also", "that food"
-      // has no antecedent at all. The cold read's finding was not merely that page 1
-      // said the wrong thing — it is that the true sentence is the DECISIVE one:
-      // seven feedings of the prescribed diet, logged before the app's record of it
-      // began, are the best evidence on the page that the owner was complying.
-      // Read off the SAME re-classification that produced the date, so the role and
-      // the date can never name different allowed rows.
+      // The DATE only. Naming which food, and characterising the row, were tried and
+      // withdrawn — see `exposureSentences` in render.ts and CUL-758.
       permittedLaterFrom: permittedLater?.from ?? null,
-      permittedLaterRole: permittedLater?.role ?? null,
-      // ── WAS THE TRIAL ACTUALLY UNDEFINED ON THIS DAY? (CUL-746, pass 2) ────────
-      //
-      // The record-gap register — "a gap in the record, not a departure from the
-      // diet" — rests on the claim that the app simply had no diet recorded yet.
-      // That is a fact about the allowed set on the feeding's own day, and the
-      // renderer had been INFERRING it from `allowed_from > started_at`, which does
-      // not entail it. The re-attack executed the difference: a trial started Apr 21
-      // on a soy hydrolysate (in force Apr 21 – May 31) switched by the vet to a
-      // salmon diet from Jun 1, with the owner feeding the salmon May 25–31 — a
-      // novel intact protein introduced mid-elimination, the textbook restart-the-
-      // trial event — rendered "7 were feedings of the trial diet itself … a gap in
-      // the record, not a departure from the diet", four lines above the same page's
-      // own "Antigen exposure — Salmon ×7 … that the trial diet does not contain".
-      //
-      // So the claim is MEASURED rather than inferred, off the one predicate that
-      // already answers it. False here means a primary diet WAS in force and this
-      // feeding departed from it; the register then degrades to the plain wording,
-      // exactly as a mixed role set does.
-      primaryDietInForce: allowedFoodsOn(ctx, dn).some((f) => f.role === 'primary_diet'),
     })
   }
   exposures.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.eventId.localeCompare(b.eventId))

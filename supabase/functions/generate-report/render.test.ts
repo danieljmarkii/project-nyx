@@ -17,7 +17,6 @@ import { strict as assert } from 'node:assert'
 import { renderReport } from './render.ts'
 import { LANE_SYMPTOM_TYPES } from '../generate-signal/detection.ts'
 import { REPORT_SYMPTOM_TYPES } from './report.ts'
-import type { TrialFoodRole } from '../../../lib/dietTrial.ts'
 import type {
   ReportSnapshot,
   SafetyFlag,
@@ -3570,8 +3569,6 @@ Deno.test('B-599 — page 1 never points at an "Also during the trial" row that 
 function exposureItem(
   rung: 'derived_protein' | 'unrecognised',
   permittedLaterFrom: string | null,
-  permittedLaterRole: TrialFoodRole | null = null,
-  primaryDietInForce = false,
 ): NonNullable<ReportSnapshot['trial']>['exposures']['items'][number] {
   return {
     eventId: `e-${rung}-${permittedLaterFrom ?? 'none'}-${Math.random()}`,
@@ -3595,10 +3592,6 @@ function exposureItem(
     panelWasRead: false,
     attributionChecked: true,
     permittedLaterFrom,
-    permittedLaterRole,
-    // Default FALSE: the fixture's whole point is the record-gap shape (no primary
-    // diet in force). A case exercising the mid-trial SWITCH passes true.
-    primaryDietInForce,
   }
 }
 
@@ -3610,23 +3603,23 @@ Deno.test('CUL-746 — the "Of those N" breakdown always sums to N', () => {
   // clauses over-run the total the reader has just been given.
   const shapes: { name: string; dp: number; un: number; offDiet?: number; items: ReturnType<typeof exposureItem>[] }[] = [
     { name: 'no dated rows', dp: 3, un: 2, items: [] },
-    { name: 'all dated, one rung', dp: 0, un: 7, items: Array.from({ length: 7 }, () => exposureItem('unrecognised', '2026-06-01', 'primary_diet')) },
-    { name: 'one dated among four protein rows', dp: 4, un: 0, items: [exposureItem('derived_protein', '2026-06-08', 'permitted_treat')] },
-    { name: 'dated rows across both rungs', dp: 3, un: 4, items: [exposureItem('derived_protein', '2026-06-08', 'permitted_treat'), exposureItem('unrecognised', '2026-06-08', 'permitted_treat')] },
-    { name: 'a single dated row', dp: 0, un: 1, items: [exposureItem('unrecognised', '2026-06-01', 'primary_diet')] },
-    { name: 'items claim MORE dated rows than byRung has', dp: 1, un: 0, items: Array.from({ length: 5 }, () => exposureItem('derived_protein', '2026-06-01', 'primary_diet')) },
+    { name: 'all dated, one rung', dp: 0, un: 7, items: Array.from({ length: 7 }, () => exposureItem('unrecognised', '2026-06-01')) },
+    { name: 'one dated among four protein rows', dp: 4, un: 0, items: [exposureItem('derived_protein', '2026-06-08')] },
+    { name: 'dated rows across both rungs', dp: 3, un: 4, items: [exposureItem('derived_protein', '2026-06-08'), exposureItem('unrecognised', '2026-06-08')] },
+    { name: 'a single dated row', dp: 0, un: 1, items: [exposureItem('unrecognised', '2026-06-01')] },
+    { name: 'items claim MORE dated rows than byRung has', dp: 1, un: 0, items: Array.from({ length: 5 }, () => exposureItem('derived_protein', '2026-06-01')) },
     // A snapshot that counts an exposure no rung claims. Unreachable from the module
     // (only rungs 2 and 3 set `offDiet`), and the point is that the sentence still
     // partitions rather than rendering "Of those 3:" with nothing after the colon.
-    { name: 'byRung is empty while offDiet is not', dp: 0, un: 0, offDiet: 3, items: [exposureItem('unrecognised', '2026-06-01', 'primary_diet')] },
+    { name: 'byRung is empty while offDiet is not', dp: 0, un: 0, offDiet: 3, items: [exposureItem('unrecognised', '2026-06-01')] },
     // …and the mirror, which exercises the CEILING caps rather than the non-negativity
     // floor: a `byRung` summing to MORE than `offDiet`. Code review mutation-proved that
     // without a shape like this, deleting either `Math.min` ceiling left every test
     // green — a defensive cap nothing was holding.
-    { name: 'byRung sums to more than offDiet, dated rows included', dp: 4, un: 4, offDiet: 3, items: Array.from({ length: 4 }, () => exposureItem('derived_protein', '2026-06-01', 'primary_diet')) },
+    { name: 'byRung sums to more than offDiet, dated rows included', dp: 4, un: 4, offDiet: 3, items: Array.from({ length: 4 }, () => exposureItem('derived_protein', '2026-06-01')) },
     { name: 'byRung sums to more than offDiet, no dated rows', dp: 5, un: 5, offDiet: 2, items: [] },
-    { name: 'mixed roles degrade to the general noun', dp: 1, un: 1, items: [exposureItem('derived_protein', '2026-06-08', 'primary_diet'), exposureItem('unrecognised', '2026-06-08', 'supplement')] },
-    { name: 'dated rows with DIFFERENT permission dates name none of them', dp: 0, un: 2, items: [exposureItem('unrecognised', '2026-06-01', 'primary_diet'), exposureItem('unrecognised', '2026-06-08', 'primary_diet')] },
+    { name: 'mixed roles degrade to the general noun', dp: 1, un: 1, items: [exposureItem('derived_protein', '2026-06-08'), exposureItem('unrecognised', '2026-06-08')] },
+    { name: 'dated rows with DIFFERENT permission dates name none of them', dp: 0, un: 2, items: [exposureItem('unrecognised', '2026-06-01'), exposureItem('unrecognised', '2026-06-08')] },
   ]
   for (const shape of shapes) {
     const offDiet = shape.offDiet ?? shape.dp + shape.un
@@ -3664,96 +3657,6 @@ Deno.test('CUL-746 — the "Of those N" breakdown always sums to N', () => {
     assert.ok(!counts.some((c) => c <= 0), `${shape.name}: a clause rendered a non-positive count — ${m![2]}`)
     // The additive framing this replaced, in either of its two shapes.
     assert.ok(!/also fed before/.test(t), `${shape.name}: the date is the reason, never a trailing "also"`)
-  }
-})
-
-Deno.test('CUL-746 — a CAPPED count still describes the whole dated population, never a prefix', () => {
-  // The re-attack's break. `early` is date-sorted, so slicing to the credited count
-  // took the EARLIEST rows — and on a mixed set whose count the `Math.min` caps
-  // reduced, that dropped the permitted-extra row and flipped the noun from the
-  // general "a food the trial permits" to "the trial diet itself", picking up the
-  // record-gap register with it and silently re-attributing a real breach to the rung.
-  // A positional prefix is the one defensive choice that can SHARPEN the claim.
-  const items = [
-    exposureItem('unrecognised', '2026-06-01', 'primary_diet'),
-    exposureItem('unrecognised', '2026-06-08', 'permitted_treat'),
-  ]
-  const html = renderReport(
-    base({
-      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
-      trial: trialBlockFixture({
-        allowedSetUnavailable: false,
-        mayClaimAllMatched: false,
-        mayStateRecordClean: false,
-        exposures: {
-          totalFeedings: 12,
-          offDiet: 2,
-          // `byRung` short of `items` by one — the disagreement the caps exist for.
-          byRung: { derived_protein: 0, unrecognised: 1 },
-          fedBeforePermitted: 2,
-          unclassifiable: 0,
-          items,
-        },
-      }),
-    }),
-  )
-  const t = plain(html)
-  assert.ok(/1 was a feeding of a food the trial permits/.test(t),
-    `expected the general noun: ${t.slice(t.indexOf('Of those'), t.indexOf('Of those') + 220)}`)
-  assert.ok(!/the trial diet itself/.test(t), 'a capped mixed set must not sharpen to the trial diet')
-  assert.ok(!/a gap in the record, not a departure/.test(t), 'nor pick up the record-gap register')
-})
-
-Deno.test('CUL-746 — a dated-membership row never claims a role no row in it carries', () => {
-  // `permittedLaterNoun` is the one place page 1 says WHICH food, and it is the
-  // only sentence on the page that can call something "the trial diet itself".
-  // A mixed set, or a role the adapter could not resolve, degrades to the general
-  // noun rather than letting one row's role speak for its neighbours' — the same
-  // rule the grouped `rung` key in appendix C follows.
-  const cases: { items: ReturnType<typeof exposureItem>[]; expect: RegExp; reject: RegExp }[] = [
-    {
-      items: [exposureItem('unrecognised', '2026-06-01', 'primary_diet')],
-      expect: /feeding of the trial diet itself/,
-      reject: /a food the trial permits/,
-    },
-    {
-      items: [exposureItem('unrecognised', '2026-06-01', 'permitted_treat')],
-      expect: /feeding of a treat the trial permits/,
-      reject: /the trial diet itself/,
-    },
-    {
-      items: [exposureItem('unrecognised', '2026-06-01', 'primary_diet'), exposureItem('unrecognised', '2026-06-01', 'permitted_treat')],
-      expect: /feedings of a food the trial permits/,
-      reject: /the trial diet itself/,
-    },
-    {
-      items: [exposureItem('unrecognised', '2026-06-01', null)],
-      expect: /feeding of a food the trial permits/,
-      reject: /the trial diet itself/,
-    },
-  ]
-  for (const c of cases) {
-    const html = renderReport(
-      base({
-        clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
-        trial: trialBlockFixture({
-          allowedSetUnavailable: false,
-          mayClaimAllMatched: false,
-          mayStateRecordClean: false,
-          exposures: {
-            totalFeedings: c.items.length + 10,
-            offDiet: c.items.length,
-            byRung: { derived_protein: 0, unrecognised: c.items.length },
-            fedBeforePermitted: c.items.length,
-            unclassifiable: 0,
-            items: c.items,
-          },
-        }),
-      }),
-    )
-    const t = plain(html)
-    assert.ok(c.expect.test(t), `expected ${c.expect} in: ${t.slice(t.indexOf('Of those'), t.indexOf('Of those') + 200)}`)
-    assert.ok(!c.reject.test(t), `must not claim ${c.reject}`)
   }
 })
 

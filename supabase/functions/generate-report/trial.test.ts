@@ -1849,24 +1849,23 @@ Deno.test('CUL-746 — the prescribed diet fed before its allowed-from date is n
   const page1 = text.slice(0, text.indexOf('Appendix A'))
   // The reason that actually placed them there, naming which food — page 1 has no
   // item column, so without the role it cannot say the thing that matters.
-  // THE REGISTER, not just the reason (cold read 18). "Fed before it was permitted" is
-  // true of the record and reads as a compliance breach, and for the trial's OWN
-  // prescribed food it cannot describe one — a trial is defined by its primary diet.
-  // The report already uses this register two rows below, for this same data state.
+  // The reason that actually placed them there — and NOTHING about which food it was
+  // or whether it was a departure. Two rounds tried to add that and three
+  // falsification passes broke every version; the record does not hold the fact
+  // (CUL-758). This wording is word-for-word appendix C's, so the pages cannot drift.
   assert.ok(
-    /Of those 7: 7 were feedings of the trial diet itself, logged before the date it was added to the allowed list \(Jun 1\) — a gap in the record, not a departure from the diet\. Dates in appendix/.test(page1),
+    /Of those 7: 7 were fed before that food was permitted \(allowed from Jun 1\)\. Dates in appendix/.test(page1),
     `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 220)}`,
   )
   // …and NOT the misleading half, in either of its two shapes.
   assert.ok(!/not recognised as trial food/.test(page1), 'the rung must not speak for a dated-membership row')
   assert.ok(!/also fed before/.test(page1), 'and the date is the reason, never a trailing "also"')
 
-  // THE TILE CARRIES IT TOO. Cold read 17 was run on the artifact where only the
-  // sentence above had been fixed, and still concluded "restart the trial, blame the
-  // owner" from the tile alone — three type sizes larger, and where a 60-second scan
-  // stops. The corrected sentence one line below did not reach the reader.
+  // THE TILE CARRIES ITS SPAN AND NOTHING ELSE. Cold read 17 asked for the reason here
+  // too, and it was added; three falsification passes then showed the app cannot
+  // establish it. A tile is the worst place for a sentence the record does not support.
   assert.ok(
-    /7 \/ 8Feedings not matched to the trial diet7 of them the trial diet itself — a record gap, not a departure/.test(page1),
+    /7 \/ 8Feedings not matched to the trial dietMay 25 – Jun 1, 2026 · a floor, not a total/.test(page1),
     `the tile read: ${page1.slice(page1.indexOf('Feedings not matched'), page1.indexOf('Feedings not matched') + 200)}`,
   )
 })
@@ -1901,7 +1900,7 @@ Deno.test('CUL-746 — a row is attributed to ONE reason, and the breakdown sums
   const page1 = text.slice(0, text.indexOf('Appendix A'))
   // 1 + 3 = 4. The dated row leaves the rung it was double-counted in.
   assert.ok(
-    /Of those 4: 1 was a feeding of a treat the trial permits, fed before it was permitted \(allowed from Jun 8\); 3 carried a protein the trial diet does not\./.test(page1),
+    /Of those 4: 1 was fed before that food was permitted \(allowed from Jun 8\); 3 carried a protein the trial diet does not\./.test(page1),
     `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`,
   )
   assert.ok(!/4 carried a protein/.test(page1), 'the rung clause must shed the row the date claimed')
@@ -1960,43 +1959,7 @@ Deno.test('CUL-746 — the ACCUSING exposure tile names its span, like the reass
   assert.ok(/Days a meal was logged · Jun 13 – Jul 2, 2026/.test(text))
   // With no dated-membership row there is nothing to split, so the tile says nothing
   // about one — the line is present-only, like every other disclosure on this page.
-  assert.ok(!/of them the trial diet itself/.test(text))
-})
-
-Deno.test('CUL-746 — the tile and the sentence take their split from ONE computation', () => {
-  // The mixed shape, which is the one that can drift: one dated-membership treat and
-  // three feedings of a food that is never on the list. The tile has a fraction of the
-  // width, so its wording differs — but the COUNTS must not, or the page contradicts
-  // itself in the two places a vet reads first and second.
-  const input = wellLoggedTrialInput()
-  input.dietTrials[0].allowedFoods = [
-    TRIAL_FOOD,
-    { ...PERMITTED_TREAT, foodItemId: 'f-stix', foodLabel: 'Pedigree Dentastix', brand: 'Pedigree', productName: 'Dentastix', allowedFrom: '2026-06-08', primaryProtein: 'cereal', proteins: ['cereal', 'chicken'] },
-  ]
-  input.events.push(
-    meal({ date: '2026-06-02', time: '15:00:00', brand: 'Pedigree', product: 'Dentastix', foodItemId: 'f-stix', proteins: ['cereal', 'chicken'], foodType: 'treat' }),
-  )
-  for (const d of days('2026-06-20', '2026-06-22')) {
-    input.events.push(
-      meal({ date: d, time: '16:00:00', brand: 'Purina', product: 'Chicken Chew', foodItemId: 'f-chick', proteins: ['chicken'], foodType: 'treat' }),
-    )
-  }
-  const text = plain(renderReport(assembleReport(input)))
-  const page1 = text.slice(0, text.indexOf('Appendix A'))
-  // Read BOTH numbers back out of the rendered page and compare them to each other —
-  // asserting each against the fixture would pass even if the two surfaces disagreed.
-  // Parsed generically over BOTH registers (the primary-diet record-gap wording and the
-  // permitted-extra wording), so the test compares the two surfaces rather than pinning
-  // one phrasing — a register change must not be able to silently pass by matching
-  // neither side.
-  const tile = /Feedings not matched to the trial diet(\d+) of them (.+?) — (?:a record gap, not a departure|fed before it was permitted)/.exec(page1)
-  const prose = /Of those \d+: (\d+) (?:was a feeding|were feedings) of (.+?), (?:logged before the date|fed before it was permitted)/.exec(page1)
-  assert.ok(tile, `no split on the tile: ${page1.slice(page1.indexOf('Feedings not matched'), page1.indexOf('Feedings not matched') + 200)}`)
-  assert.ok(prose, `no split in the prose: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`)
-  assert.equal(tile![1], prose![1], 'the tile and the sentence disagree on how many rows the date claimed')
-  // The wording differs by frame ("1 of them a treat…" vs "1 was a feeding of a treat…"),
-  // but the FOOD they name is the same one.
-  assert.equal(tile![2], prose![2], 'the tile and the sentence name different foods')
+  assert.ok(!/of them/.test(text.slice(text.indexOf('Feedings not matched'), text.indexOf('Feedings not matched') + 160)))
 })
 
 Deno.test('CUL-746 — a feeding after a permission was WITHDRAWN is not excused as "before it was permitted"', () => {
@@ -2061,7 +2024,7 @@ Deno.test('CUL-746 — appendix C never hands one feeding\u2019s excuse to anoth
   assert.ok(!/Fed before it was permitted \(allowed from Jun 10\)Chicken ×2/.test(appendixC), 'never one grouped row under the excusable member\u2019s reason')
   // Page 1 partitions the same way, so the two pages still reconcile.
   const page1 = text.slice(0, text.indexOf('Appendix A'))
-  assert.ok(/Of those 2: 1 was a feeding of a treat the trial permits, fed before it was permitted \(allowed from Jun 10\); 1 carried a protein the trial diet does not\./.test(page1),
+  assert.ok(/Of those 2: 1 was fed before that food was permitted \(allowed from Jun 10\); 1 carried a protein the trial diet does not\./.test(page1),
     `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`)
 })
 
@@ -2091,7 +2054,7 @@ Deno.test('CUL-746 — a permission date outside the window\u2019s year carries 
   // asserting one site would let the other keep inheriting the wrong year silently.
   const page1 = text.slice(0, text.indexOf('Appendix A'))
   const appendixC = text.slice(text.indexOf('Appendix C'))
-  assert.ok(/fed before it was permitted \(allowed from Mar 15, 2026\)/.test(page1),
+  assert.ok(/fed before that food was permitted \(allowed from Mar 15, 2026\)/.test(page1),
     `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`)
   assert.ok(/Fed before it was permitted \(allowed from Mar 15, 2026\)/.test(appendixC), 'appendix C too')
   // …and the row's own Dates column, one column over, must not then be read as 2026.
@@ -2111,71 +2074,25 @@ Deno.test('CUL-746 — an ordinary same-year report is byte-identical: no year i
     meal({ date: '2026-06-02', time: '15:00:00', brand: 'Pedigree', product: 'Dentastix', foodItemId: 'f-stix', proteins: ['cereal', 'chicken'], foodType: 'treat' }),
   )
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/fed before it was permitted \(allowed from Jun 8\)/.test(text), 'no year on page 1')
+  assert.ok(/fed before that food was permitted \(allowed from Jun 8\)/.test(text), 'no year on page 1')
   assert.ok(/Fed before it was permitted \(allowed from Jun 8\)/.test(text), 'none in appendix C')
   assert.ok(!/allowed from Jun 8, 2026/.test(text))
 })
 
-Deno.test('CUL-746 — the record-gap register is the trial diet\u2019s alone; a permitted extra keeps the plain wording', () => {
-  // The two halves of cold read 18's fix, asserted against each other. A trial is
-  // DEFINED by its primary diet, so that food being "not permitted" during its own
-  // trial is a contradiction in terms and the honest register is the one the report
-  // already uses two rows below ("a gap in the record, not a finding about the animal").
-  // A treat added to the list on Jun 8 is the opposite case: the vet's own decision
-  // dates it, so feeding it on Jun 2 really was a departure, and blurring the two would
-  // excuse a real one.
-  const treatOnly = wellLoggedTrialInput()
-  treatOnly.dietTrials[0].allowedFoods = [
-    TRIAL_FOOD,
-    { ...PERMITTED_TREAT, foodItemId: 'f-stix', foodLabel: 'Pedigree Dentastix', brand: 'Pedigree', productName: 'Dentastix', allowedFrom: '2026-06-08', primaryProtein: 'cereal', proteins: ['cereal', 'chicken'] },
-  ]
-  treatOnly.events.push(
-    meal({ date: '2026-06-02', time: '15:00:00', brand: 'Pedigree', product: 'Dentastix', foodItemId: 'f-stix', proteins: ['cereal', 'chicken'], foodType: 'treat' }),
-  )
-  const treatText = plain(renderReport(assembleReport(treatOnly)))
-  assert.ok(/fed before it was permitted \(allowed from Jun 8\)/.test(treatText), 'a permitted extra keeps the plain wording')
-  assert.ok(!/a gap in the record, not a departure/.test(treatText), 'and never earns the record-gap register')
-
-  // MIXED degrades to the plain wording, never to the qualifier — one primary-diet row
-  // must not excuse a permitted-extra breach standing beside it in the same clause.
-  const mixed = wellLoggedTrialInput({ events: [] })
-  mixed.requestedWindow = { startDate: '2026-05-25', endDate: '2026-06-07' }
-  mixed.dietTrials[0].startedAt = '2026-04-21'
-  mixed.dietTrials[0].allowedFoods = [
-    TRIAL_FOOD,
-    { ...PERMITTED_TREAT, foodItemId: 'f-stix', foodLabel: 'Pedigree Dentastix', brand: 'Pedigree', productName: 'Dentastix', allowedFrom: '2026-06-08', primaryProtein: 'cereal', proteins: ['cereal', 'chicken'] },
-  ]
-  for (const d of days('2026-05-25', '2026-06-07')) {
-    mixed.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
-  }
-  mixed.events.push(
-    meal({ date: '2026-06-02', time: '15:00:00', brand: 'Pedigree', product: 'Dentastix', foodItemId: 'f-stix', proteins: ['cereal', 'chicken'], foodType: 'treat' }),
-  )
-  const mixedSnap = assembleReport(mixed)
-  const roles = new Set(
-    mixedSnap.trial?.exposures.items.filter((x) => x.permittedLaterFrom).map((x) => x.permittedLaterRole),
-  )
-  assert.ok(roles.size > 1, 'the fixture must actually mix roles, or this asserts nothing')
-  const mixedText = plain(renderReport(mixedSnap))
-  assert.ok(!/a gap in the record, not a departure/.test(mixedText), 'a mixed set never takes the qualifier')
-  assert.ok(/fed before it was permitted/.test(mixedText), 'it takes the plain wording instead')
-})
-
-// ── CUL-746 pass 2 — the re-attack's four breaks ────────────────────────────
-//
-// Every one of these is in material the PREVIOUS review round added. That is the
-// CUL-69 pattern and the reason the falsification pass is re-run after each
-// correction rather than once at the end.
-
-Deno.test('CUL-746 — a mid-trial primary-diet SWITCH is a departure, never a record gap', () => {
-  // THE WORST DEFECT AVAILABLE ON THIS SURFACE, and the register change introduced it.
-  // A trial started Apr 21 on a soy hydrolysate, switched by the vet to a salmon diet
-  // from Jun 1, with the owner feeding the salmon early: a novel intact protein
-  // introduced mid-elimination, which is the textbook restart-the-trial event. The
-  // renderer inferred "the record started late" from `allowed_from > started_at`, which
-  // does not entail it, and told the vet those feedings were "a gap in the record, not
-  // a departure from the diet" — four lines above the same page's own antigen row
-  // naming salmon as a protein the trial diet does not contain.
+Deno.test('CUL-746 — page 1 never characterises a dated-membership row, on the shape that proved it cannot', () => {
+  // THE COUNTEREXAMPLE THAT ENDED TWO ROUNDS OF TRYING, kept as a standing guard.
+  //
+  // A trial started Apr 21 on a soy hydrolysate (in force Apr 21 – May 31), switched by
+  // the vet to a salmon diet from Jun 1, with the owner feeding the salmon early. Every
+  // attempt to make page 1 say WHICH food these rows were, or whether they were a
+  // departure, is false here: on those days the trial diet was the OTHER food, and the
+  // same page tallies this one\u2019s protein as one the trial diet does not contain. An
+  // explicitly withdrawn earlier diet breaks it a second way, and a mixed set made page
+  // 1 and appendix C disagree about which reading applied.
+  //
+  // The record does not hold the distinguishing fact \u2014 `allowed_from` says when a row
+  // was ENTERED, not whether the vet started late, switched, or withdrew \u2014 so the page
+  // states only what is true in every shape. Re-adding a characterisation reds this.
   const input = wellLoggedTrialInput({ events: [] })
   input.dietTrials[0].startedAt = '2026-04-21'
   input.dietTrials[0].allowedFoods = [
@@ -2185,22 +2102,16 @@ Deno.test('CUL-746 — a mid-trial primary-diet SWITCH is a departure, never a r
   for (const d of days('2026-05-18', '2026-05-24')) {
     input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
   }
-  // Fed the NEXT diet while the first one is still the one in force.
   for (const d of days('2026-05-25', '2026-05-31')) {
     input.events.push(meal({ date: d, brand: 'Purina', product: 'HA Salmon', foodItemId: 'f-ha', proteins: ['salmon'] }))
   }
   const snap = assembleReport(input)
-  const early = snap.trial?.exposures.items.filter((x) => x.permittedLaterFrom) ?? []
-  assert.ok(early.length > 0, 'the fixture must produce dated-membership rows')
-  assert.ok(
-    early.every((x) => x.primaryDietInForce),
-    'a primary diet WAS in force on those days — that is what makes this a switch, not a gap',
-  )
+  assert.ok((snap.trial?.exposures.items ?? []).some((x) => x.permittedLaterFrom), 'the fixture must produce dated rows')
   const text = plain(renderReport(snap))
-  assert.ok(!/a gap in the record, not a departure/.test(text), 'the record-gap register must be withheld')
-  assert.ok(!/a record gap, not a departure/.test(text), 'on the tile too')
-  // It is still a dated-membership row, so the reason stands — only the register moves.
-  assert.ok(/fed before it was permitted/.test(text))
+  assert.ok(/fed before that food was permitted/.test(text), 'the reason stands \u2014 it is a fact about the record')
+  assert.ok(!/the trial diet itself/.test(text), 'never names these rows as the trial diet')
+  assert.ok(!/a gap in the record, not a departure/.test(text), 'never calls them a record gap')
+  assert.ok(!/a record gap, not a departure/.test(text), 'on the tile either')
 })
 
 Deno.test('CUL-746 — a permission date far past the window carries its year even in the SAME year', () => {
@@ -2225,7 +2136,13 @@ Deno.test('CUL-746 — a permission date far past the window carries its year ev
     input.events.push(meal({ date: d, time: '16:00:00', brand: 'Acme', product: 'Dental Chew', foodItemId: 'f-chew', proteins: ['cereal'], foodType: 'treat' }))
   }
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/fed before it was permitted \(allowed from Nov 15, 2026\)/.test(text),
+  // …AND THE ALLOWED LIST TWELVE WORDS BELOW IT, which is one band and therefore one
+  // decision (CUL-69 rule 2). Pass 3 found the same date rendering stamped in the
+  // sentence and bare in the list, and the bare copy resolves to the year BEFORE the
+  // feedings — the exoneration direction.
+  assert.ok(/Dental Chew permitted treat \(from Nov 15, 2026\)/.test(text),
+    `the allowed list read: ${text.slice(text.indexOf('Allowed list'), text.indexOf('Allowed list') + 200)}`)
+  assert.ok(/fed before that food was permitted \(allowed from Nov 15, 2026\)/.test(text),
     `page 1 read: ${text.slice(text.indexOf('Of those'), text.indexOf('Of those') + 220)}`)
   assert.ok(!/allowed from Nov 15\)/.test(text), 'never the bare date')
 })
@@ -2265,23 +2182,37 @@ Deno.test('CUL-746 — a withdrawal gap is caught even when the earlier permissi
     `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`)
 })
 
-Deno.test('CUL-746 — appendix C takes the SAME register as page 1, not the wording page 1 rejects', () => {
-  // "One rule, two consumers" held for the reason and not for the wording: page 1 said
-  // "a gap in the record" while appendix C, the table a vet cross-checks it against,
-  // still printed the sentence cold read 18 called definitionally impossible.
+Deno.test('CUL-746 — page 1 and appendix C give a dated row the SAME wording, not two registers', () => {
+  // The one-rule-two-consumers claim, now literally checkable. Pass 3 broke the previous
+  // attempt precisely here: appendix C had taken a per-row register while page 1 kept an
+  // all-or-nothing one, so a MIXED set made them disagree \u2014 this issue\u2019s own defect in
+  // reduced form, re-created by the fix meant to close it.
   const input = wellLoggedTrialInput({ events: [] })
-  input.requestedWindow = { startDate: '2026-05-25', endDate: '2026-06-01' }
+  input.requestedWindow = { startDate: '2026-05-20', endDate: '2026-06-10' }
   input.dietTrials[0].startedAt = '2026-04-21'
-  for (const d of days('2026-05-25', '2026-06-01')) {
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2026-06-01' },
+    { ...PERMITTED_TREAT, allowedFrom: '2026-06-08' },
+  ]
+  // Through Jun 10, so the primary row actually permits something — otherwise the #7
+  // reconciliation guard reads the set as un-hydrated and no exposure sentence renders.
+  for (const d of days('2026-05-20', '2026-06-10')) {
     input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
   }
-  const text = plain(renderReport(assembleReport(input)))
+  for (const d of ['2026-05-22', '2026-05-25']) {
+    input.events.push(meal({ date: d, time: '17:00:00', brand: 'Royal Canin', product: 'Hydrolyzed Treats', foodItemId: 'f-chew', foodType: 'treat', proteins: ['soy'] }))
+  }
+  const snap = assembleReport(input)
+  const text = plain(renderReport(snap))
   const page1 = text.slice(0, text.indexOf('Appendix A'))
   const appendixC = text.slice(text.indexOf('Appendix C'))
-  assert.ok(/a gap in the record, not a departure from the diet/.test(page1), 'page 1 takes the register')
-  assert.ok(/The trial diet, logged before the date it was added to the allowed list \(Jun 1\) — a gap in the record/.test(appendixC),
-    `appendix C read: ${appendixC.slice(appendixC.indexOf('Hydrolyzed HP'), appendixC.indexOf('Hydrolyzed HP') + 220)}`)
-  assert.ok(!/Fed before it was permitted/.test(appendixC), 'and never the wording page 1 rejects')
+  assert.equal(snap.trial?.allowedSetUnavailable, false, 'the fixture must reach the exposure sentence')
+  assert.ok(/fed before that food was permitted/.test(page1), `page 1: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 200)}`)
+  assert.ok(/Fed before it was permitted/.test(appendixC))
+  // Narrow to the register that was withdrawn — "a gap in the record, not a finding
+  // about the animal" is the Antigen-check-paused row's own wording and is correct.
+  assert.ok(!/a gap in the record, not a departure/.test(page1), 'neither page carries a register the other lacks')
+  assert.ok(!/a gap in the record, not a departure/.test(appendixC))
 })
 
 Deno.test('R4 — a TOTAL refusal is not hedged as "largely not eaten"', () => {

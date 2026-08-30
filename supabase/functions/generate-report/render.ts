@@ -2173,11 +2173,20 @@ function dietTrialSection(snap: ReportSnapshot): string {
 
   // ── The allowed list, with provenance and effective dates ───────────────────
   if (t.permittedFoods.length > 0) {
+    // ONE YEAR DECISION FOR THE WHOLE BAND (CUL-746 pass 3, CUL-69 rule 2). These are
+    // the SAME permission dates the exposure sentence twelve words above renders, and
+    // the predicate did not reach them — so one page-1 band printed "(allowed from
+    // Nov 15, 2026)" beside a bare "(from Nov 15)", and the bare copy is the one that
+    // resolves to the year BEFORE the feedings, reading as already-permitted. That is
+    // the exoneration direction, and the pass-2 guard was green over it because it
+    // asserted the sentence's shape and not this row's.
+    const withYear = permissionDatesNeedYear(t)
+    const listDay = withYear ? fmtDayYear : fmtDay
     const items = t.permittedFoods.map((f) => {
       const dates = f.allowedUntil
-        ? ` (${h(fmtDay(f.allowedFrom))}&ndash;${h(fmtDay(f.allowedUntil))})`
+        ? ` (${h(listDay(f.allowedFrom))}&ndash;${h(listDay(f.allowedUntil))})`
         : f.addedAfterStart
-          ? ` (from ${h(fmtDay(f.allowedFrom))})`
+          ? ` (from ${h(listDay(f.allowedFrom))})`
           : ''
       // COUNTS, not membership (§7). "DentaStix — 168 feedings over 28 days" is the
       // D-B finding a vet cannot get from anywhere else: six dental chews a day
@@ -2840,65 +2849,6 @@ function exposureReasonOf(row: { rung: string | null; permittedLaterFrom: string
   return null
 }
 
-/** What the page calls the food a later permission covered. `permittedLaterFrom` being
- *  set means the shared predicate returned `permitted` on that later date, so the food
- *  IS on the allowed list — the role only decides how sharply we may say which food.
- *  A mixed set, or a role the adapter could not resolve, degrades to the general noun
- *  rather than picking one row's role to speak for the others.
- *
- *  Two forms, ONE role decision. The prose says "N were feedings of ___" and the tile,
- *  which has a fraction of the width, says "N of them ___" — the same fact in two
- *  frames, and the frames want different articles. Forking the role test to get them
- *  would be the CUL-746 defect rebuilt inside its own fix. */
-function permittedLaterNouns(roles: (string | null)[], everyRowUndefinedThatDay: boolean): {
-  phrase: string
-  short: string
-  /** THE TRIAL'S OWN PRIMARY DIET, WHICH IS A DIFFERENT REGISTER (CUL-746, cold read 18).
-   *
-   *  "Fed before it was permitted" is true of the record and reads as a compliance
-   *  breach, and for the trial's own prescribed food it cannot describe one: a trial is
-   *  DEFINED by its primary diet, so that food being unpermitted during its own trial is
-   *  a contradiction in terms. `diet_trial_foods.allowed_from` records when the row was
-   *  entered, not when the vet prescribed the diet — the round-16 artifact is a trial
-   *  started Apr 21 whose primary row is dated Jun 1.
-   *
-   *  The report already owns the correct register for exactly this data state, two rows
-   *  below, in the Antigen-check-paused disclosure: "This is a gap in the record, not a
-   *  finding about the animal." It simply was not applied here, on the one figure C6
-   *  says judges a person.
-   *
-   *  A PERMITTED EXTRA IS NOT THE SAME CASE and deliberately keeps the plain wording: a
-   *  treat added to the list on Jun 8 really was not permitted on Jun 2, and the vet's
-   *  own decision is what dates it. Blurring the two would excuse a real departure.
-   *
-   *  This governs only how the rows are DESCRIBED. Whether they belong in the off-diet
-   *  numerator at all is CUL-758 — a change to the shared predicate the card, `ask` and
-   *  this report all read, and a Dr. Chen ruling. */
-  isTrialDiet: boolean
-} {
-  const distinct = [...new Set(roles)]
-  if (distinct.length === 1 && distinct[0] === 'primary_diet') {
-    // MEASURED, NOT INFERRED (CUL-746 pass 2). `allowed_from > started_at` does not
-    // entail "the trial had no diet recorded then" — a mid-trial primary-diet SWITCH
-    // has exactly that shape and is the opposite case, a novel protein introduced
-    // into a running elimination. The register is withheld unless every credited row
-    // was fed on a day the trial genuinely defined no primary diet; the NOUN still
-    // stands, because those rows really are a primary-diet food.
-    return {
-      phrase: 'the trial diet itself',
-      short: 'the trial diet itself',
-      isTrialDiet: everyRowUndefinedThatDay,
-    }
-  }
-  if (distinct.length === 1 && distinct[0] === 'permitted_treat') {
-    return { phrase: 'a treat the trial permits', short: 'treats the trial permits', isTrialDiet: false }
-  }
-  // A MIXED set degrades to the plain wording, not to the qualifier: the record-gap
-  // register may only be applied where every row it covers earns it, or one primary-diet
-  // row would excuse a permitted-extra breach beside it.
-  return { phrase: 'a food the trial permits', short: 'foods the trial permits', isTrialDiet: false }
-}
-
 /**
  * The off-diet rows, partitioned by `exposureReasonOf` — computed ONCE and rendered
  * by both the At-a-glance tile and the page-1 sentence (CUL-746).
@@ -2920,7 +2870,6 @@ interface ExposureBreakdown {
   earlyCount: number
   proteinCount: number
   unrecognisedCount: number
-  nouns: { phrase: string; short: string; isTrialDiet: boolean }
   /** The one permission date every moved row shares, else null — with several, naming
    *  any single one would date rows it does not belong to, and both surfaces already
    *  send the reader to appendix C, which carries a date per row. */
@@ -3003,25 +2952,14 @@ function exposureBreakdown(t: NonNullable<ReportSnapshot['trial']>): ExposureBre
   // over- or under-running its own denominator, which reads as rows nobody classified
   // — or, worse, as more breaches than the count admits.
   const proteinCount = Math.min(Math.max(0, byRung.derived_protein - movedProtein), offDiet - earlyCount)
-  // THE NOUN AND THE DATE DESCRIBE ALL OF `early`, never a positional prefix.
-  //
-  // The first cut sliced to `earlyCount` so the description could not cover more rows
-  // than the sentence counts. The re-attack showed the prefix is the one defensive
-  // choice that can SHARPEN the claim: `early` is date-sorted, so on a mixed set whose
-  // count the caps reduced, `slice(0, 1)` dropped the permitted-extra row and flipped
-  // "a food the trial permits" to "the trial diet itself — a record gap, not a
-  // departure", silently re-attributing a real breach to the rung. Describing the
-  // whole population can only ever DEGRADE (a mixed set loses the sharp noun and the
-  // shared date), which is the direction this surface must fail in.
+  // THE DATE DESCRIBES ALL OF `early`, never a positional prefix — it is printed only
+  // when every dated row shares it, so it is true of each one whether the caps credited
+  // it or not.
   const dates = [...new Set(early.map((x) => x.permittedLaterFrom))]
   return {
     earlyCount,
     proteinCount,
     unrecognisedCount: offDiet - earlyCount - proteinCount,
-    nouns: permittedLaterNouns(
-      early.map((x) => x.permittedLaterRole),
-      early.length > 0 && early.every((x) => !x.primaryDietInForce),
-    ),
     permittedFrom: dates.length === 1 && dates[0] ? dates[0] : null,
   }
 }
@@ -3158,23 +3096,31 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
     // then "7 were also fed before that food was permitted" — the same seven rows,
     // twice, with the sentence a vet scans first being the false one. A row now gets
     // exactly ONE reason, the same one appendix C and the tile give it.
-    const { earlyCount, proteinCount, unrecognisedCount, nouns, permittedFrom } = exposureBreakdown(t)
+    // ── AND THE CLAUSE SAYS ONLY WHAT THE RECORD HOLDS (CUL-746, pass 3) ───────
+    //
+    // Two rounds tried to make this sentence NAME the food ("feedings of the trial
+    // diet itself") and then CHARACTERISE it ("a gap in the record, not a departure
+    // from the diet"). Three falsification passes broke every version: a mid-trial
+    // primary-diet switch made the noun false (on those days the trial diet was the
+    // OTHER food, and the same page tallied this one's protein as one the trial diet
+    // does not contain); an explicitly withdrawn earlier diet made the register false;
+    // a mixed set made page 1 and appendix C disagree about which of the two applied.
+    // Ten of the twelve findings across passes 2 and 3 were in this material.
+    //
+    // The reason is not that the attempts were sloppy — it is that the record does not
+    // hold the fact they assert. `diet_trial_foods.allowed_from` says when a row was
+    // ENTERED; nothing distinguishes "the app's record started late" from "the vet
+    // changed the diet" or "the vet withdrew it". So the clause states the one thing
+    // that is true in every shape, in the SAME words appendix C uses, and the question
+    // of what those feedings mean goes to CUL-758 as a Dr. Chen ruling.
+    const { earlyCount, proteinCount, unrecognisedCount, permittedFrom } = exposureBreakdown(t)
     const parts: string[] = []
     if (earlyCount > 0) {
       const dateBit = permittedFrom
-        ? ` (${h(permissionDatesNeedYear(t) ? fmtDayYear(permittedFrom) : fmtDay(permittedFrom))})`
+        ? ` (allowed from ${h(permissionDatesNeedYear(t) ? fmtDayYear(permittedFrom) : fmtDay(permittedFrom))})`
         : ''
-      const verb = nouns.isTrialDiet
-        ? `logged before the date it was added to the allowed list${dateBit} &mdash; a gap in the record, not a departure from the diet`
-        : `fed before it was permitted${
-            permittedFrom
-              ? ` (allowed from ${h(permissionDatesNeedYear(t) ? fmtDayYear(permittedFrom) : fmtDay(permittedFrom))})`
-              : ''
-          }`
       parts.push(
-        earlyCount === 1
-          ? `1 was a feeding of ${nouns.phrase}, ${verb}`
-          : `${num(earlyCount)} were feedings of ${nouns.phrase}, ${verb}`,
+        `${num(earlyCount)} ${earlyCount === 1 ? 'was' : 'were'} fed before that food was permitted${dateBit}`,
       )
     }
     if (proteinCount > 0) {
@@ -3656,25 +3602,16 @@ function trialExposureTile(t: NonNullable<ReportSnapshot['trial']>): string {
     // and that repair went on the branch that REASSURES while the branch that ACCUSES
     // kept no dates at all.
     //
-    // The reason: cold read 17, run on the artifact where the page-1 SENTENCE had
-    // already been fixed, still took "9 / 10 · Feedings not matched to the trial diet"
-    // off this tile and wrote down "restart the trial, blame the owner" before reaching
-    // the sentence one line below that exonerates them. The number is true under §7's
-    // dated-membership rule and is not the thing to change; what was missing is that
-    // the tile is where a 60-second scan STOPS, so "most of these are the prescribed
-    // diet itself" has to be legible here and not only in the prose. C6 makes this the
-    // one figure on the report that judges a person.
-    const b = exposureBreakdown(t)
-    const earlyBit =
-      b.earlyCount > 0
-        ? `${num(b.earlyCount)} of them ${b.earlyCount === 1 ? b.nouns.phrase : b.nouns.short} &mdash; ${
-            b.nouns.isTrialDiet ? 'a record gap, not a departure' : 'fed before it was permitted'
-          }<br/>`
-        : ''
+    // The reason line cold read 17 asked for is NOT here, deliberately. It said the
+    // tile is where a 60-second scan stops, so "most of these are the prescribed diet
+    // itself" had to be legible here — and it was added, and three falsification passes
+    // then showed the app cannot establish that claim (see `exposureSentences`). A tile
+    // is the worst possible place to put a sentence the record does not support, so
+    // until CUL-758 rules, this cell carries its count and its span and nothing else.
     return tile(
       `${t.exposures.offDiet}`,
       `<small>&nbsp;/&nbsp;${t.exposures.totalFeedings}</small>`,
-      `Feedings not matched to the trial diet<br/>${earlyBit}${h(
+      `Feedings not matched to the trial diet<br/>${h(
         fmtRange(t.evidenceStartDate, t.evidenceEndDate),
       )} &middot; a floor, not a total &mdash; dates in appendix&nbsp;C`,
     )
@@ -5381,11 +5318,6 @@ interface ConfounderRow {
    *  (CUL-746): it decides the Why column, so a group spanning members that disagree
    *  on it would hand one member's excuse to the others. */
   permittedLaterFrom: string | null
-  /** CUL-746 — the role, and whether the trial defined a primary diet that day, so the
-   *  Why column takes the same register page 1 does. Both join the group key with
-   *  `permittedLaterFrom`, since together they decide the row's stated reason. */
-  permittedLaterRole: string | null
-  primaryDietInForce: boolean
 }
 
 function confCategory(c: ConfounderExposure): 'human' | 'treat' | 'other' {
@@ -5420,8 +5352,6 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         panelWasRead: c.panelWasRead ?? false,
         attributionChecked: c.attributionChecked ?? true,
         permittedLaterFrom: c.permittedLaterFrom ?? null,
-        permittedLaterRole: c.permittedLaterRole ?? null,
-        primaryDietInForce: c.primaryDietInForce ?? true,
       })
       continue
     }
@@ -5449,9 +5379,7 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
     // stop reconciling. Keying on it splits the row, which is what both surfaces need.
     const key = `${cat}||${c.foodLabel ?? ''}||${c.primaryProtein ?? ''}||${c.proteinSet.proteins.join(',')}|${
       c.proteinSet.complete ? 'c' : 'i'
-    }|${c.rung ?? ''}|${c.permittedLaterFrom ?? ''}|${c.permittedLaterRole ?? ''}|${
-      c.primaryDietInForce ?? true ? 'd' : 'u'
-    }`
+    }|${c.rung ?? ''}|${c.permittedLaterFrom ?? ''}`
     let g = groups.get(key)
     if (!g) {
       g = {
@@ -5467,8 +5395,6 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         panelWasRead: c.panelWasRead ?? false,
         attributionChecked: true,
         permittedLaterFrom: c.permittedLaterFrom ?? null,
-        permittedLaterRole: c.permittedLaterRole ?? null,
-        primaryDietInForce: c.primaryDietInForce ?? true,
         // ANY member is enough to mark the row: the marker means "at least one of
         // these feedings was followed by a symptom in the window", and a grouped row
         // that hid that would drop the only reason a vet reads a grouped row twice.
@@ -5538,11 +5464,7 @@ function confounderRowHtml(
   const why = trialDerived
     ? `<td>${
         reason === 'fed_before_permitted'
-          ? r.permittedLaterRole === 'primary_diet' && !r.primaryDietInForce
-            ? `The trial diet, logged before the date it was added to the allowed list (${h(
-                day(r.permittedLaterFrom!),
-              )}) &mdash; a gap in the record`
-            : `Fed before it was permitted (allowed from ${h(day(r.permittedLaterFrom!))})`
+          ? `Fed before it was permitted (allowed from ${h(day(r.permittedLaterFrom!))})`
           : reason === 'derived_protein'
             ? 'Protein not in the trial diet'
             : // B-529/R7(c). THREE ROUTES REACH RUNG 3, NOT TWO. This branch read
