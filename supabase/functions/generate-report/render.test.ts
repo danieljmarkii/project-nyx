@@ -976,12 +976,19 @@ Deno.test('B-613 — the legend scopes the trial-crop disclosure to SYMPTOM even
     countIsFloor: false,
   }
   const html = renderReport(s)
-  assert.ok(/names the SYMPTOM events logged in the trial days it leaves out/.test(html))
+  assert.ok(/names the symptom events logged in the trial days it leaves out/.test(html))
   assert.ok(
-    /feedings, doses and intake in them are counted nowhere on this report/.test(html),
+    /is counted nowhere on this report/.test(html),
     'the legend must say what the disclosure does NOT reach',
   )
   assert.ok(!/section names what was logged/.test(html), 'no unrestricted universal')
+  // AND IT MAY NOT DENY WHAT THE BLOCK NOW DOES. The re-attack caught this: the legend
+  // said "neither reports an absence" twelve lines above "This report holds no meal log
+  // for 42 of those 42 days", which IS one. The G2 rule the clause carries is about an
+  // absence of SYMPTOMS, so that is what it now says — narrowing the denial to the thing
+  // the rule actually protects, rather than dropping it.
+  assert.ok(/Neither disclosure reports an absence of symptoms/.test(html))
+  assert.ok(!/Neither disclosure reports an absence,/.test(html))
 
   // B-599 both ways: the gate follows what the block ACTUALLY renders, not the symptom
   // count. A crop with no symptoms but dark days still carries a line, so it is still
@@ -991,14 +998,14 @@ Deno.test('B-613 — the legend scopes the trial-crop disclosure to SYMPTOM even
     count: 0, mostRecentIso: null, mostRecentType: null, byType: [],
     cropDays: 42, mealLoggedDaysInCrop: 8, countIsFloor: false,
   }
-  assert.ok(/names the SYMPTOM events logged in the trial days it leaves out/.test(renderReport(quiet)))
+  assert.ok(/names the symptom events logged in the trial days it leaves out/.test(renderReport(quiet)))
 
   const nothing = base()
   nothing.scope.trialCropSymptoms = {
     count: 0, mostRecentIso: null, mostRecentType: null, byType: [],
     cropDays: 42, mealLoggedDaysInCrop: 42, countIsFloor: false,
   }
-  assert.ok(!/names the SYMPTOM events logged/.test(renderReport(nothing)))
+  assert.ok(!/names the symptom events logged/.test(renderReport(nothing)))
 })
 
 Deno.test('B-613 — an out-of-window date in ANOTHER year carries that year', () => {

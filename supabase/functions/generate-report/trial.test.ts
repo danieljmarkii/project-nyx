@@ -3820,7 +3820,7 @@ Deno.test('B-613 — the coverage of the cropped stretch is stated ONLY toward d
   assert.equal(denseSnap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 42)
   const denseText = plain(renderReport(denseSnap))
   assert.ok(!/42 of those 42 days/.test(denseText), 'no completeness ratio, ever')
-  assert.ok(!/No meal is logged on/.test(denseText))
+  assert.ok(!/holds no meal log/.test(denseText))
 
   // A crop the owner barely logged says so, in the block's own vocabulary.
   const sparse = truncatedTrialInput()
@@ -3830,7 +3830,7 @@ Deno.test('B-613 — the coverage of the cropped stretch is stated ONLY toward d
   )
   const sparseSnap = assembleReport(sparse)
   assert.equal(sparseSnap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 8)
-  assert.match(plain(renderReport(sparseSnap)), /No meal is logged on 34 of those 42 days\./)
+  assert.match(plain(renderReport(sparseSnap)), /This report holds no meal log for 34 of those 42 days\./)
 })
 
 Deno.test('B-613 — a TREAT is not a logged meal day (one predicate with the coverage line)', () => {
@@ -3853,7 +3853,7 @@ Deno.test('B-613 — a TREAT is not a logged meal day (one predicate with the co
     0,
     'a stretch of nothing but treats is a stretch with no meal logged',
   )
-  assert.match(plain(renderReport(snap)), /No meal is logged on 42 of those 42 days\./)
+  assert.match(plain(renderReport(snap)), /This report holds no meal log for 42 of those 42 days\./)
 })
 
 Deno.test('B-613 — the coverage fact survives a crop with NO symptoms and a short pull', () => {
@@ -3870,7 +3870,7 @@ Deno.test('B-613 — the coverage fact survives a crop with NO symptoms and a sh
   const quietSnap = assembleReport(quiet)
   assert.equal(quietSnap.scope.trialCropSymptoms?.count, 0)
   const quietText = plain(renderReport(quietSnap))
-  assert.match(quietText, /No meal is logged on 34 of those 42 days\./)
+  assert.match(quietText, /This report holds no meal log for 34 of those 42 days\./)
   // …and still no absence claim about symptoms.
   assert.ok(!/no symptom/i.test(quietText))
 
@@ -3882,10 +3882,48 @@ Deno.test('B-613 — the coverage fact survives a crop with NO symptoms and a sh
   )
   const flooredText = plain(renderReport(assembleReport(floored)))
   assert.match(flooredText, /at least 5 symptom events/)
-  assert.match(flooredText, /No meal is logged on 34 of those 42 days\./)
+  assert.match(flooredText, /This report holds no meal log for 34 of those 42 days\./)
 })
 
 
 
 
 
+
+Deno.test('B-613 — an UNHYDRATED meal row is not a tracked day', () => {
+  // The one residual of the re-attack that ran toward reassurance. A `type === 'meal'`
+  // row whose joined child did not hydrate arrives with `meal: null` (index.ts:
+  // `event_type === 'meal' && meal ? mapMealDetail(meal) : null`), and the optional-chained
+  // predicate `e.meal?.foodType !== 'treat'` read `undefined !== 'treat'` — true — so every
+  // such day scored as tracked and silenced the un-logged sentence entirely.
+  //
+  // The window side already drops those rows, so the two predicates disagreed in OPPOSITE
+  // directions: the window under-counts TRACKED days (safe), this under-counted UN-LOGGED
+  // days, which renders a better-tracked record than the report holds.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  input.events = input.events.map((e) =>
+    e.type === 'meal' && e.occurredAt < '2026-06-02T00:00:00Z' ? { ...e, meal: null } : e,
+  )
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 0)
+  assert.match(
+    plain(renderReport(snap)),
+    /This report holds no meal log for 42 of those 42 days\./,
+  )
+})
+
+Deno.test('B-613 — a one-day crop takes the pronoun, never "1 of those 1 days"', () => {
+  // `trialCropSymptomClause` is handed `outsideDays` precisely so its pronoun agrees; the
+  // density sentence re-derives its own noun and did not.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  // Open the window one day after the trial starts ⇒ a single cropped day, unlogged.
+  input.requestedWindow = { startDate: '2026-04-22', endDate: '2026-07-02' }
+  input.events = input.events.filter((e) => e.occurredAt >= '2026-04-22T00:00:00Z')
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialCropSymptoms?.cropDays, 1)
+  const text = plain(renderReport(snap))
+  assert.ok(!/of those 1 days/.test(text))
+  assert.match(text, /This report holds no meal log for that day\./)
+})

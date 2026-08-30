@@ -60,11 +60,26 @@ CUL-613 says prove a guard by breaking the source, not by reading the test. Sixt
 
 One more thing the sweep produced: a "safety net" intersection on the meal-day set that was **provably redundant** (`inWindow` is day-granular over the same `eventDayNumber` the loop computes). Dead code that reads as a safety net is worse than none — it tells the next reader there is a case it handles — so it was deleted and the boundary it appeared to cover is pinned by test instead.
 
+## Round 3 — the re-attack
+
+The corrected version went back to `adversarial-reviewer`, which confirmed **both blocking findings closed and surviving every counterexample it could build** — the refusing-cat crop no longer carries a completeness ratio and the clause stands without the legend; the treat filter fires; the floor predicate, span identity, page-1/clause agreement, year stamping and the pull-widening containment all held across UTC+14 / −10 / +12:45. It returned five residuals; three are closed here.
+
+**The one running toward reassurance, and it is a language trap worth remembering.** A `type === 'meal'` row whose joined child did not hydrate arrives with `meal: null` (`index.ts` maps `event_type === 'meal' && meal ? … : null`). The predicate was `e.meal?.foodType !== 'treat'` — and `undefined !== 'treat'` is **true**, so every such day scored as *tracked* and silenced the un-logged sentence entirely. The window side already drops those rows, so the two predicates disagreed in **opposite directions**: the window under-counts *tracked* days (safe), this under-counted *un-logged* days (renders a better-tracked record than the report holds). `e.meal && e.meal.foodType !== 'treat'` closes it.
+
+> An optional chain turns a missing value into a passing test. On a predicate whose two outcomes are "safe" and "reassuring", `?.` picks reassuring.
+
+**And one the previous closure created — the third time in this session.** The legend was amended to describe the new un-logged line while keeping two clauses that line falsifies: *"feedings, doses and intake in them are counted nowhere on this report"* and *"neither reports an absence"*, twelve lines above a sentence that reports an absence of meal logs derived from feedings. The denial is now narrowed to what the G2 rule actually protects (*"Neither disclosure reports an absence of symptoms"*) and the scope clause names what is genuinely uncounted (*"what those meals were — the foods, the doses, the intake"*).
+
+Also closed: a one-day crop printed *"1 of those 1 days"*; and the sentence is now phrased as a fact about **this report** (*"This report holds no meal log for…"*), in one form rather than branching on `countIsFloor` — under a short pull *"no meal is logged"* is a claim about the owner's record this document cannot support, while *"holds no log"* is true either way.
+
+**One residual recorded rather than closed:** the sentence is not literally incapable of reassuring — *"1 of those 42 days"* conveys the other 41 — and a denominator that hid its complement would not be a denominator. The in-code comment now says so instead of over-claiming; what bounds it is the noun (meal logs) plus the legend's scope.
+
 ## What generalises
 
 - **The deletion held; the additions and their seams did not.** The core change (name the type, count the crop, bound it by the trial) survived every attack. Both blocking findings were in material added to satisfy the *previous* review. This is the pattern the taxonomy §9a row records, arriving again.
 - **A guard that has only ever been green has not been tested** — and three of sixteen here were written by someone who knew exactly what the defect was and still missed it.
-- **On a safety surface, re-run the falsification pass after every correction**, not once at the end. Two of the three rounds here were caused by the previous round's fix.
+- **On a safety surface, re-run the falsification pass after every correction**, not once at the end. Every round after the first was caused by the previous round's fix — including the legend contradiction, which was introduced by the closure that described the new line. The third pass was the first to return no new blocking finding.
+- **An optional chain turns a missing value into a passing test.** On a predicate whose two outcomes are "safe" and "reassuring", `?.` picks reassuring — and here it did so on the exact sentence added to prevent reassurance.
 
 ## Out of scope, filed rather than folded in
 
@@ -72,6 +87,7 @@ One more thing the sweep produced: a "safety net" intersection on the meal-day s
 - **CUL-747** — the sparsity brake is one-sided: it withholds "clean" at 11/31 coverage and publishes "dirty" at 8/28. G2's two-sidedness applied to the reassuring direction only.
 - **CUL-748** — four page-1 render/copy defects (the At-a-glance "trial's own range" aside, the antigen sentence firing over the trial diet, the `'the logged observations'` headline fallback, the partial-week nub rendered as a measured zero) plus three minor.
 - **CUL-749** — refusals and off-diet feedings in the cropped trial days are invisible everywhere on the page. The gap the adversarial counterexample exposed; the report is now *honest* about it and still does not fill it. Carries the scoping options and wants a Dr. Chen ruling.
+- **CUL-750** — the C5 logging-density series (`mealLoggedDayIndices`) counts treats *and* unhydrated meal rows, so *"Days a meal was logged"* can disagree with both coverage sentences beside it, in the reassuring direction. Pre-existing; this change's own sentence is on the correct side of it.
 
 ## Deploy
 

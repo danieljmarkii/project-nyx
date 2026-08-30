@@ -1351,13 +1351,30 @@ function trialCropDensitySentence(snap: ReportSnapshot): string {
   // as nothing. Suppressing a coverage fact is the reassuring direction, and it is the
   // one direction this block may not go quiet in.
   //
-  // Nor is it gated on `countIsFloor`. Where the pull fell short those days hold no meal
-  // log IN THIS REPORT, which is exactly what the sentence says; the error can only run
-  // toward "less tracked than it was", which is the safe side.
+  // Nor is it gated on `countIsFloor` — where the pull fell short, days it never reached
+  // count as un-logged, so the number can only be OVERSTATED, which is the safe side.
+  //
+  // ⚠️ IT IS PHRASED AS A FACT ABOUT THIS REPORT, in one form, for exactly that reason.
+  // "No meal is logged on N days" is read as a fact about the owner's RECORD, and under a
+  // short pull that is a claim this document cannot support — it holds no log for those
+  // days, which is not the same thing. Branching the wording on `countIsFloor` would put
+  // two registers on one sentence; saying what the report HOLDS is true in both cases.
+  //
+  // An honest note on what this can and cannot claim: rendering only the un-logged days
+  // means no fully-covered crop ever carries a completeness ratio, which is the defect
+  // that cost this sentence a rewrite. It does NOT mean the sentence is incapable of
+  // reassuring — "1 of those 42 days" conveys the other 41 — and a denominator that hid
+  // its complement would not be a denominator. What bounds that residual is the noun:
+  // the count is of MEAL LOGS, and the legend and the clause both say the enumeration
+  // above it is of symptom events only.
   if (!c || c.cropDays <= 0) return ''
   const unlogged = trialCropUnloggedDays(snap)
   if (unlogged <= 0) return ''
-  return ` No meal is logged on <b>${num(unlogged)} of those ${num(c.cropDays)} days</b>.`
+  // A one-day crop takes the pronoun, never "1 of those 1 days".
+  if (c.cropDays === 1) return ` This report holds no meal log for that day.`
+  return ` This report holds no meal log for <b>${num(unlogged)} of those ${num(
+    c.cropDays,
+  )} days</b>.`
 }
 
 /**
@@ -5909,7 +5926,7 @@ function appendixF(snap: ReportSnapshot): string {
       // entry standing over a report with no crop would advertise a guard as covering
       // something it was never asked about — the shape B-494 rules against.
       trialCropDisclosureRenders(snap)
-        ? ` Where a range covers only part of a diet trial &mdash; which the since-last-visit default does by construction &mdash; the trial section names the SYMPTOM events logged in the trial days it leaves out, and how many of those days carry no meal log; feedings, doses and intake in them are counted nowhere on this report. Both disclosures list only what is present; neither reports an absence, and a range can exclude days the record never covered.`
+        ? ` Where a range covers only part of a diet trial &mdash; which the since-last-visit default does by construction &mdash; the trial section names the symptom events logged in the trial days it leaves out, and how many of those days hold no meal log at all. What those meals were &mdash; the foods, the doses, the intake &mdash; is counted nowhere on this report. Neither disclosure reports an absence of symptoms, and a range can exclude days the record never covered.`
         : ''
     }</dd>
     <dt>Denominators</dt><dd>Counts are shown over their window and the days logged, so a count is never read without knowing how long and how completely it was tracked.</dd>

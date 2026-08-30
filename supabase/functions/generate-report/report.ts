@@ -4100,7 +4100,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // dental chew each and not one meal of the prescribed diet rendered as fully
         // tracked, in the same words, twelve words from a coverage line built the other
         // way — one row, two scales, on the larger half of the trial. §5.3.
-        if (e.meal?.foodType !== 'treat') mealDayNums.add(dn)
+        //
+        // ⚠️ `e.meal &&` IS LOAD-BEARING, NOT DEFENSIVE. A `type === 'meal'` row whose
+        // joined child did not hydrate arrives with `meal: null` (`index.ts`:
+        // `event_type === 'meal' && meal ? mapMealDetail(meal) : null`), and the
+        // optional-chained form `e.meal?.foodType !== 'treat'` reads `undefined !==
+        // 'treat'` — TRUE — so every such day scored as tracked and silenced the
+        // un-logged sentence entirely. The window side already drops those rows
+        // (`windowMeals` filters `&& e.meal`, and `buildTrialBlock` is handed
+        // `meals.filter(e => e.meal)`), so the two predicates disagreed in OPPOSITE
+        // directions: the window under-counts tracked days, which is safe, and this
+        // under-counted UN-logged days, which reads as a better-tracked record than the
+        // report holds. The one direction this sentence may not fail in.
+        if (e.meal && e.meal.foodType !== 'treat') mealDayNums.add(dn)
         continue
       }
       if (!REPORT_SYMPTOM_SET.has(e.type)) continue
