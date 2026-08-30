@@ -298,6 +298,14 @@ export interface TrialExposure {
    * `null` when the food is never on the list (the ordinary case).
    */
   permittedLaterFrom: string | null
+  /**
+   * The allowed-set role that later permission carried (CUL-746). Page 1 has no item
+   * column, so once the dated-membership clause leads it must say WHICH food — and
+   * `primary_diet` is the one that inverts the reading: those feedings are the trial
+   * diet itself. Read off the same re-classification as `permittedLaterFrom`, never a
+   * second lookup, so the two can never name different allowed rows.
+   */
+  permittedLaterRole: TrialFoodRole | null
 }
 
 export interface TrialBlock {
@@ -400,11 +408,17 @@ export interface TrialBlock {
     byRung: { derived_protein: number; unrecognised: number }
     /**
      * Exposures whose food IS on the allowed list, just not on the day it was fed — the
-     * THIRD reason a row can be here, orthogonal to the two rungs and not counted by
-     * either. Round 5 caught page 1 saying "Of those 4: 4 carried a protein the trial
-     * diet does not" while appendix C's Why column showed three protein rows and one
-     * dated-membership row, so a vet cross-checking got 4 against 3 and the timing
-     * violation never surfaced on page 1 at all.
+     * THIRD reason a row can be here. Round 5 caught page 1 saying "Of those 4: 4
+     * carried a protein the trial diet does not" while appendix C's Why column showed
+     * three protein rows and one dated-membership row, so a vet cross-checking got 4
+     * against 3 and the timing violation never surfaced on page 1 at all.
+     *
+     * NOT orthogonal to the rungs, which is what this comment used to claim and what
+     * the round-5 fix was built on (CUL-746). Every off-diet feeding carries a rung —
+     * only rungs 2 and 3 ever set `offDiet` — so these rows are ALSO inside `byRung`,
+     * and rendering both as independent counts reported the same feedings twice under
+     * two reasons. They are one population seen two ways, and the renderer resolves it
+     * by PRECEDENCE (`exposureReasonOf`), never by addition.
      */
     fedBeforePermitted: number
     /** Feedings naming no food — excluded from BOTH sides above and disclosed. */
@@ -859,6 +873,46 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       permittedCounts.set(key, (permittedCounts.get(key) ?? 0) + 1)
     }
     if (!classification.offDiet) continue
+    const permittedLater = ((): { from: string; role: TrialFoodRole | null } | null => {
+      // ── AND NOT IF IT WAS EVER PERMITTED *BEFORE* THIS FEEDING (CUL-746) ───────
+      //
+      // "Fed before it was permitted" says the app's record of the permission simply
+      // started after the feeding — a bookkeeping gap, not a breach. That is only
+      // true when this feeding precedes the food's FIRST membership. §7's dated
+      // membership also supports WITHDRAWAL (`allowed_until`, migration 040: removal
+      // is an UPDATE and a re-add is a new row), so a food can be permitted, taken
+      // off the list, and permitted again later — and a feeding in that gap is the
+      // owner feeding something the vet had just withdrawn.
+      //
+      // Scanning only `allowedFrom > dn` cannot see the earlier row, so it read that
+      // feeding as the innocent case. The adversarial pass executed it: a jerky
+      // permitted Jun 1–4, withdrawn, re-permitted Jun 20, fed Jun 10 rendered
+      // "1 was a feeding of a treat the trial permits, fed before it was permitted
+      // (allowed from Jun 20)" — page 1's ONLY statement about that row, exonerating
+      // a real breach, with the true rung clause deleted from beside it because the
+      // date had outranked it. C6 makes this the one place the report judges a
+      // person, and that is judging in the wrong direction.
+      //
+      // So an earlier permission disqualifies the reason entirely and the row falls
+      // back to its rung, which is true (if incomplete — naming the withdrawal as its
+      // own, STRONGER reason is CUL-758, not something to invent here).
+      //
+      // Asked of the one predicate in both directions, never a second copy of the
+      // membership rules: the feeding is re-classified as if fed on each other
+      // `allowedFrom` date and the predicate's own verdict is read back.
+      const otherDates = [...new Set(allowedFoods.map((f) => f.allowedFrom))]
+        .map((from) => ({ from, dn: dayIndexOfValue(from, timeZone) }))
+        .filter((x): x is { from: string; dn: number } => x.dn !== null)
+      for (const { from } of otherDates.filter((x) => x.dn <= dn).sort((a, b) => b.dn - a.dn)) {
+        const asIfEarlier = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
+        if (asIfEarlier.verdict === 'permitted') return null
+      }
+      for (const { from } of otherDates.filter((x) => x.dn > dn).sort((a, b) => a.dn - b.dn)) {
+        const asIfLater = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
+        if (asIfLater.verdict === 'permitted') return { from, role: asIfLater.role }
+      }
+      return null
+    })()
     exposures.push({
       eventId: e.id,
       occurredAt: e.occurredAt,
@@ -896,23 +950,18 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // precisely the duplication this PR exists to delete, so instead the same
       // feeding is re-classified as if fed on each later `allowedFrom` date and the
       // predicate's own verdict is read back. Distinct dates are a handful at most.
-      permittedLaterFrom: (() => {
-        const laterDates = [
-          ...new Set(
-            allowedFoods
-              .map((f) => f.allowedFrom)
-              .filter((from) => {
-                const fromDn = dayIndexOfValue(from, timeZone)
-                return fromDn !== null && fromDn > dn
-              }),
-          ),
-        ].sort()
-        for (const from of laterDates) {
-          const asIfLater = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
-          if (asIfLater.verdict === 'permitted') return from
-        }
-        return null
-      })(),
+      // AND THE ROLE THAT PERMISSION CARRIED, because page 1 has to say WHICH food
+      // (CUL-746). Appendix C names the row's item in its own column, so the date
+      // alone is enough there; the page-1 sentence has no item column and, once the
+      // dated-membership clause LEADS rather than trailing as an "also", "that food"
+      // has no antecedent at all. The cold read's finding was not merely that page 1
+      // said the wrong thing — it is that the true sentence is the DECISIVE one:
+      // seven feedings of the prescribed diet, logged before the app's record of it
+      // began, are the best evidence on the page that the owner was complying.
+      // Read off the SAME re-classification that produced the date, so the role and
+      // the date can never name different allowed rows.
+      permittedLaterFrom: permittedLater?.from ?? null,
+      permittedLaterRole: permittedLater?.role ?? null,
     })
   }
   exposures.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.eventId.localeCompare(b.eventId))
@@ -1023,7 +1072,10 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       totalFeedings: facts.exposures.totalFeedings,
       offDiet: facts.exposures.offDiet,
       byRung: facts.exposures.byRung,
-      fedBeforePermitted: exposures.filter((x) => x.permittedLaterFrom !== null).length,
+      // The SAME test `exposureReasonOf` applies in the renderer — truthy, not
+      // `!== null`. Equivalent today (this field is a DATE column or null, never ''),
+      // and stated once rather than as two conventions a reader has to reconcile.
+      fedBeforePermitted: exposures.filter((x) => Boolean(x.permittedLaterFrom)).length,
       unclassifiable: facts.exposures.unclassifiable,
       items: exposures,
     },
