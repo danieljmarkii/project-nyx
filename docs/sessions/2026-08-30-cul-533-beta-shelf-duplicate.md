@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-30
 
-Shipped via #770 — this record only. **No app code changed this session**, and that is the outcome rather than a shortfall: the defect CUL-533 describes was already fixed on `main`, and the session's work was establishing that with evidence instead of taking a commit message's word for it.
+Shipped via #771 — this record only. **No app code changed this session**, and that is the outcome rather than a shortfall: the defect CUL-533 describes was already fixed on `main`, and the session's work was establishing that with evidence instead of taking a commit message's word for it.
 
 ## What CUL-533 asked for
 
