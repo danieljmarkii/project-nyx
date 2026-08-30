@@ -1,7 +1,7 @@
 # 2026-08-30 — AC-CHIP's third state: the Saw it / Found it pair clipping at accessibility text sizes
 
 **Issue:** CUL-756 · **Mode:** BUILD (gated on a PM ruling, given at session start)
-**Outcome:** shipped via #781 (draft) · **Branch:** `claude/ac-chip-text-size-overflow-0r0p6b`
+**Outcome:** shipped via #781 · **Branch:** `claude/ac-chip-text-size-overflow-0r0p6b`
 
 ---
 
