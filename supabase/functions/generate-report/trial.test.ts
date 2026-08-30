@@ -3498,3 +3498,432 @@ Deno.test('ADV⑫ — page 1 does not disagree with its own cross-reference', ()
   assert.ok(!/Off-dietTreats|Off-diet1 treat|Off-diet 1 treat/.test(text), 'the row is not headed with a verdict the appendix denies')
 })
 
+
+
+// ── B-613 — what the window hides OF THE TRIAL ───────────────────────────────
+//
+// `truncatedTrialInput` is the canonical shape and already existed for B-600: a
+// `since_visit` window opening at the six-week recheck over a trial that started
+// 42 days earlier, with five vomits logged in the cropped head and one inside the
+// window. B-600 made the block say how many days it cannot see. These say what was
+// in them — the half two cold reads (rounds 14 + 15) ranked top of the non-blocking
+// list, on a window the APP picked, where no cherry-pick guard fires at all.
+
+Deno.test('B-613 — a preset window that crops a trial says what was logged in the cropped days', () => {
+  const snap = assembleReport(truncatedTrialInput())
+  // The gate the guard was missing: nothing here is a custom override, so every
+  // out-of-window field the §6 cherry-pick guard populates is still zero.
+  assert.equal(snap.scope.basis, 'since_visit')
+  assert.equal(snap.scope.isCustomOverride, false)
+  assert.equal(snap.scope.outOfWindowSymptomCount, 0, 'the cherry-pick guard is still custom-only')
+
+  assert.equal(snap.scope.trialCropSymptoms?.count, 5)
+  assert.equal(snap.scope.trialCropSymptoms?.mostRecentType, 'vomit')
+  assert.equal(snap.scope.trialCropSymptoms?.mostRecentIso, '2026-05-24T19:00:00Z')
+
+  const text = plain(renderReport(snap))
+  // The clause joins the day count, so "those days" sits against its referent.
+  assert.match(
+    text,
+    /42 trial days fall before it, outside this report’s window, and at least 5 symptom events were logged in those days \(5 vomiting; most recent May 24\)\./,
+  )
+  // And the sentence B-600 shipped still closes the row.
+  assert.match(text, /No count below is measured over the trial as a whole\./)
+})
+
+Deno.test('B-613 — the count is bounded by the TRIAL, not by all history', () => {
+  const input = truncatedTrialInput()
+  // Three symptoms BEFORE the trial started (it starts 2026-04-21) — the pet's own
+  // history, and nothing to do with the diet this block reports on. Counting them here
+  // would put a sign from before the diet into a sentence about the diet.
+  input.events.push(symptom('2026-04-02', 'vomit'))
+  input.events.push(symptom('2026-04-10', 'diarrhea'))
+  input.events.push(symptom('2026-04-20', 'vomit'))
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialCropSymptoms?.count, 5, 'still the five inside the trial')
+  assert.equal(
+    snap.scope.trialCropSymptoms?.mostRecentType,
+    'vomit',
+    'the Apr 20 diarrhea is outside the trial and must not become the named sign',
+  )
+  assert.equal(snap.scope.trialCropSymptoms?.mostRecentIso, '2026-05-24T19:00:00Z')
+})
+
+Deno.test('B-613 — the named type and the named date describe the SAME event', () => {
+  const input = truncatedTrialInput()
+  // A LATER cropped symptom of a different type. If the instant and the type are
+  // assigned in two independent branches they drift here: the date moves to Jun 1 and
+  // the noun stays "vomiting", printing one incident's date under another's name.
+  input.events.push(symptom('2026-06-01', 'diarrhea'))
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialCropSymptoms?.count, 6)
+  assert.equal(snap.scope.trialCropSymptoms?.mostRecentType, 'diarrhea')
+  assert.equal(snap.scope.trialCropSymptoms?.mostRecentIso, '2026-06-01T19:00:00Z')
+  assert.match(plain(renderReport(snap)), /5 vomiting, 1 loose stool; most recent: loose stool, Jun 1\)/)
+})
+
+Deno.test('B-613 — a cropped trial with nothing logged in the cropped days says NOTHING', () => {
+  const input = truncatedTrialInput()
+  // The G2 rule and B-494 in one move. These days are typically days the owner was not
+  // yet logging, so "no symptom events were logged in those days" converts "we hold no
+  // record" into "nothing happened" on the exact span the report has just admitted it
+  // cannot see. The absence sentence is not softened — it does not exist.
+  input.events = input.events.filter((e) => e.type !== 'vomit' || e.occurredAt >= '2026-06-02')
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialCropSymptoms?.count, 0)
+  const text = plain(renderReport(snap))
+  assert.match(text, /42 trial days fall before it, outside this report’s window\./, 'the crop is still disclosed')
+  assert.ok(!/symptom events? was logged|symptom events were logged/.test(text))
+  assert.ok(!/no symptom/i.test(text), 'the report never reports this absence')
+})
+
+Deno.test('B-613 — an untruncated trial carries no clause at all', () => {
+  // The first report of any trial, and every client surface: the window covers the whole
+  // trial, so there is no crop, nothing to disclose, and the field is null rather than a
+  // zero that a renderer might one day decide to phrase.
+  const snap = assembleReport(wellLoggedTrialInput())
+  assert.deepEqual(snap.trial?.trialDaysOutsideRange, { before: 0, after: 0 })
+  assert.equal(snap.scope.trialCropSymptoms, null)
+  assert.ok(!/symptom events were logged in those days/.test(plain(renderReport(snap))))
+})
+
+Deno.test('B-613 — the count is a FLOOR when the pull did not reach the trial start', () => {
+  // `computeLookbackIso` bounds the event pull, and a long trial can outrun it. Printing
+  // the short count as a total would be the same failure this disclosure exists to close,
+  // one layer further in — so it renders "at least N".
+  //
+  // `eventsSinceIso` DECLARES how far the pull reached; it does not re-filter `events`
+  // (in production the query already did that). So the count is unchanged and only the
+  // register moves — which is the whole mechanism: the same number, said with or without
+  // a claim to completeness.
+  const short = truncatedTrialInput()
+  short.eventsSinceIso = '2026-05-01T00:00:00Z' // AFTER the trial's 2026-04-21 start
+  const shortSnap = assembleReport(short)
+  assert.equal(shortSnap.scope.trialCropSymptoms?.countIsFloor, true)
+  assert.match(plain(renderReport(shortSnap)), /and at least 5 symptom events were logged/)
+
+  // Reaching back past the trial's start ⇒ a total, stated as one.
+  const full = truncatedTrialInput()
+  full.eventsSinceIso = '2026-01-03T00:00:00Z'
+  const fullSnap = assembleReport(full)
+  assert.equal(fullSnap.scope.trialCropSymptoms?.countIsFloor, false)
+  const text = plain(renderReport(fullSnap))
+  assert.match(text, /and 5 symptom events were logged in those days/)
+  assert.ok(!/at least 5 symptom events/.test(text))
+})
+
+Deno.test('B-613 — an UNKNOWN pull extent is treated as a floor, never as a total', () => {
+  // CUL-708's shape: `eventsSinceIso` describes something the caller always has, so its
+  // absence has no safe reading. Understating a disclosure costs a word; overstating one
+  // is a false negative on the axis the guard exists for.
+  const input = truncatedTrialInput()
+  assert.equal(input.eventsSinceIso, undefined)
+  assert.equal(assembleReport(input).scope.trialCropSymptoms?.countIsFloor, true)
+})
+
+Deno.test('B-613 — the trial block publishes its own elapsed span as one identity', () => {
+  // `elapsedEnd - elapsedStart + 1 === trialDaysElapsed`. Published from where
+  // `ctx.startDayIndex` lives rather than reconstructed at the consumer as
+  // `scope.startDayNum - before`, which is only valid while `before > 0`.
+  for (const input of [truncatedTrialInput(), wellLoggedTrialInput()]) {
+    const t = assembleReport(input).trial
+    assert.ok(t)
+    assert.equal(t.elapsedEndDayIndex - t.elapsedStartDayIndex + 1, t.trialDaysElapsed)
+  }
+  const t = assembleReport(truncatedTrialInput()).trial
+  // The span is the TRIAL's, wider than the report's window on both the block's own
+  // range and its evidence range — which is exactly why no count may be bounded by it.
+  assert.equal(t?.elapsedStartDayIndex, Math.round(Date.parse('2026-04-21T00:00:00Z') / 86_400_000))
+})
+
+
+Deno.test('B-613 — widening the pull for the trial changes ONLY the out-of-window disclosures', () => {
+  // THE RISKIEST PART OF B-613, PINNED RATHER THAN ARGUED. `computeLookbackIso` now
+  // reaches back to the report trial's start, so `input.events` can carry months of
+  // history it did not before — and every section that reads the fetched set (dedup, the
+  // detection reuse, the weight readings, dose adherence, the §6 guard) sees it. The
+  // claim this change rests on is that all of them are window- or detector-bounded and
+  // only the out-of-window disclosures are pull-bounded. That is a claim about six
+  // consumers, so it is asserted over the whole snapshot rather than spot-checked.
+  //
+  // The fixture is built so the widening is NOT inert: the trial starts 244 days before
+  // `now`, past both the 180d base floor and the window-start − 90d buffer, so the old
+  // pull genuinely stopped inside the trial.
+  const TRIAL_START = '2025-11-01'
+  const OLD_FLOOR = '2026-01-03' // min(base 180d, windowStart − 90d) for this window
+  const events = [
+    ...days('2025-11-01', '2026-07-02').map((d) =>
+      meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+    ),
+    // Symptoms on BOTH sides of the old floor, all inside the trial and outside the window.
+    symptom('2025-11-20', 'vomit'),
+    symptom('2025-12-14', 'diarrhea'),
+    symptom('2026-02-02', 'vomit'),
+    symptom('2026-06-28', 'vomit'), // inside the window
+  ]
+  // WEIGHTS AND DOSES SPANNING THE WIDENED REGION. Without them the comparison passes
+  // vacuously for those consumers — proved, not assumed: making the weight section
+  // pull-sensitive (dropping its `inWindow` filter) left the first cut of this test GREEN,
+  // because the fixture carried no weigh-ins. A differential test only covers the
+  // consumers its fixture actually populates.
+  const weightChecks = [
+    { eventId: 'w-1', weightKg: 31.8, occurredAt: at('2025-11-10', '09:00:00') },
+    { eventId: 'w-2', weightKg: 31.2, occurredAt: at('2025-12-20', '09:00:00') },
+    { eventId: 'w-3', weightKg: 30.6, occurredAt: at('2026-03-15', '09:00:00') },
+    { eventId: 'w-4', weightKg: 30.1, occurredAt: at('2026-06-28', '09:00:00') },
+  ]
+  const medications = [{
+    id: 'reg-1', medicationItemId: 'mi-1', drugName: 'Metronidazole', doseAmount: '250 mg',
+    route: 'oral', dosesPerDay: 2, scheduleNotes: null, indication: 'diarrhea',
+    prescribedBy: 'Dr. Chen', startedAt: '2025-11-05', targetDurationDays: 14,
+    status: 'active' as const, endedAt: null,
+  }]
+  const doses = [
+    { eventId: 'd-1', occurredAt: at('2025-11-06', '08:00:00'), medicationId: 'reg-1', medicationItemId: 'mi-1', adherence: 'given', doseAmount: '250 mg', pairedEventId: null },
+    { eventId: 'd-2', occurredAt: at('2025-12-02', '08:00:00'), medicationId: 'reg-1', medicationItemId: 'mi-1', adherence: 'given', doseAmount: '250 mg', pairedEventId: null },
+    { eventId: 'd-3', occurredAt: at('2026-06-27', '08:00:00'), medicationId: 'reg-1', medicationItemId: 'mi-1', adherence: 'given', doseAmount: '250 mg', pairedEventId: null },
+  ]
+  const trim = <T extends { occurredAt: string }>(rows: T[], sinceIso: string) =>
+    rows.filter((r) => r.occurredAt >= sinceIso)
+
+  const make = (evts: typeof events, sinceIso: string) =>
+    baseInput({
+      events: evts,
+      eventsSinceIso: sinceIso,
+      // index.ts trims these by the SAME pull floor (`mapWeightRows`/`mapDoseRows` take
+      // `lookbackMs`), so widening the pull widens them too — which is exactly what this
+      // test has to reproduce rather than hold constant.
+      weightChecks: trim(weightChecks, sinceIso),
+      doses: trim(doses, sinceIso),
+      // UNTRIMMED, exactly as index.ts supplies it (`mapDoseRows(doseRows)` with no
+      // lookback). This is load-bearing, and the enriched fixture proved why: with
+      // `lifetimeDoses` omitted, §4.4's lifetime medication table derives over the TRIMMED
+      // `doses` and IS pull-sensitive — the wider pull moved its first-dose day from
+      // 2026-06-27 back to 2025-11-06 and `dosesLogged` from 1 to 3. Its own doc says so
+      // ("absent ⇒ the table derives over `doses` … lookback-bounded"), and production is
+      // insulated only because that separate untrimmed array exists. So the insulation is
+      // asserted here rather than assumed.
+      lifetimeDoses: doses,
+      medications,
+      dietTrials: [{
+        id: 'trial-1', foodItemId: 'f-hp', startedAt: TRIAL_START, targetDurationDays: 84,
+        status: 'active', completedAt: null, endedAt: null, indication: 'gi', vetName: 'Dr. Chen',
+        foodLabel: 'Royal Canin Hydrolyzed HP', primaryProtein: 'soy', proteins: ['soy'],
+        allowedFoods: [TRIAL_FOOD],
+      }],
+      vetVisits: [{ visitedAt: '2026-06-25', clinicName: 'Riverside', vetName: 'Dr. Chen', reason: 'recheck' }],
+    })
+
+  const narrow = assembleReport(
+    make(events.filter((e) => e.occurredAt >= `${OLD_FLOOR}T00:00:00Z`), `${OLD_FLOOR}T00:00:00Z`),
+  )
+  const wide = assembleReport(make(events, `${TRIAL_START}T00:00:00Z`))
+
+  // The disclosures MOVE, and in the honest direction: the narrow pull could only see one
+  // of the three cropped symptoms and had to call it a floor; the wide one counts all
+  // three and states them as a total.
+  assert.equal(narrow.scope.trialCropSymptoms?.count, 1)
+  assert.equal(narrow.scope.trialCropSymptoms?.countIsFloor, true)
+  assert.equal(wide.scope.trialCropSymptoms?.count, 3)
+  assert.equal(wide.scope.trialCropSymptoms?.countIsFloor, false)
+
+  // NOTHING ELSE MOVES. Blanked rather than deleted so a NEW pull-sensitive field added
+  // later fails here instead of quietly riding along.
+  const blank = (s: typeof narrow) =>
+    JSON.stringify({
+      ...s,
+      generatedAt: null,
+      scope: { ...s.scope, trialCropSymptoms: null, outOfWindowSymptomCount: 0,
+        outOfWindowMostRecent: null, outOfWindowMostRecentType: null,
+        outOfWindowBefore: 0, outOfWindowAfter: 0 },
+    })
+  assert.equal(blank(wide), blank(narrow), 'a wider pull must not move any windowed count')
+})
+
+
+Deno.test('B-613 — the crop boundary is the same day on both sides of the ratio', () => {
+  // The numerator (events) and the denominator (days) are derived from two expressions of
+  // one idea: the loop asks `!inWindow(occurredAt)`, the day set asks `dn < startDayNum ||
+  // dn > endDayNum`. They agree only because `inWindow` is DAY-granular over the same
+  // `eventDayNumber`. Nothing in either file says so, so it is pinned here — if `inWindow`
+  // ever became instant-granular, a meal on the seam would be counted on one side and not
+  // the other and the ratio would silently exceed 1.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  // The window opens 2026-06-02. Jun 1 is the last cropped day; Jun 2 is the first
+  // in-window day. Both already carry meals in this fixture, at 08:00 local.
+  const snap = assembleReport(input)
+  const c = snap.scope.trialCropSymptoms!
+  assert.equal(c.cropDays, 42, 'Apr 21 → Jun 1 inclusive')
+  assert.ok(
+    c.mealLoggedDaysInCrop <= c.cropDays,
+    'a meal counted as cropped that is not in the cropped day set would break the ratio',
+  )
+  assert.equal(c.mealLoggedDaysInCrop, 42, 'Jun 2 onward belongs to the window, not the crop')
+})
+
+Deno.test('B-613 — the clause names the MIX, not just the most recent sign', () => {
+  // Cold read round 16: on a GI-indication trial "5 vomits" and "3 vomits and 2 itch" are
+  // different patients, and the loop holds every type already. Naming one and dropping
+  // four was the same withholding the disclosure exists to end, one notch smaller.
+  const input = truncatedTrialInput()
+  // ⚠️ THE DATES MATTER. `dedupedAll` is in occurred_at order, so these land in the tally
+  // BEFORE the fixture's five vomits (Apr 22 onward) — insertion order is itch, diarrhea,
+  // vomit and the sorted order is the reverse. An earlier cut of this test put them mid-May,
+  // where insertion order happened to equal count order, and it passed against a tally
+  // sorted by `() => 0`.
+  input.events.push(symptom('2026-04-21', 'itch'))
+  input.events.push(symptom('2026-04-21', 'diarrhea'))
+  input.events.push(symptom('2026-05-03', 'itch'))
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  const snap = assembleReport(input)
+  // Descending by count, then by type name — the same record always renders the same way.
+  assert.deepEqual(snap.scope.trialCropSymptoms?.byType, [
+    { type: 'vomit', count: 5 },
+    { type: 'itch', count: 2 },
+    { type: 'diarrhea', count: 1 },
+  ])
+  assert.match(plain(renderReport(snap)), /8 symptom events were logged in those days \(5 vomiting, 2 itching, 1 loose stool; most recent: vomiting, May 24\)/)
+  // A tie breaks on type name, so two equal counts cannot swap between renders.
+  const tie = truncatedTrialInput()
+  tie.eventsSinceIso = '2026-01-03T00:00:00Z'
+  tie.events = tie.events.filter((e) => e.type !== 'vomit' || e.occurredAt >= '2026-06-02T00:00:00Z')
+  tie.events.push(symptom('2026-05-02', 'vomit'), symptom('2026-05-03', 'itch'))
+  assert.deepEqual(assembleReport(tie).scope.trialCropSymptoms?.byType, [
+    { type: 'itch', count: 1 },
+    { type: 'vomit', count: 1 },
+  ])
+})
+
+Deno.test('B-613 — a single-type crop does not repeat the sign two words later', () => {
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  const text = plain(renderReport(assembleReport(input)))
+  assert.match(text, /\(5 vomiting; most recent May 24\)/)
+  assert.ok(!/most recent: vomiting/.test(text), 'the tally already named it')
+})
+
+Deno.test('B-613 — the coverage of the cropped stretch is stated ONLY toward doubt', () => {
+  // The cold read asked for a denominator ("5 events in 42 days is a rate if those days
+  // were logged and an unknown if they were not"). The first answer was symmetric —
+  // "Meals were logged on 42 of those 42 days" — and the adversarial pass broke it on the
+  // patient this report exists for: a crop holding 42 REFUSALS of the prescribed diet and
+  // 42 off-diet feedings, none of which any count on the page can reach, where a
+  // completeness ratio beside a symptoms-only enumeration told the reader the hole was
+  // filled. A ratio next to a partial enumeration is a claim about the enumeration.
+  //
+  // So the fully-logged crop says nothing extra, and only the un-logged days are named.
+  const dense = truncatedTrialInput()
+  dense.eventsSinceIso = '2026-01-03T00:00:00Z'
+  const denseSnap = assembleReport(dense)
+  assert.equal(denseSnap.scope.trialCropSymptoms?.cropDays, 42)
+  assert.equal(denseSnap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 42)
+  const denseText = plain(renderReport(denseSnap))
+  assert.ok(!/42 of those 42 days/.test(denseText), 'no completeness ratio, ever')
+  assert.ok(!/holds no meal log/.test(denseText))
+
+  // A crop the owner barely logged says so, in the block's own vocabulary.
+  const sparse = truncatedTrialInput()
+  sparse.eventsSinceIso = '2026-01-03T00:00:00Z'
+  sparse.events = sparse.events.filter(
+    (e) => e.type !== 'meal' || e.occurredAt >= '2026-05-25T00:00:00Z',
+  )
+  const sparseSnap = assembleReport(sparse)
+  assert.equal(sparseSnap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 8)
+  assert.match(plain(renderReport(sparseSnap)), /This report holds no meal log for 34 of those 42 days\./)
+})
+
+Deno.test('B-613 — a TREAT is not a logged meal day (one predicate with the coverage line)', () => {
+  // BLOCKING in both reviews, found independently. `lib/dietTrial.ts`'s coverage predicate
+  // excludes treats and states why in place — "on live data 82% of feedings are treats, so
+  // a 'days with food logged' count is clearable entirely by treat data". The first cut
+  // counted any `type === 'meal'` event, so a cropped head holding one dental chew a day
+  // and NOT ONE meal of the prescribed diet rendered as fully tracked, in the same words,
+  // twelve words from a coverage line built the other way.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  input.events = input.events.map((e) =>
+    e.type === 'meal' && e.occurredAt < '2026-06-02T00:00:00Z' && e.meal
+      ? { ...e, meal: { ...e.meal, foodType: 'treat' as const } }
+      : e,
+  )
+  const snap = assembleReport(input)
+  assert.equal(
+    snap.scope.trialCropSymptoms?.mealLoggedDaysInCrop,
+    0,
+    'a stretch of nothing but treats is a stretch with no meal logged',
+  )
+  assert.match(plain(renderReport(snap)), /This report holds no meal log for 42 of those 42 days\./)
+})
+
+Deno.test('B-613 — the coverage fact survives a crop with NO symptoms and a short pull', () => {
+  // Dr. Chen, follow-up read: gating this on the symptom count rendered "42 days nobody
+  // logged" and "42 days logged and genuinely quiet" identically — as nothing — and
+  // suppressing a coverage fact is the reassuring direction. It is a fact about the
+  // RECORD, so it does not depend on the patient having been ill.
+  const quiet = truncatedTrialInput()
+  quiet.eventsSinceIso = '2026-01-03T00:00:00Z'
+  quiet.events = quiet.events.filter(
+    (e) => (e.type !== 'vomit' || e.occurredAt >= '2026-06-02T00:00:00Z') &&
+      (e.type !== 'meal' || e.occurredAt >= '2026-05-25T00:00:00Z'),
+  )
+  const quietSnap = assembleReport(quiet)
+  assert.equal(quietSnap.scope.trialCropSymptoms?.count, 0)
+  const quietText = plain(renderReport(quietSnap))
+  assert.match(quietText, /This report holds no meal log for 34 of those 42 days\./)
+  // …and still no absence claim about symptoms.
+  assert.ok(!/no symptom/i.test(quietText))
+
+  // A short pull can only overstate the un-logged days, which is the safe side, so the
+  // sentence stands there too.
+  const floored = truncatedTrialInput() // no eventsSinceIso ⇒ floor
+  floored.events = floored.events.filter(
+    (e) => e.type !== 'meal' || e.occurredAt >= '2026-05-25T00:00:00Z',
+  )
+  const flooredText = plain(renderReport(assembleReport(floored)))
+  assert.match(flooredText, /at least 5 symptom events/)
+  assert.match(flooredText, /This report holds no meal log for 34 of those 42 days\./)
+})
+
+
+
+
+
+
+Deno.test('B-613 — an UNHYDRATED meal row is not a tracked day', () => {
+  // The one residual of the re-attack that ran toward reassurance. A `type === 'meal'`
+  // row whose joined child did not hydrate arrives with `meal: null` (index.ts:
+  // `event_type === 'meal' && meal ? mapMealDetail(meal) : null`), and the optional-chained
+  // predicate `e.meal?.foodType !== 'treat'` read `undefined !== 'treat'` — true — so every
+  // such day scored as tracked and silenced the un-logged sentence entirely.
+  //
+  // The window side already drops those rows, so the two predicates disagreed in OPPOSITE
+  // directions: the window under-counts TRACKED days (safe), this under-counted UN-LOGGED
+  // days, which renders a better-tracked record than the report holds.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  input.events = input.events.map((e) =>
+    e.type === 'meal' && e.occurredAt < '2026-06-02T00:00:00Z' ? { ...e, meal: null } : e,
+  )
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 0)
+  assert.match(
+    plain(renderReport(snap)),
+    /This report holds no meal log for 42 of those 42 days\./,
+  )
+})
+
+Deno.test('B-613 — a one-day crop takes the pronoun, never "1 of those 1 days"', () => {
+  // `trialCropSymptomClause` is handed `outsideDays` precisely so its pronoun agrees; the
+  // density sentence re-derives its own noun and did not.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  // Open the window one day after the trial starts ⇒ a single cropped day, unlogged.
+  input.requestedWindow = { startDate: '2026-04-22', endDate: '2026-07-02' }
+  input.events = input.events.filter((e) => e.occurredAt >= '2026-04-22T00:00:00Z')
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialCropSymptoms?.cropDays, 1)
+  const text = plain(renderReport(snap))
+  assert.ok(!/of those 1 days/.test(text))
+  assert.match(text, /This report holds no meal log for that day\./)
+})

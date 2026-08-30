@@ -337,6 +337,8 @@ const styles = StyleSheet.create({
   emptyCta: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
+    // accent-on-dark-ok: colorBrandNight (container, :258) — 8.09:1. Night ground:
+    // its siblings take colorTextOnNight*, and the ink would be 3.54:1 (CUL-744).
     color: theme.colorAccent,
   },
 
@@ -363,6 +365,7 @@ const styles = StyleSheet.create({
   retry: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
+    // accent-on-dark-ok: colorBrandNight (container, :258) — 8.09:1, as emptyCta above.
     color: theme.colorAccent,
   },
 });

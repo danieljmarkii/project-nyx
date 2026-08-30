@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   saveText: {
     fontFamily: theme.fontBodyMedium,
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   // Tertiary grey so this caption shares one register with the Account card's
   // other caption (the email-change note) — the two "Your name" / email hints

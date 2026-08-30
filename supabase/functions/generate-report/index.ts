@@ -54,8 +54,13 @@ import {
   type ReportConditionInput,
   type ReportAttachmentInput,
   type IncidentPhoto,
+  TRIAL_ANCHOR_GRACE_DAYS,
 } from './report.ts'
 import { renderReport } from './render.ts'
+// B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
+// re-implemented so the pull is stretched for exactly the trial the block describes; two
+// copies of this test are what once anchored a window on an abandoned trial.
+import { selectReportTrial } from './trial.ts'
 // B-568 — the same format-label map the app and report.ts render from (one copy,
 // two runtimes; a duplicate map here is the B-103 drift class).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
@@ -76,6 +81,17 @@ const BASE_LOOKBACK_DAYS = 180
 // covered. report.ts scopes everything to the window itself; this only guarantees
 // the pull is a superset of what assembly needs.
 const CHERRY_PICK_LOOKBACK_DAYS = 90
+// B-613 — how far past the window start the pull may be stretched to reach the START of
+// the trial this report describes, so the trial-crop symptom count is a total rather than
+// a floor. Capped, because the trial that needs it most is also the one that can be
+// arbitrarily old: nothing auto-completes a trial (B-422), so a stale-active row from two
+// years ago is the STEADY STATE, and an uncapped stretch would turn one forgotten trial
+// into a two-year event pull on a `since_visit` report whose window is a fortnight.
+//
+// Past the cap the count does not become wrong, it becomes a FLOOR and says so — which is
+// the trade this number encodes: a bounded query with an honest sentence, never an
+// unbounded query for a complete one.
+const TRIAL_CROP_LOOKBACK_CAP_DAYS = 400
 
 // ── PR 7 — incident-photo embedding (spec §8 / AC-7) ─────────────────────────────
 // Photos are fetched server-side, EXIF/GPS-stripped + downscaled via Supabase Storage image
@@ -723,14 +739,40 @@ export async function embedIncidentPhotos(
  * keeps the query on the (pet_id, occurred_at) index, and the disclosure is a
  * trust signal, not a load-bearing count. Revisit if real-vet feedback wants
  * full-history cherry-pick accounting (would widen the pull for long-tracked pets).
+ *
+ * B-613 ADDS A THIRD TERM, and only for the trial. `since_visit` truncates a long trial
+ * by construction, and the trial block now discloses what was logged in the days it
+ * crops — a count that is only honest if the pull actually reached them. The stretch is
+ * bounded by TRIAL_CROP_LOOKBACK_CAP_DAYS and is a floor, not a target: assembly compares
+ * this instant against the trial's start and renders "at least N" when the pull fell
+ * short, so the cap costs a word rather than a claim.
+ *
+ * `trialStartIso` is the start of the trial `selectReportTrial` picks — the SAME predicate
+ * the block itself is built from, called with the same arguments, never a second
+ * "which trial is this report about?" test. A divergent copy is what once anchored a
+ * window on an abandoned trial while the block described an active one.
  */
-export function computeLookbackIso(scope: ReportScope, nowMs: number): string {
+export function computeLookbackIso(
+  scope: ReportScope,
+  nowMs: number,
+  trialStartIso: string | null = null,
+): string {
   const windowStartMs = Date.parse(`${scope.startDate}T00:00:00.000Z`)
   const windowFloor = Number.isNaN(windowStartMs)
     ? nowMs
     : windowStartMs - CHERRY_PICK_LOOKBACK_DAYS * MS_PER_DAY
   const baseFloor = nowMs - BASE_LOOKBACK_DAYS * MS_PER_DAY
-  return new Date(Math.min(windowFloor, baseFloor)).toISOString()
+  // The trial term never RAISES the floor — `Math.min` over all three — so a trial that
+  // starts inside the window (the first report of any trial) leaves the pull exactly as
+  // it was, and this can only ever widen.
+  const trialMs = trialStartIso === null ? NaN : Date.parse(trialStartIso)
+  const trialFloor = Number.isNaN(trialMs)
+    ? Infinity
+    : Math.max(
+        trialMs,
+        Number.isNaN(windowStartMs) ? -Infinity : windowStartMs - TRIAL_CROP_LOOKBACK_CAP_DAYS * MS_PER_DAY,
+      )
+  return new Date(Math.min(windowFloor, baseFloor, trialFloor)).toISOString()
 }
 
 // The generation body, factored out of the HTTP handler so it is unit-testable with
@@ -838,7 +880,11 @@ export async function generateReportForPet(
     feedingArrangements: [],
     conditions: [],
   })
-  const lookbackIso = computeLookbackIso(scope, nowMs)
+  // The trial the block will describe, resolved HERE only to bound the pull (B-613). One
+  // predicate, one call shape — `report.ts` calls the same function with the same window
+  // and grace, so the pull is stretched for exactly the trial the block reports on.
+  const reportTrialForPull = selectReportTrial(dietTrials, scope, timezone, TRIAL_ANCHOR_GRACE_DAYS)
+  const lookbackIso = computeLookbackIso(scope, nowMs, reportTrialForPull?.startedAt ?? null)
 
   // 3. Pull the remaining rows — every read RLS-scoped by the caller's JWT.
   const [
@@ -971,6 +1017,9 @@ export async function generateReportForPet(
     feedingArrangements: mapFeedingArrangementRows(rowsOrThrow<ArrangementRow>(arrangementsRes, 'feeding_arrangements')),
     conditions: mapConditionRows(rowsOrThrow<ConditionRow>(conditionsRes, 'conditions')),
     attachments: mapAttachmentRows(rowsOrThrow<AttachmentRow>(attachmentsRes, 'event_attachments')),
+    // B-613 — how far back `events` actually reaches, so assembly can tell "nothing was
+    // logged in the cropped trial days" apart from "the cropped days were never pulled".
+    eventsSinceIso: lookbackIso,
   }
 
   // 4. Pure assembly → (PR 7) embed the incident-photo bytes → pure render.

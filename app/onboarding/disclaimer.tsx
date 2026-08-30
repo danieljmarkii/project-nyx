@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   fullLinkText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     textDecorationLine: 'underline',
   },
 });

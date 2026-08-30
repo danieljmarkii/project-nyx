@@ -536,7 +536,7 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 });

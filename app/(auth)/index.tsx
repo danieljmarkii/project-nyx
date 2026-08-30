@@ -198,6 +198,8 @@ const styles = StyleSheet.create({
   learnMoreText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
+    // accent-on-dark-ok: colorBrandNight (the Landing's ground, :162) — 8.09:1.
+    // Teal is correct on the night ground; colorAccentInk would be 3.54:1 (CUL-744).
     color: theme.colorAccent,
   },
   cta: {

@@ -98,6 +98,6 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
 });

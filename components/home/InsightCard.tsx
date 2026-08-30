@@ -724,6 +724,6 @@ const styles = StyleSheet.create({
     marginTop: theme.space1,
     fontSize: theme.textXS,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
 });

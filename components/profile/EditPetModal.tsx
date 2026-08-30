@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
   saveText: {
     fontSize: 16,
     fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   saveTextDisabled: {
     opacity: theme.opacityDisabled,
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
   },
   changeLabel: {
     fontSize: 14,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
   },
   dobEstimateNote: {

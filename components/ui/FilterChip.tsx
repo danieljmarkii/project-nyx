@@ -83,7 +83,7 @@ const defaultVariant = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   activeLabel: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
 });
 
