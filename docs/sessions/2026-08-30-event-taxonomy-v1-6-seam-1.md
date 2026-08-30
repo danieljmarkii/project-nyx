@@ -64,9 +64,38 @@ Per the discipline, the seam was attacked in isolation before landing —
 `adversarial-reviewer`, scoped to the seam's own material (6a's new mechanism, the
 re-anchored paragraphs, the bookkeeping) plus its seams with the adjacent open findings,
 with instructions to flag any silent adjudication of F-G/F-A/F-B/F-D/F-E rather than to
-re-litigate them.
+re-litigate them. And then re-attacked after the corrections, per the CUL-69 rule
+(re-run the falsification pass after every correction, not once at the end).
 
-**Verdict: TBD**
+**Round 1: FAIL — 10 findings (S1-1…S1-10), three high.** The preamble's prediction
+held on the pass that quoted it: every defect was in mechanism this seam *added*. The
+three high: (S1-1) my composition bullet claimed a non-active pet's client finding
+reaches the cross-pet banner "exactly as a server one does" — false at three
+independent, fail-quiet points (the shipped banner is a network read of `ai_signals`
+through a four-type allow-list; rider (i) forbids the overlay writing there), the
+CUL-676 silent-partial-membership class in the one list `guards/symptomLists.test.ts`
+structurally cannot see; (S1-2) "threads through `visibleFindings`" and "renders over
+every zone state" were jointly unsatisfiable against the shipped zone, and the merge
+direction made fixture 12's building/empty clauses assert unreachable states; (S1-3)
+fixture 12 never exercised F-C's own patient — a post-save-only build passed it while
+reproducing the basement flat, and its "zero network reads" clause was unassertable.
+Plus S1-4 (the declared F-G neutrality quietly armed rule 1's side — the pinned test
+is now held un-binding until F-G resolves), S1-5 (the timeout route inherited nothing;
+fixed by the render model, not a fifth entry point), S1-6 (rule 15 mis-cited; the
+same-rows client-vs-⑦ case ruled via §10.2a's precise-units), S1-7 (three false code
+claims about the zone's state machine, in the bullet whose job was a code claim — F-C's
+own class, repeated in the closure answering it), S1-8 (a second durable store existed;
+already wipe-wired), S1-9 (counts unscoped; the promised verdict block missing; rule
+11's stale "seven"), S1-10 (the one-predicate locus named: a shared `lib/` module, with
+the CUL-717 fingerprint consequence budgeted).
+
+All ten corrected in the same revision; the full record lives in the spec's new
+**§9b § Seam-pass verdicts** block. What held is recorded there too — the offline
+cold-start after an app kill (the hydration tick fires in `useSync`'s `finally`), the
+lead-canvas register, the arrival/haptic gate, the type-system guard, both
+fail-toward-firing directions, and F-A's non-adjudication.
+
+**Round 2 (on the corrected seam): [recorded below when complete].**
 
 ## Why one seam only
 
