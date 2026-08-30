@@ -1452,19 +1452,53 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // exactly the reports whose start really was truncated. The new predicate is IMPLIED by the
       // old one (`firstLoggedIso <= firstOnsetIso` always), so this can only ever fire more often.
       const leftCensored = daysBetweenDayKeys(snap.scope.startDate, firstLoggedKey) <= CHRONICITY_LEFT_CENSOR_DAYS
-      const censorBit = leftCensored
-        ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
-        : ''
+      // WHICH NUMBER IS THE FLOOR DEPENDS ON WHICH BOUNDARY BINDS, and the two cases are disjoint
+      // by construction (adversarial pass 2, 2026-08-30). `hasUncountedRecord` entails the report
+      // window is LONGER than the lookback — a window no longer than the lookback leaves every
+      // in-window row inside it, so the first onset IS the first entry — and `leftCensored`
+      // entails the record starts at the window edge.
+      //
+      //   • Neither, or only leftCensored → the WINDOW is what truncates the span, `f.spanDays`
+      //     is both the course and the record's extent, and B-532's sentence is exactly right.
+      //   • Both → the window truncates the RECORD while the lookback truncates the COUNTS, and
+      //     no single number is the floor. `f.spanDays` understates it (it counts the course, and
+      //     the paragraph above has just cited an earlier entry — measured at a median 32 days
+      //     short over dense chronic records, in the reassuring direction B-494 forbids), while
+      //     the record's own extent is two logged rows rather than a measured course, so stating
+      //     THAT as a duration is first-pass finding 1 arriving through the censor. The window
+      //     fact is stated without attaching any duration to it — which is also the honest
+      //     reading, since what the window edge bounds here is the record, not the span.
+      const censorBit = !leftCensored
+        ? ''
+        : hasUncountedRecord
+          ? ` This window opens ${h(
+              fmtDay(snap.scope.startDate),
+            )} and the record's first entry sits at that edge, so the sign may predate this report entirely.`
+          : ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
       // DISCLOSURE BESIDE THE NUMBER, never a re-derivation (the C5 logging-density precedent).
       // It names the date the counts actually begin at, never a day COUNT: the lookback is measured
       // back from the window END, so "the most recent 56 days" is not a portion of a 43-day span —
       // it can exceed the span outright, and then reads as the exact inverse of the warning it
       // exists to deliver. A date cannot overstate how much of the span was counted.
-      const recordBit = hasUncountedRecord
-        ? ` ${h(symptomLabel(f.symptomType))} was first logged ${h(onsetDay)}; these counts begin at ${h(
-            fmtLocalDay(f.firstOnsetIso, tz),
-          )}, so earlier entries are in appendix&nbsp;A but not in the numbers above.`
-        : ''
+      //
+      // Two shapes, because the gate is an instant and the rendered dates are local days: when the
+      // two anchors straddle the lookback edge WITHIN one local day, naming both prints the same
+      // date twice — "was first logged May 7; these counts begin at May 7" — a sentence promising
+      // earlier entries while naming nothing they are earlier than. Reachable on ~5% of flags for
+      // a boundary-edge cough course logged several times a day, which is the shape cough's floors
+      // were tuned for. The tail is number-agnostic ("the record before then", "the earlier
+      // entries") so it does not pluralise over a count this layer does not hold — the stale-
+      // singleton case really is one entry.
+      const engineOnsetDay = fmtLocalDay(f.firstOnsetIso, tz)
+      const recordBit = !hasUncountedRecord
+        ? ''
+        : firstLoggedKey === localDayKeyOf(f.firstOnsetIso, tz)
+          ? ` ${h(symptomLabel(f.symptomType))} was first logged ${h(
+              onsetDay,
+            )}; these counts begin later that day, so the earlier entries are in appendix&nbsp;A but not in the numbers above.`
+          : ` ${h(symptomLabel(f.symptomType))} was first logged ${h(
+              onsetDay,
+            )}; these counts begin at ${h(engineOnsetDay)}, so the record before then is in appendix&nbsp;A but not in the numbers above.`
       // §9 cough↔vomit adjacency (CUL-676) — the clinical register of the same fact the
       // Signal card states to the owner. Post-tussive vomiting and the cough-mistaken-for-
       // -hairball error make these two owner-logged streams cross-contaminate in BOTH
@@ -5571,6 +5605,20 @@ function appendixF(snap: ReportSnapshot): string {
       `<dt>Safety flags</dt><dd>Shown only when present, above the fold. Nothing is printed here when no flag fired &mdash; and that is <b>not</b> an &ldquo;all clear&rdquo;: it means no detector fired, which is not the same as nothing being wrong.</dd>`
   // PR 7 — the incident-photos legend entry only renders when photos exist (so the legend never
   // points at an appendix that isn't there — the dangling-appendix class the meals appendix hit).
+  // Gated exactly like `photoDt` below, for the B-599 reason stated there: a legend entry
+  // describing a line the report does not carry is a dangling reference. The HR-7 "Entries vs
+  // episodes" entry is the precedent — where two measures diverge on purpose, the report says so
+  // rather than leaving the reader to infer a cause, and the inference available here (that the
+  // engine judged the earlier entries unrelated) runs toward reassurance.
+  const chronicityWindowDt = snap.safetyFlags.some(
+    (f) =>
+      f.kind === 'chronicity' &&
+      Number.isFinite(Date.parse(f.firstLoggedIso)) &&
+      Number.isFinite(Date.parse(f.firstOnsetIso)) &&
+      Date.parse(f.firstLoggedIso) < Date.parse(f.firstOnsetIso),
+  )
+    ? `<dt>Where the chronicity counts begin</dt><dd>The chronicity flag reads a fixed recent window, which can be shorter than this report's range. Where it is, the flag names the date its counts begin and the date the sign was <b>first logged</b> &mdash; the earlier entries are real and are listed in appendix&nbsp;A; they are outside the counted window, <b>not</b> judged unrelated. Read the flag's day counts against the window it names, and the sign's extent against appendix&nbsp;A.</dd>`
+    : ''
   const photoDt = hasIncidentPhotos(snap)
     ? `<dt>Incident photos</dt><dd>Every photographed incident in the window is in appendix&nbsp;${photosAppendixLetter(
         snap,
@@ -5588,6 +5636,7 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed — a one-sided account renders as &ldquo;before/after&rdquo; that bound &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>
     <dt>Duplicate logs</dt><dd>A <span class="conf">N logs</span> tag marks the same incident logged more than once (a re-log or sync retry). It is counted once everywhere in this report; the duplicate count is disclosed rather than hidden.</dd>
     <dt>Photo analysis</dt><dd>For photographed incidents, structured fields (colour, contents, blood, foreign material) are read automatically from the photo the owner took. These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
+    ${chronicityWindowDt}
     ${photoDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
