@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
     textAlign: 'left',
   },
   accentLabel: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightSemibold,
   },
 });

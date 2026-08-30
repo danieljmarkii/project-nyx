@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   },
   listLinkText: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
   cta: {

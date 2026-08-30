@@ -172,5 +172,5 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
   },
-  retryText: { fontSize: theme.textMD, color: theme.colorAccent, fontWeight: theme.weightMedium },
+  retryText: { fontSize: theme.textMD, color: theme.colorAccentInk, fontWeight: theme.weightMedium },
 });

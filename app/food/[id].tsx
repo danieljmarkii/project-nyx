@@ -1007,7 +1007,7 @@ const styles = StyleSheet.create({
   },
   secondaryActionText: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   removeAction: {
     alignItems: 'center',

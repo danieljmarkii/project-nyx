@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
   provGo: {
     fontFamily: theme.fontBodySemibold,
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   followups: {
     flexDirection: 'row',

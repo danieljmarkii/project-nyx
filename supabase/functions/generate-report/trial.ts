@@ -369,6 +369,28 @@ export interface TrialBlock {
    *  is not this; the two differ by `trialDaysOutsideRange.after`. Anything rendering
    *  "a trial that has run N" reads THIS. */
   trialDaysElapsed: number
+  /**
+   * B-613 — THE TRIAL'S OWN ELAPSED SPAN, as local-day indices: `started_at` to
+   * `min(today, its end)`. The same span `trialDaysElapsed` measures, expressed as
+   * the two bounds instead of a length.
+   *
+   * It exists because `trialDaysOutsideRange` says HOW MANY trial days this window
+   * leaves out and nothing in the block could say WHICH ONES, so a consumer asking
+   * "what was logged in the cropped days?" had to reconstruct the bounds from
+   * `scope.startDayNum - before`. That reconstruction is only valid while
+   * `before > 0`, and it is the same seam mistake rounds 2/3/4 paid for three times
+   * — a consumer re-deriving a bound at a layer that cannot see the clip. So the
+   * bounds are published from where `ctx.startDayIndex` and the elapsed length both
+   * live, and `elapsedEnd - elapsedStart + 1 === trialDaysElapsed` is an identity
+   * asserted as one.
+   *
+   * ⚠️ THIS IS NEITHER AN EVIDENCE BOUND NOR A COVERAGE BOUND. It is the TRIAL, not
+   * the report's view of it — deliberately wider than both `range*` and `evidence*`
+   * — so no count over the record may be bounded by it. Its only sanctioned use is
+   * asking what falls OUTSIDE this report's window but inside the trial.
+   */
+  elapsedStartDayIndex: number
+  elapsedEndDayIndex: number
 
   coverage: { daysLogged: number; daysElapsed: number } | null
   exposures: {
@@ -988,6 +1010,12 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     untrackedDaysBeforeFirstLog: facts.untrackedDaysBeforeFirstLog,
     trialDaysOutsideRange: facts.trialDaysOutsideRange,
     trialDaysElapsed: facts.trialDaysElapsed,
+    // The inverse of `trialDaysElapsed = max(0, trialElapsedEnd - ctx.startDayIndex + 1)`,
+    // taken here because `ctx.startDayIndex` is in hand and the length is not enough on
+    // its own to place the span. Clamped so a zero-length elapse (a trial whose start is
+    // in the future relative to `now`) cannot produce an end BEFORE its start.
+    elapsedStartDayIndex: ctx.startDayIndex,
+    elapsedEndDayIndex: ctx.startDayIndex + Math.max(0, facts.trialDaysElapsed - 1),
     coverage: facts.coverage
       ? { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed }
       : null,

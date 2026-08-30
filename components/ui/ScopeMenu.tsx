@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   pillLabelActive: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   // Sheet styles mirror PetSwitcherSheet so every bottom sheet dims and reads
   // identically (scrim, grabber, radius, safe-area padding).
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
   },
   optionLabelSelected: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 });

@@ -1532,7 +1532,7 @@ const styles = StyleSheet.create({
   },
   photoLabel: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
   // CUL-618 — the name's row, shared by the switcher branch and the plain one so
@@ -1645,7 +1645,7 @@ const styles = StyleSheet.create({
   },
   sectionAction: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
   sectionLoader: {
@@ -1718,7 +1718,7 @@ const styles = StyleSheet.create({
   // "Log a dose" is the card's primary action (the wedge path), so it leads in the
   // accent colour while Edit/End stay quiet secondary text.
   logDoseActionText: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 

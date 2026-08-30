@@ -154,6 +154,42 @@ function fmtRange(start: string, end: string): string {
   return `${MONTHS[s.m - 1]} ${s.d}, ${s.y} – ${MONTHS[e.m - 1]} ${e.d}, ${e.y}`
 }
 
+/**
+ * B-613 — an ISO instant → the owner-local "Mon D", gaining ", YYYY" when it falls in a
+ * DIFFERENT year from the report's window.
+ *
+ * CUL-69's rule, applied where it now bites: a year-less date is safe only while its range
+ * is bounded, and the out-of-window guards are the two places on this page whose date is
+ * BY DEFINITION outside the window — bounded only by the event pull, which reaches up to
+ * 400 days before the window start for a trial. "Most recent: loose stool, May 28" beside
+ * a range box reading "Jun 1 – Jun 30, 2026" is read as this May; on a stale-active trial
+ * it can be last May, and the whole point of the sentence is how recent that event was.
+ *
+ * ⚠️ SAFE HERE BECAUSE EACH CALLER'S SENTENCE CARRIES EXACTLY ONE DATE. CUL-69's other
+ * half is that a CONDITIONAL year is worse than none once two dates share a sentence — the
+ * bare one inherits the stamped one's year and reads as the wrong side of it. Both call
+ * sites below are single-date clauses. A future caller that pairs this with another date
+ * must decide the year once for the pair, not once per date.
+ */
+function fmtLocalDayScoped(iso: string, tz: string | null, windowEndDayKey: string): string {
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return fmtLocalDay(iso, tz)
+  const windowYear = dayParts(windowEndDayKey)?.y ?? null
+  let year: number | null = null
+  if (tz) {
+    try {
+      year = Number(
+        new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric' }).format(new Date(ms)),
+      )
+    } catch {
+      /* invalid IANA zone → UTC fallback below */
+    }
+  }
+  if (year === null || Number.isNaN(year)) year = new Date(ms).getUTCFullYear()
+  const day = fmtLocalDay(iso, tz)
+  return windowYear !== null && year === windowYear ? day : `${day}, ${year}`
+}
+
 /** An ISO instant → the owner-local "Mon D" (falls back to UTC slice on a bad tz). */
 function fmtLocalDay(iso: string, tz: string | null): string {
   const ms = Date.parse(iso)
@@ -1140,7 +1176,22 @@ function signalmentBlock(snap: ReportSnapshot): string {
 function cherryPickDisclosure(snap: ReportSnapshot): string {
   const sc = snap.scope
   if (!sc.isCustomOverride || sc.outOfWindowSymptomCount <= 0) return ''
-  const recent = sc.outOfWindowMostRecent ? ` (most recent ${h(fmtLocalDay(sc.outOfWindowMostRecent, snap.timezone))})` : ''
+  // B-613 — THE TYPE, NOT JUST THE DATE. Two cold reads ranked its absence top of the
+  // non-blocking list on the same reasoning: "5 symptom events fall outside this window
+  // (most recent May 28)" is read as bookkeeping about the window, while naming the sign
+  // is read as a fact about the patient. On a completed elimination whose window closes
+  // eleven days early, that is the difference between "the trial held to the end" and
+  // "she relapsed in the final week" — and the type was already in hand one line above
+  // the counter, dropped for no reason but that nothing carried it.
+  //
+  // The noun is lowercased into the parenthetical (the file's own convention for
+  // symptomLabel inside a sentence) and the date is year-scoped, because this date is
+  // out-of-window by construction and the range box above it always states a year.
+  const recent = sc.outOfWindowMostRecent
+    ? ` (most recent: ${
+        sc.outOfWindowMostRecentType ? `${h(symptomLabel(sc.outOfWindowMostRecentType).toLowerCase())}, ` : ''
+      }${h(fmtLocalDayScoped(sc.outOfWindowMostRecent, snap.timezone, sc.endDate))})`
+    : ''
   // WHICH SIDE, WHEN THE CROP HAS TWO (B-600, cold read round 11). A one-ended crop is
   // adequately served by a scalar — everything excluded is on the side the reader can
   // infer. A hand-picked window can crop both ends, and there the same sentence hides
@@ -1161,6 +1212,169 @@ function cherryPickDisclosure(snap: ReportSnapshot): string {
   <div class="cherry"><b>Custom range.</b> ${num(sc.outOfWindowSymptomCount)} symptom event${
     sc.outOfWindowSymptomCount === 1 ? '' : 's'
   } fall outside this window${split}${recent} — shown so nothing is cropped to a good week.</div>`
+}
+
+/**
+ * B-613 — WHAT WAS LOGGED IN THE TRIAL DAYS THIS WINDOW CROPS.
+ *
+ * The sentence this attaches to says how MANY trial days fall outside the report. It was
+ * the only thing on the page that knew the view was partial, and it could not say whether
+ * the missing part was quiet or the part where everything happened. A vet handed "42 trial
+ * days fall before it" has been told the size of a hole and nothing about its contents.
+ *
+ * WHY IT IS HERE AND NOT IN THE PAGE-1 GUARD. That guard leads "Custom range." and closes
+ * "shown so nothing is cropped to a good week" — an owner's question about an owner's
+ * choice. The window that produces this is `since_visit`, which the APP picked and which
+ * truncates a long trial by construction, so the cherry-pick register would accuse an
+ * owner of a crop they did not make. This is a completeness fact about the block's own
+ * subject, so it is stated in the block, in the sentence that already re-scopes every
+ * number under it.
+ *
+ * ⚠️ PRESENT-ONLY, AND THAT IS A RULE HERE, NOT A DEFAULT. A zero renders NOTHING — never
+ * "no symptom events were logged in those days". The cropped days are typically days the
+ * owner was not yet logging (they start at the vet's directive), so an absence sentence
+ * would convert "we hold no record" into "nothing happened" on the exact span the report
+ * admits it cannot see. That is the diet-trial G2 rule (the negative claim is deleted from
+ * the product at every coverage) and B-494's finding in one move. Silence here is not a
+ * gap: it attaches to a sentence that has just said the view is partial.
+ *
+ * "At least N" when the pull did not reach the trial's start — the count is then a floor
+ * and says so, the same register §5.2 uses for off-diet exposures.
+ *
+ * ⚠️ IT IS A CLAUSE, NOT A SENTENCE, AND THE POSITION IS THE REASON. Written as its own
+ * sentence after the block's bolded scoping rule, its "those days" had to reach back over
+ * an intervening sentence to find "42 trial days fall before it" — a dangling referent on
+ * a page a vet scans in sixty seconds. It now joins the day count directly, so the number
+ * of cropped days and what was logged in them are one statement, and the bold rule still
+ * closes the row. `outsideDays` is passed rather than re-derived because the pronoun
+ * agrees with the DAYS, not with the event count: one cropped day holding two vomits is
+ * "that day", not "those days".
+ */
+function trialCropSymptomClause(snap: ReportSnapshot, outsideDays: number): string {
+  const c = snap.scope.trialCropSymptoms
+  if (!c || c.count <= 0) return ''
+  // THE MIX. With more than one sign present the tally carries the types and the
+  // most-recent clause only has to say WHICH one was last; with a single type the tally
+  // already said it, so repeating it two words later is noise.
+  //
+  // ONE PARENTHETICAL, NOT A SECOND EM-DASH. The host sentence already spends its dash on
+  // "a trial that has run 73 — 42 trial days fall before it"; a second one two clauses
+  // later, doing a different job, is what turns a dense clinical line into a list nobody
+  // finishes. The page-1 guard uses the same parenthetical shape for the same fact.
+  const parts: string[] = []
+  if (c.byType.length > 0) {
+    parts.push(
+      c.byType.map((t) => `${num(t.count)} ${h(symptomLabel(t.type).toLowerCase())}`).join(', '),
+    )
+  }
+  // With more than one sign present the tally carries the types and this only has to say
+  // WHICH was last; with a single type the tally already said it two words earlier.
+  const namedType = c.byType.length > 1 && c.mostRecentType
+    ? `${h(symptomLabel(c.mostRecentType).toLowerCase())}, `
+    : ''
+  // The date is out-of-window by construction, so it carries its year whenever that is not
+  // the window's — CUL-69, and the reason the trial case needs it more than the page-1 box
+  // does: a stale-active trial (B-422's steady state) puts these days a year or more back.
+  if (c.mostRecentIso) {
+    parts.push(
+      `most recent${namedType ? ': ' : ' '}${namedType}${h(
+        fmtLocalDayScoped(c.mostRecentIso, snap.timezone, snap.scope.endDate),
+      )}`,
+    )
+  }
+  const detail = parts.length > 0 ? ` (${parts.join('; ')})` : ''
+  const atLeast = c.countIsFloor ? 'at least ' : ''
+  return `, and ${atLeast}<b>${num(c.count)} symptom event${c.count === 1 ? '' : 's'}</b> ${
+    c.count === 1 ? 'was' : 'were'
+  } logged ${outsideDays === 1 ? 'on that day' : 'in those days'}${detail}`
+}
+
+/**
+ * B-613 — HOW MUCH OF THE CROPPED STRETCH THE OWNER WAS LOGGING, stated ONLY when the
+ * answer subtracts confidence.
+ *
+ * The cold read asked for a denominator: "5 symptom events in 42 days" is a rate if those
+ * days were tracked and an unknown if they were not, and the clause could not say which.
+ * The first cut answered it symmetrically — "Meals were logged on 42 of those 42 days" —
+ * and the adversarial pass broke it on the patient this report exists for.
+ *
+ * ⚠️ THE COUNTEREXAMPLE, BECAUSE IT IS THE WHOLE REASON THIS FUNCTION IS SHAPED LIKE THIS.
+ * A cat whose 42 cropped trial days hold 42 REFUSALS of the prescribed diet, 42 off-diet
+ * feedings and 5 vomits, with `safetyFlags: []`. Every one of those refusals and feedings
+ * is invisible on this page — the block's exposure counts are window-scoped and appendix C
+ * is too — so the only thing the clause can name is the 5 vomits. Adding "42 of 42 days
+ * logged" beside it told the reader the stretch was completely tracked AND completely
+ * accounted for, and turned a report that had honestly admitted a hole into one asserting
+ * the hole was filled. Before the change that record said only "42 trial days fall before
+ * it"; after it, it reassured. A completeness ratio next to a partial enumeration is a
+ * claim about the enumeration, whatever it is a ratio OF.
+ *
+ * So it renders the un-logged days and nothing else: silence here can only ever mean "no
+ * caveat to add", never "the record is complete", and the sentence can only move a reader
+ * toward doubt. The legend carries the scope (symptom events only; feedings and doses in
+ * those days are counted nowhere), which is where the other half of that defect lived.
+ *
+ * ONE PREDICATE. Non-treat meal days, matching `computeTrialFacts`'s coverage definition
+ * exactly — the first cut counted any `event_type='meal'`, so a cropped head holding one
+ * treat a day and no actual meal rendered "logged on 42 of 42" beside a coverage line
+ * built by excluding treats. Two conventions, same words, same row, diverging toward
+ * "well tracked": the §5.3 rule, and the specific error `lib/dietTrial.ts` documents at
+ * its own coverage predicate ("a single logged treat on day 9 erased eight untracked days
+ * from the DENOMINATOR").
+ */
+/**
+ * Un-logged days in the cropped stretch, or 0. ONE expression, read by the sentence and by
+ * the legend gate — B-599: a legend may not explain a line the page does not carry, nor
+ * leave one it does carry unexplained, and the two drifted the moment the density sentence
+ * stopped being gated on the symptom count (the legend still keyed on it, so a crop with
+ * zero symptoms and 34 dark days rendered the line with nothing explaining its scope).
+ * A second copy of this arithmetic is how that reopens.
+ */
+function trialCropUnloggedDays(snap: ReportSnapshot): number {
+  const c = snap.scope.trialCropSymptoms
+  if (!c || c.cropDays <= 0) return 0
+  return Math.max(0, c.cropDays - c.mealLoggedDaysInCrop)
+}
+
+/** Does the trial-crop disclosure put ANYTHING on the page? The legend gate reads this. */
+function trialCropDisclosureRenders(snap: ReportSnapshot): boolean {
+  const c = snap.scope.trialCropSymptoms
+  return c !== null && (c.count > 0 || trialCropUnloggedDays(snap) > 0)
+}
+
+function trialCropDensitySentence(snap: ReportSnapshot): string {
+  const c = snap.scope.trialCropSymptoms
+  // NOT GATED ON THE SYMPTOM COUNT. This is a fact about the RECORD, not about the
+  // patient, so it is the one thing here that stays sayable when the crop holds no
+  // symptoms at all: "42 days nobody logged" and "42 days logged and genuinely quiet"
+  // are different findings, and gating this on `count > 0` rendered them identically —
+  // as nothing. Suppressing a coverage fact is the reassuring direction, and it is the
+  // one direction this block may not go quiet in.
+  //
+  // Nor is it gated on `countIsFloor` — where the pull fell short, days it never reached
+  // count as un-logged, so the number can only be OVERSTATED, which is the safe side.
+  //
+  // ⚠️ IT IS PHRASED AS A FACT ABOUT THIS REPORT, in one form, for exactly that reason.
+  // "No meal is logged on N days" is read as a fact about the owner's RECORD, and under a
+  // short pull that is a claim this document cannot support — it holds no log for those
+  // days, which is not the same thing. Branching the wording on `countIsFloor` would put
+  // two registers on one sentence; saying what the report HOLDS is true in both cases.
+  //
+  // An honest note on what this can and cannot claim: rendering only the un-logged days
+  // means no fully-covered crop ever carries a completeness ratio, which is the defect
+  // that cost this sentence a rewrite. It does NOT mean the sentence is incapable of
+  // reassuring — "1 of those 42 days" conveys the other 41 — and a denominator that hid
+  // its complement would not be a denominator. What bounds that residual is the noun:
+  // the count is of MEAL LOGS, and the legend and the clause both say the enumeration
+  // above it is of symptom events only.
+  if (!c || c.cropDays <= 0) return ''
+  const unlogged = trialCropUnloggedDays(snap)
+  if (unlogged <= 0) return ''
+  // A one-day crop takes the pronoun, never "1 of those 1 days".
+  if (c.cropDays === 1) return ` This report holds no meal log for that day.`
+  return ` This report holds no meal log for <b>${num(unlogged)} of those ${num(
+    c.cropDays,
+  )} days</b>.`
 }
 
 /**
@@ -1900,7 +2114,12 @@ function dietTrialSection(snap: ReportSnapshot): string {
         t.trialDaysElapsed,
       )}</b> &mdash; ${num(outsideDays)} trial day${outsideDays === 1 ? '' : 's'} ${
         outsideDays === 1 ? 'falls' : 'fall'
-      } ${where}, outside this report&rsquo;s window. <b>No count below is measured over the trial as a whole.</b>`,
+      } ${where}, outside this report&rsquo;s window${trialCropSymptomClause(
+        snap,
+        outsideDays,
+      )}.${trialCropDensitySentence(
+        snap,
+      )} <b>No count below is measured over the trial as a whole.</b>`,
     )
   }
   if (t.coverage) {
@@ -5701,7 +5920,15 @@ function appendixF(snap: ReportSnapshot): string {
   <dl class="legend">
     ${safetyDt}
     <dt>Owner-reported</dt><dd>Every entry was logged by the owner on a phone. This is a record of what the owner observed, not a clinical examination, and contains no diagnosis or treatment recommendation.</dd>
-    <dt>Range</dt><dd>Scoped to ${h(scopeBasisLabel(snap.scope).toLowerCase())} (${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}). A custom (hand-picked) window discloses the count of symptom events that fall outside it, so nothing is cropped to a good week.</dd>
+    <dt>Range</dt><dd>Scoped to ${h(scopeBasisLabel(snap.scope).toLowerCase())} (${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}). A custom (hand-picked) window discloses the count of symptom events that fall outside it, so nothing is cropped to a good week.${
+      // B-613 — GATED, so the legend never explains a line the page does not carry (B-599,
+      // the incident-photos precedent). Both disclosures are present-only, and a legend
+      // entry standing over a report with no crop would advertise a guard as covering
+      // something it was never asked about — the shape B-494 rules against.
+      trialCropDisclosureRenders(snap)
+        ? ` Where a range covers only part of a diet trial &mdash; which the since-last-visit default does by construction &mdash; the trial section names the symptom events logged in the trial days it leaves out, and how many of those days hold no meal log at all. What those meals were &mdash; the foods, the doses, the intake &mdash; is counted nowhere on this report. Neither disclosure reports an absence of symptoms, and a range can exclude days the record never covered.`
+        : ''
+    }</dd>
     <dt>Denominators</dt><dd>Counts are shown over their window and the days logged, so a count is never read without knowing how long and how completely it was tracked.</dd>
     <dt>Entries vs episodes</dt><dd>Two different measures, deliberately not reconciled into one number (HR-7). An <b>entry</b> is one logged row (same-minute duplicates already collapsed) &mdash; the unit of the frequency trends. An <b>episode</b> is a bout: entries within three hours of each other are chained into one &mdash; the unit of the chronicity flag. So a sign the owner logs repeatedly during a single bout, such as coughing, will show more entries than episodes, and the <b>ratio between them describes how the sign presents</b> rather than being a discrepancy.</dd>
     <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed — a one-sided account renders as &ldquo;before/after&rdquo; that bound &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>

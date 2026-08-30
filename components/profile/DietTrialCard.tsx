@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   manageText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   kicker: {
     fontSize: theme.textXS,
@@ -417,6 +417,6 @@ const styles = StyleSheet.create({
   secondaryActionText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
 });
