@@ -1,9 +1,12 @@
 // B-745 PR 3 — the one-surface confirm. This pins the two ruled ACs:
 //   AC-CHIP  — the Saw it / Found it chips never wrap/squeeze/truncate; the pair
-//              drops to its own row on narrow widths. The layout-less test asserts
-//              the structural CONTRACT that guarantees both states (numberOfLines=1
-//              + flexShrink:0 on the chips, flexWrap on the row); the visual check at
-//              320pt + max accessibility font is QA spine #3 (on-device).
+//              drops to its own row on narrow widths; and (CUL-756) once the pair
+//              alone overruns THAT line, the chips stack one per row rather than
+//              clipping off the sheet. The layout-less test asserts the structural
+//              CONTRACT that guarantees all three states (numberOfLines=1 +
+//              flexShrink:0 on the chips, flexWrap on the row AND on the pair); the
+//              visual check at 320pt + max accessibility font is QA spine #3
+//              (on-device).
 //   AC-FOUND — the window state set: witnessed / open-ended / bounded, each writing
 //              exactly the right occurred_at_confidence + bounds, and the pill wording
 //              at History parity.
@@ -757,5 +760,87 @@ describe('CUL-688 — the Saw it / Found it chips', () => {
     fireEvent.press(getByText('Saw it'));
     expect(queryByTestId('confirm-chip-pair')).not.toBeNull();
     expect(getByText(/^Vomit · today at /)).toBeTruthy();
+  });
+});
+
+describe("CUL-756 — AC-CHIP's third state: the pair overruns its own line", () => {
+  // AC-CHIP shipped two states — a chip never squeezes/truncates/wraps mid-label,
+  // and the pair drops to its own line as a whole — and had no clause for the third:
+  // the pair too wide for the line it just dropped onto. `chipPair` was a plain row
+  // with nothing under it able to shrink, so the overflow left the sheet instead of
+  // resolving, and `Found it` clipped at the right edge. Measured from the shipped
+  // Geist_500Medium advances: the pair needs 389pt at AX5 against a 256pt line on a
+  // 320pt-class width (the width AC-CHIP names) and 326pt at 390pt — so it clips from
+  // AX2 on the narrow width and AX4 on a standard phone, not only at the extreme.
+  //
+  // Clipping is worse than all three things the AC forbids, and this is the control
+  // that decides occurred_at_confidence (B-010/B-448) — the witnessed-vs-discovered
+  // classifier the vet report and the correlation engine read. So the owner most
+  // dependent on the largest text size was choosing between one visible option and a
+  // half-word, on the field that says how much certainty the record claims.
+  //
+  // jest has no layout engine, so these pin the STYLE CONTRACT that produces the
+  // behaviour; the rendered proof is React Native's own Yoga, compiled from
+  // ReactCommon/yoga and run against this exact tree (pair 389pt -> 256pt, stacked,
+  // nothing past the row's content box), plus QA spine #3 on-device.
+  it('the pair wraps, so a chip drops below its sibling rather than off the sheet', () => {
+    const { getByTestId } = renderConfirm();
+    expect(flat(getByTestId('confirm-chip-pair')).flexWrap).toBe('wrap');
+  });
+
+  // The floor that makes the wrap terminate rather than merely relocate the overflow:
+  // a SINGLE chip always fits. Worst case is 'Found it' at AX5 — 214pt against the
+  // 256pt line — so there is always a width at which each chip stands whole. Pinned
+  // as the two properties that keep the label one unsqueezed line, because if a chip
+  // could itself overrun, wrapping the pair would solve nothing and the fix would be
+  // the wrong shape.
+  it('each chip stays whole and single-line — what makes the wrap terminate', () => {
+    const { getByTestId } = renderConfirm();
+    for (const id of ['chip-saw', 'chip-found']) {
+      expect(flat(getByTestId(id)).flexShrink).toBe(0);
+      expect(getByTestId(id).findByProps({ numberOfLines: 1 })).toBeTruthy();
+    }
+  });
+
+  // The knock-on, and the reason this fix is not one property. Stacking the chips
+  // creates a THIRD adjacency for CUL-688's derivation: the two now face each other
+  // VERTICALLY, each with its full CHIP_REACH, across chipPair's rowGap. The obvious
+  // implementation — reuse timeRow's 8pt — puts 8pt of each chip's reach into the
+  // other's, which is CUL-688's exact defect rotated 90°, on the same classifier,
+  // arriving as a side effect of fixing the layout. Same rule as the horizontal
+  // facing edges (CUL-612): the separation must hold both reaches, so it is derived
+  // from the reach (twice it) rather than chosen to look right.
+  it('the stacked chips never share a hit band — the vertical gap holds both reaches', () => {
+    const { getByTestId } = renderConfirm();
+    const pair = getByTestId('confirm-chip-pair');
+    const stackGap = flat(pair).rowGap ?? flat(pair).gap ?? 0;
+    const saw = getByTestId('chip-saw');
+    const found = getByTestId('chip-found');
+
+    expect(facing(saw, 'bottom') + facing(found, 'top')).toBeLessThanOrEqual(stackGap);
+  });
+
+  // Asserting the two gaps are DIFFERENT quantities, because the natural tidy-up is a
+  // single `gap` covering both — which silently drags the stacked separation down to
+  // the 4pt facing gap and reopens the band above. They are guarded separately
+  // because they answer to different neighbours (the AdherenceChipRow shape).
+  it('the facing gap and the stacked gap are not the same number', () => {
+    const { getByTestId } = renderConfirm();
+    const pair = flat(getByTestId('confirm-chip-pair'));
+    const columnGap = pair.columnGap ?? pair.gap ?? 0;
+    const rowGap = pair.rowGap ?? pair.gap ?? 0;
+
+    expect(rowGap).toBeGreaterThan(columnGap);
+  });
+
+  // The pair sits at the row's right edge when it fits. Once it wraps it spans the
+  // whole line, so without this the chips fall left — detached from where the control
+  // lives in every other state. Not carried by the `marginLeft: 'auto'` it replaced:
+  // timeMain is flexGrow:1 and absorbs the row's free space, so that margin resolved
+  // to zero in every state (which is also why the left chip yields no reach, CUL-688)
+  // and only looked like it was doing the alignment.
+  it('right-alignment survives the wrap', () => {
+    const { getByTestId } = renderConfirm();
+    expect(flat(getByTestId('confirm-chip-pair')).justifyContent).toBe('flex-end');
   });
 });

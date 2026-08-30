@@ -465,9 +465,12 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
         showsVerticalScrollIndicator={false}
         testID="confirm-scroll"
       >
-        {/* Time pill row — the label + Saw it/Found it chips. AC-CHIP: the chip pair
-            never wraps or squeezes; on a narrow row it drops below the label as a
-            whole (flexWrap on the row; the chip pair is flexShrink:0). */}
+        {/* Time pill row — the label + Saw it/Found it chips. AC-CHIP, all three
+            states: a chip never squeezes or truncates (flexShrink:0 + numberOfLines=1);
+            on a narrow row the pair drops below the label as a whole (flexWrap here);
+            and once the pair alone overruns THAT line — AX2+ at a 320pt-class width —
+            the chips stack one per row rather than clipping off the sheet (flexWrap on
+            chipPair, CUL-756). */}
         <View style={styles.timeRow} testID="confirm-time-row">
           <TouchableOpacity style={styles.timeMain} onPress={toggleTimeEditor} activeOpacity={0.7} testID="confirm-time-main">
 
@@ -694,10 +697,21 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
 // there is the Change-time control, which carries no slop of its own to yield back,
 // so a flush boundary gets no reach at all: 8pt of a control that opens the time
 // picker was resolving to a control that reclassifies the event.
+// A THIRD adjacency arrives with CUL-756's fix. AC-CHIP's wrap only ever dropped
+// the pair to its own line as a UNIT; at large accessibility text sizes the pair is
+// wider than the line it drops onto (389pt against 256pt at AX5), so the chips now
+// wrap one-per-line inside `chipPair` too. That stacks them, and two stacked chips
+// face each other vertically across `chipPair`'s rowGap with their full CHIP_REACH
+// each — so reusing timeRow's 8pt there would have put 8pt of each chip's reach into
+// the other's, re-opening THIS VERY DEFECT rotated 90°, on the same classifier, as a
+// side effect of fixing the layout. The separation is therefore derived from the
+// reach rather than chosen to look right: twice the reach, so the two meet at the
+// midpoint and never cross, exactly as the facing edges do horizontally.
 const CHIP_PAIR_GAP = theme.space0_5;
 const CHIP_ROW_GAP = theme.space1;      // timeRow's rowGap — the wrapped-state separation
 const CHIP_REACH = CHIP_ROW_GAP;        // the tighter of the two vertical bounds
 const CHIP_GAP_HALF = CHIP_PAIR_GAP / 2;
+const CHIP_STACK_GAP = CHIP_REACH * 2;  // stacked-state separation — never less than both reaches
 
 /** The LEFT chip — Saw it. Flush with Change time, so it yields its left edge whole. */
 const HITSLOP_CHIP_LEFT = {
@@ -712,7 +726,11 @@ const HITSLOP_CHIP_RIGHT = {
 // The Saw it / Found it chip — the shipped FilterChip 'default' register (teal
 // outline + tinted fill when active) with the AC-CHIP contract made explicit: the
 // label is single-line and the chip never shrinks, so it can only ever drop to its
-// own row (handled by the parent's flexWrap), never squeeze or truncate. Built
+// own row, never squeeze or truncate. That drop is now handled at BOTH levels, and
+// the distinction is the whole of CUL-756: `timeRow`'s flexWrap drops the PAIR below
+// the label, and `chipPair`'s drops each CHIP below its sibling once the pair alone
+// overruns that line. This comment used to credit "the parent's flexWrap" for both,
+// which was the gap the defect lived in — the chip's parent carried none. Built
 // inline rather than reusing FilterChip because that component doesn't expose
 // numberOfLines/flexShrink, which AC-CHIP requires.
 function SawFoundChip({ label, active, onPress, hitSlop, testID }: { label: string; active: boolean; onPress: () => void; hitSlop: Insets; testID?: string }) {
@@ -882,10 +900,31 @@ const styles = StyleSheet.create({
   chipPair: {
     flexShrink: 0,             // never squeeze — drop to the next line instead
     flexDirection: 'row',
-    // The chips' facing hitSlop is derived from this (CUL-688) — narrowing it
-    // narrows their reach with it, instead of silently opening a shared band.
-    gap: CHIP_PAIR_GAP,
-    marginLeft: 'auto',
+    // AC-CHIP's third state (CUL-756). The pair dropping to its own line is not the
+    // end of the ladder: at AX2+ on a 320pt-class width, and AX4+ at 390pt, the pair
+    // is wider than the line it just dropped onto, and with nothing under it able to
+    // shrink the overflow left the sheet — `Found it` clipped at the right edge, on
+    // the control that decides how much certainty the record claims. Wrapping here
+    // honours AC-CHIP verbatim rather than amending it: each chip stays whole,
+    // single-line and unsqueezed, and drops to its own row instead. A single chip
+    // always fits (214pt worst case against a 256pt line), so this terminates.
+    flexWrap: 'wrap',
+    // Split into columnGap/rowGap deliberately — a single `gap` would set both, and
+    // these two are different quantities with different guards: the facing reach fits
+    // inside the column gap, while the vertical reach is shared between wrapped LINES
+    // (the AdherenceChipRow shape). The chips' hitSlop is derived from both (CUL-688 +
+    // CUL-756) — narrowing either narrows their reach with it, instead of silently
+    // opening a shared band down the middle of the classifier.
+    columnGap: CHIP_PAIR_GAP,
+    rowGap: CHIP_STACK_GAP,
+    // Right-alignment that survives the wrap. This replaces a `marginLeft: 'auto'`
+    // that read as the thing aligning the pair and was inert in every state:
+    // `timeMain` is flexGrow:1, so it absorbs the row's free space and the auto
+    // margin has nothing left to resolve to (which is also why the left chip yields
+    // no reach — CUL-688). Unwrapped, the pair is content-sized and this is a no-op;
+    // wrapped, it keeps both chips' right edges on the row's right edge, where the
+    // pair sits when it fits, instead of leaving them ragged under the label.
+    justifyContent: 'flex-end',
   },
 
   // ── Saw it / Found it chips (FilterChip 'default' register) ──
