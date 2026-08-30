@@ -957,6 +957,50 @@ Deno.test('B-613 — a type-less most-recent still renders its date, never a dan
   assert.ok(!/most recent: ,/.test(html))
 })
 
+Deno.test('B-613 — the legend scopes the trial-crop disclosure to SYMPTOM events', () => {
+  // The other half of the adversarial pass's blocking finding. The legend read "the trial
+  // section names WHAT WAS LOGGED in the trial days it leaves out" — an unrestricted
+  // universal over a clause that names only REPORT_SYMPTOM_SET events. On the cat whose
+  // cropped days hold 42 refusals of the prescribed diet and 42 off-diet feedings, all
+  // invisible on this page, that sentence tells the reader the 5 vomits are the whole of
+  // it. Same class as CUL-69's "a pointer to another section is not a licence to
+  // generalise": say what the disclosure HOLDS, never what it covers.
+  const s = base()
+  s.scope.trialCropSymptoms = {
+    count: 5,
+    mostRecentIso: '2026-05-24T19:00:00Z',
+    mostRecentType: 'vomit',
+    byType: [{ type: 'vomit', count: 5 }],
+    cropDays: 42,
+    mealLoggedDaysInCrop: 42,
+    countIsFloor: false,
+  }
+  const html = renderReport(s)
+  assert.ok(/names the SYMPTOM events logged in the trial days it leaves out/.test(html))
+  assert.ok(
+    /feedings, doses and intake in them are counted nowhere on this report/.test(html),
+    'the legend must say what the disclosure does NOT reach',
+  )
+  assert.ok(!/section names what was logged/.test(html), 'no unrestricted universal')
+
+  // B-599 both ways: the gate follows what the block ACTUALLY renders, not the symptom
+  // count. A crop with no symptoms but dark days still carries a line, so it is still
+  // explained; a crop with neither carries none, so the legend stays silent.
+  const quiet = base()
+  quiet.scope.trialCropSymptoms = {
+    count: 0, mostRecentIso: null, mostRecentType: null, byType: [],
+    cropDays: 42, mealLoggedDaysInCrop: 8, countIsFloor: false,
+  }
+  assert.ok(/names the SYMPTOM events logged in the trial days it leaves out/.test(renderReport(quiet)))
+
+  const nothing = base()
+  nothing.scope.trialCropSymptoms = {
+    count: 0, mostRecentIso: null, mostRecentType: null, byType: [],
+    cropDays: 42, mealLoggedDaysInCrop: 42, countIsFloor: false,
+  }
+  assert.ok(!/names the SYMPTOM events logged/.test(renderReport(nothing)))
+})
+
 Deno.test('B-613 — an out-of-window date in ANOTHER year carries that year', () => {
   // CUL-69's rule where it now bites. This date is out-of-window BY DEFINITION and is
   // bounded only by the event pull, which reaches up to 400 days before the window start

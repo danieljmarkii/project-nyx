@@ -1286,33 +1286,78 @@ function trialCropSymptomClause(snap: ReportSnapshot, outsideDays: number): stri
   const atLeast = c.countIsFloor ? 'at least ' : ''
   return `, and ${atLeast}<b>${num(c.count)} symptom event${c.count === 1 ? '' : 's'}</b> ${
     c.count === 1 ? 'was' : 'were'
-  } logged in ${outsideDays === 1 ? 'that day' : 'those days'}${detail}`
+  } logged ${outsideDays === 1 ? 'on that day' : 'in those days'}${detail}`
 }
 
 /**
- * B-613 (cold read round 16, BLOCKING) — THE DENOMINATOR FOR THE CLAUSE ABOVE.
+ * B-613 — HOW MUCH OF THE CROPPED STRETCH THE OWNER WAS LOGGING, stated ONLY when the
+ * answer subtracts confidence.
  *
- * "5 symptom events fall in the 42 cropped days" is a rate if those days were logged and
- * an unknown if they were not, and the clause could not say which. The report's own
- * legend promises the opposite in as many words — "a count is never read without knowing
- * how long and how completely it was tracked" — so the omission was not a gap but a
- * contradiction, and a reader told the rule and then denied it stops looking for the
- * qualifier. It is stated in the block's OWN denominator vocabulary ("Meals were logged
- * on N of M days"), two lines above the sentence that uses the same words for the window,
- * so the two read as one scale rather than as two conventions.
+ * The cold read asked for a denominator: "5 symptom events in 42 days" is a rate if those
+ * days were tracked and an unknown if they were not, and the clause could not say which.
+ * The first cut answered it symmetrically — "Meals were logged on 42 of those 42 days" —
+ * and the adversarial pass broke it on the patient this report exists for.
  *
- * WITHHELD WHEN THE COUNT IS A FLOOR. There the pull did not reach the whole cropped
- * stretch, so the meal-day count is short over an unknown span, and a ratio built from
- * two partial numbers is a precision nobody can act on. "At least N" already carries the
- * incompleteness, which is the fact that matters; a fabricated denominator beside it
- * would be the manufactured-precision failure the weight tile refuses for the same reason.
+ * ⚠️ THE COUNTEREXAMPLE, BECAUSE IT IS THE WHOLE REASON THIS FUNCTION IS SHAPED LIKE THIS.
+ * A cat whose 42 cropped trial days hold 42 REFUSALS of the prescribed diet, 42 off-diet
+ * feedings and 5 vomits, with `safetyFlags: []`. Every one of those refusals and feedings
+ * is invisible on this page — the block's exposure counts are window-scoped and appendix C
+ * is too — so the only thing the clause can name is the 5 vomits. Adding "42 of 42 days
+ * logged" beside it told the reader the stretch was completely tracked AND completely
+ * accounted for, and turned a report that had honestly admitted a hole into one asserting
+ * the hole was filled. Before the change that record said only "42 trial days fall before
+ * it"; after it, it reassured. A completeness ratio next to a partial enumeration is a
+ * claim about the enumeration, whatever it is a ratio OF.
+ *
+ * So it renders the un-logged days and nothing else: silence here can only ever mean "no
+ * caveat to add", never "the record is complete", and the sentence can only move a reader
+ * toward doubt. The legend carries the scope (symptom events only; feedings and doses in
+ * those days are counted nowhere), which is where the other half of that defect lived.
+ *
+ * ONE PREDICATE. Non-treat meal days, matching `computeTrialFacts`'s coverage definition
+ * exactly — the first cut counted any `event_type='meal'`, so a cropped head holding one
+ * treat a day and no actual meal rendered "logged on 42 of 42" beside a coverage line
+ * built by excluding treats. Two conventions, same words, same row, diverging toward
+ * "well tracked": the §5.3 rule, and the specific error `lib/dietTrial.ts` documents at
+ * its own coverage predicate ("a single logged treat on day 9 erased eight untracked days
+ * from the DENOMINATOR").
  */
+/**
+ * Un-logged days in the cropped stretch, or 0. ONE expression, read by the sentence and by
+ * the legend gate — B-599: a legend may not explain a line the page does not carry, nor
+ * leave one it does carry unexplained, and the two drifted the moment the density sentence
+ * stopped being gated on the symptom count (the legend still keyed on it, so a crop with
+ * zero symptoms and 34 dark days rendered the line with nothing explaining its scope).
+ * A second copy of this arithmetic is how that reopens.
+ */
+function trialCropUnloggedDays(snap: ReportSnapshot): number {
+  const c = snap.scope.trialCropSymptoms
+  if (!c || c.cropDays <= 0) return 0
+  return Math.max(0, c.cropDays - c.mealLoggedDaysInCrop)
+}
+
+/** Does the trial-crop disclosure put ANYTHING on the page? The legend gate reads this. */
+function trialCropDisclosureRenders(snap: ReportSnapshot): boolean {
+  const c = snap.scope.trialCropSymptoms
+  return c !== null && (c.count > 0 || trialCropUnloggedDays(snap) > 0)
+}
+
 function trialCropDensitySentence(snap: ReportSnapshot): string {
   const c = snap.scope.trialCropSymptoms
-  if (!c || c.count <= 0 || c.countIsFloor || c.cropDays <= 0) return ''
-  return ` Meals were logged on <b>${num(c.mealLoggedDaysInCrop)} of those ${num(
-    c.cropDays,
-  )} days</b>.`
+  // NOT GATED ON THE SYMPTOM COUNT. This is a fact about the RECORD, not about the
+  // patient, so it is the one thing here that stays sayable when the crop holds no
+  // symptoms at all: "42 days nobody logged" and "42 days logged and genuinely quiet"
+  // are different findings, and gating this on `count > 0` rendered them identically —
+  // as nothing. Suppressing a coverage fact is the reassuring direction, and it is the
+  // one direction this block may not go quiet in.
+  //
+  // Nor is it gated on `countIsFloor`. Where the pull fell short those days hold no meal
+  // log IN THIS REPORT, which is exactly what the sentence says; the error can only run
+  // toward "less tracked than it was", which is the safe side.
+  if (!c || c.cropDays <= 0) return ''
+  const unlogged = trialCropUnloggedDays(snap)
+  if (unlogged <= 0) return ''
+  return ` No meal is logged on <b>${num(unlogged)} of those ${num(c.cropDays)} days</b>.`
 }
 
 /**
@@ -2055,7 +2100,9 @@ function dietTrialSection(snap: ReportSnapshot): string {
       } ${where}, outside this report&rsquo;s window${trialCropSymptomClause(
         snap,
         outsideDays,
-      )}.${trialCropDensitySentence(snap)} <b>No count below is measured over the trial as a whole.</b>`,
+      )}.${trialCropDensitySentence(
+        snap,
+      )} <b>No count below is measured over the trial as a whole.</b>`,
     )
   }
   if (t.coverage) {
@@ -5861,8 +5908,8 @@ function appendixF(snap: ReportSnapshot): string {
       // the incident-photos precedent). Both disclosures are present-only, and a legend
       // entry standing over a report with no crop would advertise a guard as covering
       // something it was never asked about — the shape B-494 rules against.
-      snap.scope.trialCropSymptoms && snap.scope.trialCropSymptoms.count > 0
-        ? ` Where a range covers only part of a diet trial &mdash; which the since-last-visit default does by construction &mdash; the trial section names what was logged in the trial days it leaves out. Both disclosures list only what is present; neither reports an absence, and a range can exclude days the record never covered.`
+      trialCropDisclosureRenders(snap)
+        ? ` Where a range covers only part of a diet trial &mdash; which the since-last-visit default does by construction &mdash; the trial section names the SYMPTOM events logged in the trial days it leaves out, and how many of those days carry no meal log; feedings, doses and intake in them are counted nowhere on this report. Both disclosures list only what is present; neither reports an absence, and a range can exclude days the record never covered.`
         : ''
     }</dd>
     <dt>Denominators</dt><dd>Counts are shown over their window and the days logged, so a count is never read without knowing how long and how completely it was tracked.</dd>

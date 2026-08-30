@@ -3803,58 +3803,89 @@ Deno.test('B-613 — a single-type crop does not repeat the sign two words later
   assert.ok(!/most recent: vomiting/.test(text), 'the tally already named it')
 })
 
-Deno.test('B-613 — the crop count carries its DENOMINATOR (the report promises one)', () => {
-  // BLOCKING in cold read round 16. "5 symptom events over 42 days" is a rate if those
-  // days were logged and an unknown if they were not — and the report's own legend says
-  // "a count is never read without knowing how long and how completely it was tracked".
-  // An advertised rule the page then breaks is worse than no rule: it stops the reader
-  // looking for the qualifier.
-  const input = truncatedTrialInput()
-  input.eventsSinceIso = '2026-01-03T00:00:00Z'
-  const snap = assembleReport(input)
-  // The fixture logs a meal every day from the trial's start to Jun 1, so all 42 cropped
-  // days carry one.
-  assert.equal(snap.scope.trialCropSymptoms?.cropDays, 42)
-  assert.equal(snap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 42)
-  assert.match(plain(renderReport(snap)), /Meals were logged on 42 of those 42 days\./)
+Deno.test('B-613 — the coverage of the cropped stretch is stated ONLY toward doubt', () => {
+  // The cold read asked for a denominator ("5 events in 42 days is a rate if those days
+  // were logged and an unknown if they were not"). The first answer was symmetric —
+  // "Meals were logged on 42 of those 42 days" — and the adversarial pass broke it on the
+  // patient this report exists for: a crop holding 42 REFUSALS of the prescribed diet and
+  // 42 off-diet feedings, none of which any count on the page can reach, where a
+  // completeness ratio beside a symptoms-only enumeration told the reader the hole was
+  // filled. A ratio next to a partial enumeration is a claim about the enumeration.
+  //
+  // So the fully-logged crop says nothing extra, and only the un-logged days are named.
+  const dense = truncatedTrialInput()
+  dense.eventsSinceIso = '2026-01-03T00:00:00Z'
+  const denseSnap = assembleReport(dense)
+  assert.equal(denseSnap.scope.trialCropSymptoms?.cropDays, 42)
+  assert.equal(denseSnap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 42)
+  const denseText = plain(renderReport(denseSnap))
+  assert.ok(!/42 of those 42 days/.test(denseText), 'no completeness ratio, ever')
+  assert.ok(!/No meal is logged on/.test(denseText))
 
-  // A crop the owner barely logged reads as one — this is the case the denominator exists
-  // for, where five events over a mostly-unlogged stretch is a floor, not a rate.
+  // A crop the owner barely logged says so, in the block's own vocabulary.
   const sparse = truncatedTrialInput()
   sparse.eventsSinceIso = '2026-01-03T00:00:00Z'
   sparse.events = sparse.events.filter(
     (e) => e.type !== 'meal' || e.occurredAt >= '2026-05-25T00:00:00Z',
   )
   const sparseSnap = assembleReport(sparse)
-  assert.equal(sparseSnap.scope.trialCropSymptoms?.cropDays, 42)
   assert.equal(sparseSnap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 8)
-  assert.match(plain(renderReport(sparseSnap)), /Meals were logged on 8 of those 42 days\./)
+  assert.match(plain(renderReport(sparseSnap)), /No meal is logged on 34 of those 42 days\./)
 })
 
-Deno.test('B-613 — no denominator is stated when the count is a floor', () => {
-  // Both numbers would be short over an unknown span, and a ratio built from two partial
-  // numbers is a precision nobody can act on. "At least N" already carries the
-  // incompleteness, which is the fact that matters.
-  const input = truncatedTrialInput() // no eventsSinceIso ⇒ floor
-  const text = plain(renderReport(assembleReport(input)))
-  assert.match(text, /at least 5 symptom events/)
-  assert.ok(!/Meals were logged on \d+ of those/.test(text))
-})
-
-Deno.test('B-613 — the denominator counts only MEAL days, and only cropped ones', () => {
-  // MEAL-logged days, on the C5 precedent: "days with any log" on a real record IS largely
-  // the symptom series, so it would circle back on the very count it qualifies and read
-  // "well tracked" exactly when symptoms are dense. And the set is intersected with the
-  // cropped days, so a meal inside the window can never inflate it.
+Deno.test('B-613 — a TREAT is not a logged meal day (one predicate with the coverage line)', () => {
+  // BLOCKING in both reviews, found independently. `lib/dietTrial.ts`'s coverage predicate
+  // excludes treats and states why in place — "on live data 82% of feedings are treats, so
+  // a 'days with food logged' count is clearable entirely by treat data". The first cut
+  // counted any `type === 'meal'` event, so a cropped head holding one dental chew a day
+  // and NOT ONE meal of the prescribed diet rendered as fully tracked, in the same words,
+  // twelve words from a coverage line built the other way.
   const input = truncatedTrialInput()
   input.eventsSinceIso = '2026-01-03T00:00:00Z'
-  input.events = input.events.filter((e) => e.type !== 'meal')
-  // Symptom-only days in the crop must NOT count as logged days.
+  input.events = input.events.map((e) =>
+    e.type === 'meal' && e.occurredAt < '2026-06-02T00:00:00Z' && e.meal
+      ? { ...e, meal: { ...e.meal, foodType: 'treat' as const } }
+      : e,
+  )
   const snap = assembleReport(input)
-  assert.equal(snap.scope.trialCropSymptoms?.count, 5)
-  assert.equal(snap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 0)
-  assert.match(plain(renderReport(snap)), /Meals were logged on 0 of those 42 days\./)
+  assert.equal(
+    snap.scope.trialCropSymptoms?.mealLoggedDaysInCrop,
+    0,
+    'a stretch of nothing but treats is a stretch with no meal logged',
+  )
+  assert.match(plain(renderReport(snap)), /No meal is logged on 42 of those 42 days\./)
 })
+
+Deno.test('B-613 — the coverage fact survives a crop with NO symptoms and a short pull', () => {
+  // Dr. Chen, follow-up read: gating this on the symptom count rendered "42 days nobody
+  // logged" and "42 days logged and genuinely quiet" identically — as nothing — and
+  // suppressing a coverage fact is the reassuring direction. It is a fact about the
+  // RECORD, so it does not depend on the patient having been ill.
+  const quiet = truncatedTrialInput()
+  quiet.eventsSinceIso = '2026-01-03T00:00:00Z'
+  quiet.events = quiet.events.filter(
+    (e) => (e.type !== 'vomit' || e.occurredAt >= '2026-06-02T00:00:00Z') &&
+      (e.type !== 'meal' || e.occurredAt >= '2026-05-25T00:00:00Z'),
+  )
+  const quietSnap = assembleReport(quiet)
+  assert.equal(quietSnap.scope.trialCropSymptoms?.count, 0)
+  const quietText = plain(renderReport(quietSnap))
+  assert.match(quietText, /No meal is logged on 34 of those 42 days\./)
+  // …and still no absence claim about symptoms.
+  assert.ok(!/no symptom/i.test(quietText))
+
+  // A short pull can only overstate the un-logged days, which is the safe side, so the
+  // sentence stands there too.
+  const floored = truncatedTrialInput() // no eventsSinceIso ⇒ floor
+  floored.events = floored.events.filter(
+    (e) => e.type !== 'meal' || e.occurredAt >= '2026-05-25T00:00:00Z',
+  )
+  const flooredText = plain(renderReport(assembleReport(floored)))
+  assert.match(flooredText, /at least 5 symptom events/)
+  assert.match(flooredText, /No meal is logged on 34 of those 42 days\./)
+})
+
+
 
 
 

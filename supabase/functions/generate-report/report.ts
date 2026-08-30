@@ -4093,7 +4093,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       // sentences on one page come to disagree about the same event (the B-532 class).
       if (inWindow(e.occurredAt)) continue
       if (e.type === 'meal') {
-        mealDayNums.add(dn)
+        // NON-TREAT ONLY, matching `computeTrialFacts`'s coverage predicate exactly
+        // (`lib/dietTrial.ts`: "on live data 82% of feedings are treats, so a 'days with
+        // food logged' count is clearable entirely by treat data"). Both reviewers broke
+        // the treat-inclusive first cut on the same input: 42 cropped days holding one
+        // dental chew each and not one meal of the prescribed diet rendered as fully
+        // tracked, in the same words, twelve words from a coverage line built the other
+        // way — one row, two scales, on the larger half of the trial. §5.3.
+        if (e.meal?.foodType !== 'treat') mealDayNums.add(dn)
         continue
       }
       if (!REPORT_SYMPTOM_SET.has(e.type)) continue
