@@ -99,33 +99,59 @@ export default function TrialExposuresScreen() {
               {group.title !== null && (
                 <SectionLabel label={group.title} header style={styles.groupLabel} />
               )}
-              {group.rows.map((row) => (
-                <TouchableOpacity
-                  key={row.key}
-                  testID="trial-exposure-row"
-                  style={styles.row}
-                  // A row with no reason to show is not a button. Nothing is
-                  // hidden by that — the row still renders, because an exposure
-                  // the app cannot explain still happened.
-                  onPress={row.reason !== null ? () => setOpen(row) : undefined}
-                  disabled={row.reason === null}
-                  activeOpacity={0.7}
-                  accessibilityRole={row.reason !== null ? 'button' : undefined}
-                  accessibilityLabel={
-                    row.reason !== null ? `${row.label}. ${row.meta}. ${EXPOSURE_REASON_TITLE}` : undefined
-                  }
-                >
-                  <View style={styles.rowText}>
-                    <ThemedText style={styles.rowLabel}>{row.label}</ThemedText>
-                    <ThemedText style={styles.rowMeta}>{row.meta}</ThemedText>
+              {group.rows.map((row) =>
+                // A row with no reason to show is not a button. Nothing is
+                // hidden by that — the row still renders, because an exposure
+                // the app cannot explain still happened.
+                //
+                // That was expressed as `disabled={row.reason === null}` on one
+                // TouchableOpacity, which is a different claim than it looks
+                // (CUL-728): RN copies `disabled` into
+                // `accessibilityState.disabled` and iOS maps it to
+                // UIAccessibilityTraitNotEnabled — VoiceOver's "dimmed". So the
+                // rows carrying the LEAST explanation announced an unavailable
+                // control on top of it. Split by host: the explainable row keeps
+                // the touchable, the rest is a plain View.
+                //
+                // `accessible` + a label keep the inert row ONE stop. The
+                // touchable was accessible by default, so without it the food and
+                // its timestamp split into two unrelated announcements — the
+                // label is the same facts minus the promise of a reason to tap.
+                row.reason !== null ? (
+                  <TouchableOpacity
+                    key={row.key}
+                    testID="trial-exposure-row"
+                    style={styles.row}
+                    onPress={() => setOpen(row)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${row.label}. ${row.meta}. ${EXPOSURE_REASON_TITLE}`}
+                  >
+                    <View style={styles.rowText}>
+                      <ThemedText style={styles.rowLabel}>{row.label}</ThemedText>
+                      <ThemedText style={styles.rowMeta}>{row.meta}</ThemedText>
+                    </View>
+                    {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
+                        These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and Geist
+                        carries no ✓ / ✕ / ＋ in any loaded weight, so sweeping one buys OS fallback for
+                        nothing. CUL-364 §7. */}
+                    <Text style={styles.chevron}>›</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View
+                    key={row.key}
+                    testID="trial-exposure-row"
+                    style={styles.row}
+                    accessible
+                    accessibilityLabel={`${row.label}. ${row.meta}`}
+                  >
+                    <View style={styles.rowText}>
+                      <ThemedText style={styles.rowLabel}>{row.label}</ThemedText>
+                      <ThemedText style={styles.rowMeta}>{row.meta}</ThemedText>
+                    </View>
                   </View>
-                  {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
-                      These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and Geist
-                      carries no ✓ / ✕ / ＋ in any loaded weight, so sweeping one buys OS fallback for
-                      nothing. CUL-364 §7. */}
-                  {row.reason !== null && <Text style={styles.chevron}>›</Text>}
-                </TouchableOpacity>
-              ))}
+                ),
+              )}
             </View>
           ))}
 
