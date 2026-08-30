@@ -739,9 +739,31 @@ async function presyncFoodItems(
 // QUEUE_PUSH_WAIT_CEILING_MS, whichever comes first, and then goes regardless. What
 // makes that safe is where it degrades TO — a queue stalled past the ceiling falls
 // back to exactly the concurrent behaviour it had before this change, so the worst
-// case is the old failure mode rather than a new one, while the window this exists
-// for sits well inside the bound (the completion card lives 5000ms, and its edit
-// lands a second or two after the insert's push).
+// case is the old failure mode rather than a new one.
+//
+// WHERE THE CEILING IS THE ORDINARY PATH, NOT THE FALLBACK. It is tempting to
+// justify 15s off the completion card's 5000ms life, and that is the wrong measure:
+// the card's life is the OWNER's window, and the ceiling is compared against the
+// DRAIN's duration. On the row-only queues those are worlds apart. On three they
+// are not — `drainEventAttachmentsQueue` and `drainVetDocumentsQueue` each walk up
+// to 20 compress-then-upload round trips, and pushRows' isolation pass fires up to
+// 100 sequential single-row requests after any batch refusal — so on a mediocre
+// link the ceiling fires routinely there and those queues spend the rest of that
+// run unserialized. On event_attachments that costs nothing (insert-only, no
+// version to lose); on vet_documents, an LWW queue where a rename or a soft delete
+// during a long upload is exactly this defect's shape, the protection is genuinely
+// thinner than on the rest. Still never worse than pre-fix, which is why it ships —
+// but the honest statement is "strong on the row queues, partial on the object
+// queues", not "safe everywhere". Bounding the REQUEST rather than the wait is what
+// would make it uniform (supabase-js sets no timeout, so nothing today can): CUL-743.
+//
+// AND IT IS NOT FREE ON THE READ SIDE. A caller that awaits a whole cycle now waits
+// on pushes it is not making: flushPendingForSignOut walks 12 queues behind a
+// spinner with no timeout of its own (app/settings.tsx), and flushBeforeReport and
+// the analyze-* triggers await a queue each. Pre-fix they started their own
+// concurrent drain immediately. Waiting for a run that is genuinely working is
+// correct — it is the same work — so the added cost is one ceiling per HUNG queue,
+// not per queue. (adversarial-reviewer, CUL-622.)
 //
 // Never DROPPING the trailing run is the other half of that argument, and CUL-733
 // names it: a drop-on-busy lock would leave the write waiting for the next
@@ -775,11 +797,28 @@ function settledOrCeiling(active: Promise<void>): Promise<void> {
 }
 
 function serializeQueuePush(queue: QueueTable, drain: () => Promise<void>): Promise<void> {
-  const active = queuePushInFlight.get(queue);
-  if (!active) return startDrain(queue, drain);
-
+  // THE TRAILING SLOT IS CHECKED FIRST, and the order is load-bearing rather than
+  // stylistic. The active run's `.finally` clears the in-flight slot, but the
+  // trailing run does not start until a few microtask jobs later (through
+  // settledOrCeiling's chain) — so there is a window where the in-flight slot is
+  // already empty and a trailing run is still pending. Looking at the in-flight
+  // slot first, a caller landing in that window sees nothing, starts its own run,
+  // and the pending trailing run then starts beside it: two concurrent drains on
+  // one queue, which is the whole defect back again.
+  //
+  // Joining the pending trailing run instead is always safe, by construction: a
+  // trailing run that has not started has not read the queue, so it cannot miss a
+  // write the caller just made. (adversarial-reviewer, CUL-622 — reproduced on
+  // unmutated source with `a.then(() => syncPendingEvents())`, three upserts where
+  // the serializer permits two. The window is microtask-only, so no tap or timer
+  // can land in it and nothing in today's call graph does; every same-queue call
+  // is a fresh entry and every `.then` chain crosses queues. One ordinary-looking
+  // future line re-opens it, which is why it is closed here rather than noted.)
   const waiting = queuePushTrailing.get(queue);
   if (waiting) return waiting;
+
+  const active = queuePushInFlight.get(queue);
+  if (!active) return startDrain(queue, drain);
 
   const trailing = settledOrCeiling(active).then(() => {
     queuePushTrailing.delete(queue);
@@ -2860,8 +2899,14 @@ export async function syncNow(): Promise<void> {
 // Shares syncNow's in-flight guard, so a flush that collides with a background
 // cycle is a no-op. The caller then reads a queue the in-flight cycle is about to
 // drain and may warn about rows that were never really at risk — a false warning,
-// which is the direction to fail in. The alternative (running two concurrent
-// pushes over the same queue) trades a redundant prompt for double-sent rows.
+// which is the direction to fail in.
+//
+// This comment used to justify that by naming the alternative as "double-sent
+// rows". Since CUL-622 that is no longer what dropping the guard would buy —
+// serializeQueuePush makes two concurrent drains over one queue impossible, so
+// pushAllQueues would simply QUEUE behind the background cycle rather than race it.
+// The remaining reason to keep the guard is the plainer one: two cycles would each
+// pull and reconcile, and the second would do it over rows the first just wrote.
 export async function flushPendingForSignOut(): Promise<void> {
   if (syncCycleInFlight) return;
   syncCycleInFlight = true;

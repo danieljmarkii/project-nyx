@@ -66,9 +66,32 @@ It was written, reviewed by eye, and believed. The ceiling test failed on its fi
 
 *A guard written for a mechanism is the only thing that finds the mechanism quietly doing nothing.* CUL-613's rule — prove it by mutation, not by inspection — paid for itself inside one session, against code its own author had just written to be correct.
 
+## What the reviews changed
+
+Both passes ran on `c9f6393`. `code-reviewer`: **fix-before-merge**. `adversarial-reviewer`: **PASS on correctness for every live path, FAIL on the test block's discrimination.**
+
+The correctness pass is worth recording because it checked the premise rather than taking it: it verified `set_updated_at` → `shouldWriteRemoteRow` → the `synced = 1` backstop end to end and confirmed the stale server row does win and that CUL-691's guard does not rescue it. It marked one thing **INSUFFICIENT** and was right to: nobody here can confirm that two supabase-js upserts issued 2s apart genuinely reorder at Postgres without a live HTTP/2 capture. Every *consequence* of reordering is verified; the reordering itself is inferred.
+
+Four things came back, and three of them are now closed in the diff.
+
+**1. Two one-token mutations reintroduced real concurrency defects and left all six original tests green** — found independently by both reviewers.
+
+- `return drain()` instead of `startDrain(...)` in the trailing branch: the trailing run stops claiming the slot, so the next caller pushes beside it. The whole defect, restored.
+- a bare `queuePushInFlight.delete(queue)` instead of the identity check: after a ceiling fire, the stale run's settlement clears the *live* run's slot.
+
+Both are edits in the direction a future reader would call a tidy-up, and the second is the line the in-place comment explicitly calls load-bearing. **The counting lesson is the sharp part:** the existing release test asserted *queue reads*, which are 3 either way, so it could not see a caller that failed to wait. Only the **upsert count at the moment the next caller arrives** discriminates. *A test that counts the work done cannot see a caller that failed to wait.*
+
+**2. A latent handoff gap, reproduced on unmutated source.** The active run's `.finally` clears the in-flight slot several microtask jobs before the trailing run starts. A caller landing in that window saw both maps empty, started its own drain, and the pending trailing run then started beside it — `a.then(() => syncPendingEvents())` produced three upserts where the serializer permits two. Microtask-only, so no tap or timer can land in it, and no call site does it today (every `.then` chain in the app crosses queues). One ordinary-looking future line re-opens it, so it is closed rather than noted: **check the trailing slot before the in-flight slot.** A pending trailing run has by construction not read the queue, so joining it is always safe.
+
+**3. The ceiling was justified against the wrong quantity.** The comment argued 15s from the completion card's 5000ms life — which measures the *owner's* window, not the *drain's* duration. On three queues the drain routinely exceeds it: `drainEventAttachmentsQueue` and `drainVetDocumentsQueue` each walk up to 20 compress-then-upload round trips, and `pushRows`' isolation pass fires up to 100 sequential single-row requests after a batch refusal. So the ceiling is the ordinary path there, not the fallback, and those queues spend the rest of the run unserialized. Costless on `event_attachments` (insert-only, no version); **materially thinner on `vet_documents`**, an LWW queue where a rename or soft delete mid-upload is exactly this defect. Still never worse than pre-fix, so it ships — but the header now says *strong on the row queues, partial on the object queues* instead of claiming safety everywhere.
+
+**4. Named, not closed: the read side now waits on pushes it is not making.** `flushPendingForSignOut` walks 12 queues behind a spinner with no timeout of its own, and `flushBeforeReport` and the `analyze-*` triggers each await a queue. Waiting on a run that is genuinely working is correct — it is the same work — so the real cost is one ceiling per *hung* queue, not per queue. No safety consequence (the per-incident read is escalate-only; delay never reassures).
+
+3 and 4 have the same root and the same fix, which is out of this PR's scope: **bound the request rather than the wait.** supabase-js sets no timeout, so nothing today can. Filed as **CUL-743** and referenced from the code.
+
 ## Tests
 
-Six, in `lib/sync.test.ts`, each confirmed red against a mutation of the code it protects, one defect at a time:
+Nine, in `lib/sync.test.ts`, each confirmed red against a mutation of the code it protects, one defect at a time. The last three exist because the reviews proved the first six did not cover them — the honest reading of that is that "mutation-proved" was true of the tests that were written, and the gap was in **which defects were enumerated**, not in the proving:
 
 | Mutation | Red |
 |---|---|
@@ -79,6 +102,9 @@ Six, in `lib/sync.test.ts`, each confirmed red against a mutation of the code it
 | one global lock instead of one per queue | the cross-queue test (hangs) |
 | recurse instead of `startDrain` (the ceiling becomes a no-op) | the ceiling test |
 | the ceiling timer never resolves | the ceiling test |
+| trailing run does not claim the slot (`return drain()`) | the claimed-not-borrowed test |
+| bare `delete` instead of the identity check | the stale-run test |
+| check in-flight before trailing | the handoff-gap test |
 
 The harness releases every deferred in `afterEach`, because the serializer's state is module-level: a test that fails mid-flight would otherwise leave its queue slot held and cascade red through every later test in the block, naming the wrong defect. That was observed, not anticipated.
 
