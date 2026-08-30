@@ -216,7 +216,11 @@ const styles = StyleSheet.create({
   allPatternsText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    // accent-INK, not colorAccent — the same call CUL-27 made on TodayZone's
+    // "Full day ›". This is 13px accent text on the white Card, where bright
+    // #00C2A8 is 2.26:1 (fails AA); colorAccentInk is 5.17:1. The two doors sit
+    // one card apart on the same screen, so they also have to match (CUL-578).
+    color: theme.colorAccentInk,
     // Padding + the hitSlop={8} on the Pressable clear the 44pt tap-target floor.
     paddingVertical: theme.space1,
   },
@@ -241,8 +245,12 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     marginBottom: theme.space2,
   },
+  // The highlighted state of the sublabel — 13px on the white Card, so it takes
+  // the ink for the same reason the door does. This is the CONTRAST half only:
+  // whether this line may state a week-over-week direction at all is CUL-568's
+  // question, and repointing the colour neither settles nor prejudges it.
   chartSubLabelImproving: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   emptyText: {
     fontSize: theme.textMD,
@@ -316,9 +324,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorAccent,
     opacity: 0.6,
   },
+  // 11px on the white Card — the smallest of the three, so the least forgiving.
+  // The RULE above keeps colorAccent: it is a graphical mark, not text, and it is
+  // the chart's accent line rather than a label (CUL-578 is text-only).
   trialMarkerLabel: {
     fontSize: theme.textXS,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     marginTop: 2,
   },
 
