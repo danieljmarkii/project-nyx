@@ -64,4 +64,10 @@ Run on the rewrite **before** it landed — the discipline whose absence created
 
 The 2026-08-27 review's other routed items are **not** in this pass and stay on their own issues: CUL-676's three engine briefs (the L4 lane inventory, the logged-day denominators, the ⑦ one-card cap), CUL-677's T&S gate on the §11 swap, the W1 greenlight riders, and the recommendation to move §9a from prose to an executable decision table + property tests once the rulings settled — which is now unblocked and is a build item, not a writing one.
 
+## The base merge
+
+`main` moved twice mid-session and CUL-671 (#763) edited the same spec file. The only textual conflict was the **version header** — it had annotated the v1.3 line while this branch bumped it to v1.4 — resolved on meaning, keeping CUL-671's distinctive §17-research-debt marker inside the v1.4 line rather than dropping it (the same check the v1.3 session ran against #722).
+
+One real consequence beyond the conflict: CUL-671 discharged §17 by folding the ISFM quotation into the evidence pack — which is the thing **§9a rule 8 was still asking for in its last sentence**. The ask is now marked discharged in place, so the contract does not request work that already shipped an hour earlier on another branch.
+
 — Session 2026-08-30, branch `claude/spec-v14-silence-defects-9yp3we`.
