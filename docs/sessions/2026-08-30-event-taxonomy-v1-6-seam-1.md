@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-30
 
-Shipped via **#TBD** (draft). Mode: BUILD. Branch `claude/cul-684-seam-1-f-c-idrcxt`.
+Shipped via **#783** (draft). Mode: BUILD. Branch `claude/cul-684-seam-1-f-c-idrcxt`.
 
 ## What this session was
 
