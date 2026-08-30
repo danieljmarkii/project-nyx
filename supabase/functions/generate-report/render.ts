@@ -1253,17 +1253,66 @@ function cherryPickDisclosure(snap: ReportSnapshot): string {
 function trialCropSymptomClause(snap: ReportSnapshot, outsideDays: number): string {
   const c = snap.scope.trialCropSymptoms
   if (!c || c.count <= 0) return ''
-  const type = c.mostRecentType ? `${h(symptomLabel(c.mostRecentType).toLowerCase())}, ` : ''
+  // THE MIX. With more than one sign present the tally carries the types and the
+  // most-recent clause only has to say WHICH one was last; with a single type the tally
+  // already said it, so repeating it two words later is noise.
+  //
+  // ONE PARENTHETICAL, NOT A SECOND EM-DASH. The host sentence already spends its dash on
+  // "a trial that has run 73 — 42 trial days fall before it"; a second one two clauses
+  // later, doing a different job, is what turns a dense clinical line into a list nobody
+  // finishes. The page-1 guard uses the same parenthetical shape for the same fact.
+  const parts: string[] = []
+  if (c.byType.length > 0) {
+    parts.push(
+      c.byType.map((t) => `${num(t.count)} ${h(symptomLabel(t.type).toLowerCase())}`).join(', '),
+    )
+  }
+  // With more than one sign present the tally carries the types and this only has to say
+  // WHICH was last; with a single type the tally already said it two words earlier.
+  const namedType = c.byType.length > 1 && c.mostRecentType
+    ? `${h(symptomLabel(c.mostRecentType).toLowerCase())}, `
+    : ''
   // The date is out-of-window by construction, so it carries its year whenever that is not
   // the window's — CUL-69, and the reason the trial case needs it more than the page-1 box
   // does: a stale-active trial (B-422's steady state) puts these days a year or more back.
-  const recent = c.mostRecentIso
-    ? ` (most recent: ${type}${h(fmtLocalDayScoped(c.mostRecentIso, snap.timezone, snap.scope.endDate))})`
-    : ''
+  if (c.mostRecentIso) {
+    parts.push(
+      `most recent${namedType ? ': ' : ' '}${namedType}${h(
+        fmtLocalDayScoped(c.mostRecentIso, snap.timezone, snap.scope.endDate),
+      )}`,
+    )
+  }
+  const detail = parts.length > 0 ? ` (${parts.join('; ')})` : ''
   const atLeast = c.countIsFloor ? 'at least ' : ''
   return `, and ${atLeast}<b>${num(c.count)} symptom event${c.count === 1 ? '' : 's'}</b> ${
     c.count === 1 ? 'was' : 'were'
-  } logged in ${outsideDays === 1 ? 'that day' : 'those days'}${recent}`
+  } logged in ${outsideDays === 1 ? 'that day' : 'those days'}${detail}`
+}
+
+/**
+ * B-613 (cold read round 16, BLOCKING) — THE DENOMINATOR FOR THE CLAUSE ABOVE.
+ *
+ * "5 symptom events fall in the 42 cropped days" is a rate if those days were logged and
+ * an unknown if they were not, and the clause could not say which. The report's own
+ * legend promises the opposite in as many words — "a count is never read without knowing
+ * how long and how completely it was tracked" — so the omission was not a gap but a
+ * contradiction, and a reader told the rule and then denied it stops looking for the
+ * qualifier. It is stated in the block's OWN denominator vocabulary ("Meals were logged
+ * on N of M days"), two lines above the sentence that uses the same words for the window,
+ * so the two read as one scale rather than as two conventions.
+ *
+ * WITHHELD WHEN THE COUNT IS A FLOOR. There the pull did not reach the whole cropped
+ * stretch, so the meal-day count is short over an unknown span, and a ratio built from
+ * two partial numbers is a precision nobody can act on. "At least N" already carries the
+ * incompleteness, which is the fact that matters; a fabricated denominator beside it
+ * would be the manufactured-precision failure the weight tile refuses for the same reason.
+ */
+function trialCropDensitySentence(snap: ReportSnapshot): string {
+  const c = snap.scope.trialCropSymptoms
+  if (!c || c.count <= 0 || c.countIsFloor || c.cropDays <= 0) return ''
+  return ` Meals were logged on <b>${num(c.mealLoggedDaysInCrop)} of those ${num(
+    c.cropDays,
+  )} days</b>.`
 }
 
 /**
@@ -2006,7 +2055,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
       } ${where}, outside this report&rsquo;s window${trialCropSymptomClause(
         snap,
         outsideDays,
-      )}. <b>No count below is measured over the trial as a whole.</b>`,
+      )}.${trialCropDensitySentence(snap)} <b>No count below is measured over the trial as a whole.</b>`,
     )
   }
   if (t.coverage) {

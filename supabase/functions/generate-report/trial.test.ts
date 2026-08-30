@@ -3525,7 +3525,7 @@ Deno.test('B-613 — a preset window that crops a trial says what was logged in 
   // The clause joins the day count, so "those days" sits against its referent.
   assert.match(
     text,
-    /42 trial days fall before it, outside this report’s window, and at least 5 symptom events were logged in those days \(most recent: vomiting, May 24\)\./,
+    /42 trial days fall before it, outside this report’s window, and at least 5 symptom events were logged in those days \(5 vomiting; most recent May 24\)\./,
   )
   // And the sentence B-600 shipped still closes the row.
   assert.match(text, /No count below is measured over the trial as a whole\./)
@@ -3559,7 +3559,7 @@ Deno.test('B-613 — the named type and the named date describe the SAME event',
   assert.equal(snap.scope.trialCropSymptoms?.count, 6)
   assert.equal(snap.scope.trialCropSymptoms?.mostRecentType, 'diarrhea')
   assert.equal(snap.scope.trialCropSymptoms?.mostRecentIso, '2026-06-01T19:00:00Z')
-  assert.match(plain(renderReport(snap)), /most recent: loose stool, Jun 1\)/)
+  assert.match(plain(renderReport(snap)), /5 vomiting, 1 loose stool; most recent: loose stool, Jun 1\)/)
 })
 
 Deno.test('B-613 — a cropped trial with nothing logged in the cropped days says NOTHING', () => {
@@ -3739,3 +3739,122 @@ Deno.test('B-613 — widening the pull for the trial changes ONLY the out-of-win
     })
   assert.equal(blank(wide), blank(narrow), 'a wider pull must not move any windowed count')
 })
+
+
+Deno.test('B-613 — the crop boundary is the same day on both sides of the ratio', () => {
+  // The numerator (events) and the denominator (days) are derived from two expressions of
+  // one idea: the loop asks `!inWindow(occurredAt)`, the day set asks `dn < startDayNum ||
+  // dn > endDayNum`. They agree only because `inWindow` is DAY-granular over the same
+  // `eventDayNumber`. Nothing in either file says so, so it is pinned here — if `inWindow`
+  // ever became instant-granular, a meal on the seam would be counted on one side and not
+  // the other and the ratio would silently exceed 1.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  // The window opens 2026-06-02. Jun 1 is the last cropped day; Jun 2 is the first
+  // in-window day. Both already carry meals in this fixture, at 08:00 local.
+  const snap = assembleReport(input)
+  const c = snap.scope.trialCropSymptoms!
+  assert.equal(c.cropDays, 42, 'Apr 21 → Jun 1 inclusive')
+  assert.ok(
+    c.mealLoggedDaysInCrop <= c.cropDays,
+    'a meal counted as cropped that is not in the cropped day set would break the ratio',
+  )
+  assert.equal(c.mealLoggedDaysInCrop, 42, 'Jun 2 onward belongs to the window, not the crop')
+})
+
+Deno.test('B-613 — the clause names the MIX, not just the most recent sign', () => {
+  // Cold read round 16: on a GI-indication trial "5 vomits" and "3 vomits and 2 itch" are
+  // different patients, and the loop holds every type already. Naming one and dropping
+  // four was the same withholding the disclosure exists to end, one notch smaller.
+  const input = truncatedTrialInput()
+  // ⚠️ THE DATES MATTER. `dedupedAll` is in occurred_at order, so these land in the tally
+  // BEFORE the fixture's five vomits (Apr 22 onward) — insertion order is itch, diarrhea,
+  // vomit and the sorted order is the reverse. An earlier cut of this test put them mid-May,
+  // where insertion order happened to equal count order, and it passed against a tally
+  // sorted by `() => 0`.
+  input.events.push(symptom('2026-04-21', 'itch'))
+  input.events.push(symptom('2026-04-21', 'diarrhea'))
+  input.events.push(symptom('2026-05-03', 'itch'))
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  const snap = assembleReport(input)
+  // Descending by count, then by type name — the same record always renders the same way.
+  assert.deepEqual(snap.scope.trialCropSymptoms?.byType, [
+    { type: 'vomit', count: 5 },
+    { type: 'itch', count: 2 },
+    { type: 'diarrhea', count: 1 },
+  ])
+  assert.match(plain(renderReport(snap)), /8 symptom events were logged in those days \(5 vomiting, 2 itching, 1 loose stool; most recent: vomiting, May 24\)/)
+  // A tie breaks on type name, so two equal counts cannot swap between renders.
+  const tie = truncatedTrialInput()
+  tie.eventsSinceIso = '2026-01-03T00:00:00Z'
+  tie.events = tie.events.filter((e) => e.type !== 'vomit' || e.occurredAt >= '2026-06-02T00:00:00Z')
+  tie.events.push(symptom('2026-05-02', 'vomit'), symptom('2026-05-03', 'itch'))
+  assert.deepEqual(assembleReport(tie).scope.trialCropSymptoms?.byType, [
+    { type: 'itch', count: 1 },
+    { type: 'vomit', count: 1 },
+  ])
+})
+
+Deno.test('B-613 — a single-type crop does not repeat the sign two words later', () => {
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  const text = plain(renderReport(assembleReport(input)))
+  assert.match(text, /\(5 vomiting; most recent May 24\)/)
+  assert.ok(!/most recent: vomiting/.test(text), 'the tally already named it')
+})
+
+Deno.test('B-613 — the crop count carries its DENOMINATOR (the report promises one)', () => {
+  // BLOCKING in cold read round 16. "5 symptom events over 42 days" is a rate if those
+  // days were logged and an unknown if they were not — and the report's own legend says
+  // "a count is never read without knowing how long and how completely it was tracked".
+  // An advertised rule the page then breaks is worse than no rule: it stops the reader
+  // looking for the qualifier.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  const snap = assembleReport(input)
+  // The fixture logs a meal every day from the trial's start to Jun 1, so all 42 cropped
+  // days carry one.
+  assert.equal(snap.scope.trialCropSymptoms?.cropDays, 42)
+  assert.equal(snap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 42)
+  assert.match(plain(renderReport(snap)), /Meals were logged on 42 of those 42 days\./)
+
+  // A crop the owner barely logged reads as one — this is the case the denominator exists
+  // for, where five events over a mostly-unlogged stretch is a floor, not a rate.
+  const sparse = truncatedTrialInput()
+  sparse.eventsSinceIso = '2026-01-03T00:00:00Z'
+  sparse.events = sparse.events.filter(
+    (e) => e.type !== 'meal' || e.occurredAt >= '2026-05-25T00:00:00Z',
+  )
+  const sparseSnap = assembleReport(sparse)
+  assert.equal(sparseSnap.scope.trialCropSymptoms?.cropDays, 42)
+  assert.equal(sparseSnap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 8)
+  assert.match(plain(renderReport(sparseSnap)), /Meals were logged on 8 of those 42 days\./)
+})
+
+Deno.test('B-613 — no denominator is stated when the count is a floor', () => {
+  // Both numbers would be short over an unknown span, and a ratio built from two partial
+  // numbers is a precision nobody can act on. "At least N" already carries the
+  // incompleteness, which is the fact that matters.
+  const input = truncatedTrialInput() // no eventsSinceIso ⇒ floor
+  const text = plain(renderReport(assembleReport(input)))
+  assert.match(text, /at least 5 symptom events/)
+  assert.ok(!/Meals were logged on \d+ of those/.test(text))
+})
+
+Deno.test('B-613 — the denominator counts only MEAL days, and only cropped ones', () => {
+  // MEAL-logged days, on the C5 precedent: "days with any log" on a real record IS largely
+  // the symptom series, so it would circle back on the very count it qualifies and read
+  // "well tracked" exactly when symptoms are dense. And the set is intersected with the
+  // cropped days, so a meal inside the window can never inflate it.
+  const input = truncatedTrialInput()
+  input.eventsSinceIso = '2026-01-03T00:00:00Z'
+  input.events = input.events.filter((e) => e.type !== 'meal')
+  // Symptom-only days in the crop must NOT count as logged days.
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialCropSymptoms?.count, 5)
+  assert.equal(snap.scope.trialCropSymptoms?.mealLoggedDaysInCrop, 0)
+  assert.match(plain(renderReport(snap)), /Meals were logged on 0 of those 42 days\./)
+})
+
+
+

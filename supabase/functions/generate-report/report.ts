@@ -1077,6 +1077,28 @@ export interface ScopeInfo extends ReportScope {
     mostRecentIso: string | null
     mostRecentType: ReportSymptomType | null
     /**
+     * THE MIX, not just the most recent (cold read round 16). On a GI-indication trial,
+     * "5 vomits" and "3 vomits and 2 itch" are different patients, and the loop holds
+     * every type already — naming one and dropping four was the same withholding this
+     * field exists to end, one notch smaller. Descending by count, then by type name so
+     * the same record always renders in the same order.
+     */
+    byType: Array<{ type: ReportSymptomType; count: number }>
+    /**
+     * THE DENOMINATOR (cold read round 16, BLOCKING). "5 symptom events over 42 days" is
+     * a rate if those days were logged and an unknown if they were not, and nothing said
+     * which — while the report's own legend promises "a count is never read without
+     * knowing how long and how completely it was tracked". An advertised rule the page
+     * then breaks for the one count a reader most needs it on is worse than no rule,
+     * because it stops them looking for the qualifier.
+     *
+     * MEAL-logged days, not any-logged days, on the C5 precedent: "days with any log" on a
+     * real record IS largely the symptom series, so it would circle back on the very count
+     * it is qualifying and inflate toward "well tracked" exactly when symptoms are dense.
+     */
+    cropDays: number
+    mealLoggedDaysInCrop: number
+    /**
      * The count is a FLOOR — the event pull did not reach back to the trial's start, so
      * cropped days exist that nothing counted. Rendered as "at least N", never as a total.
      *
@@ -4048,8 +4070,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let count = 0
     let mostRecentIso: string | null = null
     let mostRecentType: ReportSymptomType | null = null
+    const tally = new Map<ReportSymptomType, number>()
+    // The cropped days themselves, so the count above can be read as a rate. Collected in
+    // the SAME pass and with the same two predicates, so the numerator and its denominator
+    // can never describe different spans.
+    const cropDayNums = new Set<number>()
+    const mealDayNums = new Set<number>()
+    for (
+      let dn = trialBlock.elapsedStartDayIndex;
+      dn <= trialBlock.elapsedEndDayIndex;
+      dn++
+    ) {
+      if (dn < scope.startDayNum || dn > scope.endDayNum) cropDayNums.add(dn)
+    }
     for (const e of dedupedAll) {
-      if (!REPORT_SYMPTOM_SET.has(e.type)) continue
       const dn = eventDayNumber(e.occurredAt, tz)
       if (dn === null) continue
       // Inside the trial…
@@ -4058,12 +4092,22 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       // with every other section — a second definition of "in this report" is how two
       // sentences on one page come to disagree about the same event (the B-532 class).
       if (inWindow(e.occurredAt)) continue
+      if (e.type === 'meal') {
+        mealDayNums.add(dn)
+        continue
+      }
+      if (!REPORT_SYMPTOM_SET.has(e.type)) continue
+      const t = e.type as ReportSymptomType
       count++
+      tally.set(t, (tally.get(t) ?? 0) + 1)
       if (mostRecentIso === null || e.occurredAt > mostRecentIso) {
         mostRecentIso = e.occurredAt
-        mostRecentType = e.type as ReportSymptomType
+        mostRecentType = t
       }
     }
+    const byType = [...tally.entries()]
+      .map(([type, n]) => ({ type, count: n }))
+      .sort((a, b) => b.count - a.count || (a.type < b.type ? -1 : a.type > b.type ? 1 : 0))
     // IS THIS COUNT A TOTAL OR A FLOOR? Only the HEAD can be short: the pull carries no
     // upper bound (`.gte` only, index.ts), so everything from the floor to `now` is in
     // hand and a tail crop is always fully counted. The head is bounded by
@@ -4079,7 +4123,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     const headCropped = trialBlock.trialDaysOutsideRange.before > 0
     const countIsFloor =
       headCropped && (pullFloorDayNum === null || pullFloorDayNum >= trialBlock.elapsedStartDayIndex)
-    trialCropSymptoms = { count, mostRecentIso, mostRecentType, countIsFloor }
+    trialCropSymptoms = {
+      count,
+      mostRecentIso,
+      mostRecentType,
+      byType,
+      cropDays: cropDayNums.size,
+      // `mealDayNums` ALREADY holds only cropped days, and provably so rather than by
+      // habit: `inWindow` is `dn >= startDayNum && dn <= endDayNum` over the very
+      // `eventDayNumber` computed above (report.ts `inWindowDay`), so the loop's two
+      // filters — inside the trial span, not in the window — are exactly the predicate
+      // `cropDayNums` is built from. An intersection here would be dead code that reads
+      // as a safety net, which is worse than none: it tells the next reader there is a
+      // case it handles. The boundary behaviour it would have covered is pinned by test
+      // instead, so a change to `inWindow`'s granularity fails loudly.
+      mealLoggedDaysInCrop: mealDayNums.size,
+      countIsFloor,
+    }
   }
 
   // ── Signalment ────────────────────────────────────────────────────────────────
