@@ -389,7 +389,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="confirm-container">
       {/* Header — the glyph names the subject, "Type — Pet" names the record, and the
           back chevron returns to the grid (the sheet stays open; the grabber/backdrop
           close it). Placement follows the round-4 design-locked frame, as amended by
@@ -459,9 +459,11 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
       </View>
 
       <ScrollView
+        style={styles.bodyScroll}
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        testID="confirm-scroll"
       >
         {/* Time pill row — the label + Saw it/Found it chips. AC-CHIP: the chip pair
             never wraps or squeezes; on a narrow row it drops below the label as a
@@ -734,6 +736,18 @@ function SawFoundChip({ label, active, onPress, hitSlop, testID }: { label: stri
 const styles = StyleSheet.create({
   container: {
     // The confirm replaces the grid inside the sheet; the host caps the sheet height.
+    //
+    // CUL-755 — that sentence was true of the host and false of this view. RN defaults
+    // flexShrink to 0, so the cap had nothing to bite on here and a confirm taller
+    // than the clamp simply overflowed it, carrying the summary pill (the save) below
+    // the sheet's box where nothing could scroll to it. Reachable today via "Found
+    // it" → Adjust window → "Between two times" with two inline DateTimePickers open,
+    // and at large text sizes; reachable on every confirm once the keyboard is up,
+    // because the avoider's cap tightens to the space above it.
+    //
+    // The asymmetry was the tell: the grid's sibling ScrollView was given flexShrink
+    // on purpose (gridScroll) and this one never was.
+    flexShrink: 1,
     paddingBottom: theme.space1,
   },
   header: {
@@ -785,6 +799,15 @@ const styles = StyleSheet.create({
   circleRose: { backgroundColor: theme.colorEventSymptomLight },
   circleNeutral: { backgroundColor: theme.colorSurfaceSubtle },
 
+  // Shrinking has to be declared at BOTH levels or it stops at the first one that
+  // refuses: the container above shrinks into the sheet's clamp, and this is what
+  // lets the scroll view give up height inside the shrunken container rather than
+  // overflowing it with the header held at its natural size. The content itself
+  // (`body`) is the contentContainer and is unaffected — it stays its natural height
+  // and scrolls, which is the point.
+  bodyScroll: {
+    flexShrink: 1,
+  },
   body: {
     paddingHorizontal: theme.space3,
     paddingBottom: theme.space2,

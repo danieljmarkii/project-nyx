@@ -90,7 +90,7 @@ jest.mock('./SheetLogBeat', () => {
 });
 
 import { render, fireEvent, act } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { Alert, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { EventTypeSheet } from './EventTypeSheet';
 import { usePetStore } from '../../store/petStore';
@@ -471,6 +471,95 @@ describe('EventTypeSheet', () => {
     const row = view.getByLabelText('Log for Nyx — switch pet');
     expect(row.props.accessibilityRole).toBe('button');
     expect(row.props.accessibilityState?.disabled).toBeFalsy();
+  });
+
+  // ── KEYBOARD AVOIDANCE (CUL-755) ────────────────────────────────────────────
+  // A jest test can assert the HOST, never the geometry — whether 336pt of keyboard
+  // actually clears the summary pill is a device check, and stays one (CUL-663 step
+  // 6). What is pinned here is the structure that made the geometry impossible: the
+  // sheet had no keyboard-avoiding ancestor at all, so nothing in the tree moved.
+  //
+  // Every one was proven by MUTATION against the tree it was written for, not by
+  // reading it (CUL-613). Removing the wrapper reds the first five together — they all
+  // reach for the avoider, and with no such node in the tree there is nothing to read;
+  // the scrim guard stays green, correctly, since the scrim is a sibling either way.
+  // Each of the narrower mutations then reds exactly one: expressing the sheet's cap
+  // as a percentage (it evaporates against a content-sized parent), moving the cap up
+  // onto the avoider (it starts including the keyboard padding), and deleting the
+  // sheet's flexShrink (it stops yielding to the keyboard at all).
+  describe('keyboard avoidance', () => {
+    const kav = (view: ReturnType<typeof render>) =>
+      view.UNSAFE_getAllByType(KeyboardAvoidingView);
+
+    it('the sheet sits inside a keyboard-avoiding host', () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      expect(kav(view)).toHaveLength(1);
+      // The grabber is the sheet's first child and exists in every stage, so it
+      // stands in for "the sheet" without depending on which stage is up.
+      const grabber = kav(view)[0].findAll(
+        (n: any) => StyleSheet.flatten(n.props?.style)?.width === 36,
+      );
+      expect(grabber.length).toBeGreaterThan(0);
+    });
+
+    it('the confirm stage — where the note field lives — is inside it too', () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      fireEvent.press(view.getByText('Vomit'));
+      // The stub stands in for the real confirm; what matters is that the subtree
+      // holding it is the avoided one.
+      expect(kav(view)[0].findByProps({ children: 'confirm:vomit:Nyx' })).toBeTruthy();
+    });
+
+    // The sheet is the only node in the avoider with a rounded top — find it by what
+    // it renders as, not by a child index a comment block could shift.
+    const sheetStyleIn = (host: any) => {
+      const sheets = host.findAll(
+        (n: any) => StyleSheet.flatten(n.props?.style)?.borderTopLeftRadius !== undefined,
+      );
+      expect(sheets.length).toBeGreaterThan(0);
+      return StyleSheet.flatten(sheets[0].props.style);
+    };
+
+    // Three SEPARATE tests, not three expects in one, for the reason the review of the
+    // first draft of this file caught: collapsed together, three different defects all
+    // red the same test name and the output cannot tell them apart. Split, each
+    // mutation names itself.
+    it('the avoider bounds the assembly to the screen, and nothing more', () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      // Read off the RENDERED tree rather than restating the token (CUL-621). 100%,
+      // not 80%: RN caps the border box, so an 80% here is 80% of the screen INCLUDING
+      // the keyboard padding — it would push the save below the fold with space free.
+      expect(StyleSheet.flatten(kav(view)[0].props.style).maxHeight).toBe('100%');
+    });
+
+    it("the sheet's cap is a PIXEL value, never a percentage", () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      const style = sheetStyleIn(kav(view)[0]);
+      // THE TRAP, pinned as a type rather than a value: a percentage here resolves
+      // against a content-sized parent and evaporates, so the cap must be a number.
+      // Asserting the number itself would only restate windowHeight * 0.8; asserting
+      // it is not a string is what a future "tidy it back to '80%'" edit fails on.
+      expect(typeof style.maxHeight).toBe('number');
+      expect(style.maxHeight).toBeGreaterThan(0);
+    });
+
+    it('the sheet can give height up to the keyboard', () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      // RN defaults flexShrink to 0, so without this the sheet keeps its natural
+      // height and overflows the avoider instead of being squeezed above the keyboard.
+      expect(sheetStyleIn(kav(view)[0]).flexShrink).toBe(1);
+    });
+
+    it('the scrim stays OUTSIDE the avoider, so the dim still covers the full screen', () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      const scrim = view.getByLabelText('Close');
+      const inAvoider = (node: any) => {
+        let n = node.parent;
+        while (n) { if (n.type === KeyboardAvoidingView) return true; n = n.parent; }
+        return false;
+      };
+      expect(inAvoider(scrim)).toBe(false);
+    });
   });
 });
 
