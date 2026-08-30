@@ -1437,7 +1437,24 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // sharing the "spans N days (first logged X)" phrasing, whose parenthetical reads as the
       // span's start.
       const firstLoggedKey = localDayKeyOf(f.firstLoggedIso, tz)
-      const onsetDay = fmtLocalDay(f.firstLoggedIso, tz)
+      // YEAR-LESS WAS SAFE BY CONSTRUCTION, AND THIS CHANGE REMOVED THE CONSTRUCTION (adversarial
+      // pass 3). `fmtLocalDay` prints "Mon D" with no year, which was unambiguous while the only
+      // date here was `firstOnsetIso` — structurally within `windowDays` of the window end. The
+      // record anchor is bounded only by the report WINDOW, and that window is unbounded on rung 1
+      // (`since_visit` has no clamp) and on rung 2 (a stale `active` trial, which CLAUDE.md calls
+      // the steady state — B-594). So "first logged Mar 10; these counts begin at May 10" rendered
+      // a 27-month-old sign as a two-month-old one, and on a plain 90-day fallback 11% of
+      // generation days rendered a REVERSED pair ("first logged Nov 23; these counts begin at
+      // Jan 1"). Both read toward reassurance on the axis this flag exists for.
+      //
+      // The year is added only when it is not the window's, so an ordinary same-year report is
+      // unchanged and the year carries signal wherever it appears.
+      const scopeEndYear = snap.scope.endDate.slice(0, 4)
+      const dayInScope = (iso: string): string => {
+        const y = localDayKeyOf(iso, tz).slice(0, 4)
+        return y === scopeEndYear ? fmtLocalDay(iso, tz) : `${fmtLocalDay(iso, tz)}, ${y}`
+      }
+      const onsetDay = dayInScope(f.firstLoggedIso)
       // INSTANT-granular, not day-granular. The lookback cuts at an instant, so entries earlier on
       // the SAME local day as the first counted onset are excluded from the counts too — three
       // morning episodes dropping out of a ten-episode record while a local-day comparison read
@@ -1452,11 +1469,17 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // exactly the reports whose start really was truncated. The new predicate is IMPLIED by the
       // old one (`firstLoggedIso <= firstOnsetIso` always), so this can only ever fire more often.
       const leftCensored = daysBetweenDayKeys(snap.scope.startDate, firstLoggedKey) <= CHRONICITY_LEFT_CENSOR_DAYS
-      // WHICH NUMBER IS THE FLOOR DEPENDS ON WHICH BOUNDARY BINDS, and the two cases are disjoint
-      // by construction (adversarial pass 2, 2026-08-30). `hasUncountedRecord` entails the report
-      // window is LONGER than the lookback — a window no longer than the lookback leaves every
-      // in-window row inside it, so the first onset IS the first entry — and `leftCensored`
-      // entails the record starts at the window edge.
+      // WHICH NUMBER IS THE FLOOR DEPENDS ON WHICH BOUNDARY BINDS (adversarial pass 2). The split
+      // keys on `hasUncountedRecord` ITSELF — the condition it is about — never on a comparison of
+      // the two window lengths, and that distinction is load-bearing rather than pedantic: a pass-3
+      // sweep falsified the tempting shorthand. "hasUncountedRecord entails the report window is
+      // longer than the lookback" is FALSE at exactly `windowDays === 56` (the ACVIM skin-trial
+      // length, and the natural "8 weeks" custom pick), because the window opens at LOCAL midnight
+      // while the lookback opens at `detectionNow − 56d` and `detectionNowFor` stamps a past-ending
+      // custom window at UTC end-of-day — up to 14h of exposure at UTC+14. Harmless today (a row in
+      // that sliver lands on `scope.startDate`, which forces `leftCensored` and selects the same
+      // branch), but it must not be written down as an invariant for whoever next edits
+      // `detectionNowFor`, `CHRONICITY_LEFT_CENSOR_DAYS` or `windowDays`.
       //
       //   • Neither, or only leftCensored → the WINDOW is what truncates the span, `f.spanDays`
       //     is both the course and the record's extent, and B-532's sentence is exactly right.
@@ -1471,9 +1494,13 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const censorBit = !leftCensored
         ? ''
         : hasUncountedRecord
-          ? ` This window opens ${h(
-              fmtDay(snap.scope.startDate),
-            )} and the record's first entry sits at that edge, so the sign may predate this report entirely.`
+          // NOT "the record's first entry sits at that edge" — CHRONICITY_LEFT_CENSOR_DAYS is a
+          // 7-day TOLERANCE, so that phrasing asserted an exactness it does not have and
+          // contradicted the date in the sentence immediately before it by up to a week, on 29 of
+          // 156 disclosed flags (adversarial pass 3). B-532's original clause claimed nothing about
+          // where the entry sits; this is that clause with the indefensible number removed, and
+          // nothing else added.
+          ? ` This window opens ${h(fmtDay(snap.scope.startDate))}, so the record cannot show how long the sign predates it.`
           : ` This window opens ${h(fmtDay(snap.scope.startDate))}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
       // DISCLOSURE BESIDE THE NUMBER, never a re-derivation (the C5 logging-density precedent).
       // It names the date the counts actually begin at, never a day COUNT: the lookback is measured
@@ -1489,13 +1516,13 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // were tuned for. The tail is number-agnostic ("the record before then", "the earlier
       // entries") so it does not pluralise over a count this layer does not hold — the stale-
       // singleton case really is one entry.
-      const engineOnsetDay = fmtLocalDay(f.firstOnsetIso, tz)
+      const engineOnsetDay = dayInScope(f.firstOnsetIso)
       const recordBit = !hasUncountedRecord
         ? ''
         : firstLoggedKey === localDayKeyOf(f.firstOnsetIso, tz)
           ? ` ${h(symptomLabel(f.symptomType))} was first logged ${h(
               onsetDay,
-            )}; these counts begin later that day, so the earlier entries are in appendix&nbsp;A but not in the numbers above.`
+            )}; these counts begin later that day, so anything logged before then is in appendix&nbsp;A but not in the numbers above.`
           : ` ${h(symptomLabel(f.symptomType))} was first logged ${h(
               onsetDay,
             )}; these counts begin at ${h(engineOnsetDay)}, so the record before then is in appendix&nbsp;A but not in the numbers above.`
@@ -1529,7 +1556,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
-        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${recordBit}${censorBit}${adjacencyBit}`,
+        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
       )
     }
     case 'symptom_worsening': {
@@ -5617,7 +5644,7 @@ function appendixF(snap: ReportSnapshot): string {
       Number.isFinite(Date.parse(f.firstOnsetIso)) &&
       Date.parse(f.firstLoggedIso) < Date.parse(f.firstOnsetIso),
   )
-    ? `<dt>Where the chronicity counts begin</dt><dd>The chronicity flag reads a fixed recent window, which can be shorter than this report's range. Where it is, the flag names the date its counts begin and the date the sign was <b>first logged</b> &mdash; the earlier entries are real and are listed in appendix&nbsp;A; they are outside the counted window, <b>not</b> judged unrelated. Read the flag's day counts against the window it names, and the sign's extent against appendix&nbsp;A.</dd>`
+    ? `<dt>Where the chronicity counts begin</dt><dd>The chronicity flag reads a fixed recent window, which can be shorter than this report's range. Where it is, the flag says where its counts begin and names the date the sign was <b>first logged</b> &mdash; the earlier entries are real and are listed in appendix&nbsp;A; they are outside the counted window, <b>not</b> judged unrelated. Read the flag's day counts against the window it names, and the sign's extent against appendix&nbsp;A.</dd>`
     : ''
   const photoDt = hasIncidentPhotos(snap)
     ? `<dt>Incident photos</dt><dd>Every photographed incident in the window is in appendix&nbsp;${photosAppendixLetter(
