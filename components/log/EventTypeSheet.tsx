@@ -3,6 +3,7 @@ import {
   Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet,
   TouchableOpacity, View,
 } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown } from 'lucide-react-native';
@@ -108,6 +109,11 @@ function TitleRowContent({ name, photoPath }: { name: string; photoPath: string 
 export function EventTypeSheet({ visible, onClose }: Props) {
   const { pets, activePet } = usePetStore();
   const insets = useSafeAreaInsets();
+  // The sheet's height cap, in POINTS (CUL-755) — see the avoider below for why it is
+  // neither a percentage nor a property of the avoider. Read from the window rather
+  // than hardcoded so it survives rotation and iPad multitasking.
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetMaxHeight = windowHeight * 0.8;
   const [switcherVisible, setSwitcherVisible] = useState(false);
 
   // W1 taxonomy expansion (event_types_v2, CUL-675) — the B-712 two-gate shape,
@@ -267,26 +273,44 @@ export function EventTypeSheet({ visible, onClose }: Props) {
             app/log.tsx's flag-off path for this exact field, so flag-on stops being
             worse than flag-off (the class the D12 host gate exists to catch).
 
-            THE CLAMP LIVES HERE, NOT ON THE SHEET, and that is load-bearing rather
-            than tidy: `maxHeight: '80%'` is a percentage, and a percentage resolves
-            against the parent's content box. A KeyboardAvoidingView is content-sized,
-            so its height is indefinite — leaving the clamp on the sheet under this
-            wrapper resolves it to nothing and SILENTLY DELETES the 80% cap, which
-            looks correct in a jest tree and on a short confirm and only fails on the
-            tall one. So the cap sits on the avoider (whose parent, the backdrop, is
-            flex:1 and definite) and the sheet shrinks into it.
+            THE SHEET'S 80% CAP IS A PIXEL VALUE, NOT A PERCENTAGE, and that is
+            load-bearing rather than tidy. A percentage resolves against the parent's
+            content box; this view is content-sized, so its height is indefinite and a
+            `maxHeight: '80%'` on the sheet under here would resolve to NO CONSTRAINT
+            — silently deleting the cap, in a way that looks correct in a jest tree and
+            on a short confirm and only fails on the tall one.
+
+            Moving that cap up here instead was the obvious fix and it is the WRONG
+            one, because RN caps the BORDER box: the keyboard padding lands inside the
+            cap, so on an 844pt screen an 80% cap leaves the sheet 675 - 336 = 339pt
+            when 508 were actually free. A 406pt confirm would then have to scroll
+            ~67pt to reach the summary pill — and "the pill has to be scrolled up to"
+            is the exact weakness that got option B rejected. So this view caps at
+            100% (all it owes is that the sheet plus the keyboard never exceed the
+            screen) and the sheet carries its own cap, in points.
 
             The scrim and the switcher layer stay OUTSIDE: both are absoluteFill
-            against the backdrop, and moving them in here would re-base them on this
-            view's padding box — the dim would stop covering the strip behind the
-            keyboard. Nothing in either needs to move with the keyboard anyway; the
-            switcher is reachable only from the grid, which has no fields. */}
+            against the backdrop, and this view is content-sized and bottom-anchored,
+            so its box is only ever about as tall as the sheet. Nested in here the dim
+            would stop covering the screen ABOVE the sheet — in every state, keyboard
+            or not, rather than merely behind the keyboard. Nothing in either needs to
+            move with the keyboard anyway; the switcher is reachable only from the
+            grid, which has no fields. */}
         <KeyboardAvoidingView
           style={styles.avoider}
+          // iOS only, like every other note-bearing screen here — and on Android that
+          // is a pass-through rather than a gap: RN's Modal sets SOFT_INPUT_ADJUST_RESIZE
+          // on the dialog's OWN window (ReactModalHostView.kt), independent of the
+          // manifest, so the window itself resizes and the cap + flexShrink chain below
+          // does the rest through an ordinary relayout. Undefined behavior degrades this
+          // to a plain View, which is what we want there.
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View
-            style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}
+            style={[
+            styles.sheet,
+            { maxHeight: sheetMaxHeight, paddingBottom: insets.bottom + theme.space2 },
+          ]}
             // Assistive-tech containment for the switcher layer. As a sibling Modal the
             // switcher got this from the platform; as a layer it does not, so the sheet
             // hides itself while the switcher is up — otherwise a screen reader walks
@@ -462,26 +486,32 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: theme.colorScrim,
   },
-  // The keyboard-avoiding host, and the owner of the sheet's height cap (CUL-755).
-  // The cap CANNOT sit on the sheet while this wrapper exists: a percentage maxHeight
-  // resolves against the parent's content box, and this view is content-sized, so the
-  // sheet's '80%' would resolve to no constraint at all. Here it resolves against the
-  // backdrop, which is flex:1 and therefore definite. With the keyboard up, padding
-  // is inside the capped box, so the cap tightens to 80% of what is actually left —
-  // the sheet is bounded by the space above the keyboard rather than by the screen.
+  // The keyboard-avoiding host (CUL-755). Its only job is that the sheet PLUS the
+  // keyboard never exceed the screen: RN caps the border box, so with behavior
+  // 'padding' the keyboard's height sits inside this 100% and the sheet is squeezed
+  // into whatever is left above it. The sheet's own 80% cap lives on the sheet.
+  //
+  // Deliberately NOT the home for that cap, tidier though it looks: 80% here is 80%
+  // of the screen INCLUDING the keyboard padding, so it would hand a 406pt confirm
+  // 339pt on an 844pt screen and push the save below the fold with 508pt free. The
+  // percentage resolves fine here (the backdrop is flex:1) — it answers the wrong
+  // question.
   avoider: {
-    maxHeight: '80%',
+    maxHeight: '100%',
   },
   sheet: {
     backgroundColor: theme.colorSurface,
     borderTopLeftRadius: theme.radiusLarge,
     borderTopRightRadius: theme.radiusLarge,
     paddingTop: 10,
-    // What lets the cap above actually bite. RN defaults flexShrink to 0 (unlike the
-    // web), so without this the sheet keeps its natural height and simply overflows
-    // the avoider's clamp — the cap would be inert rather than moved. Same mechanism
-    // the grid's own gridScroll uses one level down, and the confirm's container now
-    // uses inside that.
+    // maxHeight is set INLINE, in points, off the window height — a percentage here
+    // would resolve against a content-sized parent and vanish (see the avoider).
+    //
+    // flexShrink is what lets the sheet give height up to the keyboard: RN defaults it
+    // to 0 (unlike the web), so without it the sheet keeps its natural height and
+    // overflows the avoider's 100% instead of being squeezed above the keyboard. Same
+    // mechanism the grid's gridScroll uses one level down, and the confirm's container
+    // now uses inside that.
     flexShrink: 1,
   },
   grabber: {

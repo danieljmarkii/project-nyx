@@ -47,22 +47,42 @@ PM ruled **A, amended** (decision brief on the issue; the amendment is below).
   iOS, wrapping the sheet. The scrim and the `PetSwitcherPanel` layer stay **outside** it: both
   are `absoluteFill` against the backdrop, and moving them in would re-base them on the KAV's
   padding box, so the dim would stop covering the strip behind the keyboard.
-- The `maxHeight: '80%'` clamp **moved from the sheet onto the KAV**, and the sheet took
-  `flexShrink: 1`.
+- The `maxHeight: '80%'` became a **pixel value on the sheet**, off `useWindowDimensions()`;
+  the avoider caps at `100%`; the sheet took `flexShrink: 1`.
 - `SimpleEventConfirm.tsx` — `flexShrink: 1` on `container` and on the body `ScrollView`.
 
-### The amendment, and why it is load-bearing
+### The amendment, and the second one the review forced
 
 The issue's option A said "wrapping the sheet View". Done literally, that **silently deletes the
 80% clamp**: `maxHeight: '80%'` is a percentage, percentages resolve against the parent's content
 box, and a `KeyboardAvoidingView` is content-sized — so its height is indefinite and the
 percentage resolves to no constraint at all. It looks correct in a jest tree and on a short
-confirm, and only fails on the tall one. The cap therefore sits on the avoider, whose parent
-(`backdrop`) is `flex: 1` and definite.
+confirm, and only fails on the tall one.
 
-A side effect worth having: with the keyboard up the KAV's padding is *inside* the capped box, so
-the cap tightens to 80% of what is actually left rather than 80% of the screen — the sheet is
-bounded by the space above the keyboard instead of by the display.
+**The obvious repair — move the cap onto the avoider — was the first thing built, and it was
+wrong.** It survived tsc, 6306 tests, three green CI checks and my own adversarial read; the
+`code-reviewer` pass caught it, and only as a *comment-accuracy* nit ("80% of what is actually
+left" is loose phrasing for `(0.8 x screen) - keyboardOverlap`). Chasing the phrasing down turned
+it into a real defect, because RN caps the **border** box: the keyboard padding lands *inside* the
+cap, so on an 844pt screen the sheet got `675 - 336 = 339pt` while **508pt were free** and the
+sheet only needed 406. A 406pt confirm would have had to scroll ~67pt to reach the summary pill —
+and the pill is ~50pt tall, so the save sat entirely below the fold.
+
+That is not a cosmetic miss. *"The pill still has to be scrolled up to rather than being where the
+owner left it"* is the stated reason the issue **rejected option B**. The build would have shipped
+A's shape carrying B's weakness, under a green suite, with the PR body claiming the opposite.
+
+So the cap is now a **pixel value on the sheet** (`windowHeight * 0.8`, via `useWindowDimensions`
+so it survives rotation), which sidesteps the percentage-resolution trap instead of working around
+it, and the avoider caps at `100%` — all it owes is that the sheet plus the keyboard never exceed
+the screen. Every case checks out: no keyboard, sheet <= 675 exactly as before; keyboard up, the
+avoider's content box is 508 and the 406pt sheet fits whole; a tall confirm shrinks to 508 and
+scrolls, with the assembly landing at exactly 844.
+
+**The lesson, and it is the one this repo keeps re-learning:** a green suite says the code does
+what the tests describe, never that the tests describe the right thing. The reviewer's finding was
+filed as prose-accuracy; the arithmetic behind the prose was the defect. *Check the numbers in a
+comment by computing them, not by re-reading the sentence.*
 
 Shrinking is declared at **three** levels (sheet → confirm container → confirm ScrollView) because
 it stops at the first level that refuses: a shrinkable container holding an unshrinkable scroll
@@ -75,26 +95,46 @@ by reading it:
 
 | Mutation | Reds |
 |---|---|
-| KAV removed entirely (the pre-fix tree) | the 3 host/cap guards; the scrim guard correctly stays green |
-| cap moved back onto the sheet (the "tidy-up" that reads as a no-op) | the cap guard, alone |
+| KAV removed entirely (the pre-fix tree) | all 5 avoider-reading guards; the scrim guard correctly stays green |
+| sheet's cap "tidied" back to `'80%'` | the pixel-cap guard, alone |
+| cap moved onto the avoider (the defect the review surfaced) | the avoider-bounds and pixel-cap guards |
+| sheet `flexShrink` deleted | the give-height guard, alone |
 | `container` `flexShrink` deleted | the container guard, alone |
 | `bodyScroll` `flexShrink` deleted | the scroll guard, alone |
 | scrim moved inside the avoider | the scrim guard |
 
-The two `flexShrink` assertions were **split into separate `it`s** after the first mutation run:
-together in one test both mutations produced identical output, so the comment's claim that they
-are two independent facts was not something the structure backed. Split, each mutation reds its
-own named test.
+**Two rounds of the same lesson, one of them caught by the review.** The two `flexShrink`
+assertions were split into separate `it`s after the first mutation run, because together in one
+test both mutations produced identical output. Then the review found the describe-block comment
+miscounting *which* tests a mutation reds — so the cap guard was split three ways too, and the
+count in the comment was rewritten from the actual run rather than from counting tests by eye. It
+was wrong both times I did it in my head: first "the first two" when it was three, then "the first
+four" when it was five. **A claim about what a test does is checked by running it**, exactly like
+a claim about what the code does.
 
 A jest test can assert the **host**, never the geometry. Whether 336pt of keyboard actually clears
 the summary pill is a device check and stays one — CUL-663 step 6.
 
+## Review
+
+`code-reviewer` returned **ship-ready — no BUG or ANTI-PATTERN findings**, having independently
+read RN's `KeyboardAvoidingView` and Android's `ReactModalHostView.kt` rather than taking the
+flexbox and platform claims on faith. It confirmed the shrink chain is complete with no missed
+level, and turned up three comment-accuracy findings — all three fixed, and the third of them
+turned out to be the 339-vs-508 defect above.
+
+Its Android note is worth keeping, because it is better news than the session assumed: RN's
+Android `Modal` calls `setSoftInputMode(SOFT_INPUT_ADJUST_RESIZE)` on the dialog's own window
+(`ReactModalHostView.kt:332`), independent of the manifest — so the Android window really does
+resize and cascades through the same `flex:1` / cap / `flexShrink` chain without JS-side
+avoidance. That reasoning now lives on the `behavior` line in source, not only here.
+
 ## Known limits, stated rather than implied
 
-- **Android is unchanged.** `behavior` is `undefined` there, matching every other screen in the
-  app; Android relies on `adjustResize`, which is less predictable inside a `Modal`. This fix
-  makes the sheet match the rest of the app, it does not make Android better than the rest of the
-  app. iOS is the App Store path.
+- **Android takes no JS-side avoidance** — `behavior` is `undefined` there, matching every other
+  screen. Per the review's check of `ReactModalHostView.kt:332` the modal's own window resizes, so
+  the same chain applies; this is a reasoned pass-through rather than an untested gap, but it is
+  still unverified on an Android device. iOS is the App Store path.
 - The KAV animates its padding while the `Modal` runs `animationType="slide"`. Nothing in jest
   can see that interaction; it is in the QA script.
 - Finding 2's overflow was reachable before this change via "Found it" → Adjust window → "Between

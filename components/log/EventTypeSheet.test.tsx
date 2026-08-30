@@ -479,11 +479,14 @@ describe('EventTypeSheet', () => {
   // 6). What is pinned here is the structure that made the geometry impossible: the
   // sheet had no keyboard-avoiding ancestor at all, so nothing in the tree moved.
   //
-  // Each of these was proven by MUTATION against the pre-fix tree, not by reading it
-  // (CUL-613): the first two go red with the wrapper removed, and the third goes red
-  // on the specific "tidy-up" that reads as a no-op — moving the cap back down onto
-  // the sheet, which resolves a percentage against a content-sized parent and
-  // silently deletes it.
+  // Every one was proven by MUTATION against the tree it was written for, not by
+  // reading it (CUL-613). Removing the wrapper reds the first five together — they all
+  // reach for the avoider, and with no such node in the tree there is nothing to read;
+  // the scrim guard stays green, correctly, since the scrim is a sibling either way.
+  // Each of the narrower mutations then reds exactly one: expressing the sheet's cap
+  // as a percentage (it evaporates against a content-sized parent), moving the cap up
+  // onto the avoider (it starts including the keyboard padding), and deleting the
+  // sheet's flexShrink (it stops yielding to the keyboard at all).
   describe('keyboard avoidance', () => {
     const kav = (view: ReturnType<typeof render>) =>
       view.UNSAFE_getAllByType(KeyboardAvoidingView);
@@ -507,23 +510,44 @@ describe('EventTypeSheet', () => {
       expect(kav(view)[0].findByProps({ children: 'confirm:vomit:Nyx' })).toBeTruthy();
     });
 
-    it('the height cap lives on the avoider, and the sheet shrinks into it', () => {
-      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
-      const host = kav(view)[0];
-      // Read off the RENDERED tree rather than restating the token (CUL-621).
-      expect(StyleSheet.flatten(host.props.style).maxHeight).toBe('80%');
-
-      // The sheet is the only node in here with a rounded top — find it by what it
-      // renders as, not by a child index a comment block could shift.
+    // The sheet is the only node in the avoider with a rounded top — find it by what
+    // it renders as, not by a child index a comment block could shift.
+    const sheetStyleIn = (host: any) => {
       const sheets = host.findAll(
         (n: any) => StyleSheet.flatten(n.props?.style)?.borderTopLeftRadius !== undefined,
       );
       expect(sheets.length).toBeGreaterThan(0);
-      const sheetStyle = StyleSheet.flatten(sheets[0].props.style);
-      // A cap left here would resolve against a content-sized parent — i.e. to
-      // nothing. It has to be absent, and the sheet has to be able to give height up.
-      expect(sheetStyle.maxHeight).toBeUndefined();
-      expect(sheetStyle.flexShrink).toBe(1);
+      return StyleSheet.flatten(sheets[0].props.style);
+    };
+
+    // Three SEPARATE tests, not three expects in one, for the reason the review of the
+    // first draft of this file caught: collapsed together, three different defects all
+    // red the same test name and the output cannot tell them apart. Split, each
+    // mutation names itself.
+    it('the avoider bounds the assembly to the screen, and nothing more', () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      // Read off the RENDERED tree rather than restating the token (CUL-621). 100%,
+      // not 80%: RN caps the border box, so an 80% here is 80% of the screen INCLUDING
+      // the keyboard padding — it would push the save below the fold with space free.
+      expect(StyleSheet.flatten(kav(view)[0].props.style).maxHeight).toBe('100%');
+    });
+
+    it("the sheet's cap is a PIXEL value, never a percentage", () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      const style = sheetStyleIn(kav(view)[0]);
+      // THE TRAP, pinned as a type rather than a value: a percentage here resolves
+      // against a content-sized parent and evaporates, so the cap must be a number.
+      // Asserting the number itself would only restate windowHeight * 0.8; asserting
+      // it is not a string is what a future "tidy it back to '80%'" edit fails on.
+      expect(typeof style.maxHeight).toBe('number');
+      expect(style.maxHeight).toBeGreaterThan(0);
+    });
+
+    it('the sheet can give height up to the keyboard', () => {
+      const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      // RN defaults flexShrink to 0, so without this the sheet keeps its natural
+      // height and overflows the avoider instead of being squeezed above the keyboard.
+      expect(sheetStyleIn(kav(view)[0]).flexShrink).toBe(1);
     });
 
     it('the scrim stays OUTSIDE the avoider, so the dim still covers the full screen', () => {
