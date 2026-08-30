@@ -3,7 +3,7 @@
 **Date:** 2026-08-30
 **Mode:** DISCOVERY (verification pass; deliverable is committed docs, no code)
 **Issue:** CUL-671 · **Track:** Event Taxonomy Expansion (B-756 / CUL-509)
-**Outcome:** shipped via #NNN
+**Outcome:** shipped via #763
 
 ---
 
