@@ -1,7 +1,7 @@
 # The stage-2 confirm header — a falsified premise, and a mock round
 
 **Date:** 2026-08-30
-**Issue:** CUL-726 (mock round shipped; R6-1 + R6-2 open, build deferred)
+**Issue:** CUL-726 (mock round + build both shipped; R6-1 = P1, R6-2 = accept, ruled same day)
 **Outcome:** shipped via #758
 
 ---
@@ -99,7 +99,8 @@ row wraps, the type may shrink and ellipse, and the pet's name never shrinks —
 to its own line intact. Same pattern, same file, no new idea.
 
 That leaves a fork only looking can settle — what the wrapped state looks like — which
-is what §07 draws (P1 dash-with-type, P2 type-as-eyebrow, P3 two-lines-only).
+is what §07 drew (P1 dash-with-type, P2 type-as-eyebrow, P3 two-lines-only). **PM ruled
+P1, and R6-2 accept, the same day**, so the build landed in this session too.
 
 ## Two captions that were wrong
 
@@ -117,6 +118,44 @@ It also exposed a real CSS/RN bug in the draft: a name span with `flex: 0 0 auto
 *This is the CUL-613 rule applied to a mock: a frame drawn by someone who knows what it
 should show will show it, whether or not it is true.*
 
+## The build
+
+`SimpleEventConfirm.tsx`: the header string split in two inside a wrapping row — the
+type `flexShrink: 1`, the pet `flexShrink: 0`, so the name drops to its own line whole.
+
+Two things the drawing settled that the ruling could not:
+
+- **The gap is 4px, not the 6 first drawn.** Splitting one string into two Texts removes
+  the literal space between the dash and the name; Geist SemiBold's space is 4.0px at
+  `textLG`, so 4 *restores* the undivided string's spacing rather than approximating it.
+- **`flexShrink: 0` alone overflows.** A name that by itself overruns its line runs off
+  the sheet instead of ellipsing, so the pet carries `maxWidth: '100%'` — which turns
+  the last resort back into an ellipsis, against the whole column rather than the
+  remainder after the type.
+
+And the split *does* need an `accessibilityLabel` — for a different reason than the
+issue gave. A truncated `Text` already announces its full string, so the requested
+label would have been inert; **two Texts do not announce as one**, so the label pays for
+the split. Its test pins it to the two visible halves rejoined, so it cannot drift into
+a second, disagreeing copy of the same sentence.
+
+### Six tests, and the one that mattered most
+
+Five guards, each proved by **mutation** rather than by reading (CUL-613): breaking one
+property reds exactly one test and nothing else, six for six, and all five are red
+against the pre-fix tree.
+
+The sixth is refactor-safety, and it exists because of a bug in the first draft of the
+fix: **the shared face was applied to neither half.** `styles.headerText` — size,
+weight, colour, tracking — was left behind, so the header would have rendered at RN's
+default 14px regular instead of 17px semibold Geist. Types passed. All 47 other tests
+passed. `guards/geistRollout.test.ts` passed too, because `ThemedText` always injects
+*some* family, so nothing in the repo looks at whether the size and weight survived.
+
+It was caught by reading the diff adversarially before pushing, which is the only thing
+that could have caught it. *A refactor that splits a styled node has to be checked for
+what the split dropped, not only for what it added* — and the test now pins it.
+
 ## Decisions
 
 | # | Decision |
@@ -125,13 +164,14 @@ should show will show it, whether or not it is true.*
 | 2 | The real defect is the visual cut, and it is a **Dynamic Type** problem, not a long-name one. |
 | 3 | PM ruled the direction: two lines + the type yields. Mock first, per "Mock what you change" — the round-4 frame is design-locked (F1). |
 | 4 | B and C are not composable as stated; the composition is AC-CHIP's wrap + `flexShrink: 0`, reusing an in-file precedent rather than inventing one. |
-| 5 | §03's stage-2 frames stay on the round-4 header until R6-1 is ruled. The page says so rather than quietly showing an unruled design. |
+| 5 | §03's stage-2 frames stay on the round-4 header. Not a deferral in the end: at "Vomit — Nyx" the split renders *identically*, and it only shows itself when the row would otherwise have cut the name. The page says so. |
+| 6 | **R6-1 = P1** (wrap, dash rides with the type) and **R6-2 = accept** — PM, same day. The "only if it would otherwise be lost" qualifier needs no enforcement: a wrapping row grows only when one line cannot hold it. |
 
 ## Residuals
 
-- **CUL-726** — R6-1 (P1/P2/P3) and R6-2 (is a two-line header acceptable) open. The
-  build PR follows the ruling: one PR against `SimpleEventConfirm.tsx`, guards pinning
-  that the name never shrinks and never wraps, no schema, no copy, no flag.
+- **CUL-726** — done pending the device look. The one thing a static pass cannot
+  settle is how the wrapped two-line header sits against the pills below it at a real
+  accessibility text size; it batches with #751's outstanding device checks.
 - **CUL-682** — its label's stated rationale is falsified; the label itself stands.
   Noted, not reopened.
 - **`accessibilityRole="header"`** — this header has none, and only 4 sites app-wide
@@ -139,12 +179,20 @@ should show will show it, whether or not it is true.*
 
 ## Files
 
+- `components/log/SimpleEventConfirm.tsx` — the header split into a wrapping row; the
+  `HEADER_SPAN_GAP` constant; `headerStack` / `headerType` / `headerPet` styles; the
+  title row becomes one accessible node.
+- `components/log/SimpleEventConfirm.test.tsx` — 5 guards + 1 refactor-safety test; the
+  two existing header tests rewritten for the split.
 - `docs/culprit-more-events-mockups.html` — §07 (round 6), the round-6 CSS block, Geist
   loaded from Google Fonts so the 1:1 frames are metrically honest, masthead/header
-  comment/footer moved to round 6, and §06's stale "CUL-682 needs a device check" note
-  refreshed now that it has shipped.
+  comment/footer moved to round 6, both briefs recorded as ruled, and §06's stale
+  "CUL-682 needs a device check" note refreshed now that it has shipped.
+- `CLAUDE.md` — § Code Conventions: the truncated-`Text` rule, plus the correction to
+  the CUL-682 entry's falsified clause.
 
-Republished to the same artifact URL as rounds 1–5, per the same-URL round convention.
+The mock was republished to the same artifact URL as rounds 1–5, per the same-URL round
+convention.
 
-No app code changed. `STATUS.md` untouched: no track started or ended, no standing hold
-changed, no build phase moved, no pointer went stale.
+`STATUS.md` untouched: no track started or ended, no standing hold changed, no build
+phase moved, no pointer went stale.
