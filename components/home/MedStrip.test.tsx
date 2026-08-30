@@ -35,10 +35,15 @@ import {
 // below lets `performWrite` call this mock and asserts the payload it builds.
 import { insertMedicationDose } from '../../lib/medicationDose';
 jest.mock('../../lib/medicationDose', () => ({ insertMedicationDose: jest.fn() }));
+// CUL-170 — the DEFAULT press is under test below. Every other press assertion in
+// this file injects `onPress`, which is how the bare `/(tabs)/profile` push went
+// unnoticed: the door itself was never the thing being tested.
+jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 // CUL-614 — the confirm now plays the §5.6 commit haptic. Mocked at the VERB, matching
 // momentStore.test's convention: this suite asserts WHICH moment fires (and, more
 // importantly, when it must not), while lib/haptics.test owns verb→pattern.
+import { router } from 'expo-router';
 import { commitRoutine } from '../../lib/haptics';
 jest.mock('../../lib/haptics', () => ({ commitRoutine: jest.fn() }));
 
@@ -386,6 +391,26 @@ describe('MedStrip — context card', () => {
     expect(tree.getByTestId('med-strip').props.accessibilityLabel).toBe(
       'Amoxicillin · day 5 of 14. No dose logged yet today · usually twice a day. Open medications.',
     );
+  });
+
+  // CUL-170. "Open medications" landed at the top of the Pet tab, so an owner with
+  // three courses arrived above the photo and scrolled to find the one they tapped.
+  // The key travels so the screen can resolve THIS med's row — the untouched
+  // default, not an injected handler.
+  it('by default carries its own key so the Pet tab lands on THIS med', () => {
+    (router.push as jest.Mock).mockClear();
+    const m = model({ regimens: [regimen()] });
+    const tree = render(<MedStrip model={m} />);
+    fireEvent.press(tree.getByTestId('med-strip'));
+
+    expect(router.push).toHaveBeenCalledTimes(1);
+    const href = (router.push as jest.Mock).mock.calls[0][0];
+    expect(href.pathname).toBe('/(tabs)/profile');
+    expect(href.params.focus).toBe('medications');
+    // The strip's own identity — read off the model, never re-derived here, so a
+    // change to how a strip is keyed cannot leave the door pointing at the old one.
+    expect(href.params.med).toBe(m.key);
+    expect(href.params.ts).toEqual(expect.any(String));
   });
 });
 

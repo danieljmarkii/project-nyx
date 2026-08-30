@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
   },
   change: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   // Found panel
   panel: {

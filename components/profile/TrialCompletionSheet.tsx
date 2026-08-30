@@ -430,7 +430,7 @@ const styles = StyleSheet.create({
   headerSpacer: { width: 56 },
   cancelText: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     width: 56,
   },
   body: { padding: theme.space3, paddingBottom: theme.space5 },

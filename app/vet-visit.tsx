@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
   replacePhotoBtn: { alignItems: 'center' },
   replacePhotoBtnText: {
     fontSize: 15,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
   },
   photoStepFooter: {
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
   },
   dateChangeText: {
     fontSize: 14,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   saveBtn: {
     backgroundColor: theme.colorNeutralDark,

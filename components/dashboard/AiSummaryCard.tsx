@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   },
   groundingText: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 });

@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
   },
   loadMoreText: {
     fontSize: 14,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
   },
 });

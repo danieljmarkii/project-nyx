@@ -891,7 +891,7 @@ const styles = StyleSheet.create({
   saveText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   loader: {
     alignSelf: 'center',
@@ -1019,11 +1019,11 @@ const styles = StyleSheet.create({
   },
   addRowPlus: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   addRowText: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   disclosure: {
     flexDirection: 'row',
@@ -1069,7 +1069,7 @@ const styles = StyleSheet.create({
   },
   changeLabel: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
   consent: {

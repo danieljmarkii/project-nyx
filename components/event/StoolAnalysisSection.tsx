@@ -615,7 +615,13 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
     letterSpacing: theme.trackingWidest,
   },
-  recLabelAttn: { color: theme.colorAccent },
+  // CUL-744 — the ink, and this is the site in that sweep that mattered most. This is
+  // the escalation tone: `worth_a_call` renders on `cardAttn`, whose fill is
+  // colorAccentLight, so the bright accent here was 2.08:1 — the Badge tint-pair defect
+  // sitting on the one label that asks an owner to phone a vet. It was also the LEAST
+  // legible of the card's three tones (monitor 7.17:1, muted 4.35:1), which inverts the
+  // severity ordering: the escalation read faintest. The ink is 4.75:1 on that fill.
+  recLabelAttn: { color: theme.colorAccentInk },
   recLabelNeutral: { color: theme.colorTextSecondary },
   recLabelMuted: { color: theme.colorTextTertiary },
   dismissBtn: {
@@ -632,7 +638,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
     marginTop: 6,
   },
@@ -667,7 +673,7 @@ const styles = StyleSheet.create({
   },
   editLink: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
   },
   obsRow: {

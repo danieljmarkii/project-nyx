@@ -1473,7 +1473,7 @@ const styles = StyleSheet.create({
   },
   changeTimeBtn: {
     fontSize: 14,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   exifAttribution: {
     fontSize: 13,

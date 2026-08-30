@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: theme.textXS,
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     textTransform: 'uppercase',
     letterSpacing: theme.trackingWidest,
     marginBottom: theme.space1,
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   vDown: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     // Spells its own family rather than a weight. This span sits INSIDE a ThemedText,
     // whose explicit family the native cascade hands down — under which a bare
     // `fontWeight` is inert, so the emphasis this arrow is drawn for would silently

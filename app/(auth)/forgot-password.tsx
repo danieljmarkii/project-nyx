@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
   linkAccent: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   linkMuted: {
     fontSize: theme.textMD,

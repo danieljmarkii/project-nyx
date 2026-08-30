@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   Alert, Image, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -60,6 +61,11 @@ import {
   type DoseCourseProgress, type DoseEmbedRow, type PlannedEndState,
 } from '../../lib/medications';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
+import {
+  coerceProfileFocus, focusScrollY, medFocusScrollY, resolveMedAnchorRegimenId,
+  type ProfileFocus,
+} from '../../lib/profileFocus';
 import {
   buildPastCourseRows, type PastCourseRow, type MedicationItemName,
 } from '../../lib/pastMedications';
@@ -264,6 +270,117 @@ export default function ProfileScreen() {
       }
     }, []),
   );
+  // ── CUL-170 — the strips' doorways land ON their card ────────────────────────
+  //
+  // The Home `TrialStrip`/`MedStrip` and the Daily Recap's mirrors of them are
+  // doors: "Amoxicillin · day 5 of 14" is meant to open that med. They all pushed
+  // the bare route, which arrives at the top of this screen — photo, conditions,
+  // trial card, every other med — so the tap ended in a scroll hunt. The href is
+  // built by `lib/profileFocus`; this is the half that lands it.
+  //
+  // Params + a `ts` nonce, the shipped doorway shape from `app/(tabs)/history.tsx`:
+  // a tab persists across switches, so without the nonce a second tap on the same
+  // strip re-pushes identical params and the door works exactly once per session.
+  const params = useLocalSearchParams<{ focus?: string; med?: string; ts?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  const focusReducedMotion = useReducedMotion();
+
+  // Measured tops. The med rows hold their offset WITHIN the medications card (RN
+  // reports a child's y in its parent's box); `medFocusScrollY` composes the two,
+  // so no layout callback ever has to add them while one of them may still be null.
+  const trialAnchorY = useRef<number | null>(null);
+  const medSectionY = useRef<number | null>(null);
+  const medRowOffsetY = useRef<Map<string, number>>(new Map());
+
+  // The doorway that has not landed yet. Cleared when the scroll fires — so a later
+  // re-layout can never yank the owner back to it — and on blur, so a request whose
+  // target never rendered dies with this visit instead of firing into an unrelated
+  // arrival minutes later.
+  //
+  // A REF, not state, and that is load-bearing rather than a micro-optimisation:
+  // consumption has to be visible to every closure the instant it happens. Held as
+  // state, a passive effect already queued from an earlier render re-enters with a
+  // pending-focus that React has not cleared yet and scrolls a second time — which
+  // is harmless at the same offset and is not harmless once the content underneath
+  // has moved. `focusRequestTick` exists only to make a new request re-run the
+  // effect below; the request itself is never read out of state.
+  const pendingFocusRef = useRef<{ focus: ProfileFocus; med: string | null } | null>(null);
+  const [focusRequestTick, setFocusRequestTick] = useState(0);
+  // `undefined` = nothing applied yet, which is deliberately distinct from a link
+  // that carried no nonce at all (`null`): seeding this to `null` would make the
+  // first no-nonce arrival compare equal and never apply.
+  const appliedFocusTsRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    const focus = coerceProfileFocus(params.focus);
+    if (focus === null) return;
+    const ts = typeof params.ts === 'string' ? params.ts : null;
+    if (ts === appliedFocusTsRef.current) return;
+    appliedFocusTsRef.current = ts;
+    pendingFocusRef.current = { focus, med: typeof params.med === 'string' ? params.med : null };
+    setFocusRequestTick((n) => n + 1);
+  }, [params.focus, params.med, params.ts]);
+
+  useFocusEffect(
+    useCallback(() => () => {
+      pendingFocusRef.current = null;
+    }, []),
+  );
+
+  // Every section above an anchor loads asynchronously, so a y measured mid-load is
+  // one this screen is about to invalidate. Gating on all three is what makes the
+  // arrival land on the card rather than near where the card used to be.
+  const focusContentSettled = !conditionsLoading && !medicationsLoading && !trialLoading;
+
+  const tryFocusScroll = useCallback(() => {
+    const pendingFocus = pendingFocusRef.current;
+    if (pendingFocus === null || !focusContentSettled) return;
+    let y: number | null;
+    if (pendingFocus.focus === 'trial') {
+      y = focusScrollY(trialAnchorY.current);
+    } else {
+      const regimenId = resolveMedAnchorRegimenId(medications, pendingFocus.med);
+      const rowOffset = regimenId === null ? undefined : medRowOffsetY.current.get(regimenId);
+      // The row IS in the model but has not reported its layout yet: wait for it.
+      // Falling through here would silently downgrade every cold arrival from
+      // row-level to section-level targeting — the defect this issue is about,
+      // reintroduced by a race rather than by the route.
+      if (regimenId !== null && rowOffset === undefined) return;
+      y = medFocusScrollY({
+        sectionY: medSectionY.current,
+        rowOffsetY: rowOffset ?? null,
+        isFirstRow: regimenId !== null && medications[0]?.id === regimenId,
+      });
+    }
+    // Not measured yet — a later layout pass calls back in.
+    if (y === null) return;
+    // Consumed BEFORE the scroll, so a re-entrant call cannot see a live request.
+    pendingFocusRef.current = null;
+    scrollRef.current?.scrollTo({ y, animated: !focusReducedMotion });
+  }, [focusContentSettled, medications, focusReducedMotion]);
+
+  // Covers the already-mounted tab, where the content has long since laid out and
+  // no `onLayout` will fire again; the handlers below cover the cold arrival.
+  useEffect(() => {
+    tryFocusScroll();
+  }, [tryFocusScroll, focusRequestTick]);
+
+  const handleTrialAnchorLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      trialAnchorY.current = e.nativeEvent.layout.y;
+      tryFocusScroll();
+    },
+    [tryFocusScroll],
+  );
+
+  const handleMedSectionLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      medSectionY.current = e.nativeEvent.layout.y;
+      tryFocusScroll();
+    },
+    [tryFocusScroll],
+  );
+
   // B-417 PR 6 — which completion screen is open, if any. `null` is closed.
   const [completionEntry, setCompletionEntry] = useState<TrialCompletionEntry | null>(null);
   // The extension is a one-tap write with no confirm (see `handleExtendTrial`),
@@ -913,7 +1030,11 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
 
         {/* ── Pet header ── */}
         <Card style={styles.headerCard}>
@@ -1085,7 +1206,10 @@ export default function ProfileScreen() {
         </Card>
 
         {/* ── Current medications ── */}
-        <Card style={styles.sectionGap}>
+        {/* CUL-170 anchor: the section top, used both as the med doorway's own
+            target for a first row and as the fallback when the tapped strip names
+            an ad-hoc course with no active regimen row to land on. */}
+        <Card style={styles.sectionGap} testID="med-section" onLayout={handleMedSectionLayout}>
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Current medications</ThemedText>
             <TouchableOpacity style={styles.cardActionTouch} onPress={openAddMedication} hitSlop={8}>
@@ -1111,7 +1235,18 @@ export default function ProfileScreen() {
                 .filter(Boolean)
                 .join(' · ');
               return (
-                <View key={reg.id} style={styles.medRow}>
+                <View
+                  key={reg.id}
+                  testID={`med-row-${reg.id}`}
+                  style={styles.medRow}
+                  // CUL-170 anchor. Stored RELATIVE to the card (which is what RN
+                  // reports) and composed at scroll time, so a row that lays out
+                  // before its card does cannot record a wrong absolute offset.
+                  onLayout={(e) => {
+                    medRowOffsetY.current.set(reg.id, e.nativeEvent.layout.y);
+                    tryFocusScroll();
+                  }}
+                >
                   <Divider style={styles.conditionDivider} />
                   <ThemedText style={styles.medName}>{reg.drug_name}</ThemedText>
                   {meta ? <ThemedText style={styles.medMeta}>{meta}</ThemedText> : null}
@@ -1273,6 +1408,8 @@ export default function ProfileScreen() {
           <DietTrialCard
             model={trialCard}
             style={styles.sectionGap}
+            // CUL-170 anchor — the trial strip's doorway.
+            onLayout={handleTrialAnchorLayout}
             busyAction={extendingTrial ? 'trial_extend' : null}
             actions={{
               start_trial: () => setStartTrialVisible(true),
@@ -1532,7 +1669,7 @@ const styles = StyleSheet.create({
   },
   photoLabel: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
   // CUL-618 — the name's row, shared by the switcher branch and the plain one so
@@ -1645,7 +1782,7 @@ const styles = StyleSheet.create({
   },
   sectionAction: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
   sectionLoader: {
@@ -1718,7 +1855,7 @@ const styles = StyleSheet.create({
   // "Log a dose" is the card's primary action (the wedge path), so it leads in the
   // accent colour while Edit/End stay quiet secondary text.
   logDoseActionText: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 

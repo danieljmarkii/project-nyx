@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   submit: {
     marginTop: theme.space2,
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   // link it is (the whole row was flat grey before) — matching signup's accented
   // Terms/Privacy treatment and the Landing's accent language.
   signupTextAccent: {
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 });
