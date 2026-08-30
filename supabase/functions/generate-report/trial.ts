@@ -298,6 +298,13 @@ export interface TrialExposure {
    * `null` when the food is never on the list (the ordinary case).
    */
   permittedLaterFrom: string | null
+  /**
+   * The allowed-set role that later permission carried (CUL-746). Page 1 has no item
+   * column, so once the dated-membership clause leads it must say WHICH food — and
+   * `primary_diet` is the one that inverts the reading: those feedings are the trial
+   * diet itself. Read off the same re-classification as `permittedLaterFrom`, never a
+   * second lookup, so the two can never name different allowed rows.
+   */
 }
 
 export interface TrialBlock {
@@ -400,11 +407,17 @@ export interface TrialBlock {
     byRung: { derived_protein: number; unrecognised: number }
     /**
      * Exposures whose food IS on the allowed list, just not on the day it was fed — the
-     * THIRD reason a row can be here, orthogonal to the two rungs and not counted by
-     * either. Round 5 caught page 1 saying "Of those 4: 4 carried a protein the trial
-     * diet does not" while appendix C's Why column showed three protein rows and one
-     * dated-membership row, so a vet cross-checking got 4 against 3 and the timing
-     * violation never surfaced on page 1 at all.
+     * THIRD reason a row can be here. Round 5 caught page 1 saying "Of those 4: 4
+     * carried a protein the trial diet does not" while appendix C's Why column showed
+     * three protein rows and one dated-membership row, so a vet cross-checking got 4
+     * against 3 and the timing violation never surfaced on page 1 at all.
+     *
+     * NOT orthogonal to the rungs, which is what this comment used to claim and what
+     * the round-5 fix was built on (CUL-746). Every off-diet feeding carries a rung —
+     * only rungs 2 and 3 ever set `offDiet` — so these rows are ALSO inside `byRung`,
+     * and rendering both as independent counts reported the same feedings twice under
+     * two reasons. They are one population seen two ways, and the renderer resolves it
+     * by PRECEDENCE (`exposureReasonOf`), never by addition.
      */
     fedBeforePermitted: number
     /** Feedings naming no food — excluded from BOTH sides above and disclosed. */
@@ -859,6 +872,81 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       permittedCounts.set(key, (permittedCounts.get(key) ?? 0) + 1)
     }
     if (!classification.offDiet) continue
+    const permittedLater = ((): { from: string; role: TrialFoodRole | null } | null => {
+      // ── AND NOT IF IT WAS EVER PERMITTED *BEFORE* THIS FEEDING (CUL-746) ───────
+      //
+      // "Fed before it was permitted" says the app's record of the permission simply
+      // started after the feeding — a bookkeeping gap, not a breach. That is only
+      // true when this feeding precedes the food's FIRST membership. §7's dated
+      // membership also supports WITHDRAWAL (`allowed_until`, migration 040: removal
+      // is an UPDATE and a re-add is a new row), so a food can be permitted, taken
+      // off the list, and permitted again later — and a feeding in that gap is the
+      // owner feeding something the vet had just withdrawn.
+      //
+      // Scanning only `allowedFrom > dn` cannot see the earlier row, so it read that
+      // feeding as the innocent case. The adversarial pass executed it: a jerky
+      // permitted Jun 1–4, withdrawn, re-permitted Jun 20, fed Jun 10 rendered
+      // "1 was a feeding of a treat the trial permits, fed before it was permitted
+      // (allowed from Jun 20)" — page 1's ONLY statement about that row, exonerating
+      // a real breach, with the true rung clause deleted from beside it because the
+      // date had outranked it. C6 makes this the one place the report judges a
+      // person, and that is judging in the wrong direction.
+      //
+      // So an earlier permission disqualifies the reason entirely and the row falls
+      // back to its rung, which is true (if incomplete — naming the withdrawal as its
+      // own, STRONGER reason is CUL-758, not something to invent here).
+      //
+      // Asked of the one predicate in both directions, never a second copy of the
+      // membership rules: the feeding is re-classified as if fed on each other
+      // `allowedFrom` date and the predicate's own verdict is read back.
+      //
+      // ── AND THE EARLIER PROBE IS CLAMPED TO THE TRIAL START (CUL-746, pass 2) ──
+      //
+      // The re-attack put the same defect straight back through a hole in this scan:
+      // `classifyFeeding` returns `out_of_window` for any date before `started_at`
+      // (`lib/dietTrial.ts` rung 0), which is not `'permitted'`, so a membership row
+      // whose `allowed_from` PREDATES the trial was invisible to the check. Executed:
+      // a jerky permitted May 20 – Jun 5 on a trial that started Jun 1, withdrawn,
+      // re-permitted Jun 25, fed Jun 15 — ten days after the vet pulled it — rendered
+      // "fed before it was permitted (allowed from Jun 25)" again.
+      //
+      // The blind spot is provably EXACTLY that row shape: at any in-window
+      // `allowed_from`, rung 1 must hit the row owning that date, so `out_of_window`
+      // is the only escape, and a post-end date can never be <= an in-window feeding.
+      // So the probe asks the question at the first day the row could have been in
+      // force AND the trial was running — `max(allowed_from, started_at)` — and skips
+      // the row when that lands after this feeding.
+      //
+      // "Today's write paths cannot produce such a row" is NOT a defence available
+      // here: `startDietTrial` writes `allowed_from = startedAt` and `addTrialFood`
+      // writes today, so they cannot produce the `primary_diet` row dated after
+      // `started_at` that this whole issue exists for either — and that one is in
+      // production.
+      const trialStartDn = dayIndexOfValue(trial.startedAt, timeZone)
+      const otherDates = [...new Set(allowedFoods.map((f) => f.allowedFrom))]
+        .map((from) => {
+          const rawDn = dayIndexOfValue(from, timeZone)
+          if (rawDn === null) return null
+          const clampedDn = trialStartDn !== null ? Math.max(rawDn, trialStartDn) : rawDn
+          return { from: clampedDn === rawDn ? from : trial.startedAt, dn: rawDn, probeDn: clampedDn }
+        })
+        .filter((x): x is { from: string; dn: number; probeDn: number } => x !== null)
+      for (const { from, probeDn } of otherDates
+        .filter((x) => x.probeDn <= dn)
+        .sort((a, b) => b.probeDn - a.probeDn)) {
+        const asIfEarlier = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
+        if (asIfEarlier.verdict === 'permitted') return null
+      }
+      // The LATER loop keys on the raw date — a permission that genuinely postdates
+      // the feeding — and is unaffected by the clamp above (a raw date after this
+      // feeding is inside the trial by construction, so it clamps to itself).
+      for (const { from, dn: rawDn } of otherDates.filter((x) => x.dn > dn).sort((a, b) => a.dn - b.dn)) {
+        void rawDn
+        const asIfLater = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
+        if (asIfLater.verdict === 'permitted') return { from, role: asIfLater.role }
+      }
+      return null
+    })()
     exposures.push({
       eventId: e.id,
       occurredAt: e.occurredAt,
@@ -896,23 +984,9 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // precisely the duplication this PR exists to delete, so instead the same
       // feeding is re-classified as if fed on each later `allowedFrom` date and the
       // predicate's own verdict is read back. Distinct dates are a handful at most.
-      permittedLaterFrom: (() => {
-        const laterDates = [
-          ...new Set(
-            allowedFoods
-              .map((f) => f.allowedFrom)
-              .filter((from) => {
-                const fromDn = dayIndexOfValue(from, timeZone)
-                return fromDn !== null && fromDn > dn
-              }),
-          ),
-        ].sort()
-        for (const from of laterDates) {
-          const asIfLater = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
-          if (asIfLater.verdict === 'permitted') return from
-        }
-        return null
-      })(),
+      // The DATE only. Naming which food, and characterising the row, were tried and
+      // withdrawn — see `exposureSentences` in render.ts and CUL-758.
+      permittedLaterFrom: permittedLater?.from ?? null,
     })
   }
   exposures.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.eventId.localeCompare(b.eventId))
@@ -1023,7 +1097,10 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       totalFeedings: facts.exposures.totalFeedings,
       offDiet: facts.exposures.offDiet,
       byRung: facts.exposures.byRung,
-      fedBeforePermitted: exposures.filter((x) => x.permittedLaterFrom !== null).length,
+      // The SAME test `exposureReasonOf` applies in the renderer — truthy, not
+      // `!== null`. Equivalent today (this field is a DATE column or null, never ''),
+      // and stated once rather than as two conventions a reader has to reconcile.
+      fedBeforePermitted: exposures.filter((x) => Boolean(x.permittedLaterFrom)).length,
       unclassifiable: facts.exposures.unclassifiable,
       items: exposures,
     },

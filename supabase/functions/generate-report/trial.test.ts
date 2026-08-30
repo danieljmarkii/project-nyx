@@ -1814,6 +1814,543 @@ Deno.test('R4 — dated membership outranks the rung in the "Why" column', () =>
   assert.ok(!/Dentastix.*Protein not in the trial diet/s.test(text.slice(text.indexOf('Appendix C'))))
 })
 
+// ── CUL-746 — dated membership outranks the rung ON PAGE 1 TOO ──────────────
+//
+// Cold read 16, blocking #1. The rule above has been right in appendix C since
+// round 4 and absent from `exposureSentences`, which printed the rung breakdown
+// and appended the date as a trailing "also" — so the SAME rows were reported
+// twice under two reasons and the misleading one led. Round 5's fix to this
+// sentence shipped with no test on it at all, which is why it stayed wrong for
+// two more rounds while the appendix beside it was right.
+
+Deno.test('CUL-746 — the prescribed diet fed before its allowed-from date is not scored as unrecognised', () => {
+  // THE ARTIFACT. A hydrolysed elimination trial started Apr 21 whose
+  // `diet_trial_foods` row records the primary diet as allowed from Jun 1, read
+  // through a hand-picked window that lands mostly before that date. Page 1 told
+  // the vet 7 of 8 feedings missed the trial diet — 88% non-compliance — when all
+  // seven WERE the prescribed food, and said so four lines under a line naming
+  // that same food as the trial diet. C6 makes this the one thing on the report
+  // that judges a person, and it judged the wrong way: those seven feedings are
+  // the best evidence on the page that the owner was complying.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.requestedWindow = { startDate: '2026-05-25', endDate: '2026-06-01' }
+  input.dietTrials[0].startedAt = '2026-04-21'
+  for (const d of days('2026-05-25', '2026-06-01')) {
+    input.events.push(
+      meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'all' }),
+    )
+  }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.exposures.offDiet, 7, 'seven feedings predate the allowed-from date')
+  assert.equal(snap.trial?.exposures.byRung.unrecognised, 7, 'and every one of them also carries a rung')
+  assert.equal(snap.trial?.exposures.fedBeforePermitted, 7, 'the SAME seven — one population, not two')
+
+  const text = plain(renderReport(snap))
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  // The reason that actually placed them there, naming which food — page 1 has no
+  // item column, so without the role it cannot say the thing that matters.
+  // The reason that actually placed them there — and NOTHING about which food it was
+  // or whether it was a departure. Two rounds tried to add that and three
+  // falsification passes broke every version; the record does not hold the fact
+  // (CUL-758). This wording is word-for-word appendix C's, so the pages cannot drift.
+  assert.ok(
+    /Of those 7: 7 were fed before that food was permitted \(allowed from Jun 1\)\. Dates in appendix/.test(page1),
+    `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 220)}`,
+  )
+  // …and NOT the misleading half, in either of its two shapes.
+  assert.ok(!/not recognised as trial food/.test(page1), 'the rung must not speak for a dated-membership row')
+  assert.ok(!/also fed before/.test(page1), 'and the date is the reason, never a trailing "also"')
+
+  // THE TILE CARRIES ITS SPAN AND NOTHING ELSE. Cold read 17 asked for the reason here
+  // too, and it was added; three falsification passes then showed the app cannot
+  // establish it. A tile is the worst place for a sentence the record does not support.
+  assert.ok(
+    /7 \/ 8Feedings not matched to the trial dietMay 25 – Jun 1, 2026 · a floor, not a total/.test(page1),
+    `the tile read: ${page1.slice(page1.indexOf('Feedings not matched'), page1.indexOf('Feedings not matched') + 200)}`,
+  )
+})
+
+Deno.test('CUL-746 — a row is attributed to ONE reason, and the breakdown sums to its own total', () => {
+  // The mixed case, which is where an additive framing is arithmetically visible:
+  // one treat fed before it was permitted, three feedings of a food that is never
+  // on the list. Round 5 caught page 1 crediting all four to the rung ("4 against
+  // 3" versus appendix C) and fixed it by ADDING a sentence; the counts still did
+  // not partition. Here 1 + 3 must equal the 4 the same sentence names.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    { ...PERMITTED_TREAT, foodItemId: 'f-stix', foodLabel: 'Pedigree Dentastix', brand: 'Pedigree', productName: 'Dentastix', allowedFrom: '2026-06-08', primaryProtein: 'cereal', proteins: ['cereal', 'chicken'] },
+  ]
+  // One feeding of the treat BEFORE it was permitted…
+  input.events.push(
+    meal({ date: '2026-06-02', time: '15:00:00', brand: 'Pedigree', product: 'Dentastix', foodItemId: 'f-stix', proteins: ['cereal', 'chicken'], foodType: 'treat' }),
+  )
+  // …and three feedings of a chicken chew that is never on the list at all.
+  for (const d of days('2026-06-20', '2026-06-22')) {
+    input.events.push(
+      meal({ date: d, time: '16:00:00', brand: 'Purina', product: 'Chicken Chew', foodItemId: 'f-chick', proteins: ['chicken'], foodType: 'treat' }),
+    )
+  }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.exposures.offDiet, 4)
+  assert.equal(snap.trial?.exposures.byRung.derived_protein, 4, 'all four carry an unsanctioned protein…')
+  assert.equal(snap.trial?.exposures.fedBeforePermitted, 1, '…and one of those four is ALSO dated-membership')
+
+  const text = plain(renderReport(snap))
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  // 1 + 3 = 4. The dated row leaves the rung it was double-counted in.
+  assert.ok(
+    /Of those 4: 1 was fed before that food was permitted \(allowed from Jun 8\); 3 carried a protein the trial diet does not\./.test(page1),
+    `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`,
+  )
+  assert.ok(!/4 carried a protein/.test(page1), 'the rung clause must shed the row the date claimed')
+  // And the two pages agree on that row's reason — the whole point of one predicate.
+  const appendixC = text.slice(text.indexOf('Appendix C'))
+  assert.ok(/Dentastix.*Fed before it was permitted \(allowed from Jun 8\)/s.test(appendixC))
+})
+
+Deno.test('CUL-746 — the ACCUSING exposure tile names its span, like the reassuring one already does', () => {
+  // `mayStateRecordClean` was repaired for exactly this (B-600 pass 3 5): the count
+  // is over the trial's evidence range, not the window the grid's own header names.
+  // The repair went on the branch that reassures and not on the branch that accuses,
+  // so the alarming cell was the undated one — and it is the cell a 60-second scan
+  // carries furthest.
+  //
+  // AND THE FIXTURE MUST SEPARATE THE TWO RANGES, or the assertion is vacuous. Code
+  // review mutation-proved the first cut of this test: on an untruncated trial the
+  // evidence range and the coverage range coincide, so repointing the tile at
+  // `range*` — the exact defect CLAUDE.md's evidence-vs-coverage rule forbids — still
+  // passed. The trial here starts before the window, so the two differ by 11 days.
+  // The coverage range is HEAD-CLIPPED to the first logged day (§10 S3) while the
+  // evidence range opens at the trial's start, so a trial whose first meal lands 12
+  // days in separates them — and the single off-diet feeding sits in the gap, where
+  // `range*` would print a span opening after the very feeding it counts.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].allowedFoods = [TRIAL_FOOD]
+  input.events.push(
+    meal({ date: '2026-06-03', time: '16:00:00', brand: 'Purina', product: 'Chicken Chew', foodItemId: 'f-chick', proteins: ['chicken'], foodType: 'treat' }),
+  )
+  for (const d of days('2026-06-13', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const snap = assembleReport(input)
+  assert.ok((snap.trial?.exposures.offDiet ?? 0) > 0, 'the fixture must reach the offDiet>0 branch')
+  assert.notEqual(
+    `${snap.trial?.evidenceStartDate}`,
+    `${snap.trial?.rangeStartDate}`,
+    'the fixture must separate the evidence range from the coverage range, or this asserts nothing',
+  )
+  const text = plain(renderReport(snap))
+  // SLICE THE TILE, never `.*` across the document. The first cut of this assertion
+  // used `/Feedings not matched to the trial diet.*Jun 1 – Jul 2, 2026/` and passed with
+  // the tile repointed at the coverage range, because `.*` bridged to the PROSE
+  // sentence's copy of the evidence range 400 characters later — a guard that was green
+  // over its own defect, which is exactly what CUL-613 says to prove by mutation.
+  const at = text.indexOf('Feedings not matched')
+  const tileText = text.slice(at, text.indexOf('dates in appendix C', at) + 'dates in appendix C'.length)
+  assert.ok(
+    /^Feedings not matched to the trial dietJun 1 – Jul 2, 2026 · a floor, not a total — dates in appendix C$/.test(tileText),
+    `the tile read: ${tileText}`,
+  )
+  // …and it is the SAME span the prose one line below names, not a second one.
+  assert.ok(/feedings counted over Jun 1 – Jul 2, 2026/.test(text))
+  // The coverage tile, one cell left, prints the OTHER range — which is the point: the
+  // two are different spans and the tile must not borrow the neighbour's.
+  assert.ok(/Days a meal was logged · Jun 13 – Jul 2, 2026/.test(text))
+  // With no dated-membership row there is nothing to split, so the tile says nothing
+  // about one — the line is present-only, like every other disclosure on this page.
+  assert.ok(!/of them/.test(text.slice(text.indexOf('Feedings not matched'), text.indexOf('Feedings not matched') + 160)))
+})
+
+Deno.test('CUL-746 — a feeding after a permission was WITHDRAWN is not excused as "before it was permitted"', () => {
+  // The adversarial pass broke the first cut here. §7's dated membership supports
+  // withdrawal as well as addition (migration 040: removal is an UPDATE, a re-add is a
+  // new row), so a food can be permitted, taken off the list, and permitted again. The
+  // predicate scanned only allowed-from dates AFTER the feeding, so it could not see
+  // the earlier row, and a feeding in the withdrawal gap — the owner feeding something
+  // the vet had just removed — rendered as the innocent bookkeeping case. Worse, the
+  // date OUTRANKS the rung, so the true clause was deleted from beside it and page 1's
+  // only statement about that row became an exoneration of a real breach.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    // Permitted Jun 1–4…
+    { ...PERMITTED_TREAT, foodItemId: 'f-jerky', foodLabel: 'Zukes Chicken Jerky', brand: 'Zukes', productName: 'Chicken Jerky', allowedFrom: '2026-06-01', allowedUntil: '2026-06-04', primaryProtein: 'chicken', proteins: ['chicken'] },
+    // …withdrawn, then permitted again from Jun 20.
+    { ...PERMITTED_TREAT, foodItemId: 'f-jerky', foodLabel: 'Zukes Chicken Jerky', brand: 'Zukes', productName: 'Chicken Jerky', allowedFrom: '2026-06-20', allowedUntil: null, primaryProtein: 'chicken', proteins: ['chicken'] },
+  ]
+  // Fed INSIDE the gap.
+  input.events.push(
+    meal({ date: '2026-06-10', time: '15:00:00', brand: 'Zukes', product: 'Chicken Jerky', foodItemId: 'f-jerky', proteins: ['chicken'], foodType: 'treat' }),
+  )
+  const snap = assembleReport(input)
+  const gapRow = snap.trial?.exposures.items.find((x) => x.label?.includes('Jerky'))
+  assert.ok(gapRow, 'the gap feeding is an exposure')
+  assert.equal(gapRow!.permittedLaterFrom, null, 'an EARLIER permission disqualifies the dated-membership reason')
+
+  const text = plain(renderReport(snap))
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  assert.ok(!/fed before it was permitted/.test(page1), 'page 1 must not exonerate a feeding made after a withdrawal')
+  // …and the true reason is back, rather than having been outranked by a false one.
+  assert.ok(/carried a protein the trial diet does not/.test(page1))
+  const appendixC = text.slice(text.indexOf('Appendix C'))
+  assert.ok(!/Jerky.*Fed before it was permitted/s.test(appendixC))
+})
+
+Deno.test('CUL-746 — appendix C never hands one feeding\u2019s excuse to another that straddles the permission', () => {
+  // The group key omitted `permittedLaterFrom`, the one remaining reason-bearing field
+  // left at first-member-wins. The bias is structural: a row's candidate allowed-from
+  // dates are the ones AFTER it, so the earliest member's candidate set is a superset
+  // of every later member's, and the exposures are date-sorted before grouping — so the
+  // group is always created by the member most likely to be excused, and its excuse was
+  // then applied to the rest. It also made page 1 (which partitions on this field) stop
+  // reconciling with the appendix, re-opening round 5's "4 against 3" from the far side.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    { ...PERMITTED_TREAT, foodItemId: 'f-jerky', foodLabel: 'Zukes Chicken Jerky', brand: 'Zukes', productName: 'Chicken Jerky', allowedFrom: '2026-06-10', allowedUntil: '2026-06-12', primaryProtein: 'chicken', proteins: ['chicken'] },
+  ]
+  // One BEFORE the permission (genuinely the innocent case) and one eight days AFTER it ended.
+  for (const d of ['2026-06-05', '2026-06-20']) {
+    input.events.push(
+      meal({ date: d, time: '15:00:00', brand: 'Zukes', product: 'Chicken Jerky', foodItemId: 'f-jerky', proteins: ['chicken'], foodType: 'treat' }),
+    )
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  const appendixC = text.slice(text.indexOf('Appendix C'))
+  // Two rows, not one grouped ×2 under the earlier row's excuse.
+  assert.ok(/Zukes Chicken JerkyTreatFed before it was permitted \(allowed from Jun 10\)/.test(appendixC), 'the Jun 5 feeding keeps the dated-membership reason')
+  assert.ok(/Zukes Chicken JerkyTreatProtein not in the trial diet/.test(appendixC), 'and the Jun 20 feeding keeps its rung')
+  assert.ok(!/Fed before it was permitted \(allowed from Jun 10\)Chicken ×2/.test(appendixC), 'never one grouped row under the excusable member\u2019s reason')
+  // Page 1 partitions the same way, so the two pages still reconcile.
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  assert.ok(/Of those 2: 1 was fed before that food was permitted \(allowed from Jun 10\); 1 carried a protein the trial diet does not\./.test(page1),
+    `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`)
+})
+
+Deno.test('CUL-746 — a permission date outside the window\u2019s year carries that year, everywhere it renders', () => {
+  // CUL-69, verbatim, at a new call site. `fmtDay` prints "Mon D" with no year, which
+  // was safe only by a construction this field does not have: `allowed_from` is bounded
+  // by the TRIAL, unbounded forward on an un-ended one, while the window can be a
+  // hand-picked stretch years earlier. A bare "Mar 15" beside "Nov 1 – Nov 20, 2025"
+  // resolves to March 2025 — eight months BEFORE the feedings, contradicting the very
+  // clause it sits in.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.now = '2026-07-02T12:00:00Z'
+  input.requestedWindow = { startDate: '2025-11-01', endDate: '2025-11-20' }
+  input.dietTrials[0].startedAt = '2025-11-01'
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2025-11-01' },
+    { ...PERMITTED_TREAT, foodItemId: 'f-chew', foodLabel: 'Dental Chew', brand: 'Acme', productName: 'Dental Chew', allowedFrom: '2026-03-15', primaryProtein: 'cereal', proteins: ['cereal'] },
+  ]
+  for (const d of days('2025-11-01', '2025-11-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  for (const d of ['2025-11-08', '2025-11-09', '2025-11-10']) {
+    input.events.push(meal({ date: d, time: '16:00:00', brand: 'Acme', product: 'Dental Chew', foodItemId: 'f-chew', proteins: ['cereal'], foodType: 'treat' }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  // Parse the date back out of each place it renders and require the year on all of them —
+  // asserting one site would let the other keep inheriting the wrong year silently.
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  const appendixC = text.slice(text.indexOf('Appendix C'))
+  assert.ok(/fed before that food was permitted \(allowed from Mar 15, 2026\)/.test(page1),
+    `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`)
+  assert.ok(/Fed before it was permitted \(allowed from Mar 15, 2026\)/.test(appendixC), 'appendix C too')
+  // …and the row's own Dates column, one column over, must not then be read as 2026.
+  assert.ok(/Nov 8, 2025 – Nov 10, 2025/.test(appendixC),
+    `the row's dates read: ${appendixC.slice(appendixC.indexOf('Dental Chew'), appendixC.indexOf('Dental Chew') + 220)}`)
+})
+
+Deno.test('CUL-746 — an ordinary same-year report is byte-identical: no year is stamped', () => {
+  // The other half of CUL-69's rule. A conditional year that fires when it should not is
+  // its own defect, and a stamped year has to carry signal.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    { ...PERMITTED_TREAT, foodItemId: 'f-stix', foodLabel: 'Pedigree Dentastix', brand: 'Pedigree', productName: 'Dentastix', allowedFrom: '2026-06-08', primaryProtein: 'cereal', proteins: ['cereal', 'chicken'] },
+  ]
+  input.events.push(
+    meal({ date: '2026-06-02', time: '15:00:00', brand: 'Pedigree', product: 'Dentastix', foodItemId: 'f-stix', proteins: ['cereal', 'chicken'], foodType: 'treat' }),
+  )
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/fed before that food was permitted \(allowed from Jun 8\)/.test(text), 'no year on page 1')
+  assert.ok(/Fed before it was permitted \(allowed from Jun 8\)/.test(text), 'none in appendix C')
+  assert.ok(!/allowed from Jun 8, 2026/.test(text))
+})
+
+Deno.test('CUL-746 — page 1 never characterises a dated-membership row, on the shape that proved it cannot', () => {
+  // THE COUNTEREXAMPLE THAT ENDED TWO ROUNDS OF TRYING, kept as a standing guard.
+  //
+  // A trial started Apr 21 on a soy hydrolysate (in force Apr 21 – May 31), switched by
+  // the vet to a salmon diet from Jun 1, with the owner feeding the salmon early. Every
+  // attempt to make page 1 say WHICH food these rows were, or whether they were a
+  // departure, is false here: on those days the trial diet was the OTHER food, and the
+  // same page tallies this one\u2019s protein as one the trial diet does not contain. An
+  // explicitly withdrawn earlier diet breaks it a second way, and a mixed set made page
+  // 1 and appendix C disagree about which reading applied.
+  //
+  // The record does not hold the distinguishing fact \u2014 `allowed_from` says when a row
+  // was ENTERED, not whether the vet started late, switched, or withdrew \u2014 so the page
+  // states only what is true in every shape. Re-adding a characterisation reds this.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].startedAt = '2026-04-21'
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2026-04-21', allowedUntil: '2026-05-31' },
+    { ...TRIAL_FOOD, foodItemId: 'f-ha', foodLabel: 'Purina HA Salmon', brand: 'Purina', productName: 'HA Salmon', allowedFrom: '2026-06-01', allowedUntil: null, primaryProtein: 'salmon', proteins: ['salmon'] },
+  ]
+  for (const d of days('2026-05-18', '2026-05-24')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  for (const d of days('2026-05-25', '2026-05-31')) {
+    input.events.push(meal({ date: d, brand: 'Purina', product: 'HA Salmon', foodItemId: 'f-ha', proteins: ['salmon'] }))
+  }
+  const snap = assembleReport(input)
+  assert.ok((snap.trial?.exposures.items ?? []).some((x) => x.permittedLaterFrom), 'the fixture must produce dated rows')
+  const text = plain(renderReport(snap))
+  assert.ok(/fed before that food was permitted/.test(text), 'the reason stands \u2014 it is a fact about the record')
+  assert.ok(!/the trial diet itself/.test(text), 'never names these rows as the trial diet')
+  assert.ok(!/a gap in the record, not a departure/.test(text), 'never calls them a record gap')
+  assert.ok(!/a record gap, not a departure/.test(text), 'on the tile either')
+})
+
+Deno.test('CUL-746 — a permission date far past the window carries its year even in the SAME year', () => {
+  // The year predicate asked "is the year outside the window's years"; CUL-69 asks "is
+  // the DATE outside the window". A chew permitted from Nov 15 on a window running
+  // Jan 5 – Feb 20 of the same year printed a bare "allowed from Nov 15", which a
+  // reader resolves to the November BEFORE the feedings — reading as though the food
+  // had already been permitted, i.e. toward exoneration.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.now = '2026-03-01T12:00:00Z'
+  input.requestedWindow = { startDate: '2026-01-05', endDate: '2026-02-20' }
+  input.dietTrials[0].startedAt = '2026-01-05'
+  input.dietTrials[0].targetDurationDays = 365
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2026-01-05' },
+    { ...PERMITTED_TREAT, foodItemId: 'f-chew', foodLabel: 'Dental Chew', brand: 'Acme', productName: 'Dental Chew', allowedFrom: '2026-11-15', primaryProtein: 'cereal', proteins: ['cereal'] },
+  ]
+  for (const d of days('2026-01-05', '2026-02-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  for (const d of ['2026-01-10', '2026-01-11', '2026-01-12']) {
+    input.events.push(meal({ date: d, time: '16:00:00', brand: 'Acme', product: 'Dental Chew', foodItemId: 'f-chew', proteins: ['cereal'], foodType: 'treat' }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  // …AND THE ALLOWED LIST TWELVE WORDS BELOW IT, which is one band and therefore one
+  // decision (CUL-69 rule 2). Pass 3 found the same date rendering stamped in the
+  // sentence and bare in the list, and the bare copy resolves to the year BEFORE the
+  // feedings — the exoneration direction.
+  assert.ok(/Dental Chew permitted treat \(from Nov 15, 2026\)/.test(text),
+    `the allowed list read: ${text.slice(text.indexOf('Allowed list'), text.indexOf('Allowed list') + 200)}`)
+  assert.ok(/fed before that food was permitted \(allowed from Nov 15, 2026\)/.test(text),
+    `page 1 read: ${text.slice(text.indexOf('Of those'), text.indexOf('Of those') + 220)}`)
+  assert.ok(!/allowed from Nov 15\)/.test(text), 'never the bare date')
+})
+
+Deno.test('CUL-746 — a withdrawal gap is caught even when the earlier permission predates the trial', () => {
+  // The earlier-scan re-classifies the feeding at each other allowed-from date, and
+  // `classifyFeeding` returns `out_of_window` for any date before `started_at` — so a
+  // membership row that opened BEFORE the trial was invisible to it and the exoneration
+  // came straight back. The probe is now clamped to the trial start.
+  //
+  // THE FIXTURE HAS TO ISOLATE THE CLAMP. The first cut used the default trial food,
+  // whose `allowed_from` equals the trial start and therefore lands INSIDE the jerky's
+  // first window — so probing at the trial food's date disqualified the row anyway and
+  // the test passed with the clamp deleted. The primary row is dated later here (which
+  // is this issue's own data shape), leaving the pre-trial date as the only probe at or
+  // before the feeding, so the clamp is the only thing that can catch it.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2026-06-20' },
+    // Opened BEFORE the trial started (2026-06-01) and still in force when it did,
+    // then withdrawn Jun 5…
+    { ...PERMITTED_TREAT, foodItemId: 'f-jerky', foodLabel: 'Zukes Chicken Jerky', brand: 'Zukes', productName: 'Chicken Jerky', allowedFrom: '2026-05-20', allowedUntil: '2026-06-05', primaryProtein: 'chicken', proteins: ['chicken'] },
+    // …re-permitted Jun 25.
+    { ...PERMITTED_TREAT, foodItemId: 'f-jerky', foodLabel: 'Zukes Chicken Jerky', brand: 'Zukes', productName: 'Chicken Jerky', allowedFrom: '2026-06-25', allowedUntil: null, primaryProtein: 'chicken', proteins: ['chicken'] },
+  ]
+  // Fed Jun 15 — ten days after the vet pulled it.
+  input.events.push(
+    meal({ date: '2026-06-15', time: '15:00:00', brand: 'Zukes', product: 'Chicken Jerky', foodItemId: 'f-jerky', proteins: ['chicken'], foodType: 'treat' }),
+  )
+  const snap = assembleReport(input)
+  const row = snap.trial?.exposures.items.find((x) => x.label?.includes('Jerky'))
+  assert.ok(row, 'the gap feeding is an exposure')
+  assert.equal(row!.permittedLaterFrom, null, 'a pre-trial earlier permission still disqualifies the reason')
+  const text = plain(renderReport(snap))
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  assert.ok(!/fed before it was permitted \(allowed from Jun 25\)/.test(page1),
+    `page 1 read: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 240)}`)
+})
+
+Deno.test('CUL-746 — page 1 and appendix C give a dated row the SAME wording, not two registers', () => {
+  // The one-rule-two-consumers claim, now literally checkable. Pass 3 broke the previous
+  // attempt precisely here: appendix C had taken a per-row register while page 1 kept an
+  // all-or-nothing one, so a MIXED set made them disagree \u2014 this issue\u2019s own defect in
+  // reduced form, re-created by the fix meant to close it.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.requestedWindow = { startDate: '2026-05-20', endDate: '2026-06-10' }
+  input.dietTrials[0].startedAt = '2026-04-21'
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2026-06-01' },
+    { ...PERMITTED_TREAT, allowedFrom: '2026-06-08' },
+  ]
+  // Through Jun 10, so the primary row actually permits something — otherwise the #7
+  // reconciliation guard reads the set as un-hydrated and no exposure sentence renders.
+  for (const d of days('2026-05-20', '2026-06-10')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  for (const d of ['2026-05-22', '2026-05-25']) {
+    input.events.push(meal({ date: d, time: '17:00:00', brand: 'Royal Canin', product: 'Hydrolyzed Treats', foodItemId: 'f-chew', foodType: 'treat', proteins: ['soy'] }))
+  }
+  const snap = assembleReport(input)
+  const text = plain(renderReport(snap))
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  const appendixC = text.slice(text.indexOf('Appendix C'))
+  assert.equal(snap.trial?.allowedSetUnavailable, false, 'the fixture must reach the exposure sentence')
+  assert.ok(/fed before that food was permitted/.test(page1), `page 1: ${page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 200)}`)
+  assert.ok(/Fed before it was permitted/.test(appendixC))
+  // Narrow to the register that was withdrawn — "a gap in the record, not a finding
+  // about the animal" is the Antigen-check-paused row's own wording and is correct.
+  assert.ok(!/a gap in the record, not a departure/.test(page1), 'neither page carries a register the other lacks')
+  assert.ok(!/a gap in the record, not a departure/.test(appendixC))
+})
+
+Deno.test('CUL-746 — the year decision reads the ALLOWED LIST\u2019s own dates, not only the exposures\u2019', () => {
+  // Pass 4's blocking finding. The predicate scanned `exposures.items[].permittedLaterFrom`
+  // and the Allowed list renders `permittedFoods[].allowedFrom/allowedUntil` — different
+  // populations, coinciding only when a food was fed off-diet before its own permission.
+  // So a band-level decision was taken from a fraction of the band, and the row went bare
+  // the moment nothing happened to be fed early against that date.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.now = '2026-03-01T12:00:00Z'
+  input.requestedWindow = { startDate: '2026-01-05', endDate: '2026-02-20' }
+  input.dietTrials[0].startedAt = '2026-01-05'
+  input.dietTrials[0].targetDurationDays = 365
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2026-01-05' },
+    // Permitted from November — and DELIBERATELY never fed, so no exposure row carries
+    // this date. That is the whole point: the list still prints it.
+    { ...PERMITTED_TREAT, foodItemId: 'f-chew', foodLabel: 'Dental Chew', brand: 'Acme', productName: 'Dental Chew', allowedFrom: '2026-11-15', primaryProtein: 'cereal', proteins: ['cereal'] },
+  ]
+  for (const d of days('2026-01-05', '2026-02-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/\(from Nov 15\)/.test(text), 'a bare Nov 15 resolves to the year BEFORE this window')
+  assert.ok(/Dental Chew permitted treat \(from Nov 15, 2026\)/.test(text),
+    `the allowed list read: ${text.slice(text.indexOf('Allowed list'), text.indexOf('Allowed list') + 200)}`)
+})
+
+Deno.test('CUL-746 — a permit that ENDED before the window opened cannot read as spanning it', () => {
+  // The same defect, worse: the report's own next sentence tells the vet these dates are
+  // "when each food was permitted, and feedings are scored against the list in force on
+  // the day". A bare "(Dec 1–Mar 15)" on a 2026 window reads as Dec 2025 – Mar 2026 —
+  // a span CONTAINING the window — when the permit actually ended ten months before it
+  // opened. Exoneration direction, on the row the report points the reader at.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.now = '2026-03-01T12:00:00Z'
+  input.requestedWindow = { startDate: '2026-01-05', endDate: '2026-02-20' }
+  input.dietTrials[0].startedAt = '2024-11-15'
+  input.dietTrials[0].targetDurationDays = 365
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2024-11-15' },
+    { ...PERMITTED_TREAT, foodItemId: 'f-jerky', foodLabel: 'Zukes Chicken Jerky', brand: 'Zukes', productName: 'Chicken Jerky', allowedFrom: '2024-12-01', allowedUntil: '2025-03-15', primaryProtein: 'chicken', proteins: ['chicken'] },
+  ]
+  for (const d of days('2026-01-05', '2026-02-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/\(Dec 1–Mar 15\)/.test(text), 'the bare span reads as containing the window')
+  assert.ok(/\(Dec 1, 2024–Mar 15, 2025\)/.test(text),
+    `the allowed list read: ${text.slice(text.indexOf('Allowed list'), text.indexOf('Allowed list') + 220)}`)
+  // …and the trial's own start, in the same band, is stamped by the same decision — a
+  // stale trial rendered "Started Nov 15" for 2024 beside "day 463 as of Feb 20".
+  //
+  // SCOPED TO PAGE 1. The first cut asserted over the whole document and passed against
+  // the unfixed tree, because appendix B renders "Trial diet. Started Nov 15, 2024."
+  // with an unconditional `fmtDayYear` — the assertion was matching a different sentence
+  // three pages away. Mutation caught it; reading it did not (CUL-613).
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  assert.ok(/Started Nov 15, 2024/.test(page1), `the trial line read: ${page1.slice(page1.indexOf('Started'), page1.indexOf('Started') + 80)}`)
+  // …AND THE "AS OF" IN THE SAME PARAGRAPH. Pass 5's finding: the fix repaired
+  // "Started Nov 15" and left "day 463 as of Feb 20" bare — the two halves of the very
+  // sentence its own comment quoted as the defect, joined by a space into one paragraph.
+  const trialRow = page1.slice(page1.indexOf('Elimination diet trial'), page1.indexOf('Indication'))
+  assert.ok(!/as of Feb 20 /.test(trialRow), 'a bare as-of inherits the stamped year beside it')
+  assert.ok(/as of Feb 20, 2026/.test(trialRow), `the trial row read: ${trialRow}`)
+})
+
+Deno.test('CUL-746 — the trial\u2019s own start carries the year when IT is the only out-of-year date', () => {
+  // Isolates the `startedAt`/`endedAt` half of the band. In the fixture above the permit
+  // dates are out-of-year too, so dropping the trial's dates from the decision changed
+  // nothing and the mutation stayed green. Here the only allowed food is permitted from
+  // the trial's own start (so the list prints no date at all) and the trial began the
+  // year before the window.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.now = '2026-03-01T12:00:00Z'
+  input.requestedWindow = { startDate: '2026-01-05', endDate: '2026-02-20' }
+  input.dietTrials[0].startedAt = '2025-11-15'
+  input.dietTrials[0].targetDurationDays = 365
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2025-11-15' }]
+  for (const d of days('2026-01-05', '2026-02-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  assert.ok(!/Started Nov 15\./.test(page1), 'a bare Nov 15 resolves to the window\u2019s own year')
+  assert.ok(/Started Nov 15, 2025/.test(page1), `the trial line read: ${page1.slice(page1.indexOf('Started'), page1.indexOf('Started') + 80)}`)
+})
+
+Deno.test('CUL-746 — the permission date is named ONLY when every dated row shares it', () => {
+  // Pass 4's second finding: the rule was load-bearing and unguarded. Mutating
+  // `dates.length === 1 && dates[0]` to `dates[0]` left the whole suite green while
+  // handing the EARLIEST date's excuse to rows it does not describe — the same
+  // first-member-wins shape as the group-key defect this issue is about, one layer up,
+  // and biased the same way, because `early` is date-sorted.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.requestedWindow = { startDate: '2026-05-20', endDate: '2026-06-20' }
+  input.dietTrials[0].startedAt = '2026-04-21'
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, allowedFrom: '2026-06-01' },
+    { ...PERMITTED_TREAT, allowedFrom: '2026-06-14' },
+  ]
+  for (const d of days('2026-05-20', '2026-06-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  // Two feedings whose food was permitted Jun 14, fed well before it.
+  for (const d of ['2026-05-22', '2026-05-25']) {
+    input.events.push(meal({ date: d, time: '17:00:00', brand: 'Royal Canin', product: 'Hydrolyzed Treats', foodItemId: 'f-chew', foodType: 'treat', proteins: ['soy'] }))
+  }
+  const snap = assembleReport(input)
+  const dates = new Set((snap.trial?.exposures.items ?? []).filter((x) => x.permittedLaterFrom).map((x) => x.permittedLaterFrom))
+  assert.ok(dates.size > 1, 'the fixture must carry two distinct permission dates, or this asserts nothing')
+  const page1 = plain(renderReport(snap))
+  const clause = page1.slice(page1.indexOf('Of those'), page1.indexOf('Of those') + 200)
+  assert.ok(/were fed before that food was permitted\. /.test(clause),
+    `no date may be named when the rows disagree: ${clause}`)
+  assert.ok(!/allowed from Jun 1\)/.test(clause), 'and never the earliest, which is the most excusing')
+})
+
+Deno.test('CUL-746 — the ordinary mid-trial report stamps no year at all', () => {
+  // The other half of CUL-69's rule, on the COMMONEST shape: a trial that started before
+  // the window (every `since_visit` report of a running trial). The trial food is allowed
+  // from the trial's own start, so the Allowed list prints no date for it — and the year
+  // decision must not read a date the page does not show. Widening the mirror to every
+  // `allowedFrom` makes containment fire here and stamps a year on almost every report,
+  // which is exactly the noise that costs the stamp its signal.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.requestedWindow = { startDate: '2026-06-01', endDate: '2026-07-02' }
+  input.dietTrials[0].startedAt = '2026-04-21'
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-04-21' }]
+  for (const d of days('2026-06-01', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  const page1 = text.slice(0, text.indexOf('Appendix A'))
+  assert.ok(/Started Apr 21\./.test(page1), `the trial line read: ${page1.slice(page1.indexOf('Started'), page1.indexOf('Started') + 60)}`)
+  assert.ok(!/Apr 21, 2026/.test(page1), 'no year is stamped on an ordinary same-year report')
+})
+
 Deno.test('R4 — a TOTAL refusal is not hedged as "largely not eaten"', () => {
   // The one line a vet reads for the bottom line, hedging the hardest fact on the page:
   // "largely not eaten" over a record of every rated feeding refused. "Largely" reads as

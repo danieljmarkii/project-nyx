@@ -2130,7 +2130,21 @@ Deno.test('B-503 — the at-a-glance heading does not claim one window denominat
   // The heading must NOT bare-claim "counts over the 46-day window" — coverage & off-diet
   // count over the trial's overlap (§5.1), not the window, so 43/43 is not 100% of 46.
   assert.ok(!/counts over the 46-day window/.test(html), 'the heading no longer bare-claims the window as the denominator')
-  assert.ok(/except coverage &amp; off-diet, over the trial&rsquo;s own range/.test(html), 'the heading flags that coverage & off-diet depart from the window')
+  // Wording moved in CUL-746 and the ASSERTION is unchanged in intent: the heading must
+  // flag that these two tiles depart from the window. It no longer says they share "the
+  // trial's own range", because they do not — coverage counts over the trial's clipped
+  // COVERAGE range and off-diet over its EVIDENCE range, and once the off-diet tile
+  // started printing its own span a reader could see the two disagree under a heading
+  // asserting they were one.
+  assert.ok(
+    /except coverage &amp; off-diet, which are not window counts/.test(html),
+    'the heading flags that coverage & off-diet depart from the window',
+  )
+  // NEGATIVE FORM by necessity: four of the off-diet tile's six branches render a word
+  // rather than a number and name no span at all, so any positive claim the heading
+  // makes about them ("…which name their own spans") is false on those branches.
+  assert.ok(!/which name their own spans/.test(html))
+  assert.ok(!/over the trial&rsquo;s own range/.test(html), 'and does not claim they share ONE range')
 })
 
 // ── B-498: the mid gridline label matches its geometric position on ODD maxima ──────────
@@ -3540,6 +3554,110 @@ Deno.test('B-599 — page 1 never points at an "Also during the trial" row that 
     'the reason is named where the pointer used to be',
   )
   assert.ok(/No clean-elimination statement is made for this record/.test(t))
+})
+
+// ── CUL-746 — the breakdown partitions the total it names ───────────────────
+//
+// `exposureSentences` used to print the rung tally and then APPEND the
+// dated-membership count as a trailing "also", so the same rows were reported
+// twice under two reasons and the numbers did not add up to the `offDiet` the
+// same sentence had just stated. This asserts the arithmetic over a fuzz of
+// exposure shapes, by PARSING THE RENDERED NUMBERS BACK OUT — a test that
+// re-states the counts it passed in would pass over any grouping bug at all.
+
+/** One off-diet exposure row, in the shape the snapshot carries. */
+function exposureItem(
+  rung: 'derived_protein' | 'unrecognised',
+  permittedLaterFrom: string | null,
+): NonNullable<ReportSnapshot['trial']>['exposures']['items'][number] {
+  return {
+    eventId: `e-${rung}-${permittedLaterFrom ?? 'none'}-${Math.random()}`,
+    occurredAt: '2026-06-02T13:00:00Z',
+    dayIndex: 20606,
+    label: 'A food',
+    classification: {
+      // The real verdict for each rung — a fabricated one would type-check only behind
+      // a cast, and would stop documenting what a live row looks like.
+      verdict: rung === 'derived_protein' ? 'off_diet_protein' : 'off_diet_unrecognised',
+      rung,
+      offDiet: true,
+      countsAsFeeding: true,
+      antigens: [],
+      role: null,
+      matchedBy: null,
+      permittedBy: null,
+      attributionChecked: true,
+    },
+    symptomInChallengeWindow: false,
+    panelWasRead: false,
+    attributionChecked: true,
+    permittedLaterFrom,
+  }
+}
+
+Deno.test('CUL-746 — the "Of those N" breakdown always sums to N', () => {
+  // Every shape the partition has to survive: no dated rows, all dated, dated rows
+  // split across both rungs, a single row (which takes the singular), and a
+  // snapshot whose `items` DISAGREE with its own `byRung` in both directions —
+  // the state the caps exist for, where a naive subtraction goes negative or the
+  // clauses over-run the total the reader has just been given.
+  const shapes: { name: string; dp: number; un: number; offDiet?: number; items: ReturnType<typeof exposureItem>[] }[] = [
+    { name: 'no dated rows', dp: 3, un: 2, items: [] },
+    { name: 'all dated, one rung', dp: 0, un: 7, items: Array.from({ length: 7 }, () => exposureItem('unrecognised', '2026-06-01')) },
+    { name: 'one dated among four protein rows', dp: 4, un: 0, items: [exposureItem('derived_protein', '2026-06-08')] },
+    { name: 'dated rows across both rungs', dp: 3, un: 4, items: [exposureItem('derived_protein', '2026-06-08'), exposureItem('unrecognised', '2026-06-08')] },
+    { name: 'a single dated row', dp: 0, un: 1, items: [exposureItem('unrecognised', '2026-06-01')] },
+    { name: 'items claim MORE dated rows than byRung has', dp: 1, un: 0, items: Array.from({ length: 5 }, () => exposureItem('derived_protein', '2026-06-01')) },
+    // A snapshot that counts an exposure no rung claims. Unreachable from the module
+    // (only rungs 2 and 3 set `offDiet`), and the point is that the sentence still
+    // partitions rather than rendering "Of those 3:" with nothing after the colon.
+    { name: 'byRung is empty while offDiet is not', dp: 0, un: 0, offDiet: 3, items: [exposureItem('unrecognised', '2026-06-01')] },
+    // …and the mirror, which exercises the CEILING caps rather than the non-negativity
+    // floor: a `byRung` summing to MORE than `offDiet`. Code review mutation-proved that
+    // without a shape like this, deleting either `Math.min` ceiling left every test
+    // green — a defensive cap nothing was holding.
+    { name: 'byRung sums to more than offDiet, dated rows included', dp: 4, un: 4, offDiet: 3, items: Array.from({ length: 4 }, () => exposureItem('derived_protein', '2026-06-01')) },
+    { name: 'byRung sums to more than offDiet, no dated rows', dp: 5, un: 5, offDiet: 2, items: [] },
+    { name: 'mixed roles degrade to the general noun', dp: 1, un: 1, items: [exposureItem('derived_protein', '2026-06-08'), exposureItem('unrecognised', '2026-06-08')] },
+    { name: 'dated rows with DIFFERENT permission dates name none of them', dp: 0, un: 2, items: [exposureItem('unrecognised', '2026-06-01'), exposureItem('unrecognised', '2026-06-08')] },
+  ]
+  for (const shape of shapes) {
+    const offDiet = shape.offDiet ?? shape.dp + shape.un
+    const html = renderReport(
+      base({
+        clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+        trial: trialBlockFixture({
+          allowedSetUnavailable: false,
+          mayClaimAllMatched: false,
+          mayStateRecordClean: false,
+          exposures: {
+            totalFeedings: offDiet + 10,
+            offDiet,
+            byRung: { derived_protein: shape.dp, unrecognised: shape.un },
+            fedBeforePermitted: shape.items.length,
+            unclassifiable: 0,
+            items: shape.items,
+          },
+        }),
+      }),
+    )
+    const t = plain(html)
+    const m = /Of those (\d+): ([^.]*(?:\.\d|[^.])*)\. Dates in appendix/.exec(t)
+    assert.ok(m, `${shape.name}: no breakdown sentence rendered`)
+    const stated = Number(m![1])
+    assert.equal(stated, offDiet, `${shape.name}: the sentence names the wrong total`)
+    // Read the clause counts back out of the prose, never out of the fixture.
+    const counts = [...m![2].matchAll(/(?:^|; )(\d+) /g)].map((x) => Number(x[1]))
+    assert.ok(counts.length > 0, `${shape.name}: "Of those ${stated}:" with no clauses — ${m![2]}`)
+    assert.equal(
+      counts.reduce((a, b) => a + b, 0),
+      stated,
+      `${shape.name}: clauses ${counts.join('+')} do not sum to the ${stated} named beside them — ${m![2]}`,
+    )
+    assert.ok(!counts.some((c) => c <= 0), `${shape.name}: a clause rendered a non-positive count — ${m![2]}`)
+    // The additive framing this replaced, in either of its two shapes.
+    assert.ok(!/also fed before/.test(t), `${shape.name}: the date is the reason, never a trailing "also"`)
+  }
 })
 
 Deno.test('B-599 — the pointer SURVIVES where the row really does render', () => {
