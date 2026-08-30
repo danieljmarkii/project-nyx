@@ -657,7 +657,163 @@ async function presyncFoodItems(
   }
 }
 
-export async function syncPendingMeals(): Promise<void> {
+// ── ONE PUSH PER QUEUE AT A TIME (CUL-622) ───────────────────────────────────
+//
+// CUL-691 made the MARK version-guarded: a push marks the version it sent, so an
+// edit that lands mid-flight leaves the row queued and the next pass re-sends it.
+// That closes what the response DOES on return. It does not close what ORDER the
+// requests arrive in, which is the variant CUL-622 names in one line — "#1's
+// request simply lands after #2's" — and nothing serialized these pushes.
+//
+// Every write path fires one and forgets it (lib/simpleEvent.ts, lib/meals.ts,
+// lib/weight.ts, lib/medicationDose.ts, lib/undoLog.ts, all three completion
+// cards), and `syncCycleInFlight` guards only the FULL cycle — syncNow and
+// flushPendingForSignOut — never these. So the ordinary completion-card flow puts
+// two versions of one row on the wire at once:
+//
+//   t=0.0  insertSimpleEvent writes the event and fires syncPendingEvents();
+//          push A reads the row (updated_at = T0) and sends it.
+//   t=2.0  the owner taps "Change time" on the card — which lives 5000ms and is
+//          designed to be used in exactly those seconds. updateEvent stamps
+//          updated_at = T2 and sets synced = 0, then fires syncPendingEvents().
+//   t=2.1  push B reads the row and sends T2, while A is still in the air.
+//
+// Whichever request reaches Postgres LAST decides what the server holds, and
+// nothing about issue order decides arrival order — A is still in flight
+// precisely because the network is being slow to it. If A lands last the server
+// keeps the pre-correction `occurred_at`, and every guard downstream reads clean:
+// B's mark is legitimate (the local row really is T2, which is really what B
+// sent), so the row goes synced = 1 and nothing ever re-queues it.
+//
+// THE SECOND HALF IS WHY THIS IS A CORRECTION THE OWNER LOSES rather than a
+// server that merely lags. `set_updated_at()` (migration 001) is a BEFORE UPDATE
+// trigger setting `NEW.updated_at = NOW()`, so A's conflict-update re-stamps the
+// stale server row with the SERVER's clock — later than the local corrected row's
+// T2. Hydration's LWW is `remoteT > localT` over rows at synced = 1, which is
+// exactly the state above, so the next hydrateFromCloud writes the pre-correction
+// time back over the correction ON THE DEVICE. The phone and the vet report then
+// agree, on the number the owner corrected.
+//
+// hydration.ts's header names a server-time-LWW failure mode as an ACCEPTED v1
+// design, and this is not that one: that ruling is about two devices editing one
+// row while offline, where the app genuinely cannot know which edit came first.
+// Here it is one device, one owner, one correction — and the send order is
+// entirely ours to decide.
+//
+// So a queue drains ONE AT A TIME. A caller arriving while a drain is in flight
+// gets a TRAILING run rather than the active one: the active run may already have
+// read the queue before that caller's write, so handing it back would be a promise
+// that resolves without ever having sent the row it was called for. At most one
+// trailing run is scheduled — it reads the queue when it STARTS, so it subsumes
+// every caller that arrived while the active run was working — and its slot is
+// released the moment it starts rather than when it finishes, so a write landing
+// after its queue read still gets a run of its own instead of joining one that
+// cannot see it.
+//
+// KEYED BY TABLE, from the same union the push registry uses, because each drain
+// owns exactly one LWW queue; the insert-only sibling a drain also writes
+// (vet_visit_attachments) has no version to lose. ensureEventAttachmentsSynced is
+// deliberately NOT wrapped: it is not a queue drain — it targets one event by id —
+// and event_attachments is one of the two INSERT_ONLY_QUEUE_TABLES, whose rows
+// cannot change under a push at all.
+//
+// WHAT THIS DOES NOT CLOSE, stated rather than left to be discovered: reordering
+// from outside this runtime. Two devices cannot produce it on one row (a hydrated
+// row is synced = 1 and never queued), so that residual is the accepted two-device
+// model above rather than this defect. The belt-and-braces form — a server-side
+// guard refusing an update whose `updated_at` is older than the stored one — is the
+// other half of CUL-733, and it is a migration across eleven tables plus a revision
+// of a ratified design, so it ships in its own PR.
+//
+// ── THE OBJECTION THIS HAD TO ANSWER ─────────────────────────────────────────
+//
+// CUL-691 considered serialising and deliberately did not take it, for a reason
+// recorded on CUL-733: "a hung request with no timeout would block every push
+// behind it, which is a new failure mode on the health-write path." That is right.
+// supabase-js sets no request timeout, so an unbounded wait would let one stalled
+// upsert hold its queue for the life of the process — and the correction the owner
+// just made would then never go up at all, which is worse than the race it
+// replaces.
+//
+// So the wait is BOUNDED: a trailing run waits for the active one or for
+// QUEUE_PUSH_WAIT_CEILING_MS, whichever comes first, and then goes regardless. What
+// makes that safe is where it degrades TO — a queue stalled past the ceiling falls
+// back to exactly the concurrent behaviour it had before this change, so the worst
+// case is the old failure mode rather than a new one, while the window this exists
+// for sits well inside the bound (the completion card lives 5000ms, and its edit
+// lands a second or two after the insert's push).
+//
+// Never DROPPING the trailing run is the other half of that argument, and CUL-733
+// names it: a drop-on-busy lock would leave the write waiting for the next
+// foreground, and on this path the write is a tombstone or a corrected symptom time.
+//
+// The ceiling is also why the in-flight slot is cleared by IDENTITY below. Once a
+// run can start while an older one is still outstanding, the stale run's completion
+// must not delete the newer run's slot.
+
+/**
+ * How long a trailing run waits for the active one before going anyway. Bounds the
+ * lock against a request that never settles — see the objection above.
+ */
+export const QUEUE_PUSH_WAIT_CEILING_MS = 15_000;
+
+const queuePushInFlight = new Map<QueueTable, Promise<void>>();
+const queuePushTrailing = new Map<QueueTable, Promise<void>>();
+
+// Resolve when the active run settles, or when the ceiling expires — whichever is
+// first. A failed drain resolves it too: the caller waiting behind still has an
+// unsent write, and the active run's error is not theirs (their own run's failure
+// does reach them, through the promise serializeQueuePush returns).
+function settledOrCeiling(active: Promise<void>): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const ceiling = setTimeout(resolve, QUEUE_PUSH_WAIT_CEILING_MS);
+    active.catch(() => {}).then(() => {
+      clearTimeout(ceiling);
+      resolve();
+    });
+  });
+}
+
+function serializeQueuePush(queue: QueueTable, drain: () => Promise<void>): Promise<void> {
+  const active = queuePushInFlight.get(queue);
+  if (!active) return startDrain(queue, drain);
+
+  const waiting = queuePushTrailing.get(queue);
+  if (waiting) return waiting;
+
+  const trailing = settledOrCeiling(active).then(() => {
+    queuePushTrailing.delete(queue);
+    // startDrain, NOT serializeQueuePush. Recursing here reads as the tidier shape
+    // and silently defeats the ceiling: past it the slot is still held by the run
+    // that never settled, so the recursive call would take this same branch and
+    // schedule another wait — a chain that only ever ends when the hung request
+    // does, which is the unbounded wait the ceiling exists to refuse. It looks
+    // correct because it IS correct on the ordinary path, where the slot has just
+    // been cleared by the run that settled.
+    return startDrain(queue, drain);
+  });
+  queuePushTrailing.set(queue, trailing);
+  return trailing;
+}
+
+// Start a drain and claim the queue's slot. Called synchronously, so the drain's own
+// getSession() starts exactly when it did before this wrapper existed.
+function startDrain(queue: QueueTable, drain: () => Promise<void>): Promise<void> {
+  const run = drain().finally(() => {
+    // Identity-checked, not a bare delete: past the ceiling a newer run owns the
+    // slot while this one is still outstanding, and clearing it then would let a
+    // third caller start beside the run that is genuinely active.
+    if (queuePushInFlight.get(queue) === run) queuePushInFlight.delete(queue);
+  });
+  queuePushInFlight.set(queue, run);
+  return run;
+}
+
+export function syncPendingMeals(): Promise<void> {
+  return serializeQueuePush('meals', drainMealsQueue);
+}
+
+async function drainMealsQueue(): Promise<void> {
   // Ensure the JWT is fresh before writing. getSession() triggers a refresh
   // if the access token has expired, and returns null if the session is gone.
   const { data: { session } } = await supabase.auth.getSession();
@@ -728,7 +884,11 @@ export async function syncPendingMeals(): Promise<void> {
 // on the parent here makes the order safe by construction — a weight row simply
 // waits for the next cycle, after its event syncs. No food_items pre-sync (a weight
 // check references no global catalog row); the only FK is to the parent event.
-export async function syncPendingWeightChecks(): Promise<void> {
+export function syncPendingWeightChecks(): Promise<void> {
+  return serializeQueuePush('weight_checks', drainWeightChecksQueue);
+}
+
+async function drainWeightChecksQueue(): Promise<void> {
   // Ensure the JWT is fresh before writing (Pattern 4).
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
@@ -812,7 +972,11 @@ export async function reconcilePetWeightSnapshot(petId: string): Promise<void> {
 
 // Flush unsynced local events to Supabase.
 // Called on app foreground and reconnect. Last-write-wins on updated_at.
-export async function syncPendingEvents(): Promise<void> {
+export function syncPendingEvents(): Promise<void> {
+  return serializeQueuePush('events', drainEventsQueue);
+}
+
+async function drainEventsQueue(): Promise<void> {
   // Ensure the JWT is fresh before writing. getSession() triggers a refresh
   // if the access token has expired, and returns null if the session is gone.
   const { data: { session } } = await supabase.auth.getSession();
@@ -929,7 +1093,11 @@ async function reconcileSnapshotAfterWeightTombstone(eventId: string, petId: str
   }
 }
 
-export async function syncPendingVetVisits(): Promise<void> {
+export function syncPendingVetVisits(): Promise<void> {
+  return serializeQueuePush('vet_visits', drainVetVisitsQueue);
+}
+
+async function drainVetVisitsQueue(): Promise<void> {
   const db = getDb();
 
   const unsyncedVisits = await db.getAllAsync<{
@@ -1017,7 +1185,11 @@ export async function syncPendingVetVisits(): Promise<void> {
 // owner and swept by B-121. Re-uploading the same key on a retry is idempotent
 // (upsert:true, and migration 044 grants the owner-scoped UPDATE that makes the
 // overwrite legal — the latent bug 043 had to retrofit).
-export async function syncPendingVetDocuments(): Promise<void> {
+export function syncPendingVetDocuments(): Promise<void> {
+  return serializeQueuePush('vet_documents', drainVetDocumentsQueue);
+}
+
+async function drainVetDocumentsQueue(): Promise<void> {
   const db = getDb();
 
   const unsynced = await db.getAllAsync<LocalVetDocument>(
@@ -1146,7 +1318,11 @@ export async function prepareAttachmentUpload(
   return { uri: localUri, mimeType };
 }
 
-export async function syncPendingAttachments(): Promise<void> {
+export function syncPendingAttachments(): Promise<void> {
+  return serializeQueuePush('event_attachments', drainEventAttachmentsQueue);
+}
+
+async function drainEventAttachmentsQueue(): Promise<void> {
   const db = getDb();
 
   const pending = await db.getAllAsync<{
@@ -1451,7 +1627,11 @@ export async function refreshMedicationCache(): Promise<void> {
 // have been created offline), upsert last-write-wins (Pattern 5), and only flip
 // synced=1 when the row actually landed (Pattern 1). RLS gates the write to the
 // owning account; deleted_at rides the upsert payload, never a separate DELETE.
-export async function syncPendingFeedingArrangements(): Promise<void> {
+export function syncPendingFeedingArrangements(): Promise<void> {
+  return serializeQueuePush('feeding_arrangements', drainFeedingArrangementsQueue);
+}
+
+async function drainFeedingArrangementsQueue(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
 
@@ -1512,7 +1692,11 @@ async function presyncMedicationItems(db: Db, userId: string, itemIds: string[])
 // upsert last-write-wins (Pattern 5), and only flip synced=1 when the row actually
 // landed (Pattern 1). RLS gates the write to the owning account. A regimen ends via
 // `status`/`ended_at`, never a DELETE.
-export async function syncPendingMedications(): Promise<void> {
+export function syncPendingMedications(): Promise<void> {
+  return serializeQueuePush('medications', drainMedicationsQueue);
+}
+
+async function drainMedicationsQueue(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
 
@@ -1541,7 +1725,11 @@ export async function syncPendingMedications(): Promise<void> {
 // governs only the separate case of a historical dose surviving a LATER regimen
 // deletion — migration 020 — NOT insert ordering: an insert referencing a missing
 // regimen is rejected, not nulled.)
-export async function syncPendingMedicationAdministrations(): Promise<void> {
+export function syncPendingMedicationAdministrations(): Promise<void> {
+  return serializeQueuePush('medication_administrations', drainMedicationAdministrationsQueue);
+}
+
+async function drainMedicationAdministrationsQueue(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
 
@@ -1572,7 +1760,11 @@ export async function syncPendingMedicationAdministrations(): Promise<void> {
 // wins (Pattern 5), and only flip synced=1 for rows that actually landed
 // (Pattern 1, sharpened — see pushRows). RLS gates the write to the
 // owning account. A trial ends via `status`/`ended_at`, never a DELETE.
-export async function syncPendingDietTrials(): Promise<void> {
+export function syncPendingDietTrials(): Promise<void> {
+  return serializeQueuePush('diet_trials', drainDietTrialsQueue);
+}
+
+async function drainDietTrialsQueue(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
 
@@ -1629,7 +1821,11 @@ export async function syncPendingDietTrials(): Promise<void> {
 // reference it — the meals→events ordering rule. A child whose parent's push
 // failed this cycle FK-fails (23503, non-terminal) and stays queued; both retry
 // next cycle, so an allowed food never lands orphaned.
-export async function syncPendingDietTrialFoods(): Promise<void> {
+export function syncPendingDietTrialFoods(): Promise<void> {
+  return serializeQueuePush('diet_trial_foods', drainDietTrialFoodsQueue);
+}
+
+async function drainDietTrialFoodsQueue(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
 
@@ -1655,7 +1851,11 @@ export async function syncPendingDietTrialFoods(): Promise<void> {
 // NULL (account-wide, §4), and the only server FK a NULL-pet row has is to
 // auth.users — the session user, which exists by construction. A preference is
 // turned off (enabled = false), never deleted, so there is no DELETE path here.
-export async function syncPendingNotificationPreferences(): Promise<void> {
+export function syncPendingNotificationPreferences(): Promise<void> {
+  return serializeQueuePush('notification_preferences', drainNotificationPreferencesQueue);
+}
+
+async function drainNotificationPreferencesQueue(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
 
