@@ -259,6 +259,19 @@ export function resolveMedStrips(input: MedStripInput): MedStripModel[] {
   return built.map((b) => b.model);
 }
 
+// The strip's identity for a regimen: its library item when it has one, else a
+// regimen-scoped fallback for a free-text course. Exported because a SECOND surface
+// now has to answer "which strip is this row?" — CUL-170's deep link resolves a
+// tapped strip back to its row on the Pet tab — and a second spelling of this
+// expression would silently mis-target the moment either side changed (the
+// diet-trial §5.3 lesson: one predicate, never a re-derivation).
+export function medStripKeyForRegimen(reg: {
+  id: string;
+  medication_item_id: string | null;
+}): string {
+  return reg.medication_item_id ?? `regimen:${reg.id}`;
+}
+
 // Group regimens + recent ad-hoc doses into deduped candidates. Regimens are placed
 // FIRST so an ad-hoc dose for the same drug merges into the regimen's key (the
 // regimen supplies the header; all its doses count toward coverage). Two active
@@ -274,7 +287,7 @@ function buildCandidates(
   const byKey = new Map<string, MedCandidate>();
 
   for (const reg of regimens) {
-    const key = reg.medication_item_id ?? `regimen:${reg.id}`;
+    const key = medStripKeyForRegimen(reg);
     const existing = byKey.get(key);
     // Only another regimen can already hold this key (ad-hoc is added later); keep
     // the most-recently-started.
