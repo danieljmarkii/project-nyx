@@ -334,6 +334,30 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   { table: 'notification_preferences', pendingSince: 'updated_at' },
 ];
 
+/**
+ * The column `markSynced` compares to prove the row did not CHANGE UNDER THE PUSH
+ * — or null for the two insert-only queues, whose rows cannot change (CUL-691).
+ *
+ * A push reads its rows, goes to the network, and marks them synced when the
+ * response lands. That gap is seconds wide, and on the LWW tables an owner can
+ * rewrite the row inside it — the completion card's Undo is DESIGNED to be used
+ * in exactly those seconds. Every such mutation stamps a fresh `updated_at` (and
+ * `synced = 0`), so the timestamp the push read is the whole test: if it still
+ * matches, what landed server-side is what the row still says, and marking it
+ * synced is honest. If it moved, the row is a DIFFERENT change that has never
+ * been sent, and marking it would strand that change forever.
+ *
+ * Derived from `pendingSince` rather than hand-listed, because they are the same
+ * fact: a table has `updated_at` (LWW) or it does not (insert-only). The test
+ * that keeps them the same fact reads the real schema — a table carrying an
+ * `updated_at` column MUST declare `pendingSince: 'updated_at'`, so a new queue
+ * cannot arrive silently unguarded.
+ */
+export function pushGuardColumn(table: string): 'updated_at' | null {
+  const queue = SYNC_QUEUES.find((q) => q.table === table);
+  return queue?.pendingSince === 'updated_at' ? 'updated_at' : null;
+}
+
 // The two quarantine columns every queue table carries. Kept here as the single
 // spelling so the DDL constants, the ALTER upgrade path in initDb and the guard
 // test cannot drift apart.
