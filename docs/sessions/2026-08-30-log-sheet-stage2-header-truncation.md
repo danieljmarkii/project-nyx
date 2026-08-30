@@ -1,0 +1,236 @@
+# The stage-2 confirm header — a falsified premise, and a mock round
+
+**Date:** 2026-08-30
+**Issue:** CUL-726 (mock round + build both shipped; R6-1 = P1, R6-2 = accept, ruled same day)
+**Outcome:** shipped via #758
+
+---
+
+## What this session was
+
+CUL-726 arrived as a small mechanical fix with a design footnote. It ended as the
+reverse: the mechanical half evaporated under checking, and the footnote turned out to
+be the whole issue.
+
+The issue's ask: stage 2's header renders `{typeLabel} — {petName}` on one line, so the
+ellipsis always eats the **pet's** name, never the event — and "a screen reader has no
+way to recover it, because nothing spells the name out." Fix: add an
+`accessibilityLabel`, mirroring what CUL-682 had just shipped one screen earlier.
+
+## The premise, falsified
+
+A truncated React Native `Text` **still announces its full string**, on both platforms.
+Checked against the shipped source rather than assumed, the way CUL-682 checked its own
+`disabled` → "dimmed" chain:
+
+**iOS**
+1. `Libraries/Text/Text.js:145` — `accessible` defaults to `accessible !== false`, so a
+   bare `<Text>` is an accessibility element.
+2. `RCTParagraphComponentView.mm:178` — when `paragraphProps.accessible`, the element
+   list comes from `RCTParagraphComponentAccessibilityProvider`.
+3. `RCTParagraphComponentAccessibilityProvider.mm:60–68` — the first element's
+   `accessibilityLabel` is `_attributedString.getString()`: the **full** string. The
+   comment in place says it outright — *"add first element has the text for the whole
+   textview in order to read out the whole text."*
+4. `numberOfLines` is a paragraph attribute applied at layout. It never edits the
+   attributed string.
+
+**Android** — `ReactTextView.java:382` `setNumberOfLines` → `setMaxLines`, `:439` →
+`setEllipsize`. The full `Spanned` is what `setText` receives (`:208`/`:242`), and
+`TextView.getText()` — what TalkBack reads — returns it unchanged. The ellipsis is a
+draw-time `Layout` artifact.
+
+**Render probe** of this component with `petName="Bartholomew Fitzgerald"`: no ancestor
+of the header `Text` carries `accessible` or `accessibilityLabel`; the node has
+`numberOfLines: 1` and children `["Vomit", " — ", "Bartholomew Fitzgerald"]`. And
+`react-native-svg` ships no accessibility props, so the glyph disc is **not** a separate
+stop — the header title is already exactly one VoiceOver stop, reading the whole string.
+
+So the requested label would have changed nothing a screen reader announces. It was not
+built. **A fix that is visible in the diff and inert on the device is the thing this
+repo keeps writing rules about**, and shipping one here would have closed the issue
+while leaving the real defect in place — worse than leaving it open, because the issue
+would have read as done.
+
+One consequence worth recording rather than burying: **CUL-682's second half rests on
+the same wrong premise.** Its single-pet label is still the right shape — it groups the
+disc and the sentence into one node — but its stated reason ("the full name had nowhere
+to survive") was not the reason. Shipped, benign, and left alone; noted on both issues.
+
+## What is real, and worse than filed
+
+The visual cut. Nothing on this surface sets `allowFontScaling={false}` — deliberately;
+only the tab bar does — so the header scales with the owner's system text size.
+
+Measured from the shipped Geist SemiBold TTF (17px, `letterSpacing: -0.3`) against the
+column the layout actually gives it: `screenWidth − 122` (24×2 header padding, 16 gap,
+20 chevron, 30 disc, 8 gap) = **268px on a 390pt phone**.
+
+| Header string | 17px default | 21px xxLarge | 28px AX1 |
+|---|---|---|---|
+| `Vomit — Buddy` | 122 ✓ | 151 ✓ | 203 ✓ |
+| `Vomit — Bartholomew` | 178 ✓ | 222 ✓ | **297 cut** |
+| `Itch/Scratch — Bartholomew` | 233 ✓ | **290 cut** | **389 cut** |
+| `Vomit — Bartholomew Fitzgerald` | **264 — fits at 390pt, cuts at 375pt** | cut | cut |
+
+At **xxLarge — a comfort setting, not an accessibility one** — an eleven-character name
+on the longest label already truncates. The issue framed this as a long-name edge case;
+it is a text-size problem, and the routine state one notch above default.
+
+**The asymmetry that decides the design.** On this surface the *type* is stated three
+times — the tinted disc, the header, and the summary pill that IS the save ("Vomit ·
+today at 5:33 PM") — and the *pet* exactly once. The ellipsis eats the only one said
+once, on the last surface before a health row is written, where the sheet has no
+switcher and the name in that header is the write-time identity.
+
+## The ruling, and the conflict inside it
+
+PM ruled **two lines + the type yields before the name**, mock first.
+
+Drawing it found that those are **not directly composable**. Wrapping to a second line
+needs the header to be *one* paragraph (`numberOfLines={2}` on a single `Text`); making
+the type shrink first needs it to be *two* flex children (`flexShrink` on siblings).
+Nested `Text` spans are inline, not flex items, so they cannot carry `flexShrink`.
+
+The shape that delivers both intents is already shipped **one row below this header**:
+**AC-CHIP**. `timeRow` has `flexWrap: 'wrap'` and `chipPair` is `flexShrink: 0`, so the
+chips drop to their own line *whole* rather than squeezing. Pointed at the header: the
+row wraps, the type may shrink and ellipse, and the pet's name never shrinks — it drops
+to its own line intact. Same pattern, same file, no new idea.
+
+That leaves a fork only looking can settle — what the wrapped state looks like — which
+is what §07 drew (P1 dash-with-type, P2 type-as-eyebrow, P3 two-lines-only). **PM ruled
+P1, and R6-2 accept, the same day**, so the build landed in this session too.
+
+## Two captions that were wrong
+
+The first draft of §07.3 asserted that at AX1 the type takes the ellipsis, and that
+`Bartholomew Fitzgerald` survives whole. Both false, and measuring rather than looking
+is what caught it: `Itch/Scratch —` is 203px at 28px, so it fits its own line and
+ellipses nothing until AX3 (290px); `Bartholomew Fitzgerald` is 322px at 28px, so it is
+the one string that *does* get cut.
+
+The section was rewritten as a four-rung ladder with each rung's measured width on it.
+It also exposed a real CSS/RN bug in the draft: a name span with `flex: 0 0 auto` and
+`nowrap` **overflows** rather than ellipsing, so the last resort needs `maxWidth: '100%'`
+— in RN, the same prop on the name `Text`.
+
+*This is the CUL-613 rule applied to a mock: a frame drawn by someone who knows what it
+should show will show it, whether or not it is true.*
+
+## The build
+
+`SimpleEventConfirm.tsx`: the header string split in two inside a wrapping row — the
+type `flexShrink: 1`, the pet `flexShrink: 0`, so the name drops to its own line whole.
+
+Two things the drawing settled that the ruling could not:
+
+- **The gap is 4px, not the 6 first drawn.** Splitting one string into two Texts removes
+  the literal space between the dash and the name; Geist SemiBold's space is 4.0px at
+  `textLG`, so 4 *restores* the undivided string's spacing rather than approximating it.
+- **`flexShrink: 0` alone overflows.** A name that by itself overruns its line runs off
+  the sheet instead of ellipsing, so the pet carries `maxWidth: '100%'` — which turns
+  the last resort back into an ellipsis, against the whole column rather than the
+  remainder after the type.
+
+And the split *does* need an `accessibilityLabel` — for a different reason than the
+issue gave. A truncated `Text` already announces its full string, so the requested
+label would have been inert; **two Texts do not announce as one**, so the label pays for
+the split. Its test pins it to the two visible halves rejoined, so it cannot drift into
+a second, disagreeing copy of the same sentence.
+
+### Six tests, and the one that mattered most
+
+Five guards, each proved by **mutation** rather than by reading (CUL-613): breaking one
+property reds exactly one test and nothing else, six for six, and all five are red
+against the pre-fix tree.
+
+The sixth is refactor-safety, and it exists because of a bug in the first draft of the
+fix: **the shared face was applied to neither half.** `styles.headerText` — size,
+weight, colour, tracking — was left behind, so the header would have rendered at RN's
+default 14px regular instead of 17px semibold Geist. Types passed. All 47 other tests
+passed. `guards/geistRollout.test.ts` passed too, because `ThemedText` always injects
+*some* family, so nothing in the repo looks at whether the size and weight survived.
+
+It was caught by reading the diff adversarially before pushing, which is the only thing
+that could have caught it. *A refactor that splits a styled node has to be checked for
+what the split dropped, not only for what it added* — and the test now pins it.
+
+## Two things that happened on the way out
+
+**The base went stale mid-session, and the conflict was worth resolving properly.**
+`main` moved two commits ahead (#757, #759) while this was in flight, and the ruleset
+requires branches be up to date. The merge conflicted in `CLAUDE.md` — because
+**#759 (CUL-728) had rewritten the very CUL-682 entry this branch was correcting.**
+
+Both edits were real, so neither side was taken wholesale: CUL-728's text is kept whole
+(every known `disabled`-as-suppression site closed, the third one its 85-site sweep
+missed, and the *read the branch, not the disagreement* rule), and this branch's
+correction is applied onto it — the clause claiming a truncated stop "reads the
+*ellipsed* text" struck, with a pointer to the rule that falsified it.
+
+They are also **the same principle from opposite directions**, which is why they are now
+cross-linked rather than left as two unrelated findings: CUL-728 found that a touchable
+becoming a `View` silently fragments one announcement into several; this session's fix
+does the same by splitting one `Text` into two. That is exactly why the split needs a
+label. *Two sessions found one rule from either end on the same day; the manual should
+say it once.*
+
+**Three pushes produced no CI run at all.** `7819194` (the code) and `9e6e30c` never
+got a workflow run, while sibling branches ran normally throughout — including one at
+12:24, between the two silent pushes. The merge push finally triggered one, which passed.
+No cause found: `ci.yml`'s bare `pull_request:` trigger should fire `synchronize` on
+every push, and nothing about those pushes differed from the ones that ran.
+
+It is recorded because of what it costs rather than what it is: **CI is this repo's only
+enforced gate, and a run that is never created looks exactly like one that has not
+finished yet.** Reporting green off the last completed run would have described a commit
+two behind the code. The habit that caught it — check which *sha* the green belongs to,
+not just that something is green — is the transferable part. If it recurs, it is worth a
+real investigation rather than a shrug.
+
+## Decisions
+
+| # | Decision |
+|---|---|
+| 1 | The accessibility half of CUL-726 is **not a defect**. No `accessibilityLabel` added; the finding is recorded on the issue and in the mock. |
+| 2 | The real defect is the visual cut, and it is a **Dynamic Type** problem, not a long-name one. |
+| 3 | PM ruled the direction: two lines + the type yields. Mock first, per "Mock what you change" — the round-4 frame is design-locked (F1). |
+| 4 | B and C are not composable as stated; the composition is AC-CHIP's wrap + `flexShrink: 0`, reusing an in-file precedent rather than inventing one. |
+| 5 | §03's stage-2 frames stay on the round-4 header. Not a deferral in the end: at "Vomit — Nyx" the split renders *identically*, and it only shows itself when the row would otherwise have cut the name. The page says so. |
+| 6 | **R6-1 = P1** (wrap, dash rides with the type) and **R6-2 = accept** — PM, same day. The "only if it would otherwise be lost" qualifier needs no enforcement: a wrapping row grows only when one line cannot hold it. |
+| 7 | The `CLAUDE.md` merge with CUL-728 resolved on **meaning, not by picking a side** — both edits kept, the falsified clause struck, the two findings cross-linked as one principle. |
+| 8 | `docs/nyx-more-events-picker-requirements.md` deliberately **not** edited. It is the v1.0 build contract for PRs 0–3, all shipped; round 5 (CUL-679) amended the same design-locked frame without touching it, so the precedent is that post-ship mock rounds live in the mock and in Linear. Flagged as a Tier-2 proposal instead of written. |
+
+## Residuals
+
+- **CUL-726** — done pending the device look. The one thing a static pass cannot
+  settle is how the wrapped two-line header sits against the pills below it at a real
+  accessibility text size; it batches with #751's outstanding device checks.
+- **CI run creation** — three pushes on this branch produced no workflow run (above).
+  Not chased; worth a real look if it happens again, because it degrades the only
+  enforced gate silently.
+- **CUL-682** — its label's stated rationale is falsified; the label itself stands.
+  Noted, not reopened.
+- **`accessibilityRole="header"`** — this header has none, and only 4 sites app-wide
+  use it. Real, separate, app-wide; not folded in and not yet filed.
+
+## Files
+
+- `components/log/SimpleEventConfirm.tsx` — the header split into a wrapping row; the
+  `HEADER_SPAN_GAP` constant; `headerStack` / `headerType` / `headerPet` styles; the
+  title row becomes one accessible node.
+- `components/log/SimpleEventConfirm.test.tsx` — 5 guards + 1 refactor-safety test; the
+  two existing header tests rewritten for the split.
+- `docs/culprit-more-events-mockups.html` — §07 (round 6), the round-6 CSS block, Geist
+  loaded from Google Fonts so the 1:1 frames are metrically honest, masthead/header
+  comment/footer moved to round 6, both briefs recorded as ruled, and §06's stale
+  "CUL-682 needs a device check" note refreshed now that it has shipped.
+- `CLAUDE.md` — § Code Conventions: the truncated-`Text` rule, plus the correction to
+  the CUL-682 entry's falsified clause.
+
+The mock was republished to the same artifact URL as rounds 1–5, per the same-URL round
+convention.
+
+`STATUS.md` untouched: no track started or ended, no standing hold changed, no build
+phase moved, no pointer went stale.
