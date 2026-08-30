@@ -3,7 +3,7 @@
 **Date:** 2026-08-30
 **Issue:** CUL-755 (Urgent, `Waiting on PM` → ruled this session)
 **Mode:** BUILD
-**Outcome:** shipped via #NNN
+**Outcome:** shipped via #779
 
 ---
 
