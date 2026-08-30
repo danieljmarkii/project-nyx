@@ -1,7 +1,7 @@
 # 2026-08-30 — CUL-663 step 4 as a size sweep: does the AC-CHIP fix actually resolve?
 
 **Issue:** CUL-663 (M0 — Host gate: `log_picker_v2` → GA, D12) · **Mode:** DISCOVERY
-**Branch:** `claude/log-picker-v2-prega-sweep-m13nvr` · **Outcome:** see the PR
+**Branch:** `claude/log-picker-v2-prega-sweep-m13nvr` · **Outcome:** shipped via #782
 
 ---
 
@@ -141,3 +141,19 @@ spec floor rather than a live field state.
   both reported above rather than rounded away. The claim that held: **no clipping**,
   which is invariant across every combination tested.
 - **Secrets:** none.
+
+## Close-out — the PM deferred the sitting
+
+Asked at the end of the session whether to run the device pass, the PM declined it for now
+("not going to do any on device testing at the moment"). CUL-663 was set back to `Todo`,
+unclaimed, with the deferral recorded on the issue so the next session reads the state
+correctly instead of assuming a sitting is imminent.
+
+That leaves the gate where it was: **`log_picker_v2` GA stays blocked**, and per D12 so does
+event-taxonomy **W1's GA** (W1's *build* is unaffected — only its GA rides this). Stated once
+on the issue and not pressed; the PM's call.
+
+What survives the deferral is the part that does not need a phone: step 4's layout half is a
+property of the shipped styles, so it holds until someone edits `chipPair` / the `CHIP_*`
+constants in `SimpleEventConfirm.tsx` — and `scripts/layout-probe/` re-runs it in minutes if
+they do.
