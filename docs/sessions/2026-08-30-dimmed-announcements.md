@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-30
 
-Shipped via #757. Follow-on from CUL-682 (#756), which established the rule now in `CLAUDE.md`
+Shipped via #759. Follow-on from CUL-682 (#756), which established the rule now in `CLAUDE.md`
 § Code Conventions: RN copies a touchable's `disabled` into `accessibilityState.disabled`, iOS turns
 that into `UIAccessibilityTraitNotEnabled`, and VoiceOver speaks it as **"dimmed"** — an assertion
 that *this control exists and is currently unavailable*. Using it where the control does not exist
