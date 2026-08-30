@@ -30,6 +30,7 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { StyleSheet, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { SimpleEventConfirm } from './SimpleEventConfirm';
+import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { formatTime } from '../../lib/utils';
 
@@ -59,16 +60,88 @@ beforeEach(() => {
 });
 
 describe('SimpleEventConfirm — header + default (witnessed) state', () => {
+  // The header still reads "{Type} — {Pet}"; CUL-726 split it across two Texts so the
+  // type can yield first, so it is asserted per half plus the one announcement that
+  // rejoins them, rather than as a single node.
   it('names the record "{Type} — {Pet}" and defaults to a witnessed pill', () => {
-    const { getByText } = renderConfirm('vomit');
-    expect(getByText('Vomit — Nyx')).toBeTruthy();
+    const { getByTestId, getByText } = renderConfirm('vomit');
+    expect(getByTestId('confirm-header-type').props.children).toContain('Vomit');
+    expect(getByTestId('confirm-header-pet').props.children).toBe('Nyx');
+    expect(getByTestId('confirm-header-title').props.accessibilityLabel).toBe('Vomit — Nyx');
     // The pill IS the save: "Vomit · today at {time}".
     expect(getByText(/^Vomit · today at /)).toBeTruthy();
   });
 
   it('Other reads "Other — Nyx"', () => {
-    const { getByText } = renderConfirm('other');
-    expect(getByText('Other — Nyx')).toBeTruthy();
+    const { getByTestId } = renderConfirm('other');
+    expect(getByTestId('confirm-header-type').props.children).toContain('Other');
+    expect(getByTestId('confirm-header-pet').props.children).toBe('Nyx');
+    expect(getByTestId('confirm-header-title').props.accessibilityLabel).toBe('Other — Nyx');
+  });
+});
+
+// R6-1 = P1 (CUL-726). The header used to be one numberOfLines={1} Text, so the
+// ellipsis sat on the tail and the PET's name was always what got cut — on the last
+// surface before the write, where that name is the write-time identity and the event
+// type is already stated three times over.
+//
+// Each of these was proved by MUTATION against the fixed tree (CUL-613), not by
+// reading: breaking the one property it names turns exactly this test red.
+describe('R6-1 — the header yields the type, never the pet (CUL-726)', () => {
+  it("the pet's name never shrinks, so a tight row wraps instead of cutting it", () => {
+    const { getByTestId } = renderConfirm();
+    const pet = StyleSheet.flatten(getByTestId('confirm-header-pet').props.style);
+    expect(pet.flexShrink).toBe(0);
+    expect(getByTestId('confirm-header-pet').props.numberOfLines).toBe(1);
+  });
+
+  it('the type is the only shrinkable half — it is what this surface repeats', () => {
+    const { getByTestId } = renderConfirm();
+    expect(StyleSheet.flatten(getByTestId('confirm-header-type').props.style).flexShrink).toBe(1);
+  });
+
+  it('the row wraps, so the name drops to its own line whole (the AC-CHIP shape)', () => {
+    const { getByTestId } = renderConfirm();
+    expect(StyleSheet.flatten(getByTestId('confirm-header-stack').props.style).flexWrap).toBe('wrap');
+  });
+
+  // The floor under flexShrink:0 — without it a name that alone overruns its line
+  // OVERFLOWS the sheet rather than ellipsing. Found by drawing the mock, not by
+  // reasoning about it.
+  it('a name that alone overruns its line still ellipses, against the full column', () => {
+    const { getByTestId } = renderConfirm();
+    expect(StyleSheet.flatten(getByTestId('confirm-header-pet').props.style).maxWidth).toBe('100%');
+  });
+
+  // Refactor-safety, not a guard: the split must change LAYOUT and nothing else. It is
+  // here because the first draft of the fix silently dropped the shared face off both
+  // halves — the header would have rendered at RN's default 14px regular instead of
+  // 17px semibold Geist. Types pass, every other test passes, and no guard in the repo
+  // looks at a ThemedText's size, because ThemedText always injects SOME family.
+  it('the split changed the layout, not the typography', () => {
+    const { getByTestId } = renderConfirm();
+    for (const id of ['confirm-header-type', 'confirm-header-pet']) {
+      const style = StyleSheet.flatten(getByTestId(id).props.style);
+      expect(style.fontSize).toBe(theme.textLG);
+      // ThemedText resolves the weight token into its own family and drops the weight.
+      expect(style.fontFamily).toBe(theme.fontBodySemibold);
+      expect(style.color).toBe(theme.colorTextPrimary);
+    }
+  });
+
+  // Splitting one Text into two would otherwise fragment the announcement into two
+  // stops. This is not CUL-726's originally-requested label: a truncated Text already
+  // announces its full string, so that one would have been inert. This one pays for
+  // the split, and is pinned to exactly the visible halves so it cannot drift.
+  it('the split still announces as ONE node carrying the whole sentence', () => {
+    const { getByTestId } = renderConfirm('diarrhea');
+    const title = getByTestId('confirm-header-title');
+    expect(title.props.accessible).toBe(true);
+    expect(title.props.accessibilityLabel).toBe('Loose stool — Nyx');
+    const type = getByTestId('confirm-header-type').props.children;
+    const pet = getByTestId('confirm-header-pet').props.children;
+    // The label is the two visible halves rejoined — never a second, drifting copy.
+    expect(title.props.accessibilityLabel).toBe(`${[].concat(type).join('')} ${pet}`);
   });
 });
 

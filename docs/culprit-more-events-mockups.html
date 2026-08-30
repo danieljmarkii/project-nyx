@@ -22,12 +22,13 @@
      the comparison frames as the record of how it was decided.
 
      ROUND 6 (2026-08-30, §07) amends one more: the STAGE-2 header,
-     which cuts the pet's name and never the event type (CUL-726).
-     The direction is ruled — two lines, and the type yields before
-     the name — and §07 draws the three ways that renders, because
-     the two halves of the ruling are not directly composable. R6-1
-     and R6-2 are OPEN. §03's stage-2 frames still show the round-4
-     header; they change when R6-1 is ruled.
+     which cut the pet's name and never the event type (CUL-726).
+     R6-1 was ruled P1 and R6-2 ruled ACCEPT on 2026-08-30, and both
+     are BUILT. §07 keeps the P1/P2/P3 comparison as the record of
+     how it was decided. §03's stage-2 frames are unchanged on
+     purpose: at "Vomit — Nyx" the split renders identically to the
+     undivided string — it only shows itself when the row would
+     otherwise have cut the name.
 
      §07's frames are 1:1 at 390pt and load real Geist, unlike the
      320px device frames elsewhere — this round is about where a
@@ -346,7 +347,7 @@
   /* P1 / P2 — two spans in a wrapping row: the type may shrink and ellipse,
      the name never shrinks and drops to its own line whole. The AC-CHIP
      pattern from the time row one step below, pointed at the header. */
-  .hstack.split { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; row-gap: 1px; }
+  .hstack.split { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; row-gap: 1px; }
   .hstack.split .ty { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hstack.split .nm {
     flex: 0 0 auto; max-width: 100%; white-space: nowrap;
@@ -369,7 +370,7 @@
   <header class="mast">
     <p class="eyebrow">
       <span>B-745 · FAB → More events</span><span>Round 4 — convergence · 2026-08-13</span><span>Round 5 — the title row · 2026-08-29</span><span>Round 6 — the stage-2 header · 2026-08-30</span>
-      <span class="round-chip">Round 6 open — R6-1, R6-2</span>
+      <span class="round-chip">Round 6 ruled — P1 + accept, shipped</span>
     </p>
     <h1>One surface, in daylight colours</h1>
     <p class="standfirst">
@@ -564,7 +565,10 @@
         <figcaption><b>2 · The confirm — Saw it</b>
         No form, no black surfaces: light pills with tinted circles, the ChipGroup teal selection, and
         the summary pill as the save — a live sentence in the confirm register with the one dark
-        Log-it mark (the FAB's echo). What the pill says is exactly what gets written.</figcaption>
+        Log-it mark (the FAB's echo). What the pill says is exactly what gets written.
+        <em>The header carries round 6's split (§07) as of 2026-08-30; at a name this short it renders
+        exactly as drawn, which is the point — it only shows itself when the row would otherwise have
+        cut the pet's name.</em></figcaption>
       </figure>
 
       <!-- STAGE 2 — FOUND IT -->
@@ -961,14 +965,15 @@
       wraps, the type may shrink and ellipse, and <strong>the pet&rsquo;s name never shrinks &mdash; it drops
       to its own line intact.</strong> Same pattern, same file, no new idea.</p>
 
-      <p>What is left is a fork only looking can settle: <strong>what the wrapped state looks like.</strong>
-      All three below are drawn at 21px, where today&rsquo;s header already cuts.</p>
+      <p>What was left was a fork only looking could settle &mdash; <strong>what the wrapped state
+      looks like</strong>. <strong>Ruled P1</strong> (2026-08-30); the other two stay as the record of
+      how it was decided. All three are drawn at 21px, where the old header already cut.</p>
     </div>
 
     <div class="compare">
 
       <figure>
-        <div class="optlab"><b>P1</b> &middot; wrap, dash stays with the type</div>
+        <div class="optlab"><b>P1 &mdash; RULED, shipped</b> &middot; wrap, dash stays with the type</div>
         <div class="hdrD" style="--fs:21px;">
           <div class="hrow">
             <div class="htitle">
@@ -1116,15 +1121,15 @@
     </div>
 
     <div class="brief">
-      <div class="bid">R6-1 &middot; the wrapped state &mdash; needs a look</div>
+      <div class="bid">R6-1 &middot; the wrapped state &mdash; RULED P1, 2026-08-30</div>
       <div class="bq">Which shape does the header take when it runs out of room?</div>
       <dl>
         <dt>Deciding</dt>
         <dd>How &ldquo;two lines + the type yields&rdquo; actually renders. The intent is ruled; the three
         drawings above are the same intent with different manners.</dd>
         <dt>Options</dt>
-        <dd><strong>P1</strong> &mdash; wrap, dash stays with the type. Closest to the locked composition;
-        costs a dangling em-dash. <span class="rec">&larr; recommended</span><br />
+        <dd><span class="rec">P1 &mdash; wrap, dash stays with the type. RULED.</span> Closest to the
+        locked composition; the dangling em-dash is the accepted cost.<br />
         <strong>P2</strong> &mdash; wrap, type becomes an eyebrow above the name. Cleanest reading and best
         hierarchy for what this surface is <em>for</em>; reads as a new composition rather than the locked
         one flexing.<br />
@@ -1138,14 +1143,16 @@
     </div>
 
     <div class="brief" style="margin-top:20px;">
-      <div class="bid">R6-2 &middot; the growth &mdash; confirm or veto</div>
+      <div class="bid">R6-2 &middot; the growth &mdash; RULED ACCEPT, 2026-08-30</div>
       <div class="bq">Is a header that can become two lines acceptable on this sheet?</div>
       <dl>
         <dt>Deciding</dt>
         <dd>Whether the sheet&rsquo;s header may change height, or must stay one line at all costs.</dd>
         <dt>Options</dt>
-        <dd><strong>Accept</strong> &mdash; it only grows where the name would otherwise be lost.
-        <span class="rec">&larr; recommended</span><br />
+        <dd><span class="rec">Accept &mdash; only where the name would otherwise be lost. RULED.</span>
+        That condition is not a rule anyone has to keep: a wrapping row grows only when one line
+        cannot hold it, so &ldquo;only if it would otherwise be lost&rdquo; is what the mechanism
+        already does.<br />
         <strong>Veto</strong> &mdash; keep one line and take the cut; the ruling then collapses to
         &ldquo;the type yields&rdquo; alone, which still moves the ellipsis off the name.</dd>
         <dt>Consequence</dt>
@@ -1154,14 +1161,30 @@
       </dl>
     </div>
 
+    <div class="col" style="margin-top:34px;">
+      <div class="callout">
+        <strong>Built the same day</strong> (#758). One row in <code>SimpleEventConfirm.tsx</code>: the
+        header string split in two, the row given <code>flexWrap</code>, the type
+        <code>flexShrink: 1</code>, the pet <code>flexShrink: 0</code> + <code>maxWidth: '100%'</code>.
+        Two details the drawing settled that the ruling could not: the inter-half gap is
+        <strong>4px, not the 6 first drawn</strong> &mdash; Geist SemiBold&rsquo;s space is 4.0px at
+        <code>textLG</code>, so 4 restores the undivided string&rsquo;s spacing exactly; and the split
+        needed an <code>accessibilityLabel</code> after all, though <em>not</em> for the reason CUL-726
+        gave. A truncated <code>Text</code> already announced its full string; two Texts do not, so the
+        label exists to pay for the split rather than to rescue the ellipsis. Five guards, each proved
+        by mutation &mdash; breaking one property reds exactly one test.
+      </div>
+    </div>
+
   </section>
 
   <footer>
     Source of truth: <code>docs/culprit-more-events-mockups.html</code>. Round 4 — the convergence,
     <strong>design-locked 2026-08-13 (F1)</strong>; supersedes rounds 1–3. Round 5 (§06, 2026-08-29)
     amends the title row only — <strong>R5-1 ruled B and shipped</strong>; §03's stage-1 frame carries
-    it. Round 6 (§07, 2026-08-30) amends the stage-2 header — <strong>R6-1 and R6-2 are open</strong>,
-    so §03's stage-2 frames still show the round-4 header. Same artifact URL throughout.
+    it. Round 6 (§07, 2026-08-30) amends the stage-2 header — <strong>R6-1 ruled P1, R6-2 ruled
+    accept, both shipped</strong>; §03's stage-2 frames are unchanged because at their short strings
+    the split renders identically. Same artifact URL throughout.
     Build contract: <code>docs/nyx-more-events-picker-requirements.md</code>. Frame values are copied
     from <code>constants/theme.ts</code>; the splat/swirl customs are mock drafts the build refines at
     24px master size.
