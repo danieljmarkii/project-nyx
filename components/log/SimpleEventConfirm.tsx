@@ -88,6 +88,14 @@ const PHOTO_READ_TYPES: ReadonlySet<EventTypeKey> = new Set(['vomit', 'diarrhea'
 // tuning pass away from disagreeing with this one silently.
 export const SHEET_HEADER_DISC = 30;
 
+// The gap between "Vomit —" and the pet's name when they share a line (CUL-726).
+// Sized to the space it REPLACES: splitting one string into two Texts drops the
+// literal space between the dash and the name, and Geist SemiBold's space is 4.0px
+// at textLG — so 4 restores the undivided string's spacing exactly rather than
+// approximating it. It stays fixed while the text scales, which is deliberate: by
+// the size where 4px would read tight, the two halves are on separate lines anyway.
+const HEADER_SPAN_GAP = 4;
+
 export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onDraftChange }: Props) {
   const prependEvent = useEventStore((s) => s.prependEvent);
   // The summary pill IS the write, so it needs the SAME hardened ref-latch guard the
@@ -384,15 +392,66 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
     <View style={styles.container}>
       {/* Header — the glyph names the subject, "Type — Pet" names the record, and the
           back chevron returns to the grid (the sheet stays open; the grabber/backdrop
-          close it). Placement follows the round-4 design-locked frame. */}
+          close it). Placement follows the round-4 design-locked frame, as amended by
+          mock round 6 (CUL-726, R6-1 = P1).
+
+          ── WHY THE STRING IS SPLIT (CUL-726) ───────────────────────────────
+          It used to be one `numberOfLines={1}` Text, which put the ellipsis on the
+          TAIL — so the half that got cut was always the pet's name, never the event
+          type. That is backwards here: the type is stated three times on this surface
+          (this glyph, this header, and the summary pill that IS the save), and the pet
+          exactly once. The sheet has no switcher past the grid, so the name in this
+          header IS the write-time identity for the row about to be written — it is the
+          one string that cannot afford to be the one that yields.
+
+          And it is not an exotic long-name case. Nothing here sets
+          `allowFontScaling={false}` (deliberately — only the tab bar does), so at
+          xxLarge, a comfort setting rather than an accessibility one, an ordinary
+          11-character name on the longest label ("Itch/Scratch") already overran the
+          268px this column gets on a 390pt phone.
+
+          The shape is AC-CHIP's, one row below: the row WRAPS and the half that must
+          survive is `flexShrink: 0`, so it drops to its own line whole instead of
+          squeezing. Deliberately not `numberOfLines={2}` on the original single Text —
+          that wraps, but it cannot also make the type yield first, because wrapping
+          needs ONE paragraph and shrink-ordering needs TWO flex children (nested Text
+          spans are inline and cannot carry flexShrink). Splitting buys both.
+
+          The order it gives way in: both fit → one line · together too wide → the name
+          takes its own line, whole · the type alone too wide (AX3) → the type ellipses,
+          the name still whole · the name alone too wide → the name ellipses, but
+          against the FULL column rather than the remainder after the type. */}
       <View style={styles.header}>
-        <View style={styles.headerTitle}>
+        {/* One accessibility node, not three. Splitting the string above into two Texts
+            would otherwise fragment the announcement into "Itch/Scratch —" and
+            "Bartholomew" as separate stops — so the label restores the single sentence
+            the undivided Text used to hand over for free.
+
+            Note this is NOT the fix CUL-726 originally asked for, and the distinction
+            matters: a truncated Text already announces its FULL string on both
+            platforms (§ Code Conventions), so a label added to "rescue" the ellipsed
+            name would have been inert. This label exists to pay for the split, and the
+            test pins it to exactly what is on screen so it cannot drift into a second,
+            disagreeing copy of the same sentence. */}
+        <View
+          style={styles.headerTitle}
+          testID="confirm-header-title"
+          accessible
+          accessibilityLabel={`${typeLabel} — ${petName}`}
+        >
           <View style={[styles.headerCircle, rose ? styles.circleRose : styles.circleNeutral]}>
             <EventIcon type={type} size={16} color={rose ? theme.colorEventSymptom : theme.colorTextSecondary} />
           </View>
-          <ThemedText style={styles.headerText} numberOfLines={1}>
-            {typeLabel} — {petName}
-          </ThemedText>
+          <View style={styles.headerStack} testID="confirm-header-stack">
+            {/* The dash rides with the type (R6-1 = P1) so the name is never left
+                orphaned behind a separator when the row wraps. */}
+            <ThemedText style={[styles.headerText, styles.headerType]} numberOfLines={1} testID="confirm-header-type">
+              {typeLabel} —
+            </ThemedText>
+            <ThemedText style={[styles.headerText, styles.headerPet]} numberOfLines={1} testID="confirm-header-pet">
+              {petName}
+            </ThemedText>
+          </View>
         </View>
         <TouchableOpacity onPress={onBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back to event types">
           <ChevronLeft size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
@@ -692,13 +751,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space1,
   },
-  headerText: {
+  // The wrapping row the two halves live in. `flexShrink: 1` is what gives them
+  // somewhere to shrink to; without it the row would push the back chevron off the
+  // end rather than yielding (the same note EventTypeSheet's `title` carries).
+  headerStack: {
     flexShrink: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',           // the name drops to its own line instead of squeezing
+    alignItems: 'center',
+    columnGap: HEADER_SPAN_GAP,
+    rowGap: 2,
+  },
+  // The shared face for both halves. Composed onto each span rather than folded into
+  // headerType/headerPet so the split stays visibly a LAYOUT change: the two spans are
+  // one piece of typography that yields differently, not two styles free to drift.
+  headerText: {
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     letterSpacing: theme.trackingTight,
   },
+  // The type is the ONLY shrinkable half — it is the one this surface repeats.
+  headerType: { flexShrink: 1 },
+  // The pet never shrinks, so a tight row wraps rather than cutting it. `maxWidth`
+  // is the floor under that: `flexShrink: 0` alone OVERFLOWS the sheet when the name
+  // by itself overruns its line, and 100% turns that last resort back into an
+  // ellipsis — against the whole column, which is the most room it can be given.
+  headerPet: { flexShrink: 0, maxWidth: '100%' },
   headerCircle: {
     width: SHEET_HEADER_DISC, height: SHEET_HEADER_DISC, borderRadius: theme.radiusFull,
     alignItems: 'center', justifyContent: 'center',
