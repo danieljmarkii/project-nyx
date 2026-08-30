@@ -72,6 +72,11 @@ function pageOne(html: string): string {
 export function trialBlockFixture(
   over: Partial<NonNullable<ReportSnapshot['trial']>> = {},
 ): NonNullable<ReportSnapshot['trial']> {
+  const elapsed =
+    over.trialDaysElapsed ?? (over.dayCounter ?? 45) + (over.trialDaysOutsideRange?.after ?? 0)
+  const elapsedStart = Math.round(
+    Date.parse(`${over.startedAt ?? '2026-05-08'}T00:00:00Z`) / 86_400_000,
+  )
   return {
     id: 't1',
     status: 'active',
@@ -136,10 +141,13 @@ export function trialBlockFixture(
     // Untruncated ⇒ the trial's elapsed length IS the day counter. Derived here so a
     // fixture only has to set `dayCounter`, and so no fixture can silently carry a
     // `trialDaysElapsed` that contradicts it.
-    trialDaysElapsed:
-      over.trialDaysElapsed ??
-      (over.dayCounter ?? 45) +
-        (over.trialDaysOutsideRange?.after ?? 0),
+    trialDaysElapsed: elapsed,
+    // B-613 — the elapsed SPAN, derived from `startedAt` + the length above for the same
+    // reason: `elapsedEnd - elapsedStart + 1 === trialDaysElapsed` is an identity in the
+    // production builder, so a fixture that could break it would be testing a shape the
+    // report cannot produce.
+    elapsedStartDayIndex: over.elapsedStartDayIndex ?? elapsedStart,
+    elapsedEndDayIndex: over.elapsedEndDayIndex ?? elapsedStart + Math.max(0, elapsed - 1),
   }
 }
 
@@ -170,8 +178,10 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       isCustomOverride: false,
       outOfWindowSymptomCount: 0,
       outOfWindowMostRecent: null,
+      outOfWindowMostRecentType: null,
       outOfWindowBefore: 0,
       outOfWindowAfter: 0,
+      trialCropSymptoms: null,
     },
     signalment: {
       name: 'Nyx',
@@ -912,6 +922,66 @@ Deno.test('custom window with out-of-window events → cherry-pick disclosure', 
   const html = renderReport(s)
   assert.ok(/fall outside this window/i.test(html))
   assert.ok(html.includes('Custom range'))
+})
+
+// ── B-613 — the guard names the SIGN, not just the date ─────────────────────────────
+
+Deno.test('B-613 — the cherry-pick guard names the most recent excluded symptom TYPE', () => {
+  // Two cold reads ranked this top of the non-blocking list: "5 symptom events fall
+  // outside this window (most recent May 28)" reads as bookkeeping about a window, while
+  // naming the sign reads as a fact about the patient. On a completed elimination whose
+  // window closes eleven days early it is the difference between "the trial held to the
+  // end" and "she relapsed in the final week".
+  const s = base()
+  s.scope.basis = 'custom'
+  s.scope.isCustomOverride = true
+  s.scope.outOfWindowSymptomCount = 5
+  s.scope.outOfWindowMostRecent = '2026-05-28T14:00:00Z'
+  s.scope.outOfWindowMostRecentType = 'diarrhea'
+  const html = renderReport(s)
+  assert.ok(/most recent: loose stool, May 28/.test(html), html.slice(html.indexOf('cherry')))
+})
+
+Deno.test('B-613 — a type-less most-recent still renders its date, never a dangling colon', () => {
+  // The type is populated in the same branch as the instant, so this pairing is not
+  // reachable from `assembleReport` — but ScopeInfo permits it and the renderer is public,
+  // so it degrades to exactly the pre-B-613 sentence rather than to "most recent: , May 28".
+  const s = base()
+  s.scope.basis = 'custom'
+  s.scope.isCustomOverride = true
+  s.scope.outOfWindowSymptomCount = 2
+  s.scope.outOfWindowMostRecent = '2026-05-28T14:00:00Z'
+  s.scope.outOfWindowMostRecentType = null
+  const html = renderReport(s)
+  assert.ok(/most recent: May 28/.test(html))
+  assert.ok(!/most recent: ,/.test(html))
+})
+
+Deno.test('B-613 — an out-of-window date in ANOTHER year carries that year', () => {
+  // CUL-69's rule where it now bites. This date is out-of-window BY DEFINITION and is
+  // bounded only by the event pull, which reaches up to 400 days before the window start
+  // when a trial needs it. Beside a range box that always prints a year, a bare "May 28"
+  // is read as this May — and how recent the excluded event was is the entire point of
+  // the sentence. Safe as a conditional stamp only because this clause holds ONE date.
+  const s = base()
+  s.scope.basis = 'custom'
+  s.scope.isCustomOverride = true
+  s.scope.outOfWindowSymptomCount = 1
+  s.scope.outOfWindowMostRecent = '2025-05-28T14:00:00Z' // the year BEFORE the window
+  s.scope.outOfWindowMostRecentType = 'vomit'
+  assert.ok(/most recent: vomiting, May 28, 2025/.test(renderReport(s)))
+
+  // Same-year stays bare, so an ordinary report is byte-identical to what shipped before
+  // and a printed year always carries signal.
+  const same = base()
+  same.scope.basis = 'custom'
+  same.scope.isCustomOverride = true
+  same.scope.outOfWindowSymptomCount = 1
+  same.scope.outOfWindowMostRecent = '2026-05-28T14:00:00Z'
+  same.scope.outOfWindowMostRecentType = 'vomit'
+  const html = renderReport(same)
+  assert.ok(/most recent: vomiting, May 28\)/.test(html))
+  assert.ok(!/May 28, 2026/.test(html))
 })
 
 // ── §5.8 no load-bearing colour + self-contained + print CSS ───────────────────────
