@@ -139,3 +139,22 @@ well-covered function. Source restored; 50/50 green, then **6218/6218 across 285
   patch, and costs more churn than the rename in `undoLog.test.ts` / `guards/reversePath.test.ts`.
 - **Editing `docs/sessions/2026-08-28-…`** to correct the limit at its source. Session records
   are append-only by convention; correcting one destroys the record of what was believed when.
+
+---
+
+## Documentation
+
+**`CLAUDE.md` § Code Conventions** gained one entry — *a value returned before its write has
+landed is an INTENT, and its name must say so.* It is there rather than only here because the
+reason generalises past this function: the codebase is full of deliberately fire-and-forget
+best-effort writes, and every one of them has a return value that cannot know whether it took.
+It is filed as the sibling of CUL-708's *silence is a claim* — there the caller had to answer
+because the field described a value the call always writes; here the function must not answer
+more than its own write can confirm.
+
+`STATUS.md` untouched — no track started or ended, no standing hold moved, no phase change,
+no pointer went stale. Neither held deploy (CUL-19, CUL-557) is involved.
+
+`origin/main` moved twice during the session (#769 accent-on-light AA, #771 CUL-533) and was
+merged into this branch before the final push; no conflicts, and the full suite re-run green at
+**6237/6237 across 287 suites** on the merged tree.
