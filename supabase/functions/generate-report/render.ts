@@ -2026,10 +2026,18 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // present (it always is in production — provenance travels with the resolved protein —
   // but a display-only fixture may omit it, so no dangling delimiter either way).
   if (protein) identity.push(`${labels}${provWord ? ` &middot; ${provWord}` : ''}.`)
+  // THE TRIAL'S OWN DATES TAKE THE BAND'S YEAR DECISION TOO (CUL-746 pass 4). These sit
+  // twelve words from the Allowed list and the exposure clause, so leaving them bare is
+  // the same one-band-two-renderings defect one row up: a stale trial rendered "Started
+  // Nov 15" for 2024 beside "day 463 as of Feb 20", and a completed trial rendered
+  // "Nov 2 – Jan 20" for a span crossing New Year. Containment is deliberately NOT
+  // applied to them (see `permissionDatesNeedYear`) — a trial starting before the window
+  // is the ordinary shape of every mid-trial report.
+  const identityDay = permissionDatesNeedYear(t) ? fmtDayYear : fmtDay
   identity.push(
     t.status === 'active'
-      ? `Started ${h(fmtDay(t.startedAt))}.`
-      : `${h(fmtDay(t.startedAt))} &ndash; ${h(fmtDay(t.endedAt))} &middot; ${
+      ? `Started ${h(identityDay(t.startedAt))}.`
+      : `${h(identityDay(t.startedAt))} &ndash; ${h(identityDay(t.endedAt))} &middot; ${
           t.status === 'completed' ? 'completed' : 'stopped early'
         }.`,
   )
@@ -2850,8 +2858,12 @@ function exposureReasonOf(row: { rung: string | null; permittedLaterFrom: string
 }
 
 /**
- * The off-diet rows, partitioned by `exposureReasonOf` — computed ONCE and rendered
- * by both the At-a-glance tile and the page-1 sentence (CUL-746).
+ * The off-diet rows, partitioned by `exposureReasonOf` (CUL-746).
+ *
+ * ONE CALLER TODAY — the page-1 sentence. The tile deliberately carries its count and
+ * its span and no breakdown (see `trialExposureTile`), so this is not "computed once for
+ * two surfaces" any more; that claim was true of a version that was reverted, and left
+ * standing it is the sentence a future session would trust when re-adding a tile line.
  *
  * The tile and the prose disagreeing is this issue's own defect, one layer out: cold
  * read 17, run on the artifact where the SENTENCE had already been fixed, still took
@@ -2900,26 +2912,51 @@ function permissionDatesNeedYear(t: NonNullable<ReportSnapshot['trial']>): boole
   const windowYears = new Set(
     [yearOfDay(t.evidenceStartDate), yearOfDay(t.evidenceEndDate)].filter((y): y is number => y !== null),
   )
-  return t.exposures.items.some((x) => {
-    const d = x.permittedLaterFrom
-    if (!d || !dayParts(d)) return false
-    // CONTAINMENT FIRST, YEAR SECOND (CUL-746 pass 2). The first cut asked "is the
-    // year outside the window's years", and CUL-69's question is "is the DATE outside
-    // the window". The re-attack found the gap between them: a chew permitted from
-    // Nov 15 on a trial whose window runs Jan 5 – Feb 20 of the SAME year printed a
-    // bare "allowed from Nov 15", which resolves to the November BEFORE the feedings
-    // — two months before, reading as though the food had already been permitted.
-    // `permittedLaterFrom` is unbounded forward on an un-ended trial (B-422's steady
-    // state), which is precisely the unclamped range CUL-69 names.
-    //
-    // Both tests are kept and unioned, never swapped: containment catches the
-    // same-year-far-future case, the year set catches a window that straddles New
-    // Year. The union can only ever stamp MORE, and an extra year carries no false
-    // information — a missing one does.
-    if (d > t.evidenceEndDate || d < t.evidenceStartDate) return true
+
+  // ── THE DECISION READS EVERY DATE THE BAND RENDERS (CUL-746 pass 4) ─────────
+  //
+  // The first cut scanned `exposures.items[].permittedLaterFrom` and applied the answer
+  // to the Allowed list, which renders `permittedFoods[].allowedFrom/allowedUntil` — a
+  // DIFFERENT population, coinciding only when a food was fed off-diet before its own
+  // permission. So a band-level decision was being taken from a fraction of the band.
+  // Executed twice, both toward exoneration: a chew permitted from Nov 15 but never fed
+  // early printed a bare "(from Nov 15)" over a Jan 5 – Feb 20 2026 window; and a permit
+  // withdrawn in Mar 2025 printed "(Dec 1–Mar 15)" on a 2026 window, reading as a
+  // permission span CONTAINING the window, directly under the report's own instruction
+  // that "feedings are scored against the list in force on the day".
+  //
+  // The two tests are not interchangeable and are applied where each is meaningful:
+  //
+  //   YEAR, to every rendered date. A date whose year is not the window's is ambiguous
+  //   wherever it appears — including the trial's own start and end, which the band
+  //   prints and which the first cut also missed (a stale trial rendered "Started
+  //   Nov 15" for 2024 beside "day 463 as of Feb 20").
+  //
+  //   CONTAINMENT, to the PERMISSION dates only. Those are the ones a reader expects
+  //   inside the window, so one far outside it flips on a nearest-year read — the
+  //   same-year-far-future case the year test alone cannot see. It is deliberately NOT
+  //   applied to `startedAt`: a trial starting before the window is the ordinary shape
+  //   of every mid-trial report, and testing containment there would stamp a year on
+  //   almost every report, which is the noise CUL-69 warns costs the stamp its signal.
+  const renderedPermissionDates = [
+    ...t.permittedFoods.flatMap((f) =>
+      // Mirrors what the Allowed list actually prints: a closed span shows both ends, an
+      // added-after-start row shows its opening, and a food allowed from the trial's own
+      // start shows no date at all — so it cannot force a stamp nothing displays.
+      f.allowedUntil ? [f.allowedFrom, f.allowedUntil] : f.addedAfterStart ? [f.allowedFrom] : [],
+    ),
+    ...t.exposures.items.map((x) => x.permittedLaterFrom),
+  ]
+  const bandDates = [t.startedAt, t.endedAt, ...renderedPermissionDates]
+
+  const yearIsOutside = (d: string | null): boolean => {
     const y = yearOfDay(d)
     return y !== null && windowYears.size > 0 && !windowYears.has(y)
-  })
+  }
+  if (bandDates.some(yearIsOutside)) return true
+  return renderedPermissionDates.some(
+    (d) => !!d && !!dayParts(d) && (d > t.evidenceEndDate || d < t.evidenceStartDate),
+  )
 }
 
 function exposureBreakdown(t: NonNullable<ReportSnapshot['trial']>): ExposureBreakdown {
