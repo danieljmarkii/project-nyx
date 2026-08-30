@@ -118,7 +118,38 @@ fixture 12(e)/(f) (the basement-flat discriminator and the F7 persistence clause
 un-binding beside rule 1's pinned test, becoming binding the day F-G resolves — and
 the verdicts block records the consequence in place: **seam 2 should be F-G.**
 
-**Round 3 (on the round-2 corrections): [recorded when complete].**
+**Round 3 (on the round-2 corrections): FAIL — 10 findings (S3-1…S3-10), three high.**
+The round-2 fixture rewrite had silently dropped the background→foreground assertion
+from the binding set (S3-1); "unresolved markers" was undefined and excluded the
+acknowledged marker F7's stand-down requires — the owner who acted lost the card
+(S3-2); the all-members-soft-deleted corner was the one boundary unnamed (S3-3); and
+the headline-suppression sentence cited a "shipped rule" that is a *comment* — S1-1's
+class, one bullet from where it was fixed (S3-6). All ten corrected: definitions,
+restorations, and disclosures almost throughout.
+
+**Round 4 (on the round-3 corrections — the bounded final round): FAIL — 8 findings
+(S4-1…S4-8), two high; 6 of 8 closable by disclosure or one clause.** The four-round
+pattern is now data: **every disclosure-shaped fix survived attack; every mechanism
+added in a correction drew new findings** (10 → 8 → 10 → 8). Per the
+stop-when-not-converging rule, round 4's findings are recorded as the seam's
+**standing residue** in the spec's § Seam-pass verdicts — with inline ⚠ markers on the
+two clauses it broke (the tense-split overlap rule, S4-1/S4-4; the soft-delete
+scoping, S4-3), the disproven "every marker-unset state" overclaim corrected at all
+three closure sites (S4-2: a never-delivered cluster past the window has *neither*
+derivation source — an open ruling that collides with F22's delivery-write rule), the
+F-G record balanced with rule 1's branch cost (S4-6: an ungated ever-present card is
+CE-8's wallpaper — D28's own hazard), and fixture 12(a′)'s premise pinned to the
+reachable path (S4-5).
+
+**Where the seam stands:** the durable-card architecture is written (6a + rules 1/3/6
+re-anchored), attacked four times, and honest about itself — F-C closed for
+marker-unset states within the window; the marker-set half held with F-G as fixture
+12(e)/(f); S4-1…S4-8 recorded with fix classes; both W2 waves still gated. Of the four rounds'
+thirty-six findings (10 + 8 + 10 + 8), every one drew an in-session edit —
+correction, restructure, or recorded disclosure — except the four raised as the
+standing residue: **S4-1** (one clause of mechanism), **S4-2's ruling**
+(persist-on-evaluation vs F22), **S4-3's scoping line**, and **S4-4's composition
+clause**; S4-7's two pointers ride whichever session takes those.
 
 ## Why one seam only
 
