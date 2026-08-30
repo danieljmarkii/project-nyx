@@ -23,6 +23,7 @@ const { DatabaseSync } = require('node:sqlite');
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  pushGuardColumn,
   SYNC_QUEUES,
   QUARANTINE_COLUMNS,
   MAX_SYNC_ATTEMPTS,
@@ -307,6 +308,49 @@ describe('SYNC_QUEUES covers the real schema (B-398, the B-424 shape)', () => {
       expect({ table: q.table, has: columns.includes(q.pendingSince) })
         .toEqual({ table: q.table, has: true });
     }
+  });
+
+  // ── The CUL-691 guard's own fail-closed check ──────────────────────────────
+  //
+  // markSynced reads pushGuardColumn to decide whether to compare `updated_at`
+  // before flipping a row synced. That decision is only correct if `pendingSince`
+  // and "does this table carry updated_at" are THE SAME FACT — a table that has the
+  // column but declares `created_at` would be marked UNGUARDED at runtime while the
+  // type system believes it is guarded, which is the silent-unguarded outcome the
+  // whole mechanism exists to prevent.
+  it('declares pendingSince = updated_at for EVERY table that has one', () => {
+    const withUpdatedAt = TABLES_WITH_COLUMN(db, 'updated_at');
+    const mismatched = SYNC_QUEUES.filter(
+      (q) => withUpdatedAt.includes(q.table) && q.pendingSince !== 'updated_at',
+    ).map((q) => q.table);
+    // If this fails: the named queue can be rewritten by an owner while its own
+    // push is in flight, and markSynced would flip it synced without checking —
+    // stranding that change forever (a soft delete included).
+    expect(mismatched).toEqual([]);
+  });
+
+  it('guards exactly the queues whose rows can change, and no others', () => {
+    const withUpdatedAt = TABLES_WITH_COLUMN(db, 'updated_at');
+    expect(
+      SYNC_QUEUES.map((q) => [q.table, pushGuardColumn(q.table)] as const),
+    ).toEqual(
+      SYNC_QUEUES.map(
+        (q) => [q.table, withUpdatedAt.includes(q.table) ? 'updated_at' : null] as const,
+      ),
+    );
+    // The insert-only pair is the whole of the unguarded set, stated rather than
+    // implied: an attachment row is written once and never edited, so there is no
+    // version of it to compare. Anything else appearing here is a new queue that
+    // slipped past the check above.
+    expect(SYNC_QUEUES.filter((q) => pushGuardColumn(q.table) === null).map((q) => q.table))
+      .toEqual(['event_attachments', 'vet_visit_attachments']);
+  });
+
+  it('answers null for a table it has never heard of — never a default guard', () => {
+    // A caller reaching it with an unregistered table gets "no guard", which
+    // markSynced turns into a refusal to mark. The safe direction: the rows stay
+    // queued and re-push, rather than being flipped on an assumption.
+    expect(pushGuardColumn('brand_new_mirror')).toBeNull();
   });
 });
 
