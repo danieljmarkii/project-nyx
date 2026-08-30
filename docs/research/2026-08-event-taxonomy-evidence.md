@@ -4,7 +4,7 @@
 **Status:** 🧊 Frozen point-in-time evidence capture (research brief — see `docs/research/README.md`)
 **Track:** B-756 / CUL-509 (event-type taxonomy expansion). Consumed by `docs/nyx-event-taxonomy-requirements.md` (the scored leaf matrix cites this file per cell).
 **Method:** Three isolated web-research agents run in parallel during the 2026-08-23/24 spec session (the deep-dive's lane method): Sweep A = population prevalence (insurance claims, primary-care prevalence, presenting complaints); Sweep B = competitor capture-menu teardown at leaf grain; Sweep C = validated-instrument item inventories + home-RRR literature. Reports reproduced below near-verbatim (agent meta-lines removed). **Committed the same session it was produced** — the original C2 taxonomy study (2026-08-13/14) was an agent brief that never got committed and survives only as a summary on CUL-509; this file exists so that cannot happen twice.
-**Verification status:** URLs are agent-sourced and inline; the standard adversarial fact-check pass has NOT yet run on these claims (spec §17 carries the debt). Sweep A self-labels source grades ([peer-reviewed] / [press-release] / [press-coverage]) and passed internal arithmetic spot-checks; treat press-release-grade rankings as rankings, not rates.
+**Verification status:** URLs are agent-sourced and inline; the standard adversarial fact-check pass has NOT yet run on these claims (spec §17 carries the debt). **Superseded 2026-08-30 — see §V at the foot of this file:** the W2-anchor slice was discharged by the 2026-08-26 hard review and the remainder by the CUL-671 verification pass. Claims corrected there carry an inline ⚠ pointer here. Sweep A self-labels source grades ([peer-reviewed] / [press-release] / [press-coverage]) and passed internal arithmetic spot-checks; treat press-release-grade rankings as rankings, not rates.
 
 ---
 
@@ -194,8 +194,8 @@ Ranked by combined weight of evidence (frequency across independent sources × s
 | 8 | **Urinary signs** (straining, frequency, blood, out-of-box) | NW25 D7; EMB D4 | NW25 C2; NW22 C2; ER cat dysuria #4; AGR lower-urinary top-3 both eras |
 | 9 | **Lameness / limping / mobility change** | TRU D3; VC-D lameness 2.65% + OA 2.34%; NW25 D4; ROB dog #2 (3.9%) | NW25 C5; VC-C OA 1.4% (under-diagnosed — jump hesitation is the loggable proxy) |
 | 10 | **Oral/dental signs** | VC-D periodontal 12.52% (#1); BAN 76%; NW25 D6 | VC-C periodontal 15.2% (#1); BAN 68%; NW25 C4 — caveat: mostly vet-found, weakly owner-reported (ROB) |
-| 11 | **Lump / mass found** | ROB dog #1 sign (5.8%); TRU D5; VC-D skin mass + lipoma | VC-C abscess 3.1%; EMB C2 |
-| 12 | **Breathing signs** (labored breathing, cough, sneeze, resting rate) | ER D2 dyspnea; NW25 D8 heart disease (cough proxy); VC-D murmur 2.13% | ER C1 dyspnea (cats' #1 ER complaint); NW25 C8 resp infection; VC-C murmur 4.4% |
+| 11 | **Lump / mass found** | ROB dog #1 sign (5.8%); TRU D5; VC-D skin mass + lipoma ⚠ §V.1f — denominator is *presented problems* | VC-C abscess 3.1%; EMB C2 |
+| 12 | **Breathing signs** (labored breathing, cough, sneeze, resting rate) | ER D2 dyspnea; NW25 D8 heart disease (cough proxy); VC-D murmur 2.13% | ER C1 dyspnea (cats' #1 ER complaint) ⚠ §V.1a — #1 in the *one published* ranking; NW25 C8 resp infection; VC-C murmur 4.4% |
 | 13 | **Trauma / wound / injury** | NW25 D5; ER D3 | VC-C wound 2.1% + abscess 3.1%; AGR trauma #1 claim cause 1999–2006; ER C3 |
 | 14 | **Lethargy / energy change** | ER D5 | ER C5 — weak standalone, strong ER-visit driver |
 | 15 | **Eye signs** | VC-D conjunctivitis 2.24% | ROB cat #5 ocular discharge (2.8%); VC-C conjunctivitis 1.6% |
@@ -239,7 +239,7 @@ Ranked by combined weight of evidence (frequency across independent sources × s
 - Sources: https://petdesk.com/products/veterinary-mobile-app · https://petdesk.com/blog/using-petdesk-to-remember-pet-medications
 
 ## B2. Everkin
-**Verdict: closest philosophical analog — structured symptom log + unified Timeline + auto-surfaced correlations.** (All sources vendor marketing; treat sub-field claims accordingly.)
+**Verdict: closest philosophical analog — structured symptom log + unified Timeline + auto-surfaced correlations.** (All sources vendor marketing; treat sub-field claims accordingly.) **⚠ §V.4c — re-verified 2026-08-30; the smart-insights Timeline is an Everkin+ (paid) feature.**
 - Trackers (vendor labels): **Weight · Symptoms · Feedings · Bathroom Habits · Glucose Levels · Seizures · Grooming · Activity · Medications · Allergies · Food Preferences · Medical Conditions · Daily check-ins and mood · Vet visits · Vaccinations/records**
 - Sub-detail: symptoms carry "severity levels, detailed notes, and timestamps" + photos; bathroom habits "frequency, consistency, and abnormalities"; glucose linked to meals/insulin; seizures "duration, severity, and trigger analysis"; all feed a Timeline with "smart insights that surface correlations automatically."
 - Species-conditional: none (dogs, cats, others — same menu).
@@ -338,7 +338,7 @@ Condition-specific routine logging: medications (pill reminders) · **symptom di
 
 ### §B-B Whitespace — types NO competitor structures as a typed, fielded owner event
 1. **Vomit as a first-class typed event** — symptom-menu entry (PetLog) or free text at best; nobody gives it its own type with characteristics/photo analysis.
-2. **Meal outcome / partial intake / refusal** — meals logged as given, never offered-vs-eaten; nobody structures decline. (Directly validates the intake-is-not-preference wedge.)
+2. **Meal outcome / partial intake / refusal** — meals logged as given, never offered-vs-eaten; nobody structures decline. (Directly validates the intake-is-not-preference wedge.) **⚠ §V.4a — FALSE as stated: PetLog shipped "Reluctant" / "Barely ate" on 2026-08-10. The surviving claim is that nobody *routes* a decline toward a health signal.**
 3. **Medication administration outcome** — every med log assumes given/complete; no refused/spat-out/unconfirmed states anywhere.
 4. **Respiratory events** (coughing, sneezing, labored breathing) as typed events — symptom-list entries at best.
 5. **Skin / ear / eye observations** with structured fields — only 11pets' generic "medical incident."
@@ -354,7 +354,7 @@ Condition-specific routine logging: medications (pill reminders) · **symptom di
 3. **DogLog** — richest fast-capture menu (12 one-tap defaults + custom buttons + multi-caretaker feed); light on clinical sub-fields.
 - Honorable mentions: **Everkin** (nearest strategic rival in concept; vendor-marketing-sourced), **RVC** (deepest single-domain fields; the template for episode-type events).
 
-**Pricing note:** where logging is paywalled, the gate falls on *clinical* types — glucose + seizures (Everkin+), vaccination/medical records (DogLog, 11pets), pet count (nearly all). No competitor keeps all health capture free — a direct Pets > $ differentiation point.
+**Pricing note:** where logging is paywalled, the gate falls on *clinical* types — glucose + seizures (Everkin+), vaccination/medical records (DogLog, 11pets), pet count (nearly all). No competitor keeps all health capture free — a direct Pets > $ differentiation point. **⚠ §V.4b — overstated; DogLog's and PetLog's gates fall on records and pet count, not capture. Do not publish the flat form.**
 
 ---
 
@@ -391,6 +391,8 @@ Condition-specific routine logging: medications (pill reminders) · **symptom di
 **Reading for taxonomy:** a single-item **rating**, but the anchors are frequency + context-disruption facts — scratching/licking/chewing **episode events with context flags** (during eating/play? at night? woke from sleep? continued despite distraction?) can reconstruct the tier.
 
 ## C5. Feline lower urinary tract signs (FLUTD/FIC) — owner-observable sign lists
+
+> ⚠ **§V.3** — breadth slice discharged 2026-08-30. All seven rows below are confirmed; the 2025 consensus adds the periuria-vs-spraying distinction, the vocalising pairing, the named non-specific tail and the overgrooming pain attribution. **The three Stella 2011 relative risks below are unverified — do not repeat them.**
 No validated scored index; the literature uses sign checklists:
 - **iCatCare/ISFM consensus 2025**, J Feline Med Surg, open access https://pmc.ncbi.nlm.nih.gov/articles/PMC11816079/ : LUTS = "variable combinations of dysuria, haematuria, periuria, pollakiuria and stranguria." Home-monitoring guidance verbatim: monitor "perineal staining, over-grooming of the abdomen, perineum or hindlimbs, and unusual urination indoors"; "The colour and volume of urine passed should be recorded, if known (eg, by assessing the size of the deposit [or 'clump'] where clumping litter is used)."
 - **Buffington MEMO 2006**, J Feline Med Surg 8(4):261–268, https://journals.sagepub.com/doi/10.1016/j.jfms.2006.02.002 (paywalled): owner-reported signs = hematuria, dysuria, stranguria, periuria, pollakiuria; outcome tracked as owner-reported recurrence (median weekly → never).
@@ -448,7 +450,7 @@ Owner-observable event shapes across these: a coughing episode (time-of-day, tri
 | 14 | Defecated outside box | perichezia event | Stella 2011 (RR 9.8) |
 | 15 | Coughing episode | `cough` event (time-of-day, trigger) | FETCH/CATCH cough items; FLAD frequency; JFMS sliders |
 | 16 | Respiratory-distress episode / wheeze | respiratory-distress event | FLAD; **emergency escalation** |
-| 17 | **Sleeping/resting respiratory rate** | RRR measurement event (count breaths, pet asleep) | CHF monitoring (§C-C); HHHHHMM Hurt; **the best-validated owner-collected numeric in veterinary medicine** |
+| 17 | **Sleeping/resting respiratory rate** | RRR measurement event (count breaths, pet asleep) | CHF monitoring (§C-C); HHHHHMM Hurt; **the best-validated owner-collected numeric in veterinary medicine** | ⚠ §V.1b — unsourced superlative; never publish it
 | 18 | Rested/stopped during a walk | rest-stop count on walk event | LOAD item 10 |
 | 19 | Stiff after rest / struggled to rise / refused stairs or jump | discrete mobility observation events | LOAD 5/12, CBPI Rising/Climbing, FMPI level-4 proxies (not full score substitutes) |
 | 20 | Seizure / stumble episode | seizure / stumble events | HHHHHMM Mobility; RVC template |
@@ -466,11 +468,11 @@ All four primary studies used **owner-collected counts at home**:
 |---|---|---|---|
 | Rishniw M et al., Res Vet Sci 2012;93(2):965–969, https://pubmed.ncbi.nlm.nih.gov/22240295/ | Healthy adult dogs, owner-measured, 12–14 one-minute counts | 114 | Mean SRR 13/min; RRR 19/min; healthy dogs "generally have SRR(mean) <30 breaths/min and rarely exceed this rate at any time" |
 | Ohad DG et al., JAVMA 2013;243(6):839–843, https://pubmed.ncbi.nlm.nih.gov/24004231/ | Dogs, subclinical left-sided heart disease, home | 190 | SRRmean 16/min; only 1 dog >30/min; subclinical dogs "generally had SRRmean < 25 breaths/min" |
-| Ljungvall I et al., JFMS 2014;16(4):281–290, https://pubmed.ncbi.nlm.nih.gov/24170428/ | 87 healthy + 54 subclinical-heart-disease cats, 8–10 occasions | 141 | Median SRRmean ≈21/min; healthy + mild/moderate cats consistently <30/min; SRRmean >30/min "likely warrant additional evaluation" |
+| Ljungvall I et al., JFMS 2014;16(4):281–290, https://pubmed.ncbi.nlm.nih.gov/24170428/ | 87 healthy + 54 subclinical-heart-disease cats, 8–10 occasions ⚠ §V.1e — the 87 = 59 echo-normal + 28 apparently healthy | 141 | Median SRRmean ≈21/min; healthy + mild/moderate cats consistently <30/min; SRRmean >30/min "likely warrant additional evaluation" |
 | Porciello F et al., Vet J 2016;207:164–168, https://pubmed.ncbi.nlm.nih.gov/26639825/ | Medically-controlled CHF dogs (51) + cats (22), home | 73 | Median SRRmean 20/min both species; "Most dogs and cats with CHF that is medically well-controlled and stable have SRRmean and RRRmean <30 breaths/min at home" |
 
 **Operational thresholds the field uses:** SRR **<30/min = normal / well-controlled** (both species, all four studies); **sustained >30/min = decompensation flag** warranting vet contact; some MMVD dog guidance uses >40/min as the overt-failure alarm. Trend over repeated counts matters more than a single reading. Practice summary: https://www.cliniciansbrief.com/article/home-respiratory-rate-monitoring-dogs-cats .
-**App precedent:** Ceva **Cardalis** RRR app — tap once per breath for 30 s; converts to breaths/min; graphs trend; flags >30 (and MMVD >40). https://apps.apple.com/us/app/cardalis/id569166179 · https://play.google.com/store/apps/details?id=com.ceva.cardalisv2&hl=en_US . Emerging automation: smartphone audio/video RR in sleeping dogs, 27 dogs, good agreement (https://www.nature.com/articles/s41598-025-25305-9). No peer-reviewed outcome study of Cardalis itself found.
+**App precedent:** Ceva **Cardalis** RRR app — tap once per breath for 30 s; converts to breaths/min; graphs trend; flags >30 (and MMVD >40). **⚠ §V.1c — neither threshold is verifiable as app behaviour; the >30 operational threshold stands on the four primary studies, not on this app.** https://apps.apple.com/us/app/cardalis/id569166179 · https://play.google.com/store/apps/details?id=com.ceva.cardalisv2&hl=en_US . Emerging automation: smartphone audio/video RR in sleeping dogs, 27 dogs, good agreement (https://www.nature.com/articles/s41598-025-25305-9). No peer-reviewed outcome study of Cardalis itself found.
 
 ## C — Cross-cutting cautions
 1. **Paywalled/gated content honestly held back:** FCEAI anchors, FETCH-Q/CATCH-Q item lists, FMPI phrasing (NC State license), VAScat items, VetMetrica items. Derive against published structures; never invent anchor text.
@@ -478,3 +480,82 @@ All four primary studies used **owner-collected counts at home**:
 3. **A derived score is not the validated instrument.** Deriving "CIBDAI-equivalent" numbers from events is defensible arithmetic on published anchors; claiming the validated instrument's clinical meaning requires the instrument as administered. Report derived indices as "computed from logged events using the CIBDAI/CCECAI item definitions."
 4. **Frequency-anchored ratings are the conversion frontier:** CCECAI pruritus, PVAS tiers, LOAD item 10, FLAD cough frequency — ratings whose anchors are event counts + context flags; the highest-yield derive-don't-ask targets.
 5. **The dropped-item evidence is as useful as the kept items:** CBPI discarded 'mood' and 'sleep' for owner-reliability failure — don't build items owners can't actually witness (the confirmability-gate lesson, independently rediscovered by the pain-instrument field).
+
+---
+
+# §V — Verification pass (2026-08-30, CUL-671)
+
+**Additive, dated, and not a rewrite.** This is a frozen brief (`docs/research/README.md`), so nothing above this line was edited. Every claim this pass touched keeps its original wording in place and carries an inline **⚠ §V.n** pointer to the row here that corrects it — the same shape the taxonomy spec uses for its §9b. Read the claim, then read the correction; the pair *is* the record of what we believed and what we checked.
+
+**Scope.** Discharges the three items `docs/nyx-event-taxonomy-requirements.md` §17 still carried after the 2026-08-26 hard review: (1) the HR-29 corrections fold-in, (2) the remaining fact-check breadth — the FLUTD sign-list beyond what W2 needs, and the competitor claims — and (3) the re-query scope rule, which was **verified as already written into §17 and §2 by the v1.3 pass** and is therefore recorded here, not re-done.
+
+**Headline: no matrix ranking moves — again. But two claims did not survive**, and both are competitive rather than clinical: §B-B whitespace #2 was already false on the day this pack was committed (§V.4a), and the "no competitor keeps all health capture free" line is overstated (§V.4b). Neither had reached public materials — which is precisely what §17's "re-verify before any public-materials use" gate existed to catch.
+
+## §V.1 The HR-29 corrections, folded in
+
+| # | The claim as published | The verified position | Source checked |
+|---|---|---|---|
+| **a** | §A4 #12 — "cats' #1 ER complaint" | **"#1 in the one published ranking"** — a single Korean referral ER (Kim 2014, cat n=396). Referral caseloads over-weight acuity, so this is not "#1 ER complaint" full stop. Spec §5 row 4 already carries the softened form. | §A3.2 as published |
+| **b** | C-§A row 17 — "the best-validated owner-collected numeric in veterinary medicine" | **Unsourced superlative — never publish it.** Nobody has ranked owner-collected measures against each other. Defensible only as "arguably, in veterinary *cardiology*"; what is genuinely unusual, and is the claim to make, is that **four primary studies used owner-collected home counts** (§C-C). | §C-C's own four rows |
+| **c** | §C-C — Cardalis "flags >30 (and MMVD >40)" | **Neither threshold is verifiable as app behaviour.** Re-checked 2026-08-30: the public App Store description states no numeric threshold at all — it offers "Easily measure respiratory rate at rest", "Record and track results over time", and "Contact your veterinarian if values increase or if you have concerns." The **>30 operational threshold stands on the four primary studies + the Clinician's Brief practice summary**, which is where it should have been cited from; **>40 is dog-MMVD practice guidance, not an app behaviour.** What the Cardalis citation supports is exactly what spec §5 row 5 uses it for — a tap-counter RRR app exists and graphs a trend. Nothing more. | https://apps.apple.com/us/app/cardalis/id569166179 |
+| **d** | The never-hairball rule's Cornell citation (lives in `docs/research/2026-08-signals-deep-dive.md` §4, not in this pack) | **Cornell carries the prevalence, not the confusion.** The Cornell Feline Health Center asthma page says "Asthma is a disease of the lower airways of the lungs that affects between 1 and 5% of cats" and **does not mention hairballs at all**. Cite Cornell for prevalence; cite **VCA** for the confusion — "It is often confused with 'bringing up a hairball,' but no hairball is produced" and "Cats will crouch down and extend their neck when they cough." VCA also independently sources the cough↔vomit cross-contamination caveat the rule rests on: "Severe bouts of coughing may end with a retch and a cat may even bring up stomach contents, such as bile." Of HR-29(d)'s three proposed replacements, **one is dead and one is a vendor** — see §V.4f and below. | Cornell asthma page; https://vcahospitals.com/know-your-pet/coughing-in-cats |
+| **e** | §C-C — Ljungvall "87 healthy" cats | The 87 pools **59 echocardiographically normal + 28 apparently healthy** cats, the second group defined without echo screening. Verbatim from the abstract. **Nothing moves:** <30/min is reported for the EN, AH *and* mild/moderate SHD groups alike, so the threshold does not depend on the pooling. | Ljungvall 2014 abstract (JFMS 16(4):281–290) |
+| **f** | §A4 #11 / §A3.1 — the lump claim | **Attribution is already correct in this pack** — ROB = Robinson 2015, direct observation, and §A3.1 gives the fraction (125/2,158). The correction is a **phrasing rule for consumers**: the denominator is *presented problems*, not dogs — "the most commonly owner-reported presenting sign in dogs (**5.8% of presented problems**)." Spec §5 row 14 currently omits the denominator → residual, §V.5. | §A3.1 as published |
+| **g** | *(new, per CUL-671)* the ISFM quotation rule 8 asked for | See §V.2. | PMC11816079 |
+
+None of the seven moves a matrix ranking, a floor, or a threshold.
+
+## §V.2 The ISFM quotation — and a precision finding on how spec §9a rule 8 cites it
+
+Rule 8 closes with "Put the quotation in the evidence pack." Verified verbatim 2026-08-30 from the **2025 iCatCare/ISFM consensus guidelines** (open access, https://pmc.ncbi.nlm.nih.gov/articles/PMC11816079/):
+
+> "Urethral obstruction (UO), which occurs almost exclusively in male cats, is a manifestation of LUT disease with life-threatening complications." — *Introduction*
+
+**Half of rule 8's attribution sentence is right, and the half that isn't should be narrowed.** The rule says the consensus "carries the every-cat lead sentence and the male intensifier verbatim."
+
+- **The male intensifier is verbatim** — the sentence above. The sex branches now cite a source rather than a house judgement, which is what rule 8 wanted.
+- **The every-cat lead sentence is ours.** The consensus contains no owner-facing sentence of the form "Straining without passing pee needs a vet today." What it carries is the *warrant* for one, and the warrant is solid: "almost exclusively" is not "exclusively", so **a female cat is not exempt**; UO is characterised by "life-threatening complications"; and the triage instruction is population-wide — "Cats presenting with LUTS should be triaged rapidly (Box 7) to determine if they have UO."
+
+The rule is clinically sound and **unchanged** — only its attribution needs narrowing, from *"carries … verbatim"* to *"the male intensifier verbatim; the lead sentence is ours, warranted by the consensus's 'almost exclusively' and its population-wide triage instruction."* Proposed as a Tier-2 spec edit, not written (§V.5). This is the same defect class as §V.1a and §V.1b — an attribution stated one notch stronger than the source supports — which is why it belongs in this pass rather than being waved through as a discharged slice.
+
+## §V.3 FLUTD sign-list breadth — the remaining slice, discharged
+
+Re-read the 2025 consensus for owner-observable breadth **beyond** the strain cluster W2 needs and §C5 was written for. **All seven rows of §C5's table are confirmed.** The consensus adds four things a future FLUTD leaf design must know, none of which touches W2:
+
+1. **Periuria must be distinguishable from spraying.** Verbatim: *"Distinguishing periuria from urine spraying is essential to differentiate medical and behavioural causes"*, and LUT disease *"should be excluded before a behavioural cause is assigned."* §C5's table carries one `Periuria` row with no spraying distinction, and spec leaf 6 (`urine_outside_box`, one species-neutral key) inherits that gap. **A W3+ capture-design finding, not a W2 one** — and the safe direction is the consensus's own: a leaf that cannot tell them apart routes toward the **medical** read, never the behavioural one. (Same shape as the intake-is-not-preference invariant: the ambiguous case does not get resolved toward the benign reading.)
+2. **Vocalising belongs to the strain presentation** — *"Straining unproductively (and sometimes also vocalising) in the litter tray."* §C5 files vocalising under dysuria; the consensus pairs it with unproductive straining. Both readings are event-attributes, so nothing changes structurally — but a strain leaf's optional attribute set should carry it.
+3. **The non-specific tail is named, and named as overlapping** — *"lethargy and hyporexia"*, *"weight loss, polydipsia/polyuria and gastrointestinal signs"*, which the consensus notes overlap with comorbidities such as CKD. A FLUTD-flavoured lane must not read these as urinary; they are the cat chronic-disease cluster §A4's structural note already routes elsewhere.
+4. **Overgrooming carries a stated meaning** — *"Overgrooming of the abdomen, perineum and hindlimbs, indicating underlying pain."* §C5's barbering row is confirmed and gains the pain attribution, which matters for spec leaf 10 (`overgrooming`), currently sourced to the sign list alone.
+
+**And one numeric claim in §C5 does not survive as stated.** §C5 cites Stella 2011 with three per-behaviour relative risks — "decreased food intake (RR 9.3…), defecation outside box (RR 9.8), urination outside box (RR 1.6)". The paper is paywalled; the accessible release for the same study reports **12 healthy cats and 20 cats with FIC, over 77 weeks**, a **3.2-fold** increase in sickness behaviours when routine was disrupted, and that "vomiting, urination or defecation outside the litter box and decreased food intake" accounted for **88% / 78%** of all sickness behaviours (healthy / FIC). **The three RRs could not be corroborated from any accessible source, and the pack never states the study's n (32 cats)** — a small-n study cited without its n, with unverifiable per-behaviour numbers. **Do not repeat the RRs.** The structural claim §C5 actually draws from the study — that this domain is *counted as discrete daily events, not rated* — is unaffected, and is what spec leaf 6 cites it for. (Leaf 6's citation reads "Stella 2011 counts it as daily events, RR 1.6–9.8"; the first clause survives, the second should go — §V.5.)
+
+## §V.4 Competitor claims — re-verified, and two do not survive
+
+Method as Sweep B: text sources only, no installs. All re-checked 2026-08-30.
+
+**a) §B-B whitespace #2 is FALSE — and was false on the day this pack was committed.**
+The row reads: *"Meal outcome / partial intake / refusal — meals logged as given, never offered-vs-eaten; nobody structures decline. (Directly validates the intake-is-not-preference wedge.)"*
+**PetLog** (LogFor.Life — this pack's own §B-C #1 benchmark) shipped **v2.2.1 on 10 Aug 2026**, fourteen days before this pack was committed, adding eating-behaviour categories **"Reluctant" (eats listlessly but tries)** and **"Barely ate"**. That is offered-vs-eaten, typed and structured. The sweep was already stale on this row at publication — and it is the row annotated as validating the wedge, so the correction matters more than its size suggests.
+**What survives, and is the claim to make instead: nobody *routes* a decline toward a health signal.** Capture is no longer whitespace; **interpretation still is** — and interpretation is what the invariant is actually about (a refusal is frequently a disease signal, never a preference; CLAUDE.md § safety invariants). A differentiation claim resting on *"nobody captures it"* is now false; one resting on *"nobody acts on it"* is still standing, and was the stronger claim all along.
+*No matrix cell moves:* the §5 leaf matrix's E axis cites §B-B #4/#7/#9/#10 and §B-A — never #2, because meal refusal is shipped Nyx behaviour rather than a candidate leaf.
+*And the gate held:* `docs/store-listing-copy.md`'s competitive line sources the diet-trial lane to `docs/culprit-competitive-landscape-2026-07.md`, not to this claim, so **nothing public rests on it.**
+
+**b) "No competitor keeps all health capture free" is overstated.**
+The §B-C pricing note calls this *"a direct Pets > $ differentiation point"* — the most public-materials-bound sentence in the sweep, and therefore the one §17's gate most exists for. **DogLog**'s paywall (now **$3.99/mo or $39.99/yr**) falls on **records and pet count** — "adding vaccinations and medical info", plus the per-pack pet limit — while the one-tap capture menu it is ranked for (Food · Water · Treat · Walk · Pee · Poop · Sleep · Teeth brushing · Grooming · Training · Medicine · Custom, plus stool quality and temperature) reads as free. **PetLog** likewise states "no login or subscription needed for basic features."
+**The accurate version is narrower and still ours: no competitor keeps all health capture free *and* free of a pet-count gate.** Every product surveyed gates something — but for at least two, the gate is on *records* or *pet count* rather than on capture itself. **Do not publish the flat form.**
+
+**c) Everkin — pricing and gating hold; one scope correction.** $6.99/mo, $49.99/yr confirmed; free tier still 2 pets + weight/feedings/bathroom habits/symptoms/vet visits; Everkin+ still gates glucose, seizures, PDF summaries, household sharing, unlimited pets. **Correction:** §B2 presents the Timeline "with smart insights that surface correlations automatically" as a general feature — the current site lists **"health timeline with smart insights" under Everkin+**. Everkin's *insight* layer is paid, which **sharpens** the Pets > $ contrast rather than blunting it. New platform state: iPhone only, iPad and Android "coming soon", web "later in 2026". All still vendor-marketing-grade; the sub-field claims remain uninstallable-unverified, exactly as §B2 warns.
+
+**d) PetLog now advertises analysis, not just capture** — "AI-powered insights to detect patterns and potential health issues" (App Store description). Vendor-grade, unverifiable without an install. **Consequence: the flat claim "no competitor computes food↔symptom correlation" — carried in `docs/research/README.md`'s row for the signals deep-dive — can no longer be published as stated.** It is now contested by a vendor claim nobody here has checked. Either install and check, or narrow the claim to what a text source supports.
+
+**e) Whistle → Tractive holds.** `whistle.com` returns 301 → `tractive.com` (checked 2026-08-30). §B7's archival framing stands.
+
+**f) One cited source is dead.** PetHealthNetwork's "5 Tricky Conditions You Might THINK are Hairballs" now 301s to an IDEXX category page — the article is gone. It was named in HR-29(d) as a replacement citation; **do not use it.** Of that trio, **Trudell** is a vendor selling the AeroKat inhalation chamber, so it is corroboration rather than authority (*"Because cat hairballs are mistakenly believed to be so common, sometimes cats who are heard coughing and retching are assumed to be coughing up a hairball, which may not be the problem"*), and **Hill's** is likewise commercial. **Lead with VCA** (§V.1d) — clinic-grade, and it carries the posture and post-tussive sentences too.
+
+## §V.5 What is still owed after this pass
+
+- **Tier-2 spec edits this pass surfaced — proposed, not written** (Documentation Update Protocol): §5 row 14's lump denominator (§V.1f) · §5 leaf 6's "RR 1.6–9.8" clause (§V.3) · §9a rule 8's attribution sentence (§V.2). None changes a ruling, a floor, a threshold or a score.
+- **The three Stella 2011 RRs**, if the domain ever needs them — paywalled paper, needs institutional access.
+- **Any competitive claim about *analysis*** (Everkin's correlation surface, PetLog's AI insights) now needs an install; text sources cannot settle it.
+- **The §15 real-vet answers** — unchanged, still outstanding.
+- Pricing and feature claims date fast: three of the six products re-checked here had moved since the 24 Aug sweep. **Re-verify at use, not at citation.**
