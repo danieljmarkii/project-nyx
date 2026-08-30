@@ -396,6 +396,65 @@ Deno.test('computeLookbackIso: an old since-visit window is still fully covered 
   assert.ok(Date.parse(iso) < NOW_MS - 180 * MS_PER_DAY, 'floor must precede the 180d base for an old window')
 })
 
+// ── B-613 — the trial term on the pull floor ────────────────────────────────
+//
+// The trial-crop disclosure counts symptoms in the trial days a window crops, and that
+// count is only a TOTAL if the pull actually reached them. `since_visit` can crop more
+// than the existing 90d pre-window buffer off a long trial's head, so the floor gains a
+// third term — bounded, and never one that raises the floor.
+
+const emptyScopeInput = (over: Record<string, unknown> = {}) => ({
+  now: NOW, timezone: null,
+  pet: mapPet({ id: 'p', name: 'x', species: 'dog' as const, breed: null, sex: 'unknown' as const, date_of_birth: null, weight_kg: null }),
+  ownerName: null, events: [], aiAnalyses: [], weightChecks: [], doses: [], medications: [],
+  dietTrials: [], vetVisits: [], feedingArrangements: [], conditions: [],
+  ...over,
+})
+
+Deno.test('B-613 computeLookbackIso: a trial starting before the window stretches the pull to its start', () => {
+  // A visit 20 days ago over a trial started 200 days ago: the window opens at the visit,
+  // the existing terms floor at now-180d, and the trial's own head still sits 20 days
+  // further back — exactly the span the block now discloses and could not have counted.
+  const visit = new Date(NOW_MS - 20 * MS_PER_DAY).toISOString().slice(0, 10)
+  const trialStart = new Date(NOW_MS - 200 * MS_PER_DAY).toISOString()
+  const scope = resolveScope(emptyScopeInput({
+    vetVisits: [{ visitedAt: visit, clinicName: null, vetName: null, reason: null }],
+  }))
+  const without = computeLookbackIso(scope, NOW_MS)
+  const withTrial = computeLookbackIso(scope, NOW_MS, trialStart)
+  assert.equal(without, new Date(NOW_MS - 180 * MS_PER_DAY).toISOString())
+  assert.equal(withTrial, trialStart, 'the pull now reaches the trial start exactly')
+  assert.ok(Date.parse(withTrial) < Date.parse(without))
+})
+
+Deno.test('B-613 computeLookbackIso: the trial term never RAISES the floor', () => {
+  // The first report of any trial: the trial starts inside the window, so the term is
+  // inert and the pull is byte-identical to what shipped before B-613. This is the
+  // property that makes the new argument safe to add to every call.
+  const scope = resolveScope(emptyScopeInput())
+  const inside = new Date(NOW_MS - 5 * MS_PER_DAY).toISOString()
+  assert.equal(computeLookbackIso(scope, NOW_MS, inside), computeLookbackIso(scope, NOW_MS))
+  assert.equal(computeLookbackIso(scope, NOW_MS, null), computeLookbackIso(scope, NOW_MS))
+  // An unparseable start is a missing one, never a NaN date.
+  assert.equal(computeLookbackIso(scope, NOW_MS, 'not-a-date'), computeLookbackIso(scope, NOW_MS))
+})
+
+Deno.test('B-613 computeLookbackIso: the stretch is CAPPED at 400d before the window start', () => {
+  // Nothing auto-completes a trial (B-422), so a stale-active row from years ago is the
+  // steady state — and uncapped, one forgotten trial would turn a fortnight-long
+  // `since_visit` report into a multi-year event pull. Past the cap the count does not
+  // become wrong, it becomes a floor and says so.
+  const visit = new Date(NOW_MS - 14 * MS_PER_DAY).toISOString().slice(0, 10)
+  const scope = resolveScope(emptyScopeInput({
+    vetVisits: [{ visitedAt: visit, clinicName: null, vetName: null, reason: null }],
+  }))
+  const ancient = new Date(NOW_MS - 900 * MS_PER_DAY).toISOString()
+  const iso = computeLookbackIso(scope, NOW_MS, ancient)
+  const windowStartMs = Date.parse(`${scope.startDate}T00:00:00.000Z`)
+  assert.equal(iso, new Date(windowStartMs - 400 * MS_PER_DAY).toISOString())
+  assert.ok(Date.parse(iso) > Date.parse(ancient), 'capped short of the trial start')
+})
+
 // ── Integration: raw rows → mappers → assembleReport → renderReport → HTML ────
 
 Deno.test('integration: mapped rows assemble + render to HTML naming the pet', () => {
