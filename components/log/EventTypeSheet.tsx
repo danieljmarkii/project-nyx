@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View,
+  Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet,
+  TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -252,144 +253,177 @@ export function EventTypeSheet({ visible, onClose }: Props) {
         {!switcherVisible && (
           <Pressable style={styles.scrim} onPress={requestClose} accessibilityLabel="Close" />
         )}
-        <View
-          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}
-          // Assistive-tech containment for the switcher layer. As a sibling Modal the
-          // switcher got this from the platform; as a layer it does not, so the sheet
-          // hides itself while the switcher is up — otherwise a screen reader walks
-          // the event grid behind the scrim and can log for the pet being switched
-          // away from. iOS is covered by the panel's own accessibilityViewIsModal;
-          // this is the Android half, which has to come from out here.
-          importantForAccessibility={switcherVisible ? 'no-hide-descendants' : 'auto'}
+        {/* ── KEYBOARD AVOIDANCE (CUL-755) ────────────────────────────────
+            The note field and the summary pill — which IS the save (§0) — are the
+            last two rows of the confirm, and this sheet is bottom-anchored. Without
+            this the iOS keyboard covered both: ~70pt of a 406pt sheet stayed visible,
+            the grabber and most of the header, so the owner typed blind with no
+            visible way to commit. Worse, the only control left above the keyboard was
+            the back chevron — the deliberately UNGUARDED discard (CUL-612) — so the
+            natural escape was the scrim, which raises "Discard this log?". The app was
+            offering a discard dialog as the route to finishing a log.
+
+            This is the shape every other note-bearing surface already uses, including
+            app/log.tsx's flag-off path for this exact field, so flag-on stops being
+            worse than flag-off (the class the D12 host gate exists to catch).
+
+            THE CLAMP LIVES HERE, NOT ON THE SHEET, and that is load-bearing rather
+            than tidy: `maxHeight: '80%'` is a percentage, and a percentage resolves
+            against the parent's content box. A KeyboardAvoidingView is content-sized,
+            so its height is indefinite — leaving the clamp on the sheet under this
+            wrapper resolves it to nothing and SILENTLY DELETES the 80% cap, which
+            looks correct in a jest tree and on a short confirm and only fails on the
+            tall one. So the cap sits on the avoider (whose parent, the backdrop, is
+            flex:1 and definite) and the sheet shrinks into it.
+
+            The scrim and the switcher layer stay OUTSIDE: both are absoluteFill
+            against the backdrop, and moving them in here would re-base them on this
+            view's padding box — the dim would stop covering the strip behind the
+            keyboard. Nothing in either needs to move with the keyboard anyway; the
+            switcher is reachable only from the grid, which has no fields. */}
+        <KeyboardAvoidingView
+          style={styles.avoider}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.grabber} />
+          <View
+            style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}
+            // Assistive-tech containment for the switcher layer. As a sibling Modal the
+            // switcher got this from the platform; as a layer it does not, so the sheet
+            // hides itself while the switcher is up — otherwise a screen reader walks
+            // the event grid behind the scrim and can log for the pet being switched
+            // away from. iOS is covered by the panel's own accessibilityViewIsModal;
+            // this is the Android half, which has to come from out here.
+            importantForAccessibility={switcherVisible ? 'no-hide-descendants' : 'auto'}
+          >
+            <View style={styles.grabber} />
 
-          {/* ── THE GRID STAGE, GATED ON THERE BEING A PET (CUL-681) ────────────
-              The grid does not render without an active pet, so there is no tile
-              to tap into a vanish — the ruled shape (PM, 2026-08-29) is the issue's
-              "a grid that does not accept taps at all", plus its line of copy.
+            {/* ── THE GRID STAGE, GATED ON THERE BEING A PET (CUL-681) ────────────
+                The grid does not render without an active pet, so there is no tile
+                to tap into a vanish — the ruled shape (PM, 2026-08-29) is the issue's
+                "a grid that does not accept taps at all", plus its line of copy.
 
-              One gate closes both halves of the old defect. The in-sheet half was
-              handleSelect's bare onClose(); the routes-out half never reached that
-              guard at all — Meal/Medication/Weight closed the sheet and pushed
-              /log, whose pickers are themselves gated on activePet, so the owner
-              landed on an empty screen under a "What did your pet eat?" header.
+                One gate closes both halves of the old defect. The in-sheet half was
+                handleSelect's bare onClose(); the routes-out half never reached that
+                guard at all — Meal/Medication/Weight closed the sheet and pushed
+                /log, whose pickers are themselves gated on activePet, so the owner
+                landed on an empty screen under a "What did your pet eat?" header.
 
-              Not a rare state, either: the FAB mounts unconditionally in the tabs
-              layout while pets hydrate from a NETWORK read (hooks/usePet.ts) that
-              only runs once the session restores — so every cold start has a
-              window, and on a failed double-read that hook leaves the store empty
-              on purpose. The branch is reactive, so the grid replaces this copy the
-              moment the rows land; no reopen. */}
-          {stage === 'grid' && !activePet && (
-            <EmptyState
-              // Forward-looking, and true for each way an owner arrives here
-              // (Principle 5 / nyx-voice P3). The wording and its clause ORDER moved
-              // to lib/logCopy on CUL-717, when the FAB menu one layer up gained the
-              // same state: two capture surfaces expressing one state, whose copy is
-              // load-bearing enough that two independent copies would drift. The
-              // rationale for the order lives with it there.
-              //
-              // No action button — CUL-678 keeps management rows off a capture
-              // surface, and a push from inside a Modal renders BEHIND it (CUL-662),
-              // so a door here would appear to do nothing.
-              title={noPetCopy.title}
-              body={noPetCopy.body}
-              style={styles.noPet}
-            />
-          )}
+                Not a rare state, either: the FAB mounts unconditionally in the tabs
+                layout while pets hydrate from a NETWORK read (hooks/usePet.ts) that
+                only runs once the session restores — so every cold start has a
+                window, and on a failed double-read that hook leaves the store empty
+                on purpose. The branch is reactive, so the grid replaces this copy the
+                moment the rows land; no reopen. */}
+            {stage === 'grid' && !activePet && (
+              <EmptyState
+                // Forward-looking, and true for each way an owner arrives here
+                // (Principle 5 / nyx-voice P3). The wording and its clause ORDER moved
+                // to lib/logCopy on CUL-717, when the FAB menu one layer up gained the
+                // same state: two capture surfaces expressing one state, whose copy is
+                // load-bearing enough that two independent copies would drift. The
+                // rationale for the order lives with it there.
+                //
+                // No action button — CUL-678 keeps management rows off a capture
+                // surface, and a push from inside a Modal renders BEHIND it (CUL-662),
+                // so a door here would appear to do nothing.
+                title={noPetCopy.title}
+                body={noPetCopy.body}
+                style={styles.noPet}
+              />
+            )}
 
-          {stage === 'grid' && activePet && (
-            <>
-              {/* ── ONE ROW, TWO HOSTS (CUL-682) ──────────────────────────────
-                  Multi-pet wraps the content in the switch control; single-pet
-                  wraps it in a plain View. It used to be ONE TouchableOpacity with
-                  `disabled={!multiPet}`, which is a different claim than it looks:
-                  RN propagates `disabled` into `accessibilityState.disabled`
-                  (TouchableOpacity.js) and iOS maps that to
-                  UIAccessibilityTraitNotEnabled (RCTViewComponentView.mm), which
-                  VoiceOver speaks as "dimmed". So a one-pet household was told a
-                  control was unavailable on a row where there is no control at all
-                  — and the row stayed a focusable responder while being inert.
+            {stage === 'grid' && activePet && (
+              <>
+                {/* ── ONE ROW, TWO HOSTS (CUL-682) ──────────────────────────────
+                    Multi-pet wraps the content in the switch control; single-pet
+                    wraps it in a plain View. It used to be ONE TouchableOpacity with
+                    `disabled={!multiPet}`, which is a different claim than it looks:
+                    RN propagates `disabled` into `accessibilityState.disabled`
+                    (TouchableOpacity.js) and iOS maps that to
+                    UIAccessibilityTraitNotEnabled (RCTViewComponentView.mm), which
+                    VoiceOver speaks as "dimmed". So a one-pet household was told a
+                    control was unavailable on a row where there is no control at all
+                    — and the row stayed a focusable responder while being inert.
 
-                  The VISUAL suppression was always right (no chevron, no chrome —
-                  multi-pet §3.1/§7.8 keeps multi-pet chrome away from a one-pet
-                  account); only the announcement was wrong. Suppressing chrome is
-                  not the same act as claiming a control exists but is off, and one
-                  prop was doing both.
+                    The VISUAL suppression was always right (no chevron, no chrome —
+                    multi-pet §3.1/§7.8 keeps multi-pet chrome away from a one-pet
+                    account); only the announcement was wrong. Suppressing chrome is
+                    not the same act as claiming a control exists but is off, and one
+                    prop was doing both.
 
-                  The single-pet row carries its own label rather than leaning on
-                  the text, because CUL-679's `flexShrink: 1` (which the avatar's
-                  38pt makes necessary) means a long name now ELLIPSES here — and
-                  with no label the full name had nowhere to survive. Multi-pet
-                  never had that problem: its label already spells the name out.
-                  `accessible` is what makes the View one node the label applies to;
-                  without it the label is inert and the disc + text stay separate
-                  stops. */}
-              {multiPet ? (
-                <TouchableOpacity
-                  style={styles.titleRow}
-                  onPress={() => setSwitcherVisible(true)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Log for ${activePet.name} — switch pet`}
-                >
-                  <TitleRowContent name={activePet.name} photoPath={activePet.photo_path} />
-                  <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
-                </TouchableOpacity>
-              ) : (
-                <View
-                  style={styles.titleRow}
-                  // One node, one announcement: "Log for Nyx", no role and no
-                  // disabled trait. `accessible` is load-bearing — without it the
-                  // label never applies and the disc and the sentence stay two
-                  // separate stops, the second of which reads the ellipsed text.
-                  accessible
-                  accessibilityLabel={`Log for ${activePet.name}`}
-                >
-                  <TitleRowContent name={activePet.name} photoPath={activePet.photo_path} />
-                </View>
-              )}
-              <ScrollView style={styles.gridScroll} showsVerticalScrollIndicator={false}>
-                {/* species reads the store's active pet reactively, so a switch in
-                    the panel above re-filters the grid before the next tap (§3). */}
-                <GroupedEventGrid
-                  onSelectType={handleSelect}
-                  expanded={expanded}
-                  species={activePet.species}
-                />
-              </ScrollView>
-            </>
-          )}
+                    The single-pet row carries its own label rather than leaning on
+                    the text, because CUL-679's `flexShrink: 1` (which the avatar's
+                    38pt makes necessary) means a long name now ELLIPSES here — and
+                    with no label the full name had nowhere to survive. Multi-pet
+                    never had that problem: its label already spells the name out.
+                    `accessible` is what makes the View one node the label applies to;
+                    without it the label is inert and the disc + text stay separate
+                    stops. */}
+                {multiPet ? (
+                  <TouchableOpacity
+                    style={styles.titleRow}
+                    onPress={() => setSwitcherVisible(true)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Log for ${activePet.name} — switch pet`}
+                  >
+                    <TitleRowContent name={activePet.name} photoPath={activePet.photo_path} />
+                    <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                  </TouchableOpacity>
+                ) : (
+                  <View
+                    style={styles.titleRow}
+                    // One node, one announcement: "Log for Nyx", no role and no
+                    // disabled trait. `accessible` is load-bearing — without it the
+                    // label never applies and the disc and the sentence stay two
+                    // separate stops, the second of which reads the ellipsed text.
+                    accessible
+                    accessibilityLabel={`Log for ${activePet.name}`}
+                  >
+                    <TitleRowContent name={activePet.name} photoPath={activePet.photo_path} />
+                  </View>
+                )}
+                <ScrollView style={styles.gridScroll} showsVerticalScrollIndicator={false}>
+                  {/* species reads the store's active pet reactively, so a switch in
+                      the panel above re-filters the grid before the next tap (§3). */}
+                  <GroupedEventGrid
+                    onSelectType={handleSelect}
+                    expanded={expanded}
+                    species={activePet.species}
+                  />
+                </ScrollView>
+              </>
+            )}
 
-          {stage === 'confirm' && confirm && (
-            <SimpleEventConfirm
-              type={confirm.type}
-              petId={confirm.petId}
-              petName={confirm.petName}
-              onBack={() => { setStage('grid'); setConfirm(null); setDraft(null); }}
-              onLogged={handleLogged}
-              onDraftChange={setDraft}
-            />
-          )}
+            {stage === 'confirm' && confirm && (
+              <SimpleEventConfirm
+                type={confirm.type}
+                petId={confirm.petId}
+                petName={confirm.petName}
+                onBack={() => { setStage('grid'); setConfirm(null); setDraft(null); }}
+                onLogged={handleLogged}
+                onDraftChange={setDraft}
+              />
+            )}
 
-          {/* `beatSentence` is set in the same handler that sets this stage, so the
-              pair cannot separate; gating on it keeps the beat's required title
-              honest without a fallback string that would re-open the bare-"Logged"
-              door this PR closes. */}
-          {stage === 'done' && beatSentence && confirm && (
-            <SheetLogBeat
-              tone={beatTone}
-              title={beatSentence}
-              // The pet captured at grid→confirm, NOT a re-read active pet: this
-              // names the pet the row was actually written for, and the store's
-              // active pet can have moved on by now (the multi-pet queue-then-switch
-              // guard the completion payloads carry for the same reason).
-              petName={confirm.petName}
-              onDone={onClose}
-            />
-          )}
-        </View>
+            {/* `beatSentence` is set in the same handler that sets this stage, so the
+                pair cannot separate; gating on it keeps the beat's required title
+                honest without a fallback string that would re-open the bare-"Logged"
+                door this PR closes. */}
+            {stage === 'done' && beatSentence && confirm && (
+              <SheetLogBeat
+                tone={beatTone}
+                title={beatSentence}
+                // The pet captured at grid→confirm, NOT a re-read active pet: this
+                // names the pet the row was actually written for, and the store's
+                // active pet can have moved on by now (the multi-pet queue-then-switch
+                // guard the completion payloads carry for the same reason).
+                petName={confirm.petName}
+                onDone={onClose}
+              />
+            )}
+          </View>
+        </KeyboardAvoidingView>
 
         {/* The pet switcher, as the top LAYER of this Modal — never a second one.
 
@@ -428,12 +462,27 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: theme.colorScrim,
   },
+  // The keyboard-avoiding host, and the owner of the sheet's height cap (CUL-755).
+  // The cap CANNOT sit on the sheet while this wrapper exists: a percentage maxHeight
+  // resolves against the parent's content box, and this view is content-sized, so the
+  // sheet's '80%' would resolve to no constraint at all. Here it resolves against the
+  // backdrop, which is flex:1 and therefore definite. With the keyboard up, padding
+  // is inside the capped box, so the cap tightens to 80% of what is actually left —
+  // the sheet is bounded by the space above the keyboard rather than by the screen.
+  avoider: {
+    maxHeight: '80%',
+  },
   sheet: {
     backgroundColor: theme.colorSurface,
     borderTopLeftRadius: theme.radiusLarge,
     borderTopRightRadius: theme.radiusLarge,
     paddingTop: 10,
-    maxHeight: '80%',
+    // What lets the cap above actually bite. RN defaults flexShrink to 0 (unlike the
+    // web), so without this the sheet keeps its natural height and simply overflows
+    // the avoider's clamp — the cap would be inert rather than moved. Same mechanism
+    // the grid's own gridScroll uses one level down, and the confirm's container now
+    // uses inside that.
+    flexShrink: 1,
   },
   grabber: {
     width: 36,

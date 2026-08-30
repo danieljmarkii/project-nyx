@@ -100,6 +100,27 @@ describe('R6-1 — the header yields the type, never the pet (CUL-726)', () => {
     expect(StyleSheet.flatten(getByTestId('confirm-header-type').props.style).flexShrink).toBe(1);
   });
 
+  // CUL-755 — the confirm has to be able to GIVE HEIGHT UP, or the sheet's cap has
+  // nothing to bite on and the summary pill (the save) lands below the clamped box
+  // with no way to scroll to it. The grid's sibling ScrollView was given this on
+  // purpose and this one never was; that asymmetry was the whole tell.
+  //
+  // The two levels are SEPARATE tests, not two expects in one, because shrinking
+  // stops at the first level that refuses — a shrinkable container holding an
+  // unshrinkable scroll view overflows exactly as before. Split, deleting either
+  // flexShrink reds its own named test and leaves the other green, which is what
+  // makes them two facts rather than one restated twice. Both mutations were run
+  // (CUL-613); together in one `it` they were indistinguishable in the output.
+  it('the confirm container shrinks into the sheet', () => {
+    const { getByTestId } = renderConfirm();
+    expect(StyleSheet.flatten(getByTestId('confirm-container').props.style).flexShrink).toBe(1);
+  });
+
+  it('and the scroll view shrinks inside the container', () => {
+    const { getByTestId } = renderConfirm();
+    expect(StyleSheet.flatten(getByTestId('confirm-scroll').props.style).flexShrink).toBe(1);
+  });
+
   it('the row wraps, so the name drops to its own line whole (the AC-CHIP shape)', () => {
     const { getByTestId } = renderConfirm();
     expect(StyleSheet.flatten(getByTestId('confirm-header-stack').props.style).flexWrap).toBe('wrap');
