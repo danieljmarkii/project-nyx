@@ -26,6 +26,7 @@ import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_
 import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
 import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
 import { foodFormatTag } from '../../lib/food';
+import { kgToLbs } from '../../lib/weight';
 import { supabase } from '../../lib/supabase';
 import { syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { reverseLoggedEvent } from '../../lib/undoLog';
@@ -606,6 +607,15 @@ export default function EventDetailScreen() {
   // identifier); brand + strength form the secondary line. Falls back to the bare
   // type label if the drug's library row hasn't hydrated on this device.
   const isMedication = event.event_type === 'medication';
+  // The measured weight (CUL-223). getEventById has always selected weight_kg — the
+  // History row renders it — but this screen never did, so the tap-through from the
+  // weight cards would have landed on a weight check that doesn't show its weight: the
+  // one number the owner opened it to check or correct. kgToLbs is the shared 0.1 lb
+  // rounding rule, so this cannot print a different number than the card, the History
+  // row, or the edit screen's pre-fill.
+  const weightLbs = event.event_type === 'weight_check' && event.weight_kg != null
+    ? `${kgToLbs(event.weight_kg)} lbs`
+    : null;
   const drugPrimary = dose?.genericName ?? label;
   const drugSecondary = dose
     ? [dose.brandName, dose.strength].filter(Boolean).join(' · ') || null
@@ -687,6 +697,20 @@ export default function EventDetailScreen() {
             <ThemedText style={styles.exifAttribution}>
               {formatExifAttribution(event.occurred_at)}
             </ThemedText>
+          ) : null}
+
+          {/* The measured weight. NO section label: the type heading above already
+              reads "WEIGHT", and the value IS the event — there is no badge to pair it
+              with, so it states itself the way the date does rather than sitting under
+              a second copy of its own name.
+
+              Nothing beside it, by rule: no delta against the previous reading, no
+              arrow, no colour. A weight trend never reassures (weight LOSS is the
+              danger signal and a rising line can be fluid/edema), and a per-reading
+              verdict is a different feature with a mandatory adversarial pass —
+              migration 024's guardrail, which the cards and the history list keep too. */}
+          {weightLbs ? (
+            <ThemedText style={styles.weightValue}>{weightLbs}</ThemedText>
           ) : null}
 
           {event.event_type === 'vomit' ? (
@@ -935,6 +959,15 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     letterSpacing: theme.trackingTight,
+  },
+  // The measured value, sized as the event's own fact — under the date, above
+  // everything derived. Primary ink, no tint: a weight reading carries no verdict, so
+  // it must not borrow a colour that reads as one.
+  weightValue: {
+    fontSize: theme.textLG,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
+    marginTop: theme.space2,
   },
   timeRow: {
     fontSize: theme.textMD,

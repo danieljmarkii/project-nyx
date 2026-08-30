@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { ArrowDown, ArrowUp, Minus } from 'lucide-react-native';
+import { ArrowDown, ArrowUp, ChevronRight, Minus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
@@ -12,6 +12,7 @@ import {
   describeWeightDelta,
   formatWeightDate,
   getWeightHistory,
+  getWeightReadingCount,
   kgToLbsNum,
   WeightTrend,
 } from '../../lib/weight';
@@ -70,8 +71,15 @@ export function WeightTrendCard({ petId, petName, snapshotKg }: Props) {
       let cancelled = false;
       (async () => {
         try {
-          const readings = await getWeightHistory(petId, SERIES_LIMIT);
-          if (!cancelled) setTrend(computeWeightTrend(readings));
+          // Two reads, one trend. The SERIES is the latest 12 (the sparkline's window);
+          // the COUNT is the whole record, because the card speaks it as a fact and it
+          // now labels a tap-through to every reading — a window-derived count read
+          // "12 readings" to a pet with 20 (CUL-223).
+          const [readings, total] = await Promise.all([
+            getWeightHistory(petId, SERIES_LIMIT),
+            getWeightReadingCount(petId),
+          ]);
+          if (!cancelled) setTrend(computeWeightTrend(readings, total));
         } catch (e) {
           if (!cancelled) console.error('[WeightTrendCard] load failed:', e);
         } finally {
@@ -93,18 +101,21 @@ export function WeightTrendCard({ petId, petName, snapshotKg }: Props) {
       ) : !hasReadings ? (
         <EmptyState petName={petName} snapshotKg={snapshotKg} />
       ) : trend!.readingCount === 1 ? (
-        <SingleReading trend={trend!} petName={petName} />
+        <SingleReading trend={trend!} petName={petName} petId={petId} />
       ) : (
-        <TrendBody trend={trend!} />
+        <TrendBody trend={trend!} petId={petId} />
       )}
 
       {/* Primary action, every state — logging the next reading is always the wanted
           next step (the empty/single states explicitly invite it). Weight is the one
           event whose value IS the entry, so this can't be a one-tap like "Log a dose";
           it opens the numeric quick-log step (pre-filled with the last reading). */}
+      {/* No hitSlop: this is already a 44pt box, so slop buys it no reach and only
+          reaches UP into the readings row above it — the CUL-612 overlap, where a tap
+          meant for "see the readings" would resolve to "open the log screen" by
+          z-order (CUL-579: grow the box, or delete the slop; never both). */}
       <Pressable
         onPress={() => router.push('/log?type=weight_check')}
-        hitSlop={8}
         style={styles.action}
         accessibilityRole="button"
         accessibilityLabel={`Log a weigh-in for ${petName}`}
@@ -142,13 +153,13 @@ function EmptyState({ petName, snapshotKg }: { petName: string; snapshotKg: numb
 // One reading is a point, not a trend (n=1 says nothing about movement). Show it and
 // invite the next, so the line can begin. The date anchor keeps a lone number from
 // reading as "today's weight" when it may be a back-dated or onboarding figure.
-function SingleReading({ trend, petName }: { trend: WeightTrend; petName: string }) {
+function SingleReading(
+  { trend, petName, petId }: { trend: WeightTrend; petName: string; petId: string },
+) {
   return (
     <View style={styles.body}>
       <BigNumber lbs={trend.latestLbs!} />
-      {trend.latestOccurredAt && (
-        <ThemedText style={styles.note}>Last weighed {formatWeightDate(trend.latestOccurredAt)}</ThemedText>
-      )}
+      <ReadingsLink trend={trend} petId={petId} />
       <ThemedText style={styles.note}>
         One reading so far. Log another after {petName}'s next weigh-in to see the trend.
       </ThemedText>
@@ -156,7 +167,7 @@ function SingleReading({ trend, petName }: { trend: WeightTrend; petName: string
   );
 }
 
-function TrendBody({ trend }: { trend: WeightTrend }) {
+function TrendBody({ trend, petId }: { trend: WeightTrend; petId: string }) {
   return (
     <View style={styles.body}>
       <View style={styles.valueRow}>
@@ -170,13 +181,38 @@ function TrendBody({ trend }: { trend: WeightTrend }) {
 
       <DeltaLine trend={trend} />
 
-      {trend.latestOccurredAt && (
-        <ThemedText style={styles.note}>
-          Last weighed {formatWeightDate(trend.latestOccurredAt)}
-          {trend.readingCount > 1 ? ` · ${trend.readingCount} readings` : ''}
-        </ThemedText>
-      )}
+      <ReadingsLink trend={trend} petId={petId} />
     </View>
+  );
+}
+
+// "Last weighed {date} · N readings" — the line that names the record, now the way
+// into it (CUL-223). The count was already making a promise the card couldn't keep;
+// this is the list it was implying.
+//
+// It renders as a button ONLY when there is a reading to open. At zero readings the
+// card shows a profile snapshot or an empty state and this component is never reached
+// — which is the point: a state with nothing to show renders no touchable at all,
+// rather than a `disabled` one that VoiceOver would announce as a dimmed, unavailable
+// control that does not exist here (CUL-682).
+function ReadingsLink({ trend, petId }: { trend: WeightTrend; petId: string }) {
+  if (!trend.latestOccurredAt) return null;
+  const line = `Last weighed ${formatWeightDate(trend.latestOccurredAt)}${
+    trend.readingCount > 1 ? ` · ${trend.readingCount} readings` : ''
+  }`;
+
+  return (
+    <Pressable
+      style={styles.readingsLink}
+      onPress={() => router.push({ pathname: '/weight-history', params: { petId } })}
+      accessibilityRole="button"
+      accessibilityLabel={`${line}. See all readings.`}
+    >
+      <ThemedText style={[styles.note, styles.readingsLinkText]} numberOfLines={1}>
+        {line}
+      </ThemedText>
+      <ChevronRight size={14} color={theme.colorTextTertiary} strokeWidth={2} />
+    </Pressable>
   );
 }
 
@@ -257,6 +293,26 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
     lineHeight: theme.lineHeightXS,
+  },
+  // The tap-through row. minHeight rather than hitSlop: it sits directly above the
+  // "Log a weigh-in" action, and slop on either of two adjacent controls is what puts
+  // one's hit area inside the other (CUL-612). A real 44pt box takes no space from its
+  // neighbour, and the floor is true by construction instead of resting on a rendered
+  // line box no test can measure.
+  readingsLink: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  // The line yields, the chevron does not. Without the shrink the row sizes to the
+  // text and pushes the chevron out of the card at the longest phrasing a real record
+  // reaches — "Last weighed Nov 23, 2025 · 20 readings" at a large type setting, where
+  // the year stamp and a three-digit count arrive together. Truncating costs nothing
+  // here: a screen reader still announces the whole string (CUL-726), and the count is
+  // restated as the destination's own subtitle.
+  readingsLinkText: {
+    flexShrink: 1,
   },
   emptyText: {
     fontSize: theme.textSM,

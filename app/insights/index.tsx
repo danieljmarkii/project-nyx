@@ -24,7 +24,7 @@ import {
   type DashboardCard,
   type DashboardState,
 } from '../../lib/dashboardScreen';
-import { computeWeightTrend, getWeightHistory } from '../../lib/weight';
+import { computeWeightTrend, getWeightHistory, getWeightReadingCount } from '../../lib/weight';
 import {
   describeCountDelta,
   describeRateDelta,
@@ -137,6 +137,7 @@ export default function PatternsScreen() {
         topProteins,
         composition,
         weightReadings,
+        weightReadingTotal,
       ] = await Promise.all([
         getSymptomCounts(pet.id, WINDOW),
         getSymptomFrequencyByDay(pet.id, WINDOW),
@@ -150,9 +151,14 @@ export default function PatternsScreen() {
         getTopProteins(pet.id, WINDOW),
         getMealTreatComposition(pet.id, WINDOW),
         getWeightHistory(pet.id, WEIGHT_SERIES_LIMIT),
+        // The COUNT is the whole record, not the 12-reading sparkline window it sits
+        // beside: the card speaks it as a fact and it labels the tap-through to every
+        // reading, so a window-derived count read "12 readings" to a 20-weigh-in pet
+        // (CUL-223).
+        getWeightReadingCount(pet.id),
       ]);
       if (loadIdRef.current !== myId) return; // superseded by a newer load — drop these results
-      const weightTrend = computeWeightTrend(weightReadings);
+      const weightTrend = computeWeightTrend(weightReadings, weightReadingTotal);
       setDashState(
         selectDashboardState({ symptomCounts, composition, weightReadingCount: weightTrend.readingCount }),
       );
@@ -504,8 +510,10 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
       );
     case 'weightTrend':
       // Health-trajectory card — neutral by construction (no verdict colour, factual
-      // delta). Display-only for now; a tap-through to the per-reading history is B-189.
-      return <WeightCard key={card.key} trend={card.trend} petName={petName} />;
+      // delta). Its "N readings" line opens the per-reading history (CUL-223); petId is
+      // passed so that list is scoped to this card's pet rather than re-derived from the
+      // selection on the far side of the navigation (CUL-574).
+      return <WeightCard key={card.key} trend={card.trend} petName={petName} petId={petId} />;
     default: {
       // Exhaustiveness: a new card kind must add a case above, not silently render
       // nothing. This fails to compile if DashboardCard gains a member unhandled here.
