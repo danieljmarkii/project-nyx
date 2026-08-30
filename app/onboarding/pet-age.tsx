@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
   changeLabel: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   grow: {
     flex: 1,

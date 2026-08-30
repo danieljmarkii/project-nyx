@@ -630,7 +630,7 @@ const styles = StyleSheet.create({
   },
   photoActionText: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   historySection: {
     paddingHorizontal: theme.space3,

@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
   // Cap the list height so a heavy day scrolls inside the sheet instead of pushing the
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 });

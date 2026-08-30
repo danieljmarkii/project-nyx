@@ -116,6 +116,9 @@ const styles = StyleSheet.create({
   },
   action: {
     fontSize: theme.textMD,
+    // accent-on-dark-ok: colorNeutralDark (the snackbar's own fill, :96) — 8.75:1.
+    // The inverse of CUL-744: colorAccentInk here would be 3.83:1 and FAIL. A blind
+    // sweep of the accent-as-text class breaks this site.
     color: theme.colorAccent,
     fontWeight: theme.weightMedium,
   },

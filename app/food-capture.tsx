@@ -1377,7 +1377,7 @@ const styles = StyleSheet.create({
   },
   linkBtnText: {
     fontSize: theme.textMD,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
 
   checklistRow: {
@@ -1507,7 +1507,7 @@ const styles = StyleSheet.create({
   },
   mealTimeChange: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 

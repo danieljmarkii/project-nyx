@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
   },
   freshnessAction: {
     fontSize: theme.textSM,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   freshnessConfirmed: {
     fontSize: theme.textSM,
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
   choiceYes: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   choiceNo: {
     fontSize: theme.textSM,

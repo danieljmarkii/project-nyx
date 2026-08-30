@@ -98,6 +98,8 @@ const styles = StyleSheet.create({
   turnOn: {
     fontSize: theme.textSM,
     fontWeight: theme.weightSemibold,
+    // accent-on-dark-ok: colorBrandNightElevated (the card's fill, :72) — 6.57:1.
+    // colorAccentInk would be 2.88:1 on this ground (CUL-744).
     color: theme.colorAccent,
   },
   notNow: {

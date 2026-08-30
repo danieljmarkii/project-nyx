@@ -720,7 +720,7 @@ const styles = StyleSheet.create({
   addBtnText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccent,
+    color: theme.colorAccentInk,
   },
   // The strip's own inset in the two non-scrolling branches, matching the padding
   // `scrollContent` gives it in the normal one so it sits in the same column.
