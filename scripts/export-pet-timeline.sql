@@ -27,15 +27,11 @@
 -- `WHERE name = 'Nyx' LIMIT 1` — no account predicate, on a
 -- column that is neither unique nor owner-scoped, with no
 -- ORDER BY, so which pet won was decided by the query plan.
---
--- Verified live 2026-08-30: TWO pets are named "Nyx", both
--- cats — the owner's (bf7b196e…, 958 live events) and the QA
--- mirror's (be7be700…, 771). The loser is not an obviously
--- empty stub you would notice; it is 771 events of plausible
+-- Two pets are in fact named "Nyx", both cats: the owner's and
+-- a QA mirror account's. The loser is not an obviously empty
+-- stub you would notice — it is hundreds of events of plausible
 -- cat health data, and the export carried nothing that said
--- which one it had picked. The same unscoped-read class already
--- contaminated the taxonomy spec's §2 demand instrument, which
--- pooled both accounts and returned two phantom pets.
+-- which one it had picked.
 --
 -- Pairing the id with its owner is what makes a wrong or stale
 -- id return ZERO rows instead of another account's record. A
@@ -44,19 +40,23 @@
 -- is a fact about this file's contents rather than a property
 -- the query enforces.
 --
--- Retargeting: replace both values together. If the pet is not
--- yours, stop — this is a dogfood-era single-account tool, and
--- nothing here authorises exporting someone else's record.
+-- Retargeting: replace both values together, in target_pet, and
+-- nowhere else — the pair is deliberately written ONCE in this
+-- file. If the pet is not yours, stop: this is a dogfood-era
+-- single-account tool, and nothing here authorises exporting
+-- someone else's record.
 --
--- ZERO ROWS IS AMBIGUOUS, and it never means "this pet has no
--- events". It means either that, or that the pair did not
--- resolve. Tell them apart before concluding anything:
+-- Which means ZERO ROWS NEVER MEANS "this pet has no events".
+-- It means that, or that the pair did not resolve. Tell them
+-- apart by running the target_pet block below on its own —
+-- select it as written, and append:
 --
---   SELECT p.id, p.name FROM pets p
---    WHERE p.id = 'bf7b196e-6db1-4a34-af34-f1759d380042'
---      AND p.user_id = (SELECT id FROM auth.users
---                        WHERE email = 'danieljmarkii@gmail.com');
---   -- exactly 1 row = the pair resolves; 0 rows = it does not.
+--   SELECT * FROM target_pet;
+--
+-- One row: the pair resolves, so the range really is empty.
+-- No rows: the pair is wrong, and nothing was exported. Do not
+-- re-type the id or email to check — a second copy that drifts
+-- from target_pet answers a question you did not ask.
 -- ─────────────────────────────────────────────────────────────
 -- ============================================================
 
