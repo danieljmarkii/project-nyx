@@ -2138,9 +2138,13 @@ Deno.test('B-503 — the at-a-glance heading does not claim one window denominat
   // started printing its own span a reader could see the two disagree under a heading
   // asserting they were one.
   assert.ok(
-    /except coverage &amp; off-diet, which name their own spans/.test(html),
+    /except coverage &amp; off-diet, which are not window counts/.test(html),
     'the heading flags that coverage & off-diet depart from the window',
   )
+  // NEGATIVE FORM by necessity: four of the off-diet tile's six branches render a word
+  // rather than a number and name no span at all, so any positive claim the heading
+  // makes about them ("…which name their own spans") is false on those branches.
+  assert.ok(!/which name their own spans/.test(html))
   assert.ok(!/over the trial&rsquo;s own range/.test(html), 'and does not claim they share ONE range')
 })
 
@@ -3567,6 +3571,7 @@ function exposureItem(
   rung: 'derived_protein' | 'unrecognised',
   permittedLaterFrom: string | null,
   permittedLaterRole: TrialFoodRole | null = null,
+  primaryDietInForce = false,
 ): NonNullable<ReportSnapshot['trial']>['exposures']['items'][number] {
   return {
     eventId: `e-${rung}-${permittedLaterFrom ?? 'none'}-${Math.random()}`,
@@ -3591,6 +3596,9 @@ function exposureItem(
     attributionChecked: true,
     permittedLaterFrom,
     permittedLaterRole,
+    // Default FALSE: the fixture's whole point is the record-gap shape (no primary
+    // diet in force). A case exercising the mid-trial SWITCH passes true.
+    primaryDietInForce,
   }
 }
 
@@ -3657,6 +3665,43 @@ Deno.test('CUL-746 — the "Of those N" breakdown always sums to N', () => {
     // The additive framing this replaced, in either of its two shapes.
     assert.ok(!/also fed before/.test(t), `${shape.name}: the date is the reason, never a trailing "also"`)
   }
+})
+
+Deno.test('CUL-746 — a CAPPED count still describes the whole dated population, never a prefix', () => {
+  // The re-attack's break. `early` is date-sorted, so slicing to the credited count
+  // took the EARLIEST rows — and on a mixed set whose count the `Math.min` caps
+  // reduced, that dropped the permitted-extra row and flipped the noun from the
+  // general "a food the trial permits" to "the trial diet itself", picking up the
+  // record-gap register with it and silently re-attributing a real breach to the rung.
+  // A positional prefix is the one defensive choice that can SHARPEN the claim.
+  const items = [
+    exposureItem('unrecognised', '2026-06-01', 'primary_diet'),
+    exposureItem('unrecognised', '2026-06-08', 'permitted_treat'),
+  ]
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+      trial: trialBlockFixture({
+        allowedSetUnavailable: false,
+        mayClaimAllMatched: false,
+        mayStateRecordClean: false,
+        exposures: {
+          totalFeedings: 12,
+          offDiet: 2,
+          // `byRung` short of `items` by one — the disagreement the caps exist for.
+          byRung: { derived_protein: 0, unrecognised: 1 },
+          fedBeforePermitted: 2,
+          unclassifiable: 0,
+          items,
+        },
+      }),
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/1 was a feeding of a food the trial permits/.test(t),
+    `expected the general noun: ${t.slice(t.indexOf('Of those'), t.indexOf('Of those') + 220)}`)
+  assert.ok(!/the trial diet itself/.test(t), 'a capped mixed set must not sharpen to the trial diet')
+  assert.ok(!/a gap in the record, not a departure/.test(t), 'nor pick up the record-gap register')
 })
 
 Deno.test('CUL-746 — a dated-membership row never claims a role no row in it carries', () => {

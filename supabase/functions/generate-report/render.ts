@@ -2850,7 +2850,7 @@ function exposureReasonOf(row: { rung: string | null; permittedLaterFrom: string
  *  which has a fraction of the width, says "N of them ___" — the same fact in two
  *  frames, and the frames want different articles. Forking the role test to get them
  *  would be the CUL-746 defect rebuilt inside its own fix. */
-function permittedLaterNouns(roles: (string | null)[]): {
+function permittedLaterNouns(roles: (string | null)[], everyRowUndefinedThatDay: boolean): {
   phrase: string
   short: string
   /** THE TRIAL'S OWN PRIMARY DIET, WHICH IS A DIFFERENT REGISTER (CUL-746, cold read 18).
@@ -2878,7 +2878,17 @@ function permittedLaterNouns(roles: (string | null)[]): {
 } {
   const distinct = [...new Set(roles)]
   if (distinct.length === 1 && distinct[0] === 'primary_diet') {
-    return { phrase: 'the trial diet itself', short: 'the trial diet itself', isTrialDiet: true }
+    // MEASURED, NOT INFERRED (CUL-746 pass 2). `allowed_from > started_at` does not
+    // entail "the trial had no diet recorded then" — a mid-trial primary-diet SWITCH
+    // has exactly that shape and is the opposite case, a novel protein introduced
+    // into a running elimination. The register is withheld unless every credited row
+    // was fed on a day the trial genuinely defined no primary diet; the NOUN still
+    // stands, because those rows really are a primary-diet food.
+    return {
+      phrase: 'the trial diet itself',
+      short: 'the trial diet itself',
+      isTrialDiet: everyRowUndefinedThatDay,
+    }
   }
   if (distinct.length === 1 && distinct[0] === 'permitted_treat') {
     return { phrase: 'a treat the trial permits', short: 'treats the trial permits', isTrialDiet: false }
@@ -2941,10 +2951,25 @@ function permissionDatesNeedYear(t: NonNullable<ReportSnapshot['trial']>): boole
   const windowYears = new Set(
     [yearOfDay(t.evidenceStartDate), yearOfDay(t.evidenceEndDate)].filter((y): y is number => y !== null),
   )
-  if (windowYears.size === 0) return false
   return t.exposures.items.some((x) => {
-    const y = yearOfDay(x.permittedLaterFrom)
-    return y !== null && !windowYears.has(y)
+    const d = x.permittedLaterFrom
+    if (!d || !dayParts(d)) return false
+    // CONTAINMENT FIRST, YEAR SECOND (CUL-746 pass 2). The first cut asked "is the
+    // year outside the window's years", and CUL-69's question is "is the DATE outside
+    // the window". The re-attack found the gap between them: a chew permitted from
+    // Nov 15 on a trial whose window runs Jan 5 – Feb 20 of the SAME year printed a
+    // bare "allowed from Nov 15", which resolves to the November BEFORE the feedings
+    // — two months before, reading as though the food had already been permitted.
+    // `permittedLaterFrom` is unbounded forward on an un-ended trial (B-422's steady
+    // state), which is precisely the unclamped range CUL-69 names.
+    //
+    // Both tests are kept and unioned, never swapped: containment catches the
+    // same-year-far-future case, the year set catches a window that straddles New
+    // Year. The union can only ever stamp MORE, and an extra year carries no false
+    // information — a missing one does.
+    if (d > t.evidenceEndDate || d < t.evidenceStartDate) return true
+    const y = yearOfDay(d)
+    return y !== null && windowYears.size > 0 && !windowYears.has(y)
   })
 }
 
@@ -2978,18 +3003,25 @@ function exposureBreakdown(t: NonNullable<ReportSnapshot['trial']>): ExposureBre
   // over- or under-running its own denominator, which reads as rows nobody classified
   // — or, worse, as more breaches than the count admits.
   const proteinCount = Math.min(Math.max(0, byRung.derived_protein - movedProtein), offDiet - earlyCount)
-  // THE NOUN AND THE DATE DESCRIBE THE ROWS ACTUALLY CREDITED, not the whole `early`
-  // population. Identical while `early.length === earlyCount`, which is every
-  // self-consistent snapshot; where the caps bit, describing more rows than the count
-  // names is how "N were feedings of the trial diet itself" ends up characterising rows
-  // the sentence never counted.
-  const credited = early.slice(0, earlyCount)
-  const dates = [...new Set(credited.map((x) => x.permittedLaterFrom))]
+  // THE NOUN AND THE DATE DESCRIBE ALL OF `early`, never a positional prefix.
+  //
+  // The first cut sliced to `earlyCount` so the description could not cover more rows
+  // than the sentence counts. The re-attack showed the prefix is the one defensive
+  // choice that can SHARPEN the claim: `early` is date-sorted, so on a mixed set whose
+  // count the caps reduced, `slice(0, 1)` dropped the permitted-extra row and flipped
+  // "a food the trial permits" to "the trial diet itself — a record gap, not a
+  // departure", silently re-attributing a real breach to the rung. Describing the
+  // whole population can only ever DEGRADE (a mixed set loses the sharp noun and the
+  // shared date), which is the direction this surface must fail in.
+  const dates = [...new Set(early.map((x) => x.permittedLaterFrom))]
   return {
     earlyCount,
     proteinCount,
     unrecognisedCount: offDiet - earlyCount - proteinCount,
-    nouns: permittedLaterNouns(credited.map((x) => x.permittedLaterRole)),
+    nouns: permittedLaterNouns(
+      early.map((x) => x.permittedLaterRole),
+      early.length > 0 && early.every((x) => !x.primaryDietInForce),
+    ),
     permittedFrom: dates.length === 1 && dates[0] ? dates[0] : null,
   }
 }
@@ -3509,8 +3541,15 @@ function atAGlance(snap: ReportSnapshot): string {
   // asserting they are the same — the B-532/HR-7 one-page-two-renders class. Each tile
   // already states what it counts over, which was B-503's design; the heading only has
   // to say WHICH tiles depart from the window, not re-state a span for them.
+  //
+  // AND IT SAYS SO NEGATIVELY, because a positive claim is false on four of the
+  // off-diet tile's six branches (no allowed list, an off-list bowl, unobserved
+  // free-feeding, and the below-floor fallback) — those render a WORD rather than a
+  // number and so name no span, by design. "Not window counts" is true on all six,
+  // including the ones that are not counts at all, and it is the only thing the
+  // heading actually needs to stop: a reader applying the window denominator here.
   const aside = snap.diet.trial
-    ? `over the ${num(ag.windowDays)}-day window &mdash; except coverage &amp; off-diet, which name their own spans`
+    ? `over the ${num(ag.windowDays)}-day window &mdash; except coverage &amp; off-diet, which are not window counts`
     : `symptom trajectory over the window`
   return `
   <div class="sec">
@@ -5342,6 +5381,11 @@ interface ConfounderRow {
    *  (CUL-746): it decides the Why column, so a group spanning members that disagree
    *  on it would hand one member's excuse to the others. */
   permittedLaterFrom: string | null
+  /** CUL-746 — the role, and whether the trial defined a primary diet that day, so the
+   *  Why column takes the same register page 1 does. Both join the group key with
+   *  `permittedLaterFrom`, since together they decide the row's stated reason. */
+  permittedLaterRole: string | null
+  primaryDietInForce: boolean
 }
 
 function confCategory(c: ConfounderExposure): 'human' | 'treat' | 'other' {
@@ -5376,6 +5420,8 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         panelWasRead: c.panelWasRead ?? false,
         attributionChecked: c.attributionChecked ?? true,
         permittedLaterFrom: c.permittedLaterFrom ?? null,
+        permittedLaterRole: c.permittedLaterRole ?? null,
+        primaryDietInForce: c.primaryDietInForce ?? true,
       })
       continue
     }
@@ -5403,7 +5449,9 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
     // stop reconciling. Keying on it splits the row, which is what both surfaces need.
     const key = `${cat}||${c.foodLabel ?? ''}||${c.primaryProtein ?? ''}||${c.proteinSet.proteins.join(',')}|${
       c.proteinSet.complete ? 'c' : 'i'
-    }|${c.rung ?? ''}|${c.permittedLaterFrom ?? ''}`
+    }|${c.rung ?? ''}|${c.permittedLaterFrom ?? ''}|${c.permittedLaterRole ?? ''}|${
+      c.primaryDietInForce ?? true ? 'd' : 'u'
+    }`
     let g = groups.get(key)
     if (!g) {
       g = {
@@ -5419,6 +5467,8 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         panelWasRead: c.panelWasRead ?? false,
         attributionChecked: true,
         permittedLaterFrom: c.permittedLaterFrom ?? null,
+        permittedLaterRole: c.permittedLaterRole ?? null,
+        primaryDietInForce: c.primaryDietInForce ?? true,
         // ANY member is enough to mark the row: the marker means "at least one of
         // these feedings was followed by a symptom in the window", and a grouped row
         // that hid that would drop the only reason a vet reads a grouped row twice.
@@ -5488,7 +5538,11 @@ function confounderRowHtml(
   const why = trialDerived
     ? `<td>${
         reason === 'fed_before_permitted'
-          ? `Fed before it was permitted (allowed from ${h(day(r.permittedLaterFrom!))})`
+          ? r.permittedLaterRole === 'primary_diet' && !r.primaryDietInForce
+            ? `The trial diet, logged before the date it was added to the allowed list (${h(
+                day(r.permittedLaterFrom!),
+              )}) &mdash; a gap in the record`
+            : `Fed before it was permitted (allowed from ${h(day(r.permittedLaterFrom!))})`
           : reason === 'derived_protein'
             ? 'Protein not in the trial diet'
             : // B-529/R7(c). THREE ROUTES REACH RUNG 3, NOT TWO. This branch read

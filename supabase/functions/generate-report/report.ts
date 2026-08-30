@@ -1863,6 +1863,12 @@ export interface ConfounderExposure {
   /** This same food became permitted on a LATER date, so the row is here because the
    *  feeding predates permission — the reason that outranks the rung. */
   permittedLaterFrom?: string | null
+  /** The allowed-set role the later permission carried (CUL-746). */
+  permittedLaterRole?: string | null
+  /** A `primary_diet` row was in force on this feeding's own day. Defaults TRUE on a
+   *  row with no trial classification, so the record-gap register is never claimed by
+   *  default — the safe direction. */
+  primaryDietInForce?: boolean
 }
 
 /**
@@ -3780,6 +3786,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       panelWasRead: x?.panelWasRead ?? false,
       attributionChecked: x?.attributionChecked ?? true,
       permittedLaterFrom: x?.permittedLaterFrom ?? null,
+      // CUL-746 — appendix C's Why column takes the SAME register as page 1. Cold
+      // read 18 ruled "fed before it was permitted" impossible for the trial's own
+      // primary diet; leaving it in the table a vet cross-checks page 1 against made
+      // "one rule, two consumers" hold for the reason and not for the wording.
+      permittedLaterRole: x?.permittedLaterRole ?? null,
+      primaryDietInForce: x?.primaryDietInForce ?? true,
     }
   })
   // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"

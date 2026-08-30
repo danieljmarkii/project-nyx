@@ -51,6 +51,7 @@ import {
   mayClaimAllMatched,
   mayStateRecordClean,
   narrowTrialFoodRole,
+  allowedFoodsOn,
   trialEffectiveEndDayIndex,
   trialFoodKey,
   CHALLENGE_WINDOW_DAYS,
@@ -306,6 +307,13 @@ export interface TrialExposure {
    * second lookup, so the two can never name different allowed rows.
    */
   permittedLaterRole: TrialFoodRole | null
+  /**
+   * A `primary_diet` row was in force on this feeding's own day (CUL-746). The
+   * report's record-gap register may only be used when this is FALSE for every row
+   * it covers — otherwise the trial WAS defined that day and the feeding departed
+   * from it, which is the mid-trial-switch case the register would exonerate.
+   */
+  primaryDietInForce: boolean
 }
 
 export interface TrialBlock {
@@ -900,14 +908,49 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // Asked of the one predicate in both directions, never a second copy of the
       // membership rules: the feeding is re-classified as if fed on each other
       // `allowedFrom` date and the predicate's own verdict is read back.
+      //
+      // ── AND THE EARLIER PROBE IS CLAMPED TO THE TRIAL START (CUL-746, pass 2) ──
+      //
+      // The re-attack put the same defect straight back through a hole in this scan:
+      // `classifyFeeding` returns `out_of_window` for any date before `started_at`
+      // (`lib/dietTrial.ts` rung 0), which is not `'permitted'`, so a membership row
+      // whose `allowed_from` PREDATES the trial was invisible to the check. Executed:
+      // a jerky permitted May 20 – Jun 5 on a trial that started Jun 1, withdrawn,
+      // re-permitted Jun 25, fed Jun 15 — ten days after the vet pulled it — rendered
+      // "fed before it was permitted (allowed from Jun 25)" again.
+      //
+      // The blind spot is provably EXACTLY that row shape: at any in-window
+      // `allowed_from`, rung 1 must hit the row owning that date, so `out_of_window`
+      // is the only escape, and a post-end date can never be <= an in-window feeding.
+      // So the probe asks the question at the first day the row could have been in
+      // force AND the trial was running — `max(allowed_from, started_at)` — and skips
+      // the row when that lands after this feeding.
+      //
+      // "Today's write paths cannot produce such a row" is NOT a defence available
+      // here: `startDietTrial` writes `allowed_from = startedAt` and `addTrialFood`
+      // writes today, so they cannot produce the `primary_diet` row dated after
+      // `started_at` that this whole issue exists for either — and that one is in
+      // production.
+      const trialStartDn = dayIndexOfValue(trial.startedAt, timeZone)
       const otherDates = [...new Set(allowedFoods.map((f) => f.allowedFrom))]
-        .map((from) => ({ from, dn: dayIndexOfValue(from, timeZone) }))
-        .filter((x): x is { from: string; dn: number } => x.dn !== null)
-      for (const { from } of otherDates.filter((x) => x.dn <= dn).sort((a, b) => b.dn - a.dn)) {
+        .map((from) => {
+          const rawDn = dayIndexOfValue(from, timeZone)
+          if (rawDn === null) return null
+          const clampedDn = trialStartDn !== null ? Math.max(rawDn, trialStartDn) : rawDn
+          return { from: clampedDn === rawDn ? from : trial.startedAt, dn: rawDn, probeDn: clampedDn }
+        })
+        .filter((x): x is { from: string; dn: number; probeDn: number } => x !== null)
+      for (const { from, probeDn } of otherDates
+        .filter((x) => x.probeDn <= dn)
+        .sort((a, b) => b.probeDn - a.probeDn)) {
         const asIfEarlier = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
         if (asIfEarlier.verdict === 'permitted') return null
       }
-      for (const { from } of otherDates.filter((x) => x.dn > dn).sort((a, b) => a.dn - b.dn)) {
+      // The LATER loop keys on the raw date — a permission that genuinely postdates
+      // the feeding — and is unaffected by the clamp above (a raw date after this
+      // feeding is inside the trial by construction, so it clamps to itself).
+      for (const { from, dn: rawDn } of otherDates.filter((x) => x.dn > dn).sort((a, b) => a.dn - b.dn)) {
+        void rawDn
         const asIfLater = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
         if (asIfLater.verdict === 'permitted') return { from, role: asIfLater.role }
       }
@@ -962,6 +1005,25 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // the date can never name different allowed rows.
       permittedLaterFrom: permittedLater?.from ?? null,
       permittedLaterRole: permittedLater?.role ?? null,
+      // ── WAS THE TRIAL ACTUALLY UNDEFINED ON THIS DAY? (CUL-746, pass 2) ────────
+      //
+      // The record-gap register — "a gap in the record, not a departure from the
+      // diet" — rests on the claim that the app simply had no diet recorded yet.
+      // That is a fact about the allowed set on the feeding's own day, and the
+      // renderer had been INFERRING it from `allowed_from > started_at`, which does
+      // not entail it. The re-attack executed the difference: a trial started Apr 21
+      // on a soy hydrolysate (in force Apr 21 – May 31) switched by the vet to a
+      // salmon diet from Jun 1, with the owner feeding the salmon May 25–31 — a
+      // novel intact protein introduced mid-elimination, the textbook restart-the-
+      // trial event — rendered "7 were feedings of the trial diet itself … a gap in
+      // the record, not a departure from the diet", four lines above the same page's
+      // own "Antigen exposure — Salmon ×7 … that the trial diet does not contain".
+      //
+      // So the claim is MEASURED rather than inferred, off the one predicate that
+      // already answers it. False here means a primary diet WAS in force and this
+      // feeding departed from it; the register then degrades to the plain wording,
+      // exactly as a mixed role set does.
+      primaryDietInForce: allowedFoodsOn(ctx, dn).some((f) => f.role === 'primary_diet'),
     })
   }
   exposures.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.eventId.localeCompare(b.eventId))
