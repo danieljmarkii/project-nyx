@@ -3,6 +3,7 @@ import {
   ExtractionFailedBanner,
   EXTRACTION_FAILED_DETAIL,
   EXTRACTION_FAILED_TITLE,
+  EXTRACTION_RETRY_LABEL,
 } from './ExtractionFailedBanner';
 
 // CUL-651. The banner used to print `row.ai_extraction_error` — the Edge
@@ -52,7 +53,7 @@ describe('ExtractionFailedBanner', () => {
     expect(strings).toEqual([
       EXTRACTION_FAILED_TITLE,
       EXTRACTION_FAILED_DETAIL,
-      'Try extraction again',
+      EXTRACTION_RETRY_LABEL,
     ]);
   });
 
@@ -77,6 +78,18 @@ describe('ExtractionFailedBanner', () => {
     expect(onRetry).not.toHaveBeenCalled();
     expect(btn.props.accessibilityState?.disabled).toBe(true);
     // The label is replaced by the whorl, so the row cannot read as tappable.
-    expect(queryByText('Try extraction again')).toBeNull();
+    expect(queryByText(EXTRACTION_RETRY_LABEL)).toBeNull();
+  });
+
+  // …and the button must not go ANONYMOUS when that happens. The whorl sets
+  // `accessible={false}` unless given a label, so a button named only by its text
+  // child loses its name at the exact moment it also becomes dimmed — a screen
+  // reader is left with an unavailable control and no idea what it is or why.
+  // `disabled` is a claim (CUL-682) and `busy` is what states the reason.
+  it('keeps its name and says it is busy while the label is a spinner', () => {
+    const { getByTestId } = render(<ExtractionFailedBanner onRetry={() => {}} retrying />);
+    const btn = getByTestId('food-extraction-retry');
+    expect(btn.props.accessibilityLabel).toBe(EXTRACTION_RETRY_LABEL);
+    expect(btn.props.accessibilityState?.busy).toBe(true);
   });
 });

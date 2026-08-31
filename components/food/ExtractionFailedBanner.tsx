@@ -41,8 +41,12 @@ import { ThemedText } from '../ui/ThemedText';
 // over a provider string we do not control would be specific-and-wrong, which
 // `lib/authErrors.ts` argues is worse than vague-and-honest.
 export const EXTRACTION_FAILED_TITLE = 'Extraction failed';
+// Straight apostrophe, double-quoted: the house majority (55 files to 14) and, more
+// to the point, what the sibling line in `food-capture.tsx` uses — the string this
+// copy is modelled on. `lib/authErrors.ts` is the shipped precedent for the quoting.
 export const EXTRACTION_FAILED_DETAIL =
-  'Couldn’t read the label from the photo. You can fill in the details below.';
+  "Couldn't read the label from the photo. You can fill in the details below.";
+export const EXTRACTION_RETRY_LABEL = 'Try extraction again';
 
 interface Props {
   /** Re-invokes extraction. The screen owns the pending flip and the write. */
@@ -63,11 +67,22 @@ export function ExtractionFailedBanner({ onRetry, retrying }: Props) {
         hitSlop={8}
         activeOpacity={0.8}
         accessibilityRole="button"
+        // The label is stated on the control, not left to be derived from its
+        // child: while `retrying` that child is a WhorlSpinner, which sets
+        // `accessible={false}` when given no label of its own — so a button
+        // named only by its text goes silent at exactly the moment it is also
+        // dimmed, leaving an unlabelled disabled control and no reason for it.
+        // `busy` is what carries that reason. CUL-682's rule is that `disabled`
+        // is a claim, and a claim needs to say why; `PrimaryButton` is the
+        // shipped shape. The string is the visible one, so Voice Control can
+        // still be told to tap what it reads (CUL-726).
+        accessibilityLabel={EXTRACTION_RETRY_LABEL}
+        accessibilityState={{ disabled: retrying, busy: retrying }}
         testID="food-extraction-retry"
       >
         {retrying
           ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
-          : <ThemedText style={styles.retryBtnText}>Try extraction again</ThemedText>}
+          : <ThemedText style={styles.retryBtnText}>{EXTRACTION_RETRY_LABEL}</ThemedText>}
       </TouchableOpacity>
     </View>
   );

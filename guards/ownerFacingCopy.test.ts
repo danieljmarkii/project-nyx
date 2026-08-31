@@ -56,6 +56,31 @@
 // is a named decision, not a silent hole — the same discipline
 // `LOCAL_WIPE_TABLES` / `NOT_WIPED_ON_SIGN_OUT` use.
 //
+// Where the CUL-651 stored-error-field rule over- and under-reaches (found by an
+// independent review of that change, and left as documented limits rather than
+// closed, because every one of them is hypothetical today and mechanism added to a
+// guard on speculation is how guards grow seams):
+//
+//   • OVER — it spares only the literal name `error`, so an error OBJECT
+//     destructured under another name (`setFailureError(result.uploadError)`) is
+//     flagged where the identical `result.error` is spared. Nothing in the tree
+//     destructures an error object under another name today, and a syntactic scan
+//     cannot tell an error object from an error string by its name alone.
+//   • OVER — an INLINE mapper at the sink
+//     (`Alert.alert('X', extractionErrorCopy(row.ai_extraction_error).message)`)
+//     is flagged, because the walk finds the raw field inside the call argument
+//     before the call resolves. The two-step `authErrorCopy` idiom this file
+//     already sanctions is spared (its output is read off a base named for the
+//     COPY, not the error), so per-cause copy over a stored field has a clean
+//     shape available and this over-reach costs nothing but the inline form.
+//   • UNDER — a stored error field destructured to a local and then passed to a
+//     NON-immediate sink (`const { ai_extraction_error } = row;
+//     setBannerError(ai_extraction_error)`). This is the one-hop limit below,
+//     from the other direction.
+//
+// Either OVER case is a legitimate `// copy-guard-ok: <reason>` — which is what
+// the hatch is for, and it makes the decision visible instead of silent.
+//
 // What it does NOT catch (documented, not implied): indirection deeper than one
 // local hop — a raw message routed through a HELPER FUNCTION (`show(describe(e))`)
 // or renamed across an unrelated variable name two hops out. A syntactic scan
@@ -161,12 +186,21 @@ function extractsErrorString(node: TSNode): string | null {
     // this file was green. The bare name `error` is deliberately excluded: that is
     // the Supabase `{ data, error }` shape — an error OBJECT, whose storage for
     // mapping-at-render is a sanctioned pattern (`setFailureError(result.error)`).
-    if (
-      ts.isPropertyAccessExpression(n) &&
-      n.name.text.toLowerCase() !== 'error' &&
-      isErrorishName(n.name.text)
-    ) {
+    const storedErrorField = (name: string) =>
+      name.toLowerCase() !== 'error' && isErrorishName(name);
+    if (ts.isPropertyAccessExpression(n) && storedErrorField(n.name.text)) {
       hit = `${n.expression.getText(sf)}.${n.name.text}`;
+      return;
+    }
+    // The same field reached by bracket notation. One predicate, two syntaxes —
+    // otherwise `row['ai_extraction_error']` is a one-character bypass of the rule
+    // directly above it, and the next reader has no way to know that.
+    if (
+      ts.isElementAccessExpression(n) &&
+      ts.isStringLiteralLike(n.argumentExpression) &&
+      storedErrorField(n.argumentExpression.text)
+    ) {
+      hit = `${n.expression.getText(sf)}['${n.argumentExpression.text}']`;
       return;
     }
     if (ts.isCallExpression(n)) {
@@ -557,6 +591,13 @@ describe('the detector itself', () => {
     expect(kinds(`function f(){ Alert.alert('X', \`why: \${row.ai_extraction_error}\`); }`, 'leak')).toBe(1);
   });
 
+  it('FLAGS the same field reached by bracket notation', () => {
+    expect(kinds(`const C = () => <ThemedText>{row['ai_extraction_error']}</ThemedText>;`, 'leak')).toBe(1);
+    expect(kinds(`function f(){ Alert.alert('X', row["syncError"]); }`, 'leak')).toBe(1);
+    // A bracket access that is not an error field stays clear.
+    expect(kinds(`const C = () => <ThemedText>{row['product_name']}</ThemedText>;`, 'leak')).toBe(0);
+  });
+
   // The carve-out that keeps the rule from eating the sanctioned pattern: a bare
   // `.error` is the Supabase `{ data, error }` OBJECT. Storing it to map at render
   // is correct and stays spared; only reading a display STRING off it is a leak,
@@ -631,6 +672,28 @@ describe('the detector itself', () => {
 // what the syntactic scan deliberately does not chase, so a future reader knows
 // the boundary is known, not accidental (see the file header).
 describe('documented limits (characterization, not a guarantee)', () => {
+  const kinds2 = (src: string, kind: Kind) => scanSource('fixture.tsx', src).filter((f) => f.kind === kind).length;
+
+  // The CUL-651 rule's over-reach, pinned so widening the carve-out is a visible
+  // decision rather than a silent one. Neither shape exists in the tree today.
+  it('OVER-reaches on an error object destructured under another name', () => {
+    expect(kinds2(`function f(){ setFailureError(result.error); }`, 'leak')).toBe(0);
+    expect(kinds2(`function f(){ setFailureError(result.uploadError); }`, 'leak')).toBe(1);
+  });
+
+  // Only the INLINE form over-reaches. The two-step `authErrorCopy` idiom this file
+  // already sanctions works for a stored field too — the mapper's output is read off
+  // a base named for the copy, not for the error — so the sanctioned pattern needs no
+  // exemption and there is a clean way to write per-cause copy when CUL-768 wants it.
+  it('OVER-reaches on an inline mapper at the sink, but spares the two-step idiom', () => {
+    expect(kinds2(`function f(){ const c = copyFor(row.ai_extraction_error); Alert.alert('X', c.message); }`, 'leak')).toBe(0);
+    expect(kinds2(`function f(){ Alert.alert('X', copyFor(row.ai_extraction_error).message); }`, 'leak')).toBe(1);
+  });
+
+  it('does NOT catch a stored error field destructured to a local, at a stored sink', () => {
+    expect(kinds2(`function f(){ const { ai_extraction_error } = row; setBannerError(ai_extraction_error); }`, 'leak')).toBe(0);
+  });
+
   const leaks = (src: string) => scanSource('fixture.tsx', src).filter((f) => f.kind === 'leak').length;
 
   it('does NOT chase a raw message through a helper function (deeper than one hop)', () => {
