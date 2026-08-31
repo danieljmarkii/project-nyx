@@ -23,6 +23,13 @@
 //       on the BASE being error-like, which is what separates `error.message`
 //       (leak) from `authErrorCopy(error, ctx).message` (base `copy` — the
 //       sanctioned mapper, `lib/authErrors.ts`), with no hard-coded allow-list.
+//       Since CUL-651 it ALSO flags a STORED error field — a property whose own
+//       NAME says it holds an error (`row.ai_extraction_error`, `x.syncError`) —
+//       because a database row is not error-like syntactically, and that is how
+//       `{row.ai_extraction_error}` printed a Claude HTTP status to an owner
+//       while this file was green. The bare name `error` is excluded from that
+//       rule: `result.error` is the Supabase `{ data, error }` OBJECT, whose
+//       storage for mapping-at-render is sanctioned (below).
 //       It follows ONE hop of local indirection (`const msg = e.message;
 //       Alert.alert('X', msg)`) and it does NOT flag a branch condition
 //       (`e.code === 'ENOENT' ? 'lit' : 'lit'` shows only literals — the
@@ -144,6 +151,21 @@ function extractsErrorString(node: TSNode): string | null {
     const n = ts.isExpression(raw as TSExpr) ? unwrap(raw as TSExpr) : raw;
 
     if (ts.isPropertyAccessExpression(n) && ERROR_FIELDS.has(n.name.text) && isErrorBase(n.expression)) {
+      hit = `${n.expression.getText(sf)}.${n.name.text}`;
+      return;
+    }
+    // A STORED error field (CUL-651): a property whose OWN NAME says it holds an
+    // error — `row.ai_extraction_error`, `snapshot.syncError`. The rule above keys
+    // on the BASE being error-like, and a database row is not, which is exactly how
+    // `{row.ai_extraction_error}` rendered a Claude HTTP status to an owner while
+    // this file was green. The bare name `error` is deliberately excluded: that is
+    // the Supabase `{ data, error }` shape — an error OBJECT, whose storage for
+    // mapping-at-render is a sanctioned pattern (`setFailureError(result.error)`).
+    if (
+      ts.isPropertyAccessExpression(n) &&
+      n.name.text.toLowerCase() !== 'error' &&
+      isErrorishName(n.name.text)
+    ) {
       hit = `${n.expression.getText(sf)}.${n.name.text}`;
       return;
     }
@@ -371,6 +393,15 @@ function scanSource(relFile: string, src: string): Finding[] {
     // ("Objects are not valid as a React child"), so a bare `{error}` here is
     // always a mapped error-message STRING (state named `error`/`loadError`), which
     // is the correct pattern — only `{error.message}` is a real leak.
+    //
+    // CUL-651 falsified the second half of that argument, and it is worth keeping
+    // the correction beside it: "an object would crash, therefore this is mapped
+    // copy" holds for an in-memory Error and NOT for a stored error STRING, which
+    // renders perfectly well and is mapped by nobody. `{row.ai_extraction_error}`
+    // sat in a <Text> child on the food detail screen for months. The bare-error
+    // rule stays off here (the crash argument is still sound for objects); the
+    // stored-error-field rule in `extractsErrorString` is what covers the gap, and
+    // it fires under `immediate=false` like every other extraction.
     if (ts.isJsxElement(node) && isTextTag(node.openingElement.tagName.getText(sf))) {
       for (const child of node.children) {
         if (ts.isJsxExpression(child) && child.expression) checkDisplay(child.expression, '<Text>{…}', false);
@@ -511,6 +542,32 @@ describe('the detector itself', () => {
     // worst kind of regression: invisible, and only in the error path.
     expect(kinds(`const C = () => <ThemedText>{error.message}</ThemedText>;`, 'leak')).toBe(1);
     expect(kinds(`const C = () => <ThemedText>Logged!</ThemedText>;`, 'bang')).toBe(1);
+  });
+
+  // CUL-651 — the shape that reached an owner while this file was green: a
+  // DATABASE COLUMN that holds an error. The base (`row`) is not error-like, so
+  // every rule above passes it through.
+  it('FLAGS a stored error field, whatever it is read off', () => {
+    expect(kinds(`const C = () => <ThemedText>{row.ai_extraction_error}</ThemedText>;`, 'leak')).toBe(1);
+    expect(kinds(`function f(){ Alert.alert('Failed', row.ai_extraction_error); }`, 'leak')).toBe(1);
+    expect(kinds(`function f(){ setBannerError(food.last_sync_error); }`, 'leak')).toBe(1);
+    expect(kinds(`const C = () => <Banner message={row.syncError} />;`, 'leak')).toBe(1);
+    // Through the same one hop and the same template interpolation as the rest.
+    expect(kinds(`function f(){ const d = row.ai_extraction_error; Alert.alert('X', d); }`, 'leak')).toBe(1);
+    expect(kinds(`function f(){ Alert.alert('X', \`why: \${row.ai_extraction_error}\`); }`, 'leak')).toBe(1);
+  });
+
+  // The carve-out that keeps the rule from eating the sanctioned pattern: a bare
+  // `.error` is the Supabase `{ data, error }` OBJECT. Storing it to map at render
+  // is correct and stays spared; only reading a display STRING off it is a leak,
+  // which the rules above already cover.
+  it('SPARES the bare `.error` object, and still catches a read off it', () => {
+    expect(kinds(`function f(){ setFailureError(result.error); }`, 'leak')).toBe(0);
+    expect(kinds(`function f(){ const off = isOffline(result.error); }`, 'leak')).toBe(0);
+    expect(kinds(`function f(){ Alert.alert('X', result.error.message); }`, 'leak')).toBe(1);
+    // Not every name containing "error" is an error field — the SCREAMING_SNAKE
+    // copy-constant convention still wins (`isErrorishName`).
+    expect(kinds(`function f(){ Alert.alert('X', copy.ADD_TRIAL_FOOD_ERROR); }`, 'leak')).toBe(0);
   });
 
   it('SPARES the authErrorCopy mapper output and the store-then-map pattern', () => {

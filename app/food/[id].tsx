@@ -25,6 +25,7 @@ import {
   type ProteinSetPickerHandle,
 } from '../../components/food/ProteinSetPicker';
 import { PhotoCarousel } from '../../components/food/PhotoCarousel';
+import { ExtractionFailedBanner } from '../../components/food/ExtractionFailedBanner';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
@@ -216,6 +217,17 @@ export default function FoodDetailScreen() {
   }, [activePet?.id]);
 
   function applyRow(next: FoodRow) {
+    // CUL-651 — where the raw failure string goes now that it is off the screen.
+    // `ai_extraction_error` is the Edge Function's verbatim `err.message`, which is
+    // the one thing that actually says WHY extraction failed, so it is logged
+    // rather than dropped: unactionable to an owner, and the first thing anyone
+    // debugging a stuck food wants. Same split the load path above already makes
+    // (`console.warn` the Postgres string, show the owner mapped copy). Both
+    // callers of applyRow funnel through here, so a failure that arrives over
+    // realtime is logged exactly like one that arrives on first load.
+    if (next.ai_extraction_status === 'failed' && next.ai_extraction_error) {
+      console.warn(`[food-detail] extraction failed for ${next.id}:`, next.ai_extraction_error);
+    }
     // Capture the *previous* baseline before we mutate it — the field-seeding
     // logic below uses it to detect "user has not edited this field" (i.e.
     // form value still equals the last value we loaded from the server). If
@@ -688,22 +700,14 @@ export default function FoodDetailScreen() {
           )}
 
           <View style={styles.body}>
-            {isFailed && row.ai_extraction_error && (
-              <View style={styles.failedBanner}>
-                <ThemedText style={styles.failedTitle}>Extraction failed</ThemedText>
-                <ThemedText style={styles.failedDetail}>{row.ai_extraction_error}</ThemedText>
-                <TouchableOpacity
-                  style={[styles.retryBtn, retrying && styles.retryBtnDisabled]}
-                  onPress={handleRetry}
-                  disabled={retrying}
-                  hitSlop={8}
-                  activeOpacity={0.8}
-                >
-                  {retrying
-                    ? <WhorlSpinner size="sm" tint="#fff" />
-                    : <ThemedText style={styles.retryBtnText}>Try extraction again</ThemedText>}
-                </TouchableOpacity>
-              </View>
+            {/* CUL-651. Gated on the STATUS alone — `ai_extraction_error` is a
+                diagnostic column, and requiring it hid this banner (retry button
+                and all) on every failure that never writes one: cap-reached,
+                flag-off, and a transport fault, all of which leave food-capture's
+                `status: 'failed'` upsert standing on its own. The banner takes no
+                error prop, so the raw string has nowhere to land. */}
+            {isFailed && (
+              <ExtractionFailedBanner onRetry={handleRetry} retrying={retrying} />
             )}
 
             {/* B-616 FR-13/FR-14 (mock D) — the food's relationship to the
@@ -965,39 +969,6 @@ const styles = StyleSheet.create({
   pendingText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-  },
-  failedBanner: {
-    backgroundColor: theme.colorEventSymptomLight,
-    borderRadius: theme.radiusSmall,
-    padding: theme.space2,
-    gap: theme.space1,
-  },
-  failedTitle: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  failedDetail: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: 18,
-  },
-  retryBtn: {
-    marginTop: theme.space1,
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusSmall,
-    paddingVertical: theme.space1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  retryBtnDisabled: {
-    opacity: 0.6,
-  },
-  retryBtnText: {
-    fontSize: theme.textMD,
-    color: '#fff',
-    fontWeight: theme.weightMedium,
   },
   secondaryAction: {
     alignItems: 'center',
