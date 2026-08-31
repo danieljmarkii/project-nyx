@@ -39,13 +39,44 @@
 // "no medication was given." It is also why the card's removal line makes no
 // claim about anything beyond the row it removed.
 //
+// ── THE SIGNAL CACHE IS RE-ARMED, NOT LEFT TO EXPIRE ─────────────────────────
+// CUL-642. The Home Signal is not recomputed on device — `generate-signal` runs
+// detection in Supabase and writes a cached `ai_signals` row with a 24h TTL. The
+// write paths (`insertMeal`, `insertSimpleEvent`, the capture-inbox ingest) all
+// kick a debounced regen so the cache follows the record; not one delete path did,
+// so a finding computed over an event the owner has since removed simply stood
+// until the next log or the TTL. Exactly the CUL-641 shape again — a side-effect
+// on the write path with no counterpart on the reversal — which is why it goes
+// HERE, at the one shared reversal, rather than on the surface that noticed it.
+//
+// RE-ARMING the shared debounce rather than minting a separate invalidation is
+// what also closes the race CUL-612 made routine. The completion card's dwell and
+// `REGEN_DEBOUNCE_MS` are both 5000ms by coincidence, so an Undo at t≈4.8s used to
+// land beside its own log's regen at t=5.0s — the removed row still on the server,
+// the regen computing over it, and nothing scheduled to run again. Re-arming
+// CANCELS that pending timer and re-schedules 5s after the reversal, so the only
+// regen that runs is the one over the corrected record. It collapses in the other
+// direction too: clearing several rows out of History in one sitting is one regen,
+// not one per row.
+//
+// ORDERING. `regenerateSignal` awaits `syncPendingEvents()` before it invokes the
+// function, so the tombstone is pushed before detection re-reads the server. Not an
+// absolute guarantee — CUL-622's wait ceiling lets a pathologically stalled queue
+// run unserialized — but it is the same ordering every write path already relies on,
+// not a weaker one. Offline it degrades the way the write path does: the invoke
+// fails, the previous cached signal stands, and the next successful regen corrects
+// it. Detection lives in Supabase, so there is no on-device recompute to fall back
+// to, and blanking the cache locally would trade a stale signal for a false empty
+// one — which on this surface is the worse direction.
+//
 // ── THE FAIL-SAFE IS UNTOUCHED ───────────────────────────────────────────────
 // B-156 G1 stands: an unanswered medication card still lands `unconfirmed`,
 // never `given`. Undo adds a REVERSAL, never a new path to an affirmative —
 // there is no adherence write anywhere in this module, and removing a dose can
 // only ever reduce what the record claims.
 
-import { softDeleteEvent } from './db';
+import { getEventPetId, softDeleteEvent } from './db';
+import { triggerSignalRegenDebounced } from './signal';
 import { syncPendingEvents } from './sync';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
 
@@ -79,5 +110,23 @@ export async function reverseLoggedEvent(
     eventId,
     opts ? { restoreToKg: opts.restoreWeightSnapshotToKg } : undefined,
   );
+  // CUL-642 — re-arm the Signal regen for THIS RECORD's pet (header above). Read
+  // from the row, never from `activePet`: the day-summary spine and every deep link
+  // push `/event/[id]` for any pet's rows, so the current selection is not an answer
+  // to "whose event was this?" (CUL-574). Best-effort like the reconcile beside it —
+  // a reversal must not fail on a cosmetic refresh — and the trigger itself is
+  // fire-and-forget, so nothing here waits on a network call.
+  try {
+    const petId = await getEventPetId(eventId);
+    if (petId) triggerSignalRegenDebounced(petId);
+    else {
+      // An UNRESOLVABLE pet, not a pet with nothing to refresh. Said out loud for the
+      // same reason the weight reconcile says its own unevaluable case out loud: the
+      // alternative is a missing side-effect that looks exactly like a no-op.
+      console.warn('[undo] no local row for event %s — Signal regen not re-armed', eventId);
+    }
+  } catch (e) {
+    console.warn('[undo] Signal regen re-arm failed:', e);
+  }
   syncPendingEvents().catch(console.error);
 }

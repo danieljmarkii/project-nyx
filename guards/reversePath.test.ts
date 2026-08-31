@@ -120,6 +120,18 @@ describe('CUL-641 — every soft delete goes through the one shared reversal', (
     expect(/\breconcileWeightSnapshotAfterDelete\b/.test(src)).toBe(true);
   });
 
+  it('reverseLoggedEvent re-arms the Signal regen', () => {
+    // CUL-642, the SECOND instance of the exact shape above — a side-effect the write
+    // paths perform (`insertMeal` / `insertSimpleEvent` / the capture-inbox ingest all
+    // kick a debounced regen) with no counterpart on any of the three reversals, so a
+    // cached `ai_signals` finding went on being computed over an event the owner had
+    // removed. Two instances is what makes it a class rather than an oversight, which
+    // is the argument for pinning both HERE: a third side-effect added to the write
+    // path and skipped on the reversal is the failure this file exists to make loud.
+    const src = stripComments(fs.readFileSync(path.join(ROOT, SANCTIONED_PATH), 'utf8'));
+    expect(/\btriggerSignalRegenDebounced\b/.test(src)).toBe(true);
+  });
+
   it('no other file reaches past it for the raw primitive', () => {
     const offenders = sourceFiles()
       .filter((rel) => rel !== DEFINITION && rel !== SANCTIONED_PATH)

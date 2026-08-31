@@ -131,6 +131,19 @@ function defaultDrainDeps(): DrainDeps {
     // `reverseLoggedEvent` and this exemption must go. Note the guard's marker is
     // file-wide, so that trip-wire is prose — a NEW delete call added anywhere in this
     // file inherits this exemption silently. Read it before adding one.
+    //
+    // WHAT ELSE THIS PATH DOES NOT INHERIT (CUL-642). `reverseLoggedEvent` now also
+    // re-arms the pet's Signal regen, and that is skipped here too. Acceptable, for a
+    // reason specific to this loop rather than by omission: `applyOutbox` revokes only
+    // AFTER `deps.ingest()`, and `ingestCaptureInbox` kicks a debounced regen for every
+    // pet it applied a capture for — the same per-pet timer, fired 5s later, by which
+    // time these soft deletes have landed and its own `syncPendingEvents` carries the
+    // tombstones. The uncovered case is a pass that revokes without applying anything
+    // for that pet, on a residual v1 outbox for a widget that has been
+    // informational-only since B-664 V2-1: bounded by the 24h TTL and by the next log,
+    // exactly as it was before this fix. If either fact changes — the widget writes
+    // again, or revokes stop trailing an ingest — this loop owes its own
+    // `triggerSignalRegenDebounced` per revoked pet.
     revokeEvent: softDeleteEvent,
   };
 }
