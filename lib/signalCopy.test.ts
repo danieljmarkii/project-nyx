@@ -18,6 +18,7 @@ import {
   NO_PATTERN_SUB,
   staleIntro,
   ackUpdatingCopy,
+  arrivalAnnouncementCopy,
   isNewWorsening,
   worseningNewSampleLine,
   isReflectionDensityWithheld,
@@ -479,6 +480,45 @@ describe('ackUpdatingCopy (SR-3 §5.3 / §9) — the post-log acknowledgment lin
       expect(s.includes('!')).toBe(false);
       expect(REASSURANCE_RE.test(s)).toBe(false);
       expect(CAUSAL_RE.test(s)).toBe(false);
+    }
+  });
+});
+
+describe('arrivalAnnouncementCopy (CUL-636) — the arrival moment’s screen-reader line', () => {
+  it('is the round-1 mock’s line, named for the pet', () => {
+    expect(arrivalAnnouncementCopy('Nyx')).toBe("Nyx's first pattern is ready");
+    expect(arrivalAnnouncementCopy('Mochi')).toBe("Mochi's first pattern is ready");
+  });
+
+  it('carries the second-person fallback verbatim when the name is unavailable', () => {
+    // nyx-voice Pattern 1: the caller's fallback is 'your pet', never 'the pet'. The
+    // sentence has to survive it, because a nameless account is exactly the one that
+    // would otherwise read "'s first pattern is ready".
+    expect(arrivalAnnouncementCopy('your pet')).toBe("your pet's first pattern is ready");
+  });
+
+  it('marks the OCCASION — it never restates the finding', () => {
+    // The insight is already rendered and already reachable in the a11y tree when this
+    // fires. Duplicating it would make the owner hear the finding twice and the occasion
+    // never, which is the defect inverted rather than fixed.
+    const s = arrivalAnnouncementCopy('Nyx');
+    expect(s.split(/\s+/).length).toBeLessThanOrEqual(6);
+    // Length alone is a weak proxy, so also pin the SHAPE of a restatement: every finding
+    // this can be spoken over carries a magnitude or an anchor (nyx-voice Pattern 2 —
+    // "3 hours", "60%", a food name). A line that quotes one necessarily carries a digit;
+    // the occasion never does.
+    expect(/\d/.test(s)).toBe(false);
+  });
+
+  it('is guardrail-clean (no exclamation, no reassurance/causal vocabulary — absence ≠ wellness)', () => {
+    // "A pattern exists now" is a fact about the RECORD. It must never drift toward a
+    // claim about the pet: this line is spoken over a finding nobody has read yet.
+    for (const name of ['Nyx', 'Mochi', 'Pixel']) {
+      const s = arrivalAnnouncementCopy(name);
+      expect(s.includes('!')).toBe(false);
+      expect(REASSURANCE_RE.test(s)).toBe(false);
+      expect(CAUSAL_RE.test(s)).toBe(false);
+      expect(DISMISSIVE_RE.test(s)).toBe(false);
     }
   });
 });

@@ -422,6 +422,24 @@ export function ackUpdatingCopy(petName: string): string {
   return `Noted — updating ${petName}'s picture…`;
 }
 
+// The first-insight arrival's screen-reader line (CUL-636; the moment itself is CUL-601
+// §4 / DP-3). The arrival's entire "something just arrived" semantic is carried by ~1.2s
+// of motion and one soft tap, so an owner on VoiceOver got the tap and no words at all.
+//
+// IT MARKS THE OCCASION, IT DOES NOT READ THE CARD. The insight is already rendered and
+// already reachable in the a11y tree by the time this fires, so repeating it here would
+// make the owner hear the finding twice and hear the *occasion* never. This is the
+// round-1 mock's own headline for this moment (`docs/culprit-app-polish-mockups.html`
+// §02, option 2a) — deliberately NOT a claim about the pet's health, only about the
+// record: a pattern exists now where none did before.
+//
+// Whether a line like this should also RENDER — durably, and in particular for the
+// safety-led owner whose moment §4 correctly draws nothing for — is CUL-638, a PM copy
+// round. This helper is announce-only and stays silent wherever the moment is silent.
+export function arrivalAnnouncementCopy(petName: string): string {
+  return `${petName}'s first pattern is ready`;
+}
+
 // ── Coverage diagnostics (B-053) ──────────────────────────────────────────────
 // On the no_pattern surface (E2), lead with the TOP coverage diagnostic's one-line
 // WHY there's no signal yet + at most one safe corrective ACTION (in place of a
