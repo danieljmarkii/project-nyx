@@ -590,7 +590,88 @@ export function isSignalCacheStale(row: SignalCacheRow | null, nowMs = Date.now(
 // or the function computes on stale server data and the new event is invisible to
 // it. Mirrors lib/analysis.ts:triggerVomitAnalysis. Fire-and-forget friendly:
 // returns the error rather than throwing.
-export async function regenerateSignal(petId: string): Promise<{ error: string | null }> {
+export function regenerateSignal(petId: string): Promise<{ error: string | null }> {
+  return serializeRegen(petId, () => runRegen(petId));
+}
+
+// ── One regen at a time, per pet (CUL-642) ────────────────────────────────────
+// The debounce collapses rapid triggers, but `clearTimeout` can only cancel a
+// timer that has not FIRED yet. Once it has, a fresh trigger schedules a SECOND,
+// independent regen beside the first — and `generate-signal` writes the cache with
+// a plain delete-then-insert and no version guard, so whichever invocation reaches
+// the server last wins. On the delete path that is the whole defect back again:
+// a removal at t=5.001s (or any History Remove, which is untethered from the card's
+// dwell entirely) leaves a regen already in flight over a record that still holds
+// the removed event, and if that one settles last it re-caches the stale finding
+// with a fresh 24h TTL. The re-arm alone closes only the sub-case where the
+// reversal beats its own log's timer, which is the example the issue happens to
+// name — not the general case. (code-reviewer, CUL-642; reproduced with a slow
+// first invoke and a fast second.)
+//
+// So the LAST regen to settle is made the FRESHEST one, by refusing to run two at
+// once for a pet. Same shape as `serializeQueuePush` (lib/sync.ts, CUL-622) and the
+// same four rules, which are load-bearing there for reasons that hold here too:
+//
+//   · the trailing slot is checked BEFORE the in-flight slot — the active run's
+//     `.finally` clears its slot several microtask jobs before the trailing run
+//     starts, and a caller landing in that window would otherwise start a third
+//     run beside the pending trailing one;
+//   · a caller arriving mid-run joins the TRAILING run, never the active one — the
+//     active run may already have pushed and invoked, so it cannot be promised to
+//     reflect a change made after it started;
+//   · the trailing run calls `startRegen`, never `serializeRegen` — recursing
+//     defeats the ceiling, because past it the slot is still held;
+//   · the wait is BOUNDED. Past the ceiling a trailing run goes anyway, so a hung
+//     invoke degrades to exactly the concurrent behaviour this had before, never to
+//     a new failure mode where a removal's regen never runs at all.
+const REGEN_WAIT_CEILING_MS = 15_000;
+
+const regenInFlight = new Map<string, Promise<{ error: string | null }>>();
+const regenTrailing = new Map<string, Promise<{ error: string | null }>>();
+
+function settledOrCeiling(active: Promise<unknown>): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const ceiling = setTimeout(resolve, REGEN_WAIT_CEILING_MS);
+    active.catch(() => {}).then(() => {
+      clearTimeout(ceiling);
+      resolve();
+    });
+  });
+}
+
+function serializeRegen(
+  petId: string,
+  run: () => Promise<{ error: string | null }>,
+): Promise<{ error: string | null }> {
+  const waiting = regenTrailing.get(petId);
+  if (waiting) return waiting;
+
+  const active = regenInFlight.get(petId);
+  if (!active) return startRegen(petId, run);
+
+  const trailing = settledOrCeiling(active).then(() => {
+    regenTrailing.delete(petId);
+    return startRegen(petId, run);
+  });
+  regenTrailing.set(petId, trailing);
+  return trailing;
+}
+
+function startRegen(
+  petId: string,
+  run: () => Promise<{ error: string | null }>,
+): Promise<{ error: string | null }> {
+  // Identity-checked, not a bare delete: past the ceiling a newer run owns the slot
+  // while this one is still outstanding, and clearing it then would let a third
+  // caller start beside the run that is genuinely active.
+  const started = run().finally(() => {
+    if (regenInFlight.get(petId) === started) regenInFlight.delete(petId);
+  });
+  regenInFlight.set(petId, started);
+  return started;
+}
+
+async function runRegen(petId: string): Promise<{ error: string | null }> {
   try {
     await syncPendingEvents().catch(() => {});
     await syncPendingMeals().catch(() => {});
@@ -661,6 +742,40 @@ const ackCeilingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // — clearTimeout can't cancel an in-flight call, so two regens run concurrently and the
 // first to SETTLE would otherwise clear the flag while the latest is still pending.
 const regenGeneration = new Map<string, number>();
+
+/**
+ * Drop every pending regen and its acknowledgment state (CUL-642, rls-privacy-reviewer).
+ *
+ * Called from `wipeLocalSession`, because these maps are ACCOUNT STATE resting in JS
+ * memory — the same FR-9 parity rule that already puts the App Group, the moment
+ * store and the trial-context cache in that teardown. A pending timer holds the
+ * signing-out account's pet UUID, and `supabase.functions` resolves its Authorization
+ * header at REQUEST time, not at arming time: so a timer armed by account A and left
+ * to fire after account B signs in on a shared device invokes `generate-signal` with
+ * A's pet id under B's identity. B's RLS refuses the pet (404 before any event read,
+ * so no health data crosses), but `record_ai_usage` is SECURITY DEFINER and takes its
+ * scope id straight from the body — leaving A's pet UUID persisted under B's row,
+ * readable by B and includable in a B-039 export. Reproduced end to end.
+ *
+ * WHAT THIS CANNOT DO, stated rather than implied: an invocation already on the wire
+ * cannot be recalled. That one carries the OUTGOING account's own token, so it stays
+ * within its own account — it can cause a recompute of a record this device has just
+ * wiped, which is untidy rather than a leak. Clearing `regenGeneration` also makes any
+ * such straggler's `.finally` a no-op (its generation is gone, so the guard returns
+ * early), which is why the ack state cannot be re-raised after this runs.
+ */
+export function cancelPendingSignalRegens(): void {
+  for (const t of regenTimers.values()) clearTimeout(t);
+  regenTimers.clear();
+  for (const t of ackCeilingTimers.values()) clearTimeout(t);
+  ackCeilingTimers.clear();
+  regenGeneration.clear();
+  // The serializer's slots go too: holding a signed-out account's in-flight promise
+  // would make the next account's first regen for that pet id wait behind it.
+  regenInFlight.clear();
+  regenTrailing.clear();
+  useSyncStore.setState({ signalAcknowledging: {} });
+}
 
 export function triggerSignalRegenDebounced(petId: string, delayMs = REGEN_DEBOUNCE_MS): void {
   const existing = regenTimers.get(petId);

@@ -49,25 +49,42 @@
 // on the write path with no counterpart on the reversal — which is why it goes
 // HERE, at the one shared reversal, rather than on the surface that noticed it.
 //
-// RE-ARMING the shared debounce rather than minting a separate invalidation is
-// what also closes the race CUL-612 made routine. The completion card's dwell and
-// `REGEN_DEBOUNCE_MS` are both 5000ms by coincidence, so an Undo at t≈4.8s used to
-// land beside its own log's regen at t=5.0s — the removed row still on the server,
-// the regen computing over it, and nothing scheduled to run again. Re-arming
-// CANCELS that pending timer and re-schedules 5s after the reversal, so the only
-// regen that runs is the one over the corrected record. It collapses in the other
-// direction too: clearing several rows out of History in one sitting is one regen,
-// not one per row.
+// RE-ARMING the shared debounce rather than minting a separate invalidation is what
+// also addresses the race CUL-612 made routine. The completion card's dwell and
+// `REGEN_DEBOUNCE_MS` are both 5000ms by coincidence, so an Undo at t≈4.8s lands
+// beside its own log's regen at t=5.0s — the removed row still on the server, the
+// regen computing over it, and nothing scheduled to run again. Re-arming cancels
+// that pending timer and re-schedules 5s after the reversal. It collapses in the
+// other direction too: clearing several rows out of History in one sitting is one
+// regen, not one per row.
 //
-// ORDERING. `regenerateSignal` awaits `syncPendingEvents()` before it invokes the
-// function, so the tombstone is pushed before detection re-reads the server. Not an
-// absolute guarantee — CUL-622's wait ceiling lets a pathologically stalled queue
-// run unserialized — but it is the same ordering every write path already relies on,
-// not a weaker one. Offline it degrades the way the write path does: the invoke
-// fails, the previous cached signal stands, and the next successful regen corrects
-// it. Detection lives in Supabase, so there is no on-device recompute to fall back
-// to, and blanking the cache locally would trade a stale signal for a false empty
-// one — which on this surface is the worse direction.
+// RE-ARMING ALONE IS NOT ENOUGH, and the reason is worth stating because the first
+// draft of this comment claimed it was. `clearTimeout` can only cancel a timer that
+// has not FIRED. An Undo at t=5.001s — or any History/detail Remove, which is
+// untethered from the card's dwell entirely — leaves the log's regen already in
+// flight, and the re-arm then schedules a SECOND one beside it rather than replacing
+// it. `generate-signal` writes the cache with a plain delete-then-insert and no
+// version guard, so whichever invocation reaches the server last wins; if that is the
+// stale one, the removal has re-cached the very finding it was meant to clear and
+// renewed its 24h TTL. So the ordering is enforced where it can actually be enforced,
+// in `lib/signal.ts`'s per-pet regen serializer (`serializeRegen`) — the last regen to
+// settle is made the freshest one. This header names only the debounce; that module
+// owns the rest.
+//
+// ORDERING WITHIN ONE REGEN. `regenerateSignal` awaits `syncPendingEvents()` before
+// it invokes the function, so the tombstone push is ATTEMPTED first — which is a
+// weaker claim than "the deletion reached the server", and deliberately written as
+// the weaker one. The push's failure is swallowed there and the invoke proceeds
+// regardless, so a tombstone that cannot be pushed (an offline device is safe, since
+// the invoke fails too; a QUARANTINED row, `sync_error` set, is the live case) lets
+// the regen recompute over a server that still holds the event and renew the TTL over
+// it. That swallow is shared with every write path and predates this change; narrowing
+// it here would let one unrelated queue rejection block every pet's refresh, so it is
+// tracked rather than patched in passing — CUL-772. Offline it degrades the way the
+// write path does: the invoke fails, the previous cached signal stands, and the next
+// successful regen corrects it. Detection lives in Supabase, so there is no on-device
+// recompute to fall back to, and blanking the cache locally would trade a stale signal
+// for a false empty one — which on this surface is the worse direction.
 //
 // ── THE FAIL-SAFE IS UNTOUCHED ───────────────────────────────────────────────
 // B-156 G1 stands: an unanswered medication card still lands `unconfirmed`,

@@ -27,7 +27,7 @@ jest.mock('./db', () => ({
 jest.mock('./weight', () => ({ reconcileWeightSnapshotAfterDelete: jest.fn(async () => null) }));
 
 import { getEventPetId } from './db';
-import { triggerSignalRegenDebounced } from './signal';
+import { cancelPendingSignalRegens, triggerSignalRegenDebounced } from './signal';
 import { supabase } from './supabase';
 import { syncPendingEvents } from './sync';
 import { reverseLoggedEvent } from './undoLog';
@@ -47,6 +47,7 @@ describe('CUL-642 — a reversal re-arms the Signal regen instead of racing it',
     (getEventPetId as jest.Mock).mockClear().mockResolvedValue('pet-a');
     (syncPendingEvents as jest.Mock).mockClear().mockResolvedValue(undefined);
     useSyncStore.setState({ signalAcknowledging: {}, signalTick: 0 });
+    cancelPendingSignalRegens(); // module state is per-file, not per-test — reset it
   });
   afterEach(() => {
     jest.clearAllTimers();
@@ -79,15 +80,77 @@ describe('CUL-642 — a reversal re-arms the Signal regen instead of racing it',
     // before invoking generate-signal, so detection re-reads a server that has the
     // deletion. A regen that invoked first would recompute the same stale answer and
     // then cache it for 24h — worse than not running, because it renews the TTL.
+    //
+    // THE ORDER IS RECORDED ONLY FROM THE MOMENT THE TIMER FIRES, and that is the
+    // whole test rather than a tidy-up. `reverseLoggedEvent` fires its OWN
+    // fire-and-forget `syncPendingEvents()` at t≈0, so a naive `order` array collected
+    // across the reversal already holds a 'push' before anything the regen does —
+    // and the assertion then passes no matter what `regenerateSignal` does internally.
+    // Verified: the first version of this test stayed green with the push and the
+    // invoke swapped inside `regenerateSignal`, i.e. it was green over the exact
+    // defect it names (code-reviewer, CUL-642). Slice the thing under test; never
+    // assert across the whole flow.
     const order: string[] = [];
+    await reverseLoggedEvent('ev-1');
+
     (syncPendingEvents as jest.Mock).mockImplementation(async () => { order.push('push'); });
     mockedInvoke.mockImplementation(async () => { order.push('invoke'); return { error: null }; });
-
-    await reverseLoggedEvent('ev-1');
     await jest.advanceTimersByTimeAsync(5000);
 
-    expect(order.indexOf('push')).toBeGreaterThan(-1);
-    expect(order.indexOf('invoke')).toBeGreaterThan(order.indexOf('push'));
+    expect(order).toEqual(['push', 'invoke']);
+  });
+
+  it('a reversal AFTER the log\'s regen already fired still settles last', async () => {
+    // The general case, and the one the re-arm alone does NOT close: `clearTimeout`
+    // can only cancel a timer that has not fired. A removal at t=5.001s — or any
+    // History Remove, which is untethered from the card's dwell entirely — leaves the
+    // log's regen already in flight over a server that still holds the row. Since
+    // `generate-signal` writes the cache with a plain delete-then-insert and no
+    // version guard, whichever invocation reaches the server LAST wins, and if that
+    // is the stale one the removal has re-cached the finding it was meant to clear,
+    // with a fresh 24h TTL (code-reviewer, CUL-642).
+    //
+    // The serializer makes the last settle the freshest by refusing to run two at
+    // once for a pet. What this asserts is the ORDER OF SETTLEMENT, not the call
+    // count: both regens legitimately run.
+    const settled: string[] = [];
+    let releaseStale!: () => void;
+    mockedInvoke
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseStale = () => { settled.push('stale'); resolve({ error: null }); };
+          }),
+      )
+      .mockImplementation(async () => { settled.push('fresh'); return { error: null }; });
+
+    triggerSignalRegenDebounced('pet-a');            // t=0, the log
+    await jest.advanceTimersByTimeAsync(5000);       // the log's regen FIRES and hangs
+    await reverseLoggedEvent('ev-1');                // t=5000+, nothing left to cancel
+    await jest.advanceTimersByTimeAsync(5000);       // the reversal's regen comes due
+
+    // It has not run: it is waiting behind the one already on the wire.
+    expect(settled).toEqual([]);
+    releaseStale();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(settled).toEqual(['stale', 'fresh']);
+  });
+
+  it('does not wait forever on a hung regen — it degrades to the old behaviour', async () => {
+    // The objection that makes serialising a network call safe at all (CUL-622):
+    // supabase-js sets no request timeout, so an unbounded wait would mean a single
+    // hung invoke stops a pet's Signal ever refreshing again. Past the ceiling the
+    // waiting run goes anyway — back to exactly the concurrent behaviour this had
+    // before the serializer, never to a new failure mode where a removal's regen
+    // never runs.
+    mockedInvoke.mockImplementationOnce(() => new Promise(() => {})); // never settles
+    triggerSignalRegenDebounced('pet-a');
+    await jest.advanceTimersByTimeAsync(5000);       // hangs, holding the slot
+    await reverseLoggedEvent('ev-1');
+    await jest.advanceTimersByTimeAsync(5000);       // due, and waits
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(15_000);     // REGEN_WAIT_CEILING_MS
+    expect(mockedInvoke).toHaveBeenCalledTimes(2);
   });
 
   it('collapses a burst of removals into one regen per pet', async () => {
@@ -111,6 +174,24 @@ describe('CUL-642 — a reversal re-arms the Signal regen instead of racing it',
     await reverseLoggedEvent('ev-2');
     await jest.advanceTimersByTimeAsync(5000);
     expect(regenPets().sort()).toEqual(['pet-a', 'pet-b']);
+  });
+
+  it('KNOWN LIMIT (CUL-772): a failed tombstone push does not stop the recompute', async () => {
+    // Characterization, not a guarantee — pinned so the residual is visible in the
+    // suite rather than only in prose, and so the day CUL-772 is fixed this test is
+    // what says the behaviour changed.
+    //
+    // `regenerateSignal` swallows the push's failure and invokes anyway, so the
+    // function recomputes over a server that still holds the removed event and writes
+    // a cache row with a fresh 24h TTL. Offline is safe (the invoke fails too); the
+    // live case is a QUARANTINED tombstone, which leaves every queue for the life of
+    // the install (lib/sync.ts). Not narrowed inside CUL-642 because the swallow is
+    // shared with every write path and the queue is global — refusing to invoke on a
+    // rejected push would let one unrelated queue error block every pet's refresh.
+    (syncPendingEvents as jest.Mock).mockRejectedValue(new Error('quarantined'));
+    await reverseLoggedEvent('ev-1');
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(regenPets()).toEqual(['pet-a']); // ← runs anyway; CUL-772 is whether it should
   });
 
   it('offline, the regen fails quiet and the reversal still stands', async () => {
