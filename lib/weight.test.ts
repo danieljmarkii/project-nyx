@@ -112,6 +112,34 @@ describe('parseWeightLbsToKg (the no-junk-in-the-trend gate)', () => {
     // The boundary itself is allowed.
     expect(parseWeightLbsToKg(String(MAX_WEIGHT_LBS))).not.toBeNull();
   });
+
+  // CUL-698. The input guard reads POUNDS and the write stores KILOGRAMS, so a
+  // positive pound value that rounds to 0 kg used to clear `lbs <= 0` and reach
+  // the write as the one value the whole gate exists to refuse. Asserted on the
+  // CONVERTED value, not just for null: `toBeNull()` alone would still pass if a
+  // later change returned 0 by a different route, and 0 is the defect.
+  it('rejects a positive lbs value that rounds to zero kg', () => {
+    expect(parseWeightLbsToKg('0.01')).toBeNull();
+    expect(parseWeightLbsToKg('0.005')).toBeNull();
+    expect(parseWeightLbsToKg('0.0001')).toBeNull();
+    expect(parseWeightLbsToKg('1e-9')).toBeNull();
+  });
+
+  it('accepts the smallest lbs input that still stores a non-zero kg', () => {
+    // 0.02 lb → 0.01 kg: the boundary on the allowed side, so the guard above is
+    // rejecting a rounds-to-zero value rather than everything small. Together
+    // these two pin the edge from both directions.
+    expect(parseWeightLbsToKg('0.02')).toBe(0.01);
+  });
+
+  it('never returns a value the DB CHECK (weight_kg > 0) would refuse', () => {
+    // The gate's contract in one line, swept rather than sampled: whatever it
+    // returns is storable. A rounds-to-zero input must come back null — never 0.
+    for (let lbs = 0; lbs <= 1; lbs += 0.001) {
+      const kg = parseWeightLbsToKg(String(lbs));
+      if (kg !== null) expect(kg).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('insertWeightCheck', () => {
