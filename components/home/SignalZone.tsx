@@ -304,8 +304,21 @@ function useArrivalMoment({
         //   • `halt()` clears this timer, so an arrival cut short by a pet switch, an
         //     unmount, or a blur goes quiet on BOTH channels, with no separate guard. A
         //     0ms announcement would need its own `appActive` check to match.
-        //   • The crossfade has landed by now, so the utterance is not competing with the
-        //     screen-change notification the frame swap posts.
+        //   • It is the same instant as the tap, so the moment reads as one beat rather
+        //     than two — which is the defect this closes, stated positively.
+        // An earlier draft of this comment gave a third reason: that 900ms avoids
+        // competing with "the screen-change notification the frame swap posts". THERE IS
+        // NO SUCH NOTIFICATION — checked, because leaning on a surface without verifying
+        // it does the thing is how a premise nobody owns ends up load-bearing. RN posts
+        // an a11y notification from exactly four places on iOS, and none is a content
+        // re-render: `RCTModalHostViewComponentView.mm` (ScreenChanged, on modal
+        // presentation), `RCTMountingManager.mm` + `RCTAccessibilityManager.mm`
+        // (LayoutChanged, both from an explicit `setAccessibilityFocus`), and
+        // `RCTViewManager.m` (LayoutChanged, on an `accessibilityState` prop write).
+        // Whether the utterance actually lands is a DEVICE question, not a timing one:
+        // an announcement posted while VoiceOver is mid-sentence can be queued or
+        // dropped, and this line is the moment's only carrier. That reliability limit is
+        // the strongest argument for CUL-638's rendered line, and it is recorded there.
         // BOTH PLATFORMS, deliberately — and this is where it parts from the two announce
         // sites above it. `AckLine` and `TextField` gate to `Platform.OS === 'ios'`
         // because each pairs with an `accessibilityLiveRegion` node that already covers

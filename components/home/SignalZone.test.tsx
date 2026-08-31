@@ -856,9 +856,9 @@ describe('SignalZone — the arrival moment', () => {
   it('speaks the arrival at the tap — the buzz finally has its sentence', async () => {
     const announce = spyAnnounce();
     await arrive([benignFinding]);
-    // NOT at 0ms. The crossfade is still running and the frame swap has just posted its
-    // own screen-change notification; pairing the utterance with the tap is what makes
-    // the moment one beat instead of two, and it is what lets `halt()` cancel both.
+    // NOT at 0ms. Pairing the utterance with the tap is what makes the moment one beat
+    // instead of two, and it is what lets `halt()` cancel both — see the pet-switch case
+    // below, which is the half a 0ms announcement would have to re-earn with its own guard.
     expect(announce).not.toHaveBeenCalled();
     act(() => {
       jest.advanceTimersByTime(HAPTIC_AT_MS);
