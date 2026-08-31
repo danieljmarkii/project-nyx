@@ -113,8 +113,42 @@ rather than a clinical limit, and choosing a floor is a species call (a newborn
 kitten is ~100 g), not a correctness fix. Named in the PR as a non-goal rather than
 guessed at; no issue filed, because nothing is currently wrong without it.
 
+## The code-reviewer pass, and the one thing it changed
+
+Run on the committed diff. It reached `EditPetModal` **without being pointed at it**
+and ranked it the top finding — independent corroboration of the scope call above,
+which is the useful part: two lenses arriving at the same fourth writer separately
+is stronger evidence than either finding alone.
+
+Its verdict was *fix-before-merge*, arguing CUL-698 should not close while the
+column can still take a `0`. That recommendation is declined on scope — a different
+function, and it needs a UX ruling (CUL-765) — but **the reason behind it was right
+and was acted on**: the fix's own docstring said the zero was *"the one value every
+consumer here is written to refuse"*, which reads as a claim about the column and is
+false of `pets.weight_kg`. That sentence now names its own scope and points at
+CUL-765, so a future reader cannot take this function's presence as protection of a
+column it does not gate. **A fix that overstates its reach is a fix that stops the
+next person looking** — the same failure the original docstring had, which is what
+made this defect survivable for as long as it did.
+
+Two findings folded into CUL-765 rather than here: `WeightTrendCard`'s empty state
+renders the snapshot too (so a `0` shows large on the emptiest record), and
+`formatWeightLbs` (`app/(tabs)/profile.tsx:189`) is a **third** copy of the rounding
+rule the `lib/weight.ts` header says should not exist.
+
+Its mutation pass is worth recording because it tested my tests rather than my code.
+Seven mutants; **no non-discriminating test** among the three. The two that matter:
+M6 (weaken the *input* gate to `lbs < 0`) is caught by the output guard alone —
+so the two checks really are defence-in-depth rather than one redundant pair — and
+M7 (over-tighten to `kg > 0.01`) is caught **only** by the boundary-accept pin, which
+is the test that looked like the weakest of the three. M4 (`kg !== 0`) is a genuine
+equivalent mutant, unreachable given the upstream `lbs > 0`.
+
 ## Verification
 
 - `tsc --noEmit` clean.
 - 295 suites / 6361 cases green — full run, and again through the pre-push hook.
 - Both new guards proven red against the unfixed source, individually.
+- CI green on `App (typecheck + jest)` and `Edge Functions (deno test)`.
+- `code-reviewer`: no defect found in the diff itself; its one in-scope criticism
+  (an overclaiming docstring) fixed.
