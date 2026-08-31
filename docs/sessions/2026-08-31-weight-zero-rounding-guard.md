@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-31
 
-Shipped via **#786** (draft). Mode: BUILD. Branch `claude/weight-lbs-kg-zero-rounding-h75to3`.
+Shipped via **#786**. Mode: BUILD. Branch `claude/weight-lbs-kg-zero-rounding-h75to3`.
 
 ## What shipped
 
