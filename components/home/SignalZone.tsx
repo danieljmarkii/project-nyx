@@ -290,6 +290,14 @@ function useArrivalMoment({
       // at 900ms whether or not the sweep is drawn — §4: under reduced motion the haptic
       // still fires, because touch is not motion. The same is true of speech, so the
       // announcement below rides this beat too.
+      // Pinned HERE on purpose — three lines below the `activePet.current !== petId`
+      // guard, which is the only point in this function where the active pet has just
+      // been verified against the pet whose marker is being spent. Reading `name.current`
+      // fresh inside the timer instead would re-open the window that guard closes: the
+      // refs are written during render while the pet-switch halt runs in an effect, so a
+      // fire landing between the two would speak the NEW pet's name over the OLD pet's
+      // moment (the CUL-574 wrong-pet class). A stale name after a mid-moment rename is
+      // the opposite trade — cosmetic, and the card corrects it on the next frame.
       const arrivedFor = name.current;
       run.current.timer = setTimeout(() => {
         run.current.timer = null;

@@ -601,11 +601,16 @@ describe('SignalZone — the arrival moment', () => {
    * Mount in a settled BUILDING state, then transition to live — the arrival's actual
    * trigger. Returns the render result so a test can inspect the card mid-moment.
    */
-  async function arrive(findings: CachedFinding[], petId = 'pet-1', suppress = false) {
-    mockUseSignal.mockReturnValue(signalState({ petId, displayState: 'building' }));
+  async function arrive(
+    findings: CachedFinding[],
+    petId = 'pet-1',
+    suppress = false,
+    petName = 'Nyx',
+  ) {
+    mockUseSignal.mockReturnValue(signalState({ petId, petName, displayState: 'building' }));
     const view = render(<SignalZone suppressTrialResponse={suppress} />);
     await flush();
-    mockUseSignal.mockReturnValue(signalState({ petId, displayState: 'live', findings }));
+    mockUseSignal.mockReturnValue(signalState({ petId, petName, displayState: 'live', findings }));
     await act(async () => {
       view.rerender(<SignalZone suppressTrialResponse={suppress} />);
     });
@@ -891,6 +896,44 @@ describe('SignalZone — the arrival moment', () => {
       announce.mockRestore();
       Platform.OS = prevOS;
     }
+  });
+
+  it('names the pet whose moment it is — not a hardcoded one', async () => {
+    // Every other fixture in this block is called 'Nyx', which made the whole suite blind
+    // to the CUL-574 class: hardcoding `arrivalAnnouncementCopy('Nyx')` in the source
+    // passed all 53 tests. A guard whose fixtures make two different behaviours identical
+    // is not a guard, so this case is the one that gives the others their meaning.
+    const announce = spyAnnounce();
+    await arrive([benignFinding], 'pet-2', false, 'Mochi');
+    act(() => {
+      jest.advanceTimersByTime(HAPTIC_AT_MS);
+    });
+    expect(announce).toHaveBeenCalledWith(arrivalAnnouncementCopy('Mochi'));
+    announce.mockRestore();
+  });
+
+  it('pins the name at the point the pet was verified, so a mid-moment rename cannot move it', async () => {
+    // Pinned deliberately, and the reason is a proof rather than a preference: `arrivedFor`
+    // is read immediately after the `activePet.current !== petId` guard, so it provably
+    // belongs to the pet whose marker was just spent. Reading `name.current` fresh inside
+    // the timer instead would re-open a window that guard closes — the refs are written
+    // during render while the halt runs in an effect, so a fire landing between the two
+    // would speak the NEW pet's name over the old pet's moment. That is the wrong-pet
+    // class; a stale name after a rename is cosmetic and the card corrects it. Trading a
+    // proof for a cosmetic gain is the wrong direction, so this pins the trade.
+    const announce = spyAnnounce();
+    const view = await arrive([benignFinding], 'pet-1', false, 'Nyx');
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-1', petName: 'Renamed', displayState: 'live', findings: [benignFinding] }),
+    );
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    act(() => {
+      jest.advanceTimersByTime(HAPTIC_AT_MS);
+    });
+    expect(announce).toHaveBeenCalledWith(arrivalAnnouncementCopy('Nyx'));
+    announce.mockRestore();
   });
 
   it('says NOTHING on the safety path — silence is the severity signal on every channel', async () => {

@@ -503,6 +503,11 @@ describe('arrivalAnnouncementCopy (CUL-636) — the arrival moment’s screen-re
     // never, which is the defect inverted rather than fixed.
     const s = arrivalAnnouncementCopy('Nyx');
     expect(s.split(/\s+/).length).toBeLessThanOrEqual(6);
+    // Length alone is a weak proxy, so also pin the SHAPE of a restatement: every finding
+    // this can be spoken over carries a magnitude or an anchor (nyx-voice Pattern 2 —
+    // "3 hours", "60%", a food name). A line that quotes one necessarily carries a digit;
+    // the occasion never does.
+    expect(/\d/.test(s)).toBe(false);
   });
 
   it('is guardrail-clean (no exclamation, no reassurance/causal vocabulary — absence ≠ wellness)', () => {
