@@ -4,18 +4,24 @@ import FoodDetailScreen from './[id]';
 // CUL-651 — the food detail screen's failure banner, at the seam the component
 // test cannot reach: WHETHER IT RENDERS AT ALL.
 //
-// The banner was gated `isFailed && row.ai_extraction_error`, which reads as
-// belt-and-braces and is not. `app/food-capture.tsx:631` upserts
-// `ai_extraction_status: 'failed'` and never writes that column, which is what
-// happens whenever extraction did not run: the daily/monthly cap (§4.3), the
-// feature flag off, and a transport fault that never reached the Edge Function.
-// All three left the owner with a food stuck at 'failed', no banner, and no way
-// to ask for the retry — the failure hidden by the absence of a diagnostic
-// string that never had an owner-facing job.
+// The gate is `isFailed && row.ai_extraction_error`, and the second half is the
+// load-bearing one. `ai_extraction_error` is written only by the Edge Function's
+// catch block, so non-null means extraction RAN AND FAILED; null on a 'failed'
+// row means it never ran — `food-capture.tsx:631` stamps 'failed' for the §4.3
+// cap, the flag being off, and a transport fault alike.
 //
-// So the case that matters here is `error: null`, and it is the one this file
-// exists for. Confirmed against the pre-fix screen: it rendered nothing (CUL-613
-// — a guard that has only ever been green has not been tested).
+// This session widened that gate to the status alone, on the argument that a
+// failure hidden by a missing diagnostic string is a failure hidden — and
+// reverted it, because the product review traced where the newly-shown button
+// leads: `handleRetry` writes 'pending', the cap and flag-off paths answer with a
+// typed 200 that `handleRetry` cannot see, and the row stays 'pending', where the
+// Ingredients field becomes a spinner and the reaper can hard-delete the food
+// (CUL-769). Those rows do need a state; it is the calm cap band, not this
+// banner (CUL-768).
+//
+// So the null-error case is pinned as ABSENT — with the reason, so the next
+// reader does not repeat the widening. Both directions were confirmed by
+// mutation against the tree they were written for (CUL-613).
 
 const foodRow = (over: Record<string, unknown> = {}) => ({
   id: 'food-1',
@@ -103,8 +109,19 @@ describe('food detail — the extraction-failure banner', () => {
   afterEach(() => warn.mockClear());
   afterAll(() => warn.mockRestore());
 
-  it('offers the retry on a failed food that stored no error (the cap / flag-off / transport path)', async () => {
+  // The revert, pinned. NOT "this state is fine" — it is a known defect, filed as
+  // CUL-768 — but the button this banner carries is destructive on exactly these
+  // rows, and withholding an affordance is cheap where a destructive one is not.
+  it('shows no banner on a failed food that stored no error — the retry would be destructive there', async () => {
     mockCurrentRow = foodRow({ ai_extraction_error: null });
+    const { queryByTestId, getByDisplayValue } = render(<FoodDetailScreen />);
+    await waitFor(() => expect(getByDisplayValue('Royal Canin')).toBeTruthy());
+    expect(queryByTestId('food-extraction-failed')).toBeNull();
+    expect(queryByTestId('food-extraction-retry')).toBeNull();
+  });
+
+  it('offers the retry on a food the extractor actually failed on', async () => {
+    mockCurrentRow = foodRow({ ai_extraction_error: 'Claude did not return a valid extraction result' });
     const { getByTestId } = render(<FoodDetailScreen />);
     await waitFor(() => expect(getByTestId('food-extraction-failed')).toBeTruthy());
     expect(getByTestId('food-extraction-retry')).toBeTruthy();

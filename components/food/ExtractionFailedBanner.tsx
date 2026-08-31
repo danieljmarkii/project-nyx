@@ -17,16 +17,18 @@
 // owner gets copy in the same voice `food-capture.tsx` already uses for this exact
 // event ("Couldn't read the label automatically. You can fill it in below…").
 //
-// ── THE BANNER IS NOT GATED ON THE STORED ERROR ─────────────────────────────
+// ── WHY THE CALLER STILL GATES ON THE STORED ERROR ──────────────────────────
 //
-// The caller renders this on `ai_extraction_status === 'failed'` ALONE. It used to
-// require a non-null `ai_extraction_error` too, which looks harmless and is not:
-// `food-capture.tsx` upserts `ai_extraction_status: 'failed'` WITHOUT ever writing
-// that column (the cap-reached, flag-off, and transport-fault paths all return
-// from the Edge Function without touching the row). Every one of those left an
-// owner with a failed food, no banner, and no way to retry — a failure state made
-// invisible by the absence of a diagnostic string that has no owner-facing job in
-// the first place (the CUL-62 shape: a fact is not gated on the thing it counts).
+// This component carries no error, but the screen renders it only when
+// `ai_extraction_error` is non-null — i.e. only when the Edge Function actually
+// ran and failed. A NULL error on a 'failed' row means extraction never ran (the
+// §4.3 cap, the feature flag off, a transport fault; `food-capture.tsx:631`
+// stamps 'failed' for all three). Those rows show nothing today, which is its own
+// defect — but the fix is the capture screen's calm care-first cap band, NOT this
+// banner: `handleRetry` is destructive on them (CUL-769), and a fault banner in
+// symptom rose would drop the Pets > $ commitment its capture-screen twin makes.
+// That needs the state model 'failed' is collapsing three ways — CUL-768.
+//
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';

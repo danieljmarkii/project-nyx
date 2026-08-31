@@ -700,13 +700,39 @@ export default function FoodDetailScreen() {
           )}
 
           <View style={styles.body}>
-            {/* CUL-651. Gated on the STATUS alone — `ai_extraction_error` is a
-                diagnostic column, and requiring it hid this banner (retry button
-                and all) on every failure that never writes one: cap-reached,
-                flag-off, and a transport fault, all of which leave food-capture's
-                `status: 'failed'` upsert standing on its own. The banner takes no
-                error prop, so the raw string has nowhere to land. */}
-            {isFailed && (
+            {/* CUL-651. The banner takes no error prop, so the stored string has
+                nowhere to land — but the stored string is still what GATES it, and
+                that is deliberate rather than left over.
+
+                `ai_extraction_error` is non-null only when the Edge Function ran
+                and genuinely failed (its catch block is the only writer). A NULL
+                error on a 'failed' row means extraction never ran at all —
+                `food-capture.tsx:631` upserts `'failed'` for the §4.3 cap, the
+                feature flag being off, and a transport fault alike, and the
+                function returns from all three without touching the row. So this
+                condition is not belt-and-braces; it is the only thing on the
+                client that separates "we tried and could not read it" from "we
+                did not try".
+
+                That matters because the retry is DESTRUCTIVE on the rows it
+                separates out. `handleRetry` writes `'pending'` to the server; the
+                cap and flag-off paths answer with a typed 200, so `error` is null,
+                nothing writes back, and the row stays `'pending'` — where the
+                Ingredients field below becomes a "Reading the label…" spinner (the
+                one field this banner's own copy tells the owner to fill in) and
+                `reapStalePendingFoods` becomes eligible to hard-delete the food,
+                cascading into `diet_trial_foods`. Details: CUL-769.
+
+                This session widened the gate to `isFailed` alone — the silent-
+                failure argument is real, and the spec forbids a silent extraction
+                failure — and reverted it when the product review traced where the
+                newly-shown button leads. Those rows do need a state, but it is the
+                capture screen's calm care-first cap band, not a fault banner with
+                a button that can destroy the record: withholding an affordance is
+                cheap, a destructive one is not. That work needs the state model
+                `'failed'` is currently collapsing three ways, and it is CUL-768.
+                Do not re-widen this without it. */}
+            {isFailed && row.ai_extraction_error && (
               <ExtractionFailedBanner onRetry={handleRetry} retrying={retrying} />
             )}
 
