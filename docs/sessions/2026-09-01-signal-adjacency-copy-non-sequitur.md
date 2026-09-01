@@ -45,8 +45,8 @@ Three owner surfaces, one clinical surface deliberately untouched:
   logged too — a cough can look like retching or end in vomiting. Mention both."_ The
   bridge names the sign the card is _not_ about (a vomit-led card says coughing, a
   cough-led card says vomiting), so the cough no longer arrives from nowhere. Composed
-  worst case (Bartholomew, 137 episodes, firm, a **September** onset) is **306 of
-  320**.
+  worst case (Bartholomew, 137 episodes, the longer non-firm ask, a **September**
+  onset) is **307 of 320**.
 - **Tap-to-expand** (`lib/signalCopy.ts`, `evidenceText`): same bridge and premise,
   then _"so the two can be hard to tell apart even when you're watching closely —
   either count could run low as easily as high"_. Attributes the blur to the **signs**,
