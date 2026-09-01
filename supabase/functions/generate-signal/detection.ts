@@ -6620,7 +6620,13 @@ function discloseCoughVomitAdjacency(findings: Finding[]): Finding[] {
   if (!chronicTypes.has('cough') || !chronicTypes.has('vomit')) return findings
   let marked = false
   return findings.map((f) => {
+    // The leading COUGH-OR-VOMIT card, not the leading chronicity card of any sign: the
+    // note's copy opens by naming the other sign ("Vomiting is logged too — …"), which is
+    // only true of a card that is itself one of the pair. Marking the first chronicity
+    // finding regardless of type let a longer diarrhea course carry a cough↔vomit note
+    // that named neither of its own counts (CUL-778).
     if (f.type !== 'symptom_chronicity' || marked) return f
+    if (f.symptomType !== 'cough' && f.symptomType !== 'vomit') return f
     marked = true
     return { ...f, coughVomitAdjacent: true as const }
   })

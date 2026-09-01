@@ -236,6 +236,16 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
   return `${lead} — worth a call to your vet. This is a read of your logs, not a diagnosis.`
 }
 
+// The §9 adjacency note opens by naming the sign the card is NOT about, so an owner reading
+// the vomiting card learns the cough is on the record before being told the two can blur
+// (CUL-778). The composition layer marks only a cough-or-vomit card, so the third branch
+// is unreachable by construction and kept only so the sentence can never be wrong.
+function adjacencyBridge(symptomType: SymptomType): string {
+  if (symptomType === 'cough') return 'Vomiting is logged too'
+  if (symptomType === 'vomit') return 'Coughing is logged too'
+  return 'Coughing and vomiting are both logged'
+}
+
 export function templateChronicity(f: SymptomChronicityFinding, petName: string): string {
   // Detector ⑦ (B-182) — template-only (no LLM, like ③/④/⑤/⑥), a structural never-reassure
   // guarantee. Names DURATION + RECURRENCE + COUNT, routed to the vet. NEVER causal, never a
@@ -269,10 +279,37 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   //    same moments" — i.e. DOUBLE-COUNTING, which is the benign reading and, on a safety
   //    card, the deflationary one. The failure §9 actually names is MISATTRIBUTION: a cough
   //    logged as hairball retching, or post-tussive vomiting logged as a cough. That makes
-  //    one count too LOW as readily as the other too high, so the honest word is "confused",
-  //    not "overlapping", and the sentence must not suggest either number is inflated.
+  //    one count too LOW as readily as the other too high, so the sentence names the
+  //    confusion, never "overlap", and must not suggest either number is inflated.
+  //
+  // AND ONE THING THE PM CAUGHT ON DEVICE THAT NEITHER PASS DID (2026-09-01, CUL-778):
+  //
+  // 3. THE PREMISE WAS MISSING. The corrected clause read "Coughing and vomiting are easily
+  //    confused, so raise both with your vet together" — the CONCLUSION of the clinical
+  //    caveat with its premise deleted to fit the cap. To an owner who has logged both signs
+  //    deliberately it reads as a non sequitur, or as the app doubting the record ("how does
+  //    that even make sense?"). The adversarial pass fixed the error model and the length,
+  //    and nobody re-read the result for voice — there was no Designer / nyx-voice sign-off
+  //    on the PR at all. The clause now states WHY in plain words (nyx-voice Pattern 2:
+  //    specific over generic): a cough can look like retching (cough logged as a vomit), and
+  //    a hard cough can end in vomiting (a vomit that rides on a cough). Both directions,
+  //    no mechanism word (MECHANISM_RE), no cause word (CAUSAL_RE), and still never the
+  //    hairball explanation — "retching" names what the owner SEES, not what it means.
+  //    The cold owner read (pm-feature-review) then caught the residual half of the same
+  //    defect: the card said "We've logged vomiting…" and then "A cough can look like…"
+  //    with the cough arriving from nowhere, because the note never said the OTHER sign is
+  //    on the record. So the clause opens by naming it ("Vomiting is logged too"), which
+  //    is why the composition layer may only mark a cough-or-vomit card.
+  //    LENGTH, AGAIN: the first bridge draft measured "worst case" against a MAY onset —
+  //    the shortest month name — and read 318/320; the same card with a September onset
+  //    was 323 and failed the contract the comment beside it cited (adversarial pass
+  //    2026-09-01). The premise is now the shorter "look like retching or end in
+  //    vomiting" (the "hard" qualifier lives on in the expand, where there is room), and
+  //    the cap test pins the LONGEST month with a long name, on BOTH tiers (the non-firm
+  //    ask is the longer one — the second pass found that after the first found the
+  //    month). Real ceiling 307/320: ~13 chars of headroom, a 24-letter pet name.
   const adjacency = f.coughVomitAdjacent
-    ? ` Coughing and vomiting are easily confused, so raise both with your vet together.`
+    ? ` ${adjacencyBridge(f.symptomType)} — a cough can look like retching or end in vomiting. Mention both.`
     : ''
   return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}.${adjacency} This is a read of your logs, not a diagnosis.`
 }
