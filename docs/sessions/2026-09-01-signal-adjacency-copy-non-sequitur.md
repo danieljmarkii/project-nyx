@@ -94,7 +94,19 @@ Three owner surfaces, one clinical surface deliberately untouched:
   clinical residual for Dr. Chen, not a break: on the vomit-led card both premise
   clauses read as airway explanations of the vomiting; the clause closes on "Mention
   both", so the action is escalatory, and no count is netted down.
-- **adversarial-reviewer**, pass 2 (on the shortened copy): PASS2_PLACEHOLDER
+- **adversarial-reviewer**, pass 2 (on the pushed head, after a session resume lost the
+  first attempt to run it): **PASS**, one required fix taken, one residual. The fix is the
+  same class as pass 1's, one axis over: the cap fixture enumerated the month but pinned
+  `tier: 'firm'`, and the non-firm ask ("worth a word with your vet") is one character
+  longer — real ceiling 307/320, a 24-letter pet name. The fixture now asserts both tiers
+  and that the non-firm one is the longer. The residual: the card face is the only one of
+  the three surfaces that dropped the "hard" qualifier ("a cough can look like retching
+  **or end in vomiting**"); the vomiting card still carries its own vet ask and "Mention
+  both", so nothing reads as "the vomiting is just the cough", but the trim landed on the
+  qualifying word on the most-read surface. Restoring it costs ~9 of 13 chars and re-enters
+  the voice pass. Appended to the Dr. Chen brief on CUL-778. Twelve source and client
+  mutations each reddened exactly their own guard; reachability of the note on a non-pair
+  card held across ranking, Home, the report path and the cross-pet banner.
 
 ## Tests
 
@@ -113,8 +125,8 @@ Three owner surfaces, one clinical surface deliberately untouched:
 - The three owner surfaces are still three hand-written strings. The cold read
   proposed one shared clause source (the `lib/dietTrial.ts` shape); filed as
   CUL-779.
-- The composed card is at 306/320 on the longest month with an 11-letter name. A pet
-  name past ~25 letters breaches the contract; the template still ships (chronicity is
+- The composed card is at 307/320 on the longest month, the longer tier ask and an
+  11-letter name. A pet name past 24 letters breaches the contract; the template still ships (chronicity is
   template-only and `phraseFinding` returns before validating), so that is a contract
   breach rather than a render break.
 - Dr. Chen residual (adversarial pass 1, #4): on the vomit-led card both premise clauses

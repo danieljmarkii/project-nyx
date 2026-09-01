@@ -305,7 +305,9 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   //    was 323 and failed the contract the comment beside it cited (adversarial pass
   //    2026-09-01). The premise is now the shorter "look like retching or end in
   //    vomiting" (the "hard" qualifier lives on in the expand, where there is room), and
-  //    the cap test pins the LONGEST month with a long name. ~16 chars of headroom.
+  //    the cap test pins the LONGEST month with a long name, on BOTH tiers (the non-firm
+  //    ask is the longer one — the second pass found that after the first found the
+  //    month). Real ceiling 307/320: ~13 chars of headroom, a 24-letter pet name.
   const adjacency = f.coughVomitAdjacent
     ? ` ${adjacencyBridge(f.symptomType)} — a cough can look like retching or end in vomiting. Mention both.`
     : ''

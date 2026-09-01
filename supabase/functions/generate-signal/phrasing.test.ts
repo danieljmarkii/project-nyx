@@ -830,22 +830,31 @@ Deno.test('the adjacency arm fits the phrasing cap on a deliberately worst-case 
   // A SEPTEMBER onset, deliberately: the fixture's default May is the SHORTEST month name,
   // and a "worst case" measured against it read 318/320 while the same card with a
   // September onset was 323 (adversarial pass 2026-09-01). The month is the one variable
-  // in this sentence the editor does not see.
-  const t = templateChronicity(
-    chronicity({
-      tier: 'firm',
-      symptomType: 'cough',
-      episodeCount: 137,
-      activeWeeks: 8,
-      daysSinceLastEpisode: 0,
-      firstOnsetIso: '2026-09-15T08:00:00.000Z',
-      coughVomitAdjacent: true,
-    }),
-    'Bartholomew',
-  )
-  assert.ok(/since September/.test(t), `the fixture must actually exercise the longest month: ${t}`)
-  assert.ok(t.length <= 320, `composed to ${t.length} chars, over the 320 cap: ${t}`)
-  assert.ok(validatePhrasing(t, chronicity({ tier: 'firm', symptomType: 'cough' })))
+  // in this sentence the editor does not see. And BOTH tiers, because the second pass found
+  // the same class one axis over: the non-firm ask ("worth a word with your vet") is one
+  // character LONGER than the firm one, so a fixture pinned to 'firm' was again one short
+  // of the real ceiling. The cap is asserted on every tier; `t` below is the longest.
+  const worstCase = (tier: ChronicityTier) =>
+    templateChronicity(
+      chronicity({
+        tier,
+        symptomType: 'cough',
+        episodeCount: 137,
+        activeWeeks: 8,
+        daysSinceLastEpisode: 0,
+        firstOnsetIso: '2026-09-15T08:00:00.000Z',
+        coughVomitAdjacent: true,
+      }),
+      'Bartholomew',
+    )
+  for (const tier of ['firm', 'standard'] as const) {
+    const s = worstCase(tier)
+    assert.ok(/since September/.test(s), `the fixture must actually exercise the longest month: ${s}`)
+    assert.ok(s.length <= 320, `${tier}: composed to ${s.length} chars, over the 320 cap: ${s}`)
+    assert.ok(validatePhrasing(s, chronicity({ tier, symptomType: 'cough' })))
+  }
+  const t = worstCase('standard')
+  assert.ok(t.length > worstCase('firm').length, 'the non-firm ask is the longer one — keep the ceiling honest')
   // It names MISATTRIBUTION in both directions — a cough that looks like retching, a cough
   // that ends in vomiting — never overlap/double-counting (the deflationary reading the
   // adversarial pass rejected on a safety card), and never the bare conclusion "easily
