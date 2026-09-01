@@ -1,7 +1,7 @@
 # Signal card — the cough↔vomit adjacency clause read as a non sequitur (CUL-778)
 
 **Date:** 2026-09-01
-**Shipped via #PR_NUMBER.** _(Branch `claude/signals-confusion-text-bug-512b7q`.)_
+**Shipped via #790.** _(Branch `claude/signals-confusion-text-bug-512b7q`.)_
 
 ## What this was
 
