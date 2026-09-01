@@ -97,12 +97,32 @@ function readSource(file: string): string | null {
  * CUL-641 issue itself did not name. A bare `import` line is excluded, since a file
  * cannot use what it only names in its import.
  */
-function usesPrimitive(src: string): boolean {
-  const code = stripComments(src)
+function executableBody(src: string): string {
+  return stripComments(src)
     .split('\n')
     .filter((l) => !/^\s*import\b/.test(l) && !/^\s*\}\s*from\s*'/.test(l))
     .join('\n');
-  return new RegExp(`\\b${PRIMITIVE}\\b`).test(code);
+}
+
+function usesPrimitive(src: string): boolean {
+  return new RegExp(`\\b${PRIMITIVE}\\b`).test(executableBody(src));
+}
+
+/**
+ * Does the reversal actually CALL this side-effect? Import lines are stripped for the
+ * same reason comments are, and it is the reason this helper exists rather than a bare
+ * regex over the file (rls-privacy-reviewer, CUL-642): deleting the call while leaving
+ * the `import` behind is the natural half-edit — a linter flags the unused import, a
+ * hasty fix silences it with a `void`, and a file-wide regex stays green over a
+ * side-effect that no longer runs. Mutation-proven both ways: with the call deleted and
+ * the import kept, the bare-regex version passed 4/4 and this one fails.
+ *
+ * Same limit as `usesPrimitive`: it proves a symbol is reached, never that what it does
+ * is right. The behavioural suites (lib/undoLog.test.ts, lib/signalRegenRace.test.ts)
+ * own that; this owns the whole-path omission.
+ */
+function settles(src: string, sideEffect: string): boolean {
+  return new RegExp(`\\b${sideEffect}\\b`).test(executableBody(src));
 }
 
 describe('CUL-641 — every soft delete goes through the one shared reversal', () => {
@@ -116,8 +136,20 @@ describe('CUL-641 — every soft delete goes through the one shared reversal', (
   it('reverseLoggedEvent settles the weight snapshot', () => {
     // The side-effect this guard was written around. Pinning it here rather than only in
     // a unit test means deleting the wiring breaks the guard that explains why it exists.
-    const src = stripComments(fs.readFileSync(path.join(ROOT, SANCTIONED_PATH), 'utf8'));
-    expect(/\breconcileWeightSnapshotAfterDelete\b/.test(src)).toBe(true);
+    const src = fs.readFileSync(path.join(ROOT, SANCTIONED_PATH), 'utf8');
+    expect(settles(src, 'reconcileWeightSnapshotAfterDelete')).toBe(true);
+  });
+
+  it('reverseLoggedEvent re-arms the Signal regen', () => {
+    // CUL-642, the SECOND instance of the exact shape above — a side-effect the write
+    // paths perform (`insertMeal` / `insertSimpleEvent` / the capture-inbox ingest all
+    // kick a debounced regen) with no counterpart on any of the three reversals, so a
+    // cached `ai_signals` finding went on being computed over an event the owner had
+    // removed. Two instances is what makes it a class rather than an oversight, which
+    // is the argument for pinning both HERE: a third side-effect added to the write
+    // path and skipped on the reversal is the failure this file exists to make loud.
+    const src = fs.readFileSync(path.join(ROOT, SANCTIONED_PATH), 'utf8');
+    expect(settles(src, 'triggerSignalRegenDebounced')).toBe(true);
   });
 
   it('no other file reaches past it for the raw primitive', () => {

@@ -6,6 +6,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 jest.mock('./sync', () => ({
   notifySignedOut: jest.fn(),
   flushPendingForSignOut: jest.fn().mockResolvedValue(undefined),
+  // lib/signal's regen flushes both queues before it invokes. Stubbed so the CUL-642
+  // teardown test can run the REAL debounce → regen path and observe it at the wire.
+  syncPendingEvents: jest.fn().mockResolvedValue(undefined),
+  syncPendingMeals: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('./db', () => ({
   clearLocalData: jest.fn().mockResolvedValue(undefined),
@@ -28,7 +32,9 @@ jest.mock('./notifications', () => ({
 // the client only — the two teardown functions themselves run for real below
 // (one is in-memory, one is AsyncStorage-backed), which is the same split the
 // note above describes.
-jest.mock('./supabase', () => ({ supabase: {} }));
+jest.mock('./supabase', () => ({
+  supabase: { functions: { invoke: jest.fn().mockResolvedValue({ error: null }) } },
+}));
 
 import { wipeLocalSession, flushForSignOut, unsentSignOutWarning } from './session';
 import { notifySignedOut, flushPendingForSignOut } from './sync';
@@ -43,6 +49,9 @@ import { persistAppConfig, loadCachedAppConfig, APP_CONFIG_DEFAULTS } from './ap
 import { useBetaOptInStore, BETA_OPT_IN_STORAGE_KEY } from './betaFeatures';
 import { quietDailyRecapOffer, readOfferState } from './dailyRecapOffer';
 import { hasPlayedArrival, markArrivalPlayed } from './signalArrival';
+import { triggerSignalRegenDebounced } from './signal';
+import { supabase } from './supabase';
+import { useSyncStore } from '../store/syncStore';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -203,6 +212,66 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
 // health record — and a retained cache of that account's meals and symptom photos
 // IS that leak, whatever it is labelled. So: send what can be sent, then tell the
 // owner the truth about the rest and let them decide.
+describe('wipeLocalSession — the Signal regen teardown (CUL-642)', () => {
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
+  it('cancels a pending regen so it cannot fire under the NEXT account', async () => {
+    // The attack this closes (rls-privacy-reviewer): account A removes an event,
+    // arming a 5s regen for A's pet; A signs out at t=2s; B signs in; at t=5s the
+    // timer fires and invokes generate-signal with A's pet id — under B's token,
+    // because supabase-js resolves the Authorization header at REQUEST time, not at
+    // arming time. RLS refuses the pet, so no health data crosses; but
+    // `record_ai_usage` is SECURITY DEFINER and takes its scope id from the body, so
+    // A's pet UUID lands in `ai_usage.scope_id` under B's row where B can read it.
+    //
+    // Asserted on the SIDE-EFFECT reaching the network, not on the timer map, because
+    // the map is private and a test that reads it would pass over a wipe that cleared
+    // the wrong one.
+    // OBSERVED AT THE WIRE, through the real debounce and the real regen. The first
+    // version of this test spied on `regenerateSignal` and asserted it was not
+    // called — which was vacuous: `triggerSignalRegenDebounced` calls it through the
+    // module-local binding, so the spy on the module's exports never intercepted it,
+    // and the assertion was green whether or not anything was cancelled. Mutation
+    // caught it (removing the wipe call tripped only the ack assertion beside it),
+    // which is the CUL-613 rule earning its place inside the fix for CUL-613's own
+    // failure shape.
+    jest.useFakeTimers();
+    const invoke = supabase.functions.invoke as jest.Mock;
+    invoke.mockClear();
+
+    triggerSignalRegenDebounced('pet-of-account-a', 5000);
+    expect(useSyncStore.getState().signalAcknowledging['pet-of-account-a']).toBe(true);
+
+    await wipeLocalSession();
+
+    // The acknowledgment state goes with it — otherwise the next account's Home shows
+    // "Noted — updating …" over a pet it has never heard of.
+    expect(useSyncStore.getState().signalAcknowledging).toEqual({});
+
+    await jest.advanceTimersByTimeAsync(20_000);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('the SAME timer DOES reach the wire without the wipe — the control', async () => {
+    // Without this the assertion above cannot tell "cancelled" from "this test never
+    // had a live path to the wire in the first place", which is exactly how its first
+    // version passed. Runs the identical arrangement and lets the timer fire.
+    jest.useFakeTimers();
+    const invoke = supabase.functions.invoke as jest.Mock;
+    invoke.mockClear();
+
+    triggerSignalRegenDebounced('pet-of-account-a', 5000);
+    await jest.advanceTimersByTimeAsync(5000);
+
+    expect(invoke).toHaveBeenCalledWith('generate-signal', {
+      body: { petId: 'pet-of-account-a' },
+    });
+  });
+});
+
 describe('flushForSignOut (B-430)', () => {
   it('PUSHES BEFORE REPORTING — the order is the entire feature', async () => {
     const order: string[] = [];

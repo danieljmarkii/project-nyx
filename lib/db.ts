@@ -632,6 +632,34 @@ export async function updateEvent(
   await database.runAsync(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`, params);
 }
 
+// CUL-642 — whose pet is this event? Used by the shared reversal to re-arm that
+// pet's Signal regen after a removal, so the cached `ai_signals` row stops being
+// computed over an event the owner has taken out of the record.
+//
+// DELIBERATELY NOT `deleted_at`-filtered, and that is the whole reason this is its
+// own function rather than a call to `getEventById`: the caller asks AFTER the
+// tombstone is written, so the sibling read — which ends `WHERE e.id = ? AND
+// e.deleted_at IS NULL` — would answer `null` every single time. That reuse looks
+// right in a diff and produces a side-effect that never fires, which is the CUL-641
+// failure shape (a delete path locally complete and quietly missing its half).
+//
+// Returns null for an id no local row carries — an UNKNOWN pet, never a guess. The
+// caller must not fall back to the active pet: a record screen is reached by id for
+// any pet (CUL-574), so "the current selection" is a different, confidently-stated
+// answer rather than a degraded one.
+export async function getEventPetId(
+  eventId: string,
+  // Injected for tests (the updateEvent / cacheFlush.test.ts pattern); production
+  // passes nothing.
+  database: Pick<SQLite.SQLiteDatabase, 'getFirstAsync'> = getDb(),
+): Promise<string | null> {
+  const row = await database.getFirstAsync<{ pet_id: string }>(
+    'SELECT pet_id FROM events WHERE id = ?',
+    [eventId],
+  );
+  return row?.pet_id ?? null;
+}
+
 export async function getEventSource(eventId: string): Promise<'manual' | 'exif' | 'now'> {
   const db = getDb();
   const row = await db.getFirstAsync<{ occurred_at_source: string }>(

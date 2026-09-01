@@ -39,13 +39,61 @@
 // "no medication was given." It is also why the card's removal line makes no
 // claim about anything beyond the row it removed.
 //
+// ── THE SIGNAL CACHE IS RE-ARMED, NOT LEFT TO EXPIRE ─────────────────────────
+// CUL-642. The Home Signal is not recomputed on device — `generate-signal` runs
+// detection in Supabase and writes a cached `ai_signals` row with a 24h TTL. The
+// write paths (`insertMeal`, `insertSimpleEvent`, the capture-inbox ingest) all
+// kick a debounced regen so the cache follows the record; not one delete path did,
+// so a finding computed over an event the owner has since removed simply stood
+// until the next log or the TTL. Exactly the CUL-641 shape again — a side-effect
+// on the write path with no counterpart on the reversal — which is why it goes
+// HERE, at the one shared reversal, rather than on the surface that noticed it.
+//
+// RE-ARMING the shared debounce rather than minting a separate invalidation is what
+// also addresses the race CUL-612 made routine. The completion card's dwell and
+// `REGEN_DEBOUNCE_MS` are both 5000ms by coincidence, so an Undo at t≈4.8s lands
+// beside its own log's regen at t=5.0s — the removed row still on the server, the
+// regen computing over it, and nothing scheduled to run again. Re-arming cancels
+// that pending timer and re-schedules 5s after the reversal. It collapses in the
+// other direction too: clearing several rows out of History in one sitting is one
+// regen, not one per row.
+//
+// RE-ARMING ALONE IS NOT ENOUGH, and the reason is worth stating because the first
+// draft of this comment claimed it was. `clearTimeout` can only cancel a timer that
+// has not FIRED. An Undo at t=5.001s — or any History/detail Remove, which is
+// untethered from the card's dwell entirely — leaves the log's regen already in
+// flight, and the re-arm then schedules a SECOND one beside it rather than replacing
+// it. `generate-signal` writes the cache with a plain delete-then-insert and no
+// version guard, so whichever invocation reaches the server last wins; if that is the
+// stale one, the removal has re-cached the very finding it was meant to clear and
+// renewed its 24h TTL. So the ordering is enforced where it can actually be enforced,
+// in `lib/signal.ts`'s per-pet regen serializer (`serializeRegen`) — the last regen to
+// settle is made the freshest one. This header names only the debounce; that module
+// owns the rest.
+//
+// ORDERING WITHIN ONE REGEN. `regenerateSignal` awaits `syncPendingEvents()` before
+// it invokes the function, so the tombstone push is ATTEMPTED first — which is a
+// weaker claim than "the deletion reached the server", and deliberately written as
+// the weaker one. The push's failure is swallowed there and the invoke proceeds
+// regardless, so a tombstone that cannot be pushed (an offline device is safe, since
+// the invoke fails too; a QUARANTINED row, `sync_error` set, is the live case) lets
+// the regen recompute over a server that still holds the event and renew the TTL over
+// it. That swallow is shared with every write path and predates this change; narrowing
+// it here would let one unrelated queue rejection block every pet's refresh, so it is
+// tracked rather than patched in passing — CUL-772. Offline it degrades the way the
+// write path does: the invoke fails, the previous cached signal stands, and the next
+// successful regen corrects it. Detection lives in Supabase, so there is no on-device
+// recompute to fall back to, and blanking the cache locally would trade a stale signal
+// for a false empty one — which on this surface is the worse direction.
+//
 // ── THE FAIL-SAFE IS UNTOUCHED ───────────────────────────────────────────────
 // B-156 G1 stands: an unanswered medication card still lands `unconfirmed`,
 // never `given`. Undo adds a REVERSAL, never a new path to an affirmative —
 // there is no adherence write anywhere in this module, and removing a dose can
 // only ever reduce what the record claims.
 
-import { softDeleteEvent } from './db';
+import { getEventPetId, softDeleteEvent } from './db';
+import { triggerSignalRegenDebounced } from './signal';
 import { syncPendingEvents } from './sync';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
 
@@ -79,5 +127,23 @@ export async function reverseLoggedEvent(
     eventId,
     opts ? { restoreToKg: opts.restoreWeightSnapshotToKg } : undefined,
   );
+  // CUL-642 — re-arm the Signal regen for THIS RECORD's pet (header above). Read
+  // from the row, never from `activePet`: the day-summary spine and every deep link
+  // push `/event/[id]` for any pet's rows, so the current selection is not an answer
+  // to "whose event was this?" (CUL-574). Best-effort like the reconcile beside it —
+  // a reversal must not fail on a cosmetic refresh — and the trigger itself is
+  // fire-and-forget, so nothing here waits on a network call.
+  try {
+    const petId = await getEventPetId(eventId);
+    if (petId) triggerSignalRegenDebounced(petId);
+    else {
+      // An UNRESOLVABLE pet, not a pet with nothing to refresh. Said out loud for the
+      // same reason the weight reconcile says its own unevaluable case out loud: the
+      // alternative is a missing side-effect that looks exactly like a no-op.
+      console.warn('[undo] no local row for event %s — Signal regen not re-armed', eventId);
+    }
+  } catch (e) {
+    console.warn('[undo] Signal regen re-arm failed:', e);
+  }
   syncPendingEvents().catch(console.error);
 }

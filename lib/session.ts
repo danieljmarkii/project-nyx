@@ -11,6 +11,7 @@ import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
 import { clearDailyRecapOffer } from './dailyRecapOffer';
 import { clearSignalArrival } from './signalArrival';
+import { cancelPendingSignalRegens } from './signal';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
 /**
@@ -104,6 +105,18 @@ export async function wipeLocalSession(): Promise<void> {
   // Abort any in-flight hydration BEFORE wiping, so a sync mid-cycle can't
   // re-populate the store after clearLocalData runs.
   notifySignedOut();
+  // CUL-642 (rls-privacy-reviewer): the Signal regen's per-pet debounce timers are
+  // account state resting in JS memory, and they are cancelled HERE — before the
+  // first `await` — for the same reason `notifySignedOut()` runs first. A timer that
+  // fires mid-teardown would kick a sync flush and an Edge Function call against a
+  // queue this function is in the middle of wiping; worse, one left to fire after the
+  // NEXT account signs in carries the previous owner's pet UUID under the new
+  // account's token (`supabase.functions` resolves the auth header at request time),
+  // which persists that UUID server-side in `ai_usage.scope_id` under a user who can
+  // read it back. Health data is refused by RLS either way; the identifier is not.
+  // Same FR-9 parity rule as the App Group / moment-store / trial-cache clears below:
+  // wipe every place account state rests, not just SQLite.
+  cancelPendingSignalRegens();
   await clearLocalData().catch((e) => console.warn('[session] local wipe failed:', e));
   // B-290 (FR-9 parity): the App Group container is OUTSIDE the app sandbox and
   // holds account data on a Home Screen surface — per-pet snapshots and any
