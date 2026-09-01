@@ -46,6 +46,7 @@ import type { SignalState } from '../../hooks/useSignal';
 import type { CachedFinding, CoverageDiagnostic, TrialResponseFinding } from '../../lib/signal';
 import {
   ackUpdatingCopy,
+  arrivalAnnouncementCopy,
   buildingHeadline,
   BUILDING_SUB,
   BUILDING_SUB_SPARSE,
@@ -600,11 +601,16 @@ describe('SignalZone — the arrival moment', () => {
    * Mount in a settled BUILDING state, then transition to live — the arrival's actual
    * trigger. Returns the render result so a test can inspect the card mid-moment.
    */
-  async function arrive(findings: CachedFinding[], petId = 'pet-1', suppress = false) {
-    mockUseSignal.mockReturnValue(signalState({ petId, displayState: 'building' }));
+  async function arrive(
+    findings: CachedFinding[],
+    petId = 'pet-1',
+    suppress = false,
+    petName = 'Nyx',
+  ) {
+    mockUseSignal.mockReturnValue(signalState({ petId, petName, displayState: 'building' }));
     const view = render(<SignalZone suppressTrialResponse={suppress} />);
     await flush();
-    mockUseSignal.mockReturnValue(signalState({ petId, displayState: 'live', findings }));
+    mockUseSignal.mockReturnValue(signalState({ petId, petName, displayState: 'live', findings }));
     await act(async () => {
       view.rerender(<SignalZone suppressTrialResponse={suppress} />);
     });
@@ -840,6 +846,153 @@ describe('SignalZone — the arrival moment', () => {
     });
     expect(mockInsightArrival).not.toHaveBeenCalled();
     expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+  });
+
+  // ── CUL-636 — the moment's screen-reader line ─────────────────────────────────
+  //
+  // The moment shipped as ~1.2s of motion plus one soft tap and ZERO strings, so an
+  // owner on VoiceOver got a congratulatory buzz with nothing explaining it. Every case
+  // below is really one claim: the sentence goes exactly where the tap goes, and nowhere
+  // else — so it inherits the safety bypass and every other gate for free.
+  function spyAnnounce() {
+    return jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+  }
+
+  it('speaks the arrival at the tap — the buzz finally has its sentence', async () => {
+    const announce = spyAnnounce();
+    await arrive([benignFinding]);
+    // NOT at 0ms. Pairing the utterance with the tap is what makes the moment one beat
+    // instead of two, and it is what lets `halt()` cancel both — see the pet-switch case
+    // below, which is the half a 0ms announcement would have to re-earn with its own guard.
+    expect(announce).not.toHaveBeenCalled();
+    act(() => {
+      jest.advanceTimersByTime(HAPTIC_AT_MS);
+    });
+    expect(announce).toHaveBeenCalledTimes(1);
+    // Derived from the copy module, never a literal here — the same rule that keeps a
+    // completion card from being handed a display string it could over-claim with.
+    expect(announce).toHaveBeenCalledWith(arrivalAnnouncementCopy('Nyx'));
+    announce.mockRestore();
+  });
+
+  it('announces on ANDROID too — the arrival has no live region to cover it', async () => {
+    // The two announce sites above (AckLine, TextField) gate to iOS *because* each pairs
+    // with an `accessibilityLiveRegion` node that already speaks on Android. This one has
+    // no such node, so copying their platform check would ship the identical defect to
+    // TalkBack. This test exists so that "fix" fails instead of passing quietly.
+    const prevOS = Platform.OS;
+    Platform.OS = 'android';
+    const announce = spyAnnounce();
+    // try/finally, not a trailing restore: a bare one is skipped when the expect throws,
+    // and the leaked platform then reds an unrelated test further down. Found by mutating
+    // the iOS gate back in — the mutation pass earning its keep on the guard, not the source.
+    try {
+      await arrive([benignFinding]);
+      act(() => {
+        jest.advanceTimersByTime(HAPTIC_AT_MS);
+      });
+      expect(announce).toHaveBeenCalledWith(arrivalAnnouncementCopy('Nyx'));
+    } finally {
+      announce.mockRestore();
+      Platform.OS = prevOS;
+    }
+  });
+
+  it('names the pet whose moment it is — not a hardcoded one', async () => {
+    // Every other fixture in this block is called 'Nyx', which made the whole suite blind
+    // to the CUL-574 class: hardcoding `arrivalAnnouncementCopy('Nyx')` in the source
+    // passed all 53 tests. A guard whose fixtures make two different behaviours identical
+    // is not a guard, so this case is the one that gives the others their meaning.
+    const announce = spyAnnounce();
+    await arrive([benignFinding], 'pet-2', false, 'Mochi');
+    act(() => {
+      jest.advanceTimersByTime(HAPTIC_AT_MS);
+    });
+    expect(announce).toHaveBeenCalledWith(arrivalAnnouncementCopy('Mochi'));
+    announce.mockRestore();
+  });
+
+  it('pins the name at the point the pet was verified, so a mid-moment rename cannot move it', async () => {
+    // Pinned deliberately, and the reason is a proof rather than a preference: `arrivedFor`
+    // is read immediately after the `activePet.current !== petId` guard, so it provably
+    // belongs to the pet whose marker was just spent. Reading `name.current` fresh inside
+    // the timer instead would re-open a window that guard closes — the refs are written
+    // during render while the halt runs in an effect, so a fire landing between the two
+    // would speak the NEW pet's name over the old pet's moment. That is the wrong-pet
+    // class; a stale name after a rename is cosmetic and the card corrects it. Trading a
+    // proof for a cosmetic gain is the wrong direction, so this pins the trade.
+    const announce = spyAnnounce();
+    const view = await arrive([benignFinding], 'pet-1', false, 'Nyx');
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-1', petName: 'Renamed', displayState: 'live', findings: [benignFinding] }),
+    );
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    act(() => {
+      jest.advanceTimersByTime(HAPTIC_AT_MS);
+    });
+    expect(announce).toHaveBeenCalledWith(arrivalAnnouncementCopy('Nyx'));
+    announce.mockRestore();
+  });
+
+  it('says NOTHING on the safety path — silence is the severity signal on every channel', async () => {
+    // The bypass is not a visual rule that a11y is exempt from. §4 draws nothing for a
+    // safety-led first finding deliberately, and an announcement would be a celebration
+    // of a concern arriving through the one channel that cannot see it was withheld.
+    // Whether that owner should get a line at all is CUL-638, a PM copy round.
+    const announce = spyAnnounce();
+    await arrive([liveFinding]);
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(announce).not.toHaveBeenCalled();
+    announce.mockRestore();
+  });
+
+  it('says nothing when nothing arrived — a cold mount that is already live', async () => {
+    const announce = spyAnnounce();
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-1', displayState: 'live', findings: [benignFinding] }),
+    );
+    render(<SignalZone />);
+    await flush();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(announce).not.toHaveBeenCalled();
+    announce.mockRestore();
+  });
+
+  it('still speaks under reduced motion — speech is not motion, any more than touch is', async () => {
+    const announce = spyAnnounce();
+    mockUseReducedMotion.mockReturnValue(true);
+    await arrive([benignFinding]);
+    act(() => {
+      jest.advanceTimersByTime(HAPTIC_AT_MS);
+    });
+    expect(announce).toHaveBeenCalledWith(arrivalAnnouncementCopy('Nyx'));
+    announce.mockRestore();
+  });
+
+  it('a pet switch MID-ARRIVAL cancels the sentence with the tap', async () => {
+    // `halt()` clears the one timer both ride, so the moment goes quiet on both channels
+    // together. Without that, the announcement would land AFTER the switch — naming a pet
+    // whose card is no longer on screen, which is the wrong-pet class arriving by audio.
+    const announce = spyAnnounce();
+    const view = await arrive([benignFinding], 'pet-1');
+    mockUseSignal.mockReturnValue(
+      signalState({ petId: 'pet-2', displayState: 'live', findings: [benignFinding] }),
+    );
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(announce).not.toHaveBeenCalled();
+    announce.mockRestore();
   });
 
   it('an unreadable marker fails toward silence, never toward a loop', async () => {

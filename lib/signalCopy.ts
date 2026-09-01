@@ -422,6 +422,24 @@ export function ackUpdatingCopy(petName: string): string {
   return `Noted — updating ${petName}'s picture…`;
 }
 
+// The first-insight arrival's screen-reader line (CUL-636; the moment itself is CUL-601
+// §4 / DP-3). The arrival's entire "something just arrived" semantic is carried by ~1.2s
+// of motion and one soft tap, so an owner on VoiceOver got the tap and no words at all.
+//
+// IT MARKS THE OCCASION, IT DOES NOT READ THE CARD. The insight is already rendered and
+// already reachable in the a11y tree by the time this fires, so repeating it here would
+// make the owner hear the finding twice and hear the *occasion* never. This is the
+// round-1 mock's own headline for this moment (`docs/culprit-app-polish-mockups.html`
+// §02, option 2a) — deliberately NOT a claim about the pet's health, only about the
+// record: a pattern exists now where none did before.
+//
+// Whether a line like this should also RENDER — durably, and in particular for the
+// safety-led owner whose moment §4 correctly draws nothing for — is CUL-638, a PM copy
+// round. This helper is announce-only and stays silent wherever the moment is silent.
+export function arrivalAnnouncementCopy(petName: string): string {
+  return `${petName}'s first pattern is ready`;
+}
+
 // ── Coverage diagnostics (B-053) ──────────────────────────────────────────────
 // On the no_pattern surface (E2), lead with the TOP coverage diagnostic's one-line
 // WHY there's no signal yet + at most one safe corrective ACTION (in place of a
@@ -688,6 +706,19 @@ export function medContextLine(finding: SignalFinding): string | null {
 // The honest detail behind the card, revealed on tap — how an owner trusts a card
 // enough to act on it. Associational framing on correlations (a pattern in the
 // logs, not a proven link). The safety flag points at the vet and never reassures.
+// The §9 adjacency note names the sign the card is NOT about (CUL-778). The engine marks only
+// a cough-or-vomit card, so `null` is unreachable by construction; callers keep a two-sign
+// fallback so the sentence can never be wrong.
+function adjacencyOtherSign(symptomType: SymptomChronicityFinding['symptomType']): 'coughing' | 'vomiting' | null {
+  if (symptomType === 'cough') return 'vomiting';
+  if (symptomType === 'vomit') return 'coughing';
+  return null;
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export function evidenceText(finding: SignalFinding, petName: string): string {
   if (finding.type === 'incident_red_flag') {
     // Tap-to-expand evidence (B-340): names WHAT the photo showed + the symptom + the pet, is
@@ -821,18 +852,26 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     const symptom = symptomWord(finding.symptomType);
     const weeks = Math.round(finding.windowDays / 7);
     const vetAsk = finding.tier === 'firm' ? 'booking a vet visit' : 'a word with your vet';
-    return (
+    const lead =
       `Since ${onsetMonth(finding.firstOnsetIso)}, we've logged ${count(finding.episodeCount, 'episode', 'episodes')} of ` +
       `${symptom} for ${petName} across ${finding.activeWeeks} of the last ${weeks} weeks, the most recent ` +
-      `${recencyPhrase(finding.daysSinceLastEpisode)}. A symptom that keeps recurring over weeks is worth ${vetAsk} — ` +
-      `a read of your logs, not a diagnosis.` +
-      // §9 adjacency (CUL-676). The card face carries the server-composed sentence, but the
-      // EXPAND is composed here — so without this the disclosure vanished exactly where an
-      // owner goes for more detail (adversarial pass, 2026-08-28). Names misattribution, not
-      // overlap: either count can be understated as readily as overstated.
-      (finding.coughVomitAdjacent
-        ? ` Coughing and vomiting are easily confused in both directions, so either count may be off — worth raising both together.`
-        : '')
+      `${recencyPhrase(finding.daysSinceLastEpisode)}. A symptom that keeps recurring over weeks is worth ${vetAsk}`;
+    // §9 adjacency (CUL-676). The card face carries the server-composed sentence, but the
+    // EXPAND is composed here — so without this the disclosure vanished exactly where an
+    // owner goes for more detail (adversarial pass, 2026-08-28). Names misattribution, not
+    // overlap: either count can be understated as readily as overstated.
+    // Reworded 2026-09-01 (CUL-778): the PM read "easily confused" on device and could not
+    // tell what it meant. The clause now names the other sign as logged, carries its own
+    // premise (see the matching note on templateChronicity in generate-signal/phrasing.ts),
+    // attributes the blur to the SIGNS rather than to the owner's logging, and sits BEFORE
+    // the disclaimer so the expand closes on the same line the card does.
+    if (!finding.coughVomitAdjacent) return `${lead} — a read of your logs, not a diagnosis.`;
+    const other = adjacencyOtherSign(finding.symptomType);
+    const bridge = other ? `${capitalize(other)} is logged too.` : 'Coughing and vomiting are both logged.';
+    return (
+      `${lead}. ${bridge} A cough can look like retching, and a hard one can end in vomiting, so the two ` +
+      `can be hard to tell apart even when you're watching closely — either count could run low as easily as ` +
+      `high. Worth raising both with your vet together. This is a read of your logs, not a diagnosis.`
     );
   }
   if (finding.type === 'postprandial_timing') {
@@ -1725,7 +1764,10 @@ export function phoneScript(finding: SignalFinding, petName: string): PhoneScrip
         ? [
             {
               label: 'Also mention',
-              value: 'coughing and vomiting are easily confused — both are being logged separately',
+              // Read aloud to the vet (CUL-778): names the other sign as also on the record,
+              // then the one reason the two may be mis-filed — never "blur"/"overlap", which
+              // is the double-count reading that invites a vet to discount both numbers.
+              value: `${adjacencyOtherSign(finding.symptomType) ?? 'coughing and vomiting'} as well — a cough can look like retching, so some episodes may be logged the other way round`,
             },
           ]
         : []),

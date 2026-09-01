@@ -556,16 +556,46 @@ Deno.test('adjacency: co-firing cough + vomit marks the LEADING card only', () =
   assert.equal(findings[1].coughVomitAdjacent, undefined, 'and it is not repeated on every card')
 })
 
+// Both negative guards below run through detectSignals, where the composition step lives.
+// Their first version called detectChronicity, which never sets the flag — so deleting the
+// cough+vomit precondition outright left them green (adversarial pass 2026-09-01, CUL-778).
+const chronicityVia = (events: SymptomEvent[]) =>
+  detectSignals(input({ symptomEvents: events }))
+    .map((r) => r.finding)
+    .filter((f): f is Extract<typeof f, { type: 'symptom_chronicity' }> => f.type === 'symptom_chronicity')
+
 Deno.test('adjacency: a chronic cough with NO chronic vomiting is not marked', () => {
-  const findings = detectChronicity(input({ symptomEvents: councilShape('cough') }))
+  const findings = chronicityVia(councilShape('cough'))
   assert.equal(findings.length, 1)
   assert.equal(findings[0].coughVomitAdjacent, undefined)
 })
 
-Deno.test('adjacency: two chronic GI courses are not marked (the rule is cough↔vomit)', () => {
-  const findings = detectChronicity(
-    input({ symptomEvents: [...courseOf('vomit', 52, 10), ...courseOf('diarrhea', 24, 8)] }),
+Deno.test('adjacency: the note rides the leading cough-or-vomit card, never a third sign that outranks them', () => {
+  // The clause opens "Vomiting is logged too — …" (CUL-778), which is only true of a card
+  // that is itself one of the pair. A longer diarrhea course leading the band must not
+  // carry it: before the fix the FIRST chronicity finding was marked whatever its sign.
+  const findings = detectSignals(
+    input({
+      symptomEvents: [
+        ...courseOf('diarrhea', 54, 12),
+        ...courseOf('cough', 50, 10),
+        ...courseOf('vomit', 48, 10),
+      ],
+    }),
   )
+    .map((r) => r.finding)
+    .filter((f): f is Extract<typeof f, { type: 'symptom_chronicity' }> => f.type === 'symptom_chronicity')
+  assert.equal(findings[0].symptomType, 'diarrhea', 'the diarrhea course LEADS (else the test is vacuous)')
+  const marked = findings.filter((f) => f.coughVomitAdjacent)
+  assert.equal(marked.length, 1, 'exactly one card carries the note')
+  assert.ok(marked[0].symptomType === 'cough' || marked[0].symptomType === 'vomit', `note on ${marked[0].symptomType}`)
+  const diarrhea = findings.find((f) => f.symptomType === 'diarrhea')
+  assert.ok(diarrhea, 'the diarrhea course is chronic in this fixture (else the test is vacuous)')
+  assert.equal(diarrhea!.coughVomitAdjacent, undefined)
+})
+
+Deno.test('adjacency: two chronic GI courses are not marked (the rule is cough↔vomit)', () => {
+  const findings = chronicityVia([...courseOf('vomit', 52, 10), ...courseOf('diarrhea', 24, 8)])
   assert.equal(findings.length, 2)
   assert.ok(findings.every((f) => f.coughVomitAdjacent === undefined))
 })

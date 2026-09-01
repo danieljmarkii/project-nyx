@@ -71,10 +71,30 @@ export const MAX_WEIGHT_LBS = 500;
 // corrupt a trend line or wedge the sync queue (the DB CHECK (weight_kg > 0) +
 // NUMERIC(5,2) range are the server backstops; this is the client gate that keeps
 // the Log button honest). Returns kg, ready for the write.
+//
+// The zero guard is on the CONVERTED value, not only the input, and both checks
+// are load-bearing (CUL-698). `lbsToKg` rounds to 2 dp, so a positive pound value
+// small enough to round to 0 kg — 0.01 lb — cleared an input-side `lbs <= 0` as a
+// POUND while reaching the write as a ZERO KILOGRAM — the value this gate exists
+// to refuse: it enters `computeWeightTrend` as a real point,
+// `weight_checks.CHECK (weight_kg > 0)` (migration 024) refuses the child row on
+// every sync cycle forever, and `pets.weight_kg` — which carries no such CHECK —
+// renders `0 lbs` on the Profile chip. Guard the number you are about to store,
+// not the string it came from; the input check stays because it is what rejects
+// NaN and the fat-fingered `9999` before any conversion happens.
+//
+// Scope, so this is not read as more than it is: calling this function is what
+// protects a path, and every path that writes a WEIGH-IN does (`app/log.tsx` for
+// the value and the Log button alike, `app/edit-event.tsx`). `pets.weight_kg` is
+// NOT thereby safe — `EditPetModal` writes that column through a hand-rolled
+// `!isNaN` and never reaches here, so it still accepts 0 and negatives (CUL-765).
+// A future writer of either column inherits nothing by being nearby; it inherits
+// this only by calling it.
 export function parseWeightLbsToKg(input: string): number | null {
   const lbs = parseFloat(input.trim());
   if (!isFinite(lbs) || lbs <= 0 || lbs > MAX_WEIGHT_LBS) return null;
-  return lbsToKg(lbs);
+  const kg = lbsToKg(lbs);
+  return kg > 0 ? kg : null;
 }
 
 export interface InsertWeightCheckParams {
