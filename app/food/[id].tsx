@@ -25,6 +25,7 @@ import {
   type ProteinSetPickerHandle,
 } from '../../components/food/ProteinSetPicker';
 import { PhotoCarousel } from '../../components/food/PhotoCarousel';
+import { ExtractionFailedBanner } from '../../components/food/ExtractionFailedBanner';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
@@ -216,6 +217,17 @@ export default function FoodDetailScreen() {
   }, [activePet?.id]);
 
   function applyRow(next: FoodRow) {
+    // CUL-651 — where the raw failure string goes now that it is off the screen.
+    // `ai_extraction_error` is the Edge Function's verbatim `err.message`, which is
+    // the one thing that actually says WHY extraction failed, so it is logged
+    // rather than dropped: unactionable to an owner, and the first thing anyone
+    // debugging a stuck food wants. Same split the load path above already makes
+    // (`console.warn` the Postgres string, show the owner mapped copy). Both
+    // callers of applyRow funnel through here, so a failure that arrives over
+    // realtime is logged exactly like one that arrives on first load.
+    if (next.ai_extraction_status === 'failed' && next.ai_extraction_error) {
+      console.warn(`[food-detail] extraction failed for ${next.id}:`, next.ai_extraction_error);
+    }
     // Capture the *previous* baseline before we mutate it — the field-seeding
     // logic below uses it to detect "user has not edited this field" (i.e.
     // form value still equals the last value we loaded from the server). If
@@ -688,22 +700,40 @@ export default function FoodDetailScreen() {
           )}
 
           <View style={styles.body}>
+            {/* CUL-651. The banner takes no error prop, so the stored string has
+                nowhere to land — but the stored string is still what GATES it, and
+                that is deliberate rather than left over.
+
+                `ai_extraction_error` is non-null only when the Edge Function ran
+                and genuinely failed (its catch block is the only writer). A NULL
+                error on a 'failed' row means extraction never ran at all —
+                `food-capture.tsx:631` upserts `'failed'` for the §4.3 cap, the
+                feature flag being off, and a transport fault alike, and the
+                function returns from all three without touching the row. So this
+                condition is not belt-and-braces; it is the only thing on the
+                client that separates "we tried and could not read it" from "we
+                did not try".
+
+                That matters because the retry is DESTRUCTIVE on the rows it
+                separates out. `handleRetry` writes `'pending'` to the server; the
+                cap and flag-off paths answer with a typed 200, so `error` is null,
+                nothing writes back, and the row stays `'pending'` — where the
+                Ingredients field below becomes a "Reading the label…" spinner (the
+                one field this banner's own copy tells the owner to fill in) and
+                `reapStalePendingFoods` becomes eligible to hard-delete the food,
+                cascading into `diet_trial_foods`. Details: CUL-769.
+
+                This session widened the gate to `isFailed` alone — the silent-
+                failure argument is real, and the spec forbids a silent extraction
+                failure — and reverted it when the product review traced where the
+                newly-shown button leads. Those rows do need a state, but it is the
+                capture screen's calm care-first cap band, not a fault banner with
+                a button that can destroy the record: withholding an affordance is
+                cheap, a destructive one is not. That work needs the state model
+                `'failed'` is currently collapsing three ways, and it is CUL-768.
+                Do not re-widen this without it. */}
             {isFailed && row.ai_extraction_error && (
-              <View style={styles.failedBanner}>
-                <ThemedText style={styles.failedTitle}>Extraction failed</ThemedText>
-                <ThemedText style={styles.failedDetail}>{row.ai_extraction_error}</ThemedText>
-                <TouchableOpacity
-                  style={[styles.retryBtn, retrying && styles.retryBtnDisabled]}
-                  onPress={handleRetry}
-                  disabled={retrying}
-                  hitSlop={8}
-                  activeOpacity={0.8}
-                >
-                  {retrying
-                    ? <WhorlSpinner size="sm" tint="#fff" />
-                    : <ThemedText style={styles.retryBtnText}>Try extraction again</ThemedText>}
-                </TouchableOpacity>
-              </View>
+              <ExtractionFailedBanner onRetry={handleRetry} retrying={retrying} />
             )}
 
             {/* B-616 FR-13/FR-14 (mock D) — the food's relationship to the
@@ -965,39 +995,6 @@ const styles = StyleSheet.create({
   pendingText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-  },
-  failedBanner: {
-    backgroundColor: theme.colorEventSymptomLight,
-    borderRadius: theme.radiusSmall,
-    padding: theme.space2,
-    gap: theme.space1,
-  },
-  failedTitle: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  failedDetail: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: 18,
-  },
-  retryBtn: {
-    marginTop: theme.space1,
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusSmall,
-    paddingVertical: theme.space1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  retryBtnDisabled: {
-    opacity: 0.6,
-  },
-  retryBtnText: {
-    fontSize: theme.textMD,
-    color: '#fff',
-    fontWeight: theme.weightMedium,
   },
   secondaryAction: {
     alignItems: 'center',
