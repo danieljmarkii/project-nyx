@@ -792,7 +792,12 @@ Deno.test('every chronicity template — never reassures/dismissive/causal/mecha
   for (const tier of tiers) {
     for (const symptomType of types) {
       for (const daysSinceLastEpisode of [0, 1, 7]) {
-        for (const adjacent of [undefined, true as const]) {
+        // The composition layer marks only a cough-or-vomit card (discloseCoughVomitAdjacency),
+        // so the adjacency arm is enumerated on exactly those two; the template's two-sign
+        // fallback is unreachable by construction and, at 326 chars, deliberately not
+        // asserted under the cap (CUL-778).
+        const adjacencyArms = symptomType === 'cough' || symptomType === 'vomit' ? [undefined, true as const] : [undefined]
+        for (const adjacent of adjacencyArms) {
           const f = chronicity({
             tier,
             symptomType,
@@ -822,6 +827,10 @@ Deno.test('the adjacency arm fits the phrasing cap on a deliberately worst-case 
   // sentence the contract rejects. (It ships regardless today, because chronicity is
   // template-only and phraseFinding returns before validating — which is exactly why the
   // template has to hold the line itself.)
+  // A SEPTEMBER onset, deliberately: the fixture's default May is the SHORTEST month name,
+  // and a "worst case" measured against it read 318/320 while the same card with a
+  // September onset was 323 (adversarial pass 2026-09-01). The month is the one variable
+  // in this sentence the editor does not see.
   const t = templateChronicity(
     chronicity({
       tier: 'firm',
@@ -829,16 +838,36 @@ Deno.test('the adjacency arm fits the phrasing cap on a deliberately worst-case 
       episodeCount: 137,
       activeWeeks: 8,
       daysSinceLastEpisode: 0,
+      firstOnsetIso: '2026-09-15T08:00:00.000Z',
       coughVomitAdjacent: true,
     }),
     'Bartholomew',
   )
+  assert.ok(/since September/.test(t), `the fixture must actually exercise the longest month: ${t}`)
   assert.ok(t.length <= 320, `composed to ${t.length} chars, over the 320 cap: ${t}`)
   assert.ok(validatePhrasing(t, chronicity({ tier: 'firm', symptomType: 'cough' })))
-  // It names CONFUSION (misattribution), never overlap/double-counting — the deflationary
-  // reading the adversarial pass rejected on a safety card.
-  assert.ok(/easily confused/.test(t), `must name misattribution, not overlap: ${t}`)
-  assert.ok(!/same moments|overlap/i.test(t), `must not suggest either count is merely inflated: ${t}`)
+  // It names MISATTRIBUTION in both directions — a cough that looks like retching, a cough
+  // that ends in vomiting — never overlap/double-counting (the deflationary reading the
+  // adversarial pass rejected on a safety card), and never the bare conclusion "easily
+  // confused" with its premise deleted (the PM read that on device and could not tell what
+  // it meant — CUL-778). Both halves of the premise are asserted, so a future cap-driven
+  // trim cannot silently drop one direction.
+  assert.ok(/cough can look like retching/.test(t), `must say why a cough reads as a vomit: ${t}`)
+  assert.ok(/end in vomiting/.test(t), `must say why a vomit can ride on a cough: ${t}`)
+  assert.ok(!/easily confused/.test(t), `must not state the conclusion without its premise: ${t}`)
+  assert.ok(!/same moments|overlap|blur/i.test(t), `must not suggest either count is merely inflated: ${t}`)
+  // And still never the hairball explanation — the diagnosis-delaying error the deep-dive names.
+  assert.ok(!/hairball/i.test(t), `must never offer the hairball explanation: ${t}`)
+  // The bridge names the OTHER sign, so the cough is never a non sequitur on the vomiting
+  // card and vice versa (the residual half of the CUL-778 read).
+  assert.ok(/Vomiting is logged too/.test(t), `a cough-led card must say vomiting is on the record: ${t}`)
+  const vomitLed = templateChronicity(
+    chronicity({ tier: 'firm', symptomType: 'vomit', coughVomitAdjacent: true }),
+    'Nyx',
+  )
+  assert.ok(/Coughing is logged too/.test(vomitLed), `a vomit-led card must say coughing is on the record: ${vomitLed}`)
+  assert.ok(!/Vomiting is logged too/.test(vomitLed), `and must not name its own sign as the other one: ${vomitLed}`)
+  assert.ok(validatePhrasing(vomitLed, chronicity({ tier: 'firm', symptomType: 'vomit' })))
 })
 
 // Fixture 15 (§7) — validatePhrasing rejects causal / reassurance / mechanism / food drift on a

@@ -1284,6 +1284,85 @@ describe('symptom-chronicity (⑦, B-182) — client copy', () => {
   it('rides the SAFETY rail (priorityClass), leading the surface', () => {
     expect(chronicity().priorityClass).toBe('safety');
   });
+
+  describe('§9 cough↔vomit adjacency (CUL-676, reworded CUL-778)', () => {
+    // The PM read "Coughing and vomiting are easily confused" on device and could not tell
+    // what it meant: it was the CONCLUSION of the clinical caveat with its premise deleted.
+    // The expand now says why, in both directions, names the pet, and still never suggests
+    // either count is merely inflated (the deflationary reading the adversarial pass rejected).
+    it('evidenceText names the other sign as logged, carries the premise in both directions, and blames the signs, not the owner', () => {
+      const s = evidenceText(chronicity({ symptomType: 'vomit', coughVomitAdjacent: true }), 'Nyx');
+      expect(s).toMatch(/Coughing is logged too\./);
+      expect(s).toMatch(/cough can look like retching/);
+      expect(s).toMatch(/can end in vomiting/);
+      expect(s).toMatch(/either count could run low as easily as high/);
+      expect(s).toMatch(/raising both with your vet together/);
+      expect(s).not.toMatch(/easily confused/);
+      expect(s).not.toMatch(/same moments|overlap|blur/i);
+      expect(s).not.toMatch(/hairball/i);
+      // The read attributes the blur to the signs, never to the owner's record.
+      expect(s).not.toMatch(/counts may (each )?be off|logged it wrong|your counts/i);
+      // The cough-led card names vomiting as the other sign.
+      const c = evidenceText(chronicity({ symptomType: 'cough', coughVomitAdjacent: true }), 'Nyx');
+      expect(c).toMatch(/Vomiting is logged too\./);
+      expect(c).not.toMatch(/Coughing is logged too/);
+    });
+
+    it('evidenceText keeps the adjacency BEFORE the disclaimer, so the expand closes on the same line the card does', () => {
+      const s = evidenceText(chronicity({ symptomType: 'vomit', coughVomitAdjacent: true }), 'Nyx');
+      const clause = s.indexOf('cough can look like retching');
+      const disclaimer = s.indexOf('not a diagnosis');
+      expect(clause).toBeGreaterThan(-1);
+      expect(disclaimer).toBeGreaterThan(clause);
+      expect(s.trim().endsWith('not a diagnosis.')).toBe(true);
+    });
+
+    it('evidenceText is byte-identical to the pre-CUL-778 shape when not marked (refactor safety)', () => {
+      const s = evidenceText(chronicity({ symptomType: 'vomit', tier: 'firm', episodeCount: 20, activeWeeks: 6, windowDays: 56, daysSinceLastEpisode: 0 }), 'Nyx');
+      expect(s).toBe(
+        "Since May, we've logged 20 episodes of vomiting for Nyx across 6 of the last 8 weeks, the most recent today. " +
+          'A symptom that keeps recurring over weeks is worth booking a vet visit — a read of your logs, not a diagnosis.',
+      );
+    });
+
+    it('evidenceText carries nothing of it when the finding is not marked', () => {
+      const s = evidenceText(chronicity({ symptomType: 'vomit' }), 'Nyx');
+      expect(s).not.toMatch(/retching|cough/);
+    });
+
+    it('the adjacency arm is guardrail-clean (never causal/mechanism/food/reassuring, no "!")', () => {
+      for (const symptomType of ['vomit', 'cough'] as const) {
+        const s = evidenceText(chronicity({ symptomType, coughVomitAdjacent: true }), 'Nyx');
+        expect(REASSURANCE_RE.test(s)).toBe(false);
+        expect(DISMISSIVE_RE.test(s)).toBe(false);
+        expect(CAUSAL_RE.test(s)).toBe(false);
+        expect(MECHANISM_RE.test(s)).toBe(false);
+        expect(FOOD_RE.test(s)).toBe(false);
+        expect(s.includes('!')).toBe(false);
+      }
+    });
+
+    it('phoneScript adds an "Also mention" row naming the other sign and the one reason episodes may be mis-filed', () => {
+      const facts = phoneScript(chronicity({ symptomType: 'vomit', coughVomitAdjacent: true }), 'Nyx');
+      const row = facts?.find((f) => f.label === 'Also mention');
+      expect(row).toBeTruthy();
+      expect(row?.value).toBe(
+        'coughing as well — a cough can look like retching, so some episodes may be logged the other way round',
+      );
+      // Never the double-count reading: "blur"/"overlap" invites a vet to discount both numbers.
+      expect(row?.value).not.toMatch(/easily confused|hairball|blur|overlap/i);
+      // Last row: it is a rider on the script, after the sign's own facts.
+      expect(facts?.[facts.length - 1]).toEqual(row);
+      // And the cough-led card names vomiting.
+      const c = phoneScript(chronicity({ symptomType: 'cough', coughVomitAdjacent: true }), 'Nyx');
+      expect(c?.find((f) => f.label === 'Also mention')?.value).toMatch(/^vomiting as well/);
+    });
+
+    it('phoneScript carries no "Also mention" row when the finding is not marked', () => {
+      const facts = phoneScript(chronicity({ symptomType: 'vomit' }), 'Nyx');
+      expect(facts?.map((f) => f.label)).not.toContain('Also mention');
+    });
+  });
 });
 
 describe('postprandial timing (⑤, B-078) — client copy', () => {
