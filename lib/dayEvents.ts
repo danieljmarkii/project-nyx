@@ -13,7 +13,7 @@
 import type { TimelineRow } from './db';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { formatDrugLabel } from './medications';
-import { foodFormatTag } from './food';
+import { foodFormatTag, mealRowLabel } from './food';
 import { describeOccurredAt } from './utils';
 import { pluralize } from './dashboardCards';
 
@@ -103,8 +103,9 @@ export function describeDayEvent(row: TimelineRow): DayEventDisplay {
 
   if (type === 'meal') {
     const food = foodLabelOf(row);
-    // A treat-typed meal reads "Treat" (mirrors EventRow) when there's no food name.
-    const mealLabel = row.food_type === 'treat' ? 'Treat' : 'Meal';
+    // The meal's word when there's no food name — the one shared rule (CUL-625),
+    // so this drill-in, EventRow and TodayZone cannot drift apart.
+    const mealLabel = mealRowLabel(row.food_type);
     title = food ?? mealLabel;
     // B-568 — the wet/dry variant, so the drill-in can tell apart two rows of one
     // prescription line stocked in both. Suppressed against the same label EventRow

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { ArrowDown, ArrowUp, ChevronRight, Minus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
@@ -46,11 +46,15 @@ interface Props {
   // value, not a tracked reading. Once readings exist, PR 2 keeps the snapshot pointed
   // at the latest one, so it agrees with the card's big number and isn't shown twice.
   snapshotKg: number | null;
+  // CUL-753 — the Pet tab hangs the vet-visit rundown's weight-tile scroll anchor
+  // here. A passthrough to the Card, so the measured top IS the card top (the
+  // CUL-170 shape), never a wrapper View that could move what it measures.
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
 const SERIES_LIMIT = 12;
 
-export function WeightTrendCard({ petId, petName, snapshotKg }: Props) {
+export function WeightTrendCard({ petId, petName, snapshotKg, onLayout }: Props) {
   const [trend, setTrend] = useState<WeightTrend | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -93,7 +97,7 @@ export function WeightTrendCard({ petId, petName, snapshotKg }: Props) {
   const hasReadings = trend != null && trend.readingCount > 0;
 
   return (
-    <Card style={styles.card}>
+    <Card style={styles.card} onLayout={onLayout}>
       <ThemedText style={styles.label}>Weight</ThemedText>
 
       {loading && trend === null ? (

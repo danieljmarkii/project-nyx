@@ -9,7 +9,7 @@ import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventT
 import { EventIcon } from '../event/EventIcon';
 import { DayLane } from '../recap/DayLane';
 import { formatDrugLabel } from '../../lib/medications';
-import { foodFormatTag } from '../../lib/food';
+import { foodFormatTag, mealRowLabel } from '../../lib/food';
 import { NyxEvent } from '../../store/eventStore';
 import { buildTodayLane, type DayCountChip } from '../../lib/todayLane';
 import { useEvents } from '../../hooks/useEvents';
@@ -173,9 +173,9 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
   const isSymptom = SYMPTOM_TYPES.has(event.event_type as EventTypeKey);
   const isMeal = event.event_type === 'meal';
   const isMedication = event.event_type === 'medication';
-  // Meal events backed by a treat-typed food render as "Treat". Legacy NULL
-  // and 'meal'/'other' food_type keep the "Meal" label.
-  const rowLabel = isMeal && event.food_type === 'treat' ? 'Treat' : config.label;
+  // A meal's word comes from the one shared rule (CUL-625: a treat-typed food
+  // reads "Treat", everything else "Meal"); every other type reads its config label.
+  const rowLabel = isMeal ? mealRowLabel(event.food_type) : config.label;
 
   // B-161 — the drug name as a subline, so a pet on two meds doesn't show two
   // identical "Medication" rows. The dose twin of the meal's food-name subline,

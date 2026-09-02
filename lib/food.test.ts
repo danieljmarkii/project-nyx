@@ -10,6 +10,7 @@ import {
   selectReliableFavorites, foodFavoriteNote, shouldSuppressFavorites,
   FAVORITE_MIN_RATED_MEALS, FAVORITE_MIN_RATE, FAVORITE_SHELF_LIMIT,
   type FavoriteMealRow,
+  mealRowLabel,
 } from './food';
 import type { FoodIntakeStat, PickerFood } from './db';
 
@@ -770,5 +771,35 @@ describe('shouldSuppressFavorites', () => {
     // unknown (which would itself be a silent, confusing data-loss for the owner).
     expect(shouldSuppressFavorites('none')).toBe(false);
     expect(shouldSuppressFavorites('not_enough_data')).toBe(false);
+  });
+});
+
+// ── mealRowLabel (CUL-625) ────────────────────────────────────────────────────
+// The word a meal row reads as, decided once. Three surfaces carried their own
+// `=== 'treat' ? 'Treat' : 'Meal'` and only agreed by coincidence; this pins the
+// rule AND that the surfaces now call it rather than restating it.
+describe('mealRowLabel (CUL-625 — one rule for three surfaces)', () => {
+  it('reads "Treat" for a treat-typed food, and only for one', () => {
+    expect(mealRowLabel('treat')).toBe('Treat');
+    expect(mealRowLabel('meal')).toBe('Meal');
+  });
+
+  it("decides the leftovers — the library's 'other' bucket and a legacy null read \"Meal\"", () => {
+    // The event is a meal; the food's type only refines the word. No copy ever
+    // decided these on purpose — they fell out of the else-branch.
+    expect(mealRowLabel('other')).toBe('Meal');
+    expect(mealRowLabel(null)).toBe('Meal');
+    expect(mealRowLabel(undefined)).toBe('Meal');
+  });
+
+  it('is the only place the word is spelled — the three row surfaces call it', () => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    for (const rel of ['components/history/EventRow.tsx', 'components/home/TodayZone.tsx', 'lib/dayEvents.ts']) {
+      const src = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+      // A single-quoted literal is code; the word in prose stays double-quoted.
+      expect({ file: rel, restates: /'Treat'/.test(src) }).toEqual({ file: rel, restates: false });
+      expect({ file: rel, calls: /\bmealRowLabel\(/.test(src) }).toEqual({ file: rel, calls: true });
+    }
   });
 });

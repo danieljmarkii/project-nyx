@@ -8,7 +8,7 @@
 jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null }));
 
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => {
@@ -102,5 +102,20 @@ describe('the two adjacent controls do not share hit area (CUL-612)', () => {
     await waitFor(() => expect(getByLabelText(/See all readings/)).toBeTruthy());
     const [label] = getByLabelText(/See all readings/).findAllByProps({ numberOfLines: 1 });
     expect(StyleSheet.flatten(label.props.style).flexShrink).toBe(1);
+  });
+});
+
+// CUL-753 — the vet-visit rundown's weight tile lands on this card, so the Pet
+// tab hangs its scroll anchor on it. A passthrough rather than a wrapper View at
+// the call site, so the anchor cannot move the thing it is measuring; that only
+// holds if it reaches the Card (the DietTrialCard / CUL-170 shape).
+describe('the scroll anchor (CUL-753)', () => {
+  it('forwards onLayout to the card itself, so the measured top IS the card top', () => {
+    const onLayout = jest.fn();
+    const tree = render(<WeightTrendCard petId="p1" petName="Mochi" snapshotKg={4.1} onLayout={onLayout} />);
+    // The outermost host view IS the Card — there is no wrapper between them, which
+    // is the property under test as much as the callback firing.
+    const root = tree.UNSAFE_getByType(View);
+    expect(root.props.onLayout).toBe(onLayout);
   });
 });

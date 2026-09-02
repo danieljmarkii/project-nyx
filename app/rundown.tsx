@@ -15,6 +15,7 @@ import {
   type Rundown,
   type RundownTap,
 } from '../lib/rundown';
+import { profileFocusHref } from '../lib/profileFocus';
 
 // The vet-visit rundown (Ask / B-228 PR A6, spec §3.3 + mock §7).
 //
@@ -32,7 +33,14 @@ import {
 type Status = 'loading' | 'ready' | 'error';
 
 // Map a tile's semantic tap target to an expo-router destination. Kept here (not
-// in lib/rundown) so the pure layer stays route-agnostic and testable.
+// in lib/rundown) so the pure layer stays route-agnostic and testable; the
+// mapping itself is pinned by `rundown.test.tsx`.
+//
+// The weight and meds tiles are DOORS onto the Pet tab and go through
+// `profileFocusHref` — the CUL-170 vocabulary — never the bare tab route, which
+// lands at the top of the profile and leaves the owner scrolling for the card in
+// the consult room (CUL-753). The meds tile names no single med (lib/rundown), so
+// it takes the section fallback the medications door already has.
 function navigateTo(tap: RundownTap): void {
   switch (tap.kind) {
     case 'symptom':
@@ -42,8 +50,10 @@ function navigateTo(tap: RundownTap): void {
       router.push('/insights');
       return;
     case 'weight':
+      router.push(profileFocusHref({ focus: 'weight', nowMs: Date.now() }));
+      return;
     case 'meds':
-      router.push('/(tabs)/profile');
+      router.push(profileFocusHref({ focus: 'medications', nowMs: Date.now() }));
       return;
     case 'medication':
       router.push({ pathname: '/medication/[id]', params: { id: tap.medicationId } });

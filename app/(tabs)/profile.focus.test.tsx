@@ -63,7 +63,16 @@ jest.mock('../../lib/storage', () => ({
 }));
 
 jest.mock('../../components/vetfiles/VetFilesCard', () => ({ VetFilesCard: () => null }));
-jest.mock('../../components/profile/WeightTrendCard', () => ({ WeightTrendCard: () => null }));
+// Forwards the anchor like the DietTrialCard stub below; `WeightTrendCard.test.tsx`
+// asserts the real card lands it on its own Card (CUL-753).
+jest.mock('../../components/profile/WeightTrendCard', () => {
+  const { View } = require('react-native');
+  return {
+    WeightTrendCard: ({ onLayout }: { onLayout?: (e: unknown) => void }) => (
+      <View testID="weight-anchor" onLayout={onLayout} />
+    ),
+  };
+});
 jest.mock('../../components/profile/EditPetModal', () => ({ EditPetModal: () => null }));
 jest.mock('../../components/profile/AddConditionModal', () => ({ AddConditionModal: () => null }));
 jest.mock('../../components/profile/AddMedicationModal', () => ({ AddMedicationModal: () => null }));
@@ -217,6 +226,36 @@ describe('the trial doorway', () => {
     const { scrollTo, getByTestId } = await mount();
     act(() => layout(getByTestId('trial-anchor'), 900));
     expect(scrollTo).toHaveBeenCalledWith({ y: 900 - PROFILE_FOCUS_INSET, animated: false });
+  });
+});
+
+describe('the weight doorway (CUL-753)', () => {
+  // The vet-visit rundown's weight tile. Same single-anchor shape as the trial
+  // card; what is new is that the screen knows the focus at all — before this,
+  // `focus=weight` coerced to null and the tile landed at the top of the profile.
+  it('lands on the weight card', async () => {
+    setParams({ focus: 'weight', ts: '1' });
+    const { scrollTo, getByTestId } = await mount();
+    act(() => layout(getByTestId('weight-anchor'), 600));
+    expect(scrollTo).toHaveBeenCalledWith({ y: 600 - PROFILE_FOCUS_INSET, animated: true });
+  });
+
+  it('fires once, then leaves the owner alone', async () => {
+    setParams({ focus: 'weight', ts: '1' });
+    const { scrollTo, getByTestId } = await mount();
+    act(() => layout(getByTestId('weight-anchor'), 600));
+    act(() => layout(getByTestId('weight-anchor'), 650));
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not wait on the sections below it', async () => {
+    // The weight card sits above conditions, medications and the trial card, so
+    // their loaders cannot move its top; a held trial read must not hold the door.
+    mockTrialLoading = true;
+    setParams({ focus: 'weight', ts: '1' });
+    const { scrollTo, getByTestId } = await mount();
+    act(() => layout(getByTestId('weight-anchor'), 600));
+    expect(scrollTo).toHaveBeenCalledWith({ y: 600 - PROFILE_FOCUS_INSET, animated: true });
   });
 });
 

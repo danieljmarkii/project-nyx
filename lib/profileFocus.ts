@@ -16,15 +16,19 @@
 // rather than decoration — a tab persists across switches, so a second tap on the
 // SAME strip re-pushes identical params and would otherwise be indistinguishable
 // from a re-render, and the door would work exactly once per session.
+//
+// CUL-753 extends the same vocabulary to the vet-visit rundown's tiles: `weight`
+// is a third focus, anchored on the weight-trend card, and the rundown's meds
+// tile takes the medications section (it deliberately names no single med).
 import { theme } from '../constants/theme';
 import { medStripKeyForRegimen } from './medStrip';
 
 /** The sections of the Pet tab a doorway can name. Deliberately a closed set: a
  *  focus that no anchor can service is a scroll to nowhere, so the screen refuses
  *  anything outside it rather than guessing. */
-export type ProfileFocus = 'trial' | 'medications';
+export type ProfileFocus = 'trial' | 'medications' | 'weight';
 
-const PROFILE_FOCUS_VALUES: readonly ProfileFocus[] = ['trial', 'medications'];
+const PROFILE_FOCUS_VALUES: readonly ProfileFocus[] = ['trial', 'medications', 'weight'];
 
 export const PROFILE_ROUTE = '/(tabs)/profile' as const;
 
@@ -140,7 +144,7 @@ export function medFocusScrollY(input: {
   return Math.max(0, anchor - PROFILE_FOCUS_INSET);
 }
 
-/** The scroll offset for a single-anchor doorway (the trial card). */
+/** The scroll offset for a single-anchor doorway (the trial card, the weight card). */
 export function focusScrollY(anchorY: number | null): number | null {
   if (anchorY === null) return null;
   return Math.max(0, anchorY - PROFILE_FOCUS_INSET);
