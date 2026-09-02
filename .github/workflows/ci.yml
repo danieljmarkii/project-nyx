@@ -286,7 +286,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git show HEAD:deno.lock > "${RUNNER_TEMP}/deno.lock.committed"
+          # Annotated rather than bare: `set -e` already fails the step, but the
+          # raw git stderr does not say what was lost. A missing baseline is a
+          # hard failure, never a pass — the guard has nothing to compare against.
+          if ! git show HEAD:deno.lock > "${RUNNER_TEMP}/deno.lock.committed"; then
+            echo "::error::could not read the committed deno.lock from HEAD; the remote-graph guard has no baseline, so this fails rather than passing"
+            exit 1
+          fi
           deno run --no-lock --allow-read=deno.lock,"${RUNNER_TEMP}" \
             scripts/check-deno-lock.deno.ts \
             "${RUNNER_TEMP}/deno.lock.committed" deno.lock

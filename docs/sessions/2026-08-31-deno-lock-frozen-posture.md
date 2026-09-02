@@ -156,6 +156,13 @@ findings".
 - **It proves the graph did not move, not that the pinned URLs are trustworthy.**
   Reviewing a new remote dependency is still review's job; this only guarantees the
   review is asked for.
+- **It only covers the graph CI caches.** The warm step walks
+  `find supabase/functions -name '*.test.ts'` and their imports, so a module no test
+  reaches is neither locked nor guarded. `deno info` puts that at **2 of 23** non-test
+  modules — `ask/index.ts` and `delete-account/index.ts`. Not a regression this
+  introduces (`--frozen` shares the blind spot exactly), and the larger half is that CI
+  type-checks neither file: a deliberate `const x: number = "..."` in the account-deletion
+  cascade passes both `deno test` and `tsc`. Filed as **CUL-782** (High).
 - **`--frozen` remains available** and gets strictly easier to adopt if the npm workspace
   is ever decoupled upstream. The comment in `ci.yml` now records why it is off, so the
   next person meets the measurement instead of a stale claim.

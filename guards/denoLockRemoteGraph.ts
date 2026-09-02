@@ -42,6 +42,15 @@
 // run — not that the pinned URLs are trustworthy, and not that `deno.lock` is in step
 // with `package.json` (it is deliberately blind to that, per above). Reviewing a NEW
 // remote dependency is still review's job; this only guarantees the review is asked for.
+//
+// It also only sees the graph CI actually caches: the `find supabase/functions -name
+// '*.test.ts'` set plus everything those transitively import. A module NO test reaches is
+// outside that graph, so its remote imports are never written to the lockfile and this
+// guard cannot see them — measured with `deno info` on 2026-08-31, that is
+// `ask/index.ts` and `delete-account/index.ts`, 2 of 23 non-test modules. The blind spot
+// belongs to the cached graph rather than to this guard (`--frozen` would share it
+// exactly, on the same graph), and those two files are type-checked by nothing either,
+// which is the larger half — tracked as CUL-782.
 
 export const UNGUARDED_LOCK_SECTIONS: readonly string[] = ['workspace'];
 
