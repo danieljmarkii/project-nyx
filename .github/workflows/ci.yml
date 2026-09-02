@@ -194,12 +194,23 @@ jobs:
       # step below then runs `--cached-only` and cannot fail on the network.
       #
       # `--lock=deno.lock` verifies every remote file against its committed
-      # hash, so a URL whose content silently changed fails here. Deliberately
-      # NOT `--frozen`: deno.lock's `workspace.dependencies` block still mirrors
-      # the pre-SDK-57 package.json, so `--frozen` fails on a clean checkout and
-      # would keep failing after every dependency bump until someone remembered
-      # to regenerate the lockfile. Remote-hash integrity is the part that
-      # matters and plain `--lock` gives it. (Lockfile drift → B-434.)
+      # hash, so a URL whose content silently changed fails here (confirmed by
+      # corrupting a hash: `deno cache` exits 10 with an integrity error).
+      #
+      # Still deliberately NOT `--frozen`, but for a different reason than this
+      # comment used to give (CUL-421). The old claim — that deno.lock's
+      # `workspace` block mirrors a pre-SDK-57 package.json — is out of date: the
+      # block tracks SDK 57 and `--frozen` passes on a clean checkout today. The
+      # reason it stays off is structural. Deno mirrors the root package.json into
+      # the lockfile, so `--frozen` reds whenever an APP dependency moves without
+      # someone re-running Deno: over 90 days, 14 commits changed the dependency
+      # set and only 2 carried a lockfile update, so `--frozen` would have failed
+      # this job on 12 of them — for haptics, fonts, notification and widget work.
+      # The Edge Functions import ZERO `npm:` specifiers, so none of those reds
+      # would have described a real problem here, and a tripwire firing monthly on
+      # the wrong axis is what gets a check deleted.
+      #
+      # What `--frozen` WOULD have bought is the next step's job instead.
       - name: Warm the Deno module cache
         shell: bash
         run: |
@@ -245,6 +256,46 @@ jobs:
           done
           echo "::error::could not fetch the Edge Function module graph after 4 attempts — this is an upstream CDN failure (deno.land / esm.sh), not a code failure; re-run the job"
           exit 1
+
+      # The remote-graph guard (CUL-421). Plain `--lock` above verifies hashes but
+      # SILENTLY ABSORBS a remote import nobody reviewed: adding a
+      # `https://deno.land/std@0.221.0/...` import to a suite and running the exact
+      # command above exits 0 while quietly writing seven new `remote` entries into
+      # the lockfile. The committed lock never gains them, so the new URL ends up
+      # pinned to whatever the CDN served that run, unreviewed. This step closes
+      # that gap on the sections the Edge Functions actually consume — every
+      # section EXCEPT the npm workspace mirror — so it catches what `--frozen`
+      # would catch here without inheriting `--frozen`'s false positives.
+      #
+      # The baseline comes from `git show`, not from a copy taken earlier in the
+      # job: `git show` reads the committed blob whatever the working tree looks
+      # like, so the guard cannot be defeated by reordering steps. A snapshot taken
+      # after the rewrite would compare a file to itself and pass forever.
+      #
+      # Placed here rather than at the end of the job because this is the only step
+      # that can fetch — the two below run `--cached-only` or on a wholly local
+      # graph — so nothing after it can move the lockfile, and failing here reports
+      # the real cause before spending 80s on the suites.
+      #
+      # `--no-lock` on this invocation so the guard's OWN run cannot touch
+      # deno.lock; `--allow-read` is scoped to the two files it compares. Its logic
+      # lives in guards/denoLockRemoteGraph.ts, which the app job's jest guard
+      # mutation-tests in both directions — the same function, so what is proven
+      # green there is what runs here.
+      - name: Assert the run did not move the lockfile's remote graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Annotated rather than bare: `set -e` already fails the step, but the
+          # raw git stderr does not say what was lost. A missing baseline is a
+          # hard failure, never a pass — the guard has nothing to compare against.
+          if ! git show HEAD:deno.lock > "${RUNNER_TEMP}/deno.lock.committed"; then
+            echo "::error::could not read the committed deno.lock from HEAD; the remote-graph guard has no baseline, so this fails rather than passing"
+            exit 1
+          fi
+          deno run --no-lock --allow-read=deno.lock,"${RUNNER_TEMP}" \
+            scripts/check-deno-lock.deno.ts \
+            "${RUNNER_TEMP}/deno.lock.committed" deno.lock
 
       # `--cached-only` forbids network here, so this step can only fail on the
       # code. Note this is also the ONLY type check covering supabase/functions —
