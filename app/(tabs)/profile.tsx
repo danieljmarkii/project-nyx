@@ -289,6 +289,7 @@ export default function ProfileScreen() {
   // reports a child's y in its parent's box); `medFocusScrollY` composes the two,
   // so no layout callback ever has to add them while one of them may still be null.
   const trialAnchorY = useRef<number | null>(null);
+  const weightAnchorY = useRef<number | null>(null);
   const medSectionY = useRef<number | null>(null);
   const medRowOffsetY = useRef<Map<string, number>>(new Map());
 
@@ -338,6 +339,9 @@ export default function ProfileScreen() {
     let y: number | null;
     if (pendingFocus.focus === 'trial') {
       y = focusScrollY(trialAnchorY.current);
+    } else if (pendingFocus.focus === 'weight') {
+      // CUL-753 — the rundown's weight tile. A single anchor, like the trial card.
+      y = focusScrollY(weightAnchorY.current);
     } else {
       const regimenId = resolveMedAnchorRegimenId(medications, pendingFocus.med);
       const rowOffset = regimenId === null ? undefined : medRowOffsetY.current.get(regimenId);
@@ -368,6 +372,14 @@ export default function ProfileScreen() {
   const handleTrialAnchorLayout = useCallback(
     (e: LayoutChangeEvent) => {
       trialAnchorY.current = e.nativeEvent.layout.y;
+      tryFocusScroll();
+    },
+    [tryFocusScroll],
+  );
+
+  const handleWeightAnchorLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      weightAnchorY.current = e.nativeEvent.layout.y;
       tryFocusScroll();
     },
     [tryFocusScroll],
@@ -1141,11 +1153,13 @@ export default function ProfileScreen() {
 
         {/* ── Weight trend (B-186) — descriptive, neutral; expands on the Weight
             chip above. snapshotKg lets the card show the profile weight before any
-            weigh-in is logged, so it never contradicts the Weight chip. ── */}
+            weigh-in is logged, so it never contradicts the Weight chip.
+            CUL-753 anchor: the vet-visit rundown's weight tile lands here. ── */}
         <WeightTrendCard
           petId={activePet.id}
           petName={activePet.name}
           snapshotKg={activePet.weight_kg}
+          onLayout={handleWeightAnchorLayout}
         />
 
         {/* ── Conditions ── */}

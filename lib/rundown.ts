@@ -49,9 +49,9 @@ import { drugDisplayName, type AttributableDose } from './medications';
 export type RundownTap =
   | { kind: 'symptom'; symptomType: string } // → /insights/[metric]
   | { kind: 'patterns' } //                     → /insights
-  | { kind: 'weight' } //                       → /(tabs)/profile (weight card)
+  | { kind: 'weight' } //                       → /(tabs)/profile?focus=weight (CUL-753)
   | { kind: 'medication'; medicationId: string } // → /medication/[id]
-  | { kind: 'meds' } //                         → /(tabs)/profile (no single med)
+  | { kind: 'meds' } //                         → /(tabs)/profile?focus=medications (no single med)
   | { kind: 'foods' } //                        → /(tabs)/foods
   | { kind: 'history' } //                      → /(tabs)/history
   | { kind: 'log-visit' }; //                   → /vet-visit (none logged yet)

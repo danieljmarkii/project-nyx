@@ -18,9 +18,10 @@ import {
 import { medStripKeyForRegimen, resolveMedStrips, type MedStripInput } from './medStrip';
 
 describe('coerceProfileFocus', () => {
-  it('accepts the two sections a doorway can name', () => {
+  it('accepts the three sections a doorway can name', () => {
     expect(coerceProfileFocus('trial')).toBe('trial');
     expect(coerceProfileFocus('medications')).toBe('medications');
+    expect(coerceProfileFocus('weight')).toBe('weight');
   });
 
   it('refuses anything it has no anchor for, rather than guessing', () => {
@@ -41,6 +42,13 @@ describe('profileFocusHref', () => {
     expect(href.pathname).toBe(PROFILE_ROUTE);
     expect(href.params.focus).toBe('trial');
     expect(href.params.ts).toBe('1700000000000');
+  });
+
+  it('names the weight card for the rundown tile (CUL-753) — a section door, no med key', () => {
+    expect(profileFocusHref({ focus: 'weight', nowMs: 5 })).toEqual({
+      pathname: PROFILE_ROUTE,
+      params: { focus: 'weight', ts: '5' },
+    });
   });
 
   it('omits `med` entirely on a trial door — never an empty string', () => {
