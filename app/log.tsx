@@ -994,6 +994,16 @@ export default function LogModal() {
       setSelectedType(null);
       setSeverity(null);
       setWeightLbsStr('');
+      // CUL-505 — the photo and the note are per-event state too. Left standing, a
+      // photo attached on a Vomit log rode into the next Lethargy log after Back:
+      // the wrong picture on the wrong symptom, in History and on the vet report,
+      // where the photo is what carries the clinical weight. (The meal step cannot
+      // leak one — its write never threads the attachment — so this is the
+      // non-meal → non-meal seam on the full-screen flow.)
+      setAttachmentUri(null);
+      setAttachmentTakenAt(null);
+      setAttachmentDims(null);
+      setNotes('');
       // Reset B-010 confidence state so the next event starts witnessed.
       setTimeMode('saw');
       setFoundMode('before');
