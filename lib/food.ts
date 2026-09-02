@@ -42,7 +42,9 @@ export function groupFoodsByType(foods: PickerFood[]): GroupedFoods {
 // calendar drill-in (`lib/dayEvents`) each carried their own copy of this rule
 // and agreed only by coincidence — the diet-trial §5.3 "one predicate" lesson,
 // at display-label stakes. Pinned in `lib/food.test.ts`: the three surfaces call
-// this and never restate it.
+// this and never restate it. `EVENT_TYPES.meal.label` (constants/eventTypes.ts)
+// spells the same word for the type grid from its own literal; a taxonomy rename
+// of that label must visit this helper too, or the grid and the rows diverge.
 export function mealRowLabel(foodType: string | null | undefined): 'Meal' | 'Treat' {
   return foodType === 'treat' ? 'Treat' : 'Meal';
 }

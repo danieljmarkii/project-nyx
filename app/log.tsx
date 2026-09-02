@@ -1443,8 +1443,6 @@ const styles = StyleSheet.create({
     color: theme.colorTextOnDark,
   },
 
-  // ── Severity ──
-
   // ── Simple events ──
   simpleScroll: {
     padding: theme.space3,

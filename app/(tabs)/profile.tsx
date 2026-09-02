@@ -335,13 +335,18 @@ export default function ProfileScreen() {
 
   const tryFocusScroll = useCallback(() => {
     const pendingFocus = pendingFocusRef.current;
-    if (pendingFocus === null || !focusContentSettled) return;
+    if (pendingFocus === null) return;
     let y: number | null;
-    if (pendingFocus.focus === 'trial') {
-      y = focusScrollY(trialAnchorY.current);
-    } else if (pendingFocus.focus === 'weight') {
-      // CUL-753 — the rundown's weight tile. A single anchor, like the trial card.
+    if (pendingFocus.focus === 'weight') {
+      // CUL-753 — the rundown's weight tile. A single anchor like the trial card,
+      // but it sits ABOVE every section the settled-gate below waits for, so its
+      // top is final the moment the card itself lays out; holding it on those
+      // reads would only delay an arrival that is already correct.
       y = focusScrollY(weightAnchorY.current);
+    } else if (!focusContentSettled) {
+      return;
+    } else if (pendingFocus.focus === 'trial') {
+      y = focusScrollY(trialAnchorY.current);
     } else {
       const regimenId = resolveMedAnchorRegimenId(medications, pendingFocus.med);
       const rowOffset = regimenId === null ? undefined : medRowOffsetY.current.get(regimenId);

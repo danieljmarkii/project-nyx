@@ -247,6 +247,16 @@ describe('the weight doorway (CUL-753)', () => {
     act(() => layout(getByTestId('weight-anchor'), 650));
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
+
+  it('does not wait on the sections below it', async () => {
+    // The weight card sits above conditions, medications and the trial card, so
+    // their loaders cannot move its top; a held trial read must not hold the door.
+    mockTrialLoading = true;
+    setParams({ focus: 'weight', ts: '1' });
+    const { scrollTo, getByTestId } = await mount();
+    act(() => layout(getByTestId('weight-anchor'), 600));
+    expect(scrollTo).toHaveBeenCalledWith({ y: 600 - PROFILE_FOCUS_INSET, animated: true });
+  });
 });
 
 describe('the medication doorway', () => {
