@@ -5,7 +5,7 @@ import {
 import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
-import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/authStore';
 import { fetchDisplayName, updateDisplayName } from '../../lib/profile';
 
 // OwnerNameRow — the Account card's "Your name" field (vet-report spec §7.1).
@@ -16,9 +16,14 @@ import { fetchDisplayName, updateDisplayName } from '../../lib/profile';
 // your name once is a 5-second act, not a flow. Online-only write (a profile edit is
 // a settings-class action, not pet-event logging — it doesn't ride the sync queue);
 // a failed save says so honestly and keeps the draft in the field.
+//
+// Who is signed in comes from `useAuthStore`, the app's one session mirror (the
+// root listener adopts every session there) — never a fresh `getSession()` read
+// on mount, which was a second answer to a question the store already holds and
+// a round-trip on every visit to the Account card (CUL-167).
 
 export function OwnerNameRow() {
-  const [userId, setUserId] = useState<string | null>(null);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   const [savedName, setSavedName] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
@@ -26,16 +31,12 @@ export function OwnerNameRow() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     (async () => {
-      const { data, error } = await supabase.auth.getSession();
-      const uid = error ? null : (data.session?.user.id ?? null);
-      if (cancelled) return;
-      if (!uid) {
-        setLoading(false);
-        return;
-      }
-      setUserId(uid);
-      const read = await fetchDisplayName(uid);
+      const read = await fetchDisplayName(userId);
       if (cancelled) return;
       if (read.status === 'ok') {
         setSavedName(read.displayName);
@@ -46,7 +47,7 @@ export function OwnerNameRow() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
 
   const dirty = draft.trim() !== (savedName ?? '');
 
