@@ -1,7 +1,7 @@
 # CLAUDE.md deep trim — the rules stay, the stories move
 
 **Date:** 2026-09-02
-**Shipped via:** the follow-up PR for CUL-407 (B-388), opened from the same session as #792.
+**Shipped via:** #793 (CUL-407, B-388) — the follow-up PR from the same session as #792.
 
 ## What this was
 
