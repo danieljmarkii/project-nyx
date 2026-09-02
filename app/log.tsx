@@ -212,10 +212,11 @@ export default function LogModal() {
   // if the owner toggles back to "Saw it happen".
   const [estimatedAt, setEstimatedAt] = useState<Date>(() => new Date());
 
-  // B-745 R4 — photo-first entry retired: every log starts from the event. Nothing
-  // writes `pendingAttachment` anymore (the FAB no longer offers a photo-first door),
-  // so the mount-time consumer, the type-step "photo is attached" banner, and the
-  // dashed photo tile all retired here as dead code. Photos still attach INSIDE every
+  // B-745 R4 — photo-first entry retired: every log starts from the event. The FAB
+  // no longer offers a photo-first door, so the mount-time consumer, the type-step
+  // "photo is attached" banner, and the dashed photo tile all retired here as dead
+  // code — and the `pendingAttachment` store that fed them went with CUL-501, once
+  // nothing wrote to it. Photos still attach INSIDE every
   // event flow (renderPhotoAttachRow on the symptom/simple steps; the photo row on
   // PR 3's confirm) — the capability audit stayed clean, only the entry point went.
 
