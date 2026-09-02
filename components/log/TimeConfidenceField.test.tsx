@@ -1,4 +1,4 @@
-import { StyleSheet } from 'react-native';
+import { commonAncestor, flat, owningTouchable } from '../../testUtils/tree';
 import { render, fireEvent } from '@testing-library/react-native';
 import { TimeConfidenceField } from './TimeConfidenceField';
 
@@ -28,26 +28,6 @@ function setup(over: Partial<React.ComponentProps<typeof TimeConfidenceField>> =
     ...over,
   };
   return { ...render(<TimeConfidenceField {...props} />), props };
-}
-
-// Resolve the touchable that actually OWNS a node — the nearest ancestor host
-// element with responder handlers — or null if the node sits in no button at all.
-//
-// This walk, rather than fireEvent.press, is what discriminates here. RTL's
-// `press` does not simply bubble: given a node with no handler above it, it can
-// still reach one by descending from an enclosing COMPOSITE element. Pressing
-// this file's inert label therefore fired the value's touchable, and the first
-// draft of these tests passed unchanged against the pre-fix tree — green over
-// the exact defect they exist for (the CUL-613 lesson, met the hard way). Node
-// identity cannot be reached that way: two texts share a button only if they
-// really are inside one.
-function owningTouchable(node: any): any {
-  let n = node;
-  while (n) {
-    if (n.props?.accessible && typeof n.props?.onStartShouldSetResponder === 'function') return n;
-    n = n.parent;
-  }
-  return null;
 }
 
 describe('TimeConfidenceField', () => {
@@ -114,7 +94,7 @@ describe('TimeConfidenceField', () => {
     for (const label of ['Sometime before', 'Around a time', 'Between two times']) {
       const row = owningTouchable(getByText(label));
       expect(row).not.toBeNull();
-      expect(row.props.hitSlop).toBeUndefined();
+      expect(row!.props.hitSlop).toBeUndefined();
     }
   });
 
@@ -136,7 +116,7 @@ describe('TimeConfidenceField', () => {
       for (const label of ['Saw it happen', 'Found it']) {
         const seg = owningTouchable(getByText(label));
         expect(seg).not.toBeNull();
-        expect(seg.props.hitSlop).toBeUndefined();
+        expect(seg!.props.hitSlop).toBeUndefined();
       }
     });
 
@@ -154,9 +134,8 @@ describe('TimeConfidenceField', () => {
       );
       expect(row).not.toBeNull();
 
-      const flat = (StyleSheet.flatten(row.props?.style) ?? {}) as Record<string, number | undefined>;
-      expect(flat.gap ?? 0).toBe(0);
-      expect(flat.columnGap ?? 0).toBe(0);
+      expect(flat(row).gap ?? 0).toBe(0);
+      expect(flat(row).columnGap ?? 0).toBe(0);
     });
 
     it('each segment selects its own mode', () => {
@@ -170,14 +149,3 @@ describe('TimeConfidenceField', () => {
     });
   });
 });
-
-// The nearest ancestor that contains BOTH nodes — i.e. the row the two segments
-// are siblings in, whichever intermediate composites the tree happens to have.
-// Derived from the tree rather than reached by a fixed number of `.parent` hops,
-// so it does not quietly start measuring some other element after a refactor.
-function commonAncestor(a: any, b: any): any {
-  const chain = new Set<any>();
-  for (let n = a; n; n = n.parent) chain.add(n);
-  for (let n = b; n; n = n.parent) if (chain.has(n)) return n;
-  return null;
-}

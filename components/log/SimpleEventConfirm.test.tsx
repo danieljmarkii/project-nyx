@@ -31,6 +31,7 @@ jest.mock('../../lib/simpleEvent', () => ({
 
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { StyleSheet, Alert } from 'react-native';
+import { commonAncestor, facing, flat, owningTouchable } from '../../testUtils/tree';
 import * as ImagePicker from 'expo-image-picker';
 import { SimpleEventConfirm } from './SimpleEventConfirm';
 import { theme } from '../../constants/theme';
@@ -593,39 +594,6 @@ describe('witnessed-by-construction leaves (D10 — cough / sneeze)', () => {
 // enclosing composite, so it goes green on the unfixed tree (CUL-613, learned
 // the hard way in TimeConfidenceField.test.tsx).
 
-/** The nearest ancestor host element with responder handlers — the touchable that
- *  actually owns a node — or null if the node sits in no button at all. */
-function owningTouchable(node: any): any {
-  let n = node;
-  while (n) {
-    if (n.props?.accessible && typeof n.props?.onStartShouldSetResponder === 'function') return n;
-    n = n.parent;
-  }
-  return null;
-}
-
-/** The nearest ancestor containing BOTH nodes — i.e. whichever element the two are
- *  siblings in, derived from the tree rather than reached by a fixed number of
- *  `.parent` hops, so it cannot quietly start measuring some other element. */
-function commonAncestor(a: any, b: any): any {
-  const chain = new Set<any>();
-  for (let n = a; n; n = n.parent) chain.add(n);
-  for (let n = b; n; n = n.parent) if (chain.has(n)) return n;
-  return null;
-}
-
-/** Facing reach toward a neighbour, from a rendered `hitSlop` prop. A number is
- *  reach on all four edges; an object yields per-edge; absent is no reach at all. */
-function facing(node: any, edge: 'top' | 'bottom' | 'left' | 'right'): number {
-  const slop = node?.props?.hitSlop;
-  if (slop == null) return 0;
-  return typeof slop === 'number' ? slop : (slop[edge] ?? 0);
-}
-
-function flat(node: any): Record<string, number | undefined> {
-  return (StyleSheet.flatten(node?.props?.style) ?? {}) as Record<string, number | undefined>;
-}
-
 /** Open Found it → Adjust window, where the two radio rows live. */
 function openWindowEditor() {
   const utils = renderConfirm();
@@ -656,7 +624,9 @@ describe('CUL-688 — the found-mode radio rows', () => {
   it('neither row claims reach into the other', () => {
     const { getByText } = openWindowEditor();
     for (const label of RADIO_LABELS) {
-      expect(owningTouchable(getByText(label)).props.hitSlop).toBeUndefined();
+      const row = owningTouchable(getByText(label));
+      expect(row).not.toBeNull();
+      expect(row!.props.hitSlop).toBeUndefined();
     }
   });
 

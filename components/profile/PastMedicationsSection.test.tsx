@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { PastMedicationsSection } from './PastMedicationsSection';
 import type { PastCourseRow } from '../../lib/pastMedications';
+import { owningTouchable } from '../../testUtils/tree';
 
 function row(over: Partial<PastCourseRow> = {}): PastCourseRow {
   return {
@@ -30,19 +31,6 @@ const ORPHAN = row({
 
 const METRO_LABEL = 'Metronidazole. Ended. 14 doses · Mar 3 – Mar 16';
 const ORPHAN_LABEL = 'Medication. No end recorded. 3 doses · last logged Apr 2';
-
-/** The nearest responder host at or above `node`. A touchable is `accessible` and owns
- *  `onStartShouldSetResponder`; a plain View has no responder. Walking UP and reading
- *  identity is what `fireEvent.press` cannot prove (CUL-579): a press on an inert
- *  label can still reach a handler by descent from an enclosing element. */
-function owningTouchable(node: any): any {
-  let n = node;
-  while (n) {
-    if (n.props?.accessible && typeof n.props?.onStartShouldSetResponder === 'function') return n;
-    n = n.parent;
-  }
-  return null;
-}
 
 function expand(view: ReturnType<typeof render>) {
   fireEvent.press(view.getByLabelText(/^Past medications, /));
@@ -74,7 +62,7 @@ describe('PastMedicationsSection', () => {
     // Identity, not a synthetic press: the label's own responder host is a button.
     const host = owningTouchable(label);
     expect(host).not.toBeNull();
-    expect(host.props.accessibilityRole).toBe('button');
+    expect(host!.props.accessibilityRole).toBe('button');
     fireEvent.press(label);
     expect(router.push).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith('/medication/item-metro');
