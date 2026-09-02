@@ -133,7 +133,15 @@ export function MealCompletionCard() {
   // card carries the moment's warmth without a full-screen takeover.
   const checkScale = useRef(new Animated.Value(0.6)).current;
 
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // The eventId the picker was OPENED for; null while closed (CUL-709). Captured at
+  // open rather than read live at save: `present()` swaps the payload IN PLACE, so
+  // a second log landing while the sheet is up would otherwise have Save write this
+  // record's draft time — and a 'manual' stamp — onto the row that replaced it,
+  // re-dating a record the owner never looked at. It is the same race the store's
+  // undo / patchTrialFlag / patchDoubleDose refuse, one layer out. Unreachable
+  // today (the sheet is a full-screen Modal, so nothing can complete a log behind
+  // it); the guard is for the first non-interactive presenter.
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
   // No local draft: TimeEditSheet owns it, so opening and abandoning the picker
   // cannot touch the card's authoritative occurredAt.
   const [saving, setSaving] = useState(false);
@@ -176,11 +184,19 @@ export function MealCompletionCard() {
 
   function openPicker() {
     if (!isMeal) return;
-    setPickerOpen(true);
+    setPickerFor(payload.eventId);
   }
 
   async function savePicker(next: Date) {
     if (!isMeal) return;
+    // The card moved on to another record while the sheet was open: the draft
+    // describes a row that is no longer on screen, so write nothing and close.
+    // Close SILENTLY rather than hold or explain: nothing was written, so there
+    // is no loss to speak (unlike undo's 'ignored' after a confirm, CUL-645),
+    // and a sheet left open would show a draft against a record the owner never
+    // opened it for. The card stands, now about the new record; Change time
+    // remains one tap away.
+    if (pickerFor !== payload.eventId) { setPickerFor(null); return; }
     setSaving(true);
     try {
       const iso = next.toISOString();
@@ -217,16 +233,19 @@ export function MealCompletionCard() {
       // ever edits a meal insertMeal just wrote as witnessed. Restating it is a
       // no-op that keeps the row's claim explicit; omitting the key would now
       // leave it untouched rather than wipe it (B-448), so either is safe here.
+      // `notes` and `severity` are deliberately ABSENT (CUL-703). updateEvent
+      // preserves an omitted field and CLEARS an explicit null, and this path knows
+      // neither value — the explicit nulls it used to pass were harmless only while
+      // no meal path writes a note, and would have made the first one that does
+      // erasable by a time edit, with nothing failing.
       await updateEvent(payload.eventId, {
         occurred_at: iso,
-        severity: null,
-        notes: null,
         occurred_at_source: source,
         confidence: { value: 'witnessed', earliest: null, latest: null },
       });
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
-      setPickerOpen(false);
+      setPickerFor(null);
       // Dismiss on save — the affirmative action is its own confirmation;
       // lingering with an updated time would just be noise.
       hide();
@@ -596,12 +615,12 @@ export function MealCompletionCard() {
           OCCURRENCE. That is not a default the sheet supplies: `title` is
           required precisely so a caller editing a discovery bound cannot inherit
           this question (CUL-606's adversarial finding). */}
-      {pickerOpen && (
+      {pickerFor !== null && (
         <TimeEditSheet
           value={new Date(payload.occurredAt)}
           title="When did this happen?"
           saving={saving}
-          onCancel={() => setPickerOpen(false)}
+          onCancel={() => setPickerFor(null)}
           onSave={savePicker}
         />
       )}

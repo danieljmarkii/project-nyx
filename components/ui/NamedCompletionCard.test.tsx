@@ -149,6 +149,22 @@ describe('NamedCompletionCard — what it says', () => {
     view.getByText('Saved to Biscuit’s record');
     expect(view.queryByText('Saved to Mochi’s record')).toBeNull();
   });
+
+  // `pets` holds only non-archived pets, so archiving the record's pet makes the
+  // lookup miss. It must fall to the anonymous form — the `?? activePet?.name` rung
+  // this card carried would have named Mochi here, and that rung had no correct
+  // case: every store mutator keeps activePet inside `pets`, so it could only fire
+  // when the record's pet was NOT the active pet (CUL-659; the meal and dose cards
+  // pin the same case).
+  it('falls to the anonymous form when the record’s pet is gone, never to the active one', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({}, 'p2');
+    act(() => {
+      usePetStore.setState({ pets: [{ id: 'p2', name: 'Mochi' }] as never });
+    });
+    view.getByText('Saved to your pet’s record');
+    expect(view.queryByText('Saved to Mochi’s record')).toBeNull();
+  });
 });
 
 describe('NamedCompletionCard — tone', () => {

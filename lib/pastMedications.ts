@@ -203,10 +203,9 @@ export interface PastCourseRow {
   name: string;
   meta: string;
   pill: PastCoursePill;
-  // The course's catalog item, retained for the PR-3 detail route (which is keyed by a
-  // medication_items id). Null for a free-text regimen or an unspecified orphan. NOT used
-  // for navigation in PR 2 — past rows are non-tappable until PR 3 builds the destination
-  // (a tap into today's editable catalog screen would invite editing the wrong data).
+  // The course's catalog item — the id `app/medication/[id]` is keyed by, so a row that
+  // has one taps through to that screen (CUL-318). Null for a free-text regimen or an
+  // unspecified orphan, which have no destination and render as plain rows.
   medicationItemId: string | null;
 }
 

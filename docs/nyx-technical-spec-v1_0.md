@@ -80,7 +80,7 @@ Stay in Expo managed workflow for the MVP. Do not eject unless a required native
 │   ├── eventStore.ts             # Event log
 │   ├── authStore.ts              # Auth session
 │   ├── syncStore.ts              # Sync queue
-│   └── …                         # attachmentStore, momentStore
+│   └── …                         # momentStore, …
 ├── hooks/                        # usePet, useEvents, useSync, useSignal, useSummary, useTrend, …
 ├── constants/
 │   ├── eventTypes.ts             # Icons, labels, colors per event type

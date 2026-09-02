@@ -22,7 +22,7 @@ import { EventIcon } from '../components/event/EventIcon';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
-import { usePetStore } from '../store/petStore';
+import { usePetStore, resolveRecordPetName } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAppActive } from '../hooks/useAppActive';
@@ -212,10 +212,11 @@ export default function LogModal() {
   // if the owner toggles back to "Saw it happen".
   const [estimatedAt, setEstimatedAt] = useState<Date>(() => new Date());
 
-  // B-745 R4 — photo-first entry retired: every log starts from the event. Nothing
-  // writes `pendingAttachment` anymore (the FAB no longer offers a photo-first door),
-  // so the mount-time consumer, the type-step "photo is attached" banner, and the
-  // dashed photo tile all retired here as dead code. Photos still attach INSIDE every
+  // B-745 R4 — photo-first entry retired: every log starts from the event. The FAB
+  // no longer offers a photo-first door, so the mount-time consumer, the type-step
+  // "photo is attached" banner, and the dashed photo tile all retired here as dead
+  // code — and the `pendingAttachment` store that fed them went with CUL-501, once
+  // nothing wrote to it. Photos still attach INSIDE every
   // event flow (renderPhotoAttachRow on the symptom/simple steps; the photo row on
   // PR 3's confirm) — the capability audit stayed clean, only the entry point went.
 
@@ -619,10 +620,13 @@ export default function LogModal() {
         if (isVehicleNotFinished(vehicleIntake)) {
           // Keep /log mounted so the sheet renders over the picker; the sheet's handlers own
           // the router.back() to the treat once the owner answers or dismisses.
-          const comboPetName =
-            (pairedPetId ? pets.find((p) => p.id === pairedPetId)?.name : null)
-            ?? usePetStore.getState().activePet?.name
-            ?? 'your pet';
+          // The MEAL's pet, through the one shared lookup (CUL-574 / CUL-711). A
+          // retroactive combo is always against a meal that has a pet, so a missing
+          // or unmatched id means we do not know it — never that it is the current
+          // selection. The active-pet rung this used to carry could only fire when
+          // the paired pet was NOT in `pets`, i.e. exactly when it was not the
+          // active pet either; the anonymous form is the honest answer on a miss.
+          const comboPetName = resolveRecordPetName(pets, pairedPetId);
           setComboConfirm({
             doseEventId: result.eventId,
             petName: comboPetName,
@@ -991,6 +995,16 @@ export default function LogModal() {
       setSelectedType(null);
       setSeverity(null);
       setWeightLbsStr('');
+      // CUL-505 — the photo and the note are per-event state too. Left standing, a
+      // photo attached on a Vomit log rode into the next Lethargy log after Back:
+      // the wrong picture on the wrong symptom, in History and on the vet report,
+      // where the photo is what carries the clinical weight. (The meal step cannot
+      // leak one — its write never threads the attachment — so this is the
+      // non-meal → non-meal seam on the full-screen flow.)
+      setAttachmentUri(null);
+      setAttachmentTakenAt(null);
+      setAttachmentDims(null);
+      setNotes('');
       // Reset B-010 confidence state so the next event starts witnessed.
       setTimeMode('saw');
       setFoundMode('before');

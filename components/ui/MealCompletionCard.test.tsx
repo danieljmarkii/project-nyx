@@ -457,6 +457,45 @@ describe('MealCompletionCard — Change time', () => {
     expect(view.queryByText('When did this happen?')).toBeNull();
   });
 
+  // CUL-703 — `severity` and `notes` used to ride along as explicit nulls, which
+  // updateEvent treats as CLEAR (an omitted key preserves — CUL-606). Harmless
+  // while no meal path writes a note, and destructive the day one does, with
+  // nothing failing. The edit must name the time and nothing else.
+  it('a time edit never restates notes or severity', async () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    const fields = (updateEvent as jest.Mock).mock.calls[0][1];
+    expect(fields).not.toHaveProperty('notes');
+    expect(fields).not.toHaveProperty('severity');
+  });
+
+  // CUL-709 — `present()` swaps the payload IN PLACE, and the sheet's draft was
+  // seeded from the record the owner opened it on. Save used to read
+  // `payload.eventId` live, so a second meal landing mid-edit would have had it
+  // write the FIRST meal's draft time (and a 'manual' stamp) onto the second
+  // meal's row — re-dating a record the owner never looked at. The store's undo /
+  // patchTrialFlag / patchDoubleDose all refuse on this; Save now does too.
+  it('writes nothing when another log replaced the card while the sheet was open', async () => {
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    // A second meal lands: same card, new record, sheet still up.
+    seedMeal({ eventId: 'e2', occurredAt: '2026-06-07T16:00:00.000Z' });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    expect(updateEvent as jest.Mock).not.toHaveBeenCalled();
+    // The sheet closes — its draft described a row that is no longer on screen —
+    // and the card stands, now about the second meal.
+    expect(view.queryByText('When did this happen?')).toBeNull();
+    expect(useMomentStore.getState().payload?.eventId).toBe('e2');
+  });
+
   // The inline copy's Cancel/Save were bare TouchableOpacitys — reachable by
   // sight, announced by VoiceOver as plain text. The shared sheet declares the
   // role, so adoption is an assistive-tech fix as well as a de-duplication.
