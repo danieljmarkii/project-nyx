@@ -245,7 +245,10 @@ interface MomentState {
   // is looking at and the touch-up that fires would otherwise delete the row that
   // replaced it: an irreversible action against a record the owner never saw.
   // Found by the access-control red-team, which noted this was the only unguarded
-  // action in a store that guards every patch.
+  // action in a store that guards every patch. The cards' own "Change time" save
+  // was the same hole one layer out — it read `payload.eventId` live at save time
+  // against a draft seeded from the previous payload — and carries the same guard
+  // since CUL-709 (`pickerFor` on the meal and dose cards).
   undo: (eventId: string) => Promise<UndoResult>;
   // Mutates the in-flight card's occurredAt after a "Change time" edit so the
   // card reflects the new time before dismissing. All three cards carry a

@@ -392,6 +392,37 @@ describe('MedicationCompletionCard — Change time', () => {
     expect(view.queryByText('When was this dose given?')).toBeNull();
   });
 
+  // CUL-703 — same as the meal card: the explicit nulls this write carried would
+  // have let a time edit erase a dose note the first day a dose path writes one.
+  it('a time edit never restates notes or severity', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    const fields = (updateEvent as jest.Mock).mock.calls[0][1];
+    expect(fields).not.toHaveProperty('notes');
+    expect(fields).not.toHaveProperty('severity');
+  });
+
+  // CUL-709 — see the meal card's twin. A second dose landing mid-edit swaps the
+  // payload in place; Save must refuse rather than re-date the new dose with the
+  // old draft.
+  it('writes nothing when another log replaced the card while the sheet was open', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    seedDose({ eventId: 'm2', occurredAt: '2026-06-07T16:00:00.000Z' });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+
+    expect(updateEvent as jest.Mock).not.toHaveBeenCalled();
+    expect(view.queryByText('When was this dose given?')).toBeNull();
+    expect(useMomentStore.getState().payload?.eventId).toBe('m2');
+  });
+
   it('announces its two actions as buttons', () => {
     seedDose();
     const view = render(<MedicationCompletionCard />);

@@ -70,7 +70,10 @@ export function MedicationCompletionCard() {
   const opacity = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0.6)).current;
 
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // The eventId the picker was OPENED for; null while closed (CUL-709) — see the
+  // meal card's savePicker for the full argument. `present()` swaps the payload in
+  // place, so a save must refuse once the card is about a different dose.
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
   // No local draft: TimeEditSheet owns it, so opening and abandoning the picker
   // cannot touch the card's authoritative occurredAt (meal-card pattern).
   const [saving, setSaving] = useState(false);
@@ -102,11 +105,14 @@ export function MedicationCompletionCard() {
 
   function openPicker() {
     if (!isMedication) return;
-    setPickerOpen(true);
+    setPickerFor(payload.eventId);
   }
 
   async function savePicker(next: Date) {
     if (!isMedication) return;
+    // The card moved on to another dose while the sheet was open: write nothing
+    // and close (CUL-709; mirrors the meal card).
+    if (pickerFor !== payload.eventId) { setPickerFor(null); return; }
     setSaving(true);
     try {
       const iso = next.toISOString();
@@ -129,16 +135,16 @@ export function MedicationCompletionCard() {
       // edit-event.tsx does for medication), and this card only ever edits a dose
       // insertMedicationDose just wrote as witnessed — so re-asserting it is a
       // no-op that keeps the claim explicit. Mirrors the meal card's savePicker.
+      // `notes` / `severity` deliberately absent (CUL-703): updateEvent clears an
+      // explicit null and preserves an omitted key, and this path knows neither.
       await updateEvent(payload.eventId, {
         occurred_at: iso,
-        severity: null,
-        notes: null,
         occurred_at_source: source,
         confidence: { value: 'witnessed', earliest: null, latest: null },
       });
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
-      setPickerOpen(false);
+      setPickerFor(null);
       // Dismiss on save — the affirmative action is its own confirmation; lingering
       // with an updated time would just be noise (meal-card parity).
       hide();
@@ -465,12 +471,12 @@ export function MedicationCompletionCard() {
         and the question is about occurrence — but it names the DOSE rather than
         inheriting the meal card's wording, because `title` is required precisely
         so each caller states which field it edits (CUL-606). */}
-    {pickerOpen && (
+    {pickerFor !== null && (
       <TimeEditSheet
         value={new Date(payload.occurredAt)}
         title="When was this dose given?"
         saving={saving}
-        onCancel={() => setPickerOpen(false)}
+        onCancel={() => setPickerFor(null)}
         onSave={savePicker}
       />
     )}
