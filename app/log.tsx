@@ -45,7 +45,7 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../lib/trialContaminant';
 import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, OccurredConfidence } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'medication' | 'symptom' | 'simple' | 'stool-type' | 'weight';
+type Step = 'type' | 'food' | 'medication' | 'simple' | 'stool-type' | 'weight';
 
 // B-010 — the time fields a logged event carries. occurred_at is always a
 // single derived point; confidence + window bounds describe its certainty.
@@ -56,14 +56,6 @@ type TimeFields = {
   latest: Date | null;
   source: 'manual' | 'exif' | 'now';
 };
-
-const SEVERITY_CONFIG = [
-  { value: 1, label: 'Mild' },
-  { value: 2, label: '' },
-  { value: 3, label: '' },
-  { value: 4, label: '' },
-  { value: 5, label: 'Severe' },
-];
 
 export default function LogModal() {
   const { activePet, pets } = usePetStore();
@@ -172,9 +164,6 @@ export default function LogModal() {
   // out of that decision: launchPhotoPicker settles the point itself, so the effect
   // can never race in and overwrite an EXIF stamp with the wall clock.
   const photoInFlight = useRef(false);
-
-  // Symptom state
-  const [severity, setSeverity] = useState<number | null>(null);
 
   // Weight state (B-186). The lbs the owner is entering — pre-filled with the
   // pet's last known weight (the pets.weight_kg snapshot, converted to lbs) so a
@@ -895,7 +884,6 @@ export default function LogModal() {
           latest: tf.latest,
           source: effectiveSource,
           notes: notes.trim() || null,
-          severity: severity ?? null,
           attachment: attachmentUri
             ? { uri: attachmentUri, takenAt: attachmentTakenAt, width: attachmentDims?.width, height: attachmentDims?.height }
             : null,
@@ -918,7 +906,7 @@ export default function LogModal() {
       occurred_at_confidence: tf.confidence,
       occurred_at_earliest: tf.earliest ? tf.earliest.toISOString() : null,
       occurred_at_latest: tf.latest ? tf.latest.toISOString() : null,
-      severity: severity ?? null,
+      severity: null,
       notes: notes.trim() || null,
       source: 'manual',
       deleted_at: null,
@@ -991,9 +979,8 @@ export default function LogModal() {
     // Combo mode (B-156 PR B2b) opened straight into the medication picker from the
     // meal card, so there's no type-grid to step back to — back closes the modal.
     if (isComboMode && step === 'medication') { router.back(); return; }
-    if (step === 'food' || step === 'medication' || step === 'symptom' || step === 'simple' || step === 'stool-type' || step === 'weight') {
+    if (step === 'food' || step === 'medication' || step === 'simple' || step === 'stool-type' || step === 'weight') {
       setSelectedType(null);
-      setSeverity(null);
       setWeightLbsStr('');
       // CUL-505 — the photo and the note are per-event state too. Left standing, a
       // photo attached on a Vomit log rode into the next Lethargy log after Back:
@@ -1095,10 +1082,11 @@ export default function LogModal() {
   }
 
   // The witnessed time section — the plain "date · time / Change" row plus its
-  // inline point picker. ONE implementation for the three steps that render it
-  // (weight, symptom severity, and the witnessed-by-construction simple branch —
-  // code-review cleanup on this PR: the block had been copy-pasted per step, so
-  // the picker wiring could drift between copies).
+  // inline point picker. ONE implementation for the two steps that render it
+  // (weight, and the witnessed-by-construction simple branch — a code-review
+  // cleanup: the block had been copy-pasted per step, so the picker wiring could
+  // drift between copies. The severity step was the third copy until CUL-506
+  // pruned it as unreachable: `hasSeverity` is false for every event type).
   function renderTimeRowWithPicker() {
     return (
       <>
@@ -1339,61 +1327,6 @@ export default function LogModal() {
     );
   }
 
-  // ── Severity (symptom events) ───────────────────────────────────────────────
-
-  if (step === 'symptom') {
-    const eventLabel = selectedType ? EVENT_TYPES[selectedType].label : '';
-    const canConfirm = severity !== null;
-    return (
-      <SafeAreaView style={styles.container}>
-        <Header title={eventLabel} leading="back" onLeadingPress={handleBack} />
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={styles.symptomScroll} keyboardShouldPersistTaps="handled">
-            {renderPhotoAttachRow()}
-            <ThemedText style={styles.severityHeading}>How severe?</ThemedText>
-            <View style={styles.severityRow}>
-              {SEVERITY_CONFIG.map(({ value, label }) => {
-                const isSelected = severity === value;
-                const fillOpacity = 0.15 + (value - 1) * 0.175;
-                return (
-                  <TouchableOpacity
-                    key={value}
-                    style={styles.severityItem}
-                    onPress={() => setSeverity(value)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[
-                      styles.severityCircle,
-                      { backgroundColor: isSelected ? theme.colorNeutralDark : `rgba(26,26,26,${fillOpacity})` },
-                      isSelected && styles.severityCircleSelected,
-                    ]}>
-                      <ThemedText style={[styles.severityNum, isSelected && styles.severityNumSelected]}>
-                        {value}
-                      </ThemedText>
-                    </View>
-                    <ThemedText style={styles.severityLabel}>{label}</ThemedText>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <View style={styles.divider} />
-            {renderNotesInput()}
-            {renderTimeRowWithPicker()}
-          </ScrollView>
-          <View style={styles.bottomAction}>
-            <TouchableOpacity
-              style={[styles.confirmBtn, !canConfirm && styles.confirmBtnDisabled]}
-              onPress={() => handleConfirm()}
-              disabled={!canConfirm}
-            >
-              <ThemedText style={styles.confirmBtnText}>Log {eventLabel.toLowerCase()}</ThemedText>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
-  }
-
   // ── Simple events (stool, other) ────────────────────────────────────────────
 
   if (step === 'simple') {
@@ -1511,53 +1444,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Severity ──
-  symptomScroll: {
-    padding: theme.space3,
-    gap: theme.space3,
-  },
-  severityHeading: {
-    fontSize: 22,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-  },
-  severityRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: theme.space1,
-  },
-  severityItem: {
-    alignItems: 'center',
-    gap: 6,
-  },
-  severityCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  severityCircleSelected: {
-    borderColor: theme.colorNeutralDark,
-  },
-  severityNum: {
-    fontSize: 18,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-  },
-  severityNumSelected: {
-    color: theme.colorTextOnDark,
-  },
-  severityLabel: {
-    fontSize: 11,
-    color: theme.colorTextSecondary,
-    height: 16,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: theme.colorBorder,
-  },
 
   // ── Simple events ──
   simpleScroll: {
@@ -1584,8 +1470,8 @@ const styles = StyleSheet.create({
     fontFamily: theme.fontBodyMedium,
     color: theme.colorNeutralDark,
     // A layout floor so the number doesn't collapse when the field is empty — a
-    // dimension like the other width literals in this file (severityCircle 52,
-    // photoThumb 40), not a type/spacing token.
+    // dimension like the other width literals in this file (photoThumb 40), not
+    // a type/spacing token.
     minWidth: 120,
     textAlign: 'right',
     padding: 0,
