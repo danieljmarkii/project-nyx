@@ -22,7 +22,7 @@ import { EventIcon } from '../components/event/EventIcon';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
-import { usePetStore } from '../store/petStore';
+import { usePetStore, resolveRecordPetName } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAppActive } from '../hooks/useAppActive';
@@ -619,10 +619,13 @@ export default function LogModal() {
         if (isVehicleNotFinished(vehicleIntake)) {
           // Keep /log mounted so the sheet renders over the picker; the sheet's handlers own
           // the router.back() to the treat once the owner answers or dismisses.
-          const comboPetName =
-            (pairedPetId ? pets.find((p) => p.id === pairedPetId)?.name : null)
-            ?? usePetStore.getState().activePet?.name
-            ?? 'your pet';
+          // The MEAL's pet, through the one shared lookup (CUL-574 / CUL-711). A
+          // retroactive combo is always against a meal that has a pet, so a missing
+          // or unmatched id means we do not know it — never that it is the current
+          // selection. The active-pet rung this used to carry could only fire when
+          // the paired pet was NOT in `pets`, i.e. exactly when it was not the
+          // active pet either; the anonymous form is the honest answer on a miss.
+          const comboPetName = resolveRecordPetName(pets, pairedPetId);
           setComboConfirm({
             doseEventId: result.eventId,
             petName: comboPetName,

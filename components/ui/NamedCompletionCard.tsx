@@ -4,7 +4,7 @@ import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
-import { usePetStore } from '../../store/petStore';
+import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
@@ -70,7 +70,7 @@ export function NamedCompletionCard() {
     pauseDwell, resumeDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
-  const { pets, activePet } = usePetStore();
+  const { pets } = usePetStore();
   const reduced = useReducedMotion();
 
   const translateY = useRef(new Animated.Value(80)).current;
@@ -260,11 +260,15 @@ export function NamedCompletionCard() {
 
   const celebrate = payload.tone === 'celebrate';
   const sentence = summarizeLoggedRecord(payload.record, payload.occurredAt);
-  // Name the RECORD's pet, not the active one. The write already landed on the
-  // right animal, but a queue-then-switch would otherwise print another pet's name
-  // on a card about this one — the multi-pet guard the meal card carries, for the
-  // same reason.
-  const petName = pets.find((p) => p.id === payload.petId)?.name ?? activePet?.name ?? 'your pet';
+  // Name the RECORD's pet, not the active one, through the one shared lookup
+  // (CUL-574). The write already landed on the right animal, but a
+  // queue-then-switch would otherwise print another pet's name on a card about
+  // this one — the multi-pet guard the meal and dose cards carry. The lookup has
+  // NO active-pet rung on purpose (CUL-659): `pets` holds only non-archived pets,
+  // so a miss here means the record's pet is not the active one either, and the
+  // `?? activePet?.name` fallback this line used to carry could only ever name
+  // the wrong animal. A miss falls to the anonymous form.
+  const petName = resolveRecordPetName(pets, payload.petId);
   const showChangeTime = canChangeTime(payload.record);
   const prompt = timeEditPrompt(payload.record);
   const notice = removed ? removedNoticeCopy(petName) : null;
