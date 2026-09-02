@@ -13,14 +13,17 @@
 //     IS history without spending the space.
 //   • the pill tells the two end registers apart — a neutral grey "Ended" (an owner
 //     asserted it) vs the medication-blue "No end recorded" (the record went quiet).
-//   • rows are NON-tappable in PR 2. The eventual detail (PR 3) enriches
-//     app/medication/[id] with the past-course facts; until it exists, a tap would open
-//     today's editable drug-catalog form — inviting an owner to edit the wrong data — so
-//     the rows stay calm reference rows and PR 3 lights up the tap with a real destination.
+//   • a row with a catalog item TAPS THROUGH to app/medication/[id] (CUL-318). PR 2
+//     shipped the rows inert because that screen was then only the editable
+//     drug-catalog form — a tap would have invited editing the wrong data; PR 3 gave
+//     it the past-course facts, which is the destination the tap now lands on. A
+//     dose-derived course with no item on file (`item:unspecified`) has nowhere to
+//     go, so that row stays a plain row — a View, never a dimmed control (CUL-682).
 
 import { useState } from 'react';
 import { StyleSheet, TouchableOpacity, View, ViewStyle } from 'react-native';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { router } from 'expo-router';
+import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
@@ -51,18 +54,52 @@ function PastCoursePill({ label, tone }: { label: string; tone: PastCoursePillTo
   );
 }
 
-// A calm, non-tappable reference row (see the header note on why taps wait for PR 3).
 // One accessibility label reads the whole fact so a screen reader gets name + register
 // + detail as a unit, rather than three unlabelled fragments.
+//
+// ONE ROW, TWO HOSTS (CUL-318, in the CUL-682 shape). A row whose course has a catalog
+// item opens that medication's screen; a dose-derived course with no item on file has
+// no destination. The inert branch is a plain View — not a TouchableOpacity carrying
+// `disabled`, which RN copies into accessibilityState and VoiceOver speaks as "dimmed",
+// announcing an unavailable control where no control exists. `accessible` on that
+// View is load-bearing: a touchable groups its children into one announcement by
+// default and a View does not, so without it the name, the meta and the pill become
+// three unrelated stops. The chevron is drawn only where there is somewhere to go.
 function PastRow({ row }: { row: PastCourseRow }) {
-  return (
-    <View style={styles.row} accessible accessibilityLabel={`${row.name}. ${row.pill.label}. ${row.meta}`}>
+  const label = `${row.name}. ${row.pill.label}. ${row.meta}`;
+  const body = (
+    <>
       <View style={styles.rowLeft}>
         <ThemedText style={styles.name} numberOfLines={1}>{row.name}</ThemedText>
         <ThemedText style={styles.meta}>{row.meta}</ThemedText>
       </View>
       <PastCoursePill label={row.pill.label} tone={row.pill.tone} />
-    </View>
+    </>
+  );
+  const itemId = row.medicationItemId;
+  if (itemId === null) {
+    return (
+      <View style={styles.row} accessible accessibilityLabel={label}>
+        {body}
+      </View>
+    );
+  }
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      onPress={() => router.push(`/medication/${itemId}`)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {body}
+      <ChevronRight
+        size={16}
+        color={theme.colorTextTertiary}
+        strokeWidth={2}
+        style={styles.chev}
+      />
+    </TouchableOpacity>
   );
 }
 
@@ -150,6 +187,11 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     lineHeight: theme.lineHeightSM,
     color: theme.colorTextSecondary,
+  },
+  // Sits on the name's baseline row beside the pill, which carries the same nudge.
+  chev: {
+    alignSelf: 'flex-start',
+    marginTop: theme.spaceMicro,
   },
   pill: {
     borderRadius: theme.radiusFull,

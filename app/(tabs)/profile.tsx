@@ -1385,9 +1385,8 @@ export default function ProfileScreen() {
             A collapsed-by-default section beside the active cards, answering the
             vet-chair "what has she been on?" the app has never been able to answer
             (spec §1). Renders nothing until derived / when there is no past history.
-            Rows are non-tappable in PR 2 — PR 3 builds the past-course detail on
-            app/medication/[id] and lights up the tap then (a tap into today's editable
-            catalog screen would invite editing the wrong data). */}
+            A row with a catalog item taps through to app/medication/[id], which PR 3
+            gave the past-course facts (CUL-318); an unspecified orphan stays inert. */}
         <PastMedicationsSection rows={pastRows} />
 
         {/* ── Diet trial card v2 (B-417 PR 4, §4.2 — PR 3's modal behind it) ──
