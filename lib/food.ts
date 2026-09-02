@@ -32,6 +32,21 @@ export function groupFoodsByType(foods: PickerFood[]): GroupedFoods {
   return { meals, treats, other };
 }
 
+// ── The meal row's word (CUL-625) ─────────────────────────────────────────────
+// ONE rule for what a logged meal is CALLED when a row needs a word for it: a
+// meal backed by a treat-typed food reads "Treat"; everything else reads "Meal".
+// `'other'` and a legacy `null` are decided here, on purpose, rather than by the
+// accident of a ternary's else-branch: the EVENT is a meal, the food's type only
+// refines the word, and "other" is a library bucket (`groupFoodsByType`), not
+// something an owner logged. History's `EventRow`, Home's `TodayZone` and the
+// calendar drill-in (`lib/dayEvents`) each carried their own copy of this rule
+// and agreed only by coincidence — the diet-trial §5.3 "one predicate" lesson,
+// at display-label stakes. Pinned in `lib/food.test.ts`: the three surfaces call
+// this and never restate it.
+export function mealRowLabel(foodType: string | null | undefined): 'Meal' | 'Treat' {
+  return foodType === 'treat' ? 'Treat' : 'Meal';
+}
+
 // ── Food-format display labels (B-106 / B-568) ────────────────────────────────
 // The map and the event-surface tag live in lib/foodFormat.ts — a dependency-free
 // module so the Deno Edge Functions can import the SAME copy (generate-report names

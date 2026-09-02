@@ -13,7 +13,7 @@ import {
   vehicleLabel, isComboDoseInDoubt, DOSE_IN_DOUBT_TAG,
   pairedVehicleLinkLabel, pairedDoseLinkLabel, formatDrugLabel,
 } from '../../lib/medications';
-import { foodFormatTag } from '../../lib/food';
+import { foodFormatTag, mealRowLabel } from '../../lib/food';
 import { describeOccurredAt } from '../../lib/utils';
 import { kgToLbs } from '../../lib/weight';
 
@@ -70,11 +70,9 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   // with TodayZone so both row surfaces agree on what reads as a symptom.
   const isSymptom = SYMPTOM_TYPES.has(event.event_type as EventTypeKey);
 
-  // Meal events backed by a treat-typed food render as "Treat". Legacy NULL
-  // and 'meal'/'other' food_type keep the "Meal" label.
-  const rowLabel = event.event_type === 'meal' && event.food_type === 'treat'
-    ? 'Treat'
-    : config.label;
+  // A meal's word comes from the one shared rule (CUL-625: a treat-typed food
+  // reads "Treat", everything else "Meal"); every other type reads its config label.
+  const rowLabel = event.event_type === 'meal' ? mealRowLabel(event.food_type) : config.label;
 
   // brand · product_name — matches how people refer to food ("Fancy Feast · Chunky Chicken")
   const foodLabel = event.food_brand && event.food_product_name
