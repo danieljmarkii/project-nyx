@@ -49,6 +49,7 @@ import { persistAppConfig, loadCachedAppConfig, APP_CONFIG_DEFAULTS } from './ap
 import { useBetaOptInStore, BETA_OPT_IN_STORAGE_KEY } from './betaFeatures';
 import { quietDailyRecapOffer, readOfferState } from './dailyRecapOffer';
 import { hasPlayedArrival, markArrivalPlayed } from './signalArrival';
+import { readFoldEntries, writeFoldEntries } from './signalFold';
 import { triggerSignalRegenDebounced } from './signal';
 import { supabase } from './supabase';
 import { useSyncStore } from '../store/syncStore';
@@ -168,6 +169,23 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(await hasPlayedArrival('pet-a')).toBe(true);
     await wipeLocalSession();
     expect(await hasPlayedArrival('pet-a')).toBe(false);
+  });
+
+  // CUL-784 (fold spec DF-6). The per-pet Signal fold entries live in AsyncStorage,
+  // outside the SQLite wipe. A fold is the READER's "I have read this"; inherited by the
+  // next account on a shared device it would compress a card about a pet that person
+  // has never seen. Asserted by name, through the module's own read.
+  it('clears the Signal fold entries — a shared device never inherits the previous reader’s folds', async () => {
+    await writeFoldEntries('pet-a', {
+      'postprandial_timing:vomit': {
+        state: 'folded',
+        fingerprint: { type: 'postprandial_timing', rapidCount: 8 },
+        foldedAtIso: '2026-09-03T12:00:00.000Z',
+      },
+    });
+    expect(await readFoldEntries('pet-a')).toHaveProperty('postprandial_timing:vomit');
+    await wipeLocalSession();
+    expect(await readFoldEntries('pet-a')).toEqual({});
   });
 
   it('never throws when a wipe step fails — teardown always completes', async () => {

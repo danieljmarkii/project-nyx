@@ -227,8 +227,9 @@ const anyCached = (finding: CachedFinding['finding'], text = 'A sentence.'): Cac
 // two renders of the same structure compare equal.
 const structureOf = (node: ReactElement) => JSON.stringify(render(node).toJSON());
 
-// The collapsed card's own accessibilityLabel (the whole row is one button).
-const a11yLabelOf = (node: ReactElement) => render(node).getByRole('button').props.accessibilityLabel;
+// The collapsed card's own accessibilityLabel. CUL-784: the face is one button and the
+// control row beside it holds one or two more, so the face is reached by its testID.
+const a11yLabelOf = (node: ReactElement) => render(node).getByTestId('insight-face').props.accessibilityLabel;
 
 describe('InsightCard — SR-1 card-face receipts', () => {
   it("a timing card folds its dot-lane sentence into the card's own a11y label", () => {
@@ -268,14 +269,14 @@ describe('InsightCard — SR-1 card-face receipts', () => {
   it('the safety expand renders the phone-call script', () => {
     const c = anyCached(worsening());
     const view = render(<InsightCard cached={c} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
   });
 
   it('the timing expand draws the control side + the honest un-timeable remainder', () => {
     const c = anyCached(postprandial({ eligibleCount: 8, totalEpisodes: 10, rapidCount: 4 }));
     const view = render(<InsightCard cached={c} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('The other side of the picture')).toBeTruthy();
     expect(view.queryByText("2 episodes weren't near any logged meal")).toBeTruthy();
   });
@@ -394,7 +395,7 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
 
   it('the expand shows the disclosure line for a COMPARABLE falling reflection', () => {
     const view = render(<InsightCard cached={anyCached(falling({ density: comparable }))} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('Counted honestly')).toBeTruthy();
     expect(view.queryByText('Counted from days you logged: 6 this week, 5 last.')).toBeTruthy();
   });
@@ -405,7 +406,7 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
     expect(view.queryByText('2 episodes this week')).toBeTruthy();
     expect(view.queryByText(/5 last week/)).toBeNull();
     // Expand: the reworded withheld line, grounded in logged days (B-733).
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText(/fewer logged days can look like fewer episodes/)).toBeTruthy();
   });
 
@@ -413,7 +414,7 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
     const view = render(
       <InsightCard cached={anyCached(falling({ density: comparable }))} petName="Nyx" trialRunning />,
     );
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText(/isn't the trial's verdict — the full run is what makes it readable/)).toBeTruthy();
   });
 
@@ -421,7 +422,7 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
     const view = render(
       <InsightCard cached={anyCached(falling({ density: incomparable }))} petName="Nyx" trialRunning />,
     );
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('Counted honestly')).toBeTruthy();
     expect(view.queryByText(/fewer logged days can look like fewer episodes/)).toBeTruthy();
     expect(view.queryByText(/isn't the trial's verdict/)).toBeTruthy();
@@ -432,14 +433,14 @@ describe('InsightCard — SR-5 reflection density + trial adjacency (§3.3 / §3
   it('shows NO adjacency for a FLAT reflection even with a trial running', () => {
     const flat = anyCached(reflection({ direction: 'flat', currentCount: 4, priorCount: 4, density: comparable }));
     const view = render(<InsightCard cached={flat} petName="Nyx" trialRunning />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText(/isn't the trial's verdict/)).toBeNull();
     expect(view.queryByText('Counted honestly')).toBeNull();
   });
 
   it('an old cached falling reflection (no density) still gets the adjacency when a trial runs', () => {
     const view = render(<InsightCard cached={anyCached(falling())} petName="Nyx" trialRunning />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText(/isn't the trial's verdict/)).toBeTruthy();
     // …but no density line (nothing to disclose).
     expect(view.queryByText(/Counted from days you logged/)).toBeNull();
@@ -479,7 +480,7 @@ describe('InsightCard — CUL-12 A2 timing card', () => {
       }),
     );
     const view = render(<InsightCard cached={c} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     // The two per-phenotype lanes.
     expect(view.queryByText('When they happen')).toBeTruthy();
     expect(view.queryByText('After eating')).toBeTruthy();
@@ -499,7 +500,7 @@ describe('InsightCard — CUL-12 A2 timing card', () => {
       }),
     );
     const view = render(<InsightCard cached={c} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('During an active Metronidazole course — 4 doses logged.')).toBeTruthy();
     expect(view.queryByText('What the photos showed')).toBeTruthy();
     expect(view.queryByText('Recognizable food 6h or more after eating: 3 of 5 photos we could read.')).toBeTruthy();
@@ -511,14 +512,14 @@ describe('InsightCard — CUL-12 A2 timing card', () => {
     const view = render(<InsightCard cached={c} petName="Nyx" />);
     expect(view.queryByText('Timing pattern')).toBeTruthy();
     expect(view.queryByText('12 timed of 15 episodes · 60 days')).toBeTruthy();
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('By clock')).toBeTruthy();
   });
 
   it('a story card with no clock band draws the meal lane but no clock lane', () => {
     const noClock = emptyStomach({ clockBand: undefined, clockCount: undefined });
     const view = render(<InsightCard cached={anyCached(noClock)} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('After eating')).toBeTruthy();
     expect(view.queryByText('By clock')).toBeNull();
   });
@@ -535,7 +536,7 @@ describe('InsightCard — CUL-12 A2 timing card', () => {
     const view = render(<InsightCard cached={anyCached(dense)} petName="Nyx" />);
     // Face still shows the compare (each band still legible as a proportional bar).
     expect(view.queryByText('Within 30 min of eating')).toBeTruthy();
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('After eating')).toBeNull(); // meal lane omitted (40 > cap)
     expect(view.queryByText('By clock')).toBeTruthy(); // clock lane kept (7 ≤ cap)
     // The clustering fact survives in text even where the lane is dropped — the for-your-vet relay.
@@ -550,7 +551,7 @@ describe('InsightCard — CUL-12 A2 timing card', () => {
       long: { count: 20, medianHoursSinceFeeding: 9, lastTwoEligible: false, feedingFormsInEvidence: [], clockBand: { startLocalHour: 2, windowHours: 6 }, clockCount: 15 },
     });
     const view = render(<InsightCard cached={anyCached(veryDense)} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('When they happen')).toBeNull();
     expect(view.queryByText('After eating')).toBeNull();
     expect(view.queryByText('By clock')).toBeNull();
@@ -595,7 +596,7 @@ describe('InsightCard — CUL-13 trial card', () => {
   it('the expand draws the RTM/confound honesty, the §3.4 adjacency, and the density + diet-structure', () => {
     const c = anyCached(trialResponse(), LEAD);
     const view = render(<InsightCard cached={c} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('Reading this stretch honestly')).toBeTruthy();
     expect(view.queryByText(/Three things changed at once when the trial started/)).toBeTruthy();
     expect(view.queryByText(/isn't the trial's verdict/)).toBeTruthy();
@@ -613,7 +614,7 @@ describe('InsightCard — CUL-13 trial card', () => {
       'A more sentence.',
     );
     const view = render(<InsightCard cached={c} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText(/read the counts as a rough comparison/)).toBeTruthy();
   });
 
@@ -625,7 +626,7 @@ describe('InsightCard — CUL-13 trial card', () => {
       'A more sentence.',
     );
     const view = render(<InsightCard cached={c} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('Reading this stretch honestly')).toBeNull();
     expect(view.queryByText(/Three things changed at once/)).toBeNull();
     expect(view.queryByText(/isn't the trial's verdict/)).toBeNull();
