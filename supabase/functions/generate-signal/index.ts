@@ -30,6 +30,7 @@ import {
   detectCoverage,
   stripInternalOnsets,
   computeReflectionDensity,
+  computeChronicityCompare,
   doseToMedicationWindow,
   DEFAULT_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
@@ -48,6 +49,7 @@ import {
   type IncidentAnalysisInput,
   type DetectionInput,
   type ReflectionDensity,
+  type ChronicityCompare,
   type MedOnBoardContext,
   type PhotoComposition,
 } from './detection.ts'
@@ -997,9 +999,23 @@ const handler = async (req: Request): Promise<Response> => {
         photoAnalyses,
         nowMs,
       )
+      // v1.1-b (CUL-787): the counted 4-week halves of ⑦'s lookback, PER chronicity finding (each
+      // has its own symptom type), computed from the same events the detector read. Attached here,
+      // after detection, so the valve that mutes ③ while ⑦ fires is untouched — the change an
+      // easing course shows lives inside the safety card's expand, never as a second calm card.
+      const chronicityCompare: ChronicityCompare | null =
+        r.finding.type === 'symptom_chronicity'
+          ? computeChronicityCompare(input, r.finding.symptomType, DEFAULT_CONFIG)
+          : null
       return {
         rank: r.rank,
-        finding: decorateFinding(r.finding, reflectionDensity, medOnBoard, photoComposition),
+        finding: decorateFinding(
+          r.finding,
+          reflectionDensity,
+          medOnBoard,
+          photoComposition,
+          chronicityCompare,
+        ),
       }
     })
     // Strip the internal onset arrays now that BOTH consumers have run — the episode-set-aware

@@ -601,3 +601,23 @@ describe('the store shell', () => {
     warn.mockRestore();
   });
 });
+
+// v1.1-b (CUL-787): the chronicity `compare` (the counted 4-week halves, expand + phone
+// script only) is NOT a §5.3 material-change field — a falling half is the window sliding,
+// and a rising one already moves `episodeCount` ↑ / `daysSinceLastEpisode` ↓. Pinned here so a
+// future edit to MATERIAL_FIELDS cannot make the compare a re-open trigger by accident.
+describe('materialChange — the chronicity compare (CUL-787) never re-opens a fold', () => {
+  const nyx = { halfDays: 28, recentCount: 2, priorCount: 12, recentLoggingDays: 27, priorLoggingDays: 28, comparable: true };
+  it('a compare ARRIVING on a cached finding (the engine redeploy) is not a change', () => {
+    const next: SymptomChronicityFinding = { ...chronicity, compare: nyx };
+    expect(materialChange(foldFingerprint(chronicity), foldFingerprint(next))).toBeNull();
+  });
+  it('a compare MOVING in either direction, with nothing else changed, is not a change', () => {
+    const base: SymptomChronicityFinding = { ...chronicity, compare: nyx };
+    const fell: SymptomChronicityFinding = { ...chronicity, compare: { ...nyx, recentCount: 1, comparable: false } };
+    const rose: SymptomChronicityFinding = { ...chronicity, compare: { ...nyx, recentCount: 14, priorCount: 0 } };
+    expect(materialChange(foldFingerprint(base), foldFingerprint(fell))).toBeNull();
+    expect(materialChange(foldFingerprint(base), foldFingerprint(rose))).toBeNull();
+    expect(foldFingerprint(base)).not.toHaveProperty('compare');
+  });
+});

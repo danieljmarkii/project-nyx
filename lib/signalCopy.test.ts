@@ -24,6 +24,12 @@ import {
   isReflectionDensityWithheld,
   reflectionWithheldSampleLine,
   hasBannedSignalVocabulary,
+  CHRONICITY_WHY_IT_STANDS,
+  chronicityCompareRows,
+  chronicityCompareDensityLine,
+  chronicityCompareExtras,
+  chronicityComparePhoneScriptFact,
+  isChronicityCompareFalling,
   medContextLine,
   densityDisclosureLine,
   reflectionExpandedExtras,
@@ -2530,5 +2536,122 @@ describe('trial card copy — guardrails (CUL-13)', () => {
   it('sampleLine + evidenceText stay total over the union for trial_response', () => {
     expect(sampleLine(trialResponse())).toBe('counted from days you logged');
     expect(evidenceText(trialResponse(), 'Nyx')).toContain('never a verdict on the trial');
+  });
+});
+
+// ── v1.1-b (CUL-787): the counted 4-week compare INSIDE the standing safety card ──
+// Adversarial focus: the compare is expand + phone-script only (the face label and the
+// sentence carry nothing — §3.5); both halves always print (S2); the why-it-stands clause
+// renders on a FALLING pair only; every string clears the guardrail screens and the fold
+// spec's vetoed vocabulary; an old cache (no `compare`) renders the pre-v1.1-b card.
+describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', () => {
+  const nyx = { halfDays: 28, recentCount: 2, priorCount: 12, recentLoggingDays: 27, priorLoggingDays: 28, comparable: true } as const;
+  const thin = { ...nyx, recentLoggingDays: 10, comparable: false } as const;
+  const rising = { halfDays: 28, recentCount: 9, priorCount: 0, recentLoggingDays: 26, priorLoggingDays: 0, comparable: true } as const;
+  const flat = { ...nyx, recentCount: 6, priorCount: 6 } as const;
+  // The fold spec §4 veto list (Dr. Chen, standing) — none may appear on any Signal surface.
+  const FOLD_VETO_RE = /\b(resolved|cleared|all clear|settled|better|improving|quieter|down|streak|dismissed|hidden|snoozed|seen)\b|↓|%/i;
+
+  it('renders the two halves as a Shape-C two-row compare, recent first, both counts printed (S2)', () => {
+    expect(chronicityCompareRows(nyx)).toEqual([
+      { label: 'Recent 4 weeks', count: 2, tone: 'concern' },
+      { label: 'The 4 before', count: 12, tone: 'concern' },
+    ]);
+  });
+
+  it('a true zero prints as 0 in a muted row — never an absence claim', () => {
+    expect(chronicityCompareRows(rising)[1]).toEqual({ label: 'The 4 before', count: 0, tone: 'muted' });
+  });
+
+  it('derives the week label from the payload, never a hard-coded 4', () => {
+    expect(chronicityCompareRows({ ...nyx, halfDays: 21 })[0].label).toBe('Recent 3 weeks');
+    expect(chronicityCompareRows({ ...nyx, halfDays: 21 })[1].label).toBe('The 3 before');
+  });
+
+  it('is falling only when the recent half holds FEWER episodes than the half before', () => {
+    expect(isChronicityCompareFalling(nyx)).toBe(true);
+    expect(isChronicityCompareFalling(rising)).toBe(false);
+    expect(isChronicityCompareFalling(flat)).toBe(false);
+  });
+
+  it('the why-it-stands clause renders beneath a FALLING pair only', () => {
+    expect(chronicityCompareExtras(chronicity({ compare: nyx }))?.whyItStands).toBe(CHRONICITY_WHY_IT_STANDS);
+    expect(chronicityCompareExtras(chronicity({ compare: thin }))?.whyItStands).toBe(CHRONICITY_WHY_IT_STANDS);
+    expect(chronicityCompareExtras(chronicity({ compare: rising }))?.whyItStands).toBeNull();
+    expect(chronicityCompareExtras(chronicity({ compare: flat }))?.whyItStands).toBeNull();
+  });
+
+  it('the clause is the option-(a) reword — it never says "cause" (CAUSAL_RE) and carries the ask', () => {
+    expect(CHRONICITY_WHY_IT_STANDS).toBe(
+      "Fewer lately doesn't change the ask — a course that eases before it's been looked into hasn't been explained, and your vet will want the whole run.",
+    );
+    expect(CAUSAL_RE.test(CHRONICITY_WHY_IT_STANDS)).toBe(false);
+  });
+
+  it('the density line is the disclosure form when comparable, the withheld form when not — counts printed either way', () => {
+    expect(chronicityCompareDensityLine(nyx)).toBe(
+      'Counted from days you logged: 27 in the recent 4 weeks, 28 in the 4 before.',
+    );
+    expect(chronicityCompareDensityLine(thin)).toBe(
+      'You also logged on fewer days in the recent 4 weeks — 10, against 28 before — so a lower count there can be fewer logs, not fewer episodes.',
+    );
+    // The withheld line never removes the counts: the rows still print both halves (S2).
+    expect(chronicityCompareExtras(chronicity({ compare: thin }))?.rows.map((r) => r.count)).toEqual([2, 12]);
+  });
+
+  it('the withheld form renders on a FALLING thin-logged pair ONLY — a rising or flat pair over thin logging keeps the disclosure (§3.3)', () => {
+    // Adversarial pass (2026-09-03): "a lower count there can be fewer logs" rendered on 8 vs 6.
+    const risingThin = { ...rising, priorLoggingDays: 28, recentLoggingDays: 10, comparable: false, recentCount: 8, priorCount: 6 } as const;
+    const flatThin = { ...flat, recentLoggingDays: 10, comparable: false } as const;
+    expect(chronicityCompareDensityLine(risingThin)).toBe('Counted from days you logged: 10 in the recent 4 weeks, 28 in the 4 before.');
+    expect(chronicityCompareDensityLine(flatThin)).toBe('Counted from days you logged: 10 in the recent 4 weeks, 28 in the 4 before.');
+    expect(chronicityCompareDensityLine(thin)).toMatch(/^You also logged on fewer days/);
+  });
+
+  it('a 7-day half reads "1 week", never "1 weeks"', () => {
+    const week = { ...nyx, halfDays: 7 } as const;
+    expect(chronicityCompareRows(week)[0].label).toBe('Recent 1 week');
+    expect(chronicityCompareDensityLine(week)).toBe('Counted from days you logged: 27 in the recent 1 week, 28 in the 1 before.');
+  });
+
+  it('an old cache (no compare) renders the pre-v1.1-b expand: no box, no script row', () => {
+    expect(chronicityCompareExtras(chronicity())).toBeNull();
+    const labels = phoneScript(chronicity(), 'Nyx')!.map((f) => f.label);
+    expect(labels).toEqual(['Sign', 'First logged', 'How often', 'Most recent']);
+  });
+
+  it('the phone script gains ONE two-sided row between the total and the most-recent date, denominators on the row', () => {
+    const facts = phoneScript(chronicity({ compare: nyx }), 'Nyx')!;
+    expect(facts.map((f) => f.label)).toEqual(['Sign', 'First logged', 'How often', 'Recent 4 weeks', 'Most recent']);
+    expect(facts[3].value).toBe('2 · the 4 before: 12 · logged on 27 of the recent 28 days, and 28 of the 28 before');
+    expect(chronicityComparePhoneScriptFact(rising).value).toBe('9 · the 4 before: 0 · logged on 26 of the recent 28 days, and 0 of the 28 before');
+  });
+
+  it('the compare never reaches the face: sample line, evidence sentence and face copy are unchanged by it', () => {
+    const plain = chronicity();
+    const withCompare = chronicity({ compare: nyx });
+    expect(sampleLine(withCompare)).toBe(sampleLine(plain));
+    expect(evidenceText(withCompare, 'Nyx')).toBe(evidenceText(plain, 'Nyx'));
+  });
+
+  it('every composed string clears the guardrail screens and the fold veto list', () => {
+    const risingThin = { ...rising, priorLoggingDays: 28, recentLoggingDays: 10, comparable: false } as const;
+    const flatThin = { ...flat, recentLoggingDays: 10, comparable: false } as const;
+    for (const c of [nyx, thin, rising, flat, risingThin, flatThin, { ...nyx, halfDays: 7 }]) {
+      const strings = [
+        ...chronicityCompareRows(c).map((r) => r.label),
+        chronicityCompareDensityLine(c),
+        chronicityComparePhoneScriptFact(c).value,
+        CHRONICITY_WHY_IT_STANDS,
+      ];
+      for (const str of strings) {
+        expect(hasBannedSignalVocabulary(str)).toBe(false);
+        expect(REASSURANCE_RE.test(str)).toBe(false);
+        expect(DISMISSIVE_RE.test(str)).toBe(false);
+        expect(CAUSAL_RE.test(str)).toBe(false);
+        expect(FOLD_VETO_RE.test(str)).toBe(false);
+        expect(str.includes('!')).toBe(false);
+      }
+    }
   });
 });
