@@ -1125,16 +1125,24 @@ describe('SignalZone — the labeled stand-down line (CUL-786)', () => {
     expect(render(<SignalZone />).getByText(STOOD_DOWN_TEXT)).toBeTruthy();
   });
 
-  it('is never a safety finding — a stood-down line raises no lead canvas on the card below it', () => {
-    // The benign card sits at index 1 behind the line, so it is rendered compact (no canvas):
-    // promoting it because the safety card stood down would be reassurance by layout (DF-7).
+  it('the lead canvas goes to the first CARD — the line never wears it, and never withholds it', () => {
+    // The engine splices a marker below every safety finding, so the only card a line can
+    // precede is a benign one that would have led the moment the concern went. Binding the
+    // canvas to the array index demoted that card to compact for a week (adversarial pass,
+    // 2026-09-03). Distinct from a fold (DF-7): a folded card still holds its rank as a strip.
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'live', findings: [stoodDownEntry(), benignBelow] }),
     );
-    const { getByText } = render(<SignalZone />);
+    const { getByText, getByLabelText } = render(<SignalZone />);
     const sentence = getByText(benignBelow.text);
     const flat = StyleSheet.flatten(sentence.props.style) as { fontFamily?: string; fontSize?: number };
-    expect(flat.fontFamily).not.toBe(theme.fontDisplay);
-    expect(flat.fontSize).not.toBe(theme.textSignal);
+    expect(flat.fontFamily).toBe(theme.fontDisplay);
+    expect(flat.fontSize).toBe(theme.textSignal);
+    // …and the line itself is plain secondary type, never the display face.
+    const line = getByText(STOOD_DOWN_TEXT);
+    const lineFlat = StyleSheet.flatten(line.props.style) as { fontFamily?: string; fontSize?: number };
+    expect(lineFlat.fontSize).toBe(theme.textSM);
+    expect(lineFlat.fontFamily).not.toBe(theme.fontDisplay);
+    expect(getByLabelText(STOOD_DOWN_TEXT)).toBeTruthy();
   });
 });

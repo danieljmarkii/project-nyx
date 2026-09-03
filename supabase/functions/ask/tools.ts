@@ -1640,6 +1640,13 @@ export function engineFindings(
 ): EngineFindingsResult {
   const relayed: RelayedFinding[] = (findings ?? [])
     .filter((f) => typeof f?.type === 'string')
+    // CUL-786: the labeled stand-down marker rides `ai_signals.findings` beside the real
+    // findings, but it is not one — it is the engine's statement that a chronicity card has
+    // STOPPED asserting a concern. Relaying it would flip `hasFindings` true for a pet whose
+    // engine is otherwise silent and hand the model a sentence about absence to paraphrase;
+    // the cardinal rule of this tool is that an empty relay is "engine silent", never an
+    // all-clear, and the marker must not be able to erode that from either side.
+    .filter((f) => f.type !== 'stood_down')
     .map((f) => ({
       type: f.type as string,
       priorityClass: f.priorityClass === 'safety' ? 'safety' : 'insight',

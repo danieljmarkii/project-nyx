@@ -1065,9 +1065,15 @@ const handler = async (req: Request): Promise<Response> => {
     //     `isBuilding` / `signalText` / the summary above were computed over the REAL findings
     //     and stay byte-identical; only the cached array gains the marker, in the card's former
     //     slot. An older client renders the unknown type as nothing (the G10 pin).
-    let prior: ReturnType<typeof readPriorEntries> = []
-    let priorGeneratedAtMs: number | null = null
-    {
+    //     The WHOLE block is fenced (code review, 2026-09-03): a throw anywhere in it — the
+    //     read, the resolution, the merge — must cost the marker, never the regen. Without
+    //     the fence it would fall to the handler's outer catch and no row would be written,
+    //     blanking the pet's Signal over a bug in the one part of the payload that is
+    //     decoration on the record rather than the record.
+    let cachedEntries: CachedEntry[] = cachedFindings
+    try {
+      let prior: ReturnType<typeof readPriorEntries> = []
+      let priorGeneratedAtMs: number | null = null
       const { data: priorRow, error: priorError } = await supabase
         .from('ai_signals')
         .select('findings, generated_at')
@@ -1082,16 +1088,20 @@ const handler = async (req: Request): Promise<Response> => {
         const gen = Date.parse(String(priorRow.generated_at ?? ''))
         priorGeneratedAtMs = Number.isFinite(gen) ? gen : null
       }
+      const standDowns = resolveStandDowns({
+        prior,
+        priorGeneratedAtMs,
+        current: curated.map((r) => r.finding),
+        input,
+        config: DEFAULT_CONFIG,
+        nowMs,
+      })
+      cachedEntries = mergeStandDowns(cachedFindings, standDowns, petName)
+    } catch (standDownErr) {
+      const detail = standDownErr instanceof Error ? standDownErr.message : String(standDownErr)
+      console.warn('generate-signal: stand-down resolution failed — findings written without a marker:', detail)
+      cachedEntries = cachedFindings
     }
-    const standDowns = resolveStandDowns({
-      prior,
-      priorGeneratedAtMs,
-      current: curated.map((r) => r.finding),
-      input,
-      config: DEFAULT_CONFIG,
-      nowMs,
-    })
-    const cachedEntries: CachedEntry[] = mergeStandDowns(cachedFindings, standDowns, petName)
 
     // Replace the pet's cached signal (last-write-wins; keeps row count bounded
     // without a unique constraint, matching the project's sync philosophy).

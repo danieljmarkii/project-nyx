@@ -42,6 +42,7 @@
 
 import {
   chronicityFloorsFor,
+  CORRELATION_SYMPTOM_TYPES,
   detectChronicity,
   DEFAULT_CONFIG,
   type ChronicityTier,
@@ -54,6 +55,11 @@ import {
 import { SYMPTOM_LABEL, type CachedFinding } from './phrasing.ts'
 
 const MS_PER_DAY = 86_400_000
+
+/** The engine's fetch union — the rows ⑦'s own coverage guard counts (`isFetchedSymptom` in
+ *  detection.ts is private; this is the same set by the same name). */
+const FETCHED_SYMPTOM_SET: ReadonlySet<string> = new Set(CORRELATION_SYMPTOM_TYPES)
+const isFetchedSymptomType = (s: { type: string }): boolean => FETCHED_SYMPTOM_SET.has(s.type)
 
 /** How long a stand-down stays on the surface after it is minted (spec §8: "until the weekly
  *  review says it as a count or seven days pass" — the weekly review is F5, not yet built, so the
@@ -132,17 +138,23 @@ export function withoutRecencyGate(config: DetectionConfig): DetectionConfig {
 // ── Dr. Chen's 4th condition — logging held across the gap ────────────────────
 
 /**
- * Did the owner keep using the app across `[lastEpisodeMs, nowMs]`? Judged by the SAME shape
- * ⑦ uses to decide a course was sustained rather than manufactured (computeChronicityStats's
+ * Did the owner keep using the app across the gap AFTER the last episode? Judged by the SAME
+ * shape ⑦ uses to decide a course was sustained rather than manufactured (computeChronicityStats's
  * span-halves guard): split the interval in half and require each half to carry at least
  * `reflection.minLoggingDaysPerWindow` distinct UTC days with ANY logged event — a symptom of
- * any fetched type or a meal. The same coarse "was the app used" floor, the same two halves, so a
- * gap that is dark at either end — the owner stopped logging, or only logged for the first few
- * days after the last episode — fails, and the marker is withheld.
+ * any fetched type or a meal. The same coarse "was the app used" floor, the same two halves, so
+ * a gap that is dark at either end — the owner stopped logging, or only logged for the first
+ * few days after the last episode — fails, and the marker is withheld. The episode's own UTC
+ * day is EXCLUDED (the gap starts the day after it): the log that ended the course must not
+ * count as evidence the owner kept watching afterwards (adversarial pass, 2026-09-03).
  *
- * Full fetch coverage (any symptom type counts), like ⑦'s own guard: a cough log inside a
- * vomiting gap IS evidence the owner was engaged. And the failure direction here is
- * WITHHOLDING a sentence about absence, which is the safe direction for a rule about absence.
+ * WHAT THIS MEASURES, honestly (the adversarial pass's accepted residual): this is an
+ * ABANDONMENT detector, not an attention detector. It cannot know whether an owner logging
+ * meals by trial protocol would have logged a vomit; for the diet-trial owner the floor is met
+ * by construction. The direction argument ⑦'s own guard makes ("inflating coverage lets the
+ * SAFETY lane speak") does not transfer here — inflating it lets a sentence about ABSENCE
+ * speak — so the honesty is carried by the copy, not by this guard: the line says "logged",
+ * never "happened", and closes on "That isn't an all-clear." Recorded on CUL-786.
  */
 export function gapLoggingHeld(
   input: DetectionInput,
@@ -151,14 +163,19 @@ export function gapLoggingHeld(
   floor: number,
 ): boolean {
   if (!(nowMs > lastEpisodeMs)) return false
+  // The fetch union, enforced here rather than assumed: ⑦'s guard filters through the same set
+  // (`isFetchedSymptom`, private), and the shell happens to fetch only these types — but
+  // "correct because the caller filtered" is the shape this codebase keeps having to unlearn.
   const eventMs = [
-    ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
+    ...input.symptomEvents.filter(isFetchedSymptomType).map((s) => Date.parse(s.occurredAt)),
     ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
   ].filter((ms) => Number.isFinite(ms))
+  const episodeDay = Math.floor(lastEpisodeMs / MS_PER_DAY)
   const daysIn = (start: number, end: number): number => {
     const days = new Set<number>()
     for (const ms of eventMs) {
-      if (ms >= start && ms <= end) days.add(Math.floor(ms / MS_PER_DAY))
+      const day = Math.floor(ms / MS_PER_DAY)
+      if (ms >= start && ms <= end && day > episodeDay) days.add(day)
     }
     return days.size
   }
@@ -259,6 +276,20 @@ export function resolveStandDowns(args: ResolveStandDownsArgs): StoodDownMarker[
       if (currentChronic.has(m.symptomType) || seen.has(m.symptomType)) continue
       const mintedMs = Date.parse(m.stoodDownAt)
       if (!Number.isFinite(mintedMs) || nowMs - mintedMs >= ttlMs) continue
+      // RE-ANCHOR TO THE RECORD (adversarial pass, 2026-09-03 — the one break that mattered).
+      // "Did the whole course come back?" is the wrong question for a carry: a relapse inside
+      // the seven days can land while ⑦ stays silent — the window has since slid old onsets
+      // out, so the residual count sits under the episode floor (a dog with 4 in-window
+      // vomits + one three hours ago; a cough course under its floor of 5, which for a
+      // relapsing-remitting airway sign is the MODAL case). Carrying the line verbatim would
+      // then say "No coughing logged in 28 days" on the day the owner logged one — worse
+      // than the wordless vanish, because it contradicts the record. So the carry is tied
+      // to the episode it was minted against: any newer log of this symptom ends the line,
+      // whether or not the course re-fires. A record with no episode at all (deleted) has
+      // nothing to anchor a sentence about absence to, and ends it too.
+      const anchoredMs = Date.parse(m.lastEpisodeIso)
+      const latestMs = lastEpisodeMsOf(input, m.symptomType, nowMs)
+      if (latestMs === null || !Number.isFinite(anchoredMs) || latestMs > anchoredMs) continue
       seen.add(m.symptomType)
       out.push({ ...m, formerRank: entry.rank })
       continue
@@ -294,10 +325,15 @@ export function resolveStandDowns(args: ResolveStandDownsArgs): StoodDownMarker[
 }
 
 /**
- * Place each marker in its former slot. The real findings keep their server order; a marker is
- * spliced in at `min(formerRank, length)` so the line occupies the card's old position and the
- * cards below it move down by one — the slot is the point. Ranks are re-numbered to the final
- * index, which is what the client sorts on. Pure; returns a new array.
+ * Place each marker in its former slot — BELOW every safety finding. The real findings keep
+ * their server order (safety leads, so the safety band is a prefix); a marker is spliced in at
+ * `max(formerRank, safetyCount)`, clamped to the end, so the line occupies the card's old
+ * position among the cards that are left but never above a live concern. The adversarial pass
+ * (2026-09-03) built the case this clamps: the cat that stops vomiting because it stopped
+ * eating — chronicity stands down the same regen `intake_decline` fires, and without the
+ * clamp the absence sentence took rank 0 over the feline 48-hour-window card (Principle 3:
+ * safety leads, always). Ranks are re-numbered to the final index, which is what the client
+ * sorts on. Pure; returns a new array.
  */
 export function mergeStandDowns(
   findings: CachedFinding[],
@@ -305,8 +341,9 @@ export function mergeStandDowns(
   petName: string,
 ): CachedEntry[] {
   const entries: CachedEntry[] = [...findings].sort((a, b) => a.rank - b.rank)
+  const safetyCount = entries.filter((e) => e.finding.priorityClass === 'safety').length
   for (const marker of [...markers].sort((a, b) => a.formerRank - b.formerRank)) {
-    const at = Math.min(Math.max(0, marker.formerRank), entries.length)
+    const at = Math.min(Math.max(marker.formerRank, safetyCount), entries.length)
     entries.splice(at, 0, { rank: at, text: templateStoodDown(marker, petName), finding: marker })
   }
   return entries.map((e, i) => ({ ...e, rank: i }))

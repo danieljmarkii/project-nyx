@@ -871,6 +871,14 @@ function LiveStack({
   // CUL-601: the arrival moment reads `visibleFindings` too, so that empty frame no longer
   // gets a celebration drawn over it — but the empty frame itself is still CUL-527's.
   const ordered = visibleFindings(findings, suppressTrialResponse);
+  // CUL-786: the lead canvas belongs to the first CARD. A stood-down line is not a card — the
+  // engine has stopped asserting that concern and left a seven-day epitaph — and it is spliced
+  // below every live safety finding server-side, so the only card it can precede is a benign
+  // one that would have led the moment the concern went (the pre-marker behaviour). Binding
+  // the canvas to the array index instead demoted whatever sat under the line to compact for
+  // a week (adversarial pass, 2026-09-03). This is distinct from a FOLD (DF-7): a folded card
+  // still occupies its rank as a strip, so nothing below it inherits the canvas.
+  const leadIndex = ordered.findIndex((f) => !isStoodDown(f.finding));
   return (
     <View>
       {ordered.map((f, i) => {
@@ -888,10 +896,9 @@ function LiveStack({
                 rows compress into a tighter rhythm. SR-5 (§3.4) threads trialRunning for the
                 falling reflection's mid-trial adjacency line. CUL-786: a stood-down marker is
                 one plain line in its former slot — neither a card nor a strip (nothing to fold,
-                nothing to expand) — and it never wears the lead canvas: a sentence about
+                nothing to expand) — and it never wears the lead canvas itself: a sentence about
                 absence at Newsreader size would be the reassurance the line exists to refuse.
-                The rows below it stay compact, exactly as they would under a folded lead
-                (DF-7 — the canvas is never inherited). */}
+                The canvas goes to the first card (`leadIndex`, above). */}
             {isStoodDown(f.finding) ? (
               <StoodDownLine text={f.text} />
             ) : folded ? (
@@ -900,8 +907,8 @@ function LiveStack({
               <InsightCard
                 cached={f}
                 petName={petName}
-                isLead={i === 0}
-                compact={i > 0}
+                isLead={i === leadIndex}
+                compact={i > leadIndex}
                 trialRunning={trialRunning}
                 onFold={fold.fold}
                 backBecause={fold.backBecauseOf(f.finding)}

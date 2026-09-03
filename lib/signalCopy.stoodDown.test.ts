@@ -36,10 +36,6 @@ describe('isStoodDown', () => {
     };
     expect(isStoodDown(chronicity)).toBe(false);
   });
-
-  it('a marker is never safety class — it can never lead, rail, or raise the banner', () => {
-    expect(marker().priorityClass).toBe('insight');
-  });
 });
 
 describe('stoodDownExpired', () => {

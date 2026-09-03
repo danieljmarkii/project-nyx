@@ -109,7 +109,9 @@ const priorMarker = (symptomType: SymptomType, mintedDaysAgo: number, rank = 0):
     symptomType,
     recencyDays: 14,
     tier: 'firm',
-    lastEpisodeIso: ago(15 + mintedDaysAgo),
+    // Anchored to the record's last episode (the golden shape's day-15 onset), as a real mint
+    // would be; the carry compares the record against this.
+    lastEpisodeIso: ago(15),
     stoodDownAt: ago(mintedDaysAgo, 12),
     formerRank: rank,
     associationalOnly: true,
@@ -259,6 +261,25 @@ Deno.test('WITHHELD — the gap went dark HALFWAY (logged for a week after the l
   assert.equal(resolve([priorChronicity('vomit', 'firm')], late).length, 0)
 })
 
+Deno.test("WITHHELD — the episode's own day does not count as watching afterwards (meals at 14/10/5/3/1)", () => {
+  // Two owner actions in the first half (days 14 and 10) plus the day-15 episode itself: the
+  // adversarial pass found the episode's log was being counted as a logged day in the half it
+  // bounds, which put this record over the floor. The gap starts the day AFTER the episode.
+  const inp = stoodDownInput({ mealEvents: [14, 10, 5, 3, 1].map((d) => mealAgo(d)) })
+  assert.equal(resolve([priorChronicity('vomit', 'firm')], inp).length, 0)
+  // One more logged day in the first half and it holds.
+  const held = stoodDownInput({ mealEvents: [14, 12, 10, 5, 3, 1].map((d) => mealAgo(d)) })
+  assert.equal(resolve([priorChronicity('vomit', 'firm')], held).length, 1)
+})
+
+Deno.test('the gap counts only the fetch union — a sneeze log (not fetched by the engine) is not watching', () => {
+  const inp = stoodDownInput({
+    mealEvents: [],
+    symptomEvents: [...courseQ2('vomit', 15, 55), ...[1, 3, 5, 9, 11, 13].map((d) => symptomAgo('sneeze', d))],
+  })
+  assert.equal(resolve([priorChronicity('vomit', 'firm')], inp).length, 0)
+})
+
 Deno.test('the gap is logged across by ANY event type — a cough log inside a vomiting gap counts', () => {
   const inp = stoodDownInput({
     mealEvents: [],
@@ -309,6 +330,42 @@ Deno.test('CARRY — a prior marker inside its TTL is re-emitted unchanged, at i
 Deno.test('CARRY — is not re-gated on coverage: a marker survives a dark week after it was minted', () => {
   const inp = stoodDownInput({ mealEvents: [] })
   assert.equal(resolve([priorMarker('vomit', 3)], inp).length, 1)
+})
+
+Deno.test('CARRY ENDS ON A RELAPSE ⑦ CANNOT SEE — a newer episode kills the line even though the course does not re-fire', () => {
+  // The adversarial break (2026-09-03): the window slid two old onsets out, so the residual
+  // in-window count sits UNDER the episode floor and ⑦ stays silent — yet the dog vomited
+  // three hours ago. A carry gated only on "did the course come back" would say "No vomiting
+  // logged in 14 days" on the day the owner logged one.
+  const relapsed = input({
+    symptomEvents: [...[17, 24, 31, 38].map((d) => symptomAgo('vomit', d)), symptomAgo('vomit', 0)],
+    mealEvents: mealsDaily(0, 40),
+  })
+  assert.equal(detectChronicity(relapsed).length, 0, 'premise: 5 in-window episodes < the floor of 6 — ⑦ silent')
+  assert.equal(resolve([priorMarker('vomit', 2)], relapsed).length, 0)
+
+  // The cough form — the MODAL case for a relapsing-remitting airway sign: a cough two hours
+  // ago under cough's floor of 5.
+  const cough = input({
+    symptomEvents: [...[30, 37, 44].map((d) => symptomAgo('cough', d)), symptomAgo('cough', 0)],
+    mealEvents: mealsDaily(0, 45),
+  })
+  assert.equal(detectChronicity(cough).length, 0, 'premise: 4 < 5 — ⑦ silent on cough')
+  const coughMarker: PriorEntry = {
+    rank: 0,
+    finding: { ...priorMarker('cough', 2).finding, recencyDays: 28, lastEpisodeIso: ago(30) },
+  }
+  assert.equal(resolve([coughMarker], cough).length, 0)
+
+  // And the control: the same marker with NO newer episode is carried.
+  const quiet = input({ symptomEvents: [17, 24, 31, 38].map((d) => symptomAgo('vomit', d)), mealEvents: mealsDaily(0, 40) })
+  const carried = resolve([{ rank: 0, finding: { ...priorMarker('vomit', 2).finding, lastEpisodeIso: ago(17) } }], quiet)
+  assert.equal(carried.length, 1)
+})
+
+Deno.test('CARRY ENDS when the record no longer holds any episode to anchor to', () => {
+  const wiped = input({ mealEvents: mealsDaily(0, 20) })
+  assert.equal(resolve([priorMarker('vomit', 2)], wiped).length, 0)
 })
 
 Deno.test('EXPIRY — a marker at or past the TTL is dropped; the day before, it is carried', () => {
@@ -379,22 +436,68 @@ const cachedChronicity = (rank: number): CachedFinding => ({
   text: 'a card',
   finding: priorChronicity('diarrhea', 'standard', rank).finding as unknown as SymptomChronicityFinding,
 })
+/** A benign (insight-class) cached card — the postprandial shape, minimal. */
+const cachedBenign = (rank: number, text = 'a benign card'): CachedFinding => ({
+  rank,
+  text,
+  finding: {
+    type: 'postprandial_timing',
+    priorityClass: 'insight',
+    symptomType: 'vomit',
+    rapidCount: 4,
+    eligibleCount: 12,
+    totalEpisodes: 20,
+    rapidWindowMinutes: 30,
+    medianMinutesSinceFeeding: 14,
+    windowDays: 60,
+    lastTwoEligibleRapid: false,
+    feedingFormsInEvidence: [],
+    eligibleMinutes: [],
+    associationalOnly: true,
+  } as unknown as CachedFinding['finding'],
+})
 
-Deno.test('mergeStandDowns — the line takes the former slot and the cards below move down one', () => {
-  const findings = [cachedChronicity(0), { ...cachedChronicity(1), text: 'b' }]
+Deno.test('mergeStandDowns — the line takes the former slot and the benign cards below move down one', () => {
+  const findings = [cachedBenign(0, 'a'), cachedBenign(1, 'b')]
   const merged = mergeStandDowns(findings, [marker({ formerRank: 0 })], 'Nyx')
-  assert.deepEqual(merged.map((e) => [e.rank, e.finding.type]), [
-    [0, 'stood_down'],
-    [1, 'symptom_chronicity'],
-    [2, 'symptom_chronicity'],
+  assert.deepEqual(merged.map((e) => [e.rank, e.finding.type, e.text]), [
+    [0, 'stood_down', templateStoodDown(marker(), 'Nyx')],
+    [1, 'postprandial_timing', 'a'],
+    [2, 'postprandial_timing', 'b'],
   ])
   assert.ok(isStoodDownEntry(merged[0]))
-  assert.equal(merged[0].text, templateStoodDown(marker(), 'Nyx'))
+})
+
+Deno.test('mergeStandDowns — NEVER above a live safety card: the cat that stops vomiting because it stopped eating', () => {
+  // The adversarial break (2026-09-03): chronicity stands down the same regen intake_decline
+  // fires. The marker's former rank was 0; the concern must still lead.
+  const intake: CachedFinding = {
+    rank: 0,
+    text: 'intake',
+    finding: {
+      type: 'intake_decline',
+      priorityClass: 'safety',
+      trigger: 'consecutive_low',
+      species: 'cat',
+      daysBelowBaseline: 2,
+      refusedFoodLabel: null,
+      ratedMealsConsidered: 9,
+    } as unknown as CachedFinding['finding'],
+  }
+  const merged = mergeStandDowns([intake, cachedBenign(1)], [marker({ formerRank: 0 })], 'Nyx')
+  assert.deepEqual(merged.map((e) => [e.rank, e.finding.type]), [
+    [0, 'intake_decline'],
+    [1, 'stood_down'],
+    [2, 'postprandial_timing'],
+  ])
+  // Two safety cards ⇒ below both, even with formerRank 1.
+  const two = mergeStandDowns([intake, { ...cachedChronicity(1) }], [marker({ formerRank: 1 })], 'Nyx')
+  assert.deepEqual(two.map((e) => e.finding.type), ['intake_decline', 'symptom_chronicity', 'stood_down'])
 })
 
 Deno.test('mergeStandDowns — a former rank past the end appends; an empty set yields the line alone', () => {
-  const merged = mergeStandDowns([cachedChronicity(0)], [marker({ formerRank: 5 })], 'Nyx')
-  assert.deepEqual(merged.map((e) => [e.rank, e.finding.type]), [[0, 'symptom_chronicity'], [1, 'stood_down']])
+  const merged = mergeStandDowns([cachedBenign(0)], [marker({ formerRank: 5 })], 'Nyx')
+  assert.deepEqual(merged.map((e) => [e.rank, e.finding.type]), [[0, 'postprandial_timing'], [1, 'stood_down']])
   const alone = mergeStandDowns([], [marker()], 'Nyx')
   assert.equal(alone.length, 1)
   assert.equal(alone[0].rank, 0)
@@ -437,4 +540,7 @@ Deno.test('gapLoggingHeld — the two halves are judged separately, inclusive of
   assert.equal(gapLoggingHeld(inp, last, NOW_MS, 3), false)
   assert.equal(gapLoggingHeld(stoodDownInput(), last, NOW_MS, 3), true)
   assert.equal(gapLoggingHeld(stoodDownInput(), NOW_MS, NOW_MS, 3), false, 'an empty interval never holds')
+  // The episode's own day never counts, however many events land on it.
+  const sameDay = stoodDownInput({ mealEvents: [mealAgo(15), mealAgo(15), mealAgo(15), ...mealsDaily(0, 7)] })
+  assert.equal(gapLoggingHeld(sameDay, last, NOW_MS, 3), false)
 })
