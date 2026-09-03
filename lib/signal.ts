@@ -41,7 +41,10 @@ export type InsightType =
   // future lane merged ahead of its renderer.
   | 'empty_stomach_timing'
   | 'timing_story'
-  | 'trial_response';
+  | 'trial_response'
+  // CUL-786 — the labeled stand-down marker. Not a detector output: minted by the engine's
+  // shell when a chronicity course goes quiet on its recency floor. See StoodDownMarker.
+  | 'stood_down';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
 // W1 (CUL-676 PR-3a): cough + sneeze join the CLIENT mirror before the engine learns them
@@ -224,6 +227,37 @@ export interface SymptomChronicityFinding {
    *  version lacks it, and because most findings will never carry it. */
   coughVomitAdjacent?: true;
 }
+
+// The labeled stand-down (CUL-786 — Signal fold v1.1-a; spec §0 DF-9(a)). NOT a finding: a
+// marker the engine's shell mints when a chronicity course stopped firing on its recency floor
+// (14 days; 28 for cough) with logging held across the gap, so the card can SAY it stood down
+// instead of vanishing — "reassurance-by-absence wearing an honesty costume" (Dr. Chen). It
+// rides the `findings` array so it occupies the card's former slot, but it is 'insight' class
+// (never leads, never a rail, never the cross-pet banner) and every consumer other than the
+// one-line renderer skips it via `isStoodDown`. The server composes `text` (Dr. Chen's line,
+// template-only); the client renders that text and nothing else. Mirror of standDown.ts
+// StoodDownMarker (rendered fields). Expires on the client STOOD_DOWN_TTL_DAYS after
+// `stoodDownAt` even if the cache never regenerates — the one place a clock is read here,
+// because the spec's bound is "seven days pass".
+export interface StoodDownMarker {
+  type: 'stood_down';
+  priorityClass: 'insight';
+  symptomType: SignalSymptomType;
+  /** The recency floor that fired, in days — the "in 14 days" of the line. */
+  recencyDays: number;
+  /** The tier the card LAST carried — decides which conditional ask survived. */
+  tier: ChronicityTier;
+  /** ISO-8601 UTC of the most recent logged episode. */
+  lastEpisodeIso: string;
+  /** ISO-8601 UTC of the regen that minted the marker. */
+  stoodDownAt: string;
+  /** The rank the chronicity card held before it stood down. */
+  formerRank: number;
+}
+
+// The marker's helpers (`isStoodDown`, `stoodDownExpired`, STOOD_DOWN_TTL_DAYS) live in
+// lib/signalCopy.ts: this module imports the live supabase client, and the Signal surface's
+// component tests render against the pure copy module.
 
 // Rapid post-prandial timing (⑤, B-078) — a descriptive count of timed vomiting
 // episodes that happened within `rapidWindowMinutes` of eating, over an explicit
@@ -474,7 +508,8 @@ export type SignalFinding =
   | TimeOfDayClusteringFinding
   | EmptyStomachTimingFinding
   | TimingStoryFinding
-  | TrialResponseFinding;
+  | TrialResponseFinding
+  | StoodDownMarker;
 
 export interface CachedFinding {
   rank: number;

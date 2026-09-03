@@ -14,7 +14,7 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
-import { InsightCard } from './InsightCard';
+import { InsightCard, RAIL_WIDTH } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { useWatchingRows } from '../../hooks/useWatchingRows';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -45,8 +45,10 @@ import {
   buildingHeadlineLead,
   buildingSub,
   coverageCopy,
+  isStoodDown,
   isTrialResponse,
   staleIntro,
+  stoodDownExpired,
 } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 import type { DisplayState } from '../../lib/signalCopy';
@@ -609,7 +611,15 @@ export function SignalZone({
   // there would sweep a blank card and spend the marker — on the not-eating cat, the one
   // record where a celebration is least defensible. The safety gate above deliberately
   // keeps reading the FULL set: suppression must never be able to unhide the moment.
-  const renderableCount = visibleFindings(findings, suppressTrialResponse).length;
+  //
+  // CUL-786: a stood-down line is NOT a finding for this count. It only ever exists after a
+  // chronicity card fired — and a first-ever SAFETY card withholds the moment rather than
+  // spending it, so without this exclusion the card standing down would hand the arrival a
+  // count of 1 with no safety finding in the set, and the once-ever celebration would play
+  // over a sentence about absence.
+  const renderableCount = visibleFindings(findings, suppressTrialResponse).filter(
+    (f) => !isStoodDown(f.finding),
+  ).length;
 
   const { playing: arriving, moment } = useArrivalMoment({
     petId,
@@ -773,6 +783,7 @@ function AckLine({ petName }: { petName: string }) {
 function visibleFindings(
   findings: CachedFinding[],
   suppressTrialResponse: boolean,
+  nowMs: number = Date.now(),
 ): CachedFinding[] {
   return [...findings]
     .filter(
@@ -783,7 +794,26 @@ function visibleFindings(
           f.finding.comparisonDirection === 'fewer_during_trial'
         ),
     )
+    // CUL-786: a stood-down line expires seven days after it was minted, even if the cache never
+    // regenerates (spec §8: "until … seven days pass"). The engine drops it on its own regen; this
+    // is the offline bound. It is the one clock read on this surface, and it can only REMOVE a
+    // line — never re-open a card (the fold spec's DF-5 forbids that direction).
+    .filter((f) => !(isStoodDown(f.finding) && stoodDownExpired(f.finding, nowMs)))
     .sort((a, b) => a.rank - b.rank);
+}
+
+// CUL-786 — the labeled stand-down (spec §0 DF-9(a), §8 v1.1-a). One calm line in the slot the
+// chronicity card held: NO rail (the colour mark is the concern's; this is its absence stated),
+// the secondary `textSM` register, indented to the card text column so the empty gutter IS the
+// missing rail. The sentence is the server's (Dr. Chen's line, template-only, never the model):
+// "logged", never "happened"; "That isn't an all-clear."; the ask surviving as a conditional.
+// Not a control — nothing to expand, nothing to fold, nothing to tap. Announced as one sentence.
+function StoodDownLine({ text }: { text: string }) {
+  return (
+    <View style={styles.stoodDownRow} accessible accessibilityRole="text" accessibilityLabel={text}>
+      <ThemedText style={styles.stoodDownText}>{text}</ThemedText>
+    </View>
+  );
 }
 
 // The card stack — findings are already ranked server-side (safety leads, then
@@ -835,14 +865,21 @@ function LiveStack({
             {i > 0 && <Divider style={styles.rowDivider} />}
             {/* SR-3 register (§5.1) — the lead (rank 0) keeps the enlarged canvas; secondary
                 rows compress into a tighter rhythm. SR-5 (§3.4) threads trialRunning for the
-                falling reflection's mid-trial adjacency line. */}
-            <InsightCard
-              cached={f}
-              petName={petName}
-              isLead={i === 0}
-              compact={i > 0}
-              trialRunning={trialRunning}
-            />
+                falling reflection's mid-trial adjacency line. CUL-786: a stood-down marker is
+                one plain line in its former slot, never a card — and it never wears the lead
+                canvas (a sentence about absence at Newsreader size would be the reassurance the
+                line exists to refuse), so `isLead` is bound to the rank a CARD holds. */}
+            {isStoodDown(f.finding) ? (
+              <StoodDownLine text={f.text} />
+            ) : (
+              <InsightCard
+                cached={f}
+                petName={petName}
+                isLead={i === 0}
+                compact={i > 0}
+                trialRunning={trialRunning}
+              />
+            )}
           </>
         );
         const key = `${f.finding.type}-${f.rank}`;
@@ -1202,6 +1239,17 @@ const styles = StyleSheet.create({
   },
   rowDivider: {
     marginHorizontal: -theme.space1,
+  },
+  // CUL-786 — the stand-down line. The compact-row rhythm, indented past where a rail would
+  // sit so the sentence aligns with the card text above and below it (no rail of its own).
+  stoodDownRow: {
+    paddingVertical: theme.space1,
+    paddingLeft: RAIL_WIDTH + theme.space2,
+  },
+  stoodDownText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
   },
 
   // ── CUL-601 (§4) — the arrival moment's two structural styles ────────────────

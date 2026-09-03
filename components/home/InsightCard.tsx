@@ -461,7 +461,16 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // (server lead + two two-sided count rows + day badge) + expand. GA'd (CUL-548): rendered
   // whenever the payload carries a trial_response finding.
   trial_response: TrialResponseBody,
+  // CUL-786 — the labeled stand-down is NOT a card: `LiveStack` renders it as one plain line
+  // (`StoodDownLine`) before this component is ever reached. The entry exists so the map stays
+  // exhaustive over InsightType; if a marker ever does arrive here, nothing renders rather than
+  // a rail-bearing card dressing a sentence about absence as a finding.
+  stood_down: () => null,
 };
+
+/** The safety/insight rail's width — exported so the stand-down line (which has NO rail) can
+ *  sit in the same text column as the cards above and below it. */
+export const RAIL_WIDTH = 3;
 
 interface Props {
   cached: CachedFinding;
@@ -593,7 +602,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space1,
   },
   rail: {
-    width: 3,
+    width: RAIL_WIDTH,
     borderRadius: 2,
     opacity: 0.85,
   },

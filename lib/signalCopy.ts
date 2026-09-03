@@ -28,6 +28,7 @@ import type {
   ReflectionDensity,
   ReflectionFinding,
   SignalFinding,
+  StoodDownMarker,
   SignalSymptomType,
   StapleSource,
   SymptomChronicityFinding,
@@ -577,6 +578,12 @@ export function sampleLine(finding: SignalFinding): string {
     // trialResponseSampleLine directly; this branch keeps sampleLine total over the union.
     return trialResponseSampleLine(finding);
   }
+  if (finding.type === 'stood_down') {
+    // CUL-786 — a stood-down marker is one server-composed line, never a card: it has no sample,
+    // no receipt, no expand. `LiveStack` renders it before InsightCard is reached; this branch
+    // only keeps sampleLine total over the union (and prints nothing if ever reached).
+    return '';
+  }
   if (finding.trigger === 'refused_normal_food') {
     return finding.ratedMealsConsidered > 0
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
@@ -644,6 +651,30 @@ export function isReflectionDensityWithheld(finding: SignalFinding): finding is 
  *  the incomparable prior. */
 export function reflectionWithheldSampleLine(finding: ReflectionFinding): string {
   return `${count(finding.currentCount, 'episode', 'episodes')} this week`;
+}
+
+// ── The labeled stand-down (CUL-786 — Signal fold v1.1-a) ─────────────────────
+// A marker, not a finding (lib/signal.ts StoodDownMarker): the engine's shell mints it when a
+// chronicity course goes quiet on its recency floor with logging held across the gap, and the
+// client renders the server's line in the card's former slot. These helpers are the client's
+// only logic about it — identify it, and expire it.
+
+/** The spec's bound: the line shows for at most seven days (until the weekly review, F5, can
+ *  say the ending as a count — not yet built). Mirrors standDown.ts STOOD_DOWN_TTL_DAYS. */
+export const STOOD_DOWN_TTL_DAYS = 7;
+
+export function isStoodDown(finding: SignalFinding): finding is StoodDownMarker {
+  return finding.type === 'stood_down';
+}
+
+/** True once STOOD_DOWN_TTL_DAYS have passed since the marker was minted. An unparseable
+ *  `stoodDownAt` counts as expired — a line about absence with no honest clock is not shown.
+ *  Takes `nowMs` explicitly: the one clock read on the Signal surface, and it can only ever
+ *  REMOVE a line (never re-open a card — the fold spec's DF-5 forbids that direction). */
+export function stoodDownExpired(marker: StoodDownMarker, nowMs: number): boolean {
+  const minted = Date.parse(marker.stoodDownAt);
+  if (!Number.isFinite(minted)) return true;
+  return nowMs - minted >= STOOD_DOWN_TTL_DAYS * 86_400_000;
 }
 
 // ── Universal banned-vocabulary screen (SR-5, §3.5) ───────────────────────────
@@ -940,6 +971,12 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       `${weeks === 1 ? 'week' : `${weeks} weeks`} before it. A change like this is worth reviewing with your ` +
       `vet. It's a read of your logs, never a verdict on the trial.`
     );
+  }
+  if (finding.type === 'stood_down') {
+    // CUL-786 — no expand on the stand-down line: the sentence IS the whole surface (the server's
+    // `text`), and an evidence view under a sentence about absence would be the reassurance the
+    // line exists to refuse. Kept only so evidenceText stays total over the union.
+    return '';
   }
   if (finding.trigger === 'refused_normal_food') {
     const food = finding.refusedFoodLabel ?? 'a food they normally finish';
