@@ -257,6 +257,7 @@ const isFetchedSymptom = (s: { type: string }): boolean => FETCHED_SYMPTOM_SET.h
 const COMPARISON_GATE_SYMPTOM_SET: ReadonlySet<string> = new Set(LANE_SYMPTOM_TYPES.symptomDelta)
 const countsTowardComparisonGate = (s: { type: string }): boolean =>
   COMPARISON_GATE_SYMPTOM_SET.has(s.type)
+const EMPTY_TYPE_SET: ReadonlySet<string> = new Set()
 
 /** WSAVA 5-point owner-reported intake scale (migration 011). */
 export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all'
@@ -820,6 +821,34 @@ export interface ReflectionDensity {
 }
 
 /**
+ * v1.1-b (CUL-787, fold spec §0 DF-9(b)) — the counted halves of detector ⑦'s own lookback,
+ * carried on a chronicity finding so the change an easing course shows can be said INSIDE the
+ * safety card (its expand + phone script), never as a separate calm card: `detectReflections`
+ * is muted while any symptom is chronic (the §4.4 valve), and that valve stays shut. Two
+ * now-anchored halves of `chronicity.windowDays` (56 → 28 + 28), partitioning the exact
+ * onset set ⑦ counted (`recentCount + priorCount === episodeCount` by construction — the
+ * C-4 rule: two counts over one population partition it), each with its logged-days density
+ * (the ③/④ comparison-gate cell, because this is a comparability gate, not a coverage
+ * measure — the R3 re-ruling). Both halves are ALWAYS carried (S2); `comparable` reuses the
+ * SR-4 density rule and gates only the client's reading of a FALLING pair — a rising pair is
+ * never suppressed (§3.3, fail toward escalation). Descriptive counts, never a verdict.
+ */
+export interface ChronicityCompare {
+  /** Days per half (windowDays / 2, floored) — the "{n} weeks" the client labels each half with. */
+  halfDays: number
+  /** Collapsed episodes in [now − halfDays, now). */
+  recentCount: number
+  /** Collapsed episodes in [now − 2·halfDays, now − halfDays). */
+  priorCount: number
+  /** Distinct UTC days carrying any comparison-gate log in the recent half. */
+  recentLoggingDays: number
+  /** Distinct UTC days carrying any comparison-gate log in the prior half. */
+  priorLoggingDays: number
+  /** Whether the two halves were logged with comparable density (the SR-4 rule, §3.3). */
+  comparable: boolean
+}
+
+/**
  * L3 photo-record composition (Signals v2 / B-755 / CUL-9) — ONE evidence field: a numerator
  * ("yes" reads) over its OWN "reads that answered this question" denominator (§2 L3). The
  * denominator is NEVER the raw episode count — it is the photographed-and-analyzed episodes
@@ -1185,6 +1214,12 @@ export interface SymptomChronicityFinding extends FindingBase {
    * it never explains either sign away (that direction would be reassurance-by-mechanism).
    */
   coughVomitAdjacent?: true
+  /**
+   * v1.1-b (CUL-787) — the counted 4-week halves of this finding's lookback, attached POST-
+   * detection (medContext.ts#decorateFinding, like ③'s `density`), never read by the engine.
+   * Absent on any finding cached before this version and whenever `now` is unparseable.
+   */
+  compare?: ChronicityCompare
 }
 
 /**
@@ -3772,13 +3807,28 @@ interface WindowedStats {
  * density-comparability gate (computeReflectionDensity, B-721 §3.3), so the two can never
  * drift on what "a logged day" means. UTC day-bucketing matches the rest of this module.
  */
-function loggingDaysInWindow(input: DetectionInput, startMs: number, endMs: number): number {
+function loggingDaysInWindow(
+  input: DetectionInput,
+  startMs: number,
+  endMs: number,
+  /**
+   * Symptom types that count as a logged day HERE, beyond the comparison-gate cell. Default
+   * none — ③/④'s eligibility floor and SR-4's density gate read the cell exactly as before.
+   * The v1.1-b chronicity compare passes its finding's OWN sign (CUL-787 adversarial pass):
+   * a cough card's receipt that excluded cough logs printed "the 4 before: 8 · logged on 0
+   * and 0 of those days" and, through the prior-half-dark escape hatch, minted a false
+   * `comparable: true` on a 5× fall — the ruled principle is that a number offered as the
+   * receipt for a claim about a sign must count the days that could have shown that sign.
+   * Byte-identical for every pre-taxonomy type (the cell already contains them).
+   */
+  alsoCounts: ReadonlySet<string> = EMPTY_TYPE_SET,
+): number {
   const days = new Set<number>()
   for (const s of input.symptomEvents) {
     // COMPARISON-GATE scoped, not fetch-scoped — both consumers of this function (③/④'s
     // eligibility floor and SR-4's density gate) decide whether a FALLING comparison may be
     // published, and both belong to the symptomDelta lane. See countsTowardComparisonGate.
-    if (!countsTowardComparisonGate(s)) continue
+    if (!countsTowardComparisonGate(s) && !alsoCounts.has(s.type)) continue
     const ms = Date.parse(s.occurredAt)
     if (Number.isFinite(ms) && ms >= startMs && ms < endMs) days.add(Math.floor(ms / MS_PER_DAY))
   }
@@ -3987,6 +4037,65 @@ export function computeReflectionDensity(
       ? true
       : currentLoggingDays >= priorLoggingDays * DENSITY_COMPARABLE_MIN_RATIO
   return { comparable, currentLoggingDays, priorLoggingDays }
+}
+
+/**
+ * v1.1-b (CUL-787) — the counted halves of detector ⑦'s lookback for ONE symptom type (see
+ * `ChronicityCompare`). PURE and side-effect-free; attached to the chronicity finding POST-
+ * detection (index.ts → decorateFinding), so it changes nothing about what fires, its tier,
+ * or how it ranks. Reuses ⑦'s exact episode set: the same `toEpisodeOnsets` collapse over
+ * the same `[now − windowDays, now)` lookback, split at `now − windowDays/2` — so the two
+ * counts partition `episodeCount` and no third count of the same population exists (C-4).
+ * Logged days come from `loggingDaysInWindow` (the comparison-gate cell shared with ③/④ and
+ * SR-4's density gate), NOT ⑦'s full-coverage span-halves helper: this gate decides whether
+ * a FALLING pair may be read at face value, and a comparability gate belongs to that cell.
+ *
+ * `comparable` mirrors computeReflectionDensity exactly: a prior half with zero logged days
+ * cannot have been logged MORE than the recent one, so the pair is comparable (and there is
+ * no divide-by-zero); otherwise the recent half must carry at least
+ * DENSITY_COMPARABLE_MIN_RATIO of the prior half's logged days. The client prints both
+ * counts and both logged-day figures regardless (S2); `comparable` only chooses which
+ * disclosure line sits beside them. Returns null only when `now` is unparseable.
+ */
+export function computeChronicityCompare(
+  input: DetectionInput,
+  symptomType: SymptomType,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): ChronicityCompare | null {
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+  const halfDays = Math.floor(config.chronicity.windowDays / 2)
+  const recentStart = nowMs - halfDays * MS_PER_DAY
+  // The prior half is anchored on the WHOLE lookback, never on 2 × halfDays: with an odd
+  // windowDays the floored halves would leave one day that ⑦ counts and neither half prints
+  // (adversarial pass, CUL-787 — 27 ≠ 28 at windowDays 55). The prior half absorbs the odd
+  // day; `halfDays` stays the label. Unreachable at DEFAULT_CONFIG (56) but "partitions by
+  // construction" has to be true for every config the type admits.
+  const priorStart = nowMs - config.chronicity.windowDays * MS_PER_DAY
+
+  const msList = input.symptomEvents
+    .filter((s) => s.type === symptomType)
+    .map((s) => Date.parse(s.occurredAt))
+    .filter((ms) => Number.isFinite(ms))
+  // Collapse FIRST, window SECOND — the order computeChronicityStats uses, so an episode
+  // straddling the half boundary lands in exactly one half by its onset, as ⑦ counted it.
+  const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
+  const recentCount = onsets.filter((ms) => ms >= recentStart && ms < nowMs).length
+  const priorCount = onsets.filter((ms) => ms >= priorStart && ms < recentStart).length
+
+  // The denominator counts the comparison-gate cell PLUS this finding's own sign: a receipt
+  // for a claim about cough must count the days that could have shown cough (see the
+  // `alsoCounts` note on loggingDaysInWindow). Identical to the bare cell for every
+  // pre-taxonomy type.
+  const ownSign: ReadonlySet<string> = new Set([symptomType])
+  const recentLoggingDays = loggingDaysInWindow(input, recentStart, nowMs, ownSign)
+  const priorLoggingDays = loggingDaysInWindow(input, priorStart, recentStart, ownSign)
+  const comparable =
+    priorLoggingDays === 0
+      ? true
+      : recentLoggingDays >= priorLoggingDays * DENSITY_COMPARABLE_MIN_RATIO
+
+  return { halfDays, recentCount, priorCount, recentLoggingDays, priorLoggingDays, comparable }
 }
 
 // ── Detector ④: symptom-frequency worsening (the deterministic worsening lane) ──

@@ -23,6 +23,7 @@ import type {
   IncidentRedFlagFinding,
   ReflectionDensity,
   MedOnBoardContext,
+  ChronicityCompare,
 } from './detection.ts'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -296,6 +297,37 @@ Deno.test('decorateFinding — SAFETY findings never receive medContext or densi
     const out = decorateFinding(f, DENSITY, MED)
     assert.equal('medContext' in out, false, `${f.type} must not get a med line`)
     assert.equal('density' in out, false, `${f.type} must not get density`)
+  }
+})
+
+// ── v1.1-b (CUL-787): the counted 4-week halves ride the chronicity finding only ──
+const COMPARE: ChronicityCompare = {
+  halfDays: 28,
+  recentCount: 2,
+  priorCount: 12,
+  recentLoggingDays: 27,
+  priorLoggingDays: 28,
+  comparable: true,
+}
+
+Deno.test('decorateFinding — chronicity gets the compare, never medContext or density', () => {
+  const out = decorateFinding(chronicity(), DENSITY, MED, null, COMPARE) as SymptomChronicityFinding
+  assert.deepEqual(out.compare, COMPARE)
+  assert.equal('medContext' in out, false, 'the safety face stays plain (S1)')
+  assert.equal('density' in out, false)
+})
+
+Deno.test('decorateFinding — a null compare leaves chronicity unchanged (no key added — byte-identical to pre-v1.1-b)', () => {
+  const f = chronicity()
+  const out = decorateFinding(f, DENSITY, MED, null, null)
+  assert.equal('compare' in out, false)
+  assert.deepEqual(out, f)
+})
+
+Deno.test('decorateFinding — the compare never lands on any other type', () => {
+  for (const f of [correlation(), reflection(), postprandial(), timeofday(), trialResponse(), intakeDecline(), worsening(), incidentRedFlag()]) {
+    const out = decorateFinding(f, DENSITY, MED, null, COMPARE)
+    assert.equal('compare' in out, false, `${f.type} must not carry the chronicity compare`)
   }
 })
 

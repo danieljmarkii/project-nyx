@@ -99,6 +99,29 @@ export interface ReflectionDensity {
   priorLoggingDays: number;
 }
 
+// v1.1-b (CUL-787, fold spec §0 DF-9(b)) — the counted 4-week halves of the chronicity
+// finding's own lookback, so the change an easing course shows can be said INSIDE the
+// safety card's expand + phone script. The reflection lane is muted while any symptom is
+// chronic (the engine's §4.4 valve), and this is the register that replaces F2's second
+// calm card — never a card of its own, nothing on the face or in the sentence (§3.5).
+// Both halves always carried (S2); `comparable` reuses the §3.3 density rule and only
+// chooses which disclosure line sits beside a FALLING pair — a rising pair is never gated.
+// Mirror of detection.ts ChronicityCompare — keep in sync. Attached to chronicity only.
+export interface ChronicityCompare {
+  /** Days per half (the lookback / 2 — 28) — the "{n} weeks" each half is labelled with. */
+  halfDays: number;
+  /** Collapsed episodes in the recent half [now − halfDays, now). */
+  recentCount: number;
+  /** Collapsed episodes in the prior half [now − 2·halfDays, now − halfDays). */
+  priorCount: number;
+  /** Distinct UTC days carrying any logged event in the recent half. */
+  recentLoggingDays: number;
+  /** Distinct UTC days carrying any logged event in the prior half. */
+  priorLoggingDays: number;
+  /** Whether the two halves were logged with comparable density (§3.3 — the SR-4 rule). */
+  comparable: boolean;
+}
+
 export interface CorrelationFinding {
   type: 'food_symptom_correlation';
   priorityClass: 'insight';
@@ -223,6 +246,10 @@ export interface SymptomChronicityFinding {
    *  vomiting course. Optional because every cached finding written before that engine
    *  version lacks it, and because most findings will never carry it. */
   coughVomitAdjacent?: true;
+  /** v1.1-b (CUL-787) — the counted 4-week halves of this finding's lookback (expand + phone
+   *  script only). Optional because every finding cached before that engine version lacks it,
+   *  and an old cache renders exactly the pre-v1.1-b card. */
+  compare?: ChronicityCompare;
 }
 
 // Rapid post-prandial timing (⑤, B-078) — a descriptive count of timed vomiting

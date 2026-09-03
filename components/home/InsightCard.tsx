@@ -28,6 +28,7 @@ import {
   TRIAL_ADJACENCY,
   TRIAL_RTM_CONFOUND,
   confidenceTag,
+  chronicityCompareExtras,
   displayProteinName,
   dotLaneA11yLabel,
   dotLaneModel,
@@ -357,10 +358,27 @@ function ExpandedReceipts({
   }
   const facts = phoneScript(finding, petName);
   if (facts) {
+    // v1.1-b (CUL-787): a chronicity finding whose cache carries the counted 4-week halves
+    // draws them ABOVE the script, in the same "Counted honestly" box the reflection lane
+    // uses — the two counts, the logged-days line, and (falling only) the why-it-stands
+    // clause. Expand-only: the face and the sentence stay exactly as shipped (§3.5), and an
+    // old cache (no `compare`) renders the pre-v1.1-b expand byte-identically.
+    const compare = finding.type === 'symptom_chronicity' ? chronicityCompareExtras(finding) : null;
     return (
-      <EvidenceBox title="If you call your clinic, the facts to have ready">
-        <PhoneScript facts={facts} />
-      </EvidenceBox>
+      <>
+        {compare ? (
+          <EvidenceBox title={DENSITY_BOX_TITLE}>
+            <StackedCompare rows={compare.rows} />
+            <ThemedText style={[styles.disclosure, styles.disclosureSpaced]}>{compare.densityLine}</ThemedText>
+            {compare.whyItStands ? (
+              <ThemedText style={[styles.whyItStands, styles.disclosureSpaced]}>{compare.whyItStands}</ThemedText>
+            ) : null}
+          </EvidenceBox>
+        ) : null}
+        <EvidenceBox title="If you call your clinic, the facts to have ready">
+          <PhoneScript facts={facts} />
+        </EvidenceBox>
+      </>
     );
   }
   return null;
@@ -870,6 +888,14 @@ const styles = StyleSheet.create({
   },
   disclosureSpaced: {
     marginTop: theme.space0_5,
+  },
+  // The chronicity compare's why-it-stands clause (v1.1-b, CUL-787) — primary ink, not the
+  // disclosure's secondary: it is the one sentence in the box that carries the ask, so it
+  // reads at the weight of the card's own sentence, never as an aside.
+  whyItStands: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightSM,
   },
   // The mid-trial adjacency line (§3.4) — italic, marking it as an interpretive aside
   // (the mock's `.adj`), set below the density line when both render.

@@ -14,7 +14,13 @@
 // never an explanation and never a verdict (§5.4); this module supplies the facts only —
 // the client (SR-5) renders the §9 sentence.
 
-import type { Finding, MedOnBoardContext, PhotoComposition, ReflectionDensity } from './detection.ts'
+import type {
+  ChronicityCompare,
+  Finding,
+  MedOnBoardContext,
+  PhotoComposition,
+  ReflectionDensity,
+} from './detection.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -151,9 +157,18 @@ export function decorateFinding(
   density: ReflectionDensity | null,
   medContext: MedOnBoardContext | null,
   photoComposition: PhotoComposition | null = null,
+  chronicityCompare: ChronicityCompare | null = null,
 ): Finding {
   if (finding.type === 'reflection') {
     return density ? { ...finding, density } : finding
+  }
+  // Chronicity ← the counted 4-week halves ONLY (v1.1-b, CUL-787): additive + present-only, a
+  // null leaves the field absent (byte-identical to the pre-v1.1-b payload). Never medContext
+  // (the safety face stays plain — S1) and never photoComposition (⑦ is a duration measure
+  // over one sign, not a per-episode photo set). The compare is PER FINDING (its own symptom
+  // type), so the caller computes it inside the decorate map like photoComposition.
+  if (finding.type === 'symptom_chronicity') {
+    return chronicityCompare ? { ...finding, compare: chronicityCompare } : finding
   }
   // Correlation + the trial-response lane ← medContext ONLY, never photoComposition. A food↔symptom
   // association carries no photo composition (contents describe a vomit, not the food link); the

@@ -20,6 +20,7 @@ import type {
   EmptyStomachTimingFinding,
   PostprandialTimingFinding,
   ReflectionFinding,
+  SymptomChronicityFinding,
   SymptomWorseningFinding,
   TimingStoryFinding,
   TrialResponseFinding,
@@ -121,6 +122,21 @@ const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorsenin
   trigger: 'more_episodes',
   tier: 'standard',
   windowDays: 14,
+  ...over,
+});
+
+const chronicity = (over: Partial<SymptomChronicityFinding> = {}): SymptomChronicityFinding => ({
+  type: 'symptom_chronicity',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  episodeCount: 14,
+  spanDays: 48,
+  activeWeeks: 7,
+  symptomDays: 14,
+  daysSinceLastEpisode: 3,
+  firstOnsetIso: '2026-07-05T08:00:00.000Z',
+  tier: 'firm',
+  windowDays: 56,
   ...over,
 });
 
@@ -647,5 +663,56 @@ describe('InsightCard — G10: the renderer registry safely ignores an unknown f
 
   it('POSITIVE CONTROL: a known finding type still renders (the guard is not "null for everything")', () => {
     expect(render(<InsightCard cached={cached(correlation())} petName="Nyx" />).toJSON()).not.toBeNull();
+  });
+});
+
+describe('InsightCard — the counted 4-week compare inside the chronicity card (v1.1-b, CUL-787)', () => {
+  const falling = { halfDays: 28, recentCount: 2, priorCount: 12, recentLoggingDays: 27, priorLoggingDays: 28, comparable: true } as const;
+  const rising = { halfDays: 28, recentCount: 9, priorCount: 0, recentLoggingDays: 26, priorLoggingDays: 0, comparable: true } as const;
+
+  it('the FACE carries nothing from the compare — the label is exactly the sentence (S1 / §3.5)', () => {
+    const c = anyCached(chronicity({ compare: falling }));
+    const view = render(<InsightCard cached={c} petName="Nyx" />);
+    expect(a11yLabelOf(<InsightCard cached={c} petName="Nyx" />)).toBe(c.text);
+    expect(view.queryByText('Recent 4 weeks')).toBeNull();
+    expect(view.queryByText('Counted honestly')).toBeNull();
+  });
+
+  it('the expand draws the compare box ABOVE the phone script, with the clause, on a falling pair', () => {
+    const view = render(<InsightCard cached={anyCached(chronicity({ compare: falling }))} petName="Nyx" />);
+    fireEvent.press(view.getByTestId('insight-face'));
+    expect(view.queryByText('Counted honestly')).toBeTruthy();
+    expect(view.queryByText('Recent 4 weeks')).toBeTruthy();
+    expect(view.queryByText('The 4 before')).toBeTruthy();
+    expect(view.queryByText('Counted from days you logged: 27 in the recent 4 weeks, 28 in the 4 before.')).toBeTruthy();
+    expect(view.queryByText(/Fewer lately doesn't change the ask/)).toBeTruthy();
+    expect(view.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
+    // The script row renders label + value as ONE text node ("Recent 4 weeks: 2 · …"), so match the value within it.
+    expect(view.queryByText(/Recent 4 weeks: 2 · the 4 before: 12 · logged on 27 of the recent 28 days, and 28 of the 28 before/)).toBeTruthy();
+  });
+
+  it('a RISING pair draws the compare and the script row but never the clause', () => {
+    const view = render(<InsightCard cached={anyCached(chronicity({ compare: rising }))} petName="Nyx" />);
+    fireEvent.press(view.getByTestId('insight-face'));
+    expect(view.queryByText('Counted honestly')).toBeTruthy();
+    expect(view.queryByText(/Fewer lately doesn't change the ask/)).toBeNull();
+    expect(view.queryByText(/Recent 4 weeks: 9 · the 4 before: 0 · logged on 26 of the recent 28 days, and 0 of the 28 before/)).toBeTruthy();
+  });
+
+  it('a thin-logged falling pair keeps both counts and swaps in the withheld line', () => {
+    const thin = { ...falling, recentLoggingDays: 10, comparable: false };
+    const view = render(<InsightCard cached={anyCached(chronicity({ compare: thin }))} petName="Nyx" />);
+    fireEvent.press(view.getByTestId('insight-face'));
+    expect(view.queryByText(/so a lower count there can be fewer logs, not fewer episodes/)).toBeTruthy();
+    expect(view.queryByText(/Fewer lately doesn't change the ask/)).toBeTruthy();
+    expect(view.queryByText('The 4 before')).toBeTruthy();
+  });
+
+  it('an old cache (no compare) renders the pre-v1.1-b expand: the script alone', () => {
+    const view = render(<InsightCard cached={anyCached(chronicity())} petName="Nyx" />);
+    fireEvent.press(view.getByTestId('insight-face'));
+    expect(view.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
+    expect(view.queryByText('Counted honestly')).toBeNull();
+    expect(view.queryByText(/Recent 4 weeks/)).toBeNull();
   });
 });
