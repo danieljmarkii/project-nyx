@@ -88,6 +88,7 @@ function signalState(over: Partial<SignalState> = {}): SignalState {
     dayNumber: 3,
     eventCount: 11,
     acknowledging: false,
+    answered: true,
     ...over,
   };
 }

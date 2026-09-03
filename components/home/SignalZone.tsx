@@ -14,8 +14,9 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
-import { InsightCard, RAIL_WIDTH } from './InsightCard';
+import { FoldedStrip, InsightCard, RAIL_WIDTH } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
+import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useWatchingRows } from '../../hooks/useWatchingRows';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -49,6 +50,7 @@ import {
   isTrialResponse,
   staleIntro,
   stoodDownExpired,
+  stripNameLine,
 } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 import type { DisplayState } from '../../lib/signalCopy';
@@ -505,7 +507,14 @@ export function SignalZone({
     dayNumber,
     eventCount,
     acknowledging,
+    answered,
   } = useSignal();
+
+  // CUL-784 — the Signal fold (fold spec §5/§6): this reader's per-pet memory of which
+  // cards they have compacted. Read once per pet, reconciled against the SETTLED set only
+  // (`answered` — never against the pre-read empty array or a read that threw, C-12), and
+  // handed to the stack, which renders a strip, a re-opened face, or the face per entry.
+  const fold = useSignalFold({ petId, findings, answered });
 
   // Signal/Home design uplift (B-721, SR-1..SR-6) — GA'd 2026-08-20 (CUL-546 Phase 1 /
   // CUL-547): the uplift IS the Signal surface now. SR-1 the live receipts (via LiveStack →
@@ -698,6 +707,7 @@ export function SignalZone({
                 trialRunning={trialRunning}
                 suppressTrialResponse={suppressTrialResponse}
                 arrival={moment}
+                fold={fold}
               />
             }
           />
@@ -707,6 +717,7 @@ export function SignalZone({
             petName={petName}
             trialRunning={trialRunning}
             suppressTrialResponse={suppressTrialResponse}
+            fold={fold}
           />
         )
       ) : state === 'stale' ? (
@@ -826,6 +837,7 @@ function LiveStack({
   trialRunning,
   suppressTrialResponse,
   arrival = null,
+  fold,
 }: {
   findings: CachedFinding[];
   petName: string;
@@ -835,6 +847,8 @@ function LiveStack({
    *  across 400–900ms; everything below it settles across 900–1200ms. Null on every
    *  other render, so the shipped stack is untouched (no wrapper, no opacity node). */
   arrival?: ArrivalMoment | null;
+  /** CUL-784 — this reader's fold state + actions (fold spec §6). */
+  fold: SignalFoldApi;
 }) {
   // B-789 (§5.2) — drop the trial_response card when the record shows the animal isn't eating
   // (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip withholds its
@@ -860,17 +874,28 @@ function LiveStack({
   return (
     <View>
       {ordered.map((f, i) => {
+        // CUL-784 (fold spec §6 / DF-7): ORDER IS RANK — a fold changes height, never
+        // position — and `isLead` stays bound to rank 0 whether or not that row is folded.
+        // A benign card is never promoted to the Newsreader canvas because the safety card
+        // above it was compacted (reassurance by layout). The strip is chosen only when the
+        // type has strip copy on this build — the same predicate `canFold` gates upstream —
+        // so a finding is never dropped for want of a strip (FS-7).
+        const folded = fold.stateOf(f.finding) === 'folded' && stripNameLine(f.finding) !== null;
         const row = (
           <>
             {i > 0 && <Divider style={styles.rowDivider} />}
             {/* SR-3 register (§5.1) — the lead (rank 0) keeps the enlarged canvas; secondary
                 rows compress into a tighter rhythm. SR-5 (§3.4) threads trialRunning for the
                 falling reflection's mid-trial adjacency line. CUL-786: a stood-down marker is
-                one plain line in its former slot, never a card — and it never wears the lead
-                canvas (a sentence about absence at Newsreader size would be the reassurance the
-                line exists to refuse), so `isLead` is bound to the rank a CARD holds. */}
+                one plain line in its former slot — neither a card nor a strip (nothing to fold,
+                nothing to expand) — and it never wears the lead canvas: a sentence about
+                absence at Newsreader size would be the reassurance the line exists to refuse.
+                The rows below it stay compact, exactly as they would under a folded lead
+                (DF-7 — the canvas is never inherited). */}
             {isStoodDown(f.finding) ? (
               <StoodDownLine text={f.text} />
+            ) : folded ? (
+              <FoldedStrip cached={f} onPress={fold.unfold} />
             ) : (
               <InsightCard
                 cached={f}
@@ -878,6 +903,9 @@ function LiveStack({
                 isLead={i === 0}
                 compact={i > 0}
                 trialRunning={trialRunning}
+                onFold={fold.fold}
+                backBecause={fold.backBecauseOf(f.finding)}
+                onTouch={fold.touch}
               />
             )}
           </>

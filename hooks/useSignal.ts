@@ -48,6 +48,13 @@ export interface SignalState {
    * acknowledgment line above the still-readable findings; read only on the flag-on
    * surface (the flag-off Signal ignores it, so it's invisible there — FR-FLAG-2). */
   acknowledging: boolean;
+  /** CUL-784 — true once the cache read for THIS pet has RESOLVED (with a row or with
+   * none), false while it is in flight and after a read that threw. The distinction a
+   * consumer needs when it would otherwise act on an empty `findings`: the Signal fold's
+   * reconcile deletes any fold whose finding is absent from the set, so it must only ever
+   * run against a set that was actually read (C-12: a read that hasn't answered is never
+   * an empty record). Reset with the rest on a pet switch. */
+  answered: boolean;
 }
 
 // Window for "recent activity" — distinguishes building/no_pattern (still active)
@@ -126,6 +133,7 @@ export function useSignal(): SignalState {
   const [signalText, setSignalText] = useState<string | null>(null);
   const [localCtx, setLocalCtx] = useState<LocalSignalContext>(EMPTY_LOCAL_CONTEXT);
   const [isLoading, setIsLoading] = useState(false);
+  const [answered, setAnswered] = useState(false);
 
   const petId = activePet?.id ?? null;
   const petName = activePet?.name ?? 'your pet';
@@ -156,6 +164,9 @@ export function useSignal(): SignalState {
     // far." over a day-1 pet). The sentinel's eventCount 0 also holds the day-count clause
     // back until the new pet's own read lands (BuildingStateV2's existing guard).
     setLocalCtx(EMPTY_LOCAL_CONTEXT);
+    // CUL-784: `answered` is per pet too — the previous pet's "read landed" must not
+    // license a fold reconcile against the new pet's not-yet-read set.
+    setAnswered(false);
     if (petId) setIsLoading(true);
   }
 
@@ -172,6 +183,7 @@ export function useSignal(): SignalState {
           setFindings(row?.findings ?? []);
           setCoverage(row?.coverage ?? []);
           setSignalText(row?.signalText ?? null);
+          setAnswered(true);
 
           if (isSignalCacheStale(row)) {
             // Daily-expiry regen — off the render path; re-read when it lands.
@@ -188,6 +200,9 @@ export function useSignal(): SignalState {
         } catch {
           // Cache unreadable (offline / function never deployed) — keep the last
           // state. The derived building/stale state stays honest, never all-clear.
+          // `answered` is deliberately NOT touched here: it stays whatever the last
+          // resolved read left it (false on a cold pet), so a consumer never treats
+          // this throw as "the set is empty".
         } finally {
           if (!cancelled) setIsLoading(false);
         }
@@ -220,6 +235,7 @@ export function useSignal(): SignalState {
     dayNumber: localCtx.dayNumber,
     eventCount: localCtx.eventCount,
     acknowledging,
+    answered,
   };
 }
 

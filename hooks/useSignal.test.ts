@@ -231,3 +231,79 @@ describe('useCrossPetSafetyBanner — switch-settle self-banner (B-151)', () => 
     await waitFor(() => expect(result.current?.petId).toBe(PET_A.id));
   });
 });
+
+// ── CUL-784 — `answered`: the gate the Signal fold's reconcile stands on ─────────
+//
+// `reconcileFolds` deletes any fold whose finding is absent from the set, so it must
+// only ever run against a set that was actually READ. `answered` is what tells "the cache
+// read resolved with nothing" apart from "the cache read has not answered" (in flight, or
+// threw) — C-12: a read that hasn't answered is never an empty record. Pinned against the
+// REAL hook, not the mocked one the zone tests drive.
+describe('useSignal — `answered` (CUL-784, C-12)', () => {
+  it('is false while the read is in flight and true once it RESOLVES — with rows', async () => {
+    let release: (v: unknown) => void = () => {};
+    mockedReadCache.mockImplementation(() => new Promise((r) => { release = r; }));
+    const { result } = renderHook(() => useSignal());
+    expect(result.current.answered).toBe(false);
+    expect(result.current.isLoading).toBe(true);
+    await act(async () => {
+      release({ signalText: null, isBuilding: false, findings: [finding], coverage: [], expiresAt: '2999-01-01' });
+    });
+    await waitFor(() => expect(result.current.answered).toBe(true));
+    expect(result.current.findings).toEqual([finding]);
+  });
+
+  it('is true when the read resolves with NO row — an empty answer is still an answer', async () => {
+    mockedReadCache.mockResolvedValue(null);
+    const { result } = renderHook(() => useSignal());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.answered).toBe(true);
+    expect(result.current.findings).toEqual([]);
+  });
+
+  it('stays FALSE when the read THROWS — findings are empty, but nothing was read', async () => {
+    mockedReadCache.mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useSignal());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.findings).toEqual([]);
+    expect(result.current.answered).toBe(false);
+  });
+
+  it('a later throw does not revoke an earlier answer for the same pet (the last resolved read stands)', async () => {
+    mockedReadCache.mockResolvedValueOnce({
+      signalText: null, isBuilding: false, findings: [finding], coverage: [], expiresAt: '2999-01-01',
+    });
+    const { result } = renderHook(() => useSignal());
+    await waitFor(() => expect(result.current.answered).toBe(true));
+    // The next focus/tick read fails (offline). The hook keeps the last state; `answered`
+    // keeps describing it.
+    mockedReadCache.mockRejectedValue(new Error('offline'));
+    act(() => {
+      useSyncStore.getState().bumpSignalTick();
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.findings).toEqual([finding]);
+    expect(result.current.answered).toBe(true);
+  });
+
+  it('resets to FALSE in the same render that observes a pet switch, before the new pet’s read lands', async () => {
+    mockedReadCache.mockImplementation(async (petId: string) =>
+      petId === PET_A.id
+        ? { signalText: null, isBuilding: false, findings: [finding], coverage: [], expiresAt: '2999-01-01' }
+        : null,
+    );
+    const { result } = renderHook(() => useSignal());
+    await waitFor(() => expect(result.current.answered).toBe(true));
+
+    act(() => {
+      usePetStore.setState({ activePet: PET_B });
+    });
+    // Synchronous, no await: pet A's "read landed" must not license a reconcile against
+    // pet B's not-yet-read (empty) set.
+    expect(result.current.answered).toBe(false);
+    expect(result.current.findings).toEqual([]);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.answered).toBe(true);
+  });
+});

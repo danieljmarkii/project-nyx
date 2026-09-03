@@ -10,8 +10,19 @@ import {
 import { theme } from '../../constants/theme';
 import { Badge } from '../ui/Badge';
 import { ThemedText } from '../ui/ThemedText';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { canFold, type BackBecauseReason } from '../../lib/signalFold';
 import {
   DENSITY_BOX_TITLE,
+  EVIDENCE_CONTROL_LABEL,
+  EVIDENCE_CONTROL_LABEL_OPEN,
+  FOLD_CAPTION,
+  FOLD_CONTROL_HINT,
+  FOLD_CONTROL_LABEL,
+  STRIP_A11Y_HINT,
+  backBecauseCopy,
+  stripCountLine,
+  stripNameLine,
   DOT_LANE_MAX,
   TIMING_STORY_BADGE,
   TRIAL_ADJACENCY,
@@ -67,6 +78,33 @@ const RAIL_COLOR: Record<PriorityClass, string> = {
   safety: theme.colorEventSymptom,
   insight: theme.colorAccent,
 };
+
+// ── The fold's touch geometry (CUL-784, fold spec §3.3, C-5) ─────────────────
+//
+// The card's hint row became a control row of two real text buttons (DF-3), rendered as a
+// SIBLING of the face `Pressable` (the MedStrip host-split — a button nested inside the
+// row button is swallowed by VoiceOver and by the row's own onPress). Two controls 11pt
+// tall must each reach the 44pt floor without sharing hit area with the face above, with
+// each other, or with the next card's face across the hairline below. The arithmetic,
+// asserted off the flattened styles in the tests:
+//
+//   • face ↔ control (vertical):  the control row's marginTop (8) is the gap; the control
+//     reaches 8 up and the face reaches 0 down → 8 ≥ 8 + 0.
+//   • control ↔ control (horizontal): columnGap 16 ≥ 8 + 8.
+//   • control ↔ next card's face (vertical): row paddingBottom (8 compact / 16 lead) + the
+//     1pt hairline + the next row's paddingTop (8) = 17 / 25 ≥ 8 + 8.
+//   • the floor: 8 up + a 28pt box + 8 down = 44.
+//
+// The spec's own numbers (a 28pt line reached UPWARD by a 16pt top slop and no bottom
+// slop) put 16pt of the control's hit area over the face's meta row, which under `Keep it
+// compact` would fold the card from a tap on the sample line's right end — the shared hit
+// area C-5 exists to forbid. The build keeps the spec's box and intent (the floor is met
+// without widening the row) and pays for it with a symmetric 8pt slop, which the
+// downward arithmetic above shows never crosses the hairline into the next face. The card
+// grows ~12pt for the control row's box; a real control costs its floor.
+const FACE_HITSLOP = { top: 8, left: 8, right: 8, bottom: 0 } as const;
+const CONTROL_HITSLOP = 8;
+const CONTROL_MIN_HEIGHT = 28;
 
 // ── Per-type renderer registry (§3.2 / §11f) ──────────────────────────────────
 // Detection is decoupled from presentation: each insight type owns how its body
@@ -487,6 +525,18 @@ interface Props {
   // resolved once by SignalZone). Gates ONLY the falling reflection's mid-trial adjacency
   // line in the expanded state; default false, so every non-Home caller is unaffected.
   trialRunning?: boolean;
+  // CUL-784 — the Signal fold (fold spec §3). `onFold` wires the `Keep it compact`
+  // control; absent (a non-Home caller, the shipped tests) the control does not render
+  // and the card behaves as shipped. The control also never renders for a class this
+  // build does not fold (`canFold` — the safety types until PR 2).
+  onFold?: (finding: SignalFinding) => void;
+  // Present when the RECORD re-opened this card (a material change) and the owner has not
+  // touched it since: renders the one-line Back-because above the sentence and prefixes
+  // the card's a11y label with it (DF-8).
+  backBecause?: BackBecauseReason | null;
+  // Any owner touch of the card (the row tap or either control) — the Back-because line
+  // clears on it (§5.3 release rule 2).
+  onTouch?: (finding: SignalFinding) => void;
 }
 
 export function InsightCard({
@@ -495,8 +545,14 @@ export function InsightCard({
   isLead = false,
   compact = false,
   trialRunning = false,
+  onFold,
+  backBecause = null,
+  onTouch,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
+  // FS-9: owner-caused transitions use the shipped LayoutAnimation idiom, skipped under
+  // reduced motion (geometry is instant there; the §12 crossfade is PR 3's).
+  const reducedMotion = useReducedMotion();
 
   const Body = INSIGHT_RENDERERS[cached.finding.type];
   // Unknown future type with no registered renderer: skip the card rather than
@@ -545,46 +601,158 @@ export function InsightCard({
   if (isNewWorsening(cached.finding)) {
     accessibilityLabel = `${accessibilityLabel}. New this week.`;
   }
+  // DF-8 / §7: VoiceOver hears WHY the card is large again before it hears the card.
+  const backBecauseLine = backBecause ? backBecauseCopy(backBecause) : null;
+  if (backBecauseLine) accessibilityLabel = `${backBecauseLine} ${accessibilityLabel}`;
+
+  // The fold control renders only when a host wired it AND the class folds on this build.
+  const foldable = onFold != null && canFold(cached.finding);
+
+  function animateOwnerCaused() {
+    if (reducedMotion) return;
+    LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));
+  }
 
   function toggle() {
-    LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));
+    animateOwnerCaused();
     setExpanded((e) => !e);
+    onTouch?.(cached.finding);
+  }
+
+  function fold() {
+    if (!foldable) return;
+    animateOwnerCaused();
+    // The host swaps this card for its strip; the touch is implied by the fold entry
+    // replacing any re-opened one, so no separate onTouch here.
+    onFold?.(cached.finding);
   }
 
   return (
-    // Whole row is the tap target (≥44pt with hitSlop) — the 3am-stumbling rule.
-    <Pressable
-      onPress={toggle}
-      hitSlop={8}
-      accessibilityRole="button"
-      accessibilityState={{ expanded }}
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint="Shows the evidence behind this insight"
-      // Single style reference when not compact (an inline [style, false] array would
-      // drift the card's structure for a lead row unnecessarily).
-      style={compact ? [styles.row, styles.rowCompact] : styles.row}
-    >
+    // The row is a plain container so the face and the control row are SIBLINGS, each its
+    // own accessibility element (the MedStrip host-split). The rail spans the whole row.
+    <View style={compact ? [styles.row, styles.rowCompact] : styles.row} testID="insight-row">
       <View style={[styles.rail, { backgroundColor: rail }]} />
       <View style={styles.content}>
-        <Body cached={cached} isLead={isLead} />
-        {expanded && (
-          <>
-            <ThemedText style={styles.evidence}>{evidenceText(cached.finding, petName)}</ThemedText>
-            {/* Each shape's own expanded receipts: the A2 story card's lanes/control/L3, the trial
-                card's RTM-confound + density + diet-structure, else the SR-1 receipts (timing control
-                side / safety phone script / reflection density). A finding is only ever one shape, so
-                this is an either/or chain, never two at once. */}
-            {isStory ? (
-              <TimingStoryExpanded finding={cached.finding} />
-            ) : isTrial ? (
-              <TrialResponseExpanded finding={cached.finding} />
-            ) : (
-              <ExpandedReceipts finding={cached.finding} petName={petName} trialRunning={trialRunning} />
-            )}
-          </>
-        )}
-        <ThemedText style={styles.expandHint}>{expanded ? 'Hide details' : "Why we're showing this"}</ThemedText>
+        {/* The face — the whole sentence + evidence is the tap target (the 3am-stumbling
+            rule); its bottom slop is 0 so it never reaches the control row beneath it. */}
+        <Pressable
+          onPress={toggle}
+          hitSlop={FACE_HITSLOP}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={accessibilityLabel}
+          accessibilityHint="Shows the evidence behind this insight"
+          testID="insight-face"
+        >
+          {backBecauseLine ? <ThemedText style={styles.backBecause}>{backBecauseLine}</ThemedText> : null}
+          <Body cached={cached} isLead={isLead} />
+          {expanded && (
+            <>
+              <ThemedText style={styles.evidence}>{evidenceText(cached.finding, petName)}</ThemedText>
+              {/* Each shape's own expanded receipts: the A2 story card's lanes/control/L3, the trial
+                  card's RTM-confound + density + diet-structure, else the SR-1 receipts (timing control
+                  side / safety phone script / reflection density). A finding is only ever one shape, so
+                  this is an either/or chain, never two at once. */}
+              {isStory ? (
+                <TimingStoryExpanded finding={cached.finding} />
+              ) : isTrial ? (
+                <TrialResponseExpanded finding={cached.finding} />
+              ) : (
+                <ExpandedReceipts finding={cached.finding} petName={petName} trialRunning={trialRunning} />
+              )}
+            </>
+          )}
+        </Pressable>
+        {/* The control row (DF-3): the evidence verb as a real button — the same action as the
+            face tap — and, on a foldable card, `Keep it compact` beside it. The evidence verb
+            keeps the accent ink; the fold verb sits in grey so the doorway to the evidence
+            stays the brighter of the two. */}
+        <View style={styles.controlRow}>
+          <Pressable
+            onPress={toggle}
+            hitSlop={CONTROL_HITSLOP}
+            accessibilityRole="button"
+            accessibilityState={{ expanded }}
+            accessibilityLabel={expanded ? EVIDENCE_CONTROL_LABEL_OPEN : EVIDENCE_CONTROL_LABEL}
+            accessibilityHint="Shows the evidence behind this insight"
+            style={styles.control}
+            testID="insight-evidence-control"
+          >
+            <ThemedText style={styles.expandHint}>
+              {expanded ? EVIDENCE_CONTROL_LABEL_OPEN : EVIDENCE_CONTROL_LABEL}
+            </ThemedText>
+          </Pressable>
+          {foldable ? (
+            <Pressable
+              onPress={fold}
+              hitSlop={CONTROL_HITSLOP}
+              accessibilityRole="button"
+              accessibilityLabel={FOLD_CONTROL_LABEL}
+              accessibilityHint={FOLD_CONTROL_HINT}
+              style={styles.control}
+              testID="insight-fold-control"
+            >
+              <ThemedText style={styles.foldControl}>{FOLD_CONTROL_LABEL}</ThemedText>
+            </Pressable>
+          ) : null}
+        </View>
+        {/* §3.3: in the expanded state the row also carries the one-line contract, so sighted
+            owners learn what brings a folded card back without a zone-level line (§6). */}
+        {expanded && foldable ? <ThemedText style={styles.foldCaption}>{FOLD_CAPTION}</ThemedText> : null}
       </View>
+    </View>
+  );
+}
+
+// ── The folded strip (CUL-784, fold spec §3.1) ─────────────────────────────────
+// The finding's named home while compressed — in place, at rank, between the same
+// hairlines. Rail at full opacity (never greyed), the name line, the compact count line,
+// the TrialStrip/MedStrip chevron; the sentence, every receipt, every chip, the med line
+// and the controls are dropped. Each line is its own Text node with NO numberOfLines
+// (FS-11 / C-8): at accessibility sizes a line wraps, never truncates. The whole row is
+// the tap target and re-opens to the FACE (§3.2). Borrows the strips' compact register,
+// not their Card — it stays a row of the Signal.
+export function FoldedStrip({
+  cached,
+  onPress,
+}: {
+  cached: CachedFinding;
+  onPress: (finding: SignalFinding) => void;
+}) {
+  const reducedMotion = useReducedMotion();
+  const name = stripNameLine(cached.finding);
+  const countLine = stripCountLine(cached.finding);
+  // A type with no strip copy on this build is not foldable here (the host checks the same
+  // predicate before choosing the strip); this null is unreachable through LiveStack and
+  // exists so the component can never render a blank strip.
+  if (!name || !countLine) return null;
+  const rail = RAIL_COLOR[cached.finding.priorityClass];
+  function unfold() {
+    if (!reducedMotion) {
+      LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));
+    }
+    onPress(cached.finding);
+  }
+  return (
+    <Pressable
+      onPress={unfold}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: false }}
+      accessibilityLabel={`${name}. ${countLine}.`}
+      accessibilityHint={STRIP_A11Y_HINT}
+      style={[styles.row, styles.rowCompact]}
+      testID="insight-folded-strip"
+    >
+      <View style={[styles.rail, { backgroundColor: rail }]} />
+      <View style={styles.stripText}>
+        <ThemedText style={styles.stripName}>{name}</ThemedText>
+        <ThemedText style={styles.stripCount}>{countLine}</ThemedText>
+      </View>
+      {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
+          (the B-745 GlyphSvg migration owns them), so they keep the system face rather
+          than taking the body family a sweep would give them. CUL-364 §7. */}
+      <Text style={styles.stripChevron}>›</Text>
     </Pressable>
   );
 }
@@ -729,10 +897,71 @@ const styles = StyleSheet.create({
     color: theme.colorEventMedicationInk,
     lineHeight: theme.lineHeightSM,
   },
-  expandHint: {
+  // ── The fold (CUL-784, fold spec §3) ─────────────────────────────────────────
+  // The control row: two text verbs on one line, 16pt apart (C-5: facing slops 8 + 8),
+  // 8pt below the face (the gap the control's upward slop fills exactly). Wraps at large
+  // type; a wrapped row's controls face each other vertically, so rowGap carries the
+  // same 16 (C-5's wrapping rule).
+  controlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    columnGap: theme.space2,
+    rowGap: theme.space2,
     marginTop: theme.space1,
+  },
+  // Each control's box: the 28pt line the spec reserves, text centred; with the 8pt slop
+  // above and below it reaches the 44pt floor (the arithmetic at FACE_HITSLOP).
+  control: {
+    minHeight: CONTROL_MIN_HEIGHT,
+    justifyContent: 'center',
+  },
+  expandHint: {
     fontSize: theme.textXS,
     fontWeight: theme.weightMedium,
     color: theme.colorAccentInk,
+  },
+  // The fold verb — grey, so the doorway to the evidence stays the brighter of the two.
+  foldControl: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextSecondary,
+  },
+  // The expanded state's one-line contract beneath the control row.
+  foldCaption: {
+    marginTop: theme.spaceMicro,
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.lineHeightXS,
+  },
+  // The Back-because line (DF-8) — one quiet line above the sentence, secondary ink, no
+  // rail change, no chip: it names what the record did and nothing else.
+  backBecause: {
+    marginBottom: theme.space1,
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightXS,
+  },
+  // The strip (§3.1): name in medium at textSM, the compact count a tier below.
+  stripText: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  stripName: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightSM,
+  },
+  stripCount: {
+    marginTop: theme.spaceMicro,
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.lineHeightXS,
+  },
+  stripChevron: {
+    alignSelf: 'center',
+    fontSize: theme.textLG,
+    color: theme.colorTextSecondary,
   },
 });
