@@ -1,7 +1,7 @@
 # Signal fold PR 1 — the fold primitive + the benign fold (CUL-784)
 
 **Date:** 2026-09-03
-**Outcome:** shipped via #796 (draft) — Home v1, PR 1 of 3. Unblocks PR 2 (CUL-785, the safety strips) and PR 3 (CUL-788, the motion).
+**Outcome:** shipped via #796 — Home v1, PR 1 of 3. Unblocks PR 2 (CUL-785, the safety strips) and PR 3 (CUL-788, the motion).
 
 ## What shipped
 
