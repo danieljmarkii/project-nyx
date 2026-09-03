@@ -42,39 +42,6 @@ exports[`SignalZone — the nothing-folded surface is the shipped surface safety
   <View>
     <View>
       <View
-        accessibilityHint="Shows the evidence behind this insight"
-        accessibilityLabel="We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July."
-        accessibilityRole="button"
-        accessibilityState={
-          {
-            "busy": undefined,
-            "checked": undefined,
-            "disabled": undefined,
-            "expanded": false,
-            "selected": undefined,
-          }
-        }
-        accessibilityValue={
-          {
-            "max": undefined,
-            "min": undefined,
-            "now": undefined,
-            "text": undefined,
-          }
-        }
-        accessible={true}
-        collapsable={false}
-        focusable={true}
-        hitSlop={8}
-        onBlur={[Function]}
-        onClick={[Function]}
-        onFocus={[Function]}
-        onResponderGrant={[Function]}
-        onResponderMove={[Function]}
-        onResponderRelease={[Function]}
-        onResponderTerminate={[Function]}
-        onResponderTerminationRequest={[Function]}
-        onStartShouldSetResponder={[Function]}
         style={
           {
             "flexDirection": "row",
@@ -83,6 +50,7 @@ exports[`SignalZone — the nothing-folded surface is the shipped surface safety
             "paddingVertical": 16,
           }
         }
+        testID="insight-row"
       >
         <View
           style={
@@ -106,383 +74,538 @@ exports[`SignalZone — the nothing-folded surface is the shipped surface safety
           }
         >
           <View
+            accessibilityHint="Shows the evidence behind this insight"
+            accessibilityLabel="We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July."
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": false,
+                "selected": undefined,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={
+              {
+                "bottom": 0,
+                "left": 8,
+                "right": 8,
+                "top": 8,
+              }
+            }
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            testID="insight-face"
+          >
+            <View
+              style={
+                {
+                  "gap": 8,
+                }
+              }
+            >
+              <Text
+                style={
+                  [
+                    {
+                      "color": "#0A0A0A",
+                      "fontSize": 15,
+                      "lineHeight": 22,
+                    },
+                    {
+                      "fontFamily": "Newsreader",
+                      "fontSize": 26,
+                      "letterSpacing": -0.3,
+                      "lineHeight": 34,
+                    },
+                  ]
+                }
+              >
+                We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July.
+              </Text>
+              <View
+                style={
+                  {
+                    "alignItems": "center",
+                    "flexDirection": "row",
+                    "flexWrap": "wrap",
+                    "gap": 8,
+                  }
+                }
+              >
+                <Text
+                  style={
+                    {
+                      "color": "#737373",
+                      "fontFamily": "Geist",
+                      "fontSize": 11,
+                    }
+                  }
+                >
+                  14 episodes across 5 of the last 8 weeks
+                </Text>
+              </View>
+            </View>
+          </View>
+          <View
             style={
               {
-                "gap": 8,
+                "alignItems": "center",
+                "columnGap": 16,
+                "flexDirection": "row",
+                "flexWrap": "wrap",
+                "marginTop": 8,
+                "rowGap": 16,
               }
             }
           >
-            <Text
+            <View
+              accessibilityHint="Shows the evidence behind this insight"
+              accessibilityLabel="Why we're showing this"
+              accessibilityRole="button"
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": false,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
+              onClick={[Function]}
+              onFocus={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
               style={
-                [
+                {
+                  "justifyContent": "center",
+                  "minHeight": 28,
+                }
+              }
+              testID="insight-evidence-control"
+            >
+              <Text
+                style={
+                  {
+                    "color": "#0B7B6C",
+                    "fontFamily": "Geist-Medium",
+                    "fontSize": 11,
+                  }
+                }
+              >
+                Why we're showing this
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
+    <View>
+      <View
+        style={
+          [
+            {
+              "backgroundColor": "#EAEAEA",
+              "height": 1,
+            },
+            {
+              "marginHorizontal": -8,
+            },
+          ]
+        }
+      />
+      <View
+        style={
+          [
+            {
+              "flexDirection": "row",
+              "gap": 16,
+              "minHeight": 44,
+              "paddingVertical": 16,
+            },
+            {
+              "paddingVertical": 8,
+            },
+          ]
+        }
+        testID="insight-row"
+      >
+        <View
+          style={
+            [
+              {
+                "borderRadius": 2,
+                "opacity": 0.85,
+                "width": 3,
+              },
+              {
+                "backgroundColor": "#00C2A8",
+              },
+            ]
+          }
+        />
+        <View
+          style={
+            {
+              "flex": 1,
+            }
+          }
+        >
+          <View
+            accessibilityHint="Shows the evidence behind this insight"
+            accessibilityLabel="8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating.. 8 of 8 timed episodes fell within 30 minutes of eating."
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": false,
+                "selected": undefined,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={
+              {
+                "bottom": 0,
+                "left": 8,
+                "right": 8,
+                "top": 8,
+              }
+            }
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            testID="insight-face"
+          >
+            <View
+              style={
+                {
+                  "gap": 8,
+                }
+              }
+            >
+              <Text
+                style={
                   {
                     "color": "#0A0A0A",
+                    "fontFamily": "Geist",
                     "fontSize": 15,
                     "lineHeight": 22,
-                  },
-                  {
-                    "fontFamily": "Newsreader",
-                    "fontSize": 26,
-                    "letterSpacing": -0.3,
-                    "lineHeight": 34,
-                  },
-                ]
-              }
-            >
-              We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July.
-            </Text>
-            <View
-              style={
-                {
-                  "alignItems": "center",
-                  "flexDirection": "row",
-                  "flexWrap": "wrap",
-                  "gap": 8,
-                }
-              }
-            >
-              <Text
-                style={
-                  {
-                    "color": "#737373",
-                    "fontFamily": "Geist",
-                    "fontSize": 11,
                   }
                 }
               >
-                14 episodes across 5 of the last 8 weeks
+                8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating.
               </Text>
-            </View>
-          </View>
-          <Text
-            style={
-              {
-                "color": "#0B7B6C",
-                "fontFamily": "Geist-Medium",
-                "fontSize": 11,
-                "marginTop": 8,
-              }
-            }
-          >
-            Why we're showing this
-          </Text>
-        </View>
-      </View>
-    </View>
-    <View>
-      <View
-        style={
-          [
-            {
-              "backgroundColor": "#EAEAEA",
-              "height": 1,
-            },
-            {
-              "marginHorizontal": -8,
-            },
-          ]
-        }
-      />
-      <View
-        accessibilityHint="Shows the evidence behind this insight"
-        accessibilityLabel="8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating.. 8 of 8 timed episodes fell within 30 minutes of eating."
-        accessibilityRole="button"
-        accessibilityState={
-          {
-            "busy": undefined,
-            "checked": undefined,
-            "disabled": undefined,
-            "expanded": false,
-            "selected": undefined,
-          }
-        }
-        accessibilityValue={
-          {
-            "max": undefined,
-            "min": undefined,
-            "now": undefined,
-            "text": undefined,
-          }
-        }
-        accessible={true}
-        collapsable={false}
-        focusable={true}
-        hitSlop={8}
-        onBlur={[Function]}
-        onClick={[Function]}
-        onFocus={[Function]}
-        onResponderGrant={[Function]}
-        onResponderMove={[Function]}
-        onResponderRelease={[Function]}
-        onResponderTerminate={[Function]}
-        onResponderTerminationRequest={[Function]}
-        onStartShouldSetResponder={[Function]}
-        style={
-          [
-            {
-              "flexDirection": "row",
-              "gap": 16,
-              "minHeight": 44,
-              "paddingVertical": 16,
-            },
-            {
-              "paddingVertical": 8,
-            },
-          ]
-        }
-      >
-        <View
-          style={
-            [
-              {
-                "borderRadius": 2,
-                "opacity": 0.85,
-                "width": 3,
-              },
-              {
-                "backgroundColor": "#00C2A8",
-              },
-            ]
-          }
-        />
-        <View
-          style={
-            {
-              "flex": 1,
-            }
-          }
-        >
-          <View
-            style={
-              {
-                "gap": 8,
-              }
-            }
-          >
-            <Text
-              style={
-                {
-                  "color": "#0A0A0A",
-                  "fontFamily": "Geist",
-                  "fontSize": 15,
-                  "lineHeight": 22,
-                }
-              }
-            >
-              8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating.
-            </Text>
-            <View
-              accessible={false}
-            >
               <View
-                style={
-                  {
-                    "backgroundColor": "#FAFAFA",
-                    "borderColor": "#EAEAEA",
-                    "borderRadius": 4,
-                    "borderWidth": 1,
-                    "height": 22,
-                    "position": "relative",
-                  }
-                }
+                accessible={false}
               >
                 <View
                   style={
-                    [
-                      {
-                        "backgroundColor": "#E0FBF7",
-                        "borderRadius": 4,
-                        "bottom": 0,
-                        "position": "absolute",
-                        "top": 0,
-                      },
-                      {
-                        "borderColor": "#00C2A8",
-                        "borderRightWidth": 1,
-                        "borderStyle": "dashed",
-                      },
-                      {
-                        "left": "0%",
-                        "width": "25%",
-                      },
-                    ]
+                    {
+                      "backgroundColor": "#FAFAFA",
+                      "borderColor": "#EAEAEA",
+                      "borderRadius": 4,
+                      "borderWidth": 1,
+                      "height": 22,
+                      "position": "relative",
+                    }
                   }
-                />
+                >
+                  <View
+                    style={
+                      [
+                        {
+                          "backgroundColor": "#E0FBF7",
+                          "borderRadius": 4,
+                          "bottom": 0,
+                          "position": "absolute",
+                          "top": 0,
+                        },
+                        {
+                          "borderColor": "#00C2A8",
+                          "borderRightWidth": 1,
+                          "borderStyle": "dashed",
+                        },
+                        {
+                          "left": "0%",
+                          "width": "25%",
+                        },
+                      ]
+                    }
+                  />
+                  <View
+                    style={
+                      [
+                        {
+                          "borderRadius": 999,
+                          "height": 7,
+                          "marginLeft": -3.5,
+                          "marginTop": -3.5,
+                          "position": "absolute",
+                          "top": "50%",
+                          "width": 7,
+                        },
+                        {
+                          "backgroundColor": "#F43F5E",
+                        },
+                        {
+                          "left": "1.5625%",
+                        },
+                      ]
+                    }
+                  />
+                  <View
+                    style={
+                      [
+                        {
+                          "borderRadius": 999,
+                          "height": 7,
+                          "marginLeft": -3.5,
+                          "marginTop": -3.5,
+                          "position": "absolute",
+                          "top": "50%",
+                          "width": 7,
+                        },
+                        {
+                          "backgroundColor": "#F43F5E",
+                        },
+                        {
+                          "left": "4.6875%",
+                        },
+                      ]
+                    }
+                  />
+                  <View
+                    style={
+                      [
+                        {
+                          "borderRadius": 999,
+                          "height": 7,
+                          "marginLeft": -3.5,
+                          "marginTop": -3.5,
+                          "position": "absolute",
+                          "top": "50%",
+                          "width": 7,
+                        },
+                        {
+                          "backgroundColor": "#F43F5E",
+                        },
+                        {
+                          "left": "7.8125%",
+                        },
+                      ]
+                    }
+                  />
+                  <View
+                    style={
+                      [
+                        {
+                          "borderRadius": 999,
+                          "height": 7,
+                          "marginLeft": -3.5,
+                          "marginTop": -3.5,
+                          "position": "absolute",
+                          "top": "50%",
+                          "width": 7,
+                        },
+                        {
+                          "backgroundColor": "#F43F5E",
+                        },
+                        {
+                          "left": "10.9375%",
+                        },
+                      ]
+                    }
+                  />
+                  <View
+                    style={
+                      [
+                        {
+                          "borderRadius": 999,
+                          "height": 7,
+                          "marginLeft": -3.5,
+                          "marginTop": -3.5,
+                          "position": "absolute",
+                          "top": "50%",
+                          "width": 7,
+                        },
+                        {
+                          "backgroundColor": "#F43F5E",
+                        },
+                        {
+                          "left": "14.0625%",
+                        },
+                      ]
+                    }
+                  />
+                  <View
+                    style={
+                      [
+                        {
+                          "borderRadius": 999,
+                          "height": 7,
+                          "marginLeft": -3.5,
+                          "marginTop": -3.5,
+                          "position": "absolute",
+                          "top": "50%",
+                          "width": 7,
+                        },
+                        {
+                          "backgroundColor": "#F43F5E",
+                        },
+                        {
+                          "left": "17.1875%",
+                        },
+                      ]
+                    }
+                  />
+                  <View
+                    style={
+                      [
+                        {
+                          "borderRadius": 999,
+                          "height": 7,
+                          "marginLeft": -3.5,
+                          "marginTop": -3.5,
+                          "position": "absolute",
+                          "top": "50%",
+                          "width": 7,
+                        },
+                        {
+                          "backgroundColor": "#F43F5E",
+                        },
+                        {
+                          "left": "20.3125%",
+                        },
+                      ]
+                    }
+                  />
+                  <View
+                    style={
+                      [
+                        {
+                          "borderRadius": 999,
+                          "height": 7,
+                          "marginLeft": -3.5,
+                          "marginTop": -3.5,
+                          "position": "absolute",
+                          "top": "50%",
+                          "width": 7,
+                        },
+                        {
+                          "backgroundColor": "#F43F5E",
+                        },
+                        {
+                          "left": "23.4375%",
+                        },
+                      ]
+                    }
+                  />
+                </View>
                 <View
                   style={
-                    [
-                      {
-                        "borderRadius": 999,
-                        "height": 7,
-                        "marginLeft": -3.5,
-                        "marginTop": -3.5,
-                        "position": "absolute",
-                        "top": "50%",
-                        "width": 7,
-                      },
-                      {
-                        "backgroundColor": "#F43F5E",
-                      },
-                      {
-                        "left": "1.5625%",
-                      },
-                    ]
+                    {
+                      "flexDirection": "row",
+                      "justifyContent": "space-between",
+                      "marginTop": 2,
+                    }
                   }
-                />
-                <View
-                  style={
-                    [
+                >
+                  <Text
+                    style={
                       {
-                        "borderRadius": 999,
-                        "height": 7,
-                        "marginLeft": -3.5,
-                        "marginTop": -3.5,
-                        "position": "absolute",
-                        "top": "50%",
-                        "width": 7,
-                      },
+                        "color": "#737373",
+                        "fontFamily": "Geist",
+                        "fontSize": 11,
+                      }
+                    }
+                  >
+                    ate
+                  </Text>
+                  <Text
+                    style={
                       {
-                        "backgroundColor": "#F43F5E",
-                      },
+                        "color": "#737373",
+                        "fontFamily": "Geist",
+                        "fontSize": 11,
+                      }
+                    }
+                  >
+                    30m
+                  </Text>
+                  <Text
+                    style={
                       {
-                        "left": "4.6875%",
-                      },
-                    ]
-                  }
-                />
-                <View
-                  style={
-                    [
-                      {
-                        "borderRadius": 999,
-                        "height": 7,
-                        "marginLeft": -3.5,
-                        "marginTop": -3.5,
-                        "position": "absolute",
-                        "top": "50%",
-                        "width": 7,
-                      },
-                      {
-                        "backgroundColor": "#F43F5E",
-                      },
-                      {
-                        "left": "7.8125%",
-                      },
-                    ]
-                  }
-                />
-                <View
-                  style={
-                    [
-                      {
-                        "borderRadius": 999,
-                        "height": 7,
-                        "marginLeft": -3.5,
-                        "marginTop": -3.5,
-                        "position": "absolute",
-                        "top": "50%",
-                        "width": 7,
-                      },
-                      {
-                        "backgroundColor": "#F43F5E",
-                      },
-                      {
-                        "left": "10.9375%",
-                      },
-                    ]
-                  }
-                />
-                <View
-                  style={
-                    [
-                      {
-                        "borderRadius": 999,
-                        "height": 7,
-                        "marginLeft": -3.5,
-                        "marginTop": -3.5,
-                        "position": "absolute",
-                        "top": "50%",
-                        "width": 7,
-                      },
-                      {
-                        "backgroundColor": "#F43F5E",
-                      },
-                      {
-                        "left": "14.0625%",
-                      },
-                    ]
-                  }
-                />
-                <View
-                  style={
-                    [
-                      {
-                        "borderRadius": 999,
-                        "height": 7,
-                        "marginLeft": -3.5,
-                        "marginTop": -3.5,
-                        "position": "absolute",
-                        "top": "50%",
-                        "width": 7,
-                      },
-                      {
-                        "backgroundColor": "#F43F5E",
-                      },
-                      {
-                        "left": "17.1875%",
-                      },
-                    ]
-                  }
-                />
-                <View
-                  style={
-                    [
-                      {
-                        "borderRadius": 999,
-                        "height": 7,
-                        "marginLeft": -3.5,
-                        "marginTop": -3.5,
-                        "position": "absolute",
-                        "top": "50%",
-                        "width": 7,
-                      },
-                      {
-                        "backgroundColor": "#F43F5E",
-                      },
-                      {
-                        "left": "20.3125%",
-                      },
-                    ]
-                  }
-                />
-                <View
-                  style={
-                    [
-                      {
-                        "borderRadius": 999,
-                        "height": 7,
-                        "marginLeft": -3.5,
-                        "marginTop": -3.5,
-                        "position": "absolute",
-                        "top": "50%",
-                        "width": 7,
-                      },
-                      {
-                        "backgroundColor": "#F43F5E",
-                      },
-                      {
-                        "left": "23.4375%",
-                      },
-                    ]
-                  }
-                />
+                        "color": "#737373",
+                        "fontFamily": "Geist",
+                        "fontSize": 11,
+                      }
+                    }
+                  >
+                    2h+
+                  </Text>
+                </View>
               </View>
               <View
                 style={
                   {
+                    "alignItems": "center",
                     "flexDirection": "row",
-                    "justifyContent": "space-between",
-                    "marginTop": 2,
+                    "flexWrap": "wrap",
+                    "gap": 8,
                   }
                 }
               >
@@ -495,67 +618,132 @@ exports[`SignalZone — the nothing-folded surface is the shipped surface safety
                     }
                   }
                 >
-                  ate
-                </Text>
-                <Text
-                  style={
-                    {
-                      "color": "#737373",
-                      "fontFamily": "Geist",
-                      "fontSize": 11,
-                    }
-                  }
-                >
-                  30m
-                </Text>
-                <Text
-                  style={
-                    {
-                      "color": "#737373",
-                      "fontFamily": "Geist",
-                      "fontSize": 11,
-                    }
-                  }
-                >
-                  2h+
+                  8 of 8 timed episodes within 30 min of eating
                 </Text>
               </View>
             </View>
+          </View>
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "columnGap": 16,
+                "flexDirection": "row",
+                "flexWrap": "wrap",
+                "marginTop": 8,
+                "rowGap": 16,
+              }
+            }
+          >
             <View
-              style={
+              accessibilityHint="Shows the evidence behind this insight"
+              accessibilityLabel="Why we're showing this"
+              accessibilityRole="button"
+              accessibilityState={
                 {
-                  "alignItems": "center",
-                  "flexDirection": "row",
-                  "flexWrap": "wrap",
-                  "gap": 8,
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": false,
+                  "selected": undefined,
                 }
               }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
+              onClick={[Function]}
+              onFocus={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                {
+                  "justifyContent": "center",
+                  "minHeight": 28,
+                }
+              }
+              testID="insight-evidence-control"
             >
               <Text
                 style={
                   {
-                    "color": "#737373",
-                    "fontFamily": "Geist",
+                    "color": "#0B7B6C",
+                    "fontFamily": "Geist-Medium",
                     "fontSize": 11,
                   }
                 }
               >
-                8 of 8 timed episodes within 30 min of eating
+                Why we're showing this
+              </Text>
+            </View>
+            <View
+              accessibilityHint="Folds this insight to one line. It reopens on its own when the picture changes."
+              accessibilityLabel="Keep it compact"
+              accessibilityRole="button"
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": undefined,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
+              onClick={[Function]}
+              onFocus={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                {
+                  "justifyContent": "center",
+                  "minHeight": 28,
+                }
+              }
+              testID="insight-fold-control"
+            >
+              <Text
+                style={
+                  {
+                    "color": "#525252",
+                    "fontFamily": "Geist-Medium",
+                    "fontSize": 11,
+                  }
+                }
+              >
+                Keep it compact
               </Text>
             </View>
           </View>
-          <Text
-            style={
-              {
-                "color": "#0B7B6C",
-                "fontFamily": "Geist-Medium",
-                "fontSize": 11,
-                "marginTop": 8,
-              }
-            }
-          >
-            Why we're showing this
-          </Text>
         </View>
       </View>
     </View>
@@ -574,39 +762,6 @@ exports[`SignalZone — the nothing-folded surface is the shipped surface safety
         }
       />
       <View
-        accessibilityHint="Shows the evidence behind this insight"
-        accessibilityLabel="Nyx had 2 vomiting episodes this week, down from 5 last week."
-        accessibilityRole="button"
-        accessibilityState={
-          {
-            "busy": undefined,
-            "checked": undefined,
-            "disabled": undefined,
-            "expanded": false,
-            "selected": undefined,
-          }
-        }
-        accessibilityValue={
-          {
-            "max": undefined,
-            "min": undefined,
-            "now": undefined,
-            "text": undefined,
-          }
-        }
-        accessible={true}
-        collapsable={false}
-        focusable={true}
-        hitSlop={8}
-        onBlur={[Function]}
-        onClick={[Function]}
-        onFocus={[Function]}
-        onResponderGrant={[Function]}
-        onResponderMove={[Function]}
-        onResponderRelease={[Function]}
-        onResponderTerminate={[Function]}
-        onResponderTerminationRequest={[Function]}
-        onStartShouldSetResponder={[Function]}
         style={
           [
             {
@@ -620,6 +775,7 @@ exports[`SignalZone — the nothing-folded surface is the shipped surface safety
             },
           ]
         }
+        testID="insight-row"
       >
         <View
           style={
@@ -643,30 +799,51 @@ exports[`SignalZone — the nothing-folded surface is the shipped surface safety
           }
         >
           <View
-            style={
+            accessibilityHint="Shows the evidence behind this insight"
+            accessibilityLabel="Nyx had 2 vomiting episodes this week, down from 5 last week."
+            accessibilityRole="button"
+            accessibilityState={
               {
-                "gap": 8,
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": false,
+                "selected": undefined,
               }
             }
-          >
-            <Text
-              style={
-                {
-                  "color": "#0A0A0A",
-                  "fontFamily": "Geist",
-                  "fontSize": 15,
-                  "lineHeight": 22,
-                }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
               }
-            >
-              Nyx had 2 vomiting episodes this week, down from 5 last week.
-            </Text>
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={
+              {
+                "bottom": 0,
+                "left": 8,
+                "right": 8,
+                "top": 8,
+              }
+            }
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            testID="insight-face"
+          >
             <View
               style={
                 {
-                  "alignItems": "center",
-                  "flexDirection": "row",
-                  "flexWrap": "wrap",
                   "gap": 8,
                 }
               }
@@ -674,28 +851,160 @@ exports[`SignalZone — the nothing-folded surface is the shipped surface safety
               <Text
                 style={
                   {
-                    "color": "#737373",
+                    "color": "#0A0A0A",
                     "fontFamily": "Geist",
+                    "fontSize": 15,
+                    "lineHeight": 22,
+                  }
+                }
+              >
+                Nyx had 2 vomiting episodes this week, down from 5 last week.
+              </Text>
+              <View
+                style={
+                  {
+                    "alignItems": "center",
+                    "flexDirection": "row",
+                    "flexWrap": "wrap",
+                    "gap": 8,
+                  }
+                }
+              >
+                <Text
+                  style={
+                    {
+                      "color": "#737373",
+                      "fontFamily": "Geist",
+                      "fontSize": 11,
+                    }
+                  }
+                >
+                  2 episodes this week, 5 last week
+                </Text>
+              </View>
+            </View>
+          </View>
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "columnGap": 16,
+                "flexDirection": "row",
+                "flexWrap": "wrap",
+                "marginTop": 8,
+                "rowGap": 16,
+              }
+            }
+          >
+            <View
+              accessibilityHint="Shows the evidence behind this insight"
+              accessibilityLabel="Why we're showing this"
+              accessibilityRole="button"
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": false,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
+              onClick={[Function]}
+              onFocus={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                {
+                  "justifyContent": "center",
+                  "minHeight": 28,
+                }
+              }
+              testID="insight-evidence-control"
+            >
+              <Text
+                style={
+                  {
+                    "color": "#0B7B6C",
+                    "fontFamily": "Geist-Medium",
                     "fontSize": 11,
                   }
                 }
               >
-                2 episodes this week, 5 last week
+                Why we're showing this
+              </Text>
+            </View>
+            <View
+              accessibilityHint="Folds this insight to one line. It reopens on its own when the picture changes."
+              accessibilityLabel="Keep it compact"
+              accessibilityRole="button"
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": undefined,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
+              onClick={[Function]}
+              onFocus={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                {
+                  "justifyContent": "center",
+                  "minHeight": 28,
+                }
+              }
+              testID="insight-fold-control"
+            >
+              <Text
+                style={
+                  {
+                    "color": "#525252",
+                    "fontFamily": "Geist-Medium",
+                    "fontSize": 11,
+                  }
+                }
+              >
+                Keep it compact
               </Text>
             </View>
           </View>
-          <Text
-            style={
-              {
-                "color": "#0B7B6C",
-                "fontFamily": "Geist-Medium",
-                "fontSize": 11,
-                "marginTop": 8,
-              }
-            }
-          >
-            Why we're showing this
-          </Text>
         </View>
       </View>
     </View>
