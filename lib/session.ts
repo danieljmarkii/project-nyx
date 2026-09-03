@@ -11,6 +11,7 @@ import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
 import { clearDailyRecapOffer } from './dailyRecapOffer';
 import { clearSignalArrival } from './signalArrival';
+import { clearSignalFold } from './signalFold';
 import { cancelPendingSignalRegens } from './signal';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
@@ -219,4 +220,11 @@ export async function wipeLocalSession(): Promise<void> {
   // a literal collision is not the risk — an inherited "already played" map is.) Same
   // FR-9 parity rule as the rest of this list.
   await clearSignalArrival();
+  // CUL-784 (fold spec DF-6 / FS-10) — the per-pet Signal fold entries, AsyncStorage-
+  // resident like the arrival markers above. A fold is a fact about a READER, so it is
+  // account-adjacent device state in the strictest sense: the next person on a shared
+  // device must not inherit "already read" against cards about a pet they have never
+  // seen — and a fold left behind would compress a card the moment that account's own
+  // finding set happened to share a key. Same FR-9 parity rule as the rest of this list.
+  await clearSignalFold();
 }

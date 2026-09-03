@@ -37,6 +37,7 @@ import type {
   TrialResponseFinding,
 } from './signal';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
+import type { BackBecauseReason } from './signalFold';
 import { formatTimingBandLabel } from './timingBandLabels';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
@@ -2015,4 +2016,136 @@ export function validateBannerPhrasing(text: string): boolean {
   if (BANNER_CAUSAL_RE.test(t)) return false;
   if (BANNER_ALARM_RE.test(t)) return false;
   return true;
+}
+
+// ── The Signal fold — strip lines + the Back-because line (CUL-784, fold spec §3.1 / §4) ──
+//
+// A folded card compresses to a strip: the finding's NAME on one line and a COMPACT count
+// on the next, each its own `Text` node so an ask can never break mid-phrase (FS-11). The
+// strip is a compression of the face, so every count here is derived from the SAME fields
+// `sampleLine` reads — one source per fact, nothing stated twice (S10) — and every composed
+// line is screened by `hasBannedSignalVocabulary` at build (test-pinned per type).
+//
+// FS-11's length bounds. The spec names ≤30 (name) / ≤40 (count), but its own verbatim
+// forms exceed them (the timing_story name is 35 characters for vomiting; its correlation
+// example is 34), so the binding requirement is the one the numbers were standing in for:
+// ONE LINE on a 375pt device at default type, nothing truncated. The strip's text column is
+// ~282pt wide there (375 − 2×16 screen inset − 2×16 card padding − rail 3 − gap 8 − chevron
+// ~10 − gap 8); Geist Medium at 13pt averages ~7.2pt a character (≈39 fit) and Geist at 11pt
+// ~6.1pt (≈46 fit). The caps below sit under those with margin, and the per-type test pins
+// every form at its realistic maximum (two-digit counts, the longest symptom word the type
+// can carry). PR 2 adds the ask line (≤20) and the safety forms.
+export const STRIP_NAME_LINE_MAX = 36;
+export const STRIP_COUNT_LINE_MAX = 44;
+
+/**
+ * The strip's name line — the finding's name only, no count, no verdict. Null for a type
+ * this build does not fold (the safety types until PR 2), so a caller can never render a
+ * strip with a blank first line.
+ */
+export function stripNameLine(finding: SignalFinding): string | null {
+  switch (finding.type) {
+    case 'postprandial_timing':
+      return `${capitalize(symptomWord(finding.symptomType))} soon after eating`;
+    case 'empty_stomach_timing':
+      return `${capitalize(symptomWord(finding.symptomType))} long after eating`;
+    case 'timing_story':
+      return `${capitalize(symptomWord(finding.symptomType))} soon or hours after eating`;
+    case 'timeofday_clustering':
+      return `${capitalize(symptomWord(finding.symptomType))} ${localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours)}`;
+    case 'food_symptom_correlation':
+      // `{Symptom} after {protein}` — the spec's `{Protein} — {symptom} tends to follow` runs
+      // to 41 characters for `skin irritation`, past the single-line bound, so the name line
+      // takes the same temporal shape as the timing strips ("… after eating"): a sequence
+      // observed, no attribution (G1) — the hedge lives in the sentence and the evidence,
+      // where there is room for it. A joint candidate names EVERY member (the label already
+      // does — `chicken and duck`) and may wrap: dropping a member would be the false
+      // exoneration the cluster exists to prevent (FS-11's one sanctioned exception).
+      return `${capitalize(symptomWord(finding.symptomType))} after ${finding.protein}`;
+    case 'reflection':
+      return `${capitalize(symptomWord(finding.symptomType))}, week over week`;
+    case 'trial_response':
+      return finding.targetDurationDays != null
+        ? `Trial diet — day ${finding.trialDayNumber} of ${finding.targetDurationDays}`
+        : `Trial diet — day ${finding.trialDayNumber}`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The strip's compact count line — the face's sample line said in fewer words, from the
+ * same fields. Time-ordered and direction-neutral where a pair is involved; the
+ * density-withheld reflection swap is preserved (the strip must not re-assert a
+ * comparison the sentence withheld — §3.3). Null for a type this build does not fold.
+ */
+export function stripCountLine(finding: SignalFinding): string | null {
+  switch (finding.type) {
+    case 'postprandial_timing':
+      return `${finding.rapidCount} of ${finding.eligibleCount} timed within ${finding.rapidWindowMinutes} min of eating`;
+    case 'empty_stomach_timing':
+      return `${finding.longCount} of ${finding.eligibleCount} timed ${finding.longGapHours}h or more after eating`;
+    case 'timing_story':
+      return `${finding.bandCounts.rapid} soon · ${finding.bandCounts.mid} between · ${finding.bandCounts.long} long, of ${finding.eligibleCount} timed`;
+    case 'timeofday_clustering':
+      return `${finding.clusterCount} of ${finding.eligibleCount} timed ${localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours)}`;
+    case 'food_symptom_correlation':
+      return `${count(finding.symptomEventCount, 'episode', 'episodes')} across ${count(finding.matchedPairs, 'matched day', 'matched days')}`;
+    case 'reflection': {
+      // The same swap `isReflectionDensityWithheld` makes on the face (a type guard there;
+      // spelled out here because `finding` is already narrowed to a reflection).
+      const withheld = finding.direction === 'improving' && finding.density?.comparable === false;
+      return withheld
+        ? `${finding.currentCount} this week`
+        : `${finding.currentCount} this week, ${finding.priorCount} last week`;
+    }
+    case 'trial_response':
+      return `${finding.pooledTrialCount} during the trial, ${finding.pooledBaselineCount} before`;
+    default:
+      return null;
+  }
+}
+
+/** The strip as one accessible sentence (§7): "{name}. {count}." PR 2 inserts the ask. */
+export function stripA11yLabel(finding: SignalFinding): string | null {
+  const name = stripNameLine(finding);
+  const cnt = stripCountLine(finding);
+  if (!name || !cnt) return null;
+  return `${name}. ${cnt}.`;
+}
+
+// The fold's control + caption strings (§4). Verbatim; nyx-voice-governed.
+export const FOLD_CONTROL_LABEL = 'Keep it compact';
+export const FOLD_CONTROL_HINT = 'Folds this insight to one line. It reopens on its own when the picture changes.';
+export const FOLD_CAPTION = 'It comes back on its own when the picture changes.';
+export const EVIDENCE_CONTROL_LABEL = "Why we're showing this";
+export const EVIDENCE_CONTROL_LABEL_OPEN = 'Hide details';
+export const STRIP_A11Y_HINT = 'Opens this insight.';
+
+/**
+ * The Back-because line (DF-8) — one `textXS` line above a re-opened card naming why it
+ * came back. Names what the RECORD did, never a verdict word (the §4 veto list). The
+ * `timing_changed` line is this build's one addition to the spec's table: a timing card's
+ * structural flips (the clock band shifting, the last-two flag) are re-open triggers whose
+ * cause is not always a new episode, and "a new episode was logged" must not be a guess.
+ */
+export function backBecauseCopy(reason: BackBecauseReason): string {
+  switch (reason) {
+    case 'new_episode':
+      return 'Back because a new episode was logged.';
+    case 'new_week':
+      return "Back because a new week's counts are in.";
+    case 'tier_established':
+      return 'Back because this pattern is now established.';
+    case 'ask_changed':
+      return 'Back because the vet ask changed.';
+    case 'trial_counts':
+      return 'Back because the trial counts moved.';
+    case 'intake_day':
+      return 'Back because another day came in below the usual.';
+    case 'photo_record':
+      return 'Back because the photo record changed.';
+    case 'timing_changed':
+      return 'Back because the timing changed.';
+  }
 }
