@@ -1,0 +1,561 @@
+<title>Signal fold</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Home v1 — the Signal fold. Mock ROUND 1 (build-ready proposal).
+     Current-proposal page for CUL-695 F3 ("Seen & fold"), split from the
+     exploratory Living-Signal page per the current-vs-archive rule
+     (2026-08-15). The shipped surface's authority remains
+     culprit-signal-home-mockups.html round 2.1; this page is the design
+     authority for the FOLD only. Same-URL republish discipline from here.
+
+     Document chrome is theme-aware; DEVICE FRAMES stay light in both
+     themes — they render the app's shipping light surfaces. Frame values
+     are the real tokens from constants/theme.ts.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .revnew { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .revnew b { color: var(--ink); }
+  .revnew a { color: var(--teal-ink); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+  .brief { margin: 28px 0 8px; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  table.spec { border-collapse: collapse; width: 100%; font-size: 14px; margin: 18px 0 8px; }
+  table.spec th, table.spec td { text-align: left; vertical-align: top; padding: 9px 10px; border-top: 1px solid var(--rule); }
+  table.spec th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .tablewrap { overflow-x: auto; }
+
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .cost { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 8px; color: var(--ink-3); display: block; }
+  .phone { width: 316px; max-width: 100%; background: #F2F2F4; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 12px 12px 20px; color: #0A0A0A; font-family: var(--sans); }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 10px; }
+  .appbody { display: grid; gap: 12px; }
+  .acard { background: #FFFFFF; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin-bottom: 8px; }
+  .seclabel.receded { color: #A3A3A3; }
+  .irow { display: flex; gap: 9px; padding: 8px 0; }
+  .irow + .irow, .irow + .foldrow, .foldrow + .irow, .foldrow + .foldrow { border-top: 1px solid #EAEAEA; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.85; align-self: stretch; }
+  .rail.safety { background: #F43F5E; }
+  .rail.insight { background: #00C2A8; }
+  .ibody { flex: 1; min-width: 0; }
+  .lead { font-family: var(--serif); font-size: 19.5px; line-height: 1.32; letter-spacing: -0.012em; color: #0A0A0A; margin: 0 0 6px; }
+  .lead.compact { font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  .samp { font-size: 10.5px; color: #737373; margin-top: 5px; }
+  .why { font-size: 11px; color: #0B7B6C; font-weight: 600; margin-top: 7px; }
+  .hintrow { display: flex; gap: 14px; margin-top: 7px; align-items: center; }
+  .hintrow .why { margin-top: 0; }
+  .hintrow .fold { font-size: 11px; color: #737373; font-weight: 600; }
+  .lane { position: relative; height: 22px; background: #F7F6FA; border: 1px solid #EFEEF4; border-radius: 6px; margin-top: 8px; overflow: hidden; }
+  .laneband { position: absolute; top: 0; bottom: 0; left: 0; width: 33%; background: rgba(0,194,168,0.10); border-right: 1.5px dashed rgba(11,123,108,0.5); }
+  .dot { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #F43F5E; transform: translateY(-50%); }
+  .laneax { display: flex; justify-content: space-between; font-size: 9px; color: #737373; margin-top: 3px; padding: 0 2px; }
+  .cmp { display: grid; gap: 6px; margin-top: 8px; }
+  .cmprow { display: grid; grid-template-columns: 92px 1fr 34px; gap: 8px; align-items: center; font-size: 11px; color: #525252; }
+  .cmprow .cbar { height: 8px; border-radius: 4px; background: #F43F5E; opacity: 0.7; min-width: 2px; }
+  .cmprow .cbar.calm { background: #C9C9C9; opacity: 0.9; }
+  .cmprow .cn { font-family: var(--mono); font-size: 11px; color: #0A0A0A; text-align: right; }
+  .metarow { display: flex; align-items: center; gap: 7px; margin-top: 7px; flex-wrap: wrap; }
+  .badge { font-size: 9.5px; font-weight: 600; color: #525252; background: #F5F5F5; border: 1px solid #EAEAEA; border-radius: 999px; padding: 2px 7px; }
+  .badge.new { color: #0B7B6C; background: #E0FBF7; border-color: transparent; }
+  .badge.updated { color: #0B7B6C; background: #E0FBF7; border-color: transparent; }
+  /* The folded strip — the v1 anatomy under review */
+  .foldrow { display: flex; align-items: center; gap: 9px; padding: 0 0; min-height: 44px; }
+  .foldrow .ftext { flex: 1; min-width: 0; font-size: 13px; line-height: 18px; color: #525252; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foldrow .ftext b { color: #0A0A0A; font-weight: 500; }
+  .foldrow .ftext .cnt { color: #737373; }
+  .foldrow .chev { color: #A3A3A3; font-size: 15px; flex-shrink: 0; width: 18px; text-align: center; }
+  .foldrow .rail { height: 16px; align-self: center; }
+  .quietline { font-size: 11px; color: #737373; font-style: italic; padding: 8px 2px 2px; border-top: 1px solid #EAEAEA; }
+  .chiprow { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+  .chip { font-size: 12px; font-weight: 600; color: #0B7B6C; background: #E0FBF7; border: 1px solid rgba(11,123,108,0.25); border-radius: 999px; padding: 5px 12px; }
+  .chip.quiet { color: #525252; background: #F5F5F5; border-color: #EAEAEA; font-weight: 500; }
+  .annot { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.05em; color: #B4123B; background: #FFF1F2; border: 1px dashed rgba(180,18,59,0.35); border-radius: 6px; padding: 3px 7px; margin-top: 8px; display: inline-block; }
+  .annot.ok { color: #0B7B6C; background: #ECFDF9; border-color: rgba(11,123,108,0.3); }
+  .doorway { border-top: 1px solid #EAEAEA; margin-top: 6px; padding-top: 8px; font-size: 11px; color: #737373; font-weight: 500; }
+  .zone { background: #FFFFFF; border-radius: 18px; padding: 12px 14px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); font-size: 11px; color: #737373; }
+  .zone b { color: #0A0A0A; font-weight: 600; display: block; font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase; margin-bottom: 4px; color: #737373; }
+  .strip { background: #FFFFFF; border-radius: 14px; padding: 10px 14px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); font-size: 12px; color: #0A0A0A; display: flex; justify-content: space-between; align-items: center; }
+  .strip .sub { color: #737373; font-size: 10.5px; margin-top: 2px; }
+  .arrow { font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-align: center; padding: 4px 0; }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span class="roundtag">Round 1 — build-ready proposal</span>
+      <span>Home v1 · the Signal fold · 2026-09-03</span>
+      <span>Spec: <code>docs/nyx-signal-fold-requirements.md</code> · track CUL-695 (F3)</span>
+    </p>
+    <h1>Seen, never resolved</h1>
+    <p class="standfirst">
+      The Signal says <strong>what is true</strong>; the owner opens it asking <strong>what changed</strong>.
+      Six weeks of the same card at headline size is the surface with no way to hear "I've read this."
+      v1 gives it that memory: a card you have opened can be folded to one calm line that keeps its
+      rail, its count and — on a safety card — its ask and the date of the last episode, and the
+      <em>record</em>, never the calendar, brings it back. Every frame below is drawn on Nyx's real
+      record. The shipped surface's authority remains <code>culprit-signal-home-mockups.html</code>
+      (round 2.1); this page is the design authority for the fold only.
+    </p>
+    <div class="revnew">
+      <b>Split from the exploratory Living-Signal page on purpose.</b> That page (round 1.2, PR #736)
+      keeps the seven directions and the D1–D5 deliberation; this one carries the current proposal
+      for the one direction the PM greenlit for v1, and republishes to the same URL from here.
+      Three things are for the PM: <a href="#df2">DF-2 · ratify the safety strip</a> ·
+      <a href="#df3">DF-3 · where the control lives</a> · <a href="#df4">DF-4 · who judges "changed"</a>.
+    </div>
+  </header>
+
+  <!-- ================================================== 01 -->
+  <section id="frames">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The frames — today, the fold, the safety strip, the return</h2></div>
+    <div class="col">
+      <p>
+        Read them in order. F0 is the screen the PM opens every morning. F1 is PR 1 (benign cards fold,
+        all accounts, no flag). F2 is where the fold lives — one gesture past the evidence. F3 is PR 2,
+        the strip Dr. Chen conditioned. F4 is the return. F5 is the alternative placement the PM may
+        prefer. F6 draws the stated-action shape for the side-by-side DF-2 asks for. F7 shows the class
+        line: an acute card never folds.
+      </p>
+    </div>
+
+    <div class="frames">
+
+      <!-- F0 — today -->
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel receded">Signal</div>
+            <div class="irow">
+              <div class="rail safety"></div>
+              <div class="ibody">
+                <p class="lead">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                <div class="why">Why we're showing this</div>
+              </div>
+            </div>
+            <div class="irow">
+              <div class="rail insight"></div>
+              <div class="ibody">
+                <p class="lead compact">8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet.</p>
+                <div class="lane"><div class="laneband"></div>
+                  <div class="dot" style="left:5%"></div><div class="dot" style="left:9%"></div><div class="dot" style="left:13%"></div><div class="dot" style="left:17%"></div>
+                  <div class="dot" style="left:21%"></div><div class="dot" style="left:24%"></div><div class="dot" style="left:28%"></div><div class="dot" style="left:31%"></div>
+                </div>
+                <div class="laneax"><span>ate</span><span>30m</span><span>2h+</span></div>
+                <div class="metarow"><span class="badge">Timing pattern</span><span class="samp" style="margin-top:0">8 of 8 timed episodes within 30 min of eating</span></div>
+                <div class="why">Why we're showing this</div>
+              </div>
+            </div>
+            <div class="doorway">See all of Nyx's patterns →</div>
+          </div>
+          <div class="strip"><div>Diet trial · Day 31 of 42<div class="sub">Turkey · 0 off-diet foods logged this week</div></div><span style="color:#A3A3A3">›</span></div>
+          <div class="zone"><b>Today</b>2 meals · 1 dose logged</div>
+        </div></div>
+        <p class="frame-cap"><b>F0 — Today (control)</b>
+          Both cards correct, both standing, unchanged since about July 20. The Signal takes ~70% of
+          the first viewport; the sentence the PM has read forty times wears the display face every
+          morning. Zero changes.
+          <span class="cost">shipped behaviour</span>
+        </p>
+      </div>
+
+      <!-- F1 — benign fold -->
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel receded">Signal</div>
+            <div class="irow">
+              <div class="rail safety"></div>
+              <div class="ibody">
+                <p class="lead">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                <div class="why">Why we're showing this</div>
+              </div>
+            </div>
+            <div class="foldrow">
+              <div class="rail insight"></div>
+              <div class="ftext" style="white-space:normal"><b>Timing — vomiting within 30 min of eating</b><br><span class="cnt">8 of 8 timed episodes within 30 min of eating</span></div>
+              <div class="chev">›</div>
+            </div>
+            <div class="doorway">See all of Nyx's patterns →</div>
+          </div>
+          <div class="strip"><div>Diet trial · Day 31 of 42<div class="sub">Turkey · 0 off-diet foods logged this week</div></div><span style="color:#A3A3A3">›</span></div>
+          <div class="zone"><b>Today</b>2 meals · 1 dose logged</div>
+        </div></div>
+        <p class="frame-cap"><b>F1 — The benign fold (PR 1, all accounts)</b>
+          The timing card, opened and read, folded to its strip: teal rail kept, the name of the
+          pattern in medium weight, the shipped sample line underneath, the chevron of the trial and
+          med strips. It stays at its rank between the same hairlines — a fold changes height, never
+          position. Tap the strip and the face returns. In PR 1 the safety card has no fold control.
+          <span class="cost">client only · one AsyncStorage key · no engine change</span>
+        </p>
+      </div>
+
+      <!-- F2 — where the fold lives -->
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel receded">Signal</div>
+            <div class="irow">
+              <div class="rail safety"></div>
+              <div class="ibody">
+                <p class="lead">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                <div class="samp" style="color:#525252;font-size:11.5px;line-height:1.45;margin-top:8px">Vomiting has recurred across 5 of the last 8 weeks, with the most recent episode 8 days ago. We count episodes, not causes.</div>
+                <div class="cmp" style="margin-top:8px;border:1px solid #EAEAEA;border-radius:8px;padding:8px 9px">
+                  <div class="samp" style="margin:0 0 4px;font-weight:600;color:#525252">If you call your clinic, the facts to have ready</div>
+                  <div class="cmprow" style="grid-template-columns:78px 1fr"><span>Symptom</span><span style="color:#0A0A0A">vomiting</span></div>
+                  <div class="cmprow" style="grid-template-columns:78px 1fr"><span>Count</span><span style="color:#0A0A0A">14 episodes</span></div>
+                  <div class="cmprow" style="grid-template-columns:78px 1fr"><span>Span</span><span style="color:#0A0A0A">5 of the last 8 weeks</span></div>
+                  <div class="cmprow" style="grid-template-columns:78px 1fr"><span>Most recent</span><span style="color:#0A0A0A">8 days ago</span></div>
+                </div>
+                <div class="hintrow"><span class="why">Hide details</span><span class="fold">Keep it compact</span></div>
+                <div class="samp" style="margin-top:3px">It comes back on its own when the picture changes.</div>
+                <div class="annot ok">control renders in the EXPANDED state only · sibling of the row button</div>
+              </div>
+            </div>
+            <div class="foldrow">
+              <div class="rail insight"></div>
+              <div class="ftext" style="white-space:normal"><b>Timing — vomiting within 30 min of eating</b><br><span class="cnt">8 of 8 timed episodes within 30 min of eating</span></div>
+              <div class="chev">›</div>
+            </div>
+            <div class="doorway">See all of Nyx's patterns →</div>
+          </div>
+        </div></div>
+        <p class="frame-cap"><b>F2 — Where the fold lives</b>
+          You fold what you have opened. The face tap keeps its one meaning (show the evidence); the
+          expanded state gains a control row beside <em>Hide details</em>: <em>Keep it compact</em>,
+          with a one-line caption that teaches the contract. No swipe anywhere — on a health card a
+          swipe reads as delete, one-handed at 3am. Every fold is therefore a stated acknowledgment
+          by construction, which is what makes F3 safe.
+          <span class="cost">DF-3 · the alternative placement is F5</span>
+        </p>
+      </div>
+
+      <!-- F3 — the safety strip -->
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel receded">Signal</div>
+            <div class="foldrow">
+              <div class="rail safety"></div>
+              <div class="ftext" style="white-space:normal"><b>Recurring vomiting — worth a vet visit</b><br><span class="cnt">14 episodes across 5 of the last 8 weeks · last logged Aug 26</span></div>
+              <div class="chev">›</div>
+            </div>
+            <div class="foldrow">
+              <div class="rail insight"></div>
+              <div class="ftext" style="white-space:normal"><b>Timing — vomiting within 30 min of eating</b><br><span class="cnt">8 of 8 timed episodes within 30 min of eating</span></div>
+              <div class="chev">›</div>
+            </div>
+            <div class="doorway">See all of Nyx's patterns →</div>
+          </div>
+          <div class="strip"><div>Diet trial · Day 31 of 42<div class="sub">Turkey · 0 off-diet foods logged this week</div></div><span style="color:#A3A3A3">›</span></div>
+          <div class="zone"><b>Today</b>2 meals · 1 dose logged</div>
+          <div class="zone"><b>Trend</b>Vomiting · 14 days · fewer this week than last, counted from days you logged</div>
+        </div></div>
+        <p class="frame-cap"><b>F3 — The safety strip (PR 2, DF-2)</b>
+          Both cards folded; the Signal is ~140pt tall and the Today and Trend zones rise into the
+          first viewport. The safety strip is Dr. Chen's conditioned line: the rose rail at full
+          opacity, the symptom, the ask verb, the count with its span, and the <em>date</em> of the
+          last episode — a date, never a days-since counter. It never sinks below a benign card. It
+          says "worth a vet visit" every morning, at a size an owner can live beside.
+          <span class="cost">standing safety cards only · acute cards never (F7)</span>
+        </p>
+      </div>
+
+      <!-- F4 — back because -->
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel receded">Signal</div>
+            <div class="irow">
+              <div class="rail safety"></div>
+              <div class="ibody">
+                <div class="samp" style="margin:0 0 6px;color:#525252">Back because a new episode was logged.</div>
+                <p class="lead">We've logged vomiting for Nyx across 6 of the last 8 weeks — 15 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                <div class="samp">15 episodes across 6 of the last 8 weeks</div>
+                <div class="why">Why we're showing this</div>
+              </div>
+            </div>
+            <div class="foldrow">
+              <div class="rail insight"></div>
+              <div class="ftext" style="white-space:normal"><b>Timing — vomiting within 30 min of eating</b><br><span class="cnt">8 of 8 timed episodes within 30 min of eating</span></div>
+              <div class="chev">›</div>
+            </div>
+            <div class="doorway">See all of Nyx's patterns →</div>
+          </div>
+          <div class="zone"><b>Today</b>1 meal · 1 vomit logged</div>
+        </div></div>
+        <p class="frame-cap"><b>F4 — The return</b>
+          The owner logged a vomit this morning; the next regen moved the finding (15 episodes, a
+          newer last episode), so the fold released and the full card is back with one line saying
+          why. The timing strip stays folded — this episode had no meal it could be timed against,
+          so that finding did not move. Nothing animates: the card is already open when Home paints.
+          The count aging <em>down</em> as a week leaves the window would not have done this.
+          <span class="cost">re-open on the record, never the calendar · no clock anywhere</span>
+        </p>
+      </div>
+
+      <!-- F5 — alternative placement -->
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel receded">Signal</div>
+            <div class="irow">
+              <div class="rail safety"></div>
+              <div class="ibody">
+                <p class="lead">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                <div class="hintrow"><span class="why">Why we're showing this</span><span class="fold">Keep it compact</span></div>
+                <div class="annot">alternative — the control on the FACE (PM-vetoable pick, DF-3)</div>
+              </div>
+            </div>
+            <div class="irow">
+              <div class="rail insight"></div>
+              <div class="ibody">
+                <p class="lead compact">8 of the 8 vomiting episodes we could time for Nyx happened within 30 minutes of eating, including the last two — a timing pattern worth mentioning to your vet.</p>
+                <div class="metarow"><span class="badge">Timing pattern</span><span class="samp" style="margin-top:0">8 of 8 timed episodes within 30 min of eating</span></div>
+                <div class="hintrow"><span class="why">Why we're showing this</span><span class="fold">Keep it compact</span></div>
+              </div>
+            </div>
+            <div class="doorway">See all of Nyx's patterns →</div>
+          </div>
+        </div></div>
+        <p class="frame-cap"><b>F5 — The other place the control could live</b>
+          What the owner interviews asked for: a small explicit button in the meta row, one tap from
+          the face. It costs two things F2 avoids — a fold of a card whose evidence was never opened
+          (the acknowledgment is weaker, which matters most on the safety card), and two adjacent
+          text buttons on every face. It saves one tap, once per finding. The Designer holds F2; the
+          PM can veto to this.
+          <span class="cost">DF-3 alternative</span>
+        </p>
+      </div>
+
+      <!-- F6 — stated action (for the side-by-side) -->
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel receded">Signal</div>
+            <div class="irow">
+              <div class="rail safety"></div>
+              <div class="ibody">
+                <p class="lead">We've logged vomiting for Nyx across 5 of the last 8 weeks — 14 episodes since July. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</p>
+                <div class="samp">14 episodes across 5 of the last 8 weeks</div>
+                <div class="chiprow"><span class="chip">Visit booked</span><span class="chip">We've been</span><span class="chip quiet">Not yet</span></div>
+                <div class="annot">D1 option (b) — the care thread (F4), NOT v1 · needs its own schema + scoping round</div>
+              </div>
+            </div>
+            <div class="foldrow">
+              <div class="rail insight"></div>
+              <div class="ftext" style="white-space:normal"><b>Timing — vomiting within 30 min of eating</b><br><span class="cnt">8 of 8 timed episodes within 30 min of eating</span></div>
+              <div class="chev">›</div>
+            </div>
+            <div class="doorway">See all of Nyx's patterns →</div>
+          </div>
+        </div></div>
+        <p class="frame-cap"><b>F6 — The stated-action fold, drawn for the side-by-side</b>
+          The shape the earlier round recommended for D1: a safety card compresses only when the
+          owner tells it something. It is the deepest answer and it stays on the roadmap (the care
+          thread), but it is not v1 — it needs a pet-scoped table, RLS, an export rule, and its own
+          round. Two lenses moved off it as the <em>only</em> exit: owners will tap "Visit booked"
+          to get their screen back if that is the sole way to shrink the card, and then the record
+          lies. When F4 lands, <em>Not yet</em> inherits F3's behaviour and is never removed.
+          <span class="cost">roadmap · CUL-695 D4/D5</span>
+        </p>
+      </div>
+
+      <!-- F7 — acute never folds -->
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel receded">Signal</div>
+            <div class="irow">
+              <div class="rail safety"></div>
+              <div class="ibody">
+                <p class="lead">Nyx has eaten less than usual for 3 days. For a cat, three days of eating less is worth a call to your vet today. This is a read of your logs, not a diagnosis.</p>
+                <div class="samp">3 days below the usual, across 9 recent meals</div>
+                <div class="why">Why we're showing this</div>
+                <div class="annot ok">acute card · no fold control in any state · ranks above the strips</div>
+              </div>
+            </div>
+            <div class="foldrow">
+              <div class="rail safety"></div>
+              <div class="ftext" style="white-space:normal"><b>Recurring vomiting — worth a vet visit</b><br><span class="cnt">14 episodes across 5 of the last 8 weeks · last logged Aug 26</span></div>
+              <div class="chev">›</div>
+            </div>
+            <div class="foldrow">
+              <div class="rail insight"></div>
+              <div class="ftext" style="white-space:normal"><b>Timing — vomiting within 30 min of eating</b><br><span class="cnt">8 of 8 timed episodes within 30 min of eating</span></div>
+              <div class="chev">›</div>
+            </div>
+            <div class="doorway">See all of Nyx's patterns →</div>
+          </div>
+        </div></div>
+        <p class="frame-cap"><b>F7 — The class line: acute never folds</b>
+          A new safety finding of another type lands as a full card above the strips — a fold never
+          suppresses a different finding. And an acute card (eating less, blood in a photo) asks for
+          an action <em>today</em> and is retired by the record, not the reader: it has no fold
+          control in any state. Only the standing class — recurring, worsening — folds.
+          <span class="cost">FS-2 · FS-7</span>
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================================================== 02 -->
+  <section id="anatomy">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The strip, specified</h2></div>
+    <div class="col">
+      <p>Real tokens from <code>constants/theme.ts</code>; the engineer builds from this table and spec §3, not from the pixels above.</p>
+    </div>
+    <div class="tablewrap">
+    <table class="spec">
+      <tr><th>Element</th><th>Spec</th></tr>
+      <tr><td>Rail</td><td>Unchanged: 3pt · <code>RAIL_COLOR[priorityClass]</code> · opacity 0.85 · full row height. Read before a word; never dims on fold.</td></tr>
+      <tr><td>Clause (line 1)</td><td><code>ThemedText</code> · <code>textSM</code> · <code>weightMedium</code> · <code>colorTextPrimary</code> · <code>lineHeightSM</code>. No <code>numberOfLines</code> — wraps, never truncates (an ask is never cut). ≤ 42 chars target; worst-case fixture "skin irritation" + a 3-digit count.</td></tr>
+      <tr><td>Count (line 2)</td><td><code>sampleLine(finding)</code> verbatim · <code>textXS</code> · <code>colorTextTertiary</code>. Safety strips append <code> · last logged {Mon D}</code> — day precision, device zone, year-less (bounded by the 56-day lookback).</td></tr>
+      <tr><td>Chevron</td><td>The TrialStrip/MedStrip <code>›</code>: raw <code>&lt;Text&gt;</code> (geist-ok) · <code>textLG</code> · <code>colorTextSecondary</code> · its own node, never concatenated into the clause.</td></tr>
+      <tr><td>Dropped</td><td>The sentence, every receipt, every meta chip (<code>New</code> cannot appear on a strip — novelty re-opens), the med line, the linked-pair row, "Why we're showing this".</td></tr>
+      <tr><td>Geometry</td><td><code>minHeight 44</code> · <code>paddingVertical: space1</code> → ~52pt typical, ~70pt worst-case wrap, against ~180pt for a lead canvas. Type drops two tiers: Newsreader 26 → Geist 15 → Geist 13/11.</td></tr>
+      <tr><td>States</td><td><code>face</code> ⇄ <code>expanded</code> → <code>folded</code> → <code>face</code>. Owner-caused transitions use the shipped <code>LayoutAnimation</code> idiom (skipped under reduced motion); an automatic re-open never animates.</td></tr>
+      <tr><td>Order</td><td>Server rank, always. <code>isLead</code> stays bound to rank 0 — if rank 0 is folded, no card wears the canvas (promoting a benign card because the safety card folded is reassurance by layout).</td></tr>
+      <tr><td>Store</td><td>One AsyncStorage key <code>nyx.signalFold</code> (the <code>signalArrival</code> one-key shape + clear-epoch guard) · per pet · per finding key (type + the noun, never rank) · wiped by name on sign-out · not synced.</td></tr>
+      <tr><td>Re-open</td><td>A material change in the finding: counts <em>increase-only</em>; tiers, booleans, directions on any change; chronicity also on <code>daysSinceLastEpisode</code> decreasing (the net-zero day). Never on the regen, pull-to-refresh, a timer, or a window aging. An absent finding deletes its entry so a re-fire renders open.</td></tr>
+      <tr><td>Accessibility</td><td>Strip = one button, label "{clause}. {count line}.", <code>expanded: false</code>, hint "Opens this insight." Control = "Keep it compact", hint "Folds this insight to one line. It reopens on its own when the picture changes." Back-because is prefixed to the re-opened card's label.</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <!-- ================================================== 03 -->
+  <section id="briefs">
+    <div class="sec-head"><span class="sec-num">03</span><h2>For the PM — three briefs</h2></div>
+
+    <div class="conflict">
+      <p><strong>The round's recorded conflict, now closed by the lenses themselves:</strong></p>
+      <p><strong>Designer:</strong> a standing safety card at canvas size for six weeks trains the eye off the zone; the next new safety finding inherits the blindness. A fold reachable only from the expanded state is a stated acknowledgment; the strip keeps rail, ask, rank.</p>
+      <p><strong>Dr. Chen:</strong> an unacted-on escalation must never quietly shrink — but a strip that keeps the ask <em>is</em> the same escalation at a size an owner can live beside, and the detector is the timer. What moved me: when a stated action is the only exit, owners state a false one and the record lies.</p>
+      <p><strong>Both land on F3 for the standing class, never for the acute class. The PM ratifies or vetoes.</strong></p>
+    </div>
+
+    <div class="brief" id="df2">
+      <p class="bid">DF-2 — ratify the safety strip (gates PR 2 only)</p>
+      <p><strong>Deciding:</strong> whether the PM's own card — recurring vomiting — may be folded to F3's strip.</p>
+      <p><strong>Options:</strong> (a) benign only — F1 forever, the safety card stays at canvas size (does not fix the PM's screen) · <span class="rec">(b) F3 — standing safety cards fold via the expanded-state control to the strip that keeps rail + ask + count + last-episode date; acute cards never; no clock — recommended, both lenses agree</span> · (c) F6 — fold only via a stated action (the care thread; own schema + round; the false-"Booked" hazard).</p>
+      <p><strong>Consequence:</strong> (b) ships PR 2 right behind PR 1 with Dr. Chen's conditions as build guards; (a) ships PR 1 only and leaves the complaint standing; (c) parks the safety half behind a scoping round + a schema PR.</p>
+    </div>
+
+    <div class="brief" id="df3">
+      <p class="bid">DF-3 — where the control lives (PM-vetoable pick)</p>
+      <p><strong>Deciding:</strong> F2 (expanded state only) or F5 (on the face meta row).</p>
+      <p><strong>Options:</strong> <span class="rec">F2 — you fold what you have opened; one meaning per tap; no adjacent buttons on the face — recommended (Designer)</span> · F5 — one tap from the face, as the owner interviews asked; weaker acknowledgment on the safety card; two text buttons per face.</p>
+      <p><strong>Consequence:</strong> a one-line change in PR 1 either way; F2 is what makes DF-2's "stated acknowledgment" true by construction.</p>
+    </div>
+
+    <div class="brief" id="df4">
+      <p class="bid">DF-4 — who judges "the picture changed" (does not block PR 1)</p>
+      <p><strong>Deciding:</strong> whether the re-open is judged on the device from the cached payload, or waits for the engine to emit a per-finding change token.</p>
+      <p><strong>Options:</strong> <span class="rec">(a) client-side in v1 — the per-type table (increase-only counts, any-change tiers), property-tested, with a server token winning whenever one is present — recommended: v1 ships now, the migration path is built in</span> · (b) hold PR 1 for a <code>generate-signal</code> payload addition (the Data Scientist's one-predicate concern; a deploy in the critical path).</p>
+      <p><strong>Consequence:</strong> (a) is two PRs and no deploy; (b) adds an engine PR + deploy before the first fold ships.</p>
+    </div>
+  </section>
+
+  <!-- ================================================== 04 -->
+  <section id="copy">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Every string, verbatim</h2></div>
+    <div class="col"><p>nyx-voice-governed: no exclamation marks, no glyphs, no percentages, no pet name on a strip; every clause passes the banned-vocabulary screen at build. Vetoed on any fold surface: Resolved · Cleared · All clear · Settled · Better · Improving · Quieter · Down · ↓ · % · "N days clear" · streaks · Dismissed · Hidden · Snoozed · Reminder · Seen · Nothing new.</p></div>
+    <div class="tablewrap">
+    <table class="spec">
+      <tr><th>Type</th><th>Clause</th><th>Count line</th></tr>
+      <tr><td>chronicity (firm / standard)</td><td>Recurring {symptom} — worth a vet visit · Recurring {symptom} — tell your vet</td><td>sample line · last logged {Mon D}</td></tr>
+      <tr><td>worsening</td><td>{Symptom} up from last week — tell your vet</td><td>sample line · last logged {Mon D}</td></tr>
+      <tr><td>timing (rapid / long / story)</td><td>Timing — {symptom} within {30} min of eating · Timing — {symptom} {6}h or more after eating · Timing — within {30} min of eating, and {6}h or more after</td><td>sample line</td></tr>
+      <tr><td>time of day</td><td>Timing — {symptom} {between 2–6am}</td><td>sample line</td></tr>
+      <tr><td>food correlation</td><td>{Chicken} — {symptom} tends to follow it (a joint candidate names every member)</td><td>sample line</td></tr>
+      <tr><td>reflection</td><td>Week over week — {symptom}</td><td>sample line (density-withheld swap kept)</td></tr>
+      <tr><td>trial response</td><td>Trial diet — day {23} of {56}</td><td>{4} episodes during the trial, {12} in the {7} weeks before</td></tr>
+      <tr><td>intake decline · photo red flag</td><td colspan="2"><em>never fold — no strip copy exists, by construction</em></td></tr>
+      <tr><td>control · caption</td><td>Keep it compact</td><td>It comes back on its own when the picture changes.</td></tr>
+      <tr><td>back because</td><td colspan="2">Back because a new episode was logged. · Back because a new week's counts are in. · Back because this pattern is now established. · Back because the vet ask changed. · Back because the trial counts moved.</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <!-- ================================================== 05 -->
+  <section id="notfixed">
+    <div class="sec-head"><span class="sec-num">05</span><h2>What the fold does not fix — said plainly</h2></div>
+    <div class="col">
+      <p>
+        "A fold with nothing new underneath is a smaller version of boring" (Jordan). Nyx went from
+        12 episodes to 2 across two four-week stretches and Home still cannot say it. That sentence
+        belongs <strong>inside</strong> the safety card's evidence and phone script, with one line on
+        why the ask still stands — never as a separate calm card while the symptom is chronic
+        (CUL-787). And when the card finally stops firing it should say so once, in a labeled line,
+        instead of vanishing (CUL-786). Both are engine work, filed as v1.1. The broader answer —
+        what leads Home, what changes daily, whether "three slots" was ever the right proxy — is the
+        Home Redesign spike's mock round, fed by this session's interviews and research.
+      </p>
+      <p class="callout">Nothing on this page touches detection, thresholds, ranking, or the plainness of a safety card. The fold silences the <em>size</em>; the record decides when the full card returns; the owner cannot make a safety card go away.</p>
+    </div>
+  </section>
+
+</div>
