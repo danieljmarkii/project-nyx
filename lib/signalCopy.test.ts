@@ -2599,6 +2599,21 @@ describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', 
     expect(chronicityCompareExtras(chronicity({ compare: thin }))?.rows.map((r) => r.count)).toEqual([2, 12]);
   });
 
+  it('the withheld form renders on a FALLING thin-logged pair ONLY — a rising or flat pair over thin logging keeps the disclosure (§3.3)', () => {
+    // Adversarial pass (2026-09-03): "a lower count there can be fewer logs" rendered on 8 vs 6.
+    const risingThin = { ...rising, priorLoggingDays: 28, recentLoggingDays: 10, comparable: false, recentCount: 8, priorCount: 6 } as const;
+    const flatThin = { ...flat, recentLoggingDays: 10, comparable: false } as const;
+    expect(chronicityCompareDensityLine(risingThin)).toBe('Counted from days you logged: 10 in the recent 4 weeks, 28 in the 4 before.');
+    expect(chronicityCompareDensityLine(flatThin)).toBe('Counted from days you logged: 10 in the recent 4 weeks, 28 in the 4 before.');
+    expect(chronicityCompareDensityLine(thin)).toMatch(/^You also logged on fewer days/);
+  });
+
+  it('a 7-day half reads "1 week", never "1 weeks"', () => {
+    const week = { ...nyx, halfDays: 7 } as const;
+    expect(chronicityCompareRows(week)[0].label).toBe('Recent 1 week');
+    expect(chronicityCompareDensityLine(week)).toBe('Counted from days you logged: 27 in the recent 1 week, 28 in the 1 before.');
+  });
+
   it('an old cache (no compare) renders the pre-v1.1-b expand: no box, no script row', () => {
     expect(chronicityCompareExtras(chronicity())).toBeNull();
     const labels = phoneScript(chronicity(), 'Nyx')!.map((f) => f.label);
@@ -2608,8 +2623,8 @@ describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', 
   it('the phone script gains ONE two-sided row between the total and the most-recent date, denominators on the row', () => {
     const facts = phoneScript(chronicity({ compare: nyx }), 'Nyx')!;
     expect(facts.map((f) => f.label)).toEqual(['Sign', 'First logged', 'How often', 'Recent 4 weeks', 'Most recent']);
-    expect(facts[3].value).toBe('2 · the 4 before: 12 · logged on 27 and 28 of those days');
-    expect(chronicityComparePhoneScriptFact(rising).value).toBe('9 · the 4 before: 0 · logged on 26 and 0 of those days');
+    expect(facts[3].value).toBe('2 · the 4 before: 12 · logged on 27 of the recent 28 days, and 28 of the 28 before');
+    expect(chronicityComparePhoneScriptFact(rising).value).toBe('9 · the 4 before: 0 · logged on 26 of the recent 28 days, and 0 of the 28 before');
   });
 
   it('the compare never reaches the face: sample line, evidence sentence and face copy are unchanged by it', () => {
@@ -2620,7 +2635,9 @@ describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', 
   });
 
   it('every composed string clears the guardrail screens and the fold veto list', () => {
-    for (const c of [nyx, thin, rising, flat]) {
+    const risingThin = { ...rising, priorLoggingDays: 28, recentLoggingDays: 10, comparable: false } as const;
+    const flatThin = { ...flat, recentLoggingDays: 10, comparable: false } as const;
+    for (const c of [nyx, thin, rising, flat, risingThin, flatThin, { ...nyx, halfDays: 7 }]) {
       const strings = [
         ...chronicityCompareRows(c).map((r) => r.label),
         chronicityCompareDensityLine(c),

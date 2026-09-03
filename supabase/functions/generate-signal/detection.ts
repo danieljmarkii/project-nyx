@@ -257,6 +257,7 @@ const isFetchedSymptom = (s: { type: string }): boolean => FETCHED_SYMPTOM_SET.h
 const COMPARISON_GATE_SYMPTOM_SET: ReadonlySet<string> = new Set(LANE_SYMPTOM_TYPES.symptomDelta)
 const countsTowardComparisonGate = (s: { type: string }): boolean =>
   COMPARISON_GATE_SYMPTOM_SET.has(s.type)
+const EMPTY_TYPE_SET: ReadonlySet<string> = new Set()
 
 /** WSAVA 5-point owner-reported intake scale (migration 011). */
 export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all'
@@ -3806,13 +3807,28 @@ interface WindowedStats {
  * density-comparability gate (computeReflectionDensity, B-721 §3.3), so the two can never
  * drift on what "a logged day" means. UTC day-bucketing matches the rest of this module.
  */
-function loggingDaysInWindow(input: DetectionInput, startMs: number, endMs: number): number {
+function loggingDaysInWindow(
+  input: DetectionInput,
+  startMs: number,
+  endMs: number,
+  /**
+   * Symptom types that count as a logged day HERE, beyond the comparison-gate cell. Default
+   * none — ③/④'s eligibility floor and SR-4's density gate read the cell exactly as before.
+   * The v1.1-b chronicity compare passes its finding's OWN sign (CUL-787 adversarial pass):
+   * a cough card's receipt that excluded cough logs printed "the 4 before: 8 · logged on 0
+   * and 0 of those days" and, through the prior-half-dark escape hatch, minted a false
+   * `comparable: true` on a 5× fall — the ruled principle is that a number offered as the
+   * receipt for a claim about a sign must count the days that could have shown that sign.
+   * Byte-identical for every pre-taxonomy type (the cell already contains them).
+   */
+  alsoCounts: ReadonlySet<string> = EMPTY_TYPE_SET,
+): number {
   const days = new Set<number>()
   for (const s of input.symptomEvents) {
     // COMPARISON-GATE scoped, not fetch-scoped — both consumers of this function (③/④'s
     // eligibility floor and SR-4's density gate) decide whether a FALLING comparison may be
     // published, and both belong to the symptomDelta lane. See countsTowardComparisonGate.
-    if (!countsTowardComparisonGate(s)) continue
+    if (!countsTowardComparisonGate(s) && !alsoCounts.has(s.type)) continue
     const ms = Date.parse(s.occurredAt)
     if (Number.isFinite(ms) && ms >= startMs && ms < endMs) days.add(Math.floor(ms / MS_PER_DAY))
   }
@@ -4049,9 +4065,13 @@ export function computeChronicityCompare(
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return null
   const halfDays = Math.floor(config.chronicity.windowDays / 2)
-  const halfMs = halfDays * MS_PER_DAY
-  const recentStart = nowMs - halfMs
-  const priorStart = nowMs - 2 * halfMs
+  const recentStart = nowMs - halfDays * MS_PER_DAY
+  // The prior half is anchored on the WHOLE lookback, never on 2 × halfDays: with an odd
+  // windowDays the floored halves would leave one day that ⑦ counts and neither half prints
+  // (adversarial pass, CUL-787 — 27 ≠ 28 at windowDays 55). The prior half absorbs the odd
+  // day; `halfDays` stays the label. Unreachable at DEFAULT_CONFIG (56) but "partitions by
+  // construction" has to be true for every config the type admits.
+  const priorStart = nowMs - config.chronicity.windowDays * MS_PER_DAY
 
   const msList = input.symptomEvents
     .filter((s) => s.type === symptomType)
@@ -4063,8 +4083,13 @@ export function computeChronicityCompare(
   const recentCount = onsets.filter((ms) => ms >= recentStart && ms < nowMs).length
   const priorCount = onsets.filter((ms) => ms >= priorStart && ms < recentStart).length
 
-  const recentLoggingDays = loggingDaysInWindow(input, recentStart, nowMs)
-  const priorLoggingDays = loggingDaysInWindow(input, priorStart, recentStart)
+  // The denominator counts the comparison-gate cell PLUS this finding's own sign: a receipt
+  // for a claim about cough must count the days that could have shown cough (see the
+  // `alsoCounts` note on loggingDaysInWindow). Identical to the bare cell for every
+  // pre-taxonomy type.
+  const ownSign: ReadonlySet<string> = new Set([symptomType])
+  const recentLoggingDays = loggingDaysInWindow(input, recentStart, nowMs, ownSign)
+  const priorLoggingDays = loggingDaysInWindow(input, priorStart, recentStart, ownSign)
   const comparable =
     priorLoggingDays === 0
       ? true

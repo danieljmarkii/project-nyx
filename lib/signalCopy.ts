@@ -1050,6 +1050,12 @@ function compareHalfWeeks(c: ChronicityCompare): number {
   return Math.max(1, Math.round(c.halfDays / 7));
 }
 
+/** "{w} weeks" / "1 week" — the singular exists for the label's sake only (a 7-day half is
+ *  unreachable at the shipped lookback, but "1 weeks" must not be the day it becomes reachable). */
+function weeksWord(w: number): string {
+  return w === 1 ? '1 week' : `${w} weeks`;
+}
+
 /** The pair is FALLING when the recent half holds fewer episodes than the half before. Flat
  *  and rising are not "falling" — the clause is for the one direction an owner could read as
  *  the ask having lapsed. */
@@ -1064,22 +1070,25 @@ export function isChronicityCompareFalling(c: ChronicityCompare): boolean {
 export function chronicityCompareRows(c: ChronicityCompare): [CompareRow, CompareRow] {
   const w = compareHalfWeeks(c);
   return [
-    { label: `Recent ${w} weeks`, count: c.recentCount, tone: c.recentCount >= 1 ? 'concern' : 'muted' },
+    { label: `Recent ${weeksWord(w)}`, count: c.recentCount, tone: c.recentCount >= 1 ? 'concern' : 'muted' },
     { label: `The ${w} before`, count: c.priorCount, tone: c.priorCount >= 1 ? 'concern' : 'muted' },
   ];
 }
 
 /** The logged-days line under the compare — the denominators, where the reader meets the
- *  claim (C-3). Comparable: the disclosure form. Not comparable: the withheld form, grounded
- *  in logged days exactly as DENSITY_WITHHELD is (B-733 — the gate sees days-with-any-log,
- *  never symptom coverage). Both counts stay printed above it either way (S2); this line only
+ *  claim (C-3). The disclosure form by default. The withheld form ONLY when the pair is
+ *  FALLING and the recent half was thinner-logged (§3.3 — the gate reads a falling pair
+ *  only; a rising comparison is never gated, and "a lower count there" is a false sentence
+ *  over a rise — the CUL-787 adversarial pass rendered it on 8 vs 6). Grounded in logged
+ *  days exactly as DENSITY_WITHHELD is (B-733 — the gate sees days-with-any-log, never
+ *  symptom coverage). Both counts stay printed above it either way (S2); this line only
  *  says how far the recent one may be read. */
 export function chronicityCompareDensityLine(c: ChronicityCompare): string {
   const w = compareHalfWeeks(c);
-  if (c.comparable) {
-    return `Counted from days you logged: ${c.recentLoggingDays} in the recent ${w} weeks, ${c.priorLoggingDays} in the ${w} before.`;
+  if (c.comparable || !isChronicityCompareFalling(c)) {
+    return `Counted from days you logged: ${c.recentLoggingDays} in the recent ${weeksWord(w)}, ${c.priorLoggingDays} in the ${w} before.`;
   }
-  return `You also logged on fewer days in the recent ${w} weeks — ${c.recentLoggingDays}, against ${c.priorLoggingDays} before — so a lower count there can be fewer logs, not fewer episodes.`;
+  return `You also logged on fewer days in the recent ${weeksWord(w)} — ${c.recentLoggingDays}, against ${c.priorLoggingDays} before — so a lower count there can be fewer logs, not fewer episodes.`;
 }
 
 export interface ChronicityCompareExpanded {
@@ -1104,12 +1113,15 @@ export function chronicityCompareExtras(f: SymptomChronicityFinding): Chronicity
 /** The one two-sided phone-script row (the issue's form verbatim: "Recent 4 weeks: 2 · the 4
  *  before: 12"), with the logged-day denominators on the same row — the script is read aloud
  *  to a vet, so the scope travels with the claim rather than in a box the owner may not
- *  read out. Never a direction word. */
+ *  read out. Each denominator is SPOKEN ("27 of the recent 28 days"): the adversarial pass
+ *  read the first cut aloud and "logged on 27 and 28 of those days" parsed as two dates
+ *  beside a "First logged: July" row, with no antecedent for "those days". Never a
+ *  direction word. */
 export function chronicityComparePhoneScriptFact(c: ChronicityCompare): PhoneScriptFact {
   const w = compareHalfWeeks(c);
   return {
-    label: `Recent ${w} weeks`,
-    value: `${c.recentCount} · the ${w} before: ${c.priorCount} · logged on ${c.recentLoggingDays} and ${c.priorLoggingDays} of those days`,
+    label: `Recent ${weeksWord(w)}`,
+    value: `${c.recentCount} · the ${w} before: ${c.priorCount} · logged on ${c.recentLoggingDays} of the recent ${c.halfDays} days, and ${c.priorLoggingDays} of the ${c.halfDays} before`,
   };
 }
 

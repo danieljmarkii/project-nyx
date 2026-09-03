@@ -5189,3 +5189,73 @@ Deno.test('computeChronicityCompare — the compare is ADDITIVE: ⑦ fires ident
   const [f] = detectChronicity(nyxEasing())
   assert.equal('compare' in f, false, 'the detector does not attach it — decoration does')
 })
+
+// ── CUL-787 adversarial pass (2026-09-03): the three engine breaks it found, pinned ──
+
+Deno.test('computeChronicityCompare — a COUGH card counts cough logs in its own denominator (the receipt names the days that could have shown the sign)', () => {
+  // Cat, cough-only logging (cough is in the ⑦ lane but NOT in the ③/④ comparison-gate cell).
+  // Before the fix the receipt read "the 4 before: 8 · logged on 0 and 0 of those days" — a
+  // receipt denying the logs its own numerator came from.
+  const coughAgo = (d: number): SymptomEvent => symptom('cough', ago(d))
+  const symptomEvents = [29, 32, 35, 38, 41, 44, 47, 50, 2, 9, 16].map(coughAgo)
+  const inp = input({ pet: cat, symptomEvents })
+  assert.ok(detectChronicity(inp).some((f) => f.symptomType === 'cough'), 'the cough course fires')
+  const c = computeChronicityCompare(inp, 'cough')!
+  assert.deepEqual([c.recentCount, c.priorCount], [3, 8])
+  assert.deepEqual([c.recentLoggingDays, c.priorLoggingDays], [3, 8], 'every cough day is a logged day for THIS receipt')
+})
+
+Deno.test('computeChronicityCompare — a cough card whose prior-half attention was all cough is NOT minted comparable on a 5× fall', () => {
+  // Prior half: 10 cough days, no meals. Recent half: 2 coughs + 3 meal days. With cough excluded
+  // from the denominator the prior half read as dark (0) and the escape hatch returned
+  // comparable: true on a 10 → 2 fall — the reassurance direction on a firm safety card.
+  const coughAgo = (d: number): SymptomEvent => symptom('cough', ago(d))
+  const symptomEvents = [...[29, 31, 33, 35, 37, 39, 41, 43, 45, 47].map(coughAgo), coughAgo(3), coughAgo(20)]
+  const mealEvents = [1, 10, 15].map((d) => mealAgo(d))
+  const inp = input({ pet: cat, symptomEvents, mealEvents })
+  assert.ok(detectChronicity(inp).some((f) => f.symptomType === 'cough'), 'the cough course fires')
+  const c = computeChronicityCompare(inp, 'cough')!
+  assert.deepEqual([c.recentCount, c.priorCount], [2, 10])
+  assert.deepEqual([c.recentLoggingDays, c.priorLoggingDays], [5, 10])
+  assert.equal(c.comparable, false, 'attention collapsed with the fall — the withheld line, never the plain disclosure')
+})
+
+Deno.test('computeChronicityCompare — the vomit denominator is byte-identical to the bare comparison-gate cell (no change for pre-taxonomy types)', () => {
+  const inp = nyxEasing()
+  const c = computeChronicityCompare(inp, 'vomit')!
+  const d = computeReflectionDensity(inp)! // reads the bare cell over 7-day windows — same definition of a logged day
+  assert.ok(d.currentLoggingDays <= c.recentLoggingDays, 'sanity: a 7-day window never out-counts its 28-day half')
+  assert.deepEqual([c.recentLoggingDays, c.priorLoggingDays], [28, 28])
+})
+
+Deno.test('computeChronicityCompare — the halves partition episodeCount for EVERY windowDays, odd ones included (property)', () => {
+  // Deterministic LCG so the fixture is reproducible; 60 random courses × 5 window widths.
+  let seed = 787
+  const rnd = (): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed / 2147483648
+  }
+  for (let trial = 0; trial < 60; trial++) {
+    const n = 6 + Math.floor(rnd() * 20)
+    const symptomEvents: SymptomEvent[] = []
+    for (let i = 0; i < n; i++) {
+      // Onsets anywhere in the last 60 days at a random hour — some straddle bouts, some outside.
+      const ms = NOW_MS - Math.floor(rnd() * 60 * DAY_MS)
+      symptomEvents.push(symptom('vomit', new Date(ms).toISOString()))
+    }
+    const mealEvents: MealEvent[] = []
+    for (let d = 0; d <= 60; d++) mealEvents.push(mealAgo(d))
+    const inp = input({ symptomEvents, mealEvents })
+    for (const windowDays of [55, 56, 57, 49, 63]) {
+      const cfg = { ...DEFAULT_CONFIG, chronicity: { ...DEFAULT_CONFIG.chronicity, windowDays } }
+      const chron = detectChronicity(inp, cfg).find((f) => f.symptomType === 'vomit')
+      if (!chron) continue // below floor — nothing to partition
+      const c = computeChronicityCompare(inp, 'vomit', cfg)!
+      assert.equal(
+        c.recentCount + c.priorCount,
+        chron.episodeCount,
+        `windowDays ${windowDays}, trial ${trial}: ${c.recentCount} + ${c.priorCount} ≠ ${chron.episodeCount}`,
+      )
+    }
+  }
+})

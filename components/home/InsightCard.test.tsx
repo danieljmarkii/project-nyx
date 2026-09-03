@@ -688,7 +688,7 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
     expect(view.queryByText(/Fewer lately doesn't change the ask/)).toBeTruthy();
     expect(view.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
     // The script row renders label + value as ONE text node ("Recent 4 weeks: 2 · …"), so match the value within it.
-    expect(view.queryByText(/Recent 4 weeks: 2 · the 4 before: 12 · logged on 27 and 28 of those days/)).toBeTruthy();
+    expect(view.queryByText(/Recent 4 weeks: 2 · the 4 before: 12 · logged on 27 of the recent 28 days, and 28 of the 28 before/)).toBeTruthy();
   });
 
   it('a RISING pair draws the compare and the script row but never the clause', () => {
@@ -696,7 +696,7 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
     fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('Counted honestly')).toBeTruthy();
     expect(view.queryByText(/Fewer lately doesn't change the ask/)).toBeNull();
-    expect(view.queryByText(/Recent 4 weeks: 9 · the 4 before: 0 · logged on 26 and 0 of those days/)).toBeTruthy();
+    expect(view.queryByText(/Recent 4 weeks: 9 · the 4 before: 0 · logged on 26 of the recent 28 days, and 0 of the 28 before/)).toBeTruthy();
   });
 
   it('a thin-logged falling pair keeps both counts and swaps in the withheld line', () => {

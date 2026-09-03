@@ -141,8 +141,8 @@ SR-1/SR-2 are disjoint and parallel-safe (separate sessions/branches; the one co
 | Phone-script header | `If you call your clinic, the facts to have ready` |
 | Chronicity compare — why it stands (expanded, falling only; v1.1-b) | `Fewer lately doesn't change the ask — a course that eases before it's been looked into hasn't been explained, and your vet will want the whole run.` _(Dr. Chen, fold session 2026-09-03; reworded under option (a), PM 2026-09-03 — the original "before a cause is found" trips the causal screen. CUL-787)_ |
 | Chronicity compare — density disclosure (expanded) | `Counted from days you logged: {a} in the recent {w} weeks, {b} in the {w} before.` |
-| Chronicity compare — density withheld (expanded) | `You also logged on fewer days in the recent {w} weeks — {a}, against {b} before — so a lower count there can be fewer logs, not fewer episodes.` _(both counts stay printed above it — S2)_ |
-| Chronicity compare — phone-script row | `Recent {w} weeks: {n} · the {w} before: {m} · logged on {a} and {b} of those days` |
+| Chronicity compare — density withheld (expanded, **falling pairs only**) | `You also logged on fewer days in the recent {w} weeks — {a}, against {b} before — so a lower count there can be fewer logs, not fewer episodes.` _(both counts stay printed above it — S2; a rising or flat pair over thinner logging keeps the disclosure form — §3.3, a rising comparison is never gated)_ |
+| Chronicity compare — phone-script row | `Recent {w} weeks: {n} · the {w} before: {m} · logged on {a} of the recent {d} days, and {b} of the {d} before` _(each denominator spoken — read aloud, "27 and 28 of those days" parsed as dates; adversarial pass 2026-09-03)_ |
 | Control-side header | `The other side of the picture` |
 
 ## 10. Flagged Tier-2 edits (proposed wording — PM approval required before writing)
