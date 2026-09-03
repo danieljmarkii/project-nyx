@@ -680,7 +680,7 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
 
   it('the expand draws the compare box ABOVE the phone script, with the clause, on a falling pair', () => {
     const view = render(<InsightCard cached={anyCached(chronicity({ compare: falling }))} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('Counted honestly')).toBeTruthy();
     expect(view.queryByText('Recent 4 weeks')).toBeTruthy();
     expect(view.queryByText('The 4 before')).toBeTruthy();
@@ -693,7 +693,7 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
 
   it('a RISING pair draws the compare and the script row but never the clause', () => {
     const view = render(<InsightCard cached={anyCached(chronicity({ compare: rising }))} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('Counted honestly')).toBeTruthy();
     expect(view.queryByText(/Fewer lately doesn't change the ask/)).toBeNull();
     expect(view.queryByText(/Recent 4 weeks: 9 · the 4 before: 0 · logged on 26 and 0 of those days/)).toBeTruthy();
@@ -702,7 +702,7 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
   it('a thin-logged falling pair keeps both counts and swaps in the withheld line', () => {
     const thin = { ...falling, recentLoggingDays: 10, comparable: false };
     const view = render(<InsightCard cached={anyCached(chronicity({ compare: thin }))} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText(/so a lower count there can be fewer logs, not fewer episodes/)).toBeTruthy();
     expect(view.queryByText(/Fewer lately doesn't change the ask/)).toBeTruthy();
     expect(view.queryByText('The 4 before')).toBeTruthy();
@@ -710,7 +710,7 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
 
   it('an old cache (no compare) renders the pre-v1.1-b expand: the script alone', () => {
     const view = render(<InsightCard cached={anyCached(chronicity())} petName="Nyx" />);
-    fireEvent.press(view.getByRole('button'));
+    fireEvent.press(view.getByTestId('insight-face'));
     expect(view.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
     expect(view.queryByText('Counted honestly')).toBeNull();
     expect(view.queryByText(/Recent 4 weeks/)).toBeNull();
