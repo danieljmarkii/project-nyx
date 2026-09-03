@@ -39,7 +39,7 @@ const mockInsightArrival = jest.fn();
 jest.mock('../../lib/haptics', () => ({ insightArrival: () => mockInsightArrival() }));
 
 import { act, render } from '@testing-library/react-native';
-import { AccessibilityInfo, Platform } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet } from 'react-native';
 import { SignalZone } from './SignalZone';
 import { theme } from '../../constants/theme';
 import type { SignalState } from '../../hooks/useSignal';
@@ -1007,5 +1007,142 @@ describe('SignalZone — the arrival moment', () => {
       jest.advanceTimersByTime(WHOLE_MOMENT_MS);
     });
     expect(mockInsightArrival).not.toHaveBeenCalled();
+  });
+
+  it('CUL-786: a stood-down line is NOT a finding — a marker-only transition plays nothing and spends nothing', async () => {
+    // The break this pins: a first-ever SAFETY card withholds the moment without spending
+    // it (the safety bypass above marks the pet, but an unreadable/unset marker plus a
+    // safety-led set can leave it unspent). When that card later stands down, the set
+    // holds ONE insight-class entry and no safety finding — exactly the shape that would
+    // otherwise play the once-ever celebration over a sentence about absence.
+    const view = await arrive([stoodDownEntry()]);
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(WHOLE_MOMENT_MS);
+    });
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+    // …and the line itself still rendered — nothing was hidden to achieve the silence.
+    expect(view.getByText(STOOD_DOWN_TEXT)).toBeTruthy();
+  });
+});
+
+// ── CUL-786 — the labeled stand-down (Signal fold v1.1-a) ─────────────────────────
+//
+// One calm line in the chronicity card's former slot, rendered from the server's text: no
+// rail, no control, no canvas, and gone after seven days even if the cache never
+// regenerates. Every rule here is about what the line is NOT — it is a sentence about
+// absence, and the surface must not dress it as a finding.
+const STOOD_DOWN_TEXT =
+  "No vomiting logged for Nyx in 14 days — this card has stood down. That isn't an all-clear. If you haven't been, the visit is still worth booking.";
+
+function stoodDownEntry(over: Partial<CachedFinding> = {}, mintedDaysAgo = 2): CachedFinding {
+  return {
+    rank: 0,
+    text: STOOD_DOWN_TEXT,
+    finding: {
+      type: 'stood_down',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      recencyDays: 14,
+      tier: 'firm',
+      lastEpisodeIso: new Date(Date.now() - (14 + mintedDaysAgo) * 86_400_000).toISOString(),
+      stoodDownAt: new Date(Date.now() - mintedDaysAgo * 86_400_000).toISOString(),
+      formerRank: 0,
+    },
+    ...over,
+  };
+}
+
+describe('SignalZone — the labeled stand-down line (CUL-786)', () => {
+  const benignBelow: CachedFinding = {
+    rank: 1,
+    text: 'A benign card sentence below the line.',
+    finding: {
+      type: 'postprandial_timing',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      rapidCount: 4,
+      eligibleCount: 12,
+      totalEpisodes: 20,
+      rapidWindowMinutes: 30,
+      medianMinutesSinceFeeding: 14,
+      windowDays: 60,
+      lastTwoEligibleRapid: false,
+      feedingFormsInEvidence: [],
+      eligibleMinutes: [10, 12, 14, 20, 45, 60, 90, 120, 150, 180, 200, 240],
+      timingReliable: true,
+    },
+  };
+
+  it('renders the server line in its former slot, above the card that used to sit below it', () => {
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [benignBelow, stoodDownEntry()] }),
+    );
+    const { getByText, getByLabelText, toJSON } = render(<SignalZone />);
+    expect(getByText(STOOD_DOWN_TEXT)).toBeTruthy();
+    expect(getByText(benignBelow.text)).toBeTruthy();
+    // Order = rank: the line (rank 0) precedes the benign card (rank 1) in the tree.
+    const serialized = JSON.stringify(toJSON());
+    expect(serialized.indexOf(STOOD_DOWN_TEXT)).toBeLessThan(serialized.indexOf(benignBelow.text));
+    // Announced as one plain sentence — not a button, nothing to expand.
+    const line = getByLabelText(STOOD_DOWN_TEXT);
+    expect(line.props.accessibilityRole).toBe('text');
+    expect(line.props.accessibilityState).toBeUndefined();
+  });
+
+  it('wears no rail — the row is a plain View with no rail sibling', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [stoodDownEntry()] }));
+    const { getByLabelText } = render(<SignalZone />);
+    const line = getByLabelText(STOOD_DOWN_TEXT);
+    // A card's rail is a `View` sibling of the content with the rail width; the line's row has
+    // exactly one child (its ThemedText) and no rail.
+    expect(line.children).toHaveLength(1);
+    const flat = Array.isArray(line.props.style) ? Object.assign({}, ...line.props.style) : line.props.style;
+    expect(flat.paddingLeft).toBe(3 + theme.space2);
+  });
+
+  it('renders alone when the stood-down card was the only finding — the live register, one line', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [stoodDownEntry()] }));
+    const { getByText, queryByText } = render(<SignalZone />);
+    expect(getByText(STOOD_DOWN_TEXT)).toBeTruthy();
+    expect(queryByText(NO_PATTERN_HEADLINE)).toBeNull();
+  });
+
+  it('expires seven days after it was minted, even when the cache never regenerated', () => {
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [stoodDownEntry({}, 7), benignBelow] }),
+    );
+    const { queryByText, getByText } = render(<SignalZone />);
+    expect(queryByText(STOOD_DOWN_TEXT)).toBeNull();
+    expect(getByText(benignBelow.text)).toBeTruthy();
+  });
+
+  it('the day before expiry, it is still there', () => {
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [stoodDownEntry({}, 6)] }),
+    );
+    expect(render(<SignalZone />).getByText(STOOD_DOWN_TEXT)).toBeTruthy();
+  });
+
+  it('the lead canvas goes to the first CARD — the line never wears it, and never withholds it', () => {
+    // The engine splices a marker below every safety finding, so the only card a line can
+    // precede is a benign one that would have led the moment the concern went. Binding the
+    // canvas to the array index demoted that card to compact for a week (adversarial pass,
+    // 2026-09-03). Distinct from a fold (DF-7): a folded card still holds its rank as a strip.
+    mockUseSignal.mockReturnValue(
+      signalState({ displayState: 'live', findings: [stoodDownEntry(), benignBelow] }),
+    );
+    const { getByText, getByLabelText } = render(<SignalZone />);
+    const sentence = getByText(benignBelow.text);
+    const flat = StyleSheet.flatten(sentence.props.style) as { fontFamily?: string; fontSize?: number };
+    expect(flat.fontFamily).toBe(theme.fontDisplay);
+    expect(flat.fontSize).toBe(theme.textSignal);
+    // …and the line itself is plain secondary type, never the display face.
+    const line = getByText(STOOD_DOWN_TEXT);
+    const lineFlat = StyleSheet.flatten(line.props.style) as { fontFamily?: string; fontSize?: number };
+    expect(lineFlat.fontSize).toBe(theme.textSM);
+    expect(lineFlat.fontFamily).not.toBe(theme.fontDisplay);
+    expect(getByLabelText(STOOD_DOWN_TEXT)).toBeTruthy();
   });
 });

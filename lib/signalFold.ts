@@ -67,6 +67,8 @@ export type FoldStore = Record<string, PetFoldEntries>;
  * store can never disagree about the class line.
  */
 export function canFold(finding: SignalFinding): boolean {
+  // CUL-786: a stood-down marker is a line, not a card — nothing to fold, no control.
+  if (finding.type === 'stood_down') return false;
   return finding.priorityClass !== 'safety';
 }
 
@@ -206,6 +208,18 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     turnOn: [],
     anyChange: ['mostRecentFlaggedIso', 'flags'],
     reason: () => 'photo_record',
+  },
+  // CUL-786 — the labeled stand-down marker. Not foldable (`canFold` refuses it), so no entry
+  // is ever written for it and this row is never read; it exists because the table is
+  // exhaustive over InsightType. When the course RE-FIRES, the chronicity finding returns
+  // under its own key, and the marker's absence from the set is what release-on-absence
+  // sees — the returning course renders as a full card, never as a strip.
+  stood_down: {
+    increaseOnly: [],
+    decreaseOnly: [],
+    turnOn: [],
+    anyChange: [],
+    reason: () => 'new_episode',
   },
 };
 

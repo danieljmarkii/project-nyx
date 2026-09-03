@@ -1160,6 +1160,24 @@ Deno.test('engineFindings — relay only, safety-first, empty = engine silent (n
   assert.equal(empty.findings.length, 0)
 })
 
+Deno.test('engineFindings — a stood-down marker (CUL-786) is never relayed and never counts as a finding', () => {
+  // The marker rides ai_signals.findings beside real findings but is the engine SAYING a card
+  // stopped. Alone it must read as "engine silent" (never an all-clear from either side), and
+  // beside a real finding it must not reach the model as a sentence about absence to paraphrase.
+  const marker = {
+    type: 'stood_down',
+    priorityClass: 'insight',
+    payload: { text: 'No vomiting logged for Nyx in 14 days — this card has stood down. That isn\'t an all-clear.' },
+  }
+  const alone = engineFindings([marker])
+  assert.equal(alone.hasFindings, false)
+  assert.equal(alone.findings.length, 0)
+
+  const beside = engineFindings([marker, { type: 'postprandial_timing', priorityClass: 'insight', payload: { c: 3 } }])
+  assert.equal(beside.hasFindings, true)
+  assert.deepEqual(beside.findings.map((f) => f.type), ['postprandial_timing'])
+})
+
 Deno.test('lastSymptom — none logged ⇒ null (never a wellness verdict)', () => {
   const events = [ev({ type: 'diarrhea', occurredAt: '2026-07-14T08:00:00Z' })]
   assert.equal(lastSymptom(events, [], { symptomType: 'vomit' }).event, null)

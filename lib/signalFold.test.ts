@@ -28,6 +28,7 @@ import type {
   CorrelationFinding,
   EmptyStomachTimingFinding,
   IncidentRedFlagFinding,
+  StoodDownMarker,
   InsightType,
   IntakeDeclineFinding,
   PostprandialTimingFinding,
@@ -192,6 +193,18 @@ const redFlag: IncidentRedFlagFinding = {
   windowDays: 14,
 };
 
+// CUL-786 — the labeled stand-down marker: not a card, never foldable.
+const stoodDown: StoodDownMarker = {
+  type: 'stood_down',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  recencyDays: 14,
+  tier: 'firm',
+  lastEpisodeIso: '2026-08-19T11:00:00.000Z',
+  stoodDownAt: '2026-09-03T12:00:00.000Z',
+  formerRank: 0,
+};
+
 const BASE: Record<InsightType, SignalFinding> = {
   food_symptom_correlation: correlation,
   symptom_chronicity: chronicity,
@@ -204,8 +217,13 @@ const BASE: Record<InsightType, SignalFinding> = {
   trial_response: trial,
   intake_decline: intake,
   incident_red_flag: redFlag,
+  stood_down: stoodDown,
 };
-const TYPES = Object.keys(MATERIAL_FIELDS) as InsightType[];
+// The property walks cover every FOLDABLE-OR-SAFETY type. The stood-down marker (CUL-786) is
+// neither — a line, not a card, `canFold` refuses it — so its table row is inert by design and
+// is pinned separately below rather than walked (an empty row would fail the "has fields" walk
+// for the right reason: it is not a card and carries no material fields).
+const TYPES = (Object.keys(MATERIAL_FIELDS) as InsightType[]).filter((t) => t !== 'stood_down');
 
 // Deep-clone + set a dotted path.
 function withPath<T extends SignalFinding>(finding: T, path: string, value: unknown): T {
@@ -273,6 +291,19 @@ describe('canFold — the PR 1 class line', () => {
     for (const t of TYPES) {
       expect(canFold(BASE[t])).toBe(BASE[t].priorityClass !== 'safety');
     }
+  });
+
+  it('CUL-786: a stood-down marker never folds — insight class, but a line, not a card', () => {
+    expect(stoodDown.priorityClass).toBe('insight');
+    expect(canFold(stoodDown)).toBe(false);
+    // Its table row is inert: no material field, so the same payload is never a change and a
+    // stray entry could never be re-opened by it.
+    const spec = MATERIAL_FIELDS.stood_down;
+    expect([...spec.increaseOnly, ...spec.decreaseOnly, ...spec.turnOn, ...spec.anyChange]).toHaveLength(0);
+    expect(materialChange(foldFingerprint(stoodDown), foldFingerprint(stoodDown))).toBeNull();
+    // Its identity is its own — a marker's presence never shadows the chronicity key, so when
+    // the course re-fires the finding returns under its own key and renders open.
+    expect(foldIdentity(stoodDown)).not.toBe(foldIdentity(chronicity));
   });
 });
 

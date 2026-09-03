@@ -84,6 +84,15 @@ import {
   PHRASING_SYSTEM,
   type CachedFinding,
 } from './phrasing.ts'
+// CUL-786 (Signal fold v1.1-a) — the labeled stand-down. Pure, offline-tested (standDown.test.ts);
+// minted HERE, after curation / phrasing / the summary packet, so the marker can never reach the
+// cap, the model, the summary, or the vet report (which re-runs detection and never reads this cache).
+import {
+  mergeStandDowns,
+  readPriorEntries,
+  resolveStandDowns,
+  type CachedEntry,
+} from './standDown.ts'
 import {
   buildSummaryPacket,
   summaryTemplate,
@@ -1063,6 +1072,53 @@ const handler = async (req: Request): Promise<Response> => {
     // yields []. Per §9 these describe DATA COVERAGE, never wellness.
     const coverage: CoverageDiagnostic[] = isBuilding ? detectCoverage(input, DEFAULT_CONFIG) : []
 
+    // 5b. The labeled stand-down (CUL-786). Read the PRIOR row before it is replaced — the
+    //     only memory the engine has of what the card said last time — and mint a marker for a
+    //     chronicity course that stopped on its recency floor with logging held across the gap
+    //     (standDown.ts carries the four conditions). Read with the caller's JWT like every
+    //     other read here, so RLS scopes it to the owner. A failed read withholds the marker
+    //     (today's wordless vanish — the safe direction for a sentence about absence), warned.
+    //     `isBuilding` / `signalText` / the summary above were computed over the REAL findings
+    //     and stay byte-identical; only the cached array gains the marker, in the card's former
+    //     slot. An older client renders the unknown type as nothing (the G10 pin).
+    //     The WHOLE block is fenced (code review, 2026-09-03): a throw anywhere in it — the
+    //     read, the resolution, the merge — must cost the marker, never the regen. Without
+    //     the fence it would fall to the handler's outer catch and no row would be written,
+    //     blanking the pet's Signal over a bug in the one part of the payload that is
+    //     decoration on the record rather than the record.
+    let cachedEntries: CachedEntry[] = cachedFindings
+    try {
+      let prior: ReturnType<typeof readPriorEntries> = []
+      let priorGeneratedAtMs: number | null = null
+      const { data: priorRow, error: priorError } = await supabase
+        .from('ai_signals')
+        .select('findings, generated_at')
+        .eq('pet_id', petId)
+        .order('expires_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (priorError) {
+        console.warn('generate-signal: prior ai_signals read failed — no stand-down minted:', priorError.message)
+      } else if (priorRow) {
+        prior = readPriorEntries(priorRow.findings)
+        const gen = Date.parse(String(priorRow.generated_at ?? ''))
+        priorGeneratedAtMs = Number.isFinite(gen) ? gen : null
+      }
+      const standDowns = resolveStandDowns({
+        prior,
+        priorGeneratedAtMs,
+        current: curated.map((r) => r.finding),
+        input,
+        config: DEFAULT_CONFIG,
+        nowMs,
+      })
+      cachedEntries = mergeStandDowns(cachedFindings, standDowns, petName)
+    } catch (standDownErr) {
+      const detail = standDownErr instanceof Error ? standDownErr.message : String(standDownErr)
+      console.warn('generate-signal: stand-down resolution failed — findings written without a marker:', detail)
+      cachedEntries = cachedFindings
+    }
+
     // Replace the pet's cached signal (last-write-wins; keeps row count bounded
     // without a unique constraint, matching the project's sync philosophy).
     await supabase.from('ai_signals').delete().eq('pet_id', petId)
@@ -1070,14 +1126,14 @@ const handler = async (req: Request): Promise<Response> => {
       pet_id: petId,
       signal_text: signalText,
       is_building: isBuilding,
-      findings: cachedFindings,
+      findings: cachedEntries,
       coverage,
       summary,
     })
     if (insertError) throw new Error(`ai_signals write failed: ${insertError.message}`)
 
     return Response.json(
-      { is_building: isBuilding, signal_text: signalText, findings: cachedFindings, coverage, summary },
+      { is_building: isBuilding, signal_text: signalText, findings: cachedEntries, coverage, summary },
       { headers: CORS_HEADERS },
     )
   } catch (err) {
