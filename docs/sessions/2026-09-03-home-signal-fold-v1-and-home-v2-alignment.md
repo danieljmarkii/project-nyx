@@ -83,3 +83,15 @@ The PM reacted to round 1 within the session:
 **Linear:** new project **Home v1 — The Signal fold** with the CUL-by-CUL plan in its description (PR 0 #795 → PR 1 CUL-784 → PR 2 CUL-785 → PR 3 CUL-788 → PR 4 CUL-790; v1.1 CUL-786 / CUL-787; gates, parallelism, the `lib/signalCopy.ts` collision named, the per-PR session ritual, and what "done" means). CUL-784/785/786/787 moved into it; CUL-785 re-scoped to all four safety types and un-blocked; CUL-788 (the motion), CUL-789 (mock round 2, this session), CUL-790 (the card refresh) filed; CUL-695 keeps the decision record and gained the rulings comment.
 
 **Open for the PM after this part:** DF-10 (approve the motion) and DF-11 (pick the card direction) on CUL-789; CUL-775 D1–D4 for v2. PR 1 (CUL-784) needs nothing.
+
+---
+
+## Part 3 — the round-2 reactions, applied (same day)
+
+> "F3. I sort of hate how the line of text in the headline of the safety strip wraps." · "Re the fold and unfold motion.. I'll defer to you on that experience. But I like the direction here a lot… Feel free to even go a bit more aggressive." · "DF-11.. Let's punt on card direction. Don't want to blow up scope!"
+
+- **The wrap (spec → v1.2, FS-11).** A real defect, not a mock artifact: `Recurring vomiting — worth a vet visit` fits a 390pt phone by a few points and wraps on 375pt; `Recurring skin irritation — …` wraps everywhere. Truncation is off the table (C-8), so the fix is structural — the strip is built from short lines, each its own node: the **name** (≤ 30), the **ask** on its own line on safety strips (≤ 20, plain ink), and a **compact count** (`stripCountLine`, ≤ 40 — Dr. Chen's own form, `14 episodes, 5 of 8 weeks · last Aug 26`). Benign names shortened too (`Vomiting soon after eating`). Worst-case fixtures pinned; the joint-candidate correlation is the one sanctioned wrap.
+- **The motion (§12 v1.2).** Bolder, per the PM, the Designer's call on the details: the drift doubles to 8pt; the settle is felt (damping 0.7, ~4pt); and **the rail leads** — its own animated height, growing ~80ms ahead of the box on unfold and shortening ~80ms after it on fold. The close-bounce veto holds. The mock's tappable frame runs the new beats.
+- **The card refresh (DF-11).** Punted; CUL-790 canceled; PR 4 struck from the project plan; §13 kept as the record. A's host-split control row ships anyway because F5 needs it.
+
+Mock republished as round 2.1 (same URL). Nothing is left for the PM on the fold; PR 1 (CUL-784) is ready.
