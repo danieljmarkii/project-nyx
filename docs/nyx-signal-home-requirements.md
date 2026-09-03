@@ -2,7 +2,7 @@
 
 _Track ID: filed as B-718; renumbered to **B-721** at the 2026-08-07 wrap (B-718 was taken on `main` first by the Vet Files round-3 row)._
 
-**Version:** 1.2 (**FINALIZED** — build-ready for rungs 1+2; v1.2 folds in the SR-6 copy/safety rulings) · **Date:** 2026-08-09 (v1.2 — SR-6, PM-vetoable: B-728 §2 S1 `New`-chip carve + §11 AC clarification; §5.5 SR-5 med-line/density rendering contract for B-733. v1.1 2026-08-07 adds FR-FLAG) · **GA'd 2026-08-20** — `signal_design_v2` graduated out of beta and retired (FR-FLAG-5 record in §7; CUL-546 / CUL-551, 2026-08-21) · **Owner:** Sr. Product Designer, ratified by PM through mock rounds 1–2.1
+**Version:** 1.3 (**FINALIZED** — build-ready for rungs 1+2; v1.3 adds the v1.1-b chronicity compare — §3.2 row, §3.5 narrowed to face + sentence, §9 strings; CUL-787, PM-approved 2026-09-03; v1.2 folds in the SR-6 copy/safety rulings) · **Date:** 2026-09-03 (v1.3 — CUL-787. v1.2 2026-08-09 — SR-6, PM-vetoable: B-728 §2 S1 `New`-chip carve + §11 AC clarification; §5.5 SR-5 med-line/density rendering contract for B-733. v1.1 2026-08-07 adds FR-FLAG) · **GA'd 2026-08-20** — `signal_design_v2` graduated out of beta and retired (FR-FLAG-5 record in §7; CUL-546 / CUL-551, 2026-08-21) · **Owner:** Sr. Product Designer, ratified by PM through mock rounds 1–2.1
 **Provenance:** `docs/sessions/2026-08-06-signal-home-design-exploration.md` (interviews, research, the team review, the Change Contract negotiation, every PM ruling) + `docs/culprit-signal-home-mockups.html` (round 2.1, the design authority — artifact 🌒, same-URL across rounds).
 **This doc is the canonical spec for the Signal/Home surface** (R2-6d absorption ruling): B-284's N4/N7 narrow to pointers here (Tier-2 edit pending, §10). It composes with — never modifies — `docs/nyx-ai-signal-requirements.md` (the engine/spec substrate; its §3.2/§11f per-type-presentation mandate is what rung 1 finally executes).
 
@@ -55,7 +55,7 @@ Negotiated with Dr. Chen under the PM's consumer-centric directive (full negotia
 |---|---|---|---|
 | `symptom_worsening` | Safety | Sentence (trigger axis: days vs episodes) + `New` when `priorCount === 0` (replaces "up from none" phrasing) | v1 |
 | `intake_decline` | Safety | Sentence carries `daysBelowBaseline` ("third day"); refusal arm = the event is the sentence | v1 |
-| `symptom_chronicity` | Safety | Sentence carries span + recency (already does); never a week-pair framing | v1 |
+| `symptom_chronicity` | Safety | Sentence carries span + recency (already does); never a week-pair framing on the face or in the sentence. **Expand + phone script (v1.1-b, CUL-787 — fold spec §0 DF-9(b)):** the counted halves of the finding's own lookback — `Recent 4 weeks: N · The 4 before: M`, both always printed (Shape C in the expand's `Counted honestly` box; one two-sided row in the script, denominators on the row), the logged-days line per half (the §3.3 rule reused: the withheld form when the recent half was thinner-logged, counts kept), and the why-it-stands clause beneath a **falling** pair only (§9); never a `reflection` card while chronicity fires (the engine's valve stays shut — this register replaces F2's second slot). Additive server payload (`compare`), attached post-detection. | v1 · expand **v1.1-b** |
 | `reflection` | Insight | Sentence, **density-gated when falling** (3.3) | v1 |
 | `food_symptom_correlation` | Insight | `Early pattern` tag ↔ its absence (shipped); `Now established` one-render transition | tag v1 · transition **v2** |
 | `postprandial_timing` / `timeofday_clustering` | Insight | `New` | **v2** (prior-set memory) |
@@ -63,7 +63,7 @@ Negotiated with Dr. Chen under the PM's consumer-centric directive (full negotia
 
 **3.3 The density rule (asymmetric; both directions fail toward escalation).** A *falling* reflection sentence renders its comparison only when week-over-week logging density is comparable — `densityComparable` computed server-side in `generate-signal` (days-with-any-log; threshold an engine constant, **adversarial-review-gated**); when density fell, the comparison is withheld and the expanded state says why ("You also logged on fewer days this week, so we can't tell yet whether there was less to log"). A *rising* safety comparison is **never** suppressed. The disclosure line ("Counted from days you logged: 6 this week, 5 last") lives in the expanded evidence, never on the card face.
 **3.4 The trial adjacency.** When `isTrialRunning` (the one predicate, `lib/dietTrial.ts`), a falling reflection's expanded text appends: *"A quieter week partway through a diet trial isn't the trial's verdict — the full run is what makes it readable."* Expanded-only, weakening-only.
-**3.5 Residual vetoes (Dr. Chen; standing).** ↑/↓/slope glyphs · percentages · verdict words (worse/better/improving/quieter) as labels · change framing on `incident_red_flag` · week-pair framing on chronicity · "Resolved"/all-clear states inferred from absence of detection. Every new/changed string passes the guardrail regex screens; a11y labels are full sentences.
+**3.5 Residual vetoes (Dr. Chen; standing).** ↑/↓/slope glyphs · percentages · verdict words (worse/better/improving/quieter) as labels · change framing on `incident_red_flag` · week-pair framing on the chronicity **face and sentence** (narrowed 2026-09-03, CUL-787: the expand + phone script carry the counted halves per §3.2) · "Resolved"/all-clear states inferred from absence of detection. Every new/changed string passes the guardrail regex screens; a11y labels are full sentences.
 
 ## 4. The receipt system (Shapes A + C)
 
@@ -139,6 +139,10 @@ SR-1/SR-2 are disjoint and parallel-safe (separate sessions/branches; the one co
 | Density disclosure (expanded) | `Counted from days you logged: {a} this week, {b} last.` |
 | Trial adjacency (expanded, falling only) | `A quieter week partway through a diet trial isn't the trial's verdict — the full run is what makes it readable.` |
 | Phone-script header | `If you call your clinic, the facts to have ready` |
+| Chronicity compare — why it stands (expanded, falling only; v1.1-b) | `Fewer lately doesn't change the ask — a course that eases before it's been looked into hasn't been explained, and your vet will want the whole run.` _(Dr. Chen, fold session 2026-09-03; reworded under option (a), PM 2026-09-03 — the original "before a cause is found" trips the causal screen. CUL-787)_ |
+| Chronicity compare — density disclosure (expanded) | `Counted from days you logged: {a} in the recent {w} weeks, {b} in the {w} before.` |
+| Chronicity compare — density withheld (expanded) | `You also logged on fewer days in the recent {w} weeks — {a}, against {b} before — so a lower count there can be fewer logs, not fewer episodes.` _(both counts stay printed above it — S2)_ |
+| Chronicity compare — phone-script row | `Recent {w} weeks: {n} · the {w} before: {m} · logged on {a} and {b} of those days` |
 | Control-side header | `The other side of the picture` |
 
 ## 10. Flagged Tier-2 edits (proposed wording — PM approval required before writing)

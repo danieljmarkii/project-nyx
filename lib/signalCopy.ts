@@ -31,6 +31,7 @@ import type {
   SignalSymptomType,
   StapleSource,
   SymptomChronicityFinding,
+  ChronicityCompare,
   SymptomWorseningFinding,
   TimeOfDayClusteringFinding,
   TimingStoryFinding,
@@ -1025,6 +1026,92 @@ export function reflectionExpandedExtras(
   return { densityLine, trialAdjacency: trialRunning ? TRIAL_ADJACENCY : null };
 }
 
+// ── v1.1-b (CUL-787): the counted 4-week compare INSIDE the standing safety card ──
+// The change an easing chronic course shows lives in the chronicity card's OWN expand and
+// phone script — never a separate calm card (the engine mutes the reflection lane while any
+// symptom is chronic, and that valve stays shut), nothing on the face, nothing in the
+// sentence (§3.5 — week-pair framing stays barred there). Two-sided by construction (S2 —
+// both halves always printed, a zero is "0", never an absence claim), count-anchored and
+// time-ordered, never a verdict word (no "down"/"better"/"improving"/"quieter"). When the
+// pair is FALLING the why-it-stands clause renders beneath: the ask does not move because a
+// count did. When it is rising or flat the sentence and the ask already carry it — nothing.
+
+/** The why-it-stands clause (Dr. Chen, fold session 2026-09-03; reworded under option (a),
+ *  PM 2026-09-03, so it clears the causal screen — "before a cause is found" tripped
+ *  CAUSAL_RE, the very vocabulary the clause exists to avoid). No mechanism, no cause, no
+ *  diagnosis: it names what a falling count does NOT settle, and where the whole run goes. */
+export const CHRONICITY_WHY_IT_STANDS =
+  "Fewer lately doesn't change the ask — a course that eases before it's been looked into hasn't been explained, and your vet will want the whole run.";
+
+/** Whole weeks per half (28d → 4). The label denominator, derived from the payload so a
+ *  changed lookback can never leave a stale "4" on the card. */
+function compareHalfWeeks(c: ChronicityCompare): number {
+  return Math.max(1, Math.round(c.halfDays / 7));
+}
+
+/** The pair is FALLING when the recent half holds fewer episodes than the half before. Flat
+ *  and rising are not "falling" — the clause is for the one direction an owner could read as
+ *  the ask having lapsed. */
+export function isChronicityCompareFalling(c: ChronicityCompare): boolean {
+  return c.recentCount < c.priorCount;
+}
+
+/** The Shape-C two-row compare (§4): the recent half above the half before, both counts
+ *  printed, bars proportional to the larger. Both rows wear the symptom hue descriptively
+ *  (a pattern wears the hue; a calm-toned recent row beside a rose prior row would be
+ *  reassurance by colour), muted only at a true zero. */
+export function chronicityCompareRows(c: ChronicityCompare): [CompareRow, CompareRow] {
+  const w = compareHalfWeeks(c);
+  return [
+    { label: `Recent ${w} weeks`, count: c.recentCount, tone: c.recentCount >= 1 ? 'concern' : 'muted' },
+    { label: `The ${w} before`, count: c.priorCount, tone: c.priorCount >= 1 ? 'concern' : 'muted' },
+  ];
+}
+
+/** The logged-days line under the compare — the denominators, where the reader meets the
+ *  claim (C-3). Comparable: the disclosure form. Not comparable: the withheld form, grounded
+ *  in logged days exactly as DENSITY_WITHHELD is (B-733 — the gate sees days-with-any-log,
+ *  never symptom coverage). Both counts stay printed above it either way (S2); this line only
+ *  says how far the recent one may be read. */
+export function chronicityCompareDensityLine(c: ChronicityCompare): string {
+  const w = compareHalfWeeks(c);
+  if (c.comparable) {
+    return `Counted from days you logged: ${c.recentLoggingDays} in the recent ${w} weeks, ${c.priorLoggingDays} in the ${w} before.`;
+  }
+  return `You also logged on fewer days in the recent ${w} weeks — ${c.recentLoggingDays}, against ${c.priorLoggingDays} before — so a lower count there can be fewer logs, not fewer episodes.`;
+}
+
+export interface ChronicityCompareExpanded {
+  rows: [CompareRow, CompareRow];
+  densityLine: string;
+  /** The why-it-stands clause, present only when the pair is falling. */
+  whyItStands: string | null;
+}
+
+/** Everything the chronicity expand's "Counted honestly" box renders, or null when the cached
+ *  finding carries no compare (an old cache — the pre-v1.1-b expand, byte-identical). */
+export function chronicityCompareExtras(f: SymptomChronicityFinding): ChronicityCompareExpanded | null {
+  const c = f.compare;
+  if (!c) return null;
+  return {
+    rows: chronicityCompareRows(c),
+    densityLine: chronicityCompareDensityLine(c),
+    whyItStands: isChronicityCompareFalling(c) ? CHRONICITY_WHY_IT_STANDS : null,
+  };
+}
+
+/** The one two-sided phone-script row (the issue's form verbatim: "Recent 4 weeks: 2 · the 4
+ *  before: 12"), with the logged-day denominators on the same row — the script is read aloud
+ *  to a vet, so the scope travels with the claim rather than in a box the owner may not
+ *  read out. Never a direction word. */
+export function chronicityComparePhoneScriptFact(c: ChronicityCompare): PhoneScriptFact {
+  const w = compareHalfWeeks(c);
+  return {
+    label: `Recent ${w} weeks`,
+    value: `${c.recentCount} · the ${w} before: ${c.priorCount} · logged on ${c.recentLoggingDays} and ${c.priorLoggingDays} of those days`,
+  };
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Receipts (SR-1, B-721) — pure models for the Signal evidence strips.
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1755,6 +1842,10 @@ export function phoneScript(finding: SignalFinding, petName: string): PhoneScrip
         label: 'How often',
         value: `${count(finding.episodeCount, 'episode', 'episodes')} across ${finding.activeWeeks} of ${weeks} weeks`,
       },
+      // v1.1-b (CUL-787): the counted halves as ONE two-sided row, only when the cache carries
+      // them (an old cache renders the pre-v1.1-b script). Sits between the total and the
+      // most-recent date so the script still reads oldest-fact → newest-fact.
+      ...(finding.compare ? [chronicityComparePhoneScriptFact(finding.compare)] : []),
       { label: 'Most recent', value: recencyPhrase(finding.daysSinceLastEpisode) },
       // The relay the owner READS ALOUD is the one place this mattered most and the one
       // place the first cut omitted it (adversarial pass, 2026-08-28): "mention both" is an

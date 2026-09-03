@@ -15,6 +15,7 @@ import {
   detectIntakeDecline,
   detectReflections,
   computeReflectionDensity,
+  computeChronicityCompare,
   DENSITY_COMPARABLE_MIN_RATIO,
   detectWorsening,
   detectChronicity,
@@ -5036,4 +5037,155 @@ Deno.test('stripInternalOnsets (CUL-9) — strips a merged timing_story\'s long.
   const stripped = stripInternalOnsets([story])[0] as TimingStoryFinding
   assert.equal('longEpisodeOnsets' in stripped.long, false, 'the merged story\'s long onsets are stripped')
   assert.deepEqual(story.long.longEpisodeOnsets, [111, 222], 'the input is not mutated (the strip clones `long`)')
+})
+
+// ── v1.1-b (CUL-787): computeChronicityCompare — the counted halves INSIDE the safety card ──
+//
+// The change an easing chronic course shows must be sayable inside ⑦'s own card, because the
+// reflection layer is (correctly) muted while any symptom is chronic (§4.4). Adversarial focus:
+// (1) the two halves must PARTITION the exact episode set ⑦ counted — no third count of one
+// population (C-4); (2) a FALLING pair over a thinner-logged recent half must read
+// `comparable: false` (fail toward escalation), while a RISING pair is never gated; (3) the
+// collapse-then-window order is what ⑦ uses, so a bout straddling the half boundary lands
+// once, in the half its onset is in. Windows (windowDays 56): recent = [NOW−28d, NOW), prior =
+// [NOW−56d, NOW−28d). `ago(d)` sits at 11:00 UTC, NOW at 12:00 — so ago(28) is INSIDE recent
+// by one hour and ago(56) inside prior by one hour; the exact-boundary cases use ago(d, 12).
+
+/** The Nyx-shaped record (CUL-695 / CUL-787): 12 episodes in the prior 4 weeks, 2 in the recent
+ *  4, logged every day — the case the fold discovery found Home structurally unable to say. */
+const nyxEasing = (): DetectionInput => {
+  const prior = [29, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51].map((d) => vomitAgo(d)) // 12
+  const recent = [3, 10].map((d) => vomitAgo(d)) // 2
+  const mealEvents: MealEvent[] = []
+  for (let d = 0; d <= 55; d++) mealEvents.push(mealAgo(d)) // 28 + 28 logged days
+  return input({ symptomEvents: [...prior, ...recent], mealEvents })
+}
+
+Deno.test('computeChronicityCompare — the Nyx-shaped easing course: 2 recent, 12 before, density held, comparable', () => {
+  const c = computeChronicityCompare(nyxEasing(), 'vomit')!
+  assert.deepEqual(c, {
+    halfDays: 28,
+    recentCount: 2,
+    priorCount: 12,
+    recentLoggingDays: 28,
+    priorLoggingDays: 28,
+    comparable: true,
+  })
+})
+
+Deno.test('computeChronicityCompare — the two halves PARTITION the episode set ⑦ counted (C-4)', () => {
+  const inp = nyxEasing()
+  const [f] = detectChronicity(inp)
+  assert.equal(f.symptomType, 'vomit', 'the course is chronic: span 48 / 14 episodes / recent')
+  const c = computeChronicityCompare(inp, 'vomit')!
+  assert.equal(c.recentCount + c.priorCount, f.episodeCount, 'no third count of one population')
+})
+
+Deno.test('computeChronicityCompare — never a reflection card while chronicity fires, even on an easing course', () => {
+  // The whole point of DF-9(b): F2's "second calm card" would reopen the §4.4 valve. With the
+  // compare present the valve is untouched — the reflection layer stays blank and ⑦ leads.
+  const inp = nyxEasing()
+  assert.deepEqual(detectReflections(inp), [], 'the ③ valve holds on an easing chronic course')
+  const ranked = detectSignals(inp)
+  assert.ok(!ranked.some((r) => r.finding.type === 'reflection'), 'no calm card')
+  assert.equal(ranked[0].finding.type, 'symptom_chronicity', 'the safety card leads')
+})
+
+Deno.test('computeChronicityCompare — a RISING pair over a dark prior half is comparable (never gated) and prints 0 before', () => {
+  // A course that began three weeks ago on an account that logged nothing before it: the prior
+  // half is dark (0 logged days), so the pair could only have RISEN — comparable, no divide by 0.
+  const symptomEvents = [0, 3, 6, 9, 12, 15, 18, 21, 24].map((d) => vomitAgo(d)) // 9, span 24
+  const mealEvents: MealEvent[] = []
+  for (let d = 0; d <= 26; d++) mealEvents.push(mealAgo(d))
+  const inp = input({ symptomEvents, mealEvents })
+  assert.equal(detectChronicity(inp).length, 1, 'the young course is chronic (span 24 ≥ 21)')
+  const c = computeChronicityCompare(inp, 'vomit')!
+  assert.equal(c.recentCount, 9)
+  assert.equal(c.priorCount, 0, 'a half that predates the course prints 0 — a true count, never hidden')
+  assert.equal(c.priorLoggingDays, 0)
+  assert.equal(c.comparable, true, 'prior half dark ⇒ density cannot have fallen ⇒ comparable')
+})
+
+Deno.test('computeChronicityCompare — a FALLING pair over a thinner-logged recent half is NOT comparable, counts still carried', () => {
+  // Same 12→2 shape as Nyx, but the recent half was logged on 10 of 28 days (10 < 28 × 0.7):
+  // a quieter-looking half may just be a less-logged one, so the pair may not be read at face
+  // value — and BOTH counts still travel (S2), the client only swaps the disclosure line.
+  const prior = [29, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51].map((d) => vomitAgo(d))
+  const recent = [3, 10].map((d) => vomitAgo(d))
+  const mealEvents: MealEvent[] = []
+  for (let d = 28; d <= 55; d++) mealEvents.push(mealAgo(d)) // prior: 28 logged days
+  for (const d of [1, 2, 3, 5, 8, 10, 13, 17, 21, 25]) mealEvents.push(mealAgo(d)) // recent: 10
+  const c = computeChronicityCompare(input({ symptomEvents: [...prior, ...recent], mealEvents }), 'vomit')!
+  assert.equal(c.recentCount, 2)
+  assert.equal(c.priorCount, 12)
+  assert.equal(c.recentLoggingDays, 10)
+  assert.equal(c.priorLoggingDays, 28)
+  assert.equal(c.comparable, false, 'fail toward escalation: the fall is not read at face value')
+})
+
+Deno.test('computeChronicityCompare — a mild logging dip (≥ 70%) stays comparable; the gate is the shared SR-4 constant', () => {
+  const prior = [29, 33, 37, 41, 45, 49].map((d) => vomitAgo(d))
+  const recent = [3, 10].map((d) => vomitAgo(d))
+  const mealEvents: MealEvent[] = []
+  for (let d = 28; d <= 55; d++) mealEvents.push(mealAgo(d)) // 28
+  for (let d = 0; d <= 19; d++) mealEvents.push(mealAgo(d)) // 20 ≥ 28 × 0.7 = 19.6
+  const c = computeChronicityCompare(input({ symptomEvents: [...prior, ...recent], mealEvents }), 'vomit')!
+  assert.equal(c.recentLoggingDays, 20)
+  assert.equal(c.comparable, true)
+  assert.equal(20 >= 28 * DENSITY_COMPARABLE_MIN_RATIO, true, 'the same named constant ③ uses')
+})
+
+Deno.test('computeChronicityCompare — the half boundary is [now−56d, now−28d) / [now−28d, now): exact-boundary onsets land once', () => {
+  // An onset exactly at NOW−28d is the recent half's first instant; exactly NOW−56d is the prior
+  // half's first instant; one hour before THAT is outside the lookback entirely (⑦ would not
+  // count it either). Built from explicit instants, never a day-number approximation.
+  const atOffset = (ms: number): SymptomEvent => symptom('vomit', new Date(NOW_MS - ms).toISOString())
+  const symptomEvents = [
+    atOffset(28 * DAY_MS), // recentStart exactly → recent
+    atOffset(56 * DAY_MS), // priorStart exactly → prior
+    // priorStart − 4h → outside. FOUR hours, not one: an outside log within the 3h collapse gap
+    // of the exact-boundary onset would MERGE with it into one episode whose onset is outside —
+    // which is what ⑦ does too (collapse first, window second), and the straddle test below pins.
+    atOffset(56 * DAY_MS + 4 * HOUR_MS),
+    ...[3, 10, 17].map((d) => vomitAgo(d)),
+    ...[35, 42, 49].map((d) => vomitAgo(d)),
+  ]
+  const c = computeChronicityCompare(input({ symptomEvents }), 'vomit')!
+  assert.equal(c.recentCount, 4, 'three interior + the exact recentStart onset')
+  assert.equal(c.priorCount, 4, 'three interior + the exact priorStart onset; the outside one is not counted')
+})
+
+Deno.test('computeChronicityCompare — collapse FIRST, window SECOND: a bout straddling the half boundary counts once, in its onset half', () => {
+  // Two logs 40 minutes apart across NOW−28d: one at 11:40 (prior half), one at 12:20 (recent).
+  // ⑦ collapses them into ONE episode whose onset is the earlier log — so the compare must put
+  // exactly one episode in the PRIOR half and none in the recent, never one in each.
+  const straddle = [
+    symptom('vomit', new Date(NOW_MS - 28 * DAY_MS - 20 * 60_000).toISOString()),
+    symptom('vomit', new Date(NOW_MS - 28 * DAY_MS + 20 * 60_000).toISOString()),
+  ]
+  const base = computeChronicityCompare(input({ symptomEvents: [] }), 'vomit')!
+  assert.deepEqual([base.recentCount, base.priorCount], [0, 0])
+  const c = computeChronicityCompare(input({ symptomEvents: straddle }), 'vomit')!
+  assert.deepEqual([c.recentCount, c.priorCount], [0, 1], 'one episode, in the half its onset is in')
+})
+
+Deno.test('computeChronicityCompare — counts ONE symptom type; other signs count as logged days only', () => {
+  const symptomEvents = [...[3, 10].map((d) => vomitAgo(d)), ...[5, 12, 33].map((d) => diarrheaAgo(d))]
+  const c = computeChronicityCompare(input({ symptomEvents }), 'vomit')!
+  assert.deepEqual([c.recentCount, c.priorCount], [2, 0], 'diarrhea never inflates the vomit halves')
+  assert.equal(c.recentLoggingDays, 4, 'but a diarrhea log is a logged day (the comparison-gate cell)')
+  assert.equal(c.priorLoggingDays, 1)
+})
+
+Deno.test('computeChronicityCompare — halfDays is windowDays / 2 and an unparseable now → null', () => {
+  assert.equal(computeChronicityCompare(input({}), 'vomit')!.halfDays, DEFAULT_CONFIG.chronicity.windowDays / 2)
+  assert.equal(computeChronicityCompare(input({ now: 'not-a-date' }), 'vomit'), null)
+})
+
+Deno.test('computeChronicityCompare — the compare is ADDITIVE: ⑦ fires identically with or without it (no detection delta)', () => {
+  // Pure function of the input; detectChronicity never reads it. The detector's output on the
+  // Nyx fixture is byte-identical to the pre-v1.1-b shape (no `compare` key — the decorate map
+  // attaches it in index.ts, after detection).
+  const [f] = detectChronicity(nyxEasing())
+  assert.equal('compare' in f, false, 'the detector does not attach it — decoration does')
 })
