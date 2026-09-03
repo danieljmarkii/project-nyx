@@ -60,3 +60,26 @@ None PM-ratified — by design. The lenses closed D1 among themselves; DF-2 / DF
 ## Next
 
 PR 1 (CUL-784) can start now. The PM's three answers — DF-2, DF-3, DF-4 — and CUL-775 D1–D4 are the only gates. Kickoff prompts are in the session summary.
+
+---
+
+## Part 2 — the PM's reactions, applied (same day)
+
+The PM reacted to round 1 within the session:
+
+> "as these cards are expanding and contracting .. lets add some design delight. Not sure what that looks like. But lets make it happen" · "F5. I like this one. Keeping the dismiss controls at the top level. I think this is also df3." · "F6. I like this to an extent. But lets not make this v1." · "DF2. I think the acute card should collapse too." · "df4. Im fine w the recommendation of a" · "If theres anything we can di to improve the design of the cards lets explore those options" · "i think we have some issues in linear. But lets add that to a project and i want a cul by cul (pr by pr) plan for how to run this added to the project description"
+
+**Rulings applied (spec → v1.1):**
+- **DF-2:** every safety card folds, **the acute class included** — the lenses' class line overridden. The concern was stated once (an intake-decline card is the 48-hour window for a cat; Dr. Chen's falsification set assumed it stays open) and the PM's call was built to: the acute fold is bounded by the record, not the reader — `daysBelowBaseline` climbs daily and a new flagged photo moves `mostRecentFlaggedIso`, so an acute fold lasts one regen cycle; the strip keeps the card's ask verb verbatim; Dr. Chen's dissent is recorded in §10 and he signs the four acute strings at PR 2. §5.3 gained the two acute rows; §4 the four acute clauses and two Back-because lines.
+- **DF-3:** the control on the **face** (F5), beside `Why we're showing this`, repeated in the expanded row; §3.3 rewritten as a host-split two-button control row with the 44pt floor reached upward only (the next card's own `Pressable` starts just past the hairline — a bottom slop would share hit area with it). FS-4 rewritten; "you fold what you have opened" retired.
+- **DF-4:** (a), as recommended. **F6:** not v1 (DF-9c).
+
+**Two new asks → a second isolated Designer pass** (motion + card directions; no `react-native-reanimated` in the project, confirmed; `InsightCard` is on the haptics guard's always-scanned list, so the fold is silent by construction):
+- **§12 the fold motion (DF-10, PR 3 — CUL-788).** The principle: a fold is a collapse in place, so the motion is subtraction with one thing held constant — **the rail is the same node before, during and after**, never changing colour or opacity. Fold = 150ms the body fades and drifts 4pt toward the line (`Animated`, ease-out quad) + 250ms the box closes around the rail while the strip fades in as one node (`LayoutAnimation`, custom config object — `create()` cannot express the ease/spring split). Unfold = 400ms with one soft settle (iOS spring, damping 0.85, ≤2pt overshoot; Android ease) + the sentence landing −4→0 over 250ms. Identical on every class (S1 lives in what the strip says). Reduced motion = crossfade only (a 130pt jump is itself a jolt — §3.2 softened by one word). Forbidden: any loop, a bounce on *close* (reads as relief), scale, sideways travel, a wash, a rail colour change, a check mark, a haptic. The settling wrapper mounts only while settling, so the idle tree stays byte-identical.
+- **§13 three card directions (DF-11, PR 4 — CUL-790).** **A "Quiet foot"** (the boxed pills go; `Early pattern` becomes a prefix on the sample line; one control row) · **B "Margin rule"** (row hairlines go; the rails become segments of one ruled margin — a folded strip is a short segment beside one line; the rose segment is the only warm mark on the paper; one Tier-2 line in the Signal spec §5.2) · **C "Picture first"** (the receipt leads on benign cards — **vetoed**: re-opens S4/S10, breaks the fold's compression logic, and a falling compare as a hero beside a folded safety strip is reassurance by layout). Recommendation: **build B carrying A's foot.**
+
+**Mock round 2** (same URL): the rulings ledger at the top; F2/F5/F6/F7 recaptioned (F7 now draws an acute card folded and the next morning's return, "Back because another day came in below the usual."); a **tappable motion frame** running the §12 beats in CSS with a reduce-motion toggle; the three card directions side by side; two briefs left for the PM — DF-10 (approve the motion as drawn / quicker / spring both ways) and DF-11 (B+A recommended / A only / keep the cards).
+
+**Linear:** new project **Home v1 — The Signal fold** with the CUL-by-CUL plan in its description (PR 0 #795 → PR 1 CUL-784 → PR 2 CUL-785 → PR 3 CUL-788 → PR 4 CUL-790; v1.1 CUL-786 / CUL-787; gates, parallelism, the `lib/signalCopy.ts` collision named, the per-PR session ritual, and what "done" means). CUL-784/785/786/787 moved into it; CUL-785 re-scoped to all four safety types and un-blocked; CUL-788 (the motion), CUL-789 (mock round 2, this session), CUL-790 (the card refresh) filed; CUL-695 keeps the decision record and gained the rulings comment.
+
+**Open for the PM after this part:** DF-10 (approve the motion) and DF-11 (pick the card direction) on CUL-789; CUL-775 D1–D4 for v2. PR 1 (CUL-784) needs nothing.
