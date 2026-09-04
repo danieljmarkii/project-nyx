@@ -21,9 +21,11 @@
 // set; a pet switch re-runs it synchronously in the same render, so a strip can never print
 // the previous pet's last episode over the new pet's card.
 //
-// `null` per type means the read did not answer for that type (C-12: unanswered is never
-// "no episodes" — and here it cannot be, because a standing safety finding exists only
-// because episodes were logged). The caller renders no date rather than inventing one.
+// `null` per type means EITHER the read did not answer OR the record holds no such event
+// (`MAX()` over zero rows is null). The two are deliberately not told apart: a standing
+// safety finding exists only because episodes were logged, so "no rows" is itself a sign the
+// local record is incomplete (a fresh install before hydration), and both cases want the
+// same outcome — no date printed, the fold's witness left untouched (`keepWitnesses`).
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';

@@ -2255,23 +2255,28 @@ export function stripDayUTC(iso: string): StripDay | null {
 
 /**
  * The chronicity strip's FALLBACK last-episode instant (§3.4) — used only when the local
- * record could not be read. The engine counted `daysSinceLastEpisode` at generation time,
- * and the cache row's `expires_at` sits one TTL (24h) after that, so the last episode fell on
- * `expiresAt − 24h − daysSinceLastEpisode` days. An approximation to the day (the engine
- * buckets in UTC and this renders the local day), which is why it is the fallback and the
- * record is the source. Null when the row's expiry is missing or unparseable — then the
- * strip prints no date at all rather than a guess. Worsening has no such field and no
- * fallback.
+ * record could not be read. The engine counted `daysSinceLastEpisode` at `generatedAt` (the
+ * cache row's `generated_at`; never the expiry, whose TTL is a migration default this
+ * module must not be coupled to), so the last episode fell `daysSinceLastEpisode` days
+ * before that instant.
+ *
+ * The bound, stated so nobody has to re-derive it: `daysSinceLastEpisode` is a FLOOR, so the
+ * true onset lies in `(generatedAt − (d+1) days, generatedAt − d days]` and this returns the
+ * upper end — systematically LATE by up to one calendar day (plus the engine's UTC
+ * bucketing against the local day rendered), never early. Late is the escalating direction
+ * for a "last episode" on a safety strip. Null when the row's anchor is missing or
+ * unparseable — then the strip prints no date at all rather than a guess. Worsening has no
+ * such field and no fallback.
  */
 export function chronicityLastEpisodeFallbackIso(
   finding: SymptomChronicityFinding,
-  expiresAt: string | null,
+  generatedAt: string | null,
 ): string | null {
-  if (!expiresAt) return null;
-  const exp = Date.parse(expiresAt);
-  if (!Number.isFinite(exp)) return null;
+  if (!generatedAt) return null;
+  const gen = Date.parse(generatedAt);
+  if (!Number.isFinite(gen)) return null;
   const DAY_MS = 24 * 60 * 60 * 1000;
-  return new Date(exp - DAY_MS - finding.daysSinceLastEpisode * DAY_MS).toISOString();
+  return new Date(gen - finding.daysSinceLastEpisode * DAY_MS).toISOString();
 }
 
 /**

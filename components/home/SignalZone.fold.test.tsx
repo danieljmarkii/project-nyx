@@ -52,6 +52,7 @@ import { SignalZone } from './SignalZone';
 import { facing, flat, owningTouchable } from '../../testUtils/tree';
 import * as signalCopy from '../../lib/signalCopy';
 import { usePetStore } from '../../store/petStore';
+import { useSyncStore } from '../../store/syncStore';
 import {
   foldFingerprint,
   foldIdentity,
@@ -172,7 +173,7 @@ function live(findings: CachedFinding[], over: Partial<SignalState> = {}): Signa
     dayNumber: 60,
     eventCount: 140,
     acknowledging: false,
-    expiresAt: null,
+    generatedAt: null,
     answered: true,
     ...over,
   };
@@ -423,30 +424,30 @@ describe('SignalZone — the standing safety strip', () => {
     const thisMorning = new Date(2026, 8, 4, 7, 30).toISOString();
     mockLastEpisodeByType = { vomit: thisMorning };
     await writeFoldEntries('pet-1', { [CKEY]: foldedEntry(chronicityFinding, NOW) });
-    // The expiry would derive Sep 1 (3 days before Sep 4 noon); the record says Sep 4.
-    const expiresAt = new Date(2026, 8, 5, 12).toISOString();
-    mockUseSignal.mockReturnValue(live([chronicity, postprandial], { expiresAt }));
+    // The engine's anchor would derive Sep 1 (3 days before Sep 4 noon); the record says Sep 4.
+    const generatedAt = new Date(2026, 8, 4, 12).toISOString();
+    mockUseSignal.mockReturnValue(live([chronicity, postprandial], { generatedAt }));
     const view = render(<SignalZone />);
     await view.findByTestId('insight-folded-strip');
     expect(view.getByText('14 episodes, 5 of 8 weeks · last Sep 4')).toBeTruthy();
     expect(view.queryByText(/last Sep 1/)).toBeNull();
   });
 
-  it('when the record cannot be read, chronicity falls back to the engine’s recency off the cache expiry (§3.4)', async () => {
+  it('when the record cannot be read, chronicity falls back to the engine’s recency off the row’s generated_at (§3.4)', async () => {
     mockDbThrows = true;
     await writeFoldEntries('pet-1', { [CKEY]: foldedEntry(chronicityFinding, NOW) });
-    // The row expires Sep 5 local noon ⇒ generated Sep 4 noon ⇒ last episode 3 days before: Sep 1.
-    const expiresAt = new Date(2026, 8, 5, 12).toISOString();
-    mockUseSignal.mockReturnValue(live([chronicity, postprandial], { expiresAt }));
+    // Generated Sep 4 local noon ⇒ last episode 3 days before: Sep 1.
+    const generatedAt = new Date(2026, 8, 4, 12).toISOString();
+    mockUseSignal.mockReturnValue(live([chronicity, postprandial], { generatedAt }));
     const view = render(<SignalZone />);
     await view.findByTestId('insight-folded-strip');
     expect(view.getByText('14 episodes, 5 of 8 weeks · last Sep 1')).toBeTruthy();
   });
 
-  it('with neither the record nor an expiry, the count stands alone — no invented date', async () => {
+  it('with neither the record nor an engine anchor, the count stands alone — no invented date', async () => {
     mockDbThrows = true;
     await writeFoldEntries('pet-1', { [CKEY]: foldedEntry(chronicityFinding, NOW) });
-    mockUseSignal.mockReturnValue(live([chronicity, postprandial], { expiresAt: null }));
+    mockUseSignal.mockReturnValue(live([chronicity, postprandial], { generatedAt: null }));
     const view = render(<SignalZone />);
     await view.findByTestId('insight-folded-strip');
     expect(view.getByText('14 episodes, 5 of 8 weeks')).toBeTruthy();
@@ -472,6 +473,29 @@ describe('SignalZone — the standing safety strip', () => {
     await again.findByTestId('insight-folded-strip');
     expect(again.getByText('11 episodes, 4 of 8 weeks')).toBeTruthy();
     expect(again.queryByText(/^Back because/)).toBeNull();
+  });
+
+  it('the saturated daily course (adversarial pass): the payload never moves, the record does — a new local episode re-opens the strip, regen or no regen', async () => {
+    const saturated: CachedFinding = {
+      ...chronicity,
+      finding: { ...chronicityFinding, episodeCount: 56, activeWeeks: 8, symptomDays: 56, daysSinceLastEpisode: 0, tier: 'firm' },
+    };
+    mockLastEpisodeByType = { vomit: new Date(2026, 8, 3, 8).toISOString() };
+    mockUseSignal.mockReturnValue(live([saturated, postprandial]));
+    const view = render(<SignalZone />);
+    await act(async () => {});
+    fireEvent.press(view.getAllByText('Keep it compact')[0]);
+    await view.findByTestId('insight-folded-strip');
+    expect(view.getByText('56 episodes, 8 of 8 weeks · last Sep 3')).toBeTruthy();
+    // The next morning: the owner logs a vomit. The regen has not run (offline, or the
+    // debounce) — the SAME payload — but the local record's newest episode moved, and a sync
+    // / focus tick re-reads it.
+    mockLastEpisodeByType = { vomit: new Date(2026, 8, 4, 7, 30).toISOString() };
+    act(() => useSyncStore.getState().bumpHydrationTick());
+    await view.findByText('Back because a new episode was logged.');
+    expect(view.queryByTestId('insight-folded-strip')).toBeNull();
+    expect(view.getByText(chronicity.text)).toBeTruthy();
+    await waitFor(async () => expect((await readFoldEntries('pet-1'))?.[CKEY]?.state).toBe('reopened'));
   });
 
   it('the vet ask changing (a tier flip) re-opens the strip with the ask line’s reason', async () => {

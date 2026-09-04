@@ -508,24 +508,26 @@ export function SignalZone({
     dayNumber,
     eventCount,
     acknowledging,
-    expiresAt,
+    generatedAt,
     answered,
   } = useSignal();
 
-  // CUL-784 — the Signal fold (fold spec §5/§6): this reader's per-pet memory of which
-  // cards they have compacted. Read once per pet, reconciled against the SETTLED set only
-  // (`answered` — never against the pre-read empty array or a read that threw, C-12), and
-  // handed to the stack, which renders a strip, a re-opened face, or the face per entry.
-  const fold = useSignalFold({ petId, findings, answered });
   // CUL-785 (fold spec §3.4) — the standing safety strips end with the DATE of the last
-  // logged episode, from the local record. Read for the symptom types the stack could show
-  // a date for; the chronicity fallback (`expiresAt`) is applied per row in the stack.
+  // logged episode, from the local record, and that same instant is the fold's witness for a
+  // new episode (`RecordFacts`). Read for the symptom types the stack could show a date for;
+  // the chronicity fallback (`generatedAt`) is applied per row in the stack.
   const lastEpisodes = useLastEpisodeDates({
     petId,
     symptomTypes: findings
       .filter((f) => f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening')
       .map((f) => (f.finding as { symptomType: string }).symptomType),
   });
+
+  // CUL-784 — the Signal fold (fold spec §5/§6): this reader's per-pet memory of which
+  // cards they have compacted. Read once per pet, reconciled against the SETTLED set only
+  // (`answered` — never against the pre-read empty array or a read that threw, C-12), and
+  // handed to the stack, which renders a strip, a re-opened face, or the face per entry.
+  const fold = useSignalFold({ petId, findings, answered, lastEpisodes });
 
   // Signal/Home design uplift (B-721, SR-1..SR-6) — GA'd 2026-08-20 (CUL-546 Phase 1 /
   // CUL-547): the uplift IS the Signal surface now. SR-1 the live receipts (via LiveStack →
@@ -720,7 +722,7 @@ export function SignalZone({
                 arrival={moment}
                 fold={fold}
                 lastEpisodes={lastEpisodes}
-                expiresAt={expiresAt}
+                generatedAt={generatedAt}
               />
             }
           />
@@ -732,7 +734,7 @@ export function SignalZone({
             suppressTrialResponse={suppressTrialResponse}
             fold={fold}
             lastEpisodes={lastEpisodes}
-            expiresAt={expiresAt}
+            generatedAt={generatedAt}
           />
         )
       ) : state === 'stale' ? (
@@ -854,7 +856,7 @@ function LiveStack({
   arrival = null,
   fold,
   lastEpisodes = {},
-  expiresAt = null,
+  generatedAt = null,
 }: {
   findings: CachedFinding[];
   petName: string;
@@ -868,8 +870,8 @@ function LiveStack({
   fold: SignalFoldApi;
   /** CUL-785 (§3.4) — symptom type → the record's last episode ISO (null = unread). */
   lastEpisodes?: LastEpisodeDates;
-  /** The cache row's expiry, for the chronicity strip's fallback date when the record could not be read. */
-  expiresAt?: string | null;
+  /** When the engine counted (the cache row's `generated_at`), for the chronicity strip's fallback date when the record could not be read. */
+  generatedAt?: string | null;
 }) {
   // B-789 (§5.2) — drop the trial_response card when the record shows the animal isn't eating
   // (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip withholds its
@@ -908,7 +910,7 @@ function LiveStack({
         const lastEpisodeIso =
           f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening'
             ? lastEpisodes[f.finding.symptomType] ??
-              (f.finding.type === 'symptom_chronicity' ? chronicityLastEpisodeFallbackIso(f.finding, expiresAt) : null)
+              (f.finding.type === 'symptom_chronicity' ? chronicityLastEpisodeFallbackIso(f.finding, generatedAt) : null)
             : null;
         // CUL-784 (fold spec §6 / DF-7): ORDER IS RANK — a fold changes height, never
         // position — and `isLead` stays bound to rank 0 whether or not that row is folded.

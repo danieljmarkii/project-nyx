@@ -86,7 +86,7 @@ describe('useSignal — pet-switch multi-pet safety', () => {
     mockedReadCache.mockImplementation(
       async (petId: string) =>
         petId === PET_A.id
-          ? { signalText: null, isBuilding: false, findings: [finding], coverage: [], expiresAt: '2999-01-01' }
+          ? { signalText: null, isBuilding: false, findings: [finding], coverage: [], generatedAt: '2026-09-03T12:00:00.000Z', expiresAt: '2999-01-01' }
           : null, // pet B's fetch simply hasn't resolved yet in this test
     );
 
@@ -247,7 +247,7 @@ describe('useSignal — `answered` (CUL-784, C-12)', () => {
     expect(result.current.answered).toBe(false);
     expect(result.current.isLoading).toBe(true);
     await act(async () => {
-      release({ signalText: null, isBuilding: false, findings: [finding], coverage: [], expiresAt: '2999-01-01' });
+      release({ signalText: null, isBuilding: false, findings: [finding], coverage: [], generatedAt: '2026-09-03T12:00:00.000Z', expiresAt: '2999-01-01' });
     });
     await waitFor(() => expect(result.current.answered).toBe(true));
     expect(result.current.findings).toEqual([finding]);
@@ -271,7 +271,7 @@ describe('useSignal — `answered` (CUL-784, C-12)', () => {
 
   it('a later throw does not revoke an earlier answer for the same pet (the last resolved read stands)', async () => {
     mockedReadCache.mockResolvedValueOnce({
-      signalText: null, isBuilding: false, findings: [finding], coverage: [], expiresAt: '2999-01-01',
+      signalText: null, isBuilding: false, findings: [finding], coverage: [], generatedAt: '2026-09-03T12:00:00.000Z', expiresAt: '2999-01-01',
     });
     const { result } = renderHook(() => useSignal());
     await waitFor(() => expect(result.current.answered).toBe(true));
@@ -289,7 +289,7 @@ describe('useSignal — `answered` (CUL-784, C-12)', () => {
   it('resets to FALSE in the same render that observes a pet switch, before the new pet’s read lands', async () => {
     mockedReadCache.mockImplementation(async (petId: string) =>
       petId === PET_A.id
-        ? { signalText: null, isBuilding: false, findings: [finding], coverage: [], expiresAt: '2999-01-01' }
+        ? { signalText: null, isBuilding: false, findings: [finding], coverage: [], generatedAt: '2026-09-03T12:00:00.000Z', expiresAt: '2999-01-01' }
         : null,
     );
     const { result } = renderHook(() => useSignal());
