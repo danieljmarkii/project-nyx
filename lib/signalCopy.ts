@@ -2199,9 +2199,9 @@ export const STRIP_COUNT_LINE_MAX = 44;
 export const STRIP_ASKS = {
   /** The card says "worth booking a vet visit" (chronicity firm; worsening firm). */
   visit: 'Worth a vet visit',
-  /** The card says "worth a word with your vet" (chronicity standard; worsening standard / soft). */
+  /** The card says "worth a word with your vet" (chronicity standard; worsening standard). */
   tell: 'Tell your vet',
-  /** The card says "a word with your vet if it carries on" (intake decline, both triggers). */
+  /** The card says "a word with your vet if it carries on" (intake decline, both triggers; worsening soft). */
   check: 'Check with your vet',
   /** The card says "worth a call to your vet" (a photo red flag). */
   call: 'Call your vet',
@@ -2333,10 +2333,12 @@ export function stripAskLine(finding: SignalFinding): string | null {
       // templateChronicity: firm → "worth booking a vet visit", else "worth a word with your vet".
       return finding.tier === 'firm' ? STRIP_ASKS.visit : STRIP_ASKS.tell;
     case 'symptom_worsening':
-      // templateWorsening: firm → "worth booking a vet visit soon"; standard / soft → "worth a
-      // word with your vet". The spec's §4 table gave worsening one form; the card has two
-      // verbs, and the strip follows the card (CUL-785 brief B).
-      return finding.tier === 'firm' ? STRIP_ASKS.visit : STRIP_ASKS.tell;
+      // templateWorsening: firm → "worth booking a vet visit soon"; standard → "worth a word
+      // with your vet"; soft → "a word with your vet if it carries on" (the conditional
+      // register intake shares). The spec's §4 table gave worsening one form; the card has
+      // three verbs, and the strip follows the card (CUL-785 brief B; the soft rung was the
+      // pm-feature-review's catch — `Tell your vet` hardened a conditional into an imperative).
+      return finding.tier === 'firm' ? STRIP_ASKS.visit : finding.tier === 'soft' ? STRIP_ASKS.check : STRIP_ASKS.tell;
     case 'intake_decline':
       // templateIntakeDecline: both triggers end "a word with your vet if it carries on".
       return STRIP_ASKS.check;

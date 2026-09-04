@@ -285,7 +285,7 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
     expect(stripCountLine(chronicity(), { lastEpisodeIso: 'garbage' })).toBe('14 episodes, 5 of 8 weeks');
   });
 
-  it('worsening: the axis that rose, bare numbers; firm mirrors "booking a vet visit", the rest "a word with your vet"', () => {
+  it('worsening: the axis that rose, bare numbers; the ask follows the tier the card phrases on — firm / standard / soft', () => {
     expect(stripNameLine(worsening())).toBe('Vomiting up this week');
     expect(stripCountLine(worsening(), LAST)).toBe('5 this week, 2 last week · last Aug 26');
     expect(stripCountLine(worsening({ trigger: 'more_days', currentDays: 5, priorDays: 3 }), LAST)).toBe(
@@ -293,7 +293,8 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
     );
     expect(stripAskLine(worsening({ tier: 'firm' }))).toBe('Worth a vet visit');
     expect(stripAskLine(worsening({ tier: 'standard' }))).toBe('Tell your vet');
-    expect(stripAskLine(worsening({ tier: 'soft' }))).toBe('Tell your vet');
+    // soft says "a word with your vet if it carries on" — the conditional register, intake's verb.
+    expect(stripAskLine(worsening({ tier: 'soft' }))).toBe('Check with your vet');
   });
 
   it('a `New` worsening (zero prior) drops the "0 last week" pair, exactly as the face does (S10)', () => {
