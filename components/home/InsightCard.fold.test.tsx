@@ -11,8 +11,9 @@ const mockUseReducedMotion = jest.fn(() => false);
 jest.mock('../../hooks/useReducedMotion', () => ({
   useReducedMotion: () => mockUseReducedMotion(),
 }));
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { LayoutAnimation } from 'react-native';
 import { FoldedStrip, InsightCard } from './InsightCard';
 import { commonAncestor, facing, flat, owningTouchable } from '../../testUtils/tree';
@@ -46,6 +47,9 @@ const chronicity: SymptomChronicityFinding = {
   windowDays: 56,
 };
 const SENTENCE = 'A sentence about Nyx.';
+// A mocked native-driver animation completes on the next animation frame, whatever its
+// duration — so one frame is what a "the beat completed" step advances by.
+const FRAME_MS = 20;
 const benign: CachedFinding = { rank: 1, text: SENTENCE, finding: postprandial };
 const safety: CachedFinding = { rank: 0, text: SENTENCE, finding: chronicity };
 
@@ -82,12 +86,20 @@ describe('the control row is a sibling of the face (DF-3, C-6)', () => {
 });
 
 describe('`Keep it compact` — where it renders and what it does (FS-4, the PR 1 class gate)', () => {
-  it('renders on a benign card when a host wired onFold, and calls it with the finding', () => {
+  it('renders on a benign card when a host wired onFold, and calls it with the finding once the words have left', () => {
+    // CUL-788: the host's state change rides the choreography — it fires when the 180ms
+    // leave beat completes (the box closes around the line), not at the press itself.
+    jest.useFakeTimers();
     const onFold = jest.fn();
     const { getByText } = render(<InsightCard cached={benign} petName="Nyx" onFold={onFold} />);
     fireEvent.press(getByText(FOLD_CONTROL_LABEL));
+    expect(onFold).not.toHaveBeenCalled();
+    act(() => {
+      jest.advanceTimersByTime(FRAME_MS);
+    });
     expect(onFold).toHaveBeenCalledTimes(1);
     expect(onFold).toHaveBeenCalledWith(postprandial);
+    jest.useRealTimers();
   });
 
   it('does NOT render on a safety card on this build, even when onFold is wired', () => {
@@ -193,12 +205,19 @@ describe('the Back-because line (DF-8 / §7)', () => {
 
 describe('reduced motion (FS-9)', () => {
   it('the two press paths animate normally', () => {
+    jest.useFakeTimers();
     const spy = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
     const { getByTestId, getByText } = render(<InsightCard cached={benign} petName="Nyx" onFold={jest.fn()} />);
     fireEvent.press(getByTestId('insight-face'));
+    expect(spy).toHaveBeenCalledTimes(1);
     fireEvent.press(getByText(FOLD_CONTROL_LABEL));
+    // The fold's layout config fires when the leave beat completes (CUL-788, §12.1).
+    act(() => {
+      jest.advanceTimersByTime(FRAME_MS);
+    });
     expect(spy).toHaveBeenCalledTimes(2);
     spy.mockRestore();
+    jest.useRealTimers();
   });
 
   it('under reduced motion there is NO LayoutAnimation call on either path', () => {
@@ -260,14 +279,22 @@ describe('FoldedStrip (§3.1 / §7)', () => {
     expect(getByText('8 of 8 timed within 30 min of eating').props.numberOfLines).toBeUndefined();
   });
 
-  it('keeps the rail at full opacity on the fold (FS-3)', () => {
-    const { getByTestId } = render(<FoldedStrip cached={benign} onPress={jest.fn()} />);
-    const strip = getByTestId('insight-folded-strip');
-    const rail = strip.children[0] as { props: { style: unknown } };
+  it('keeps the rail at full opacity on the fold (FS-3) — the row’s rail, beside the strip', () => {
+    // CUL-788: the rail belongs to the ROW in both states (one node through the motion), so
+    // a folded card's rail is the row's first child, and the strip is its content.
+    const { getByTestId } = render(
+      <InsightCard cached={benign} petName="Nyx" onFold={jest.fn()} folded onUnfold={jest.fn()} />,
+    );
+    const row = getByTestId('insight-row');
+    const rail = row.children[0] as { props: { style: unknown } };
     const railStyle = flat(rail as never);
-    // The shipped rail opacity — unchanged, never dimmed.
+    // The shipped rail opacity and width — unchanged, never dimmed, never narrowed.
     expect(railStyle.opacity).toBe(0.85);
     expect(railStyle.width).toBe(3);
+    // At rest on a strip the rail is the mock's 16pt tick, centred (§12: "the strip's 16pt").
+    expect(railStyle.height).toBe(16);
+    expect(railStyle.alignSelf).toBe('center');
+    expect(getByTestId('insight-folded-strip')).toBeTruthy();
   });
 
   it('renders nothing for a type with no strip copy on this build (the safety class)', () => {
@@ -275,15 +302,24 @@ describe('FoldedStrip (§3.1 / §7)', () => {
     expect(toJSON()).toBeNull();
   });
 
-  it('the unfold animates, except under reduced motion', () => {
+  it('the unfold animates, except under reduced motion (the choreography is InsightCard.motion.test)', () => {
+    jest.useFakeTimers();
     const spy = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
-    const a = render(<FoldedStrip cached={benign} onPress={jest.fn()} />);
+    const a = render(<InsightCard cached={benign} petName="Nyx" onFold={jest.fn()} folded onUnfold={jest.fn()} />);
     fireEvent.press(a.getByTestId('insight-folded-strip'));
+    // The unfold's layout config follows the rail's 80ms lead (CUL-788, §12.2).
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
     expect(spy).toHaveBeenCalledTimes(1);
     mockUseReducedMotion.mockReturnValue(true);
-    const b = render(<FoldedStrip cached={benign} onPress={jest.fn()} />);
+    const b = render(<InsightCard cached={benign} petName="Nyx" onFold={jest.fn()} folded onUnfold={jest.fn()} />);
     fireEvent.press(b.getByTestId('insight-folded-strip'));
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
+    jest.useRealTimers();
   });
 });

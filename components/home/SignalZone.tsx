@@ -14,7 +14,7 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
-import { FoldedStrip, InsightCard, RAIL_WIDTH } from './InsightCard';
+import { InsightCard, RAIL_WIDTH } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useWatchingRows } from '../../hooks/useWatchingRows';
@@ -901,9 +901,10 @@ function LiveStack({
                 The canvas goes to the first card (`leadIndex`, above). */}
             {isStoodDown(f.finding) ? (
               <StoodDownLine text={f.text} />
-            ) : folded ? (
-              <FoldedStrip cached={f} onPress={fold.unfold} />
             ) : (
+              // CUL-788: the card renders its own strip when `folded` — one row, one rail,
+              // so the fold motion has a single continuous node to hold (§12). The host
+              // never swaps components; it only says which state the finding is in.
               <InsightCard
                 cached={f}
                 petName={petName}
@@ -911,6 +912,8 @@ function LiveStack({
                 compact={i > leadIndex}
                 trialRunning={trialRunning}
                 onFold={fold.fold}
+                folded={folded}
+                onUnfold={fold.unfold}
                 backBecause={fold.backBecauseOf(f.finding)}
                 onTouch={fold.touch}
               />

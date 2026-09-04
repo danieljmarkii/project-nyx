@@ -1,5 +1,6 @@
-import { useState, type ReactElement } from 'react';
+import { useState, type ReactElement, type ReactNode } from 'react';
 import {
+  Animated,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -10,8 +11,10 @@ import {
 import { theme } from '../../constants/theme';
 import { Badge } from '../ui/Badge';
 import { ThemedText } from '../ui/ThemedText';
+import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-import { canFold, type BackBecauseReason } from '../../lib/signalFold';
+import { canFold, foldIdentity, type BackBecauseReason } from '../../lib/signalFold';
+import { FOLD_MOTION, useFoldMotion } from './foldMotion';
 import {
   DENSITY_BOX_TITLE,
   EVIDENCE_CONTROL_LABEL,
@@ -555,6 +558,14 @@ interface Props {
   // Any owner touch of the card (the row tap or either control) — the Back-because line
   // clears on it (§5.3 release rule 2).
   onTouch?: (finding: SignalFinding) => void;
+  // CUL-788 — the host's fold state for this finding. Folded, the row renders the strip in
+  // the same row, beside the SAME rail node (the motion's one continuous thread, spec §12);
+  // the face and the strip are never two components the host swaps. A change in this prop
+  // WITHOUT a press (the record re-opening the card, a release on absence, a stored fold on
+  // first paint) renders the new state on the next frame, un-animated (FS-9).
+  folded?: boolean;
+  // The owner tapped the strip. Absent, the strip renders inert (a non-Home caller).
+  onUnfold?: (finding: SignalFinding) => void;
 }
 
 export function InsightCard({
@@ -566,11 +577,28 @@ export function InsightCard({
   onFold,
   backBecause = null,
   onTouch,
+  folded = false,
+  onUnfold,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  // FS-9: owner-caused transitions use the shipped LayoutAnimation idiom, skipped under
-  // reduced motion (geometry is instant there; the §12 crossfade is PR 3's).
+  // FS-9: the evidence toggle uses the shipped LayoutAnimation idiom, skipped under
+  // reduced motion. The fold / unfold choreography (§12) lives in `useFoldMotion`.
   const reducedMotion = useReducedMotion();
+  const appActive = useAppActive();
+  // A re-open lands on the FACE, never the expanded state (§3.2): the evidence closes the
+  // moment the row is folded, so it is shut when the strip opens back up.
+  if (folded && expanded) setExpanded(false);
+  // The face row's top padding — the rail's absolute `top` while it is out of the flow.
+  const facePaddingTop = compact ? theme.space1 : theme.space2;
+  const motion = useFoldMotion({
+    folded,
+    reducedMotion,
+    appActive,
+    identity: foldIdentity(cached.finding),
+    facePaddingTop,
+    onFold: () => onFold?.(cached.finding),
+    onUnfold: () => onUnfold?.(cached.finding),
+  });
 
   const Body = INSIGHT_RENDERERS[cached.finding.type];
   // Unknown future type with no registered renderer: skip the card rather than
@@ -632,6 +660,8 @@ export function InsightCard({
   }
 
   function toggle() {
+    // A press mid-transition is a no-op: the row is already on its way somewhere.
+    if (motion.phase !== 'idle') return;
     animateOwnerCaused();
     setExpanded((e) => !e);
     onTouch?.(cached.finding);
@@ -639,18 +669,99 @@ export function InsightCard({
 
   function fold() {
     if (!foldable) return;
-    animateOwnerCaused();
-    // The host swaps this card for its strip; the touch is implied by the fold entry
-    // replacing any re-opened one, so no separate onTouch here.
-    onFold?.(cached.finding);
+    // The choreography owns the host's state change: `onFold` fires when the box closes
+    // (or at once under reduced motion). The touch is implied by the fold entry replacing
+    // any re-opened one, so no separate onTouch here.
+    motion.fold();
   }
+
+  function unfold() {
+    if (!onUnfold) return;
+    motion.unfold();
+  }
+
+  // ── The row's in-flight anatomy (§12.4) ───────────────────────────────────────
+  // Idle, this is the shipped tree to the byte: a plain rail View, no wrapper, no layout
+  // handler. In flight: the rail is an `Animated.View` — the SAME node through the animated
+  // commit — and, once it holds an explicit height, it steps out of the row's flow
+  // (absolute) so no layout keyframe touches it; the content column takes the rail's width
+  // + the gap as margin so nothing moves sideways; the row clips, so the trailing rail
+  // never paints over the card below. Each wrapper mounts only while its content is
+  // arriving or leaving.
+  const railOut = motion.inFlight && motion.railHeight != null;
+  const railNode = motion.inFlight ? (
+    <Animated.View
+      testID="insight-rail"
+      style={[
+        styles.rail,
+        { backgroundColor: rail },
+        railOut
+          ? [
+              styles.railOut,
+              {
+                top: facePaddingTop,
+                height: motion.railHeight,
+                transform: [{ translateY: motion.values.railShift }, { scaleY: motion.values.railScale }],
+              },
+            ]
+          : null,
+      ]}
+    />
+  ) : folded ? (
+    <View style={[styles.rail, { backgroundColor: rail }, styles.railStrip]} />
+  ) : (
+    <View style={[styles.rail, { backgroundColor: rail }]} />
+  );
+  const rowStyle = folded
+    ? motion.inFlight
+      ? [styles.row, styles.rowStrip, styles.rowInFlight]
+      : [styles.row, styles.rowStrip]
+    : motion.inFlight
+      ? [styles.row, compact ? styles.rowCompact : null, styles.rowInFlight]
+      : compact
+        ? [styles.row, styles.rowCompact]
+        : styles.row;
+  const contentLayout =
+    folded || motion.phase !== 'idle'
+      ? { onLayout: (e: { nativeEvent: { layout: { height: number } } }) => motion.onContentLayout(e.nativeEvent.layout.height) }
+      : null;
+  const faceWrapped = motion.phase === 'leaving' || motion.phase === 'opening' || motion.phase === 'crossfade';
+  const stripWrapped = motion.phase === 'closing' || motion.phase === 'crossfade';
+  const wrapFace = (node: ReactNode) =>
+    faceWrapped ? (
+      <Animated.View
+        testID="insight-face-stage"
+        style={
+          motion.phase === 'crossfade'
+            ? { opacity: motion.values.faceOpacity }
+            : { opacity: motion.values.faceOpacity, transform: [{ translateY: motion.values.faceShift }] }
+        }
+      >
+        {node}
+      </Animated.View>
+    ) : (
+      node
+    );
+  const wrapStrip = (node: ReactNode) =>
+    stripWrapped ? (
+      <Animated.View testID="insight-strip-stage" style={{ opacity: motion.values.stripOpacity }}>
+        {node}
+      </Animated.View>
+    ) : (
+      node
+    );
 
   return (
     // The row is a plain container so the face and the control row are SIBLINGS, each its
     // own accessibility element (the MedStrip host-split). The rail spans the whole row.
-    <View style={compact ? [styles.row, styles.rowCompact] : styles.row} testID="insight-row">
-      <View style={[styles.rail, { backgroundColor: rail }]} />
-      <View style={styles.content}>
+    <View style={rowStyle} testID="insight-row">
+      {railNode}
+      <View style={railOut ? [styles.content, styles.contentRailOut] : styles.content} {...contentLayout}>
+        {folded ? (
+          wrapStrip(<FoldedStrip cached={cached} onPress={unfold} />)
+        ) : (
+          wrapFace(
+            <>
         {/* The face — the whole sentence + evidence is the tap target (the 3am-stumbling
             rule); its bottom slop is 0 so it never reaches the control row beneath it. */}
         <Pressable
@@ -717,6 +828,9 @@ export function InsightCard({
         {/* §3.3: in the expanded state the row also carries the one-line contract, so sighted
             owners learn what brings a folded card back without a zone-level line (§6). */}
         {expanded && foldable ? <ThemedText style={styles.foldCaption}>{FOLD_CAPTION}</ThemedText> : null}
+            </>,
+          )
+        )}
       </View>
     </View>
   );
@@ -724,12 +838,17 @@ export function InsightCard({
 
 // ── The folded strip (CUL-784, fold spec §3.1) ─────────────────────────────────
 // The finding's named home while compressed — in place, at rank, between the same
-// hairlines. Rail at full opacity (never greyed), the name line, the compact count line,
-// the TrialStrip/MedStrip chevron; the sentence, every receipt, every chip, the med line
-// and the controls are dropped. Each line is its own Text node with NO numberOfLines
-// (FS-11 / C-8): at accessibility sizes a line wraps, never truncates. The whole row is
-// the tap target and re-opens to the FACE (§3.2). Borrows the strips' compact register,
-// not their Card — it stays a row of the Signal.
+// hairlines. The name line, the compact count line, the TrialStrip/MedStrip chevron; the
+// sentence, every receipt, every chip, the med line and the controls are dropped. Each
+// line is its own Text node with NO numberOfLines (FS-11 / C-8): at accessibility sizes a
+// line wraps, never truncates. The whole strip is one tap target and re-opens to the
+// FACE (§3.2). Borrows the strips' compact register, not their Card — it stays a row of
+// the Signal.
+//
+// CUL-788: this is the strip's CONTENT — the rail beside it belongs to the row
+// (`InsightCard`, `folded`), because the rail is the one node the fold motion holds
+// constant while everything around it moves (§12). The strip carries the row's compact
+// padding and the 44pt floor itself, so the folded row's geometry is exactly PR 1's.
 export function FoldedStrip({
   cached,
   onPress,
@@ -737,32 +856,23 @@ export function FoldedStrip({
   cached: CachedFinding;
   onPress: (finding: SignalFinding) => void;
 }) {
-  const reducedMotion = useReducedMotion();
   const name = stripNameLine(cached.finding);
   const countLine = stripCountLine(cached.finding);
   // A type with no strip copy on this build is not foldable here (the host checks the same
   // predicate before choosing the strip); this null is unreachable through LiveStack and
   // exists so the component can never render a blank strip.
   if (!name || !countLine) return null;
-  const rail = RAIL_COLOR[cached.finding.priorityClass];
-  function unfold() {
-    if (!reducedMotion) {
-      LayoutAnimation.configureNext(LayoutAnimation.create(theme.durationMedium, 'easeInEaseOut', 'opacity'));
-    }
-    onPress(cached.finding);
-  }
   return (
     <Pressable
-      onPress={unfold}
+      onPress={() => onPress(cached.finding)}
       hitSlop={8}
       accessibilityRole="button"
       accessibilityState={{ expanded: false }}
       accessibilityLabel={`${name}. ${countLine}.`}
       accessibilityHint={STRIP_A11Y_HINT}
-      style={[styles.row, styles.rowCompact]}
+      style={styles.strip}
       testID="insight-folded-strip"
     >
-      <View style={[styles.rail, { backgroundColor: rail }]} />
       <View style={styles.stripText}>
         <ThemedText style={styles.stripName}>{name}</ThemedText>
         <ThemedText style={styles.stripCount}>{countLine}</ThemedText>
@@ -791,6 +901,44 @@ const styles = StyleSheet.create({
     width: RAIL_WIDTH,
     borderRadius: 2,
     opacity: 0.85,
+  },
+  // ── The fold motion's anatomy (CUL-788, §12) ──────────────────────────────────
+  // The folded row carries no padding of its own: the strip inside it does (`strip`), so
+  // the folded row's geometry is PR 1's to the point, and the rail's resting position on
+  // the strip is the row's centre.
+  rowStrip: {
+    paddingVertical: 0,
+  },
+  // In flight the row clips: the rail trails the closing box and leads the opening one,
+  // and where it runs past the box it must never paint over the card below (the mock's
+  // `.mrow { overflow: hidden }`).
+  rowInFlight: {
+    overflow: 'hidden',
+  },
+  // The strip's resting rail — the mock's 16pt tick, centred (§12: "the strip's 16pt").
+  // Same colour, same opacity, same width as the face's rail; only the height differs.
+  railStrip: {
+    height: FOLD_MOTION.stripRailPt,
+    alignSelf: 'center',
+  },
+  // The rail out of the row's flow, for the commits that animate layout (see foldMotion).
+  // Anchored at the top so `scaleY` shortens it downward, like a line being drawn back.
+  railOut: {
+    position: 'absolute',
+    left: 0,
+    transformOrigin: 'top',
+  },
+  // With the rail absolute the content column takes its width + the row gap as margin, so
+  // the text does not move sideways by a point (sideways reads as swipe — §12.3).
+  contentRailOut: {
+    marginLeft: RAIL_WIDTH + theme.space2,
+  },
+  // The strip's own box: the compact rhythm and the 44pt floor, as PR 1's strip row had.
+  strip: {
+    flexDirection: 'row',
+    gap: theme.space2,
+    minHeight: 44,
+    paddingVertical: theme.space1,
   },
   content: {
     flex: 1,

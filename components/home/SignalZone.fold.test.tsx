@@ -185,11 +185,13 @@ describe('SignalZone — the fold, end to end', () => {
     mockUseSignal.mockReturnValue(live([chronicity, postprandial, reflection]));
     const view = render(<SignalZone />);
     await view.findByTestId('insight-folded-strip');
-    // Read the stack's rows in tree order: safety face, strip, reflection face.
-    const rows = [
-      ...view.getAllByTestId(/^insight-(row|folded-strip)$/),
-    ];
-    expect(rows.map((r) => r.props.testID)).toEqual(['insight-row', 'insight-folded-strip', 'insight-row']);
+    // Read the stack's rows in tree order: safety face, the strip's row, reflection face.
+    // CUL-788: a folded finding is still an `insight-row` (one row, one rail); the strip is
+    // that row's content.
+    const rows = view.getAllByTestId('insight-row');
+    expect(rows).toHaveLength(3);
+    const holdsStrip = (row: (typeof rows)[number]) => row.findAllByProps({ testID: 'insight-folded-strip' }).length > 0;
+    expect(rows.map(holdsStrip)).toEqual([false, true, false]);
     expect(view.getByText(chronicity.text)).toBeTruthy();
     expect(view.getByText(reflection.text)).toBeTruthy();
     expect(view.queryByText(postprandial.text)).toBeNull();
