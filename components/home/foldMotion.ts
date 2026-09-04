@@ -321,6 +321,10 @@ export function useFoldMotion({
       () => {
         values.faceOpacity.setValue(0);
         values.faceShift.setValue(-FOLD_MOTION.driftPt);
+        // Belt and braces: every path that leaves `leaving` early (blur → settle, a re-key →
+        // abort, unmount) stops the animation first, so `run` already drops this callback on
+        // `finished: false`. Kept so a future stop path that forgets to stop cannot close a
+        // box the owner no longer has.
         if (phaseRef.current !== 'leaving') return;
         // Beat 2: the box closes around the line. One commit carries the layout config,
         // the phase, the rail's explicit height and the host's state change, so the row

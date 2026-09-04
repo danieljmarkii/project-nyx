@@ -490,7 +490,51 @@ describe('a transition is one-shot: blur finishes it, a re-keyed row abandons it
     expect(configureNext).toHaveBeenCalledTimes(1);
   });
 
-  it('unmounting mid-transition leaves no timer to fire', () => {
+  it('the layout config is applied BEFORE the host is told, in both directions — the commit it configures is the one the host causes', () => {
+    const onFold = jest.fn();
+    const onUnfold = jest.fn();
+    const view = render(<InsightCard cached={benign} petName="Nyx" onFold={onFold} onUnfold={onUnfold} />);
+    fireEvent.press(view.getByText(FOLD_CONTROL_LABEL));
+    act(() => {
+      jest.advanceTimersByTime(FRAME_MS);
+    });
+    expect(configureNext).toHaveBeenCalledTimes(1);
+    expect(onFold).toHaveBeenCalledTimes(1);
+    expect(configureNext.mock.invocationCallOrder[0]).toBeLessThan(onFold.mock.invocationCallOrder[0]);
+    // The unfold, from a folded row whose strip has reported its layout.
+    view.rerender(<InsightCard cached={benign} petName="Nyx" onFold={onFold} folded onUnfold={onUnfold} />);
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    layout(contentOf(view.getByTestId('insight-row')), STRIP_H);
+    fireEvent.press(view.getByTestId('insight-folded-strip'));
+    act(() => {
+      jest.advanceTimersByTime(FRAME_MS + FOLD_MOTION.railLagMs);
+    });
+    expect(configureNext).toHaveBeenCalledTimes(2);
+    expect(onUnfold).toHaveBeenCalledTimes(1);
+    expect(configureNext.mock.invocationCallOrder[1]).toBeLessThan(onUnfold.mock.invocationCallOrder[0]);
+  });
+
+  it('a strip layout event during the rail’s lead (before the box opens) is the strip’s, never the rail’s new height', () => {
+    const view = render(<Host start />);
+    const row = view.getByTestId('insight-row');
+    layout(contentOf(row), STRIP_H);
+    fireEvent.press(view.getByTestId('insight-folded-strip'));
+    expect(flat(view.getByTestId('insight-rail')).height).toBe(STRIP_H);
+    // The strip re-reports (the margin compensation re-laid it out) while the host still
+    // says folded: the rail must not take a strip height as the face's.
+    layout(contentOf(row), STRIP_H + 8);
+    expect(flat(view.getByTestId('insight-rail')).height).toBe(STRIP_H);
+    // Once the box opens and the FACE reports, the rail takes the face's height.
+    act(() => {
+      jest.advanceTimersByTime(FRAME_MS + FOLD_MOTION.railLagMs);
+    });
+    layout(contentOf(row), FACE_H);
+    expect(flat(view.getByTestId('insight-rail')).height).toBe(FACE_H);
+  });
+
+  it('unmounting mid-transition: the pending state write never lands and no timer fires into a dead card', () => {
     const onFold = jest.fn();
     const view = render(<InsightCard cached={benign} petName="Nyx" onFold={onFold} onUnfold={jest.fn()} />);
     fireEvent.press(view.getByText(FOLD_CONTROL_LABEL));
