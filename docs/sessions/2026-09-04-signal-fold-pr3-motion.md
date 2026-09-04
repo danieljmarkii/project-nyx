@@ -1,7 +1,7 @@
 # Signal fold PR 3 — the fold motion (CUL-788)
 
 **Date:** 2026-09-04
-**Outcome:** shipped via #799 — Home v1, PR 3 of 3 (PR 2, the safety strips, is CUL-785 and runs in parallel; the motion extends to its strips the moment they exist, since the physics are per row, not per class).
+**Outcome:** shipped via #800 — Home v1, PR 3 of 3 (PR 2, the safety strips, is CUL-785 and runs in parallel; the motion extends to its strips the moment they exist, since the physics are per row, not per class).
 
 ## What shipped
 
