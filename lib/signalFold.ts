@@ -58,18 +58,35 @@ export type PetFoldEntries = Record<string, FoldEntry>;
 /** The persisted blob: `{ [petId]: PetFoldEntries }`. */
 export type FoldStore = Record<string, PetFoldEntries>;
 
-// ── The class gate (PR 1 → PR 2) ──────────────────────────────────────────────
+// ── The class gate (DF-2) ────────────────────────────────────────────────────
 
 /**
- * Which findings may be folded on THIS build. PR 1 ships the benign fold only; the safety
- * strips (standing and acute — DF-2) flip this gate in PR 2 (CUL-785), together with the
- * ask-bearing strip clauses and the FS-3 build guard. One place, so the control and the
- * store can never disagree about the class line.
+ * CUL-785 brief A — whether `intake_decline` may fold on this build. HELD CLOSED, provisionally.
+ *
+ * DF-2 ruled that the acute cards fold "bounded by the record: their material fields move
+ * daily, so an acute fold lasts one regen cycle". For the red flag that bound holds (a newer
+ * flagged photo moves `mostRecentFlaggedIso`). For intake decline it does NOT: the shipped
+ * `detectIntakeDecline` walks exactly `consecutiveDays` days, so `daysBelowBaseline` is a
+ * constant (1 for a cat, 2 for a dog) and 0 on a refusal — a folded "not eating" strip would
+ * stay folded for as long as the decline continued, with no clock allowed to re-open it
+ * (DF-5). Until the engine emits a field that moves with each day of the decline, the safe
+ * default is the one Dr. Chen's dissent asked for: the card stays open. The strip copy, the
+ * ask and the tests are built and pinned, so the flip is this one line once the PM ratifies
+ * it or the engine change lands.
+ */
+export const INTAKE_DECLINE_FOLDS = false;
+
+/**
+ * Which findings may be folded on THIS build. Every safety type folds (DF-2, PM-ruled
+ * 2026-09-03 — the standing class AND the acute class), with the one provisional hold above.
+ * One place, so the control, the store and the strip can never disagree about the class
+ * line; the strip's ask is guarded separately (FS-3, `signalCopy.strip.test.ts`).
  */
 export function canFold(finding: SignalFinding): boolean {
   // CUL-786: a stood-down marker is a line, not a card — nothing to fold, no control.
   if (finding.type === 'stood_down') return false;
-  return finding.priorityClass !== 'safety';
+  if (finding.type === 'intake_decline') return INTAKE_DECLINE_FOLDS;
+  return true;
 }
 
 // ── Identity (§5.2) — the finding key, never `rank` ───────────────────────────
@@ -195,7 +212,9 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     reason: () => 'trial_counts',
   },
   intake_decline: {
-    // Moves daily while the decline continues, so the fold is a one-day fold by construction.
+    // The spec's premise was that this field climbs daily; under the shipped detector it is a
+    // constant per species (see INTAKE_DECLINE_FOLDS above), so the row is correct but inert
+    // until the engine moves the field. Kept as the §5.3 table states it.
     increaseOnly: ['daysBelowBaseline'],
     decreaseOnly: [],
     turnOn: [],

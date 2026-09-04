@@ -5,7 +5,14 @@
 // safety suppression (a reassuring trial_response card over a not-eating record), which is
 // a safety gate, not a beta gate.
 
-jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn() },
+  useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
+}));
+// CUL-785: the last-episode date read (useLastEpisodeDates) — an empty record here.
+jest.mock('../../lib/db', () => ({
+  getDb: () => ({ getAllSync: () => [{ last: null }] }),
+}));
 
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({
@@ -88,6 +95,7 @@ function signalState(over: Partial<SignalState> = {}): SignalState {
     dayNumber: 3,
     eventCount: 11,
     acknowledging: false,
+    expiresAt: null,
     answered: true,
     ...over,
   };

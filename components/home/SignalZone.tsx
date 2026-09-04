@@ -17,6 +17,7 @@ import { SectionLabel } from '../ui/SectionLabel';
 import { FoldedStrip, InsightCard, RAIL_WIDTH } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
+import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
 import { useWatchingRows } from '../../hooks/useWatchingRows';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -50,6 +51,8 @@ import {
   isTrialResponse,
   staleIntro,
   stoodDownExpired,
+  chronicityLastEpisodeFallbackIso,
+  stripAskLine,
   stripNameLine,
 } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
@@ -507,6 +510,7 @@ export function SignalZone({
     dayNumber,
     eventCount,
     acknowledging,
+    expiresAt,
     answered,
   } = useSignal();
 
@@ -515,6 +519,15 @@ export function SignalZone({
   // (`answered` — never against the pre-read empty array or a read that threw, C-12), and
   // handed to the stack, which renders a strip, a re-opened face, or the face per entry.
   const fold = useSignalFold({ petId, findings, answered });
+  // CUL-785 (fold spec §3.4) — the standing safety strips end with the DATE of the last
+  // logged episode, from the local record. Read for the symptom types the stack could show
+  // a date for; the chronicity fallback (`expiresAt`) is applied per row in the stack.
+  const lastEpisodes = useLastEpisodeDates({
+    petId,
+    symptomTypes: findings
+      .filter((f) => f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening')
+      .map((f) => (f.finding as { symptomType: string }).symptomType),
+  });
 
   // Signal/Home design uplift (B-721, SR-1..SR-6) — GA'd 2026-08-20 (CUL-546 Phase 1 /
   // CUL-547): the uplift IS the Signal surface now. SR-1 the live receipts (via LiveStack →
@@ -708,6 +721,8 @@ export function SignalZone({
                 suppressTrialResponse={suppressTrialResponse}
                 arrival={moment}
                 fold={fold}
+                lastEpisodes={lastEpisodes}
+                expiresAt={expiresAt}
               />
             }
           />
@@ -718,6 +733,8 @@ export function SignalZone({
             trialRunning={trialRunning}
             suppressTrialResponse={suppressTrialResponse}
             fold={fold}
+            lastEpisodes={lastEpisodes}
+            expiresAt={expiresAt}
           />
         )
       ) : state === 'stale' ? (
@@ -838,6 +855,8 @@ function LiveStack({
   suppressTrialResponse,
   arrival = null,
   fold,
+  lastEpisodes = {},
+  expiresAt = null,
 }: {
   findings: CachedFinding[];
   petName: string;
@@ -849,6 +868,10 @@ function LiveStack({
   arrival?: ArrivalMoment | null;
   /** CUL-784 — this reader's fold state + actions (fold spec §6). */
   fold: SignalFoldApi;
+  /** CUL-785 (§3.4) — symptom type → the record's last episode ISO (null = unread). */
+  lastEpisodes?: LastEpisodeDates;
+  /** The cache row's expiry, for the chronicity strip's fallback date when the record could not be read. */
+  expiresAt?: string | null;
 }) {
   // B-789 (§5.2) — drop the trial_response card when the record shows the animal isn't eating
   // (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip withholds its
@@ -887,8 +910,19 @@ function LiveStack({
         // A benign card is never promoted to the Newsreader canvas because the safety card
         // above it was compacted (reassurance by layout). The strip is chosen only when the
         // type has strip copy on this build — the same predicate `canFold` gates upstream —
-        // so a finding is never dropped for want of a strip (FS-7).
-        const folded = fold.stateOf(f.finding) === 'folded' && stripNameLine(f.finding) !== null;
+        // so a finding is never dropped for want of a strip (FS-7) — and a SAFETY finding
+        // folds only when its strip can say its ask (FS-3): otherwise the open card renders.
+        const folded =
+          fold.stateOf(f.finding) === 'folded' &&
+          stripNameLine(f.finding) !== null &&
+          (f.finding.priorityClass !== 'safety' || stripAskLine(f.finding) !== null);
+        // §3.4: the record's date first; for chronicity the engine-derived fallback when the
+        // record did not answer; worsening has no fallback and prints no date then.
+        const lastEpisodeIso =
+          f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening'
+            ? lastEpisodes[f.finding.symptomType] ??
+              (f.finding.type === 'symptom_chronicity' ? chronicityLastEpisodeFallbackIso(f.finding, expiresAt) : null)
+            : null;
         const row = (
           <>
             {i > 0 && <Divider style={styles.rowDivider} />}
@@ -902,7 +936,7 @@ function LiveStack({
             {isStoodDown(f.finding) ? (
               <StoodDownLine text={f.text} />
             ) : folded ? (
-              <FoldedStrip cached={f} onPress={fold.unfold} />
+              <FoldedStrip cached={f} onPress={fold.unfold} lastEpisodeIso={lastEpisodeIso} />
             ) : (
               <InsightCard
                 cached={f}

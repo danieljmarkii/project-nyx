@@ -48,6 +48,11 @@ export interface SignalState {
    * acknowledgment line above the still-readable findings; read only on the flag-on
    * surface (the flag-off Signal ignores it, so it's invisible there — FR-FLAG-2). */
   acknowledging: boolean;
+  /** CUL-785 — the cache row's `expires_at` for THIS pet, or null before a read lands / when
+   * there is no row. The fold's standing safety strip derives its FALLBACK last-episode date
+   * from it (`expiresAt − 24h` is when the engine last counted, and `daysSinceLastEpisode`
+   * is counted from there) when the local record could not be read. Reset on a pet switch. */
+  expiresAt: string | null;
   /** CUL-784 — true once the cache read for THIS pet has RESOLVED (with a row or with
    * none), false while it is in flight and after a read that threw. The distinction a
    * consumer needs when it would otherwise act on an empty `findings`: the Signal fold's
@@ -134,6 +139,7 @@ export function useSignal(): SignalState {
   const [localCtx, setLocalCtx] = useState<LocalSignalContext>(EMPTY_LOCAL_CONTEXT);
   const [isLoading, setIsLoading] = useState(false);
   const [answered, setAnswered] = useState(false);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
 
   const petId = activePet?.id ?? null;
   const petName = activePet?.name ?? 'your pet';
@@ -167,6 +173,7 @@ export function useSignal(): SignalState {
     // CUL-784: `answered` is per pet too — the previous pet's "read landed" must not
     // license a fold reconcile against the new pet's not-yet-read set.
     setAnswered(false);
+    setExpiresAt(null);
     if (petId) setIsLoading(true);
   }
 
@@ -183,6 +190,7 @@ export function useSignal(): SignalState {
           setFindings(row?.findings ?? []);
           setCoverage(row?.coverage ?? []);
           setSignalText(row?.signalText ?? null);
+          setExpiresAt(row?.expiresAt ?? null);
           setAnswered(true);
 
           if (isSignalCacheStale(row)) {
@@ -194,6 +202,7 @@ export function useSignal(): SignalState {
                 setFindings(fresh.findings);
                 setCoverage(fresh.coverage);
                 setSignalText(fresh.signalText);
+                setExpiresAt(fresh.expiresAt ?? null);
               })
               .catch(() => {});
           }
@@ -235,6 +244,7 @@ export function useSignal(): SignalState {
     dayNumber: localCtx.dayNumber,
     eventCount: localCtx.eventCount,
     acknowledging,
+    expiresAt,
     answered,
   };
 }

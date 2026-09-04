@@ -9,6 +9,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  INTAKE_DECLINE_FOLDS,
   MATERIAL_FIELDS,
   SIGNAL_FOLD_STORAGE_KEY,
   clearSignalFold,
@@ -285,12 +286,22 @@ describe('foldIdentity — the finding key, never rank', () => {
   });
 });
 
-// ── The class gate (PR 1) ─────────────────────────────────────────────────────
-describe('canFold — the PR 1 class line', () => {
-  it('benign findings fold; safety findings do not (until PR 2 flips this)', () => {
+// ── The class gate (DF-2, CUL-785) ────────────────────────────────────────────
+describe('canFold — every card folds, the safety class included (DF-2)', () => {
+  it('benign findings fold; the standing safety class folds; the red flag folds', () => {
     for (const t of TYPES) {
-      expect(canFold(BASE[t])).toBe(BASE[t].priorityClass !== 'safety');
+      if (t === 'intake_decline') continue;
+      expect([t, canFold(BASE[t])]).toEqual([t, true]);
     }
+  });
+
+  it('intake decline is HELD CLOSED behind the one named constant (CUL-785 brief A), and the hold is the whole reason', () => {
+    // The ruling's bound — "daysBelowBaseline climbs daily" — does not hold in the shipped
+    // detector (a constant 1 / 2, and 0 on a refusal), so an intake fold would be unbounded.
+    // When the engine moves the field, flipping the constant is the entire change.
+    expect(canFold(intake)).toBe(INTAKE_DECLINE_FOLDS);
+    expect(canFold({ ...intake, trigger: 'refused_normal_food', daysBelowBaseline: 0 })).toBe(INTAKE_DECLINE_FOLDS);
+    expect(INTAKE_DECLINE_FOLDS).toBe(false);
   });
 
   it('CUL-786: a stood-down marker never folds — insight class, but a line, not a card', () => {
@@ -410,9 +421,22 @@ describe('materialChange — the per-type table, walked as a property', () => {
     expect(materialChange(foldFingerprint(base2), foldFingerprint(reordered))).toBeNull();
   });
 
-  it('intake decline: day 3 → day 4 re-opens (the acute fold is a one-day fold)', () => {
+  it('intake decline: day 3 → day 4 re-opens (the acute fold is a one-day fold — once the engine moves the field)', () => {
     expect(materialChange(foldFingerprint(intake), foldFingerprint({ ...intake, daysBelowBaseline: 4 }))).toBe('intake_day');
     expect(materialChange(foldFingerprint(intake), foldFingerprint({ ...intake, ratedMealsConsidered: 12 }))).toBeNull();
+    // A trigger flip (a refusal arriving on top of a decline) or a different refused food is
+    // the ask changing; the species field is never a trigger.
+    expect(materialChange(foldFingerprint(intake), foldFingerprint({ ...intake, trigger: 'refused_normal_food' }))).toBe('ask_changed');
+    expect(materialChange(foldFingerprint(intake), foldFingerprint({ ...intake, species: 'dog' }))).toBeNull();
+  });
+
+  it('red flag: nothing but the photo record re-opens it — the window aging is not a trigger', () => {
+    expect(materialChange(foldFingerprint(redFlag), foldFingerprint({ ...redFlag, windowDays: 21 }))).toBeNull();
+    // The same photo, re-cached with the count one lower because an older flagged photo aged
+    // out: stays folded (a count falling is the window, not the pet).
+    expect(materialChange(foldFingerprint(redFlag), foldFingerprint({ ...redFlag, flaggedIncidentCount: 1 }))).toBeNull();
+    // A second flag kind on the same photo record: the set changed → back.
+    expect(materialChange(foldFingerprint(redFlag), foldFingerprint({ ...redFlag, flags: ['blood', 'foreign_material'] }))).toBe('photo_record');
   });
 
   it('a field the stored fingerprint never carried is skipped, not treated as a change', () => {
@@ -482,6 +506,37 @@ describe('reconcileFolds', () => {
     // Any movement, even a decrease → the entry is gone.
     const r = reconcileFolds(reopened, [{ ...postprandial, rapidCount: 5, eligibleCount: 5 }], NOW);
     expect(r.entries).toEqual({});
+  });
+
+  it('improving-then-relapsing (Dr. Chen’s falsification set): a folded course that stands down is RELEASED, so its re-fire renders as a full card', () => {
+    const ck = foldIdentity(chronicity);
+    // Day 0: the owner folds the chronicity card.
+    let entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW) };
+    // Weeks later the course goes quiet: the finding leaves the set and the labeled stand-down
+    // marker (CUL-786) takes its slot. The marker is a different key, so the fold's key is
+    // ABSENT → the entry is deleted (release rule 1), not carried over onto the marker.
+    let r = reconcileFolds(entries, [stoodDown, postprandial], NOW);
+    expect(r.changed).toBe(true);
+    expect(r.entries).toEqual({});
+    entries = r.entries;
+    // The course relapses: chronicity re-fires with a SMALLER count than the day it was folded
+    // (the window slid). Against the fold-day fingerprint that would have read as "no
+    // material change" and kept the strip; with the entry gone, nothing is folded and the
+    // card renders open — and no Back-because line either (there is no memory to be back from).
+    const relapse = { ...chronicity, episodeCount: 9, activeWeeks: 3, daysSinceLastEpisode: 0 };
+    r = reconcileFolds(entries, [relapse, postprandial], NOW);
+    expect(r.changed).toBe(false);
+    expect(r.entries[ck]).toBeUndefined();
+  });
+
+  it('the refusing cat: a folded chronicity is untouched by intake decline arriving above it (FS-7), and never inherits its release', () => {
+    const ck = foldIdentity(chronicity);
+    const entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW) };
+    // Intake decline fires at rank 0 (a new safety finding lands as a full card above the
+    // strip); the chronicity fold is neither released nor re-keyed by it.
+    const r = reconcileFolds(entries, [intake, chronicity], NOW);
+    expect(r.changed).toBe(false);
+    expect(r.entries[ck].state).toBe('folded');
   });
 
   it('never touches another finding’s entry (FS-7 — a fold on one never suppresses another)', () => {
