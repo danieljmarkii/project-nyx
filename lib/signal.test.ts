@@ -94,6 +94,7 @@ describe('isSignalCacheStale', () => {
     isBuilding: false,
     findings: [],
     coverage: [],
+    generatedAt: new Date(Date.now() - 60_000).toISOString(),
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   };
   it('treats a missing row as stale (a regen is due)', () => {

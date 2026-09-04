@@ -14,9 +14,10 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
-import { InsightCard, RAIL_WIDTH } from './InsightCard';
+import { InsightCard, RAIL_WIDTH, stripRenderable } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
+import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
 import { useWatchingRows } from '../../hooks/useWatchingRows';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -50,7 +51,7 @@ import {
   isTrialResponse,
   staleIntro,
   stoodDownExpired,
-  stripNameLine,
+  chronicityLastEpisodeFallbackIso,
 } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 import type { DisplayState } from '../../lib/signalCopy';
@@ -507,14 +508,26 @@ export function SignalZone({
     dayNumber,
     eventCount,
     acknowledging,
+    generatedAt,
     answered,
   } = useSignal();
+
+  // CUL-785 (fold spec §3.4) — the standing safety strips end with the DATE of the last
+  // logged episode, from the local record, and that same instant is the fold's witness for a
+  // new episode (`RecordFacts`). Read for the symptom types the stack could show a date for;
+  // the chronicity fallback (`generatedAt`) is applied per row in the stack.
+  const lastEpisodes = useLastEpisodeDates({
+    petId,
+    symptomTypes: findings
+      .filter((f) => f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening')
+      .map((f) => (f.finding as { symptomType: string }).symptomType),
+  });
 
   // CUL-784 — the Signal fold (fold spec §5/§6): this reader's per-pet memory of which
   // cards they have compacted. Read once per pet, reconciled against the SETTLED set only
   // (`answered` — never against the pre-read empty array or a read that threw, C-12), and
   // handed to the stack, which renders a strip, a re-opened face, or the face per entry.
-  const fold = useSignalFold({ petId, findings, answered });
+  const fold = useSignalFold({ petId, findings, answered, lastEpisodes });
 
   // Signal/Home design uplift (B-721, SR-1..SR-6) — GA'd 2026-08-20 (CUL-546 Phase 1 /
   // CUL-547): the uplift IS the Signal surface now. SR-1 the live receipts (via LiveStack →
@@ -708,6 +721,8 @@ export function SignalZone({
                 suppressTrialResponse={suppressTrialResponse}
                 arrival={moment}
                 fold={fold}
+                lastEpisodes={lastEpisodes}
+                generatedAt={generatedAt}
               />
             }
           />
@@ -718,6 +733,8 @@ export function SignalZone({
             trialRunning={trialRunning}
             suppressTrialResponse={suppressTrialResponse}
             fold={fold}
+            lastEpisodes={lastEpisodes}
+            generatedAt={generatedAt}
           />
         )
       ) : state === 'stale' ? (
@@ -838,6 +855,8 @@ function LiveStack({
   suppressTrialResponse,
   arrival = null,
   fold,
+  lastEpisodes = {},
+  generatedAt = null,
 }: {
   findings: CachedFinding[];
   petName: string;
@@ -849,6 +868,10 @@ function LiveStack({
   arrival?: ArrivalMoment | null;
   /** CUL-784 — this reader's fold state + actions (fold spec §6). */
   fold: SignalFoldApi;
+  /** CUL-785 (§3.4) — symptom type → the record's last episode ISO (null = unread). */
+  lastEpisodes?: LastEpisodeDates;
+  /** When the engine counted (the cache row's `generated_at`), for the chronicity strip's fallback date when the record could not be read. */
+  generatedAt?: string | null;
 }) {
   // B-789 (§5.2) — drop the trial_response card when the record shows the animal isn't eating
   // (`suppressTrialResponse`, computed by Home from the same `trialInput` the strip withholds its
@@ -882,13 +905,21 @@ function LiveStack({
   return (
     <View>
       {ordered.map((f, i) => {
+        // §3.4: the record's date first; for chronicity the engine-derived fallback when the
+        // record did not answer; worsening has no fallback and prints no date then.
+        const lastEpisodeIso =
+          f.finding.type === 'symptom_chronicity' || f.finding.type === 'symptom_worsening'
+            ? lastEpisodes[f.finding.symptomType] ??
+              (f.finding.type === 'symptom_chronicity' ? chronicityLastEpisodeFallbackIso(f.finding, generatedAt) : null)
+            : null;
         // CUL-784 (fold spec §6 / DF-7): ORDER IS RANK — a fold changes height, never
         // position — and `isLead` stays bound to rank 0 whether or not that row is folded.
         // A benign card is never promoted to the Newsreader canvas because the safety card
         // above it was compacted (reassurance by layout). The strip is chosen only when the
-        // type has strip copy on this build — the same predicate `canFold` gates upstream —
-        // so a finding is never dropped for want of a strip (FS-7).
-        const folded = fold.stateOf(f.finding) === 'folded' && stripNameLine(f.finding) !== null;
+        // finding HAS a strip — `stripRenderable`, the same predicate `FoldedStrip` refuses on —
+        // so a finding is never dropped for want of a strip (FS-7), and a SAFETY finding folds
+        // only when its strip can say its ask (FS-3): otherwise the open card renders.
+        const folded = fold.stateOf(f.finding) === 'folded' && stripRenderable(f.finding, { lastEpisodeIso });
         const row = (
           <>
             {i > 0 && <Divider style={styles.rowDivider} />}
@@ -914,6 +945,7 @@ function LiveStack({
                 onFold={fold.fold}
                 folded={folded}
                 onUnfold={fold.unfold}
+                lastEpisodeIso={lastEpisodeIso}
                 backBecause={fold.backBecauseOf(f.finding)}
                 onTouch={fold.touch}
               />

@@ -17,8 +17,16 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { LayoutAnimation } from 'react-native';
 import { FoldedStrip, InsightCard } from './InsightCard';
 import { commonAncestor, facing, flat, owningTouchable } from '../../testUtils/tree';
+import * as signalCopy from '../../lib/signalCopy';
 import { FOLD_CAPTION, FOLD_CONTROL_LABEL } from '../../lib/signalCopy';
-import type { CachedFinding, PostprandialTimingFinding, SymptomChronicityFinding } from '../../lib/signal';
+import type {
+  CachedFinding,
+  IncidentRedFlagFinding,
+  IntakeDeclineFinding,
+  PostprandialTimingFinding,
+  StoodDownMarker,
+  SymptomChronicityFinding,
+} from '../../lib/signal';
 
 const postprandial: PostprandialTimingFinding = {
   type: 'postprandial_timing',
@@ -46,12 +54,45 @@ const chronicity: SymptomChronicityFinding = {
   tier: 'firm',
   windowDays: 56,
 };
+const intakeFinding: IntakeDeclineFinding = {
+  type: 'intake_decline',
+  priorityClass: 'safety',
+  trigger: 'consecutive_low',
+  species: 'cat',
+  daysBelowBaseline: 1,
+  refusedFoodLabel: null,
+  ratedMealsConsidered: 9,
+};
+const redFlagFinding: IncidentRedFlagFinding = {
+  type: 'incident_red_flag',
+  priorityClass: 'safety',
+  incidentType: 'vomit',
+  flags: ['blood'],
+  mostRecentFlaggedIso: '2026-09-01T08:00:00.000Z',
+  flaggedIncidentCount: 2,
+  windowDays: 14,
+};
+const stoodDownMarker: StoodDownMarker = {
+  type: 'stood_down',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  recencyDays: 14,
+  tier: 'firm',
+  lastEpisodeIso: '2026-08-19T11:00:00.000Z',
+  stoodDownAt: '2026-09-03T12:00:00.000Z',
+  formerRank: 0,
+};
 const SENTENCE = 'A sentence about Nyx.';
 // A mocked native-driver animation completes on the next animation frame, whatever its
 // duration — so one frame is what a "the beat completed" step advances by.
 const FRAME_MS = 20;
 const benign: CachedFinding = { rank: 1, text: SENTENCE, finding: postprandial };
 const safety: CachedFinding = { rank: 0, text: SENTENCE, finding: chronicity };
+const intake: CachedFinding = { rank: 0, text: SENTENCE, finding: intakeFinding };
+const redFlag: CachedFinding = { rank: 0, text: SENTENCE, finding: redFlagFinding };
+const stoodDown: CachedFinding = { rank: 0, text: 'No vomiting logged for Nyx in 14 days.', finding: stoodDownMarker };
+// B-514: a local-day fixture is built from local components, never a UTC literal.
+const AUG_26_LOCAL_NOON = new Date(2026, 7, 26, 12).toISOString();
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -85,7 +126,7 @@ describe('the control row is a sibling of the face (DF-3, C-6)', () => {
   });
 });
 
-describe('`Keep it compact` — where it renders and what it does (FS-4, the PR 1 class gate)', () => {
+describe('`Keep it compact` — where it renders and what it does (FS-4, the DF-2 class gate)', () => {
   it('renders on a benign card when a host wired onFold, and calls it with the finding once the words have left', () => {
     // CUL-788: the host's state change rides the choreography — it fires when the 180ms
     // leave beat completes (the box closes around the line), not at the press itself.
@@ -102,8 +143,23 @@ describe('`Keep it compact` — where it renders and what it does (FS-4, the PR 
     jest.useRealTimers();
   });
 
-  it('does NOT render on a safety card on this build, even when onFold is wired', () => {
-    const { queryByText } = render(<InsightCard cached={safety} petName="Nyx" onFold={jest.fn()} />);
+  it('renders on a safety card too (DF-2 — every card folds), and calls onFold with the finding', () => {
+    jest.useFakeTimers();
+    const onFold = jest.fn();
+    const { getByText } = render(<InsightCard cached={safety} petName="Nyx" onFold={onFold} />);
+    fireEvent.press(getByText(FOLD_CONTROL_LABEL));
+    // CUL-788: identical choreography on every class — the host is told when the words have left.
+    act(() => {
+      jest.advanceTimersByTime(FRAME_MS);
+    });
+    expect(onFold).toHaveBeenCalledWith(chronicity);
+    jest.useRealTimers();
+    const flag = render(<InsightCard cached={redFlag} petName="Nyx" onFold={onFold} />);
+    expect(flag.getByText(FOLD_CONTROL_LABEL)).toBeTruthy();
+  });
+
+  it('does NOT render on an intake-decline card — held closed (CUL-785 brief A) until the engine bounds the fold', () => {
+    const { queryByText } = render(<InsightCard cached={intake} petName="Nyx" onFold={jest.fn()} />);
     expect(queryByText(FOLD_CONTROL_LABEL)).toBeNull();
   });
 
@@ -128,7 +184,11 @@ describe('`Keep it compact` — where it renders and what it does (FS-4, the PR 
 
     const safe = render(<InsightCard cached={safety} petName="Nyx" onFold={jest.fn()} />);
     fireEvent.press(safe.getByTestId('insight-face'));
-    expect(safe.queryByText(FOLD_CAPTION)).toBeNull();
+    expect(safe.getByText(FOLD_CAPTION)).toBeTruthy();
+
+    const held = render(<InsightCard cached={intake} petName="Nyx" onFold={jest.fn()} />);
+    fireEvent.press(held.getByTestId('insight-face'));
+    expect(held.queryByText(FOLD_CAPTION)).toBeNull();
   });
 });
 
@@ -297,8 +357,8 @@ describe('FoldedStrip (§3.1 / §7)', () => {
     expect(getByTestId('insight-folded-strip')).toBeTruthy();
   });
 
-  it('renders nothing for a type with no strip copy on this build (the safety class)', () => {
-    const { toJSON } = render(<FoldedStrip cached={safety} onPress={jest.fn()} />);
+  it('renders nothing for a type with no strip copy (the stand-down marker is a line, not a card)', () => {
+    const { toJSON } = render(<FoldedStrip cached={stoodDown} onPress={jest.fn()} />);
     expect(toJSON()).toBeNull();
   });
 
@@ -321,5 +381,94 @@ describe('FoldedStrip (§3.1 / §7)', () => {
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
     jest.useRealTimers();
+  });
+});
+
+// ── The safety strip (CUL-785, §3.1 / §3.4 / §7 / FS-3) ────────────────────────
+describe('FoldedStrip — the safety strip', () => {
+  it('renders name, the ask on its own line, the compact count with the last-episode date, the chevron — nothing else', () => {
+    const { getByText, queryByText } = render(
+      <FoldedStrip cached={safety} onPress={jest.fn()} lastEpisodeIso={AUG_26_LOCAL_NOON} />,
+    );
+    expect(getByText('Recurring vomiting')).toBeTruthy();
+    expect(getByText('Worth a vet visit')).toBeTruthy();
+    expect(getByText('14 episodes, 5 of 8 weeks · last Aug 26')).toBeTruthy();
+    expect(getByText('›')).toBeTruthy();
+    expect(queryByText(SENTENCE)).toBeNull();
+    expect(queryByText(FOLD_CONTROL_LABEL)).toBeNull();
+    expect(queryByText(/days? (ago|since)/i)).toBeNull();
+  });
+
+  it('the ask is its own Text node in plain primary ink at textSM regular, never truncated (FS-11 / S1)', () => {
+    const { getByText } = render(<FoldedStrip cached={safety} onPress={jest.fn()} lastEpisodeIso={AUG_26_LOCAL_NOON} />);
+    const ask = getByText('Worth a vet visit');
+    const name = getByText('Recurring vomiting');
+    expect(ask).not.toBe(name);
+    expect(ask.props.numberOfLines).toBeUndefined();
+    // ThemedText resolves the weight to the Geist face (C-2), so the family is the weight.
+    const style = flat(ask) as Record<string, unknown>;
+    expect(style.fontSize).toBe(13);
+    expect(style.fontFamily).toBe('Geist');
+    expect(style.color).toBe('#0A0A0A');
+    // The name keeps the medium weight, so the eye reads name → ask → count.
+    expect((flat(name) as Record<string, unknown>).fontFamily).toBe('Geist-Medium');
+    // No rose text anywhere on the row: the rail is the only warm mark.
+    expect(flat(getByText('14 episodes, 5 of 8 weeks · last Aug 26')).color).toBe('#737373');
+  });
+
+  it('keeps the rail at full opacity in the safety colour', () => {
+    // CUL-788: the rail is the ROW's (one node through the motion), so a folded safety row
+    // is read through InsightCard with `folded`; the strip inside it has no rail of its own.
+    const { getByTestId } = render(
+      <InsightCard cached={safety} petName="Nyx" onFold={jest.fn()} folded onUnfold={jest.fn()} />,
+    );
+    expect(getByTestId('insight-folded-strip')).toBeTruthy();
+    const rail = getByTestId('insight-row').children[0] as { props: { style: unknown } };
+    expect(flat(rail as never).opacity).toBe(0.85);
+    expect(flat(rail as never).backgroundColor).toBe(flat(render(<InsightCard cached={safety} petName="Nyx" />).getByTestId('insight-row').children[0] as never).backgroundColor);
+  });
+
+  it('speaks the ask and the date with the month in full (§7)', () => {
+    const { getByTestId } = render(<FoldedStrip cached={safety} onPress={jest.fn()} lastEpisodeIso={AUG_26_LOCAL_NOON} />);
+    const strip = getByTestId('insight-folded-strip');
+    expect(strip.props.accessibilityLabel).toBe('Recurring vomiting. Worth a vet visit. 14 episodes, 5 of 8 weeks, last August 26.');
+    expect(strip.props.accessibilityHint).toBe('Opens this insight.');
+    expect(strip.props.accessibilityLabel).not.toMatch(/dismiss|acknowledg|read|seen|resolved|clear/i);
+  });
+
+  it('with no date from the record the count stands alone — never an invented day', () => {
+    const { getByText, queryByText } = render(<FoldedStrip cached={safety} onPress={jest.fn()} lastEpisodeIso={null} />);
+    expect(getByText('14 episodes, 5 of 8 weeks')).toBeTruthy();
+    expect(queryByText(/last /)).toBeNull();
+  });
+
+  it('the red flag strip carries its own UTC day from the photo record, whatever the context says', () => {
+    const { getByText } = render(<FoldedStrip cached={redFlag} onPress={jest.fn()} lastEpisodeIso={AUG_26_LOCAL_NOON} />);
+    expect(getByText('Blood in a vomit photo')).toBeTruthy();
+    expect(getByText('Call your vet')).toBeTruthy();
+    expect(getByText('AI read of 2 logged photos · last Sep 1')).toBeTruthy();
+  });
+
+  it('the whole strip is ONE button: the ask line re-opens the card like the name does (C-6)', () => {
+    const onPress = jest.fn();
+    const { getByText, getByTestId } = render(<FoldedStrip cached={safety} onPress={onPress} />);
+    const strip = owningTouchable(getByTestId('insight-folded-strip'));
+    expect(owningTouchable(getByText('Worth a vet visit'))).toBe(strip);
+    fireEvent.press(getByText('Worth a vet visit'));
+    expect(onPress).toHaveBeenCalledWith(chronicity);
+  });
+
+  it('FS-3, the runtime half: a safety strip that cannot say its ask is not drawn', () => {
+    // The build half is the strip copy test; here the copy layer is made to fail so the
+    // renderer's refusal is proven, not assumed (C-18: a guard is proven by mutation).
+    const spy = jest.spyOn(signalCopy, 'stripAskLine').mockReturnValue(null);
+    try {
+      const { toJSON } = render(<FoldedStrip cached={safety} onPress={jest.fn()} />);
+      expect(toJSON()).toBeNull();
+      // A benign strip is untouched by the same failure — it never had an ask.
+      expect(render(<FoldedStrip cached={benign} onPress={jest.fn()} />).toJSON()).not.toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

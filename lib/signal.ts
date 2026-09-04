@@ -613,6 +613,10 @@ export interface SignalCacheRow {
   isBuilding: boolean;
   findings: CachedFinding[];
   coverage: CoverageDiagnostic[];
+  /** When the engine counted (the row's `generated_at`) — the anchor for the chronicity
+   *  strip's fallback last-episode date (CUL-785). Null on a row written before the column
+   *  was selected here (never in practice: the column has always had a default). */
+  generatedAt: string | null;
   expiresAt: string;
 }
 
@@ -622,7 +626,7 @@ export interface SignalCacheRow {
 export async function readSignalCache(petId: string): Promise<SignalCacheRow | null> {
   const { data, error } = await supabase
     .from('ai_signals')
-    .select('signal_text, is_building, findings, coverage, expires_at')
+    .select('signal_text, is_building, findings, coverage, generated_at, expires_at')
     .eq('pet_id', petId)
     .order('expires_at', { ascending: false })
     .limit(1)
@@ -634,6 +638,7 @@ export async function readSignalCache(petId: string): Promise<SignalCacheRow | n
     isBuilding: (data.is_building as boolean) ?? true,
     findings: Array.isArray(data.findings) ? (data.findings as CachedFinding[]) : [],
     coverage: Array.isArray(data.coverage) ? (data.coverage as CoverageDiagnostic[]) : [],
+    generatedAt: (data.generated_at as string | null) ?? null,
     expiresAt: data.expires_at as string,
   };
 }
