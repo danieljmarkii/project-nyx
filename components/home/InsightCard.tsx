@@ -737,10 +737,30 @@ export function InsightCard({
 // is the tap target and re-opens to the FACE (§3.2). Borrows the strips' compact register,
 // not their Card — it stays a row of the Signal.
 //
-// FS-3, the runtime half: a safety strip that cannot say its ask is NOT drawn — this
-// returns null and the host renders the open card instead (FS-7: a finding is never
-// dropped). The build half is `signalCopy.strip.test.ts`, which fails on any safety type
-// without a ratified ask, so this branch is unreachable on a green build.
+// FS-3, the runtime half: a safety strip that cannot say its ask is NOT drawn — the host
+// asks `stripRenderable` before choosing the strip and renders the open card instead (FS-7:
+// a finding is never dropped), and the strip itself asks the same predicate so the two can
+// never disagree. The build half is `signalCopy.strip.test.ts`, which fails on any safety
+// type without a ratified ask, so the refusal is unreachable on a green build.
+
+/**
+ * Whether a finding has a strip to render: a name, a count, a spoken label, and — for a
+ * safety finding — its ask. ONE predicate for `LiveStack` (choose strip vs card) and
+ * `FoldedStrip` (draw or refuse), so a type added to one copy switch and not another can
+ * never produce a blank row where a safety card should be (code review, CUL-785). The
+ * calls go through the copy module's exports on purpose: a test can make the copy layer
+ * fail and prove both sites refuse.
+ */
+export function stripRenderable(finding: SignalFinding, ctx: StripContext = {}): boolean {
+  if (stripNameLine(finding) === null) return false;
+  if (stripCountLine(finding, ctx) === null) return false;
+  if (stripA11yLabel(finding, ctx) === null) return false;
+  // Stated separately from the label (which already withholds itself on a safety finding
+  // with no ask) so the FS-3 rule reads here in one line, not by implication.
+  if (finding.priorityClass === 'safety' && stripAskLine(finding) === null) return false;
+  return true;
+}
+
 export function FoldedStrip({
   cached,
   onPress,
@@ -754,15 +774,13 @@ export function FoldedStrip({
 }) {
   const reducedMotion = useReducedMotion();
   const ctx: StripContext = { lastEpisodeIso };
-  const name = stripNameLine(cached.finding);
+  // Unreachable through LiveStack (it asks the same predicate first); kept so the component
+  // can never render a blank strip, or a safety strip that dropped the vet.
+  if (!stripRenderable(cached.finding, ctx)) return null;
+  const name = stripNameLine(cached.finding) as string;
   const ask = stripAskLine(cached.finding);
-  const countLine = stripCountLine(cached.finding, ctx);
-  const label = stripA11yLabel(cached.finding, ctx);
-  // A type with no strip copy is not foldable here (the host checks the same predicates
-  // before choosing the strip); these nulls are unreachable through LiveStack and exist so
-  // the component can never render a blank strip, or a safety strip that dropped the vet.
-  if (!name || !countLine || !label) return null;
-  if (cached.finding.priorityClass === 'safety' && !ask) return null;
+  const countLine = stripCountLine(cached.finding, ctx) as string;
+  const label = stripA11yLabel(cached.finding, ctx) as string;
   const rail = RAIL_COLOR[cached.finding.priorityClass];
   function unfold() {
     if (!reducedMotion) {

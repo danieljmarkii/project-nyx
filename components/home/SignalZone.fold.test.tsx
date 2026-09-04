@@ -50,6 +50,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { SignalZone } from './SignalZone';
 import { facing, flat, owningTouchable } from '../../testUtils/tree';
+import * as signalCopy from '../../lib/signalCopy';
 import { usePetStore } from '../../store/petStore';
 import {
   foldFingerprint,
@@ -512,6 +513,29 @@ describe('SignalZone — the standing safety strip', () => {
     expect(view.getByText('Worth a vet visit')).toBeTruthy();
     expect(view.getByText(/See all of Nyx's patterns/)).toBeTruthy();
     expect(view.queryByText(/nothing new|all clear/i)).toBeNull();
+  });
+});
+
+describe('SignalZone — FS-3 / FS-7 end to end: a safety finding whose strip cannot say its ask renders the OPEN CARD, never a blank row', () => {
+  it('with the copy layer failing the ask, a stored fold on the chronicity card yields the card, not a strip and not nothing', async () => {
+    // The build guard forbids this state; here the copy layer is broken on purpose so the
+    // host's fallback is proven end to end (code review, CUL-785: the strip's own refusal was
+    // proven, the host's was not — and a host that chose the strip anyway would have drawn
+    // NOTHING for a safety finding).
+    const spy = jest.spyOn(signalCopy, 'stripAskLine').mockReturnValue(null);
+    try {
+      await writeFoldEntries('pet-1', { [CKEY]: foldedEntry(chronicityFinding, NOW) });
+      mockUseSignal.mockReturnValue(live([chronicity, postprandial]));
+      const view = render(<SignalZone />);
+      await act(async () => {});
+      expect(view.queryByTestId('insight-folded-strip')).toBeNull();
+      expect(view.getByText(chronicity.text)).toBeTruthy();
+      expect(view.getAllByTestId('insight-row')).toHaveLength(2);
+      // And the benign card beside it is untouched by the failure.
+      expect(view.getByText(postprandial.text)).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

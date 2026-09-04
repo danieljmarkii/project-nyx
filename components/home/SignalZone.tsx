@@ -14,7 +14,7 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
-import { FoldedStrip, InsightCard, RAIL_WIDTH } from './InsightCard';
+import { FoldedStrip, InsightCard, RAIL_WIDTH, stripRenderable } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
@@ -52,8 +52,6 @@ import {
   staleIntro,
   stoodDownExpired,
   chronicityLastEpisodeFallbackIso,
-  stripAskLine,
-  stripNameLine,
 } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 import type { DisplayState } from '../../lib/signalCopy';
@@ -905,17 +903,6 @@ function LiveStack({
   return (
     <View>
       {ordered.map((f, i) => {
-        // CUL-784 (fold spec §6 / DF-7): ORDER IS RANK — a fold changes height, never
-        // position — and `isLead` stays bound to rank 0 whether or not that row is folded.
-        // A benign card is never promoted to the Newsreader canvas because the safety card
-        // above it was compacted (reassurance by layout). The strip is chosen only when the
-        // type has strip copy on this build — the same predicate `canFold` gates upstream —
-        // so a finding is never dropped for want of a strip (FS-7) — and a SAFETY finding
-        // folds only when its strip can say its ask (FS-3): otherwise the open card renders.
-        const folded =
-          fold.stateOf(f.finding) === 'folded' &&
-          stripNameLine(f.finding) !== null &&
-          (f.finding.priorityClass !== 'safety' || stripAskLine(f.finding) !== null);
         // §3.4: the record's date first; for chronicity the engine-derived fallback when the
         // record did not answer; worsening has no fallback and prints no date then.
         const lastEpisodeIso =
@@ -923,6 +910,14 @@ function LiveStack({
             ? lastEpisodes[f.finding.symptomType] ??
               (f.finding.type === 'symptom_chronicity' ? chronicityLastEpisodeFallbackIso(f.finding, expiresAt) : null)
             : null;
+        // CUL-784 (fold spec §6 / DF-7): ORDER IS RANK — a fold changes height, never
+        // position — and `isLead` stays bound to rank 0 whether or not that row is folded.
+        // A benign card is never promoted to the Newsreader canvas because the safety card
+        // above it was compacted (reassurance by layout). The strip is chosen only when the
+        // finding HAS a strip — `stripRenderable`, the same predicate `FoldedStrip` refuses on —
+        // so a finding is never dropped for want of a strip (FS-7), and a SAFETY finding folds
+        // only when its strip can say its ask (FS-3): otherwise the open card renders.
+        const folded = fold.stateOf(f.finding) === 'folded' && stripRenderable(f.finding, { lastEpisodeIso });
         const row = (
           <>
             {i > 0 && <Divider style={styles.rowDivider} />}
