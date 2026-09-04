@@ -249,11 +249,13 @@ describe('SignalZone — the fold, end to end', () => {
     mockUseSignal.mockReturnValue(live([chronicity, postprandial, reflection]));
     const view = render(<SignalZone />);
     await view.findByTestId('insight-folded-strip');
-    // Read the stack's rows in tree order: safety face, strip, reflection face.
-    const rows = [
-      ...view.getAllByTestId(/^insight-(row|folded-strip)$/),
-    ];
-    expect(rows.map((r) => r.props.testID)).toEqual(['insight-row', 'insight-folded-strip', 'insight-row']);
+    // Read the stack's rows in tree order: safety face, the strip's row, reflection face.
+    // CUL-788: a folded finding is still an `insight-row` (one row, one rail); the strip is
+    // that row's content.
+    const rows = view.getAllByTestId('insight-row');
+    expect(rows).toHaveLength(3);
+    const holdsStrip = (row: (typeof rows)[number]) => row.findAllByProps({ testID: 'insight-folded-strip' }).length > 0;
+    expect(rows.map(holdsStrip)).toEqual([false, true, false]);
     expect(view.getByText(chronicity.text)).toBeTruthy();
     expect(view.getByText(reflection.text)).toBeTruthy();
     expect(view.queryByText(postprandial.text)).toBeNull();
@@ -391,8 +393,11 @@ describe('SignalZone — the standing safety strip', () => {
     expect(view.getByText('14 episodes, 5 of 8 weeks · last Aug 26')).toBeTruthy();
     expect(owningTouchable(view.getByText('Worth a vet visit'))).toBe(owningTouchable(strip));
     // Position is rank: the strip is the FIRST row; both benign faces sit beneath it (FS-5).
-    const rows = view.getAllByTestId(/^insight-(row|folded-strip)$/);
-    expect(rows.map((r) => r.props.testID)).toEqual(['insight-folded-strip', 'insight-row', 'insight-row']);
+    // CUL-788: a folded finding is still an `insight-row` (one row, one rail); the strip is
+    // that row's content — so the safety strip is the FIRST row, and it holds the strip.
+    const rows = view.getAllByTestId('insight-row');
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.findAllByProps({ testID: 'insight-folded-strip' }).length > 0)).toEqual([true, false, false]);
     // And no benign card inherited the Newsreader canvas (DF-7).
     for (const t of [postprandial.text, reflection.text]) {
       expect(flat(view.getByText(t)).fontFamily).not.toBe('Newsreader');
