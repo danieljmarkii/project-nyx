@@ -58,18 +58,35 @@ export type PetFoldEntries = Record<string, FoldEntry>;
 /** The persisted blob: `{ [petId]: PetFoldEntries }`. */
 export type FoldStore = Record<string, PetFoldEntries>;
 
-// ── The class gate (PR 1 → PR 2) ──────────────────────────────────────────────
+// ── The class gate (DF-2) ────────────────────────────────────────────────────
 
 /**
- * Which findings may be folded on THIS build. PR 1 ships the benign fold only; the safety
- * strips (standing and acute — DF-2) flip this gate in PR 2 (CUL-785), together with the
- * ask-bearing strip clauses and the FS-3 build guard. One place, so the control and the
- * store can never disagree about the class line.
+ * CUL-785 brief A — whether `intake_decline` may fold on this build. HELD CLOSED, provisionally.
+ *
+ * DF-2 ruled that the acute cards fold "bounded by the record: their material fields move
+ * daily, so an acute fold lasts one regen cycle". For the red flag that bound holds (a newer
+ * flagged photo moves `mostRecentFlaggedIso`). For intake decline it does NOT: the shipped
+ * `detectIntakeDecline` walks exactly `consecutiveDays` days, so `daysBelowBaseline` is a
+ * constant (1 for a cat, 2 for a dog) and 0 on a refusal — a folded "not eating" strip would
+ * stay folded for as long as the decline continued, with no clock allowed to re-open it
+ * (DF-5). Until the engine emits a field that moves with each day of the decline, the safe
+ * default is the one Dr. Chen's dissent asked for: the card stays open. The strip copy, the
+ * ask and the tests are built and pinned, so the flip is this one line once the PM ratifies
+ * it or the engine change lands.
+ */
+export const INTAKE_DECLINE_FOLDS = false;
+
+/**
+ * Which findings may be folded on THIS build. Every safety type folds (DF-2, PM-ruled
+ * 2026-09-03 — the standing class AND the acute class), with the one provisional hold above.
+ * One place, so the control, the store and the strip can never disagree about the class
+ * line; the strip's ask is guarded separately (FS-3, `signalCopy.strip.test.ts`).
  */
 export function canFold(finding: SignalFinding): boolean {
   // CUL-786: a stood-down marker is a line, not a card — nothing to fold, no control.
   if (finding.type === 'stood_down') return false;
-  return finding.priorityClass !== 'safety';
+  if (finding.type === 'intake_decline') return INTAKE_DECLINE_FOLDS;
+  return true;
 }
 
 // ── Identity (§5.2) — the finding key, never `rank` ───────────────────────────
@@ -106,7 +123,25 @@ export function foldIdentity(finding: SignalFinding): string {
 // directions re-open on ANY change. The table is data so the property test in
 // `signalFold.test.ts` can walk every row rather than restate it.
 
-export type MaterialKind = 'increase' | 'decrease' | 'turn_on' | 'change';
+export type MaterialKind = 'increase' | 'decrease' | 'turn_on' | 'change' | 'later';
+
+/**
+ * What the LOCAL RECORD knows about a finding that the cached payload does not — read by
+ * `useLastEpisodeDates` and handed to the fold with the finding (CUL-785). `record.*` paths in
+ * a `MaterialSpec` read from here, never from the finding.
+ *
+ * Why the record is a material input at all: the engine's `daysSinceLastEpisode` is a FLOORED
+ * day count, pinned at 0 whenever the last episode is under a day old, and `episodeCount` /
+ * `activeWeeks` / `tier` all saturate on a dense course — so for a pet vomiting daily every
+ * material field is at a ceiling or a floor and `materialChange` is a fixed point: ten new
+ * episodes, zero re-opens (the adversarial pass, 2026-09-04, against the real detector). The
+ * instant of the record's newest episode is the witness a floored day count is not — it only
+ * ever moves LATER on a new episode, it needs no engine change, and it is readable offline.
+ */
+export interface RecordFacts {
+  /** ISO of the pet's most recent logged episode of the finding's symptom; null = unread. */
+  lastEpisodeIso?: string | null;
+}
 
 export interface MaterialSpec {
   /** Re-opens only when the value RISES. */
@@ -117,6 +152,10 @@ export interface MaterialSpec {
   turnOn: readonly string[];
   /** Re-opens on ANY change. */
   anyChange: readonly string[];
+  /** ISO instants (from `RecordFacts`) that re-open only when they move LATER — a newer
+   *  episode in the record. Never re-opens on an earlier instant (a deleted episode) and never
+   *  on a read that did not answer. */
+  laterInstant: readonly string[];
   /** The Back-because reason a change in a given field carries. */
   reason: (field: string, kind: MaterialKind) => BackBecauseReason;
 }
@@ -132,6 +171,8 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     decreaseOnly: ['daysSinceLastEpisode'],
     turnOn: ['coughVomitAdjacent'],
     anyChange: ['tier'],
+    // The record's newest episode — the witness that survives a saturated course (above).
+    laterInstant: ['record.lastEpisodeIso'],
     reason: (field) => (field === 'tier' || field === 'coughVomitAdjacent' ? 'ask_changed' : 'new_episode'),
   },
   symptom_worsening: {
@@ -139,12 +180,14 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     decreaseOnly: [],
     turnOn: [],
     anyChange: ['tier', 'trigger'],
-    reason: (_field, kind) => (kind === 'increase' ? 'new_week' : 'ask_changed'),
+    laterInstant: ['record.lastEpisodeIso'],
+    reason: (field, kind) => (kind === 'later' ? 'new_episode' : kind === 'increase' ? 'new_week' : 'ask_changed'),
   },
   food_symptom_correlation: {
     increaseOnly: ['matchedPairs', 'symptomEventCount'],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     // A member joining the cluster is a NEW KEY (foldIdentity), so it never reaches here.
     anyChange: ['tier', 'jointCandidate', 'jointGuidance'],
     reason: (field, kind) =>
@@ -154,6 +197,7 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     increaseOnly: ['rapidCount', 'eligibleCount'],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     anyChange: ['lastTwoEligibleRapid'],
     reason: timingReason,
   },
@@ -161,6 +205,7 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     increaseOnly: ['clusterCount', 'eligibleCount'],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     anyChange: ['clusterStartLocalHour', 'clusterWindowHours'],
     reason: timingReason,
   },
@@ -168,6 +213,7 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     increaseOnly: ['bandCounts.rapid', 'bandCounts.mid', 'bandCounts.long', 'eligibleCount', 'clockCount'],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     anyChange: ['lastTwoEligibleLong'],
     reason: timingReason,
   },
@@ -175,6 +221,7 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     increaseOnly: ['bandCounts.rapid', 'bandCounts.mid', 'bandCounts.long', 'eligibleCount', 'long.clockCount'],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     anyChange: ['rapid.lastTwoEligible', 'long.lastTwoEligible'],
     reason: timingReason,
   },
@@ -182,6 +229,7 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     increaseOnly: [],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     // The pair IS the finding; a new week's pair is a new fact.
     anyChange: ['currentCount', 'priorCount', 'direction', 'density.comparable'],
     reason: () => 'new_week',
@@ -190,15 +238,19 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     increaseOnly: [],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     // The server already emits only on "changed materially".
     anyChange: ['pooledTrialCount', 'pooledBaselineCount', 'comparisonDirection', 'rapid.trial', 'mid.trial', 'long.trial'],
     reason: () => 'trial_counts',
   },
   intake_decline: {
-    // Moves daily while the decline continues, so the fold is a one-day fold by construction.
+    // The spec's premise was that this field climbs daily; under the shipped detector it is a
+    // constant per species (see INTAKE_DECLINE_FOLDS above), so the row is correct but inert
+    // until the engine moves the field. Kept as the §5.3 table states it.
     increaseOnly: ['daysBelowBaseline'],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     anyChange: ['trigger', 'refusedFoodLabel'],
     reason: (_field, kind) => (kind === 'increase' ? 'intake_day' : 'ask_changed'),
   },
@@ -206,6 +258,7 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     increaseOnly: ['flaggedIncidentCount'],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     anyChange: ['mostRecentFlaggedIso', 'flags'],
     reason: () => 'photo_record',
   },
@@ -218,6 +271,7 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     increaseOnly: [],
     decreaseOnly: [],
     turnOn: [],
+    laterInstant: [],
     anyChange: [],
     reason: () => 'new_episode',
   },
@@ -238,14 +292,28 @@ function readPath(finding: SignalFinding, path: string): string | number | boole
   return null;
 }
 
-/** The finding's material fields (§5.3), by dotted path, plus `type`. */
-export function foldFingerprint(finding: SignalFinding): FoldFingerprint {
+/** Every path a spec names, in one list. */
+function specPaths(spec: MaterialSpec): string[] {
+  return [...spec.increaseOnly, ...spec.decreaseOnly, ...spec.turnOn, ...spec.anyChange, ...spec.laterInstant];
+}
+
+/** The finding's material fields (§5.3), by dotted path, plus `type` — and the record's
+ *  facts under `record.*` when the caller has them (absent → `null`, like any missing field). */
+export function foldFingerprint(finding: SignalFinding, record: RecordFacts = {}): FoldFingerprint {
   const spec = MATERIAL_FIELDS[finding.type];
   const fp: FoldFingerprint = { type: finding.type };
-  for (const path of [...spec.increaseOnly, ...spec.decreaseOnly, ...spec.turnOn, ...spec.anyChange]) {
-    fp[path] = readPath(finding, path);
+  for (const path of specPaths(spec)) {
+    fp[path] = path.startsWith('record.')
+      ? readPath(record as unknown as SignalFinding, path.slice('record.'.length))
+      : readPath(finding, path);
   }
   return fp;
+}
+
+function asInstant(v: string | number | boolean | null | undefined): number | null {
+  if (typeof v !== 'string') return null;
+  const ms = Date.parse(v);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 function asNumber(v: string | number | boolean | null | undefined): number | null {
@@ -285,7 +353,30 @@ export function materialChange(prev: FoldFingerprint, next: FoldFingerprint): Ba
     const b = asNumber(next[f]);
     if (has(f) && a !== null && b !== null && b < a) return spec.reason(f, 'decrease');
   }
+  for (const f of spec.laterInstant) {
+    const a = asInstant(prev[f]);
+    const b = asInstant(next[f]);
+    if (has(f) && a !== null && b !== null && b > a) return spec.reason(f, 'later');
+  }
   return null;
+}
+
+/**
+ * A record witness the fold already holds is never overwritten by a read that did not
+ * answer: `laterInstant` fields that are null on the new fingerprint keep the stored value,
+ * so a transient store failure cannot erase the instant a later episode is judged against.
+ */
+function keepWitnesses(prev: FoldFingerprint, next: FoldFingerprint): FoldFingerprint {
+  const spec = MATERIAL_FIELDS[next.type as InsightType];
+  if (!spec || spec.laterInstant.length === 0) return next;
+  let out = next;
+  for (const f of spec.laterInstant) {
+    if ((next[f] === null || next[f] === undefined) && prev[f] != null) {
+      if (out === next) out = { ...next };
+      out[f] = prev[f];
+    }
+  }
+  return out;
 }
 
 function sameFingerprint(a: FoldFingerprint, b: FoldFingerprint): boolean {
@@ -308,6 +399,8 @@ function sameFingerprint(a: FoldFingerprint, b: FoldFingerprint): boolean {
  *      makes 7. Against the fold-day 8 that is a decrease; against the record it is the
  *      new episode it is.)
  *   4. A `reopened` entry whose fingerprint changed at all is deleted (the line clears).
+ *   5. The record's witness (`record.lastEpisodeIso`) re-opens on a LATER instant only, and a
+ *      read that did not answer never erases the witness a fold already holds.
  *
  * `nowIso` is passed in, never read here: the only clock this function touches is the
  * timestamp it STAMPS on a release, and the decision never depends on it. Returns the
@@ -317,6 +410,9 @@ export function reconcileFolds(
   entries: PetFoldEntries,
   findings: readonly SignalFinding[],
   nowIso: string,
+  /** The record's facts for a finding (CUL-785) — the zone's `useLastEpisodeDates` read;
+   *  absent for callers that have none (every row then carries a null witness). */
+  recordOf: (finding: SignalFinding) => RecordFacts = () => ({}),
 ): { entries: PetFoldEntries; changed: boolean } {
   const byKey = new Map<string, SignalFinding>();
   for (const f of findings) byKey.set(foldIdentity(f), f);
@@ -329,7 +425,7 @@ export function reconcileFolds(
       changed = true;
       continue;
     }
-    const fp = foldFingerprint(finding);
+    const fp = keepWitnesses(entry.fingerprint, foldFingerprint(finding, recordOf(finding)));
     if (entry.state === 'folded') {
       const reason = materialChange(entry.fingerprint, fp);
       if (reason) {
@@ -347,9 +443,10 @@ export function reconcileFolds(
   return changed ? { entries: next, changed } : { entries, changed };
 }
 
-/** A fresh `folded` entry for a finding the owner just compacted. */
-export function foldedEntry(finding: SignalFinding, nowIso: string): FoldEntry {
-  return { state: 'folded', fingerprint: foldFingerprint(finding), foldedAtIso: nowIso };
+/** A fresh `folded` entry for a finding the owner just compacted, carrying the record's
+ *  facts as of the fold so the next episode is judged against where the record IS. */
+export function foldedEntry(finding: SignalFinding, nowIso: string, record: RecordFacts = {}): FoldEntry {
+  return { state: 'folded', fingerprint: foldFingerprint(finding, record), foldedAtIso: nowIso };
 }
 
 // ── The AsyncStorage shell ────────────────────────────────────────────────────

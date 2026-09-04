@@ -9,6 +9,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  INTAKE_DECLINE_FOLDS,
   MATERIAL_FIELDS,
   SIGNAL_FOLD_STORAGE_KEY,
   clearSignalFold,
@@ -23,6 +24,7 @@ import {
   writeFoldEntries,
   type FoldFingerprint,
   type PetFoldEntries,
+  type RecordFacts,
 } from './signalFold';
 import type {
   CorrelationFinding,
@@ -285,12 +287,22 @@ describe('foldIdentity — the finding key, never rank', () => {
   });
 });
 
-// ── The class gate (PR 1) ─────────────────────────────────────────────────────
-describe('canFold — the PR 1 class line', () => {
-  it('benign findings fold; safety findings do not (until PR 2 flips this)', () => {
+// ── The class gate (DF-2, CUL-785) ────────────────────────────────────────────
+describe('canFold — every card folds, the safety class included (DF-2)', () => {
+  it('benign findings fold; the standing safety class folds; the red flag folds', () => {
     for (const t of TYPES) {
-      expect(canFold(BASE[t])).toBe(BASE[t].priorityClass !== 'safety');
+      if (t === 'intake_decline') continue;
+      expect([t, canFold(BASE[t])]).toEqual([t, true]);
     }
+  });
+
+  it('intake decline is HELD CLOSED behind the one named constant (CUL-785 brief A), and the hold is the whole reason', () => {
+    // The ruling's bound — "daysBelowBaseline climbs daily" — does not hold in the shipped
+    // detector (a constant 1 / 2, and 0 on a refusal), so an intake fold would be unbounded.
+    // When the engine moves the field, flipping the constant is the entire change.
+    expect(canFold(intake)).toBe(INTAKE_DECLINE_FOLDS);
+    expect(canFold({ ...intake, trigger: 'refused_normal_food', daysBelowBaseline: 0 })).toBe(INTAKE_DECLINE_FOLDS);
+    expect(INTAKE_DECLINE_FOLDS).toBe(false);
   });
 
   it('CUL-786: a stood-down marker never folds — insight class, but a line, not a card', () => {
@@ -318,6 +330,27 @@ describe('materialChange — the per-type table, walked as a property', () => {
         // turnOn fields may legitimately be absent on the base (the adjacency is optional).
         if (spec.turnOn.includes(f)) continue;
         expect(getPath(BASE[t], f)).toBeDefined();
+      }
+      // A record witness is a `record.*` path (read from RecordFacts, never the finding), and
+      // only the two standing safety types carry one (CUL-785).
+      for (const f of spec.laterInstant) expect(f.startsWith('record.')).toBe(true);
+      expect(spec.laterInstant.length > 0).toBe(t === 'symptom_chronicity' || t === 'symptom_worsening');
+    }
+  });
+
+  it('LATER instant ⇒ re-opens as a new episode; the same or an EARLIER instant never does', () => {
+    const before: RecordFacts = { lastEpisodeIso: '2026-08-26T15:00:00.000Z' };
+    const later: RecordFacts = { lastEpisodeIso: '2026-09-04T07:30:00.000Z' };
+    const earlier: RecordFacts = { lastEpisodeIso: '2026-08-20T15:00:00.000Z' };
+    for (const t of TYPES) {
+      for (const f of MATERIAL_FIELDS[t].laterInstant) {
+        const base = BASE[t];
+        expect([t, f, materialChange(foldFingerprint(base, before), foldFingerprint(base, later))]).toEqual([t, f, 'new_episode']);
+        expect(materialChange(foldFingerprint(base, before), foldFingerprint(base, before))).toBeNull();
+        expect(materialChange(foldFingerprint(base, before), foldFingerprint(base, earlier))).toBeNull();
+        // A witness that never answered on either side decides nothing.
+        expect(materialChange(foldFingerprint(base, {}), foldFingerprint(base, later))).toBeNull();
+        expect(materialChange(foldFingerprint(base, before), foldFingerprint(base, { lastEpisodeIso: null }))).toBeNull();
       }
     }
   });
@@ -396,6 +429,21 @@ describe('materialChange — the per-type table, walked as a property', () => {
     expect(materialChange(foldFingerprint(chronicity), foldFingerprint(next))).toBe('new_episode');
   });
 
+  it('the saturated course (adversarial pass, 2026-09-04): a pet vomiting daily moves NO engine field — the record’s witness re-opens the fold', () => {
+    // 56 episodes in a 56-day window at one a day: episodeCount at the window's capacity,
+    // activeWeeks at its ceiling, daysSinceLastEpisode floored at 0, tier pinned firm. Ten new
+    // episodes later the payload is byte-identical.
+    const saturated: SymptomChronicityFinding = {
+      ...chronicity, episodeCount: 56, activeWeeks: 8, symptomDays: 56, daysSinceLastEpisode: 0, tier: 'firm',
+    };
+    const foldDay: RecordFacts = { lastEpisodeIso: '2026-09-03T08:00:00.000Z' };
+    const nextDay: RecordFacts = { lastEpisodeIso: '2026-09-04T08:10:00.000Z' };
+    // Without the witness the fold is a fixed point — this is the break the pass reproduced.
+    expect(materialChange(foldFingerprint(saturated, {}), foldFingerprint(saturated, {}))).toBeNull();
+    // With it, the next morning's episode brings the card back.
+    expect(materialChange(foldFingerprint(saturated, foldDay), foldFingerprint(saturated, nextDay))).toBe('new_episode');
+  });
+
   it('correlation: Early pattern → established says so', () => {
     const next = { ...correlation, tier: 'established' as const };
     expect(materialChange(foldFingerprint(correlation), foldFingerprint(next))).toBe('tier_established');
@@ -410,9 +458,22 @@ describe('materialChange — the per-type table, walked as a property', () => {
     expect(materialChange(foldFingerprint(base2), foldFingerprint(reordered))).toBeNull();
   });
 
-  it('intake decline: day 3 → day 4 re-opens (the acute fold is a one-day fold)', () => {
+  it('intake decline: day 3 → day 4 re-opens (the acute fold is a one-day fold — once the engine moves the field)', () => {
     expect(materialChange(foldFingerprint(intake), foldFingerprint({ ...intake, daysBelowBaseline: 4 }))).toBe('intake_day');
     expect(materialChange(foldFingerprint(intake), foldFingerprint({ ...intake, ratedMealsConsidered: 12 }))).toBeNull();
+    // A trigger flip (a refusal arriving on top of a decline) or a different refused food is
+    // the ask changing; the species field is never a trigger.
+    expect(materialChange(foldFingerprint(intake), foldFingerprint({ ...intake, trigger: 'refused_normal_food' }))).toBe('ask_changed');
+    expect(materialChange(foldFingerprint(intake), foldFingerprint({ ...intake, species: 'dog' }))).toBeNull();
+  });
+
+  it('red flag: nothing but the photo record re-opens it — the window aging is not a trigger', () => {
+    expect(materialChange(foldFingerprint(redFlag), foldFingerprint({ ...redFlag, windowDays: 21 }))).toBeNull();
+    // The same photo, re-cached with the count one lower because an older flagged photo aged
+    // out: stays folded (a count falling is the window, not the pet).
+    expect(materialChange(foldFingerprint(redFlag), foldFingerprint({ ...redFlag, flaggedIncidentCount: 1 }))).toBeNull();
+    // A second flag kind on the same photo record: the set changed → back.
+    expect(materialChange(foldFingerprint(redFlag), foldFingerprint({ ...redFlag, flags: ['blood', 'foreign_material'] }))).toBe('photo_record');
   });
 
   it('a field the stored fingerprint never carried is skipped, not treated as a change', () => {
@@ -482,6 +543,91 @@ describe('reconcileFolds', () => {
     // Any movement, even a decrease → the entry is gone.
     const r = reconcileFolds(reopened, [{ ...postprandial, rapidCount: 5, eligibleCount: 5 }], NOW);
     expect(r.entries).toEqual({});
+  });
+
+  it('the record witness rides reconcileFolds: a newer local episode re-opens the fold with NO change to the payload (offline)', () => {
+    const ck = foldIdentity(chronicity);
+    const foldDay = { lastEpisodeIso: '2026-09-03T08:00:00.000Z' };
+    const entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW, foldDay) };
+    // The same payload, the same day: nothing.
+    expect(reconcileFolds(entries, [chronicity], NOW, () => foldDay).changed).toBe(false);
+    // The owner logs a vomit; the regen has not landed; the record's newest instant moved.
+    const r = reconcileFolds(entries, [chronicity], NOW, () => ({ lastEpisodeIso: '2026-09-04T07:30:00.000Z' }));
+    expect(r.entries[ck]).toMatchObject({ state: 'reopened', reason: 'new_episode' });
+  });
+
+  it('a read that did not answer never erases the witness a fold holds (keepWitnesses)', () => {
+    const ck = foldIdentity(chronicity);
+    const foldDay = { lastEpisodeIso: '2026-09-03T08:00:00.000Z' };
+    let entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW, foldDay) };
+    // Transient store failure: the record reads null. Not a change, and the witness survives.
+    let r = reconcileFolds(entries, [chronicity], NOW, () => ({ lastEpisodeIso: null }));
+    expect(r.changed).toBe(false);
+    expect(r.entries[ck].fingerprint['record.lastEpisodeIso']).toBe(foldDay.lastEpisodeIso);
+    entries = r.entries;
+    // The store answers again with a newer episode: judged against the KEPT witness → back.
+    r = reconcileFolds(entries, [chronicity], NOW, () => ({ lastEpisodeIso: '2026-09-04T07:30:00.000Z' }));
+    expect(r.entries[ck]).toMatchObject({ state: 'reopened', reason: 'new_episode' });
+    // And a reopened line is not cleared by a transient null either.
+    r = reconcileFolds(r.entries, [chronicity], NOW, () => ({ lastEpisodeIso: null }));
+    expect(r.entries[ck].state).toBe('reopened');
+  });
+
+  it('a fold stored with no witness (unread at fold time, or a PR 1 entry) gains one on the next read and re-opens on the episode after', () => {
+    const ck = foldIdentity(chronicity);
+    let entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW) };
+    // The record now answers: not material (nothing to compare against), the stored
+    // fingerprint follows the record (rule 3), the fold stays.
+    let r = reconcileFolds(entries, [chronicity], NOW, () => ({ lastEpisodeIso: '2026-09-03T08:00:00.000Z' }));
+    expect(r.changed).toBe(true);
+    expect(r.entries[ck].state).toBe('folded');
+    entries = r.entries;
+    r = reconcileFolds(entries, [chronicity], NOW, () => ({ lastEpisodeIso: '2026-09-04T07:30:00.000Z' }));
+    expect(r.entries[ck]).toMatchObject({ state: 'reopened', reason: 'new_episode' });
+    // A PR 1 entry (no `record.*` key at all) is skipped, never treated as a change.
+    const legacy: PetFoldEntries = { [ck]: { state: 'folded', fingerprint: { ...foldFingerprint(chronicity), 'record.lastEpisodeIso': undefined as never }, foldedAtIso: NOW } };
+    delete (legacy[ck].fingerprint as Record<string, unknown>)['record.lastEpisodeIso'];
+    const up = reconcileFolds(legacy, [chronicity], NOW, () => ({ lastEpisodeIso: '2026-09-04T07:30:00.000Z' }));
+    expect(up.entries[ck].state).toBe('folded');
+  });
+
+  it('a deleted episode moves the witness EARLIER: not a re-open, and the fold follows the record down', () => {
+    const ck = foldIdentity(chronicity);
+    const entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW, { lastEpisodeIso: '2026-09-03T08:00:00.000Z' }) };
+    const r = reconcileFolds(entries, [chronicity], NOW, () => ({ lastEpisodeIso: '2026-08-30T08:00:00.000Z' }));
+    expect(r.entries[ck].state).toBe('folded');
+    expect(r.entries[ck].fingerprint['record.lastEpisodeIso']).toBe('2026-08-30T08:00:00.000Z');
+  });
+
+  it('improving-then-relapsing (Dr. Chen’s falsification set): a folded course that stands down is RELEASED, so its re-fire renders as a full card', () => {
+    const ck = foldIdentity(chronicity);
+    // Day 0: the owner folds the chronicity card.
+    let entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW) };
+    // Weeks later the course goes quiet: the finding leaves the set and the labeled stand-down
+    // marker (CUL-786) takes its slot. The marker is a different key, so the fold's key is
+    // ABSENT → the entry is deleted (release rule 1), not carried over onto the marker.
+    let r = reconcileFolds(entries, [stoodDown, postprandial], NOW);
+    expect(r.changed).toBe(true);
+    expect(r.entries).toEqual({});
+    entries = r.entries;
+    // The course relapses: chronicity re-fires with a SMALLER count than the day it was folded
+    // (the window slid). Against the fold-day fingerprint that would have read as "no
+    // material change" and kept the strip; with the entry gone, nothing is folded and the
+    // card renders open — and no Back-because line either (there is no memory to be back from).
+    const relapse = { ...chronicity, episodeCount: 9, activeWeeks: 3, daysSinceLastEpisode: 0 };
+    r = reconcileFolds(entries, [relapse, postprandial], NOW);
+    expect(r.changed).toBe(false);
+    expect(r.entries[ck]).toBeUndefined();
+  });
+
+  it('the refusing cat: a folded chronicity is untouched by intake decline arriving above it (FS-7), and never inherits its release', () => {
+    const ck = foldIdentity(chronicity);
+    const entries: PetFoldEntries = { [ck]: foldedEntry(chronicity, NOW) };
+    // Intake decline fires at rank 0 (a new safety finding lands as a full card above the
+    // strip); the chronicity fold is neither released nor re-keyed by it.
+    const r = reconcileFolds(entries, [intake, chronicity], NOW);
+    expect(r.changed).toBe(false);
+    expect(r.entries[ck].state).toBe('folded');
   });
 
   it('never touches another finding’s entry (FS-7 — a fold on one never suppresses another)', () => {

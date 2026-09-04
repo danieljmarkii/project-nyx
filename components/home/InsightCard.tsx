@@ -21,8 +21,11 @@ import {
   FOLD_CONTROL_LABEL,
   STRIP_A11Y_HINT,
   backBecauseCopy,
+  stripA11yLabel,
+  stripAskLine,
   stripCountLine,
   stripNameLine,
+  type StripContext,
   DOT_LANE_MAX,
   TIMING_STORY_BADGE,
   TRIAL_ADJACENCY,
@@ -545,8 +548,9 @@ interface Props {
   trialRunning?: boolean;
   // CUL-784 — the Signal fold (fold spec §3). `onFold` wires the `Keep it compact`
   // control; absent (a non-Home caller, the shipped tests) the control does not render
-  // and the card behaves as shipped. The control also never renders for a class this
-  // build does not fold (`canFold` — the safety types until PR 2).
+  // and the card behaves as shipped. The control also never renders for a finding this
+  // build does not fold (`canFold` — every class since CUL-785, with the one provisional
+  // hold on intake decline recorded there).
   onFold?: (finding: SignalFinding) => void;
   // Present when the RECORD re-opened this card (a material change) and the owner has not
   // touched it since: renders the one-line Back-because above the sentence and prefixes
@@ -722,28 +726,61 @@ export function InsightCard({
   );
 }
 
-// ── The folded strip (CUL-784, fold spec §3.1) ─────────────────────────────────
+// ── The folded strip (CUL-784 / CUL-785, fold spec §3.1) ─────────────────────
 // The finding's named home while compressed — in place, at rank, between the same
-// hairlines. Rail at full opacity (never greyed), the name line, the compact count line,
-// the TrialStrip/MedStrip chevron; the sentence, every receipt, every chip, the med line
-// and the controls are dropped. Each line is its own Text node with NO numberOfLines
-// (FS-11 / C-8): at accessibility sizes a line wraps, never truncates. The whole row is
-// the tap target and re-opens to the FACE (§3.2). Borrows the strips' compact register,
+// hairlines. Rail at full opacity (never greyed), the name line, on a SAFETY strip the ask
+// line beneath it, the compact count line (with the last-episode date where the record
+// gave one), the TrialStrip/MedStrip chevron; the sentence, every receipt, every chip, the
+// med line and the controls are dropped. Each line is its own Text node with NO
+// numberOfLines (FS-11 / C-8): at accessibility sizes a line wraps, never truncates, and an
+// ask can never break mid-phrase because it is never joined to another line. The whole row
+// is the tap target and re-opens to the FACE (§3.2). Borrows the strips' compact register,
 // not their Card — it stays a row of the Signal.
+//
+// FS-3, the runtime half: a safety strip that cannot say its ask is NOT drawn — the host
+// asks `stripRenderable` before choosing the strip and renders the open card instead (FS-7:
+// a finding is never dropped), and the strip itself asks the same predicate so the two can
+// never disagree. The build half is `signalCopy.strip.test.ts`, which fails on any safety
+// type without a ratified ask, so the refusal is unreachable on a green build.
+
+/**
+ * Whether a finding has a strip to render: a name, a count, a spoken label, and — for a
+ * safety finding — its ask. ONE predicate for `LiveStack` (choose strip vs card) and
+ * `FoldedStrip` (draw or refuse), so a type added to one copy switch and not another can
+ * never produce a blank row where a safety card should be (code review, CUL-785). The
+ * calls go through the copy module's exports on purpose: a test can make the copy layer
+ * fail and prove both sites refuse.
+ */
+export function stripRenderable(finding: SignalFinding, ctx: StripContext = {}): boolean {
+  if (stripNameLine(finding) === null) return false;
+  if (stripCountLine(finding, ctx) === null) return false;
+  if (stripA11yLabel(finding, ctx) === null) return false;
+  // Stated separately from the label (which already withholds itself on a safety finding
+  // with no ask) so the FS-3 rule reads here in one line, not by implication.
+  if (finding.priorityClass === 'safety' && stripAskLine(finding) === null) return false;
+  return true;
+}
+
 export function FoldedStrip({
   cached,
   onPress,
+  lastEpisodeIso,
 }: {
   cached: CachedFinding;
   onPress: (finding: SignalFinding) => void;
+  /** §3.4 — the record's most recent episode of this finding's symptom (`useLastEpisodeDates`,
+   *  or the chronicity fallback); null / absent renders the count with no date. */
+  lastEpisodeIso?: string | null;
 }) {
   const reducedMotion = useReducedMotion();
-  const name = stripNameLine(cached.finding);
-  const countLine = stripCountLine(cached.finding);
-  // A type with no strip copy on this build is not foldable here (the host checks the same
-  // predicate before choosing the strip); this null is unreachable through LiveStack and
-  // exists so the component can never render a blank strip.
-  if (!name || !countLine) return null;
+  const ctx: StripContext = { lastEpisodeIso };
+  // Unreachable through LiveStack (it asks the same predicate first); kept so the component
+  // can never render a blank strip, or a safety strip that dropped the vet.
+  if (!stripRenderable(cached.finding, ctx)) return null;
+  const name = stripNameLine(cached.finding) as string;
+  const ask = stripAskLine(cached.finding);
+  const countLine = stripCountLine(cached.finding, ctx) as string;
+  const label = stripA11yLabel(cached.finding, ctx) as string;
   const rail = RAIL_COLOR[cached.finding.priorityClass];
   function unfold() {
     if (!reducedMotion) {
@@ -757,7 +794,7 @@ export function FoldedStrip({
       hitSlop={8}
       accessibilityRole="button"
       accessibilityState={{ expanded: false }}
-      accessibilityLabel={`${name}. ${countLine}.`}
+      accessibilityLabel={label}
       accessibilityHint={STRIP_A11Y_HINT}
       style={[styles.row, styles.rowCompact]}
       testID="insight-folded-strip"
@@ -765,6 +802,10 @@ export function FoldedStrip({
       <View style={[styles.rail, { backgroundColor: rail }]} />
       <View style={styles.stripText}>
         <ThemedText style={styles.stripName}>{name}</ThemedText>
+        {/* The ask, on its own line and in plain primary ink: the rail is the only warm mark
+            (S1). Regular weight — the name carries the medium — so the eye reads name, then
+            ask, then count, in that order. */}
+        {ask ? <ThemedText style={styles.stripAsk}>{ask}</ThemedText> : null}
         <ThemedText style={styles.stripCount}>{countLine}</ThemedText>
       </View>
       {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
@@ -976,6 +1017,14 @@ const styles = StyleSheet.create({
   stripName: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightSM,
+  },
+  // The safety strip's ask line (§3.1 line 2): textSM regular in primary ink, no rose text
+  // — the rail is the only warm mark on the row (S1).
+  stripAsk: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightRegular,
     color: theme.colorTextPrimary,
     lineHeight: theme.lineHeightSM,
   },

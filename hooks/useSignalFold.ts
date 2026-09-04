@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CachedFinding, SignalFinding } from '../lib/signal';
+import type { LastEpisodeDates } from './useLastEpisodeDates';
 import { usePetStore } from '../store/petStore';
 import {
   canFold,
@@ -33,6 +34,7 @@ import {
   writeFoldEntries,
   type BackBecauseReason,
   type PetFoldEntries,
+  type RecordFacts,
 } from '../lib/signalFold';
 
 export type FoldState = 'open' | 'folded';
@@ -57,15 +59,30 @@ interface FoldSnapshot {
 
 const EMPTY: PetFoldEntries = {};
 
+/** The record's facts for one finding — the standing safety types carry the newest-episode
+ *  witness (CUL-785); every other type has none. */
+export function recordFactsFor(finding: SignalFinding, lastEpisodes: LastEpisodeDates): RecordFacts {
+  if (finding.type === 'symptom_chronicity' || finding.type === 'symptom_worsening') {
+    return { lastEpisodeIso: lastEpisodes[finding.symptomType] ?? null };
+  }
+  return {};
+}
+
 export function useSignalFold({
   petId,
   findings,
   answered,
+  lastEpisodes = {},
 }: {
   petId: string | null;
   findings: CachedFinding[];
   /** `useSignal.answered` — the findings read for THIS pet resolved (rows or none). */
   answered: boolean;
+  /** CUL-785 — the record's newest episode per symptom type (`useLastEpisodeDates`), the
+   *  witness that re-opens a standing safety fold when the engine's fields have saturated.
+   *  The reconcile re-runs when it moves, so a fold re-opens on a new episode even while the
+   *  regen has not landed (offline). */
+  lastEpisodes?: LastEpisodeDates;
 }): SignalFoldApi {
   const [snapshot, setSnapshot] = useState<FoldSnapshot>({ petId: null, entries: EMPTY });
 
@@ -81,6 +98,11 @@ export function useSignalFold({
   );
   const latestFindings = useRef(findings);
   latestFindings.current = findings;
+  // The record's witness is content too: a new local episode moves it without any regen.
+  const recordKey = useMemo(() => JSON.stringify(lastEpisodes), [lastEpisodes]);
+  const latestRecord = useRef(lastEpisodes);
+  latestRecord.current = lastEpisodes;
+  const recordOf = useCallback((f: SignalFinding) => recordFactsFor(f, latestRecord.current), []);
 
   useEffect(() => {
     if (!petId || !answered) return;
@@ -92,7 +114,7 @@ export function useSignalFold({
       // Storage did not answer: leave the surface as it was (C-12). Nothing written.
       if (stored === null) return;
       const set = latestFindings.current.map((f) => f.finding);
-      const { entries: next, changed } = reconcileFolds(stored, set, nowIso);
+      const { entries: next, changed } = reconcileFolds(stored, set, nowIso, recordOf);
       setSnapshot({ petId, entries: next });
       if (changed) void writeFoldEntries(petId, next);
       // §5.1: entries whose pet this device no longer knows are pruned on read. Guarded on
@@ -104,7 +126,7 @@ export function useSignalFold({
     return () => {
       cancelled = true;
     };
-  }, [petId, answered, findingsKey]);
+  }, [petId, answered, findingsKey, recordKey, recordOf]);
 
   // Every owner action applies to this render's entries and writes the whole map back
   // (the store is per pet; the shell handles the blob). The write is a plain side effect
@@ -141,9 +163,9 @@ export function useSignalFold({
       if (!canFold(finding)) return;
       const key = foldIdentity(finding);
       const nowIso = new Date().toISOString();
-      commit((prev) => ({ ...prev, [key]: foldedEntry(finding, nowIso) }));
+      commit((prev) => ({ ...prev, [key]: foldedEntry(finding, nowIso, recordOf(finding)) }));
     },
-    [commit],
+    [commit, recordOf],
   );
 
   const remove = useCallback(

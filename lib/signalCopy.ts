@@ -2158,13 +2158,25 @@ export function validateBannerPhrasing(text: string): boolean {
   return true;
 }
 
-// ── The Signal fold — strip lines + the Back-because line (CUL-784, fold spec §3.1 / §4) ──
+// ── The Signal fold — strip lines + the Back-because line (CUL-784 / CUL-785, fold spec §3.1 / §4) ──
 //
-// A folded card compresses to a strip: the finding's NAME on one line and a COMPACT count
-// on the next, each its own `Text` node so an ask can never break mid-phrase (FS-11). The
-// strip is a compression of the face, so every count here is derived from the SAME fields
-// `sampleLine` reads — one source per fact, nothing stated twice (S10) — and every composed
-// line is screened by `hasBannedSignalVocabulary` at build (test-pinned per type).
+// A folded card compresses to a strip: the finding's NAME on one line, on a safety strip
+// the ASK on its own line beneath it, and a COMPACT count on the last line — each its own
+// `Text` node so an ask can never break mid-phrase (FS-11). The strip is a compression of
+// the face, so every count here is derived from the SAME fields `sampleLine` reads — one
+// source per fact, nothing stated twice (S10) — and every composed line is screened by
+// `hasBannedSignalVocabulary` at build (test-pinned per type).
+//
+// THE ASK IS THE CARD'S VERB, NEVER STRONGER AND NEVER SOFTER (DF-2, Dr. Chen's condition).
+// Each safety strip carries the verb its card's sentence carries, compressed to fit one
+// line: "worth booking a vet visit" → `Worth a vet visit`; "worth a word with your vet" →
+// `Tell your vet`; "a word with your vet if it carries on" → `Check with your vet`; "worth a
+// call to your vet" → `Call your vet`. The tier / trigger rules below mirror the server
+// templates (generate-signal `phrasing.ts`) and the client evidence text; a strip may not
+// out-escalate its own card, so a verb the sentence does not say (the spec's `Call your vet
+// today`) is not minted here — it lands when the engine's sentence gains it (CUL-785 brief C).
+// A safety strip without its ask is a BUILD FAILURE (FS-3; `signalCopy.strip.test.ts`), and
+// the renderer refuses to draw one (`FoldedStrip`).
 //
 // FS-11's length bounds. The spec names ≤30 (name) / ≤40 (count), but its own verbatim
 // forms exceed them (the timing_story name is 35 characters for vomiting; its correlation
@@ -2174,17 +2186,119 @@ export function validateBannerPhrasing(text: string): boolean {
 // ~10 − gap 8); Geist Medium at 13pt averages ~7.2pt a character (≈39 fit) and Geist at 11pt
 // ~6.1pt (≈46 fit). The caps below sit under those with margin, and the per-type test pins
 // every form at its realistic maximum (two-digit counts, the longest symptom word the type
-// can carry). PR 2 adds the ask line (≤20) and the safety forms.
+// can carry). The ask line is Geist Regular 13pt: 20 characters is ~144pt, half the column.
 export const STRIP_NAME_LINE_MAX = 36;
+export const STRIP_ASK_LINE_MAX = 20;
 export const STRIP_COUNT_LINE_MAX = 44;
 
 /**
- * The strip's name line — the finding's name only, no count, no verdict. Null for a type
- * this build does not fold (the safety types until PR 2), so a caller can never render a
- * strip with a blank first line.
+ * The ratified ask set (§4; Dr. Chen signs the strings). Every safety strip's ask line is
+ * one of these and nothing else — the FS-3 guard walks this object, so a new safety type
+ * cannot invent a fifth verb without a signature.
+ */
+export const STRIP_ASKS = {
+  /** The card says "worth booking a vet visit" (chronicity firm; worsening firm). */
+  visit: 'Worth a vet visit',
+  /** The card says "worth a word with your vet" (chronicity standard; worsening standard). */
+  tell: 'Tell your vet',
+  /** The card says "a word with your vet if it carries on" (intake decline, both triggers; worsening soft). */
+  check: 'Check with your vet',
+  /** The card says "worth a call to your vet" (a photo red flag). */
+  call: 'Call your vet',
+} as const;
+
+/**
+ * What the strip needs beyond the finding: the date of the most recent episode of the
+ * finding's symptom, from the LOCAL RECORD (§3.4 — `MAX(occurred_at)` over the pet's
+ * non-deleted events of that type, read by `useLastEpisodeDates`). `null` means the read
+ * did not answer; absent means the caller has nothing to offer. Either way the strip
+ * renders without a date rather than inventing one — a wrong date on a safety strip is
+ * worse than none (Dr. Chen: a DATE, never a counter; and never a guess).
+ */
+export interface StripContext {
+  lastEpisodeIso?: string | null;
+}
+
+/** A year-less day for the strip: the short form printed, the spoken form for VoiceOver. */
+export interface StripDay {
+  short: string;
+  spoken: string;
+}
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The DEVICE-ZONE calendar day of an instant, year-less (§3.4; B-514 — the day boundary is
+ * local midnight, so the day is read off local components, never off the UTC string).
+ * Year-less is safe because every standing finding's lookback bounds it well under a year
+ * (C-19: a record-anchored date is free; a duration is guarded). Null for an unparseable
+ * instant — the strip then renders no date.
+ */
+export function stripDayLocal(iso: string): StripDay | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return { short: `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`, spoken: `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}` };
+}
+
+/**
+ * The UTC calendar day, year-less — for the red flag's `mostRecentFlaggedIso` ONLY, because
+ * the server sentence ("most recently on August 6") and the phone script's "Most recent"
+ * row both print that instant's UTC day, and the strip must not disagree with the card it
+ * compresses (S10, one source per fact). The standing strips read the local record and
+ * take the local day above.
+ */
+export function stripDayUTC(iso: string): StripDay | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return { short: `${MONTH_SHORT[d.getUTCMonth()]} ${d.getUTCDate()}`, spoken: `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}` };
+}
+
+/**
+ * The chronicity strip's FALLBACK last-episode instant (§3.4) — used only when the local
+ * record could not be read. The engine counted `daysSinceLastEpisode` at `generatedAt` (the
+ * cache row's `generated_at`; never the expiry, whose TTL is a migration default this
+ * module must not be coupled to), so the last episode fell `daysSinceLastEpisode` days
+ * before that instant.
+ *
+ * The bound, stated so nobody has to re-derive it: `daysSinceLastEpisode` is a FLOOR, so the
+ * true onset lies in `(generatedAt − (d+1) days, generatedAt − d days]` and this returns the
+ * upper end — systematically LATE by up to one calendar day (plus the engine's UTC
+ * bucketing against the local day rendered), never early. Late is the escalating direction
+ * for a "last episode" on a safety strip. Null when the row's anchor is missing or
+ * unparseable — then the strip prints no date at all rather than a guess. Worsening has no
+ * such field and no fallback.
+ */
+export function chronicityLastEpisodeFallbackIso(
+  finding: SymptomChronicityFinding,
+  generatedAt: string | null,
+): string | null {
+  if (!generatedAt) return null;
+  const gen = Date.parse(generatedAt);
+  if (!Number.isFinite(gen)) return null;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return new Date(gen - finding.daysSinceLastEpisode * DAY_MS).toISOString();
+}
+
+/**
+ * The strip's name line — the finding's name only, no count, no verdict, no pet name. Null
+ * for a type with no strip (the stand-down marker, an unknown future type), so a caller can
+ * never render a strip with a blank first line.
  */
 export function stripNameLine(finding: SignalFinding): string | null {
   switch (finding.type) {
+    case 'symptom_chronicity':
+      return `Recurring ${symptomWord(finding.symptomType)}`;
+    case 'symptom_worsening':
+      // "up this week" is the shipped Change-Contract direction word ("up from N last week");
+      // the strip states the axis rose and nothing about severity (never "worse").
+      return `${capitalize(symptomWord(finding.symptomType))} up this week`;
+    case 'intake_decline':
+      return finding.trigger === 'refused_normal_food' ? 'Refused the usual food' : 'Eating less than usual';
+    case 'incident_red_flag':
+      // Blood leads when both flags are set (the engine's own stable order, and the more
+      // urgent read); the sentence and the expand still name both. The noun is the family
+      // ("vomit" / "stool"), never a consistency the photo did not measure.
+      return `${finding.flags.includes('blood') ? 'Blood' : 'Something unusual'} in a ${finding.incidentType} photo`;
     case 'postprandial_timing':
       return `${capitalize(symptomWord(finding.symptomType))} soon after eating`;
     case 'empty_stomach_timing':
@@ -2214,13 +2328,68 @@ export function stripNameLine(finding: SignalFinding): string | null {
 }
 
 /**
- * The strip's compact count line — the face's sample line said in fewer words, from the
- * same fields. Time-ordered and direction-neutral where a pair is involved; the
- * density-withheld reflection swap is preserved (the strip must not re-assert a
- * comparison the sentence withheld — §3.3). Null for a type this build does not fold.
+ * The ask line (§3.1 line 2, safety strips only) — the card's own vet verb, compressed to
+ * one short line so it can never wrap mid-phrase. Null for every benign type: an ask on a
+ * benign strip would be the escalation the S1 plainness rule reserves for the safety lane.
  */
-export function stripCountLine(finding: SignalFinding): string | null {
+export function stripAskLine(finding: SignalFinding): string | null {
   switch (finding.type) {
+    case 'symptom_chronicity':
+      // templateChronicity: firm → "worth booking a vet visit", else "worth a word with your vet".
+      return finding.tier === 'firm' ? STRIP_ASKS.visit : STRIP_ASKS.tell;
+    case 'symptom_worsening':
+      // templateWorsening: firm → "worth booking a vet visit soon"; standard → "worth a word
+      // with your vet"; soft → "a word with your vet if it carries on" (the conditional
+      // register intake shares). The spec's §4 table gave worsening one form; the card has
+      // three verbs, and the strip follows the card (CUL-785 brief B; the soft rung was the
+      // pm-feature-review's catch — `Tell your vet` hardened a conditional into an imperative).
+      return finding.tier === 'firm' ? STRIP_ASKS.visit : finding.tier === 'soft' ? STRIP_ASKS.check : STRIP_ASKS.tell;
+    case 'intake_decline':
+      // templateIntakeDecline: both triggers end "a word with your vet if it carries on".
+      return STRIP_ASKS.check;
+    case 'incident_red_flag':
+      // templateIncidentRedFlag: "worth a call to your vet".
+      return STRIP_ASKS.call;
+    default:
+      return null;
+  }
+}
+
+// The count line, in its printed form (`· last Aug 26`) or its spoken form (`, last August
+// 26` — VoiceOver reads a middle dot as nothing and "Aug" as a syllable).
+function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean): string | null {
+  const lastLocal = ctx.lastEpisodeIso ? stripDayLocal(ctx.lastEpisodeIso) : null;
+  const suffix = (day: StripDay | null): string => (day ? (spoken ? `, last ${day.spoken}` : ` · last ${day.short}`) : '');
+  switch (finding.type) {
+    case 'symptom_chronicity':
+      // Dr. Chen's own strip form: the face's "14 episodes across 5 of the last 8 weeks" said
+      // in fewer words, plus the date of the last episode from the record.
+      return `${count(finding.episodeCount, 'episode', 'episodes')}, ${finding.activeWeeks} of ${Math.round(finding.windowDays / 7)} weeks${suffix(lastLocal)}`;
+    case 'symptom_worsening': {
+      // The axis that rose (the sample line's rule): days for more_days, episodes otherwise —
+      // bare numbers, the noun is the name line. A zero-prior (`New`) worsening drops the
+      // "0 last week" pair exactly as the face does (worseningNewSampleLine, S10).
+      const pair =
+        finding.trigger === 'more_days'
+          ? `${count(finding.currentDays, 'day', 'days')} this week, ${finding.priorDays} last week`
+          : finding.priorCount === 0
+            ? `${finding.currentCount} this week`
+            : `${finding.currentCount} this week, ${finding.priorCount} last week`;
+      return `${pair}${suffix(lastLocal)}`;
+    }
+    case 'intake_decline':
+      // The sample line's facts, compressed. The acute strips carry their recency from the
+      // finding itself (§3.4): the day count IS the recency here.
+      if (finding.trigger === 'refused_normal_food') {
+        return finding.ratedMealsConsidered > 0
+          ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
+          : 'Compared with what you usually log';
+      }
+      return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`;
+    case 'incident_red_flag':
+      // "AI read" keeps it an unconfirmed read (the detail-screen register); the date is the
+      // photo record's own, UTC like the sentence and the phone script.
+      return `AI read of ${count(finding.flaggedIncidentCount, 'logged photo', 'logged photos')}${suffix(stripDayUTC(finding.mostRecentFlaggedIso))}`;
     case 'postprandial_timing':
       return `${finding.rapidCount} of ${finding.eligibleCount} timed within ${finding.rapidWindowMinutes} min of eating`;
     case 'empty_stomach_timing':
@@ -2246,12 +2415,30 @@ export function stripCountLine(finding: SignalFinding): string | null {
   }
 }
 
-/** The strip as one accessible sentence (§7): "{name}. {count}." PR 2 inserts the ask. */
-export function stripA11yLabel(finding: SignalFinding): string | null {
+/**
+ * The strip's compact count line — the face's sample line said in fewer words, from the
+ * same fields. Time-ordered and direction-neutral where a pair is involved; the
+ * density-withheld reflection swap is preserved (the strip must not re-assert a
+ * comparison the sentence withheld — §3.3). The standing safety strips end with the date
+ * of the last episode when `ctx` carries one (§3.4). Null for a type with no strip.
+ */
+export function stripCountLine(finding: SignalFinding, ctx: StripContext = {}): string | null {
+  return stripCount(finding, ctx, false);
+}
+
+/**
+ * The strip as one accessible sentence (§7): "{name}. {ask}. {count}." — the safety strip's
+ * label therefore SAYS the ask and the date, with the month spoken in full. Null when the
+ * name or count is missing, and null for a SAFETY finding with no ask (FS-3): a safety
+ * strip that cannot say its ask is not rendered, so it has no label.
+ */
+export function stripA11yLabel(finding: SignalFinding, ctx: StripContext = {}): string | null {
   const name = stripNameLine(finding);
-  const cnt = stripCountLine(finding);
+  const cnt = stripCount(finding, ctx, true);
   if (!name || !cnt) return null;
-  return `${name}. ${cnt}.`;
+  const ask = stripAskLine(finding);
+  if (finding.priorityClass === 'safety' && !ask) return null;
+  return ask ? `${name}. ${ask}. ${cnt}.` : `${name}. ${cnt}.`;
 }
 
 // The fold's control + caption strings (§4). Verbatim; nyx-voice-governed.
