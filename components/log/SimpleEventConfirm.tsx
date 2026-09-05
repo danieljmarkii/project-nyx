@@ -10,7 +10,7 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EventIcon } from '../event/EventIcon';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
-import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../../constants/eventTypes';
 import {
   buildTimeFields, resolveTimeModeChange, resolveFoundModeChange,
   sourceAfterPointEdit, refreshedNowPoint, DEFAULT_WINDOW_SPAN_MS,
@@ -85,13 +85,6 @@ function isRoseType(type: EventTypeKey): boolean {
   return SYMPTOM_TYPES.has(type) || type === 'stool_normal';
 }
 
-// The types whose attached photo actually gets an AI read (insertSimpleEvent fires
-// analyze-vomit / analyze-stool for exactly these). The photo sub-line only PROMISES
-// a read for these — for lethargy / itch / Other the photo is just an attachment, so
-// claiming "I can read it for signs" there would promise a read that never happens
-// (clinical-guardrails: never assert a capability the record won't deliver).
-const PHOTO_READ_TYPES: ReadonlySet<EventTypeKey> = new Set(['vomit', 'diarrhea', 'stool_normal']);
-
 // The leading disc on this sheet's header, shared with the GRID stage's title row
 // (CUL-679) so stage 1 → stage 2 is a disc swapping its contents in place rather
 // than a header that jumps sideways. Exported rather than restated: the two rows
@@ -123,7 +116,18 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
 
   const typeLabel = EVENT_TYPES[type].label;
   const rose = isRoseType(type);
-  const readsPhoto = PHOTO_READ_TYPES.has(type);
+  // The photo sub-line only PROMISES a read for the types that actually get one —
+  // for lethargy / itch / Other the photo is just an attachment, so claiming "I can
+  // read it for signs" there would promise a read that never happens
+  // (clinical-guardrails: never assert a capability the record won't deliver).
+  //
+  // Asked through the shared predicate rather than a local set (CUL-802). This was a
+  // hand-listed `PHOTO_READ_TYPES` whose membership happened to match — exactly the
+  // "second list that agrees today" hasPerIncidentRead's docstring names as the
+  // failure mode. It now cannot disagree with what insertSimpleEvent actually fires,
+  // or with where this very confirm sends the owner afterwards: one leaf added in
+  // one place would otherwise promise a read on a screen that never shows one.
+  const readsPhoto = hasPerIncidentRead(type);
   // Per-leaf capture contract (taxonomy §6/§7, D10 — CUL-675). A witnessed-by-
   // construction leaf (cough/sneeze) renders NO Saw it / Found it pair — there is
   // nothing to "find", so a window claim is unwritable by construction (the B-448
