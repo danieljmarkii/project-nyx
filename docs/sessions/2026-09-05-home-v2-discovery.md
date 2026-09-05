@@ -479,3 +479,342 @@ Cold-open budget: first paint from local data in one frame — Signal from the m
 
 The pattern I'd most regret: **three memories of "what the owner has seen"** — the fold store, a Home last-seen snapshot, and a server `changeToken` — each with its own wipe and its own drift; make it one device-local, versioned, wiped-by-name ledger from PR 3.
 
+
+---
+
+## Part 2 — the PM's reactions to round 1, three consultants seated, round 2 drawn (same day)
+
+The PM reacted to round 1 "live tweet style":
+
+> 1. "Signals is still a core component. Lets not rename that section to 'standing'" · 2. "Since you last looked.. not sure if im sold." · 3. "FAB. I love the fab experience. Lets not touch that w this work" · 4. "C. The briefing. I dont think im sold. If its the 'ask' experience just.. brought front and center so that the user doesnt have to use Ask.. not sure. Using ask should be a delightful experience" · 5. "I absolutely love showing beautifully designed charts and data over text. The dots under 'today' showing the days timeline is amazing." · 6. "If were going w the 'ask' experience.. we should make sure a user knows its AI, beautifully designed the experience. Weve been incorporating more motion and haptics recently. Maybe there's something there" · 7. "If were going w Ask then.. the single line input row feels.. small.. well need to optimize for a user entering.. idk.. a paragraph of text."
+>
+> "Overall.. I think this was a nice round of work. But i dont know that im seeing much that i would call mindblowing or a significant improvement over what we have now. Lets make sure the product designer is researching other apps and drawing design inspiration. … if we dont have the right personas on the team and need to temporarily include consultants.. then lets make sure that we have the right people at the table w the right expertise"
+
+**The honest diagnosis:** round 1 answered the staleness complaint with words. Every direction was the same card stack reordered with a sentence on top, because the lenses that drew it reason in sentences (S4 "no hero numbers", the Change Contract's sentence-first rule) and the Designer's research pass read the reference apps for *mechanisms*, never for *look*. The PM's "not mindblowing" was correct.
+
+**Rulings taken from the reactions (recorded on CUL-810):** R1 the section keeps its name, Signals. R3 the FAB is out of scope. R2 the "since you last looked" lead and R4 the composed briefing are parked. R5–R7 are round 2's direction.
+
+**Three consultants seated** (the PM's ask), each an isolated agent briefed with the reactions verbatim and the round-1 page: a **data-visualization designer**, a **motion + haptics designer**, an **AI-product / conversational-UX designer**; plus the **Designer's second pass, on look rather than mechanism**. Their briefs are verbatim in Part 2's appendix below.
+
+**What round 2 drew** (`docs/culprit-home-v2-mockups.html`, republished at the same artifact URL — round 2 supersedes round 1 in place; round 1 is in git at `13a06b5`):
+- §01 three Homes that differ in kind, all on Nyx at 7:05am, the safety card identical and plain in each: **I The Board** (the Day Instrument — the lane at page width with a NOW needle and yesterday's ghost dots; every standing fact a ruled row with its number at the rail), **II The Long Lane** (recommended — the record as one continuous lane, columns are days, height is the hour, today at the right edge; the findings annotate the drawing; the dataviz consult reads it as the top grain of an almanac), **III The Daybook** (a dateline, the trial's 42 dated cells as the masthead, the page body as the composer).
+- §02 the Ask moment as a tappable CSS motion frame: "the dot that reads" — the Signal's teal dot leaves the Ask pill on send, becomes the Whorl's core while the record is read, and the answer's rail grows down out of it on arrival; headline + denominator land as one node; three new haptic verbs (`sendQuestion`, `answerArrival` soft never Success and gated silent on deflection/cap/safety, `commitNote`). "Dots land": every write made while Home is mounted lands its dot on the Today lane; a note as a hollow ring. The composer sheet at rest, typing a paragraph (Sam's note), and capped (the cap line inside the sheet, never on Home).
+- §03 the three charts at build detail: WeekLanes (the unlogged day drawn as a dashed track, ghost ticks at the median meal times), SeasonStrip (one countable dot per episode over a seven-tick logged-days base — the density gate drawn; adversarial-gated before build), TrialCells (positive marking only) + Weight (a dot series, never an arrow).
+- §04 the briefs re-asked: DB-1 the direction (II recommended), DB-2 the composer (a two-line door + a sheet, recommended), DB-3 may the hero draw the symptom record at display size (yes, ink pips, adversarial-gated), DB-4 the Pets > $ free class (amend Ask D3/D5), DB-5 a note lands on the lane as a hollow ring. D1 and D6 from round 1 still open.
+- §05 who was at the table and where the consultants disagreed (one continuous scrolling lane vs stacked grains; the sheet vs the page body).
+
+**Sizing evidence the AI-UX consult brought:** consumer prompts are short (WildChat median ~98 chars; secondary-grade — the PDFs would not parse) and health-diary entries are sentence-shaped (83% of 632 MS e-diary entries reached ten words), so "optimize for a paragraph" is honestly met by a door that opens a sheet growing to eight lines, not a permanent paragraph box on Home.
+
+**Decisions:** none PM-ratified in Part 2 (the PM reacts to round 2 next). The lenses converged on: the record drawn at grains, the safety card plain by contrast, the sheet as the composer, the free deterministic class, the AI signature as a continuity. One conflict recorded for the PM (§05): one continuous lane vs stacked grains.
+
+**Residuals:** the CSS motion frame approximates the beats (an `Animated` + `LayoutAnimation` build will tune the spring); the season strip and the Long Lane's rose marks need the adversarial pass before fidelity; the composer-length figures are secondary-grade; no app code.
+
+### Appendix — the four round-2 briefs, verbatim
+
+#### Brief — consult-dataviz
+
+# Home v2 — the drawn record (data-visualization consult, round 2)
+
+**Consultant lens:** dataviz design. **Brief:** the PM loves the Today dot lane and wants charts over text at a "mindblowing / significant improvement" bar, inside S1–S10. **One diagnosis first:** the dot lane works because it draws the *record itself* — one mark per event, at its real time, in its category hue — not an aggregate of it. Every chart below is that same move at a different grain. The aggregate charts Home has today (14-day bars, a sparkline) are the ones that feel stale, because a summary changes slowly; the record changes every time you log.
+
+## 1. The inventory — what the record can draw, per pet, per day
+
+| Fact | Form (what encodes what) | S2 control it must carry | Never encodes | Empty / thin | Why it moves daily |
+|---|---|---|---|---|---|
+| **Events on a day** (`buildTodayLane`) | Dot lane: x = clock time, hue = category, hollow = note/other | The track itself is the denominator (6a→12a, always drawn) | Any verdict; count-as-size | Empty track + the nudge (as built) | Every log lands a dot |
+| **The week** (7 × day lane) | Small multiples, one lane per day, today at the bottom; same x-scale | A day with no log renders a *dashed* track + `no log` — absence is drawn, never blank | Colour per "good/bad day"; a streak; a total | <2 logged days: today's lane alone | Yesterday's lane slides up each morning; today's fills |
+| **The season** (weeks since first log / trial) | Unit chart: one countable dot per episode stacked per week column | A 7-tick "days logged" base under every column (the density gate, drawn) | Bar height without denominator; a line joining weeks; ↑↓, %, opacity-as-improvement | <2 weeks: not drawn; the sentence only | A new week column appears Monday; today's column grows |
+| **Per-symptom episode timeline** | Same dot lane per symptom leaf, one row each (vomit / stool / cough) — a row exists only for leaves logged ≥1× in window | Shared x-axis with the meal row above it | A row for a symptom never logged ("no cough" is reassurance) | Rows only for logged leaves | Rows appear as leaves appear |
+| **Meal-relative timing** (Shape A, `dotLaneModel`) | Meal-relative lane, tinted 30-min band with dashed true edge, out-of-window dots pale but present | The pale dots + "N weren't near a logged meal" (`timingControlDisclosure`) | A % within window | Degrades to Shape C above `DOT_LANE_MAX` (12) | Each timed episode adds a dot |
+| **Weight** | Dot series (no line unless ≥3 readings; readings ≥2 weeks apart), y labelled with real values, both ends printed | `n readings` + span printed | A trend arrow (the Patterns card has one — do not migrate it); a target band | 1 reading: the value and its date, no plot | Only on the day a weigh-in is logged |
+| **Trial coverage + exposures** (`TrialFacts.coveredDayIndices`, `exposures`) | 42-cell day strip: covered filled, uncovered-elapsed hollow, future ground; off-diet = a rose tick *under* the cell | "meals on 29 of 31 days" printed; positive marking only (a tick's absence is never "clean" — G2) | A % fill / progress bar; a green cell | `allowedSetUnavailable` → no strip, the sentence | Today's cell fills when a meal lands; the marker advances |
+| **Doses toward a target** (`target_duration_doses`) | Dose cells: given filled slate, partial half, refused hollow with ink ring; target cells ground | "Dose 6 of 14" printed | `missed` / `due`; a compliance bar; a finished-course cheer | Days-denominated course: no cells, the strip as built | One cell per confirm |
+| **Logging cadence** | Never its own chart: it is the *ground* of every chart above (dashed tracks, the 7-tick base, hollow cells) | It *is* the control | A streak, a score, a "7-day" ring | — | Fills as the owner logs |
+
+## 2. Three compositions — Nyx, 7:05am
+
+Shared: `HomeHeader`, FAB, "Signals" name, safety card plain (text + rail + sample line, S1), all charts hand-rolled Views, reduced-motion static frames.
+
+**(i) The record as material.** Order: Today lane (empty track with two hairline *ghost ticks* at Nyx's usual breakfast/dinner times — confirmation over entry, not a nudge) → **This week** at display size: seven day lanes, Mon–Thu each showing teal·teal(·slate), the Aug 26 lane long gone, today's lane empty at the bottom → **Signals**: chronicity card plain; timing card with Shape A; trial card with the 42-cell strip → Trend: the season unit chart. Plain-by-contrast works because the safety card is the *only* text-first block between two drawn ones. 7am: the week is the hero (the record has substance, today does not). After a log: the dot arrives on today's lane with the fold's rail-led physics, then the week lane gains it. 9pm: today's lane is full and its door is the Recap.
+
+**(ii) Small multiples.** Order: Signals lead — chronicity plain; timing with Shape A *and* a second row, the clock lane (`timingStoryClockLaneModel`); trial card with strip C two-sided "1 · was 8"; Today lane; Trend becomes the dense season chart (Tide-Guide grade: 11 columns, month words, trial rule, the 7-tick base). Richest cards, but the safety card sits between two drawn neighbours it cannot match — S1 by contrast is strongest here. Daily change is weakest: only Today and the current season column move.
+
+**(iii) The Almanac — my recommendation.** One time axis, three grains, one left gutter, one dot language, read top-down as a zoom-out: **Today** (hours) → **Signals** (the interpretive layer, safety plain) → **This week** (days) → **Since July** (weeks, with the Turkey-trial rule and the trial cells beneath the same columns) → Trial/Med strips as drawn cells. Nothing is a card *about* the record; each block *is* the record at a grain, and the Signal sentences sit where the eye passes from hours to days. 7am: the today lane is empty but the week and season are full — the screen is never blank. After breakfast: one teal dot lands top-left (arrival motion, `commitRoutine` haptic as today), and the same dot appears in the week's bottom lane and the season's last column base tick — one event, three grains, visibly the same thing. 9pm: the today lane is complete; Recap is the door.
+
+## 3. The three charts that matter — build spec at 316pt
+
+**A. WeekLanes** (`components/home/WeekLanes.tsx`, pure model in `lib/weekLanes.ts` reusing `laneEventPosition`). Gutter 32pt left: weekday `Mon`…`Thu`, `Today` bottom, textXS tabular tertiary. Plot 284 − 2×inset. 7 rows × 18pt = 126pt; axis row 16pt (`6a · noon · 6p · 12a`). Track 1pt `colorBorder`; today's track 1.5pt `colorBorderStrong`. Dots 7pt (not the lane's 11 — density) with a 1.5pt `colorSurface` ring so overlapping marks stay separate; a dot within 4pt of another nudges +3pt y (beeswarm, one level). Hues `NODE_TINT_DAY`; note/other = 1pt ring, no fill. Unlogged day: dashed track + `no log` right-aligned textXS. Ghost ticks: 1×6pt `colorBorderStrong` at the median meal times of the last 14 logged days, today's row only, ≥5 meals required, never on a symptom. Thin data: <2 logged days → render today's lane only (the shipped `DayLane`). A11y (one sentence per row, the whole block one element): "This week for Nyx. Today, nothing logged yet. Thursday, breakfast 8:10, dinner 6:30, one dose. Wednesday, two meals. Tuesday, not logged. …" Reduced motion: a new dot crossfades over `durationFast`, no travel.
+
+**B. SeasonStrip** (`lib/seasonStrip.ts` from the same day buckets `useTrend` builds, extended to N weeks). Columns = weeks since first logged week, max 13; width (316 − 12×4) / 13 ≈ 20pt. Each episode a 5pt rose dot, 2pt surface gap, stacked from the base; above 12 the column prints its numeral (Geist tabular, textXS) over 12 dots — never bins. **Base:** 7 ticks 2×3pt per column, `colorBorderStrong` for a logged day, absent otherwise — this base is the density gate drawn; a 0-episode week over 7 ticks and a 0 over 2 ticks look different, which is the whole S5 argument in one glyph. Trial start: 1pt dashed `colorAccentInk` rule between columns, `Turkey trial` textXS beneath. Month words at each month's first column. Direct labels: the max column (`8`) and the current column only. Every column the same rose, same opacity — no fade on the low weeks. Nyx: `4·6·8·4·4·4·4·2·0·1·1` reads as a shape the eye takes in without a word being spoken. A11y: "Vomiting by week since July: 4, 6, 8, 4, 4, 4, 4, 2, 0, 1, 1. Counted from days you logged: 7 of 7 each week. Turkey trial started in the eighth week." Static; no motion. **Adversarial note for the Data Scientist:** a drawn falling series is *read* as improving even when no word says so; the mitigation is structural — no line, no hue shift, the base always drawn, and the compare sentence stays in the gated safety card. TrendZone's 14-day bars set the precedent (CUL-372 removed the verdict, kept the shape).
+
+**C. TrialCells** (`lib/trialCells.ts` from `computeTrialFacts`). 42 cells 6×10pt, 1.5pt gaps (= 313.5pt). Covered (`coveredDayIndices`) `colorAccentSoft` fill; elapsed-uncovered hollow 1pt `colorBorderStrong`; future `colorChartEmpty`; today 1.5pt ink outline; untracked-before-first-log cells absent with `untracked` label; off-diet exposure a 3×3pt rose tick under the cell (`exposures.items`, date-keyed). Line beneath: `Day 31 of 42 · meals on 29 of 31 days · 1 off-diet` — `0 off-diet` only when `mayStateRecordClean` allows. Never a filled progress fraction; the cells are days, not percent. A11y: "Turkey trial, day 31 of 42. Meals logged on 29 of 31 days. One off-diet food logged, on August 19."
+
+## 4. Vetoes — what a naïve "more charts" pass would ship
+
+A wellness / activity ring (a score by geometry). A green week or any hue keyed to "good" (absence ≠ wellness). A 7-day sparkline with no logged-days base (numerator-only; S2). **Migrating the Patterns calendar's intensity heatmap** — `buildHeatRows` is a sequential ramp, and a light month reads as a verdict on Home. Bar height for weekly counts (a height is not countable; dots are). A line through weekly counts (asserts continuity and slope). A dual-axis weight-vs-vomit chart. A big number (S4). A trial progress bar or dial. Animated count-ups. Opacity or tint fading on low weeks. A "dose streak". Any chart whose empty state is a flat line — an empty chart must show its ground (the track, the ticks) or not render.
+
+## 5. Where the significant improvement is
+
+Today's Home tells a returning owner "14 episodes, 5 of 8 weeks · last Aug 26" — true, and unchanged since the last open, and it has to be *read*. The drawn Home shows, in the two seconds before reading starts, where in the day things happen and where in the season she is: rose dots sitting just right of teal ones on lane after lane, a season whose dots thin after the dashed trial rule over a base that says the logging held, a row of 42 cells with today's outline eleven from the end. Nothing rotates and nothing is generated — it changes because every log is a mark, and a record drawn at three grains is different every morning by construction. That is the fact today's Home structurally cannot show: the *shape* of the record, which is what the vet will ask for and what the owner is already carrying in her head without a picture of it.
+
+
+#### Brief — consult-motion
+
+# Consult — motion & haptics for Ask on Home (Home v2, round 2)
+
+*One round. Stack verified: no `react-native-reanimated` in `package.json` — everything below is `Animated` (native driver) + `LayoutAnimation`, the split `components/home/foldMotion.ts` already makes. I extend what the app owns: the fold's **rail-led physics** (fold spec §12; incident spec D4 reuses it for the per-incident read), the **Whorl** and the **Signal dot** (`components/brand/`), and the seven-verb haptic module with its silence-on-safety guard.*
+
+**Governing rule: flourish is rationed by frequency** ([Kowalski](https://emilkowal.ski/ui/great-animations); [Freiberg](https://rauno.me/craft/interaction-design)). Culprit's ladder, made explicit: **once-ever** = the gold wash (polish §4, keep it reserved) · **a few times a week** = an Ask answer arriving (rail leads, one settle, a soft tap) · **several times a day** = a dot landing on the Today lane (≤320ms) · **many times a day** = chips (a selection tick, no motion) · **continuous** = typing (nothing). Every transition is interruptible the fold's way — a scroll, blur or re-key *finishes* it, never pauses it — and never delays reading (legible by the ease midpoint, ~330ms).
+
+**The "this is AI" signature — no sparkles, no word.** The sparkle glyph now reads as ambiguity ([CSS-Tricks](https://css-tricks.com/the-proliferation-and-problem-of-the-sparkles-icon/)); Notion answered with a mark of its own ([Fast Company](https://www.fastcompany.com/91192119/notions-new-animated-ai-assistant-looks-more-new-yorker-than-clippy)). Culprit already has one: **the Signal dot is the engine's mark; the Whorl is what the engine looks like while it reads.** The signature is a *continuity*: the same teal dot sits on the Ask verb, becomes the Whorl's core while the record is read, and lands as the head of the answer's rail. The only thing on Home whose line grows out of a dot is a model answer — the rundown, a strip, a count line never do. Copy carries the literal disclosure; the motion carries the recognition. The answer's *body* stays data-shaped, Oura Advisor's precedent ([Oura](https://ouraring.com/blog/oura-advisor/)) and the Ask spec's D6.
+
+---
+
+## 1. The Ask moment on Home, beat by beat
+
+Origin: **one composer, two doors.** The Tell row (round 1 N1) at rest is one quiet line under Today; the header pill is a scroll-to-and-focus of that same field, never a second composer. The FAB is untouched. Every beat below is silent unless a verb is named; every beat has a reduced-motion frame; nothing loops.
+
+| Beat | What moves · what is held | Timing / easing | Haptic | Reduced motion | Forbidden |
+|---|---|---|---|---|---|
+| **(a) Open** — tap the row or the pill | The field grows 1 → 4 lines (~96pt, paragraph-sized) **on the keyboard's own curve**: `keyboardWillShow` gives duration + curve, `LayoutAnimation.configureNext({duration: e.duration, update:{type: LayoutAnimation.Types.keyboard}})` (Android: 250ms easeInEaseOut). Home scrolls so the field's bottom sits 12pt above the keyboard in the same transaction. **Held:** the Signals section, the lane, the header — nothing dims, nothing blurs. | ≈250ms, the keyboard's curve | none (a focus is not an event) | instant height; caret blinks as ever | a dimmed ground (that is R1's, a commit register); a bounce; any glow on the field |
+| **(a′) The verbs appear** | Before the first character the row shows only the field. On the first character `Save note` (the dark Log-it pill) and `Ask` (teal dot as its glyph) **crossfade in once** (150ms) and then stay until blur — never per keystroke. Split by host, never `disabled` (C-7). Per-line growth while typing is instant `onContentSizeChange` (continuous → no animation). | 150ms ease-out, once | none | same | verbs that pulse, tint, or "wake" as you type; a per-line grow animation |
+| **(b) The mark** | The Ask verb's dot is a plain 8pt teal circle at rest. It does nothing until pressed. (The fresh-state promise line sits under the field: "Anything in {pet}'s record — counts, trends, foods, meds. I'll show my sources." — the spec's, unchanged; the voice pass owns any edit.) | — | — | — | a breathing dot at rest (D4: no looping chrome, ever) |
+| **(c) Submit** | The text leaves the field **upward** into the question bubble (opacity 1→0, translateY −8, 180ms — the fold's leave) as the bubble lands above (translateY +8→0, 220ms, ease-out); the field shrinks to one line on the keyboard-hide curve; **the dot leaves the pill** and travels (FLIP: measure, `translateX/Y` on the native driver, 260ms `Easing.out(Easing.cubic)`) to the centre of the space the answer will occupy. **Held:** the question's words are never re-rendered — the bubble is the same string. | 180 / 220 / 260ms overlapping; total ≈300ms | **`sendQuestion()`** — light impact at the press (the request began; the pullThreshold class) | bubble and field swap instantly; the dot crossfades into place | a send that bounces; typewriter or streaming text anywhere on Home |
+| **(d) Thinking** | Around the arrived dot the Whorl's four ridges **draw on** (stroke-dashoffset from 0 to their `frac`, 400ms, staggered 60ms) and then rotate at the shipped 9/14/19/25s; the dot breathes at 2.6s (it is `WhorlSpinner size="sm" ground="day"`, the dot now *its* core). Beneath, the card-shaped skeleton (`Skeleton` rows, **no sweep** — a shimmer is a lie about progress) and the honest line "Reading {pet}'s record…". Bounded: past 8s the line changes to a designed wait, past the function's timeout the deflection arrives by the same arrival beat. Pauses on blur (`useAppActive`). | 400ms draw-on, then the Whorl's own periods | none — never a pulse while waiting | the Whorl's static frame (ridges at rest + glow), the skeleton still | the NightMoment (full-screen, night ground on the record — D8 forbids it); shimmer text; a progress bar; a heartbeat haptic |
+| **(e) Arrival** — the considered moment | t0: the ridges stop drawing and **fade** (150ms) as the dot **rises 4pt** to the top-left of the answer slot; t120: **the rail grows down out of the dot** (`railScale` about its top, 160ms `Easing.out(Easing.cubic)`) — the dot is the rail's head and dissolves into it by t280 (same colour, so nothing "changes"); t200: the box opens after the rail with **one felt settle** (`LayoutAnimation` spring, damping 0.7, iOS; ease on Android — the `UNFOLD_LAYOUT` config, reused); t240–540: **headline + its denominator land as ONE node** (translateY −8→0, 300ms `Easing.out(Easing.cubic)`) — a claim never lands before its receipt (S2, S4); t300: the data component (pips/sparkline/tiles) fades in with the box; t420: the follow-up chips and tap-through chevron last. **Held:** the question bubble, the Signals section above, the lane. Rail colour: `colorAccent` for an answer, the deflection ground's plain ink for a deflection (same physics, S1's rule: plainness lives in what it says and its colour, never in a different beat). The moment plays **once per answer id**; a remount renders the answer on first paint. | ≈540ms, composed 160 + 370 + 300 | **`answerArrival()`** — one *soft* impact at t0, gated (see §3): never on a deflection, a cap, or a safety-class relay | crossfade 150ms; no rail lead, no drift; the haptic still fires (touch is not motion — polish §4's precedent) | the gold wash (once-ever, the Signal's); any overshoot on a deflection's box; streaming; a scale-up ("appearing from the distance" reads as a modal); a stagger between headline and denominator |
+| **(f) Provenance and back** | The receipt row is a plain press (the default highlight); the push is the platform's. On return the conversation is there (D8) **and nothing re-plays**: `arrivedAt` on the turn is the once-gate. | platform | none | — | a re-arrival on return; a "back to your answer" toast |
+| **(g) Save note** | The words leave the field upward (180ms) into the **R2 `SheetLogBeat`** with its sentence (`Note · 8:32am · Saved to {pet}'s record`, Undo armed, dwell pauses on touch); 80ms after the beat's check lands, the note's mark lands on the Today lane (§4, proposal 2). The field returns to its line. | 180 + R2's own | **`commitNote()`** — soft impact (§3) | instant swap; the beat's own reduced frame | the success double-tap (the app cannot read the note); a bounce on close |
+
+## 2. Home's daily arrival (the 7am open)
+
+**Home may move only when the owner or the record just did something, and Home was mounted to see it.** The 7am open is a first paint: nothing moved overnight → **nothing moves**; the day's difference is *content* (today's lane is empty; yesterday's is in the Recap). The record moved → the changed state is on the first frame (FS-9, spec'd, not redone). Allowed on open: the cold-start `NightMoment` dissolve and the pull band (both exist). Never: an entrance stagger, a "good morning" sweep, a lane drawing its axis, dots "arriving" for rows written before the mount. Dots land only for a write made while Home is mounted or returned to from a completion card (§4). The one ceremonial motion stays once-ever, per pet.
+
+## 3. Haptic vocabulary additions (`lib/haptics.ts`; export list re-pinned in `lib/haptics.test.ts`)
+
+| Verb | Moment | Primitive | Why this, not a reuse |
+|---|---|---|---|
+| `sendQuestion()` | the Ask verb / a chip is pressed and a question is sent | `impactAsync(Light)` | the gesture took, like `pullThreshold` — but a request beginning is its own moment; a chip that sends fires this alone, never `selectChip` + this |
+| `answerArrival()` | a model answer lands (t0 of beat e) | `impactAsync(Soft)` | **never `Success`**: an answer is not an achievement and may carry bad counts; soft is "it's here," the same register as `commitSymptom`. It summons the eye — the owner may have looked away during thinking — so it fires at t0, unlike `insightArrival`'s punctuating 900ms tap on a watched moment |
+| `commitNote()` | a plain note saved | `impactAsync(Soft)` | the app does not read the note; it gets acknowledgement, never celebration. If PR 2's extraction proposes a symptom and the owner taps Log it, *that* commit is `commitSymptom` through the standard register — no new verb |
+
+**Gate + guard.** All three fire from the **ask store / moment store** (the CUL-613 pattern: the surface never imports haptics). `answerArrival` is gated in `resolveAnswer`: silent on `deflection`, `capped`, `disabled`, and on any answer whose body relays a safety-class finding (family 5) — the SignalZone gate, one layer out. Add `components/ask/AskAnswerCard.tsx` and the Home composer to `ALWAYS_SCANNED` in `guards/haptics.test.ts` (the answer card can carry a safety relay, and the composer sits under the safety band); the derived MARKERS already catch anything that mentions `priorityClass`. Apple's guidance — consistent meaning, sparing, always paired with a visual — is the HIG's *Playing haptics* page ([developer.apple.com](https://developer.apple.com/design/human-interface-guidelines/playing-haptics)); I found no citable primary source for Flighty's or Things' patterns, so nothing here is attributed to them.
+
+## 4. Two delight proposals I'd stake the round on
+
+**Proposal 1 — "The dot that reads."** One 8pt teal circle is the single node held constant across four states: at rest it is the Ask verb's glyph; on send it leaves the pill and travels to the answer slot; while the record is read it is the Whorl's core, ridges drawn around it; on arrival the ridges fade, the dot lifts, and **the rail grows out of it** — the answer's coloured line is literally born from the thing that was thinking. The fold's delight was "the rail never breaks"; this is "the dot never breaks," and it is the AI signature without a glyph or a word. *CSS prototype (the fold frame's shape — a tappable phone, a reduce-motion checkbox, an `Ask` button):* one absolutely-positioned `.dot` FLIP-moved with `transform` (260ms `cubic-bezier(.215,.61,.355,1)`); four `<circle>` ridges with `stroke-dasharray` and a `stroke-dashoffset` transition (400ms, 60ms stagger) then `animation: rotate` at 9/14/19/25s alternating; on arrival ridges `opacity 0` (150ms), the dot `translateY(-4px)`, a `.rail` with `transform-origin: top` scaling `0 → 1` (160ms), the `.acard` `height` on `cubic-bezier(.3,1.18,.5,1)` delayed 80ms, headline+denominator as one `<div>` `translateY(-8px → 0)` (300ms, delay 120ms), chips last. Reduced: opacity only.
+
+**Proposal 2 — "Dots land."** The Today lane the PM loves becomes the surface that *answers every write*. From the R1 card or the R2 beat, 80ms after the check lands, the new dot appears on the lane at its time position — `scale 0.4 → 1`, `opacity 0 → 1`, 320ms, one settle (spring damping ~0.75) — and the count line recomposes by a 150ms crossfade; a note lands as a **hollow ink ring** at its time (it joins no count, N2 holds — this amends N2's "no lane" to "no count," a one-line PM ruling). Undo: the dot fades (150ms), never shrinks — scale-down reads as dismissal. Frequency-honest: several a day, ≤320ms, and only for writes made while Home is mounted; never on open. *CSS prototype:* `.lane .dot { left:%; transform: scale(.4); opacity:0 }` → `.landed` transitions `transform 320ms cubic-bezier(.3,1.18,.5,1), opacity 150ms`; a `Log breakfast` / `Save note` button on the frame; the count line swaps text under a 150ms opacity crossfade.
+
+## 5. What I'd veto
+
+Token streaming or typewriter text on Home (delays reading, thrashes layout without reanimated, and the model never composes a number anyway — the answer is a card); shimmer "Thinking…" text and skeleton sweeps in the thinking state; the sparkle glyph or the word "AI" as a badge; a breathing composer, a pulsing send, any idle motion; the NightMoment or any night ground for Ask (D8); `Success` on an answer; a haptic during thinking, on a deflection, on a cap, or on any safety-shaped content; a bounce on any close (field shrink, box on a deflection, Undo); scale on appear or dismiss; an entrance choreography on the 7am open; a re-arrival on returning from provenance; a skeleton that pre-shapes a chart for an answer that may be a count (the skeleton is card-shaped, never data-shaped); a second composer behind the header pill.
+
+*Also read: [Gentler Streak (Sketch)](https://www.sketch.com/blog/gentler-streak/) — restraint as care, the health-app benchmark for delight that never celebrates a bad day.*
+
+
+#### Brief — consult-ai-ux
+
+# Consult — the Ask composer on Home (AI-product design, one round, 2026-09-05)
+
+Read: the round-2 brief, `culprit-home-v2-mockups.html` (E and the Tell row), `nyx-ask-requirements.md` §1–3/§6/§7/§9, `ask-mockups.html`, `app/ask.tsx` + `components/ask/*` + `lib/ask.ts`, both research briefs, and the Dr. Chen / T&S / Designer interviews. What is built is better than the PM's reaction suggests: the answer anatomy (D6), the deterministic chips, the rundown, and the cap band are the right bones. What is missing is the *door* — and the door is where delight lives or dies.
+
+## 1. Sizing the composer honestly
+
+**Evidence.** Real consumer prompts are short. On WildChat (1M ChatGPT logs) one behavioural-biometrics study reports **median 98 characters, mean 187, SD 312** — a compressed, long-tailed distribution ([PromptPrint, arXiv 2606.06755](https://arxiv.org/pdf/2606.06755), via [WildChat overview](https://www.emergentmind.com/topics/wildchat-dataset)); another analysis puts the median user turn at **~13 tokens** ([Search Arena, arXiv 2506.05334](https://arxiv.org/pdf/2506.05334)). *Grade: secondary — the figures came from search extraction; the PDFs would not parse here, so I have not verified them against the paper text.* Health-diary free text is shorter still and sentence-shaped: in a 632-entry MS e-diary, 83% of entries reached *ten words* ([PMC9582921](https://pmc.ncbi.nlm.nih.gov/articles/PMC9582921/)); open-ended mobile responses average ~40 words and run shorter on phones than desktop ([open-ended length table](https://www.researchgate.net/figure/Length-of-Answers-Number-of-Words_tbl3_249737422)). The "100–500 word" journal-entry figures are self-reported forum lore ([Wanderings](https://wanderings.com/blogs/wanderers-way/how-long-or-short-should-a-journal-entry-be)) — *grade: anecdotal* — and describe reflective journaling, not "gagged twice on the walk."
+
+**What it implies.** The median Ask question is two lines; the median note is one to three sentences; the *paragraph* is the tail (~600–900 chars), real but rare. So the composer is not sized for the mean — it is sized so the tail never feels punished and the median never feels like a form. ChatGPT reached the same conclusion: its iOS composer stays compact and added a **full-screen editor for longer prompts on 2026-08-26** ([changelog](https://learn.chatgpt.com/docs/changelog)).
+
+**Recommendation: a one-tap-to-expand composer sheet, with a door on Home that is visibly roomier than one line.**
+- *At rest on Home:* a 64pt row (two-line placeholder at Geist 15/22, 10pt padding), never a single-line input. It is a door, not the field.
+- *Expanded (a bottom sheet over Home):* text area **min 3 lines (88pt)**, grows to **8 lines (~198pt)**, then scrolls internally; an `↗` corner control opens the full-screen editor for the tail.
+- *6.1" geometry (393×852pt, keyboard + QuickType ≈ 336pt):* ~457pt remain; header 48 + chips 44 + composer 88–198 + verb row 56 = 236–346pt — fits with the keyboard up, no scroll to reach the verbs. Dock the composer; pad the scroll by composer + safe area ([Setproduct](https://www.setproduct.com/blog/ai-chat-interface-ui-design)).
+- *Dictation:* the OS keyboard mic, not a custom speech pipeline (no new permission, no audio leaving the device on our account). The row carries a mic glyph that opens the sheet focused, so the mic key is one tap away.
+- *Limits:* keep Ask at 1,000 chars; notes 2,000 — a note is the record, a question is a request.
+
+## 2. The Ask surface on Home, designed
+
+**Where.** Inside the Today register, under the dot lane the PM loves — the record's present tense (the Designer's placement, which I endorse). Below every safety strip, above the fold when the Signal is folded, never the hero. Tapping it lifts a sheet — the same sheet register the log picker already uses, so capture and ask share one material (cohesion, thought 4). The sheet *is* `/ask` presented modally: D8's conversation store survives, and the built screen is reused rather than forked. **The answer lives in the sheet, never inline on Home** — an answer card beside a safety card dilutes S1, and "chat on Home" is what Whoop retired ([inspirational-apps §4 #6](../docs/research/2026-09-home-v2-inspirational-apps.md)).
+
+**How the owner knows it is AI (at 25% scale).** Not a sparkle — it now means "some AI thing" and nothing else ([NN/g](https://www.nngroup.com/articles/ai-sparkles-icon-problem/)); not Apple's rainbow edge glow, which is a *system* signature and would read as Siri ([SlashGear](https://www.slashgear.com/1865686/iphone-glowing-around-edges-reason/)). Culprit already owns a working mark: the **Whorl**. Use it three ways, and only three: a static 14pt whorl glyph on the *Ask* verb pill (the note verb has none — the glyph means "a model reads this"); the whorl *turning* in the send slot while thinking; and the receipt line under every answer, **"Counted from Nyx's record · worded by AI"**, in ink-tertiary. Newsreader for the answer headline is the app's AI voice already (the Signal speaks in it), so the register does the rest. Text beats icon: the sheet's title line reads *Ask · reads Nyx's record*.
+
+**Suggested chips — data-aware, and time-aware.** Seeded from local SQLite as today (`buildSuggestionChips`), three max, *recall only, never evaluative* (Dr. Chen). Time of day changes the tense, not the truth: **7am** → "What's new since last night?" · "When was the last vomit?" · "Day 31 of the turkey trial — what's logged?"; **9pm** → "What did I log today?" · "Anything for the vet this week?" · the rundown. Chips answer *deterministically on device* (§3 below) so they are instant, offline and uncapped — the answer already on screen for Jordan at 2am.
+
+**Note vs question: one field, two verbs, the owner routes.** Day One had to split Chat from Log because a fused box made every entry a conversation ([Day One Labs](https://dayoneapp.com/labs/daily-chat/)); Oura fuses under "+" because both are *doors*, not fields. The honest synthesis: one composer, **Note is the default verb** (free, on-device, no model), **Ask** is the second pill with the whorl glyph. A question mark never routes; a model never decides what you meant (Engineering: an intent router is a classifier and a paywalled Ask under free capture). The verbs appear only when text exists.
+
+**Three word-frames**
+
+```
+AT REST (Home · Today register · Signal folded)
+┌ Today                                    Full day › ┐
+│ 1 meal so far                                       │
+│ ●·····○··········  6am   noon   6pm   now           │
+│ ┌─────────────────────────────────────────────┐ 🎤  │
+│ │ Anything about Nyx today?                   │     │
+│ │ A note for her record, or a question of it  │     │
+│ └─────────────────────────────────────────────┘     │
+│  What's new since last night?  ·  Last vomit?       │
+└─────────────────────────────────────────────────────┘
+```
+```
+TYPING A PARAGRAPH (sheet over Home · keyboard up)
+┌ ▔▔▔        Ask · reads Nyx's record          ↗  ┐
+│ gagged twice on the walk, nothing came up.     │
+│ she was fine after but drank a lot when we got │
+│ home — more than usual. also the neighbour     │
+│ might have given her ham yesterday, not sure.  │
+│ should I be logging that somewhere?|           │
+│                                                │
+│ [ Save note ]                [ ◎ Ask ]         │
+│ Note stays on your phone · Ask sends it to AI  │
+└──────────────── keyboard ──────────────────────┘
+```
+```
+THE ANSWER ARRIVED (sheet · ◎ turned, skeleton → card, sentence settles −8→0)
+┌ ▔▔▔        Ask · reads Nyx's record          +  ┐
+│ ┃ Recurring vomiting — worth a vet visit  ›     │  ← relayed safety lead, plain
+│ ┌──────────────────────────────────────────────┐ │
+│ │ Your note is saved to Sep 5, 8:32am.        │ │  Newsreader
+│ │ "Drank a lot" isn't a leaf the picker has — │ │
+│ │ it's kept as written, beside Breakfast 8:10. │ │
+│ │ 1 note today · 4 since the trial started     │ │
+│ │ Counted from Nyx's record · worded by AI     │ │
+│ │ Open the note →                              │ │
+│ └──────────────────────────────────────────────┘ │
+│  Log the ham as an off-diet food?   What else?   │
+└──────────────────────────────────────────────────┘
+```
+Arrival physics: the built skeleton, then the card's sentence settles the fold's −8pt beat; one `answerArrival` soft haptic (a new verb in `lib/haptics.ts`, silent when `safetyLead` is present — silence on safety). Reduced motion: crossfade. No glow, no wash, no loop.
+
+## 3. Pets > $ on Home
+
+Whoop ships Coach in every tier ([Whoop](https://www.whoop.com/us/en/membership/)); Strava gates Athlete Intelligence to subscribers and *places it under every activity* — the "my data + your fee" rage formula ([Strava support](https://support.strava.com/en-us/articles/15401629-athlete-intelligence-on-strava)); Day One gates Daily Chat behind $74.99/yr Gold while plain logging stays free ([9to5Mac](https://9to5mac.com/2026/04/08/day-one-journaling-app-introduces-gold-plan-with-ai-summaries-and-daily-chat/)). The honest Culprit version:
+
+| Free forever, on Home | Premium (after 3 conversations/month) |
+|---|---|
+| Saving a note (never a model; never capped) | A typed question the model plans over |
+| The recall chips — answered on device from the aggregate layer, no model, no cap, offline | Follow-ups in a conversation |
+| Counts with denominators; "what did I log" | Synthesis across events ("what changed since the trial started, in words") |
+| The vet-visit rundown | General mode, when flipped |
+| Every relayed safety finding, every deflection | — |
+
+**The capped state on Home: nothing.** The row, the chips and the verbs are identical (D5's cap rule, kept). The cap lives inside the sheet — and to kill the Designer's "discover the cap after composing" failure, it shows *before* the send as one ink-tertiary line above the verbs: **"Ask's free conversations restart Oct 1 — notes and the chips still work."** A symptom-shaped draft drops that line entirely; the Save-note verb is never dimmed. Copy reuses `askCapCopy`.
+
+**This forces two spec amendments — decision brief:**
+- **Deciding:** whether Home's chips answer *deterministically and free* (outside the cap), and whether the composer counts as "chrome."
+- **Options:** (a) **Recommended** — chips are on-device recall, uncapped; the model call (typed/follow-up) is the metered conversation; amend D3 to name the deterministic class and D5 to "chrome or the Today composer, never a card." (b) Chips keep sending to the model as today — then Home shows a control that refuses 27 days a month, and E's Principle-7 objection stands. (c) Header pill only.
+- **Consequence:** (a) is client-only and needs nothing from the `ask` redeploy chain (CUL-557); (b) blocks on Track-3.
+
+## 4. Safety at prominence
+
+Dr. Chen is right that placement changes the question mix. Three structural answers, all designed states, none an error:
+
+- **The crisis gate, before any model.** A keyword gate in client *and* function ("not breathing", "rat poison", "straining, nothing"). The sheet replaces the verbs with a plain card in the safety register: *"If Nyx is struggling to breathe, that's an emergency — call your vet or an emergency clinic now. Your note is saved. Nothing here was read by AI."* [Call the clinic] [Keep the note]. No chips, no cap accounting, no whorl.
+- **Consent before the first Ask send (5.1.2(i)).** The first tap on *Ask* — never on app open — raises one sheet: *"Send this to AI? Your note, and what your question needs from Nyx's record, go to Anthropic, the maker of Claude. Not used to train. Notes you only save stay on your phone."* [Send] [Not now]. Recorded server-side, fail-closed; D10 whole-boundary so text and photos share one gate.
+- **The deflection that stays warm on the thousandth ask.** Warmth is structural, not tonal: the deflection is an *answer card*, same Newsreader headline, same anatomy, and it always *does* something. "So nothing new, right?" → headline **"Nothing new has been logged since 9:40pm."** detail *"The record only shows what's been seen — it can't say she's fine. If she seems off to you, trust that."* then the rundown chip. Identical template every time (tested against `REASSURANCE_RE`); a lower "should I worry" rate comes from the chips being recall-only and the default verb being *Note* — the daily gesture is telling, not asking.
+
+## 5. Delight vs gimmick — ten rules
+
+1. Delight is the *arrival*, not the idle: motion plays once, when something the owner asked for lands.
+2. The AI mark is a working mark (the whorl turning) and a receipt line — never decoration.
+3. Say "AI" in words where it matters (the receipt, the consent sheet); never in a glyph alone.
+4. Chips are things the owner would say, in the tense of the hour; three, not six.
+5. The composer opens with the keyboard and closes with the answer; no third tap, ever.
+6. Every number in an answer is the app's own component, tap-through attached.
+7. Silence on safety: no haptic, no settle, no wash when a safety lead is on the card.
+8. The deflection is a card that helps, never a grey wall that apologises.
+9. A note commits like a log: the R2 beat, undoable, named with its time.
+10. Nothing on Home changes because of money.
+
+**Veto:** a rainbow/glow border; a typing-dots "bot is thinking"; a persona name or avatar; suggested prompts that flatter ("How is she doing today?"); a streaming word-by-word answer (the numbers must land as a unit — a half-rendered count is a wrong count); an inline answer card on Home; any chip whose answer is a verdict.
+
+## 6. The single biggest call
+
+- **Deciding:** what Home's Ask surface *is* — a door into the sheet with free deterministic chips, or a prominent field whose every use is metered.
+- **Options:** (a) **Recommended** — the Tell row (64pt, two verbs, Note default) opening the Ask sheet; chips deterministic and free; the model is the Premium conversation. (b) Frame E's prominent field with model-backed chips. (c) Header pill only, as built.
+- **Consequence:** (a) gives the PM a paragraph-sized, unmistakably-AI composer that obeys Pets > $ by construction, ships client-only now, and needs two spec amendments (D3 deterministic class, D5 wording); (b) needs a Principle-7 ruling and Track-3 first.
+
+
+#### Brief — designer-r2
+
+# Home v2 — Designer, round 2: LOOK and COMPOSITION (2026-09-05)
+
+**Method, honestly.** No installs. Read at screen level: Apple's ADA copy for Tide Guide and Moonlitt (developer.apple.com/design/awards), Flighty's Behind the Design (Apple Developer, snippet grade), Oura's two redesign posts (ouraring.com/blog), Copilot's Dashboard help article (it names the modules and the chart's two lines), Things' features page, Arc Search's launch post, Linear's mobile changelog, the ChatGPT composer coverage (BGR + changelog: mobile mirrors the three-button web composer). Could NOT see: Whoop's Locker post (403); Watch Duty's screens (site + screensdesign describe function only); Gentler Streak's path beyond secondary reviews ("green shaded area, white line"); Rise's curve beyond a reviewer's "my data looks like a wave"; Retro's site (a footer); the Claude mobile composer. Pins marked *(memory)* describe a composition I know but could not fetch.
+
+## 1. Mood board in words
+
+1. **Tide Guide — the curve is the page.** One full-width tide curve is the screen; NOW is a marker on it, scrubbed to read any hour; the palette shifts with the sky (ADA 2026: "rich full-screen charts… crisp, clear… palette designed to match the color of the sky"). Take: the record drawn full-bleed at display size, NOW as a marker, scrub as the read.
+2. **Flighty — one line per flight.** "Airport boards have one line per flight… 50 years of figuring out what's important." A board where every row is time · thing · status in tabular numerals, status carried by one word and one colour. Take: the ruled row as the unit of a standing fact, its number at the rail.
+3. **Copilot Money — one line, one dotted line.** The dashboard opens on the spending chart: "a dotted line represents the ideal spending rate… the solid line your spending rate," the free-to-spend figure as the chart's caption, line colour keyed to today-vs-budget. Take: the denominator DRAWN beside the numerator (S2 as composition); the headline is the chart's caption, not a card.
+4. **Oura Today (2025) — one big thing, then a snapshot.** "Focus on 'one big thing'… a quick snapshot… any unusual key metrics"; "color to signal your body's different states." *(memory)* a large single score in light type on a dark atmospheric ground, tiles beneath. Take the hierarchy; leave the score and the dark ground.
+5. **Retro — the week as a film strip, no capture button.** "Users add photos to this week's film strip displayed at the top." *(memory)* white page, a strip of square frames labeled by weekday, empty frames as the empty state. Take: the trial or the week as dated cells at the masthead, an unfilled cell as the honest empty state.
+6. **Things 3 — the paper register.** "A clear white piece of paper"; "no distractions, just you and your thoughts"; Today is a finite list with This Evening folded below. *(memory)* generous gutters, hairlines not cards, one blue element. Take: hairline density, one accent, a day that ends, a lighter "later today" block.
+7. **Linear mobile — glass chrome, one create door.** "A custom frosted glass material that adds depth and contrast"; "a 'Create Issue' button at the top of every screen." Take: capture identical everywhere (our FAB), and chrome visibly distinct from content — chrome may be glass, content never.
+8. **Watch Duty — density with a legend.** A map "at the heart," an incident panel "with status, acreage, updates," "clear iconography with a detailed legend," and the warning that the default view "can appear visually cluttered." Take: a dense data surface earns density with a key on the surface; without one it is clutter.
+9. **Arc Search — the composer is the room.** "Always opens with the keyboard up"; Browse for Me is a button on a search, never the home. Take the sizing only: where typing is the job the field is paragraph-sized and the keyboard is up — right for a sheet, wrong for a home.
+10. **ChatGPT / Claude composers — three buttons, one field.** Plus left, dictate + voice right, the field grows with the text, long pastes become attachments. *(memory)* a ~52pt pill at rest growing to ~6 lines, send appears only with text. Take: at rest one calm pill; marked as AI by what appears when it wakes, not by decoration at rest.
+
+## 2. What round 1 got wrong, visually
+
+Round 1 was an information architecture drawn as the current screen. Every direction was the same card stack — white cards, 16 radius, a SectionLabel, a chevron row — reordered, with a new sentence at the top. The Moved line was text; the fold strips were text; Trend was the existing bars; the Tell row was a 44pt input the PM rightly called small. Nothing sat at display size except a sentence, so nothing looked new, because nothing was drawn. I wrote "size encodes novelty" and then gave the size to words. I also read my own research for mechanisms and never once described what a Tide Guide screen looks like, so the frames had no visual ancestry. The error was treating the token set as a ceiling: Newsreader + Geist, teal, rose, med blue, a hairline and a white card are enough to draw a board, a lane, or a page. Round 1 drew a list.
+
+## 3. Three bold directions
+
+Shared: 390×844, header and FAB as shipped, Home daylight (#FAFAFA) — I do not reopen D8. Record at 7:05am: chronicity safety finding (14 episodes, 5 of 8 weeks, last Aug 26), post-meal timing (8 of 8 within 30 min), turkey trial day 31 of 42, nothing logged. **In all three the safety card is identical: white, 16 radius, rose rail, Newsreader 22 sentence, Geist 15 count line, the shipped fold — and it is the only card on the page, so plainness is contrast.**
+
+### I — "The Board" · the dense instrument panel
+**Thesis:** Home is a departures board for one animal — every standing fact is a ruled row with its number at the rail; nothing is a card except the one thing that must be plain.
+
+**7:05am.** Hero (0–220pt), **the Day Instrument**: the Today dot lane grown to page width, 120pt tall, on the day ground, no card. A 24h axis in Geist 11 tabular tertiary (`6am · noon · 6pm · mid`), a 1px `colorBorderStrong` baseline, a 2px teal NOW needle at 7:05 labeled in Geist 11 medium. Above the baseline, today's dots (none). Below it a fainter lane labeled `yesterday`: yesterday's dots at 30% — breakfast 7:30, dinner 6:10, a med dot 8pm — the drawing's reason to exist at 7am: it shows what usually happens, where (Principle 2, drawn). Caption, Geist 13 secondary: `Nothing yet today · last vomit Aug 26` — a date, never a days-since. Scrub the needle to read the hour.
+Signals (220–440): `SIGNALS` label; the safety card; then the timing pattern as a **row** — hairline, Geist 15 `Vomiting soon after eating`, rail `8 / 8` tabular with `within 30 min` in 13 secondary, chevron.
+Standing rows (440–560): `Turkey trial` · rail `31 / 42`, with a 6px 42-segment tick strip under the label (31 elapsed in ink, meals-logged days darker, a rose pip under the 3 vomit days — the denominator is the strip's length). `Cerenia` · rail `Log dose` (the shipped one-tap). `Weight` · `4.2 kg · Aug 30`.
+Ask (560–620): a row like the others, its rail a 20px static Whorl frame (day ridges), label `Ask Nyx's record`, `AI` as a 9pt micro-chip in `colorAccentLight`/`colorAccentInk`. Tap: the row lifts into a `radiusLarge` sheet with a 120pt field (4 lines min, radius 8, `colorSurfaceSubtle`), the Whorl breathes ONCE as the sheet arrives (arrival haptic, then silence), three recall chips, the Anthropic line at first use. The AI mark is the Whorl — the brand's "working on the pet's behalf" motif — plus the word.
+**9pm:** needle at the right edge; the ghost lane gone (the day is full); caption `2 meals · 1 dose · Full day ›`; Ask label `Anything about today worth keeping?`. **After a log:** R2 beat, the dot lands on the lane at its hour, the matching ghost dot disappears.
+**Thin data (day 3):** the instrument still draws (axis, needle, yesterday); Signals is the plain `building` card; standing rows render only with a value — no `—` rows, ever.
+**Risk:** reads as a spreadsheet to Sam; density without a legend is Watch Duty's warning. **For:** Jordan in week 5 and Dr. Chen — every row is something you say to a vet.
+
+### II — "The Long Lane" · the one big drawing
+**Thesis:** the record is one continuous lane with today at the right edge; Home is the window onto it, and the findings annotate the drawing.
+
+**7:05am.** Hero (0–300pt): a horizontally scrollable lane, edge to edge, 260pt tall, day ground, no card. Time runs left→right; the right edge is NOW with the teal needle. Each day is a 44pt column, its date in Geist 11 tabular at the foot (`Sep 5` in ink medium, earlier days tertiary), a hairline between weeks, the month once per band in Newsreader 17 top-left. Events are the house dots at their hour (vertical = time of day, 6am at the top, midnight at the foot — the day lane rotated): meals teal, meds `colorEventMedication`, symptoms rose, notes hollow. Axis ticks in ink: `Trial · turkey` at Aug 6, `Last vomit` at Aug 26 in rose ink. Scrub left and the lane pages back through the six weeks the chronicity finding counts. Today's column is empty above the needle beside a fully drawn yesterday — the drawing says "nothing yet, and here is the shape of a normal day."
+Signals (300–520): the safety card, plain. Tap it and the episode weeks gain a 2px rose underline on the axis — the receipt lives on the drawing (S2: all 8 weeks visible). The timing pattern is a Geist 15 row, rail `8 / 8`; tap: the eight meal→vomit pairs get a hairline bracket on the lane.
+Standing (520–600): `Turkey trial · 31 / 42`, `Cerenia · Log dose`; no separate Trend — the lane is the trend; `All patterns ›` is a row.
+Ask (600–660): a 52pt pill, `colorSurface`, hairline, static Whorl at left, placeholder `Ask or tell Nyx's record…`, the `AI` micro-chip. Tap: keyboard up, the pill grows in place to 4–6 lines, the Whorl breathes once with the arrival haptic, chips slide in above the keyboard.
+**9pm:** today's column full; the window unchanged (no re-light, S7); caption becomes the count line + `Full day ›`. **After a log:** the dot drops into today's column at its hour, R2 beat; nothing else moves.
+**Thin data:** three columns and blank width to their right, the axis reading `Sep 3 · Sep 4 · Sep 5`; the blankness is the state; Signals says `building` plainly.
+**Risk:** a rose dot-field for a 14-episode cat is a drawing of the danger beside the plain card — Dr. Chen's falsification gates it. At 44pt columns ~8 days show per screen; six weeks are a scroll, not a glance. **For:** Sam (a normal day's shape vs today) and the PM's "charts and data over text."
+
+### III — "The Daybook" · the page you write on
+**Thesis:** Home is today's page of the record — a Newsreader dateline, dated cells as the masthead, findings as marginal rows, the composer as the page's body.
+
+**7:05am.** Dateline (0–56): `Saturday, September 5` Newsreader 28 ink; `Day 31 of the turkey trial` Geist 13 secondary. Hero (56–200), **the trial strip**: 42 cells, 6×7, 40pt square, 4pt gap, `colorSurface` + hairline; elapsed cells carry the day-of-month in Geist 11 tabular and a 6px teal dot per meal-logged day (0–2), a rose pip on the 3 vomit days, today outlined 2px teal, 11 future cells empty. The grid is the denominator; no fill ratio. With no trial, the masthead is the current week's 7 cells in the same grammar (Retro's strip).
+Signals (200–400): the safety card; the timing row.
+Page body (400–620): a 160pt field on the page, no card, hairlines above and below, placeholder in Newsreader 17 italic tertiary `Tell Nyx's record — or ask it.` A note by default; typing reveals `Save note` (dark) and `Ask` (accent-light, the `AI` chip on Ask only). Choose Ask and the lower hairline becomes a 2px teal rule drawing in left→right over 250ms (the fold's rail-led physics) while the Whorl appears at the corner and breathes once — the same motion every time, the arrival haptic, then silence. The note path has neither mark.
+Standing rows (620–700): `Cerenia · Log dose`, `Weight 4.2 kg · Aug 30`, `All patterns ›`; the Today lane becomes a 56pt row under the dateline once anything is logged.
+**9pm:** the dateline gains `2 meals · 1 dose · Full day ›`; placeholder `Anything about today worth remembering?`; the same page otherwise. **After a log:** a dot lands in today's cell and the lane row, R2 beat.
+**Thin data:** the week strip with three lived cells, the field, the building card — a page with three stamps on it.
+**Risk:** an empty field on a safety morning (my round-1 dissent stands; the body sits below the card by construction), and Newsreader italic placeholder risks reading as a diary. **For:** Sam at 9pm, and thought 6 taken all the way.
+
+## 4. Type and spacing for Home v2
+
+- Same tokens, new roles: Newsreader 28 (the one display element per open), Newsreader 22 (the safety sentence), Geist 15 rows, 13 captions, 11 axis + section labels at `trackingWidest`, 9 micro-chip (`AI` only).
+- Newsreader at most twice per viewport; never in a row, chip, or number.
+- Every number is Geist tabular (`fontVariant: ['tabular-nums']`), at the RIGHT rail, denominator in the same run (`8 / 8`, `31 / 42`, `4.2 kg`).
+- Hairlines carry structure (`colorBorder` 1px, bleeding to 16pt margins); a card is reserved for the safety finding and the building/empty Signal. If everything is a card, nothing is plain.
+- Radius 16 for the card, 8 for fields, full for chips; no 24 on Home (24 is the sheet).
+- Density target: ≥6 facts in the first viewport with one drawing ≥120pt; 52pt rows; 16pt gutters; 24pt between blocks; glyph tints ≥3:1, `*Ink` siblings for tinted text (CUL-578).
+- Colour is state only: teal live/tappable + meals, rose symptom marks + the safety rail, med blue doses. The day ground never changes with the clock (S7).
+- Motion: one arrival per open (the drawing settles); no loop at rest; the Whorl breathes once when Ask wakes; static frames under reduced motion.
+
+## 5. Vetoes and decision briefs
+
+**Veto:** a dark hero on the record (D8 stays closed; Oura's atmosphere is theirs) · a days-since counter anywhere · a drawing that outranks the plain card in colour (larger in area is fine; one rose pip per episode-day, never a filled rose cell) · Newsreader numerals · a composer pinned above the tab bar (fights the FAB) · an `AI` chip on the note path · any `—` placeholder row.
+
+**DB-1 — Which direction does round 2 draw at fidelity?**
+Deciding: the visual language every later frame inherits. Options: I The Board (densest; Jordan / Dr. Chen) · **II The Long Lane — recommended: the only one where the record is the hero and findings annotate it, which is what "charts over text" asks for, and its hero is the shipped Today lane grown up** · III The Daybook (thought 6 all the way; carries the empty-field-on-a-safety-morning risk). Consequence: II needs Dr. Chen's falsification of a rose dot-field beside a plain card before fidelity; I and III draw from tokens today.
+
+**DB-2 — Where does the Ask composer live, at what size?**
+Deciding: a resting composer on Home or a door to one. Options: a 52pt pill growing in place to 4–6 lines (II) · **a row that opens a sheet with a 120pt field and the keyboard up — recommended: paragraph-sized where typing happens, one calm line where it does not; the sheet is where the AI mark, the disclosure and the caps are honest without touching Home** · the page body (III). Consequence: the sheet reuses the log sheet's shell; the in-place pill needs a new keyboard-avoidance path on Home.
+
+**DB-3 — May the hero draw the symptom record at display size?**
+Deciding: whether rose pips on dated cells/columns may sit above the plain safety card. Options: **yes — one ink-tinted pip per episode-day, never filled, the adversarial pass as the gate — recommended** · yes, but only below the safety card · no; the hero draws intake and meds only. Consequence: "no" forecloses II's thesis; "below" makes the safety card the page's first element, which S1 already permits.
+
