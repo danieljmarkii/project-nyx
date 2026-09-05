@@ -14,7 +14,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { canFold, foldIdentity, type BackBecauseReason } from '../../lib/signalFold';
-import { FOLD_MOTION, useFoldMotion } from './foldMotion';
+import { FOLD_MOTION, useFoldMotion } from '../motion/foldMotion';
 import {
   DENSITY_BOX_TITLE,
   EVIDENCE_CONTROL_LABEL,

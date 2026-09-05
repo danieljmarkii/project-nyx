@@ -38,6 +38,8 @@ jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { readObservationFold, setObservationFold } from '../../lib/observationFold';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
+import { LayoutAnimation } from 'react-native';
+import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
 
@@ -673,5 +675,59 @@ describe('VomitAnalysisSection — the RECORD re-opens a fold (§5.3)', () => {
     rerender(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
     rerender(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
     expect(getByText(/4 findings/)).toBeTruthy();
+  });
+});
+
+// ── The read's arrival (CUL-804, §7) ─────────────────────────────────────────
+// The pair that decides whether the flourish is earned. Both cases paint the same
+// "Reading the photo…" box on their first frame, and only one of them WAITED for
+// anything: the section reads its local row on every mount, including the mount that
+// happens when an owner opens an incident from History months later.
+describe('VomitAnalysisSection — the arrival fires only for a read the screen waited for', () => {
+  let configureNext: jest.SpyInstance;
+  beforeEach(() => {
+    configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    (watchAnalysisRow as jest.Mock).mockClear();
+  });
+  afterEach(() => { configureNext.mockRestore(); mockRow = null; });
+
+  it('a read already in the record on open: no arrival, not one `configureNext`', async () => {
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'monitor',
+      read_text: 'Yellow, foamy, mostly bile.',
+    });
+    const { findByText } = render(
+      <VomitAnalysisSection eventId="old-1" petId="pet-1" petName="Rex" hasPhoto />,
+    );
+    expect(await findByText('Keep an eye out')).toBeTruthy();
+    // PAST beat 2's lag before asserting: the box opens 80ms behind the rail, so an
+    // assertion taken the moment the text appears passes whether or not an arrival was
+    // started, and would not notice the fetch frame being counted as a wait.
+    await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
+    // The fetch frame is not a wait. Nothing animated on the way to this read.
+    expect(configureNext).not.toHaveBeenCalled();
+  });
+
+  it('a read that lands while the screen waits: the box opens once', async () => {
+    mockRow = row({ status: 'pending', recommendation: null });
+    const { findByText } = render(
+      <VomitAnalysisSection eventId="new-1" petId="pet-1" petName="Rex" hasPhoto />,
+    );
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    expect(configureNext).not.toHaveBeenCalled();
+
+    mockRow = row({
+      status: 'completed',
+      recommendation: 'worth_a_call',
+      read_text: 'Worth a call to your vet.',
+    });
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+    expect(await findByText('Worth a call')).toBeTruthy();
+
+    // Beat 2 is 80ms behind the rail, and fires exactly once.
+    await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
+    expect(configureNext).toHaveBeenCalledTimes(1);
   });
 });

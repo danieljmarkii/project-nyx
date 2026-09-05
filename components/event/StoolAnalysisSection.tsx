@@ -49,8 +49,12 @@ import {
   CONTENT_OPTIONS,
 } from './stoolFields';
 import { ThemedText } from '../ui/ThemedText';
-import { IncidentReadCard, IncidentReadPending } from './IncidentReadCard';
+import { IncidentReadCard, RAIL_TICK_HEIGHT } from './IncidentReadCard';
+import { IncidentReadSection } from './IncidentReadSection';
 import { ObservationGrid } from './ObservationGrid';
+import { useIncidentArrival } from '../motion/arrivalMotion';
+import { useAppActive } from '../../hooks/useAppActive';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useObservationFold } from './useObservationFold';
 
 // 'capped' / 'read_disabled' are the two states the analyze-stool function writes
@@ -115,6 +119,32 @@ export function StoolAnalysisSection(
   // findings — reads as a change and releases every restored fold on mount.
   const observationFingerprint = row ? buildObservations(row).map((o) => o.value).join('|') : null;
   const [folded, setFolded] = useObservationFold(petId, eventId, observationFingerprint);
+
+  // §7 — the read's arrival. Called above every early return: the rules of hooks require
+  // it, and the phase has to survive the branch change that IS the arrival (every branch
+  // roots at `IncidentReadSection`, so React reconciles that node rather than remounting
+  // it, and the beats keep running across the swap).
+  const reducedMotion = useReducedMotion();
+  const appActive = useAppActive();
+  // NOT the union of the two pending-box branches below. The first of them — `row`
+  // undefined — is this component reading the local row, which it also does when the read
+  // landed weeks ago; treating that as a wait would replay the arrival every time an owner
+  // opened an old incident from History. `working` is set only where the server has
+  // actually been asked, which is the wait §7 means. And with no photo there is no pending
+  // box at all, so there was no wait for anything to arrive out of.
+  const awaitingRead = hasPhoto && (working || row?.status === 'pending');
+  const arrival = useIncidentArrival({
+    awaitingRead,
+    // §7: a re-analysis after an owner edit swaps un-animated. A read the owner has
+    // corrected did not ARRIVE, it was answered. `edited_at` survives a re-analysis (the
+    // Edge Function never clobbers a human review), so it is still set when the re-read
+    // lands — which is exactly the case the rule names.
+    suppressed: !!row?.edited_at,
+    reducedMotion,
+    appActive,
+    identity: eventId,
+    tickHeight: RAIL_TICK_HEIGHT,
+  });
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -262,12 +292,7 @@ export function StoolAnalysisSection(
   // stays silent until it resolves (to an escalation, or to nothing), so the
   // section never appears-then-vanishes on the common photoless path (B-363).
   if (hasPhoto && row === undefined && !working) {
-    return (
-      <View style={styles.section}>
-        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
-        <IncidentReadPending />
-      </View>
-    );
+    return <IncidentReadSection arrival={arrival} pending />;
   }
 
   const status: Status | undefined = row?.status;
@@ -275,12 +300,7 @@ export function StoolAnalysisSection(
   // Pending / actively working. Same photoless rule: no spinner for a photoless
   // event — a contextual escalation pops in clean when it resolves (B-363).
   if (hasPhoto && (working || status === 'pending')) {
-    return (
-      <View style={styles.section}>
-        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
-        <IncidentReadPending />
-      </View>
-    );
+    return <IncidentReadSection arrival={arrival} pending />;
   }
 
   // Failed — UNLESS the record already holds an escalation, which outlives a failed
@@ -290,8 +310,7 @@ export function StoolAnalysisSection(
   // escalationSurvivesFailure for why the rule is asymmetric.
   if (status === 'failed' && !escalationSurvivesFailure(row)) {
     return (
-      <View style={styles.section}>
-        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
+      <IncidentReadSection arrival={arrival} pending={false}>
         <View style={styles.failedBox}>
           <ThemedText style={styles.failedText}>Couldn't finish reading this one.</ThemedText>
           <TouchableOpacity
@@ -306,7 +325,7 @@ export function StoolAnalysisSection(
               : <ThemedText style={styles.retryBtnText}>Try again</ThemedText>}
           </TouchableOpacity>
         </View>
-      </View>
+      </IncidentReadSection>
     );
   }
 
@@ -325,12 +344,11 @@ export function StoolAnalysisSection(
   // cap of 10.
   if (status === 'capped') {
     return (
-      <View style={styles.section}>
-        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
+      <IncidentReadSection arrival={arrival} pending={false}>
         <View style={styles.capBox}>
           <ThemedText style={styles.capText}>{stoolCapCopy(petName, 'daily')}</ThemedText>
         </View>
-      </View>
+      </IncidentReadSection>
     );
   }
 
@@ -356,8 +374,7 @@ export function StoolAnalysisSection(
   // synced yet, the documented race triggerStoolAnalysis guards against).
   if (!row || !row.recommendation) {
     return (
-      <View style={styles.section}>
-        <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
+      <IncidentReadSection arrival={arrival} pending={false}>
         <View style={styles.neutralCard}>
           <ThemedText style={styles.readText}>Not enough to say about this one yet.</ThemedText>
           <TouchableOpacity onPress={handleRetry} hitSlop={16} disabled={retrying}>
@@ -365,7 +382,7 @@ export function StoolAnalysisSection(
           </TouchableOpacity>
         </View>
         <ThemedText style={styles.disclaimer}>This is a quick read of a single moment, not a diagnosis.</ThemedText>
-      </View>
+      </IncidentReadSection>
     );
   }
 
@@ -378,9 +395,7 @@ export function StoolAnalysisSection(
   );
 
   return (
-    <View style={styles.section}>
-      <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
-
+    <IncidentReadSection arrival={arrival} pending={false}>
       {dismissed ? (
         <View style={styles.dismissedRow}>
           <ThemedText style={styles.dismissedText}>AI note hidden</ThemedText>
@@ -394,6 +409,7 @@ export function StoolAnalysisSection(
           label={REC_LABEL[rec]}
           readText={row.read_text}
           onHide={() => setDismissed(true)}
+          arrival={arrival.rail}
         />
       )}
 
@@ -440,7 +456,7 @@ export function StoolAnalysisSection(
           <ThemedText style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</ThemedText>
         </TouchableOpacity>
       ) : null}
-    </View>
+    </IncidentReadSection>
   );
 }
 
@@ -556,16 +572,6 @@ function formatEditedDate(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  section: {
-    marginTop: theme.space3,
-  },
-  sectionLabel: {
-    fontSize: theme.textXS,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    letterSpacing: theme.trackingWidest,
-    marginBottom: theme.space1,
-  },
   neutralCard: {
     backgroundColor: theme.colorSurfaceSubtle,
     borderColor: theme.colorBorder,

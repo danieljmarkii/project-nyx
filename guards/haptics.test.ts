@@ -79,6 +79,7 @@ const ALWAYS_SCANNED = [
   'components/event/VomitAnalysisSection.tsx',
   'components/event/StoolAnalysisSection.tsx',
   'components/event/IncidentReadCard.tsx',
+  'components/event/IncidentReadSection.tsx',
   'components/event/ObservationGrid.tsx',
 ];
 

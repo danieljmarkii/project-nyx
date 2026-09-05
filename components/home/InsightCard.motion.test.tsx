@@ -24,7 +24,7 @@ import { useState } from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { InsightCard } from './InsightCard';
-import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from './foldMotion';
+import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
 import { flat } from '../../testUtils/tree';
 import { theme } from '../../constants/theme';
 import { FOLD_CONTROL_LABEL } from '../../lib/signalCopy';
