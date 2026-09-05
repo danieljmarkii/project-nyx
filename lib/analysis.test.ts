@@ -52,6 +52,9 @@ import {
   buildVomitEditWrite,
   buildStoolEditWrite,
   triggerStoolAnalysis,
+  triggerVomitAnalysis,
+  claimAnalysisChain,
+  awaitAnalysisChain,
   watchAnalysisRow,
   ANALYSIS_WATCH_FALLBACK_DELAYS_MS,
 } from './analysis';
@@ -462,6 +465,181 @@ describe('buildStoolEditWrite — client-side never-clobber guarantee', () => {
     ]) {
       expect(w).not.toHaveProperty(forbidden);
     }
+  });
+});
+
+// ── The analysis-chain claim: one read per photo (CUL-801) ────────────────────
+//
+// The defect this closes: the log path (compress → upload → invoke) and the
+// incident screen's mount both trigger a read for the same event. Two invocations
+// burn two units of the daily-10 cap, race each other's write-back, and — when
+// the SECOND call is the one that crosses the cap — can write a 'capped' state
+// over the first call's real read of a photo that did land.
+//
+// The invariant these tests exist to defend is the OTHER direction, and it is the
+// one that matters clinically: the claim must never suppress the ONLY read. Every
+// path that settles without invoking settles FALSE, and false means "trigger your
+// own".
+describe('analysis-chain claim (CUL-801)', () => {
+  beforeEach(() => mockInvoke.mockReset());
+
+  it('resolves false when no chain is outstanding — the caller triggers its own read', async () => {
+    await expect(awaitAnalysisChain('nobody-claimed-me')).resolves.toBe(false);
+  });
+
+  it('holds a waiter while a chain is outstanding, then releases it with the outcome', async () => {
+    const claim = claimAnalysisChain('ev-claim-1');
+    expect(claim).not.toBeNull();
+
+    let settled: boolean | 'still-waiting' = 'still-waiting';
+    const waiter = awaitAnalysisChain('ev-claim-1').then((v) => { settled = v; });
+    // A microtask turn is enough for an already-resolved promise to land; the
+    // waiter must NOT have resolved, because the chain is still running.
+    await Promise.resolve();
+    expect(settled).toBe('still-waiting');
+
+    claim!.settle(true);
+    await waiter;
+    expect(settled).toBe(true);
+  });
+
+  it('a chain that dies before its read settles FALSE — the waiter must trigger one itself', async () => {
+    // This is the upload-threw / attachment-upsert-errored path in
+    // attachPhotoBestEffort. Skipping instead of awaiting would leave the
+    // incident with no descriptive read AND no deterministic escalation.
+    // The waiter is taken BEFORE the settle on purpose: once a chain settles its
+    // key is freed, and awaiting a freed key returns false no matter WHAT was
+    // settled — so asserting after the fact would pass on any implementation.
+    const claim = claimAnalysisChain('ev-dead-chain');
+    const waiter = awaitAnalysisChain('ev-dead-chain');
+    claim!.settle(false);
+    await expect(waiter).resolves.toBe(false);
+  });
+
+  it('refuses a second claim while one is outstanding, and frees the key once it settles', () => {
+    const first = claimAnalysisChain('ev-claim-2');
+    expect(first).not.toBeNull();
+    // The nesting case: the log path holds the claim, and the trigger it calls
+    // finds it taken. A null claim must never settle a chain it does not own.
+    expect(claimAnalysisChain('ev-claim-2')).toBeNull();
+
+    first!.settle(true);
+    const second = claimAnalysisChain('ev-claim-2');
+    expect(second).not.toBeNull();
+    // Settle it: this module's Map is real state and jest does not reset modules
+    // between cases in a file, so a claim left outstanding here would silently
+    // suppress any later test that reuses the key.
+    second!.settle(true);
+  });
+
+  it('settle is idempotent — a second settle neither throws nor changes the outcome', async () => {
+    const claim = claimAnalysisChain('ev-double-settle');
+    // The waiter has to be taken BEFORE the settle: once a chain finishes, its key
+    // is freed and a LATER caller correctly gets false (no chain is running, so it
+    // should decide for itself). Idempotence is about the waiters already holding
+    // the promise — e.g. attachPhotoBestEffort's `finally` firing after the inner
+    // trigger already settled the same claim.
+    const waiter = awaitAnalysisChain('ev-double-settle');
+    claim!.settle(true);
+    claim!.settle(false);
+    await expect(waiter).resolves.toBe(true);
+  });
+
+  it('a caller arriving after the chain finished gets false — and the row read is what stops a re-invoke', async () => {
+    // Stated rather than left to be discovered: the claim covers the window while
+    // a chain is RUNNING, not after it. The section's own fetchRow() is what
+    // covers "already done" — the Edge Function writes its row before it responds,
+    // so by the time an invoke resolves the row exists and start() returns early
+    // on it. The residual is the millisecond between that DB write and the
+    // response landing, and a section that mounts inside it degrades to exactly
+    // the pre-CUL-801 behaviour (one extra call), never to something worse.
+    const claim = claimAnalysisChain('ev-after');
+    claim!.settle(true);
+    await expect(awaitAnalysisChain('ev-after')).resolves.toBe(false);
+  });
+
+  it('a re-claimed event is a genuinely NEW chain — a stale settle cannot disturb it', async () => {
+    // Deliberately NOT a test of the identity comparison in settle(): the
+    // per-claim `settled` flag short-circuits before that comparison, so nothing
+    // reachable from this API can make a settle run against someone else's slot
+    // (the comparison stays as wiring against a future refactor that drops the
+    // flag — a defect guard kept even where the gate makes it unreachable).
+    // What IS reachable and load-bearing: the second chain must hold its own
+    // waiters independently of the first.
+    const stale = claimAnalysisChain('ev-identity');
+    stale!.settle(true);
+
+    const fresh = claimAnalysisChain('ev-identity');
+    expect(fresh).not.toBeNull();
+    expect(claimAnalysisChain('ev-identity')).toBeNull(); // fresh holds the key
+
+    let resolved: boolean | 'still-waiting' = 'still-waiting';
+    const waiter = awaitAnalysisChain('ev-identity').then((v) => { resolved = v; });
+    stale!.settle(false); // idempotent no-op
+    await Promise.resolve();
+    expect(resolved).toBe('still-waiting');
+
+    fresh!.settle(true);
+    await waiter;
+    expect(resolved).toBe(true);
+  });
+
+  it('trigger*Analysis claims its own chain: a concurrent waiter is released, and does not invoke twice', async () => {
+    let release!: (v: { error: null }) => void;
+    mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
+
+    const triggering = triggerVomitAnalysis('ev-trigger-claim');
+    // Let the trigger reach its claim + invoke.
+    await Promise.resolve();
+
+    let waiterSaw: boolean | 'still-waiting' = 'still-waiting';
+    const waiter = awaitAnalysisChain('ev-trigger-claim').then((v) => { waiterSaw = v; });
+    await Promise.resolve();
+    expect(waiterSaw).toBe('still-waiting'); // held while the invoke is in flight
+
+    release({ error: null });
+    await triggering;
+    await waiter;
+    expect(waiterSaw).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('a REFUSED invoke settles false — a waiter retries rather than watching for a row nothing writes', async () => {
+    // The waiter has to be holding the chain's promise while the invoke is still
+    // in flight; grabbing it after the trigger resolves reads a freed key and
+    // would report false against any implementation.
+    let release!: (v: { error: { message: string } }) => void;
+    mockInvoke.mockReturnValue(new Promise((r) => { release = r; }));
+    const triggering = triggerStoolAnalysis('ev-refused');
+    const waiter = awaitAnalysisChain('ev-refused');
+
+    release({ error: { message: 'network down' } });
+    await expect(triggering).resolves.toEqual({ error: 'network down' });
+    await expect(waiter).resolves.toBe(false);
+  });
+
+  it('a throwing invoke settles false too — the claim is never left outstanding', async () => {
+    let reject!: (e: Error) => void;
+    mockInvoke.mockReturnValue(new Promise((_r, rj) => { reject = rj; }));
+    const triggering = triggerVomitAnalysis('ev-threw');
+    const waiter = awaitAnalysisChain('ev-threw');
+
+    reject(new Error('boom'));
+    await expect(triggering).resolves.toEqual({ error: 'boom' });
+    await expect(waiter).resolves.toBe(false);
+    // And the key is free again, so nothing is stuck waiting on a dead chain.
+    expect(claimAnalysisChain('ev-threw')).not.toBeNull();
+  });
+
+  it('an explicit re-trigger still invokes while a chain is outstanding (the retry floor)', async () => {
+    // Deliberate: the sections' "Try analysis" is an owner action and must never
+    // be swallowed by a claim. Only callers that await the chain FIRST defer to
+    // it; a direct trigger always calls.
+    const claim = claimAnalysisChain('ev-retry');
+    mockInvoke.mockResolvedValue({ error: null });
+    await triggerVomitAnalysis('ev-retry');
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    claim!.settle(true);
   });
 });
 

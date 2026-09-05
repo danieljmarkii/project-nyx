@@ -30,7 +30,7 @@ import { kgToLbs } from '../../lib/weight';
 import { supabase } from '../../lib/supabase';
 import { syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { reverseLoggedEvent } from '../../lib/undoLog';
-import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
+import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
@@ -514,6 +514,12 @@ export default function EventDetailScreen() {
       // full-size photo is too large to analyze. The picker's dimensions are
       // passed so the cap lands on the photo's true longest edge (B-352).
       const uploadUri = await compressForUpload(captureUri, asset.width, asset.height);
+      // CUL-801 — same claim the log path takes: this chain owns the event's next
+      // read, so a section that re-mounts mid-upload (navigate away and back)
+      // awaits it instead of firing a second invoke against the same photo.
+      const isReadable = event.event_type === 'vomit' || isStoolEvent(event.event_type);
+      const readClaim = isReadable ? claimAnalysisChain(event.id) : null;
+      let readInvoked = false;
       // Fire-and-forget upload; sync retries on reconnect if it fails
       uploadPhoto('nyx-event-attachments', storagePath, uploadUri)
         .then(async () => {
@@ -529,10 +535,28 @@ export default function EventDetailScreen() {
           // photo to a photoless event, or replacing an oversized historic photo
           // with a compressed one) — the per-incident section triggers on mount, but
           // a photo added after mount needs this nudge to get its first read.
-          if (event.event_type === 'vomit') triggerVomitAnalysis(event.id).catch(() => {});
-          if (isStoolEvent(event.event_type)) triggerStoolAnalysis(event.id).catch(() => {});
+          if (isReadable) {
+            // A null claim means another chain already owns this event's read —
+            // typically the section's own mount trigger on the photoless incident
+            // this photo is being added to. WAIT for it, then read anyway: unlike
+            // the sections, this call site exists because the PHOTO CHANGED, and a
+            // read of the previous state does not answer the new one. Waiting is
+            // what removes the concurrency (the two calls serialize, so the photo
+            // read lands last and wins); skipping would silently drop the very
+            // re-read this path exists for.
+            if (readClaim === null) await awaitAnalysisChain(event.id);
+            const { error: readErr } = event.event_type === 'vomit'
+              ? await triggerVomitAnalysis(event.id)
+              : await triggerStoolAnalysis(event.id);
+            if (readErr) console.warn('[event-detail] per-incident read trigger failed:', readErr);
+            readInvoked = !readErr;
+          }
         })
-        .catch(console.error);
+        .catch(console.error)
+        // Settles on every exit — the upsert early-return and a rejected upload
+        // included. A chain that died before its read settles FALSE, so a waiting
+        // section triggers its own instead of watching for a row nothing writes.
+        .finally(() => readClaim?.settle(readInvoked));
       // Detach the rows this capture replaced — after the replacement is stored
       // AND its upload is in flight. Order matters twice over: removing first
       // would turn a failed insert into an event with no photo at all, and

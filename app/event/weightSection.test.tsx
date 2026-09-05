@@ -23,7 +23,14 @@ jest.mock('../../lib/storage', () => ({
 jest.mock('../../lib/attachments', () => ({ detachEventAttachment: jest.fn(), detachOtherEventAttachments: jest.fn() }));
 jest.mock('../../lib/sync', () => ({ syncPendingMeals: jest.fn(), syncPendingMedicationAdministrations: jest.fn() }));
 jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn() }));
-jest.mock('../../lib/analysis', () => ({ triggerVomitAnalysis: jest.fn(), triggerStoolAnalysis: jest.fn() }));
+jest.mock('../../lib/analysis', () => ({
+  triggerVomitAnalysis: jest.fn(), triggerStoolAnalysis: jest.fn(),
+  // CUL-801 — the photo-add chain claims/awaits these. Not reachable from this
+  // test (it never drives the picker), but the module graph is the whole point
+  // of this harness, so keep it complete rather than undefined.
+  claimAnalysisChain: jest.fn(() => ({ settle: jest.fn() })),
+  awaitAnalysisChain: jest.fn(() => Promise.resolve(false)),
+}));
 jest.mock('../../lib/haptics', () => ({ destructiveConfirm: jest.fn() }));
 jest.mock('../../components/event/VomitAnalysisSection', () => ({ VomitAnalysisSection: () => null }));
 jest.mock('../../components/event/StoolAnalysisSection', () => ({ StoolAnalysisSection: () => null }));

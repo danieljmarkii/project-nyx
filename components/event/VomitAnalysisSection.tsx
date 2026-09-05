@@ -21,6 +21,7 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
   triggerVomitAnalysis,
+  awaitAnalysisChain,
   watchAnalysisRow,
   saveVomitFieldEdits,
   deriveEditedFields,
@@ -131,12 +132,34 @@ export function VomitAnalysisSection(
       setRow(first);
       return;
     }
-    // No row yet, or a stale 'pending' — (re)trigger and watch.
+    // No row yet, or a stale 'pending'. CUL-801 — the LOG path may already own
+    // this event's first read (it claims before its upload starts), so await that
+    // chain rather than starting a second one: two invocations burn two units of
+    // the daily cap and race each other's write-back, and a second call that
+    // crosses the cap can write 'capped' over the first call's real read.
+    // awaitAnalysisChain resolves false when no chain is outstanding, and false
+    // when one settled WITHOUT ever invoking (its upload failed) — then, and only
+    // then, we trigger, so a suppressed trigger can never leave this incident
+    // with no read and no escalation.
     setRow(first ?? null);
     setWorking(true);
-    const { error } = await triggerVomitAnalysis(eventId);
+    const readAlreadyRunning = await awaitAnalysisChain(eventId);
+    if (!readAlreadyRunning) {
+      // The invoke is a SERVER-side side effect and must OUTLIVE this screen, so
+      // it is issued whether or not we are still mounted. Guarding it on
+      // `cancelled` here is what the adversarial pass broke: the wait can run for
+      // the whole upload, an owner who glances at the photo and taps back inside
+      // it would bail before the call, and a chain that then settled false (its
+      // upload failed) would leave the incident with NO read and no deterministic
+      // contextual escalation — the one outcome await-not-skip exists to prevent.
+      // Only the state writes and the watch below are guarded.
+      const { error } = await triggerVomitAnalysis(eventId);
+      if (error) console.warn('[vomit-analysis] trigger error:', error);
+    }
     if (cancelled.current) return;
-    if (error) console.warn('[vomit-analysis] trigger error:', error);
+    // Either way the realtime watch carries the result. Its fallback schedule
+    // starts HERE, after the chain settles, so a slow upload no longer eats the
+    // give-up budget.
     beginWatch();
   }, [eventId, fetchRow, beginWatch]);
 

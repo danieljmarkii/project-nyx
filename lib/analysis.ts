@@ -1,6 +1,114 @@
 import { supabase } from './supabase';
 import { syncPendingEvents, ensureEventAttachmentsSynced } from './sync';
 
+// ── One read per photo: the analysis-chain claim (CUL-801) ────────────────────
+//
+// Two independent paths trigger a per-incident read for the same event: the log
+// path (lib/simpleEvent.ts attachPhotoBestEffort — compress → upload → invoke)
+// and the incident screen's mount (VomitAnalysisSection / StoolAnalysisSection).
+// Before CUL-800 routed owners to that screen an immediate detail-open was rare;
+// with the route it is EVERY photographed incident. Two invocations are not a
+// harmless duplicate — the analyze-* functions upsert, so nothing corrupts, but:
+//   · each call increments the usage counter (incident-analysis.ts step 4), so a
+//     10/day cap is really 5 photographed incidents a day;
+//   · the two write-backs are last-writer-wins over two INDEPENDENT model runs,
+//     so the card can change under an owner who is already reading it;
+//   · worst, if the second call is the one that crosses the cap it takes the
+//     gated branch while the first call's read has not landed yet — so
+//     `existingRealAnalysis` is still false there and a 'capped' state is
+//     written OVER a good read of a photo that did land.
+//
+// The fix is a claim, held in memory for the life of the process and keyed by
+// event id: whoever starts a chain owns that event's first read, and anyone else
+// AWAITS it rather than starting a second one.
+//
+// WHY IN MEMORY, and not the `pending` row migration 013 originally described.
+// A persisted row would have to survive a process death to be worth writing, and
+// that is exactly when it becomes a trap: an app killed mid-upload would leave a
+// 'pending' row no chain is coming back for. The recovery today is that start()
+// finds NO row and triggers; a persisted claim would have to be distinguishable
+// from a stuck one to keep it, and nothing can make that distinction from the
+// row alone. An in-memory claim dies with the process, so the recovery survives
+// by construction — the claim can only ever suppress a trigger while the runtime
+// that owes the read is still alive to make it.
+//
+// (Migration 013's header says analysis rows are "created by the client on log
+// (status='pending')" and the column defaults to it. That was never built: every
+// write of `status` is the Edge Function's — completed / uncertain / capped /
+// read_disabled / failed — and no client inserts the row. The sections' "stale
+// pending → re-trigger" branch is therefore dead code against today's server, not
+// the live recovery an earlier draft of this comment claimed it was.)
+//
+// WHY AWAIT, and not skip-if-claimed. A chain can settle without ever invoking
+// (the upload threw, the attachment upsert errored). A skip would then leave the
+// incident with no read at all — no descriptive read AND no deterministic
+// escalation — which is the one outcome this must never produce.
+// `awaitAnalysisChain` resolves FALSE in exactly that case, and the caller
+// triggers its own read.
+//
+// WHAT THIS DOES NOT CLOSE, stated rather than left to be discovered. The claim
+// covers the window while a chain is RUNNING, not after it: a caller arriving
+// once a chain has settled gets false and decides for itself. Covering that is
+// the SECTION's job, not the claim's — start() reads the row first, and the Edge
+// Function writes its row before it responds, so by the time an invoke resolves
+// the row exists and start() returns on it. The residual is a section that
+// completes its read inside the milliseconds between that DB write and the
+// response landing; it degrades to exactly the pre-CUL-801 behaviour (one extra
+// call), never to anything worse, which is why it does not buy a settled-chain
+// cache — a cache with an expiry would also have to be prevented from swallowing
+// a legitimate retry after the watch gives up.
+
+export interface AnalysisChainClaim {
+  /** Release everyone awaiting this event's chain. `invoked` is true only when an
+   *  analyze-* call was actually made AND accepted; false means the chain died
+   *  before the read, so an awaiting caller must trigger one itself. Idempotent. */
+  settle: (invoked: boolean) => void;
+}
+
+interface ChainSlot {
+  promise: Promise<boolean>;
+  resolve: (invoked: boolean) => void;
+}
+
+const analysisChains = new Map<string, ChainSlot>();
+
+/** Claim this event's first read. Returns null when a chain is ALREADY claimed —
+ *  the caller does not own it and must not settle it (the owner will, and until
+ *  then `awaitAnalysisChain` holds anyone who asks). Nesting is therefore safe:
+ *  the log path claims before its upload, and the trigger it eventually calls
+ *  finds the claim taken and leaves the settle to its owner. */
+export function claimAnalysisChain(eventId: string): AnalysisChainClaim | null {
+  if (analysisChains.has(eventId)) return null;
+  let resolve!: (invoked: boolean) => void;
+  const promise = new Promise<boolean>((r) => { resolve = r; });
+  const slot: ChainSlot = { promise, resolve };
+  analysisChains.set(eventId, slot);
+  let settled = false;
+  return {
+    settle(invoked: boolean) {
+      if (settled) return;
+      settled = true;
+      // Identity-checked, not key-checked (the CUL-622 lesson): a settle arriving
+      // after the map moved on must never delete a NEWER chain's slot. Wiring
+      // rather than a live gate — the `settled` flag above already makes a second
+      // settle unreachable, so nothing in this API can exercise this comparison
+      // today (its test says so plainly rather than pretending to prove it). It
+      // stays because dropping the flag in a later refactor would make it live,
+      // and the failure it prevents is silent: an unclaimed key hands the next
+      // mount a second invoke.
+      if (analysisChains.get(eventId) === slot) analysisChains.delete(eventId);
+      resolve(invoked);
+    },
+  };
+}
+
+/** True once an outstanding chain for this event has made its analyze-* call.
+ *  False immediately when no chain is outstanding, and false when one settles
+ *  without ever invoking — both mean "no read is coming, trigger your own". */
+export function awaitAnalysisChain(eventId: string): Promise<boolean> {
+  return analysisChains.get(eventId)?.promise ?? Promise.resolve(false);
+}
+
 // Kicks off per-incident AI analysis for a vomit event (B-027). The
 // analyze-vomit Edge Function reads the event AND its photo from Supabase, so we
 // flush the event first (attachment rows FK to it), then force THIS event's
@@ -8,19 +116,35 @@ import { syncPendingEvents, ensureEventAttachmentsSynced } from './sync';
 // wrongly marked synced before the upsert-error fix (their files are already in
 // storage, only the row is missing). We AWAIT both so they've landed before the
 // function runs, otherwise it races the sync and reports "not enough to say" on
-// an event that clearly has a photo. Idempotent: the function upserts the
-// event_ai_analysis row keyed by event_id, so calling this twice (auto-on-log
-// and again on detail open / re-run) is safe.
+// an event that clearly has a photo. Idempotent in the sense that the function
+// upserts by event_id, so a second call CORRUPTS nothing — but it is not free
+// (CUL-801: a second call burns a second cap unit and races the first one's
+// write-back), so the claim above is what keeps it to one read per photo.
 export async function triggerVomitAnalysis(eventId: string): Promise<{ error: string | null }> {
+  // Claim the chain if nobody owns it yet (CUL-801), so a concurrent mount awaits
+  // this invoke instead of making a second one. A null claim means SOMEONE ELSE
+  // owns the chain and will settle it around this call — the log path, another
+  // section's mount, or the photo-add path. Note this does NOT gate the invoke:
+  // a direct call always invokes, which is what keeps the owner's explicit
+  // "Try analysis" working. Gating is the CALLER's job, by awaiting the chain
+  // first — and a caller that takes a null claim and then invokes anyway without
+  // awaiting is the double-invoke this whole module exists to stop.
+  const claim = claimAnalysisChain(eventId);
+  let invoked = false;
   try {
     await syncPendingEvents().catch(() => {});
     await ensureEventAttachmentsSynced(eventId).catch(() => {});
     const { error } = await supabase.functions.invoke('analyze-vomit', {
       body: { event_id: eventId },
     });
+    // A refused invoke is NOT a read: settle false so a waiter retries rather
+    // than watching for a row nothing is going to write.
+    invoked = !error;
     return { error: error ? error.message : null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    claim?.settle(invoked);
   }
 }
 
@@ -34,19 +158,33 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
 // server computes contextual escalation flags (repeated loose stool, concurrent
 // vomiting/lethargy) with no photo needed, and that escalation must run. A
 // photoless-and-no-flag read collapses to not_enough_to_say; the detail section
-// suppresses that dead result (B-363). Idempotent: the function upserts
-// event_ai_analysis keyed by event_id, so auto-on-log and a later detail-open
-// re-run are both safe.
+// suppresses that dead result (B-363). Same idempotence caveat as vomit: a second
+// call corrupts nothing but costs a cap unit and races the first (CUL-801).
 export async function triggerStoolAnalysis(eventId: string): Promise<{ error: string | null }> {
+  // Claim the chain if nobody owns it yet (CUL-801), so a concurrent mount awaits
+  // this invoke instead of making a second one. A null claim means SOMEONE ELSE
+  // owns the chain and will settle it around this call — the log path, another
+  // section's mount, or the photo-add path. Note this does NOT gate the invoke:
+  // a direct call always invokes, which is what keeps the owner's explicit
+  // "Try analysis" working. Gating is the CALLER's job, by awaiting the chain
+  // first — and a caller that takes a null claim and then invokes anyway without
+  // awaiting is the double-invoke this whole module exists to stop.
+  const claim = claimAnalysisChain(eventId);
+  let invoked = false;
   try {
     await syncPendingEvents().catch(() => {});
     await ensureEventAttachmentsSynced(eventId).catch(() => {});
     const { error } = await supabase.functions.invoke('analyze-stool', {
       body: { event_id: eventId },
     });
+    // A refused invoke is NOT a read: settle false so a waiter retries rather
+    // than watching for a row nothing is going to write.
+    invoked = !error;
     return { error: error ? error.message : null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    claim?.settle(invoked);
   }
 }
 
