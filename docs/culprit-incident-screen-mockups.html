@@ -4,7 +4,7 @@
 <style>
   /* ============================================================
      The incident screen — post-log routing + the AI read's arrival.
-     Mock ROUND 1 (directions, not yet build-ready).
+     Mock ROUND 2 (BUILD-READY — D1–D4 PM-ruled 2026-09-05). Round 1 was the directions pass; its frames stay below, annotated.
      Current-proposal page. Republish to the SAME artifact URL from here;
      git is the history. Absorbs CUL-158 (B-029, per-incident AI
      detail-screen design polish).
@@ -48,10 +48,13 @@
   h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
   .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
   .standfirst strong { color: var(--ink); font-weight: 600; }
+  .revnew { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .revnew b { color: var(--ink); }
   .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
   section { margin-top: 72px; }
   .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
   .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 .roundtag { vertical-align: middle; margin-left: 10px; font-family: var(--mono); }
   h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
   h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
   p { margin: 0 0 16px; }
@@ -215,14 +218,27 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span>Culprit · the incident screen</span><span>CUL-158 absorbed</span><span>2026-09-05</span><span class="roundtag">Round 1 · directions</span></p>
+    <p class="eyebrow"><span>Culprit · the incident screen</span><span>CUL-158 absorbed</span><span>2026-09-05</span><span class="roundtag">Round 2 · build-ready</span></p>
     <h1>Where a logged vomit lands, and how the read arrives</h1>
-    <p class="standfirst">Today a photographed vomit ends on Home under the black card, and the one surface that holds the AI read is never shown. This round mocks <strong>three routing directions</strong>, <strong>two shapes for the incident screen</strong>, and the <strong>arrival</strong> of the read as a motion moment, drawn with the same physics as the Signal fold. Every frame renders the shipping light surfaces with the real tokens.</p>
+    <p class="standfirst">Today a photographed vomit ends on Home under the black card, and the one surface that holds the AI read is never shown. Round 1 mocked three routing directions, two shapes for the incident screen, and the read's <strong>arrival</strong> as a motion moment. <strong>Round 2 is the build-ready pass:</strong> the PM ruled all four briefs on 2026-09-05, the ruled frames are drawn in full below, and the round-1 alternatives stay as the deliberation record. Every frame renders the shipping light surfaces with the real tokens.</p>
+    <div class="revnew"><b>Ruled 2026-09-05 (§0).</b> D1 land on the record · D2 photographed vomit + stool only · D3 <b>the photo stays the hero</b> (overrides the round-1 recommendation: an owner must be able to pull a vomit up and show a vet) · D4 the rail-led arrival. Build: CUL-802 (route) → PR 2 (screen) → PR 3 (arrival), spec <code>docs/nyx-incident-screen-requirements.md</code>. Round 2 supersedes round 1 on this URL.</div>
   </header>
 
-  <!-- ───────────────────────── 0 · Today ───────────────────────── -->
+  <!-- ───────────────────────── §0 · Decision record ───────────────────────── -->
+  <section id="decisions">
+    <div class="sec-head"><span class="sec-num">§0</span><h2>Decision record</h2></div>
+    <div class="tablewrap"><table class="spec">
+      <tr><th>#</th><th>Decision</th><th>Ruling (PM, 2026-09-05)</th><th>What it binds</th></tr>
+      <tr><td>D1</td><td>Where a photographed vomit lands after Save</td><td><strong>R1 — land on the record.</strong> The log modal is replaced by <code>/event/[id]</code>; the named card lands over it; Back is one tap to Home.</td><td>CUL-802. Resolves the Designer's Principle-1 dissent by scope (D2), not by tie-break: the record is the confirmation.</td></tr>
+      <tr><td>D2</td><td>Which logs take the route</td><td><strong>The logs with an AI read: vomit and stool, when a photo was attached.</strong> "The logs where the owner should see the incident screen — just vomit and stool now."</td><td>A photoless vomit/stool and every other type keep the shipped path, byte-identical. A photoless contextual escalation is the Signal's acute card's job.</td></tr>
+      <tr><td>D3</td><td>Photo as hero or tile</td><td><strong>Keep the hero.</strong> "I want the pet owner to be able to pull up a vomit and show it to a vet." Overrides round 1's S-B recommendation.</td><td>PR 2 builds S-A: hero unchanged, the read moves up under the record. Adds the viewer caption (V1) so the vet also sees <em>when</em>.</td></tr>
+      <tr><td>D4</td><td>How the read arrives</td><td><strong>The rail-led arrival, the fold's physics.</strong> "Let's absolutely go with the motion arrival moment."</td><td>PR 3, after CUL-788 so the motion module is shared. No haptic on any verdict.</td></tr>
+    </table></div>
+  </section>
+
+  <!-- ───────────────────────── 1 · Today ───────────────────────── -->
   <section id="today">
-    <div class="sec-head"><span class="sec-num">§0</span><h2>What ships today, and what the owner never sees</h2></div>
+    <div class="sec-head"><span class="sec-num">§1</span><h2>What ships today, and what the owner never sees</h2></div>
     <div class="col">
       <p>The log modal saves, calls <code>router.back()</code>, and the named card lands over Home for five seconds with Undo and Change time. The photo's read is kicked off in the background (compress, upload, then the vision call) and lands in <code>event_ai_analysis</code> some seconds later. Nothing routes to the incident screen. The read is reachable only through History, a row tap, and a scroll, which is why the differentiator is invisible to the person who just took the photo.</p>
     </div>
@@ -274,12 +290,12 @@
 
   <!-- ───────────────────────── 1 · Routing ───────────────────────── -->
   <section id="routing">
-    <div class="sec-head"><span class="sec-num">§1</span><h2>Three routing directions</h2></div>
+    <div class="sec-head"><span class="sec-num">§2</span><h2>Three routing directions <span class="roundtag">D1 ruled · R1</span></h2></div>
     <div class="col">
       <p>The constraint on every direction is Principle 1. The quick-log page of the design principles says the confirmation is <em>"a brief completion state, then back to home"</em>, and the 2am test is one hand, in the dark, under ten seconds. So a direction is honest only if it adds nothing to the log itself and takes the owner somewhere <strong>only when there is something to show</strong>. A photoless vomit has no read; routing it to a screen with an empty photo hero would be a punishment for not taking a photo.</p>
     </div>
 
-    <h3>R1 · Land on the record</h3>
+    <h3>R1 · Land on the record <span class="annot ok">ruled — D1</span></h3>
     <div class="col"><p>After Save, the modal is <em>replaced</em> by the incident screen rather than dismissed, so the owner arrives on the record with the photo they just took and the read pending. The named card still lands, now over the incident screen, so Undo and Change time survive the move. Back is one tap to Home. Scope: photographed vomit and stool only.</p></div>
     <div class="frames">
       <div class="frame-slot">
@@ -323,7 +339,7 @@
       </div>
     </div>
 
-    <h3>R2 · The card carries the read</h3>
+    <h3>R2 · The card carries the read <span class="annot">not taken — D1</span></h3>
     <div class="col"><p>Stay on Home. The named card grows a third line while the photo is being read, and when the read lands the line becomes the verdict with an <em>Open</em> that goes to the record. The dwell holds while pending, bounded at 20s, then dismisses whatever the state. Principle 1 stays intact; the cost is safety prose on a self-dismissing surface, the exact thing the dose card's fade rule forbids.</p></div>
     <div class="frames">
       <div class="frame-slot">
@@ -365,7 +381,7 @@
       </div>
     </div>
 
-    <h3>R3 · Nothing changes on the log; the record comes to you</h3>
+    <h3>R3 · Nothing changes on the log; the record comes to you <span class="annot">not taken — D1</span></h3>
     <div class="col"><p>Stay on Home and keep the card exactly as shipped. When the read lands, only an escalation surfaces: a strip above Today, rose-bordered, that does not auto-dismiss and opens the record. A <em>Keep an eye out</em> or <em>Not enough to say</em> surfaces nothing on Home. The never-reassure rule makes this honest: a non-escalating read has nothing urgent to say, so it does not chase the owner.</p></div>
     <div class="frames">
       <div class="frame-slot">
@@ -388,31 +404,31 @@
       <p><strong>Designer:</strong> Principle 1 ends the log on Home. R1 adds a screen the owner has to leave. At 2am that is a tax.</p>
       <p><strong>PM, Dr. Chen:</strong> The read is the differentiator and, when it escalates, the one sentence the owner must see. Today it is three taps deep and nobody reads it.</p>
       <p><strong>Jordan:</strong> If the app is about to tell me something about the thing I just photographed, I will wait eight seconds. If it is going to spin for a minute, I will not.</p>
-      <p><strong>Resolution proposed, not ruled:</strong> R1 scoped to the photographed vomit and stool, because that is the only log with a read to show, and the record already IS the confirmation. The escalation-after-you-left case is not R1's to solve: the Signal's acute card already exists for it. Verify it fires from the per-incident row at <code>generate-signal/detection.ts</code> before relying on it.</p>
+      <p><strong>Resolution — ruled by the PM as D1 + D2 (2026-09-05):</strong> R1 scoped to the photographed vomit and stool, because that is the only log with a read to show, and the record already IS the confirmation. The escalation-after-you-left case is not R1's to solve: the Signal's acute card already exists for it. Verify it fires from the per-incident row at <code>generate-signal/detection.ts</code> before relying on it.</p>
     </div>
 
     <div class="brief">
       <p class="bid">R-1 · Where does a photographed vomit land?</p>
       <p><strong>Deciding:</strong> the screen the owner is on when the read arrives, and whether the completion card moves with them.</p>
-      <p><strong>Options:</strong> <span class="rec">R1 Land on the record (recommended)</span> because the read arrives where the photo is, Undo rides along, and Back is one tap · R2 the card carries the read, cheaper but puts safety prose on a fading surface · R3 escalation strip only, honest but duplicates the Signal's acute card · keep as is.</p>
-      <p><strong>Consequence:</strong> R1 is a routing change in <code>app/log.tsx</code> and the beta sheet, plus a route-aware bottom offset on the card. R2 and R3 are new card and Home states with their own safety review.</p>
+      <p><strong>Ruled:</strong> <span class="rec">R1, land on the record</span> (PM, 2026-09-05, D1). Not taken: R2 the card carries the read (safety prose on a fading surface) · R3 escalation strip only (duplicates the Signal's acute card).</p>
+      <p><strong>Consequence:</strong> CUL-802: a routing change in <code>app/log.tsx</code> and the beta sheet, plus a route-aware bottom offset on the card. Blocked by CUL-801 (the trigger race).</p>
     </div>
     <div class="brief">
       <p class="bid">R-2 · Which logs take the new route?</p>
       <p><strong>Deciding:</strong> the scope of the landing.</p>
-      <p><strong>Options:</strong> <span class="rec">photographed vomit and stool only (recommended)</span>, the two types with a read · every symptom log, which routes a photoless vomit to an empty hero · every photographed event, which routes a meal photo nowhere useful.</p>
+      <p><strong>Ruled:</strong> <span class="rec">the logs with an AI read — photographed vomit and stool</span> (PM, 2026-09-05, D2). Not taken: every symptom log (a photoless vomit would land on an empty hero) · every photographed event.</p>
       <p><strong>Consequence:</strong> the narrow scope keeps every other log on the shipped Principle 1 path, byte-identical.</p>
     </div>
   </section>
 
   <!-- ───────────────────────── 2 · The screen ───────────────────────── -->
   <section id="screen">
-    <div class="sec-head"><span class="sec-num">§2</span><h2>Two shapes for the incident screen</h2></div>
+    <div class="sec-head"><span class="sec-num">§3</span><h2>The incident screen <span class="roundtag">D3 ruled · S-A, hero kept</span></h2></div>
     <div class="col">
       <p>Once the route lands here, the screen has to earn it. Both shapes keep the record in daylight (the D8 rule), keep the verdict copy verbatim from the shipped enum, and keep the read dismissible and never editable while the observations stay editable. What changes is <strong>what leads</strong>.</p>
     </div>
 
-    <h3>S-A · The read leads, the photo stays the hero</h3>
+    <h3>S-A · The read leads, the photo stays the hero <span class="annot ok">ruled — D3</span></h3>
     <div class="col"><p>The shipped order, tightened. The read moves up under the record with a rail, rose when it escalates, quiet otherwise, and the observations become a compact two-column grid that folds to a strip once seen. The photo stays full-width because it is what the owner just took and how they confirm this is the right incident.</p></div>
     <div class="frames">
       <div class="frame-slot">
@@ -434,7 +450,7 @@
       </div>
     </div>
 
-    <h3>S-B · The photo steps back</h3>
+    <h3>S-B · The photo steps back <span class="annot">not taken — D3</span></h3>
     <div class="col"><p>Sam's point: nobody wants to look at a vomit photo full-bleed at 8am. Here the photo is a 64pt tile beside the record header, tap for the viewer, and the read takes the hero position. The owner still confirms the incident from the tile; the screen is about what the app made of it, not the thing itself. Photoless incidents keep the tap-to-add hero, unchanged.</p></div>
     <div class="frames">
       <div class="frame-slot">
@@ -457,17 +473,89 @@
       </div>
     </div>
 
+
+    <h3>Round 2 · the frames the build needs</h3>
+    <div class="col"><p>Three frames round 1 did not draw: the stool sibling on the same layout, Undo taken from the card while it sits over the record, and the full-screen viewer with the caption that lets a vet read <em>when</em> as well as <em>what</em> (the D3 rationale, finished).</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Diarrhea</div>
+            <div class="dscroll">
+              <div class="hero" style="background: linear-gradient(135deg, #CFC6B8 0%, #B9AE9C 55%, #A99C88 100%);"></div>
+              <div class="rec"><div class="typ">Diarrhea</div><div class="date">Today</div><div class="time">7:40 AM · 2 min ago</div><div class="who">Biscuit's record</div></div>
+              <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">This is the third loose stool in two days, and there was a vomit overnight. Together that is worth a call to your vet today.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div><div class="hide"><span>Hide this note</span></div></div></div></div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Consistency</small>Liquid</div><div class="okv"><small>Colour</small>Tan</div><div class="okv"><small>Blood</small>None visible</div><div class="okv"><small>Mucus</small>Some</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>S-A2 · Stool sibling, contextual escalation</b>Same layout, same rail. The escalation here came from context (repeat + concurrent vomit), not the photo, and the read text says so: the floor forces <em>Worth a call</em> and the model cannot downgrade it.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · just now</div><div class="who">Biscuit's record</div></div>
+              <div class="sect"><div class="seclabel">AI read</div><div class="pending"><div class="rail quiet" style="height:16px;width:3px;border-radius:2px;background:#C9C9C9"></div><div class="whorl"></div>Reading the photo…</div></div>
+            </div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ncard over-screen">
+            <div class="row"><div class="chk">✓</div><div><div class="ttl">Vomit · 2:14 AM</div><div class="sub">Saved to Biscuit's record</div></div></div>
+            <div class="acts"><span style="text-decoration:underline">Undo</span><span>Change time</span></div>
+          </div>
+          <span class="annot ok" style="position:absolute;left:18px;bottom:18px">Undo confirms first: the photo is named</span>
+        </div>
+        <p class="frame-cap"><b>U1 · Undo, from over the record</b>A photo-bearing record's Undo confirms and names the photo (CUL-645), as shipped. On confirm the reversal runs, the screen underneath is a deleted row, so the screen dismisses…</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Biscuit <span>Fri, Sep 5</span></div></div>
+            <div class="acard"><div class="seclabel">Signal</div><div class="irow"><div class="rail insight"></div><div class="ibody"><p class="lead">Chicken days and next-day vomiting keep lining up.</p><div class="samp">6 of 9 vomit days · 8 weeks</div></div></div></div>
+            <div class="acard"><div class="seclabel">Today</div><div class="today"><div class="trow"><span class="glyph meal">●</span>Dinner · Farmina lamb<span class="t">Yesterday 7:05 PM</span></div></div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Biscuit</span></div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ncard over-tabs">
+            <div class="row"><div><div class="ttl">Removed</div><div class="sub">Taken out of Biscuit's record</div></div></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>U2 · …and the Removed line lands on Home</b>The quiet line, no mark, as shipped. The in-flight read is orphaned by the soft delete; the analyze function's row is never shown for a deleted event.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone" style="background:#0B0B12;">
+          <div class="notch"></div>
+          <div class="screen" style="justify-content:center;">
+            <div class="hero" style="height:300px;border-radius:6px;"></div>
+            <div style="color:#FFFFFF;font-size:13px;font-weight:600;padding:12px 4px 0;">Biscuit · Vomit</div>
+            <div style="color:rgba(255,255,255,0.7);font-size:12px;padding:2px 4px 0;font-variant-numeric:tabular-nums;">Friday, Sep 5 · 2:14 AM · witnessed</div>
+            <div style="color:rgba(255,255,255,0.45);font-size:10.5px;padding:2px 4px 0;">Found-not-witnessed renders its window here, never a point.</div>
+            <div style="position:absolute;top:44px;right:22px;color:#FFFFFF;font-size:18px;">✕</div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>V1 · The viewer, captioned</b>Tap the hero and the vet sees the photo with pet, event, date and time under it, derived through the same <code>describeOccurredAt</code> path the card and History use. The one place a dark ground is right: a photo viewer.</p>
+      </div>
+    </div>
+
     <div class="brief">
       <p class="bid">R-3 · Photo as hero, or as a tile?</p>
       <p><strong>Deciding:</strong> what the owner sees first on the record of a photographed incident.</p>
-      <p><strong>Options:</strong> <span class="rec">S-B tile (recommended)</span> because the read is the reason to be here and the photo is evidence, one tap away at full size · S-A hero, the shipped shape with the read moved up.</p>
-      <p><strong>Consequence:</strong> S-B changes the header composition for every photographed event type; S-A is a reorder inside the existing tree.</p>
+      <p><strong>Ruled:</strong> <span class="rec">S-A, keep the hero</span> (PM, 2026-09-05, D3): "I want the pet owner to be able to pull up a vomit and show it to a vet." The round-1 recommendation (S-B tile) is overridden and stays below as the record. Round 2 adds the viewer caption (V1) so the vet also sees when.</p>
+      <p><strong>Consequence:</strong> PR 2 is a reorder inside the existing tree plus the rail, the grid, the fold, and the caption. The tile composition is not built.</p>
     </div>
   </section>
 
   <!-- ───────────────────────── 3 · Arrival ───────────────────────── -->
   <section id="arrival" class="demo">
-    <div class="sec-head"><span class="sec-num">§3</span><h2>The arrival, drawn with the fold's physics</h2></div>
+    <div class="sec-head"><span class="sec-num">§4</span><h2>The arrival, drawn with the fold's physics <span class="roundtag">D4 ruled</span></h2></div>
     <div class="col">
       <p>The design principles allow exactly one considered animation: <em>the transition from "building your picture" to a real insight should feel like something arrived.</em> The per-incident read is that class of moment, one incident down. So the arrival borrows the fold's rule, <strong>the rail is the continuous thread</strong>: the pending line is a 16pt tick of rail beside the whorl; when the read lands, the rail grows first, the box opens around it with one felt settle, and the sentence lands a beat after the box. Nothing is added that was not already there; the line the owner watched while waiting is the line beside the verdict.</p>
       <p>Same physics on every verdict. A <em>Worth a call</em> does not arrive harder or louder; it arrives on a rose rail with no haptic, because silence on safety is structural. Reduced motion is a crossfade. App blur finishes the arrival, never pauses it.</p>
@@ -479,7 +567,8 @@
           <div class="screen">
             <div class="dhead"><span class="bk">‹</span>Vomit</div>
             <div class="dscroll">
-              <div class="rechead"><div class="hero tile"></div><div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · just now</div><div class="who">Biscuit's record</div></div></div>
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · just now</div><div class="who">Biscuit's record</div></div>
               <div class="arrive" id="arrive">
                 <div class="pendingband readcard neutral" style="max-height:none;padding:12px 12px 10px"><div class="rrow"><div class="rail quiet" style="height:16px;align-self:center"></div><div class="pending" style="padding:0"><div class="whorl"></div>Reading the photo…</div></div></div>
                 <div class="readcard neutral"><div class="rrow"><div class="rail quiet"></div><div class="ibody rbody"><div class="verdict">Keep an eye out</div><div class="readtext">Yellow, foamy, mostly bile. Nothing in this photo on its own stands out. If it happens again today, or Biscuit skips a meal, that's the moment to call.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div></div></div></div>
@@ -494,7 +583,7 @@
           </div>
         </div>
         <div class="btnrow"><button class="btn" id="play" type="button">Play the arrival</button><button class="btn" id="reset" type="button">Reset</button></div>
-        <p class="frame-cap"><b>Live · tap Play, then fold the observations</b>The rail leads, the box follows with a settle, the sentence lands last. The observations fold to a strip that names the findings and the count, and re-opens from the strip.</p>
+        <p class="frame-cap"><b>Live · tap Play, then fold the observations</b>Round 2: drawn on the ruled S-A layout (hero kept). The rail leads, the box follows with a settle, the sentence lands last. The observations fold to a strip that names the findings and the count, and re-opens from the strip.</p>
       </div>
     </div>
     <div class="beats">
@@ -506,14 +595,14 @@
     <div class="brief">
       <p class="bid">R-4 · How does the read arrive?</p>
       <p><strong>Deciding:</strong> whether the arrival is a motion moment or a swap.</p>
-      <p><strong>Options:</strong> <span class="rec">rail-led arrival, fold physics (recommended)</span> because it reuses <code>foldMotion.ts</code>'s constants and its two-engine split, so it costs one component, not a new vocabulary · crossfade only, the reduced-motion frame as the default.</p>
-      <p><strong>Consequence:</strong> the recommended path lifts the fold's motion hook into a shared <code>components/motion/</code> home, which the fold PR 3 (CUL-788) is about to land; sequence after it.</p>
+      <p><strong>Ruled:</strong> <span class="rec">the rail-led arrival, fold physics</span> (PM, 2026-09-05, D4). It reuses <code>foldMotion.ts</code>'s constants and its two-engine split, so it costs one component, not a new vocabulary. Crossfade stays as the reduced-motion frame only.</p>
+      <p><strong>Consequence:</strong> PR 3 lifts the fold's motion hook into a shared <code>components/motion/</code> home, which the fold PR 3 (CUL-788) is about to land; sequence after it.</p>
     </div>
   </section>
 
   <!-- ───────────────────────── 4 · States the route must survive ───────────────────────── -->
   <section id="states">
-    <div class="sec-head"><span class="sec-num">§4</span><h2>The states the landing has to survive</h2></div>
+    <div class="sec-head"><span class="sec-num">§5</span><h2>The states the landing has to survive</h2></div>
     <div class="col"><p>Routing to a screen that is waiting on a server means the screen must be honest about every way that wait ends. These are all already states of <code>VomitAnalysisSection</code>; the route just makes them visible on arrival instead of on a later visit.</p></div>
     <div class="tablewrap"><table class="spec">
       <tr><th>State</th><th>What the owner sees on arrival</th><th>Rule it honours</th></tr>
@@ -530,21 +619,22 @@
 
   <!-- ───────────────────────── 5 · Build shape ───────────────────────── -->
   <section id="build">
-    <div class="sec-head"><span class="sec-num">§5</span><h2>Build shape, if R1 + S-B + the arrival are ratified</h2></div>
+    <div class="sec-head"><span class="sec-num">§6</span><h2>Build shape (ruled)</h2></div>
     <div class="col">
       <ul class="tight">
-        <li><strong>PR 1 · the route.</strong> <code>app/log.tsx</code> and the beta sheet: for a photographed vomit or stool, replace the modal with <code>/event/[id]</code> instead of <code>router.back()</code>; the named card keeps firing, with a route-aware bottom offset. Everything else byte-identical. Snapshot pins the non-photographed paths.</li>
-        <li><strong>PR 2 · the screen.</strong> The header composition (tile + record + "Biscuit's record", which lands CUL-660 on the way), the read moved up with its rail, the observations grid and fold. Static; no motion yet.</li>
-        <li><strong>PR 3 · the arrival.</strong> The rail-led arrival on both analysis sections, sharing the fold's motion module after CUL-788 lands. Reduced-motion crossfade, blur completion, snapshot proves no node is added when idle.</li>
-        <li><strong>Own issue · the trigger race</strong> from §4, because it is a correctness fix the route makes urgent rather than a design change.</li>
+        <li><strong>CUL-801 first · the trigger race.</strong> A correctness fix the route makes urgent: on arrival the detail-mount trigger must not fire a second analyze call before the photo has landed.</li>
+        <li><strong>PR 1 · the route (CUL-802).</strong> <code>app/log.tsx</code> and the beta sheet: a photographed vomit or stool replaces the modal with <code>/event/[id]</code>; the named card still fires, with a route-aware bottom offset; Undo from over the record dismisses the screen and lands the Removed line on Home. Every other path byte-identical, snapshot-pinned.</li>
+        <li><strong>PR 2 · the screen.</strong> Hero kept (D3); the read moves up under the record with its rail; "{pet}'s record" on the record block (lands CUL-660); the observations grid and its fold; the viewer caption (V1). Static.</li>
+        <li><strong>PR 3 · the arrival.</strong> The rail-led arrival on both analysis sections, sharing the fold's motion module after CUL-788 lands. Reduced-motion crossfade, blur completion, no haptic, snapshot proves no node is added when idle.</li>
       </ul>
+      <p>Spec: <code>docs/nyx-incident-screen-requirements.md</code> v1.0. Parent issue: CUL-800.</p>
     </div>
   </section>
 
   <section id="react">
-    <div class="sec-head"><span class="sec-num">§6</span><h2>React</h2></div>
+    <div class="sec-head"><span class="sec-num">§7</span><h2>React</h2></div>
     <div class="col">
-      <p>Four briefs above: R-1 routing, R-2 scope, R-3 photo, R-4 arrival. A ruling on R-1 unblocks PR 1 alone; R-3 and R-4 gate PRs 2 and 3. If the whole set is ratified as recommended, round 2 is the build-ready pass: frames for the stool sibling, the Undo-from-the-record flow, and the tile's photoless state.</p>
+      <p>All four briefs are ruled (§0). What round 2 asks of the PM is a read of the four new frames (S-A2, U1, U2, V1) for anything that reads wrong; silence is a go. The one open detail is V1's third line for a found-not-witnessed time: the window ("found by 5:33 PM"), as the card and History already say it, is the proposal.</p>
     </div>
   </section>
 </div>
