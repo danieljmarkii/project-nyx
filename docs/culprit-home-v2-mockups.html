@@ -3,12 +3,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
 <style>
   /* ============================================================
-     Home v2 — the redesign. Mock ROUND 2 — "the record drawn".
+     Home v2 — the redesign. Mock ROUND 3 — "the instrument that expands".
      Current-proposal page for the Home v2 project (CUL-808 discovery,
      CUL-809 round 1, CUL-810 the briefs). Round 2 supersedes round 1 in
      place (same URL, same <title>, same favicon): the PM's seven reactions
-     are the ledger below; round 1's five directions are kept in git
-     (commit 13a06b5) and summarised in §06, not redrawn.
+     are the ledger below; rounds 1 and 2 are kept in git (13a06b5, 62a5feb)
+     and summarised in §08, not redrawn.
      Design authorities that bind the frames: nyx-signal-home-requirements
      (S1–S10, the Change Contract, receipt shapes A/C), nyx-signal-fold-
      requirements (the shipped fold), app-polish (chrome — the FAB is
@@ -285,57 +285,216 @@
   @media (prefers-reduced-motion: reduce) { .whorl.on circle { animation: none !important; } }
   @media (max-width: 720px) { .veto { columns: 1; } .ledger div { grid-template-columns: 1fr; gap: 4px; } .frame-slot.wide { width: 100%; } }
 </style>
+<style>
+  /* ── Round 3 additions ───────────────────────────────────── */
+  .xinstr { position: relative; overflow: hidden; transition: height 380ms cubic-bezier(.3,1.18,.5,1); }
+  .xinstr .grain { position: absolute; left: 0; right: 0; top: 0; opacity: 0; transition: opacity 200ms; pointer-events: none; }
+  .xinstr .grain.on { opacity: 1; pointer-events: auto; }
+  .xinstr[data-g="0"] { height: 92px; } .xinstr[data-g="1"] { height: 196px; } .xinstr[data-g="2"] { height: 236px; }
+  .grainbar { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  .grainbar .g { font-size: 10.5px; font-weight: 600; color: #737373; border: 1px solid #EAEAEA; border-radius: 999px; padding: 3px 9px; background: #FFF; cursor: pointer; font-family: inherit; }
+  .grainbar .g.on { color: #0B7B6C; background: #E0FBF7; border-color: rgba(11,123,108,0.3); }
+  .grainbar .hint { margin-left: auto; font-size: 9.5px; color: #A3A3A3; }
+  .rm .xinstr { transition: none !important; }
+  .fullask { background: #FFFFFF; border-radius: 22px; padding: 10px 14px 12px; min-height: 520px; display: flex; flex-direction: column; gap: 10px; margin: -4px -12px -14px; }
+  .fullask .top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #525252; }
+  .fullask .top b { font-weight: 600; color: #0A0A0A; }
+  .fullask .thread { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  .fullask .qb { align-self: flex-end; }
+  .fullask .comp { border: 1px solid #E5E5E5; border-radius: 12px; padding: 8px 10px; font-size: 12.5px; color: #8B8B8B; display: flex; align-items: center; gap: 8px; }
+  .arr { display: grid; gap: 0; }
+  .arr .it { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-top: 1px solid #EAEAEA; font-size: 12.5px; }
+  .arr .it:first-child { border-top: 0; }
+  .arr .h { color: #C9C9C9; font-size: 14px; width: 12px; }
+  .arr .lab { flex: 1; }
+  .arr .lab small { display: block; font-size: 10px; color: #737373; }
+  .arr .tg { width: 30px; height: 18px; border-radius: 999px; background: #00C2A8; position: relative; flex-shrink: 0; }
+  .arr .tg::after { content: ""; position: absolute; right: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #FFF; }
+  .arr .tg.off { background: #D4D4D4; } .arr .tg.off::after { right: auto; left: 2px; }
+  .arr .pin { font-size: 9px; font-weight: 600; letter-spacing: 0.08em; color: #737373; background: #F5F5F5; border-radius: 4px; padding: 2px 5px; }
+  .names { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 18px; }
+  .name { border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 16px; font-size: 13.5px; color: var(--ink-2); }
+  .name .w { font-family: var(--serif); font-size: 22px; color: var(--ink); margin: 0 0 6px; }
+  .name .strs { display: grid; gap: 4px; font-size: 12.5px; margin: 6px 0 8px; }
+  .name .strs span { display: block; }
+  .name .strs b { color: var(--ink); font-weight: 500; }
+  .name .verdict { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+  .name.rec { border-color: var(--teal); }
+  .name.rec .verdict { color: var(--teal-ink); }
+  .hs { overflow: hidden; position: relative; }
+  .hs .inner { width: 190%; }
+  .hs .edge { position: absolute; left: 0; top: 0; bottom: 0; width: 28px; background: linear-gradient(90deg, #FFFFFF, rgba(255,255,255,0)); pointer-events: none; }
+  .hs .edgelab { position: absolute; left: 4px; top: 2px; font-size: 9px; color: #737373; }
+</style>
 <div class="wrap">
   <header class="mast">
     <p class="eyebrow">
-      <span class="roundtag">Round 2 — the record drawn</span>
+      <span class="roundtag">Round 3 — the instrument that expands</span>
       <span>Home v2 · the redesign · 2026-09-05</span>
       <span>Project Home v2 — the redesign · CUL-808 · CUL-810 the briefs</span>
     </p>
-    <h1>The record, drawn — and an Ask worth opening</h1>
+    <h1>One instrument, three grains — and a record you can tell</h1>
     <p class="standfirst">
-      Round 1 answered the staleness complaint with words. You said: charts and data over text, the dot lane is the
-      reference, Signals keeps its name, the FAB is untouched, and if Ask is on Home it must be unmistakably AI,
-      delightful, and sized for more than a line. Round 2 seats <strong>three consultants</strong> beside the Designer —
-      a data-visualization designer, a motion and haptics designer, an AI-product designer — and draws three Homes
-      that differ in <em>kind</em>, one tappable Ask moment, and the three charts at build detail. Every frame is still
-      Nyx at 7:05am on the real record.
+      Round 2 drew the record at three grains as three separate Homes. You loved the <strong>Day Instrument</strong> with
+      yesterday beneath it, found the Long Lane chaotic, and asked whether the condensed lane could <em>expand</em> into it.
+      That is round 3's spine: one instrument that opens from today, to the week, to the season, on one gesture. Around
+      it: the Ask door moved to the top, the sheet grown to full screen, the trial calendar's early days, a season strip
+      that scrolls across time, logging returned to the FAB as a question rather than a change, an <em>Arrange Home</em>
+      sheet for "build your own home", and a name workshop for a surface that now takes notes as well as questions.
     </p>
     <div class="revnew">
-      <b>Round 2 supersedes round 1 in place</b> (same URL). Round 1's five directions live in git (<code>13a06b5</code>) and are
-      summarised in <a href="#round1">§06</a>. Read: <a href="#directions">§01</a> three drawn Homes ·
-      <a href="#ask">§02</a> the Ask moment, tap it ·
-      <a href="#charts">§03</a> the charts, at build detail ·
-      <a href="#briefs">§04</a> the briefs, re-asked ·
-      <a href="#table">§05</a> who was at the table.
+      <b>Round 3 supersedes round 2 in place</b> (same URL; round 2 is in git at <code>62a5feb</code>, round 1 at <code>13a06b5</code>; both summarised in <a href="#record">§08</a>).
+      Read: <a href="#instrument">§01</a> the instrument, tap it ·
+      <a href="#home">§02</a> the Home it sits in, with the door at the top ·
+      <a href="#sheet">§03</a> the sheet that grows to full screen ·
+      <a href="#trial">§04</a> the trial calendar early, and the strip across time ·
+      <a href="#arrange">§05</a> Arrange Home ·
+      <a href="#name">§06</a> the name ·
+      <a href="#briefs">§07</a> the briefs.
     </div>
     <div class="ledger" id="ledger">
-      <div><b>R1</b><span><span class="ruled">ruled</span>&nbsp; "Signals is still a core component. Lets not rename that section to 'standing'." — Signals keeps its name in every frame.</span></div>
-      <div><b>R2</b><span><span class="ruled open">not sold</span>&nbsp; "Since you last looked.. not sure if im sold." — parked; nothing here leads with a sentence about the last open.</span></div>
-      <div><b>R3</b><span><span class="ruled">ruled</span>&nbsp; "FAB. I love the fab experience. Lets not touch that w this work." — untouched; no composer sits near it, no second create door.</span></div>
-      <div><b>R4</b><span><span class="ruled open">not sold</span>&nbsp; "The briefing… Using ask should be a delightful experience." — the briefing is gone; the delight budget went to Ask (§02).</span></div>
-      <div><b>R5</b><span><span class="ruled dir">direction</span>&nbsp; "I absolutely love showing beautifully designed charts and data over text. The dots under 'today' showing the days timeline is amazing." — the dot lane grows into three grains (§01, §03).</span></div>
-      <div><b>R6</b><span><span class="ruled dir">direction</span>&nbsp; "make sure a user knows its AI, beautifully designed… motion and haptics" — the signature is a continuity, not an icon (§02).</span></div>
-      <div><b>R7</b><span><span class="ruled dir">direction</span>&nbsp; "the single line input row feels.. small.. optimize for… a paragraph" — a two-line door on Home, a composer sheet that grows to eight lines (§02, §03).</span></div>
+      <div><b>R2·1</b><span><span class="ruled">kept</span>&nbsp; "love the day instrument that also shows yesterday." — it is the hero of every frame here.</span></div>
+      <div><b>R2·2</b><span><span class="ruled dir">direction</span>&nbsp; "I dont know if i love the long lane. It reads a bit.. chaotic… I wonder if we could take an approach of allowing the condensed lane to expand into the long lane." — §01.</span></div>
+      <div><b>R2·3</b><span><span class="ruled open">brief</span>&nbsp; "The log cerenia dose.. not sure. I feel like all logging should just go through fab" — the med strip's one-tap is a shipped ruling (B-614 D1); drawn without it in §02, re-ruled in DC-4, not changed silently.</span></div>
+      <div><b>R2·4</b><span><span class="ruled dir">direction</span>&nbsp; "i kind of like this calendar in iii. But it could be a big old empty state early on in the month." — its cells are trial days, not month days; the day-3 and no-trial states are §04.</span></div>
+      <div><b>R2·5</b><span><span class="ruled dir">direction</span>&nbsp; "if Ask is going to be prominent. Should it appear prominently.. like.. towards the top of home." — §02 draws the door at the top and after Signals, side by side.</span></div>
+      <div><b>R2·6</b><span><span class="ruled dir">direction</span>&nbsp; "that bottom sheet may not scale… chat history" — §03 grows the sheet to full screen; chat history is a persistence ruling (Ask D8 / B-375), flagged in DC-3.</span></div>
+      <div><b>R2·7</b><span><span class="ruled">kept</span>&nbsp; "Love the motion in Ask though" · "'Tell Nyx's record or ask it' is a great CTA." · "The trial card! I like the design" · "the seasonStrip is nice… could we make it hscrollable across time" — §04.</span></div>
+      <div><b>R2·8</b><span><span class="ruled open">brief</span>&nbsp; "What if.. we had a 'build your own home' experience… This may be a bad.. resource intensive experience." — §05, DC-5.</span></div>
+      <div><b>R2·9</b><span><span class="ruled open">brief</span>&nbsp; "If we're transitioning the Ask layer to be note capture too. Maybe it needs its name/branding revisited." — §06, DC-6.</span></div>
     </div>
   </header>
 
   <!-- ================================================== 01 -->
-  <section id="directions">
-    <div class="sec-head"><span class="sec-num">01</span><h2>Three drawn Homes, 7:05am</h2></div>
+  <section id="instrument">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The instrument that expands — tap it</h2></div>
     <div class="col">
       <p>
-        The data-visualization consult's diagnosis first, because it explains round 1: <em>the dot lane works because it
-        draws the record itself, one mark per event at its real time, not an aggregate of it.</em> Aggregates change slowly;
-        the record changes every time you log. So each direction below draws the record at display size and keeps the
-        one safety card plain by contrast (S1). They differ in kind: a board, a lane, a page.
+        Condensed, it is the Day Instrument you liked: today's lane at page width, a NOW needle, yesterday's dots ghosted
+        beneath. Tap the lane (or the grain chips) and it opens to <em>the week</em> — seven lanes on the same axis, the
+        unlogged day drawn as a dashed track — and again to <em>the season</em>, the Long Lane's content on a calmer
+        drawing: weeks as columns, each episode a countable dot over a logged-days base, the trial's start as a rule. Same
+        axis language at every grain; position and colour never change meaning. Collapse returns to today. The state is
+        remembered per pet on the device (the fold store's shape), so an owner who lives at the week grain opens to it.
       </p>
     </div>
     <div class="frames">
-      <!-- I The Board -->
+      <div class="frame-slot wide">
+        <div class="phone" id="xframe" style="width:316px"><div class="notch"></div>
+          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span><span class="askpill"><i></i>Ask</span><span class="ownerav">D</span></span></div>
+          <div class="appbody">
+            <div class="instr" style="padding-bottom:0">
+              <div class="xinstr" id="xinstr" data-g="0" role="button" tabindex="0" aria-label="Today's instrument. Tap to expand to the week, then the season.">
+                <div class="grain on" id="g0">
+                  <div class="ax"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>
+                  <div class="plot"><div class="base"></div><div class="needle" style="left:6%"><b>7:05</b></div></div>
+                  <div class="plot ghost" style="margin-top:10px"><span class="lab">yesterday</span><div class="base"></div><div class="d meal ghost" style="left:8%"></div><div class="d meal ghost" style="left:67%"></div><div class="d med ghost" style="left:78%"></div></div>
+                  <div class="capt">Nothing yet today · last vomit Aug 26</div>
+                </div>
+                <div class="grain" id="g1">
+                  <div class="ax" style="margin-left:34px"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>
+                  <div class="weeks" style="margin-top:2px">
+                    <span class="wl">Sat</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d meal" style="left:66%"></div><div class="d med" style="left:78%"></div></div>
+                    <span class="wl">Sun</span><div class="lane"><div class="track"></div><div class="d meal" style="left:10%"></div><div class="d meal" style="left:67%"></div></div>
+                    <span class="wl">Mon</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d note" style="left:38%"></div><div class="d meal" style="left:69%"></div><div class="d med" style="left:77%"></div></div>
+                    <span class="wl">Tue</span><div class="lane nolog"><div class="track"></div><span class="nl">no log</span></div>
+                    <span class="wl">Wed</span><div class="lane"><div class="track"></div><div class="d meal" style="left:11%"></div><div class="d meal" style="left:70%"></div><div class="d med" style="left:79%"></div></div>
+                    <span class="wl">Thu</span><div class="lane"><div class="track"></div><div class="d meal" style="left:9%"></div><div class="d meal" style="left:66%"></div></div>
+                    <span class="wl">Fri</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d meal" style="left:67%"></div><div class="d med" style="left:78%"></div></div>
+                    <span class="wl today">Today</span><div class="lane today"><div class="track"></div><span class="gt" style="left:9%"></span><span class="gt" style="left:67%"></span><div class="needle" style="left:6%;top:-3px;bottom:-3px;position:absolute;width:2px;background:#00C2A8"></div></div>
+                  </div>
+                  <div class="capt" style="margin-top:8px">This week · meals on 6 of 7 days · Tuesday not logged</div>
+                </div>
+                <div class="grain" id="g2">
+                  <div class="season" style="margin-top:2px">
+                    <span class="lab" style="left:22.5%;top:-4px">8</span>
+                    <div class="cols">
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span><span class="u"></span></div>
+                    </div>
+                    <div class="rule" style="left:63.5%"></div><span class="rulelab" style="left:65%;top:-2px">Turkey trial</span>
+                    <div class="mo"><span>Jul</span><span></span><span></span><span></span><span>Aug</span><span></span><span></span><span></span><span></span><span>Sep</span><span></span></div>
+                  </div>
+                  <div class="weeks" style="margin-top:10px"><span class="wl">Today</span><div class="lane today"><div class="track"></div><span class="gt" style="left:9%"></span><span class="gt" style="left:67%"></span></div></div>
+                  <div class="capt" style="margin-top:6px">Since July · vomiting by week, each dot one episode · ticks are the days you logged</div>
+                </div>
+              </div>
+              <div class="grainbar"><button class="g on" type="button" data-g="0">Today</button><button class="g" type="button" data-g="1">Week</button><button class="g" type="button" data-g="2">Season</button><span class="hint">tap the lane to expand</span></div>
+            </div>
+            <div class="seclabel" style="margin-top:4px">Signals</div>
+            <div class="acard"><div class="irow" style="padding:2px 0"><div class="rail safety"></div><div class="ibody"><p class="lead">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26</div></div></div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Nyx</span><span class="fab">+</span></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center">
+          <label class="toggle" style="margin:0"><input type="checkbox" id="rmtoggle2"> Reduce motion</label>
+        </div>
+        <p class="frame-cap"><b>Today → Week → Season, one instrument</b>
+          The box grows with one settle (the fold's unfold spring; ease on Android); the axis words stay put; today's
+          row is the constant node — it is the same lane at every grain, so the eye never re-finds itself. Collapse is
+          the fold's close: subtraction, no bounce. Reduced motion: crossfade. What the Long Lane tried to show in one
+          scrolling drawing is here as three calm ones the owner chooses between. The season grain keeps the Long Lane's
+          honesty (every episode a countable mark, the logged-days base) without its noise (no hour axis on a six-week
+          drawing).
+          <span class="lens"><b>Data-viz consult:</b> this is the almanac, entered from the top grain. <b>Dr. Chen's gate (DB-3) still applies</b> to the season grain's rose marks at display size; the safety card stays plain beneath at every grain.</span>
+          <span class="cost">one InstrumentZone owning three renderers (DayLane · WeekLanes · SeasonStrip) + a per-pet grain key in the fold store · LayoutAnimation only</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 02 -->
+  <section id="home">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The Home it sits in — the door at the top, or after Signals</h2></div>
+    <div class="col">
+      <p>
+        You asked whether Ask, if prominent, should sit toward the top. Two placements, side by side, otherwise
+        identical: the Board's rows for standing facts (you liked the "Ask Nyx's record" CTA; the door now carries the
+        one you liked more), the trial card's strip, and — per your "all logging through the FAB" — the Cerenia row drawn
+        as <em>context only</em>, no one-tap. That last change is a re-ruling of a shipped spec, so it is DC-4, not a
+        silent edit.
+      </p>
+    </div>
+    <div class="frames">
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div>
-          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span><span class="askpill"><i></i>Ask</span><span class="ownerav">D</span></span></div>
+          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span class="ownerav">D</span></div>
+          <div class="appbody">
+            <div class="door" style="margin-top:0"><svg class="wh" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="#00C2A8"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#00C2A8" stroke-width="1.2" stroke-dasharray="26 15"/><circle cx="12" cy="12" r="10" fill="none" stroke="#00C2A8" stroke-width="1" stroke-dasharray="40 23" opacity=".55"/></svg><span class="txt"><b>Tell Nyx's record, or ask it<span class="aichip">AI</span></b>What happened, what you noticed, what you want to know.</span></div>
+            <div class="instr">
+              <div class="ax"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>
+              <div class="plot"><div class="base"></div><div class="needle" style="left:6%"><b>7:05</b></div></div>
+              <div class="plot ghost" style="margin-top:10px"><span class="lab">yesterday</span><div class="base"></div><div class="d meal ghost" style="left:8%"></div><div class="d meal ghost" style="left:67%"></div><div class="d med ghost" style="left:78%"></div></div>
+              <div class="capt">Nothing yet today · last vomit Aug 26</div>
+            </div>
+            <div class="seclabel">Signals</div>
+            <div class="acard"><div class="irow" style="padding:2px 0"><div class="rail safety"></div><div class="ibody"><p class="lead">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26</div></div></div></div>
+            <div class="rows">
+              <div class="r"><span class="lab">Vomiting soon after eating<small>within 30 min of a meal</small></span><span class="num">8 / 8</span><span class="chev">›</span></div>
+              <div class="r"><span class="lab">Cerenia<small>day 6 of 14 · last dose yesterday 8:00pm</small></span><span class="num">6 / 14</span><span class="chev">›</span></div>
+            </div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Nyx</span><span class="fab">+</span></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>A — the door at the top</b> Directly under the header; the header pill retires (one door, not two).
+          Prominent, and honest at rest: two lines, the Whorl, the AI chip, no keyboard until tapped. <strong>The bypass class:</strong>
+          when an <em>unfolded</em> safety card is on screen it takes the top and the door follows it — safety leads by position
+          (S1) whatever else is prominent.
+          <span class="lens"><b>Dr. Chen:</b> prominence makes "should I worry" the daily question — the deflection must stay identical on the thousandth ask, and the recall chips are what keep the question mix honest. <b>Sam:</b> "not the thing I must get past to see the record" — at two lines it is not.</span>
+        </p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span class="ownerav">D</span></div>
           <div class="appbody">
             <div class="instr">
               <div class="ax"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>
@@ -344,204 +503,48 @@
               <div class="capt">Nothing yet today · last vomit Aug 26</div>
             </div>
             <div class="seclabel">Signals</div>
-            <div class="acard"><div class="irow" style="padding:2px 0"><div class="rail safety"></div><div class="ibody"><p class="lead">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26</div><div class="hintrow"><span class="why">Why we're showing this</span><span class="fold">Keep it compact</span></div></div></div></div>
-            <div class="rows">
-              <div class="r"><span class="lab">Vomiting soon after eating<small>within 30 min of a meal</small></span><span class="num">8 / 8</span><span class="chev">›</span></div>
-              <div class="r"><span class="lab">Turkey trial<small><span class="cellstrip" style="margin-top:4px;height:6px;width:150px"><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="hollow"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="today"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i></span></small></span><span class="num">31 / 42</span><span class="chev">›</span></div>
-              <div class="r"><span class="lab">Cerenia<small>last dose yesterday 8:00pm</small></span><span class="confirm">Log dose</span></div>
-              <div class="r"><span class="lab">Weight<small>Aug 30</small></span><span class="num">4.2 kg</span><span class="chev">›</span></div>
-              <div class="r"><svg class="wh" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="#00C2A8"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#00C2A8" stroke-width="1.2" stroke-dasharray="26 15"/><circle cx="12" cy="12" r="10" fill="none" stroke="#00C2A8" stroke-width="1" stroke-dasharray="40 23" opacity=".55"/></svg><span class="lab">Ask Nyx's record<span class="aichip">AI</span><small>counts, foods, meds, the report</small></span><span class="chev">›</span></div>
-            </div>
-            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Nyx</span><span class="fab">+</span></div>
-          </div>
-        </div>
-        <p class="frame-cap"><b>I — The Board (the dense instrument panel)</b>
-          A departures board for one animal. The hero is the <em>Day Instrument</em>: the Today lane grown to page width on
-          the day ground, a NOW needle, and beneath it yesterday's dots at 30% — the drawing's reason to exist at 7am is
-          that it shows what usually happens, where (confirmation over entry, drawn). Every standing fact is a ruled row
-          with its number at the rail in tabular figures; the safety card is the only card on the page. Ask is a row
-          whose glyph is the Whorl.
-          <span class="lens"><b>For:</b> Jordan in week 5, Dr. Chen. <b>Risk:</b> reads as a spreadsheet to Sam; density without a key is clutter (Watch Duty's warning).</span>
-          <span class="cost">rows + one new instrument view · every number a shared analytics function</span>
-        </p>
-      </div>
-      <!-- II The Long Lane -->
-      <div class="frame-slot">
-        <div class="phone"><div class="notch"></div>
-          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span><span class="askpill"><i></i>Ask</span><span class="ownerav">D</span></span></div>
-          <div class="appbody">
-            <div class="longlane">
-              <div class="month">September</div>
-              <span class="tick">◂ last vomit Aug 26</span>
-              <div class="hours"><span style="top:0">6a</span><span style="top:33%">noon</span><span style="top:66%">6p</span><span style="top:100%">12a</span></div>
-              <div class="cols">
-                <div class="c wk"><div class="d meal" style="top:9%"></div><div class="d meal" style="top:68%"></div><div class="d med" style="top:78%"></div></div>
-                <div class="c"><div class="d meal" style="top:10%"></div><div class="d meal" style="top:66%"></div></div>
-                <div class="c"><div class="d meal" style="top:8%"></div><div class="d note" style="top:40%"></div><div class="d meal" style="top:69%"></div><div class="d med" style="top:77%"></div></div>
-                <div class="c"><div class="d meal" style="top:9%"></div><div class="d meal" style="top:67%"></div></div>
-                <div class="c wk"><div class="d meal" style="top:11%"></div><div class="d meal" style="top:70%"></div><div class="d med" style="top:79%"></div></div>
-                <div class="c"><div class="d meal" style="top:9%"></div><div class="d meal" style="top:66%"></div></div>
-                <div class="c"><div class="d meal" style="top:8%"></div><div class="d meal" style="top:67%"></div><div class="d med" style="top:78%"></div></div>
-                <div class="c today"></div>
-              </div>
-              <div class="needle"></div>
-              <div class="dates"><span>29</span><span>30</span><span>31</span><span>1</span><span>2</span><span>3</span><span>4</span><span><b>5</b></span></div>
-            </div>
-            <div class="seclabel">Signals</div>
-            <div class="acard"><div class="irow" style="padding:2px 0"><div class="rail safety"></div><div class="ibody"><p class="lead">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26 · tap to mark those weeks on the lane</div></div></div></div>
-            <div class="rows">
-              <div class="r"><span class="lab">Vomiting soon after eating<small>tap to bracket the 8 pairs on the lane</small></span><span class="num">8 / 8</span><span class="chev">›</span></div>
-              <div class="r"><span class="lab">Turkey trial<small>meals on 29 of 31 days · 1 off-diet</small></span><span class="num">31 / 42</span><span class="chev">›</span></div>
-              <div class="r"><span class="lab">Cerenia<small>last dose yesterday 8:00pm</small></span><span class="confirm">Log dose</span></div>
-            </div>
-            <div class="door"><svg class="wh" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="#00C2A8"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#00C2A8" stroke-width="1.2" stroke-dasharray="26 15"/><circle cx="12" cy="12" r="10" fill="none" stroke="#00C2A8" stroke-width="1" stroke-dasharray="40 23" opacity=".55"/></svg><span class="txt"><b>Tell Nyx's record, or ask it<span class="aichip">AI</span></b>What happened, what you noticed, what you want to know.</span></div>
-            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Nyx</span><span class="fab">+</span></div>
-          </div>
-        </div>
-        <p class="frame-cap"><b>II — The Long Lane (recommended)</b>
-          The record is one continuous lane with today at the right edge; Home is the window onto it and the findings
-          annotate the drawing. Columns are days, height is the hour (the shipped lane rotated), the house dots at their
-          real times: meals teal, doses slate, a note hollow. Scrub left and the lane pages back through the six weeks
-          the safety finding counts, with <em>Trial · turkey</em> and <em>last vomit</em> as axis ticks. Today's empty column
-          beside a fully drawn yesterday says "nothing yet, and here is the shape of a normal day." Tap the safety card
-          and its episode weeks underline on the axis; tap the timing row and the eight meal→vomit pairs bracket. The
-          Ask door is two lines, not one, and opens the sheet in §02.
-          <span class="lens"><b>For:</b> Sam (a normal day's shape vs today) and "charts over text." <b>Gate:</b> a rose dot-field beside a plain card needs Dr. Chen's falsification before fidelity (DB-3). <b>The dataviz consult's reading:</b> this is the top grain of an <em>almanac</em> — hours → days → weeks (§03) on one axis.</span>
-          <span class="cost">one new lane view over the shipped laneEventPosition + tints · a horizontal scroller · zero new predicates</span>
-        </p>
-      </div>
-      <!-- III The Daybook -->
-      <div class="frame-slot">
-        <div class="phone"><div class="notch"></div>
-          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span><span class="askpill"><i></i>Ask</span><span class="ownerav">D</span></span></div>
-          <div class="appbody">
-            <div class="dateline">Saturday, September 5<small>Day 31 of the turkey trial · nothing logged yet</small></div>
-            <div class="cells">
-              <div class="cell untracked"></div><div class="cell untracked"></div><div class="cell">6<span class="m"><i></i><i></i></span></div><div class="cell">7<span class="m"><i></i><i></i></span></div><div class="cell">8<span class="m"><i></i></span><span class="p"></span></div><div class="cell">9<span class="m"><i></i><i></i></span></div><div class="cell">10<span class="m"><i></i><i></i></span></div>
-              <div class="cell">11<span class="m"><i></i><i></i></span></div><div class="cell">12<span class="m"><i></i></span></div><div class="cell">13<span class="m"><i></i><i></i></span></div><div class="cell">14<span class="m"><i></i><i></i></span></div><div class="cell">15<span class="m"><i></i><i></i></span></div><div class="cell">16</div><div class="cell">17<span class="m"><i></i><i></i></span></div>
-              <div class="cell">18<span class="m"><i></i><i></i></span></div><div class="cell">19<span class="m"><i></i><i></i></span><span class="p"></span></div><div class="cell">20<span class="m"><i></i><i></i></span></div><div class="cell">21<span class="m"><i></i><i></i></span></div><div class="cell">22<span class="m"><i></i><i></i></span></div><div class="cell">23<span class="m"><i></i><i></i></span></div><div class="cell">24<span class="m"><i></i></span></div>
-              <div class="cell">25<span class="m"><i></i><i></i></span></div><div class="cell">26<span class="m"><i></i><i></i></span><span class="p"></span></div><div class="cell">27<span class="m"><i></i><i></i></span></div><div class="cell">28<span class="m"><i></i><i></i></span></div><div class="cell">29<span class="m"><i></i><i></i></span></div><div class="cell">30<span class="m"><i></i><i></i></span></div><div class="cell">31<span class="m"><i></i><i></i></span></div>
-              <div class="cell">1<span class="m"><i></i><i></i></span></div><div class="cell">2<span class="m"><i></i><i></i></span></div><div class="cell">3<span class="m"><i></i><i></i></span></div><div class="cell">4<span class="m"><i></i><i></i></span></div><div class="cell today">5</div><div class="cell future">6</div><div class="cell future">7</div>
-            </div>
-            <div class="samp" style="margin-top:6px">Turkey trial · day 31 of 42 · meals logged on 29 of 31 days · 3 vomit days marked</div>
-            <div class="seclabel" style="margin-top:6px">Signals</div>
             <div class="acard"><div class="irow" style="padding:2px 0"><div class="rail safety"></div><div class="ibody"><p class="lead">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26</div></div></div></div>
-            <div class="pagebody">Tell Nyx's record — or ask it.</div>
+            <div class="door"><svg class="wh" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="#00C2A8"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#00C2A8" stroke-width="1.2" stroke-dasharray="26 15"/><circle cx="12" cy="12" r="10" fill="none" stroke="#00C2A8" stroke-width="1" stroke-dasharray="40 23" opacity=".55"/></svg><span class="txt"><b>Tell Nyx's record, or ask it<span class="aichip">AI</span></b>What happened, what you noticed, what you want to know.</span></div>
+            <div class="acard">
+              <div class="seclabel row">Turkey trial <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">Trial ›</span></div>
+              <div class="cellstrip" style="height:12px"><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="hollow"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i class="today"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i></div>
+              <div class="samp" style="margin-top:12px">Day 31 of 42 · meals on 29 of 31 days · 3 vomit days</div>
+            </div>
             <div class="rows">
-              <div class="r"><span class="lab">Cerenia<small>last dose yesterday 8:00pm</small></span><span class="confirm">Log dose</span></div>
-              <div class="r"><span class="lab">All patterns</span><span class="chev">›</span></div>
+              <div class="r"><span class="lab">Cerenia<small>day 6 of 14 · last dose yesterday 8:00pm</small></span><span class="num">6 / 14</span><span class="chev">›</span></div>
             </div>
             <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Nyx</span><span class="fab">+</span></div>
           </div>
         </div>
-        <p class="frame-cap"><b>III — The Daybook (the page you write on)</b>
-          Home is today's page of the record: a Newsreader dateline, the trial's 42 dated cells as the masthead (a teal
-          dot per logged meal, a rose pip on a vomit day, today outlined, eleven future cells empty — the grid is the
-          denominator, never a fill ratio), the safety card, then the page body: a 160pt field with hairlines above and
-          below, a note by default, <em>Save note</em> and <em>Ask</em> appearing when you type. Thought 6 taken all the way. With no
-          trial the masthead is the current week's seven cells in the same grammar (Retro's film strip).
-          <span class="lens"><b>For:</b> Sam at 9pm. <b>Risk:</b> an empty field on a safety morning (the Designer's own dissent stands); the italic placeholder can read as a diary.</span>
-          <span class="cost">TrialCells from computeTrialFacts · the page field is the composer sheet's contract inline</span>
+        <p class="frame-cap"><b>B — the door after Signals</b> The instrument and the safety card read first; the door sits where the
+          record's present tense is, above the trial strip; the header pill stays as a second way in. The med row is the
+          same in both: context, its count at the rail, the chevron to the medication — the one-tap confirm gone per
+          "all logging through the FAB."
+          <span class="lens"><b>The re-ruling this drawing implies (DC-4):</b> the med strip's one-tap confirm was ruled in B-614 D1 as a <em>confirmation</em>, not a second door ("a control that writes a row the app could already describe"); FAB-only logging retires it. Principle 2 (confirmation over entry) and Sam's grazer are the dissent.</span>
         </p>
       </div>
     </div>
   </section>
 
-  <!-- ================================================== 02 -->
-  <section id="ask">
-    <div class="sec-head"><span class="sec-num">02</span><h2>The Ask moment — tap it</h2></div>
+  <!-- ================================================== 03 -->
+  <section id="sheet">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The sheet that grows to full screen</h2></div>
     <div class="col">
       <p>
-        Three consultants converged on one shape. <strong>Sizing:</strong> real prompts and health-journal notes are
-        sentence-shaped (medians under 100 characters; the paragraph is the tail), so the honest answer to "size for a
-        paragraph" is a two-line door on Home that opens a composer sheet growing from three lines to eight, then a
-        full-screen editor. <strong>The AI signature is a continuity, not an icon:</strong> the Signal's teal dot sits on the
-        Ask verb, leaves the pill on send, becomes the Whorl's core while the record is read, and on arrival <em>the
-        answer's rail grows down out of it</em> — the fold's rail-led physics with a new origin. One node, never broken; no
-        sparkle, no glow, the word "AI" as a micro-chip and a receipt line. <strong>Delight is rationed by frequency:</strong>
-        the arrival gets one settle and one soft haptic; typing gets nothing; the 7am open moves nothing.
+        The bottom sheet is the door's first state, not its ceiling. It opens at half height with the composer and the
+        recall chips; it grows with the text; it becomes full screen on a drag, on the expand control, or the moment a
+        conversation has a second turn. Full screen is the built <code>/ask</code> screen — the same thread, the same answer
+        cards — presented from the sheet rather than the header. That is where a longer conversation, the vet rundown, and
+        any future history would live. <strong>Chat history is a ruling, not a layout:</strong> the Ask spec keeps no durable
+        transcript (D8; the T&amp;S lean, B-375), so "history" today means the current conversation. DC-3 asks whether that
+        changes.
       </p>
-    </div>
-    <div class="frames">
-      <div class="frame-slot wide">
-        <div class="phone motion" id="mframe" style="width:316px">
-          <div class="notch"></div>
-          <div class="appbody">
-            <div class="sheet">
-              <div class="grab"></div>
-              <div class="stage" id="stage">
-                <div id="composer">
-                  <div class="field" id="mfield">when did Nyx last throw up, and was it near a meal?<span class="caret"></span></div>
-                  <div class="verbs"><button class="mbtn save" id="bsave" type="button">Save note</button><button class="mbtn ask" id="bask" type="button"><span style="width:8px;height:8px;border-radius:50%;background:#00C2A8;display:inline-block" id="pilldot"></span> Ask</button></div>
-                  <div class="chiprow"><span class="chip">What's new since last night?</span><span class="chip">How many vomits this month?</span><span class="chip quiet">Vet visit rundown</span></div>
-                  <div class="promise">Anything in Nyx's record — counts, trends, foods, meds. Sources shown with every answer.</div>
-                </div>
-                <div id="conv" hidden>
-                  <div class="qb" id="qb">when did Nyx last throw up, and was it near a meal?</div>
-                  <div style="position:relative;min-height:56px;margin-top:14px" id="slot">
-                    <svg class="whorl" id="whorl" viewBox="0 0 44 44" aria-hidden="true" style="left:50%;top:50%"><circle cx="22" cy="22" r="8"/><circle cx="22" cy="22" r="12"/><circle cx="22" cy="22" r="16"/><circle cx="22" cy="22" r="20"/></svg>
-                    <div class="skel" id="skel" style="padding-top:48px"><i style="width:80%"></i><i style="width:55%"></i><i style="width:35%"></i></div>
-                    <div class="samp" id="reading" style="text-align:center;opacity:0;transition:opacity 150ms">Reading Nyx's record…</div>
-                  </div>
-                  <div class="ans" id="ans">
-                    <div class="arail"></div>
-                    <div class="body"><div class="answer" style="border:0;padding:0"><div class="h">Nyx last vomited on Aug 26 — 10 days ago, 25 minutes after breakfast.</div><div class="s">2 episodes in the last 4 weeks · 12 in the 4 before · counted from days you logged: 28 of 28 each</div></div></div>
-                    <div class="later"><div class="answer" style="border:0;padding:0"><div class="prov">Open the event ›</div><div class="rc"><span style="width:6px;height:6px;border-radius:50%;background:#00C2A8;display:inline-block"></span>Counted from Nyx's record · worded by AI</div><div class="chiprow"><span class="chip">And before that?</span><span class="chip">Show all 14</span></div></div></div>
-                  </div>
-                </div>
-                <div class="mdot" id="mdot" style="opacity:0"></div>
-              </div>
-              <div class="kb" id="kb">K E Y B O A R D</div>
-            </div>
-          </div>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center">
-          <button class="mbtn ask" type="button" id="play">▶ Ask</button>
-          <button class="mbtn reset" type="button" id="reset">Reset</button>
-          <label class="toggle" style="margin:0"><input type="checkbox" id="rmtoggle"> Reduce motion</label>
-        </div>
-        <p class="frame-cap"><b>The dot that reads — the Ask moment, beat by beat</b>
-          <span class="beats">
-            <b>(c) send</b> · the text leaves the field upward into the question bubble (180ms); the dot leaves the pill and travels to the answer slot (260ms, ease-out) · haptic <code>sendQuestion</code> light<br>
-            <b>(d) thinking</b> · the Whorl's ridges draw on around the dot (400ms, 60ms stagger) then turn at the shipped 9/14/19/25s; a card-shaped skeleton, no shimmer; "Reading Nyx's record…" · no haptic, ever, while waiting<br>
-            <b>(e) arrival</b> · ridges fade (150ms), the dot lifts 4pt, <b>the rail grows down out of it</b> (160ms), the box opens with one felt settle (spring, damping 0.7), <b>headline + denominator land as one node</b> (300ms) — a claim never precedes its receipt; provenance and chips last (420ms) · haptic <code>answerArrival</code> soft, never Success; silent on a deflection, a cap, or a safety relay<br>
-            <b>reduced motion</b> · crossfade only; the haptic still fires · <b>forbidden</b> · streaming text, typing dots, a pulse while waiting, a bounce on close, a glow, the NightMoment
-          </span>
-          <span class="cost">Animated + LayoutAnimation only (no reanimated in the project) · fired from the ask store, never from components/ask · two files join the haptics guard's always-scanned list</span>
-        </p>
-      </div>
-      <div class="frame-slot">
-        <div class="phone landing" id="lframe"><div class="notch"></div>
-          <div class="appbody">
-            <div class="acard">
-              <div class="seclabel row">Today <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">Full day ›</span></div>
-              <div class="count" id="lcount"><b>1</b> meal so far</div>
-              <div class="lane"><div class="track"></div><div class="d meal" style="left:12%"></div><div class="d meal pre" id="ld1" style="left:15%"></div><div class="d note pre" id="ld2" style="left:20%"></div></div>
-              <div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div>
-            </div>
-            <div class="acard" style="background:#1B1A2E;color:#FFF;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;opacity:0;transition:opacity 150ms" id="lbeat"><span id="lbeattext">Breakfast · 8:10am · finished<br><small style="color:#C9C4E8;font-size:10.5px">Turkey · Nyx</small></span><span style="color:#4FD8C4;font-weight:600;font-size:11.5px">Undo</span></div>
-          </div>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
-          <button class="mbtn save" type="button" id="lmeal">Log breakfast</button>
-          <button class="mbtn reset" type="button" id="lnote">Save a note</button>
-          <button class="mbtn reset" type="button" id="lreset">Reset</button>
-        </div>
-        <p class="frame-cap"><b>Dots land</b>
-          The lane you like becomes the surface that answers every write. Eighty milliseconds after the completion beat's
-          check lands, the new dot appears at its time on the lane — scale 0.4 → 1, 320ms, one settle — and the count line
-          recomposes by a crossfade. A note lands as a <em>hollow ring</em> at its time and joins no count (a one-line amendment
-          to round 1's N2: "no lane" becomes "no count"). Undo fades the dot; it never shrinks. Only for writes made while
-          Home is mounted — the 7am open moves nothing, because nothing just happened.
-          <span class="cost">≤320ms · several times a day · silent when a safety card leads (the existing SignalZone gate)</span>
-        </p>
-      </div>
     </div>
     <div class="frames">
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div>
           <div class="appbody">
-            <div class="sheet" style="margin-top:80px">
+            <div class="sheet" style="margin-top:120px">
               <div class="grab"></div>
               <div class="field ph">Tell Nyx's record, or ask it…</div>
               <div class="chiprow"><span class="chip">What's new since last night?</span><span class="chip">How many vomits this month?</span><span class="chip quiet">Vet visit rundown</span></div>
@@ -550,235 +553,274 @@
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>The sheet at rest — 7am</b> Three-line minimum (88pt), grows to eight lines (~198pt) then scrolls, an
-          expand control to a full-screen editor past that. Chips are recall-only and tense-shifted by the hour (7am
-          "What's new since last night?"; 9pm "What did I log today?"). Dictation is the OS keyboard's. The disclosure
-          line is the ratified §6.5 sentence, verbatim.</p>
+        <p class="frame-cap"><b>1 — Half sheet</b> Home stays visible above it; the composer is three lines; chips are recall-only. A note saved here never opens the full screen — it commits with the R2 beat and the sheet closes.</p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div>
           <div class="appbody">
-            <div class="sheet" style="margin-top:40px">
+            <div class="sheet" style="margin-top:20px">
               <div class="grab"></div>
-              <div class="field">Pickle left half the wet again and Juniper finished it. Third time this week, I think. She's drinking more than usual too, the bowl was low this morning. Not hiding or anything, just not that into food.<span class="caret"></span></div>
-              <div class="verbs"><span class="pill save">Save note</span><span class="pill ask"><i></i>Ask</span><span style="font-size:10.5px;color:#737373;margin-left:auto">↗</span></div>
-              <div class="promise">A note is saved to Pickle's record with the time. Ask reads the record to answer.</div>
+              <div class="qb">when did Nyx last throw up, and was it near a meal?</div>
+              <div class="answer" style="margin-top:10px"><div class="h">Nyx last vomited on Aug 26 — 10 days ago, 25 minutes after breakfast.</div><div class="s">2 episodes in the last 4 weeks · 12 in the 4 before · counted from days you logged: 28 of 28 each</div><div class="prov">Open the event ›</div><div class="rc"><span style="width:6px;height:6px;border-radius:50%;background:#00C2A8;display:inline-block"></span>Counted from Nyx's record · worded by AI</div></div>
+              <div class="chiprow"><span class="chip">And before that?</span><span class="chip">Show all 14</span></div>
+              <div class="field ph" style="min-height:44px;margin-top:10px">Ask a follow-up…<span style="float:right;color:#737373">↗</span></div>
               <div class="kb">K E Y B O A R D</div>
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>Typing a paragraph — Sam, 7:10am</b> One field, two verbs, the owner routes: a note by default; the
-          verbs crossfade in once on the first character and stay until blur. A question mark never routes by itself.
-          Save is free forever and never leaves the device unless Ask is asked. (This note is exactly the kind Dr. Chen
-          named: "drinking more" beside "eating less" in a cat is the pair a workup wants — and the app must never say so
-          itself; it stays a dated quote for the vet.)</p>
+        <p class="frame-cap"><b>2 — Grown</b> One answer in; the sheet took the height it needed; the follow-up composer shrinks to a line beneath the answer. The expand control is the ↗.</p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div>
           <div class="appbody">
-            <div class="sheet" style="margin-top:80px">
-              <div class="grab"></div>
-              <div class="field ph">Tell Nyx's record, or ask it…</div>
-              <div class="capline">You've used this month's 3 free conversations. Notes, counts and the vet rundown always work here; questions resume Oct 1, or with Premium.</div>
-              <div class="chiprow"><span class="chip">How many vomits this month?</span><span class="chip quiet">Vet visit rundown</span></div>
-              <div class="kb">K E Y B O A R D</div>
+            <div class="fullask">
+              <div class="top"><span>‹ Home</span><b>Nyx's record</b><span>＋</span></div>
+              <div class="thread">
+                <div class="qb">when did Nyx last throw up, and was it near a meal?</div>
+                <div class="answer"><div class="h">Nyx last vomited on Aug 26 — 10 days ago, 25 minutes after breakfast.</div><div class="s">2 episodes in the last 4 weeks · 12 in the 4 before</div><div class="prov">Open the event ›</div></div>
+                <div class="qb">and before that?</div>
+                <div class="answer"><div class="h">Aug 19, 40 minutes after dinner — and Aug 8, in the night.</div><div class="s">The 3 most recent of 14 since July · all 8 timed episodes were within 30 min of a meal</div><div class="prov">Show all 14 ›</div><div class="rc"><span style="width:6px;height:6px;border-radius:50%;background:#00C2A8;display:inline-block"></span>Counted from Nyx's record · worded by AI</div></div>
+                <div class="chiprow"><span class="chip">Vet visit rundown</span><span class="chip">What did she eat before each?</span></div>
+              </div>
+              <div class="comp"><span style="flex:1">Ask a follow-up, or tell the record…</span><span style="width:22px;height:22px;border-radius:50%;background:#1B1A2E;color:#FFF;display:grid;place-items:center;font-size:12px">↑</span></div>
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>Capped — inside the sheet, never on Home</b> Home shows nothing when capped: no meter, no lock, the
-          door reads the same (Pets &gt; $). The cap line sits <em>before</em> the send so nobody composes into a wall, and it
-          names what still works: saving a note, the on-device recall chips, counts, the rundown, and every safety relay.
-          Typed questions, follow-ups and synthesis are Premium. This is the Day One split (logging free, chat gated),
-          not the Strava one (AI under every activity, subscribers only).
-          <span class="cost">requires amending the Ask spec's D3 (name the free deterministic class) and D5 (the Today door) — DB-4</span>
-        </p>
+        <p class="frame-cap"><b>3 — Full screen</b> The built <code>/ask</code> screen, reached from the sheet. The conversation survives
+          navigation (D8) and ends on background, idle, or ＋. If a durable history is ruled in (DC-3), it lives behind the
+          title here — never on Home.</p>
       </div>
     </div>
   </section>
 
-  <!-- ================================================== 03 -->
-  <section id="charts">
-    <div class="sec-head"><span class="sec-num">03</span><h2>The three charts that matter, at build detail</h2></div>
+  <!-- ================================================== 04 -->
+  <section id="trial">
+    <div class="sec-head"><span class="sec-num">04</span><h2>The trial calendar early, and the strip across time</h2></div>
     <div class="col">
       <p>
-        Each reuses what is shipped — <code>laneEventPosition</code>, the node tints, <code>TrialFacts.coveredDayIndices</code>, the Trend's day
-        buckets — so no new predicate enters the record. Each carries its denominator <em>drawn</em> (S2), encodes no verdict
-        (S3, S5), and changes daily by construction. The unlogged day is drawn as a dashed track, never left blank:
-        logging cadence is the ground of every chart, not a chart of its own.
+        The calendar's cells are the trial's days, not the month's — so "early in the month" is not the empty case;
+        "early in the trial" is, and "no trial" is. Both are drawn. The season strip gains a horizontal scroll: the
+        thirteen most recent weeks fill the card and earlier weeks are one swipe left, the base and the trial rule
+        scrolling with them.
       </p>
     </div>
     <div class="frames">
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div>
           <div class="appbody">
-            <div class="acard">
-              <div class="seclabel row">This week <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">All patterns ›</span></div>
-              <div class="weeks">
-                <span class="wl">Sat</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d meal" style="left:66%"></div><div class="d med" style="left:78%"></div></div>
-                <span class="wl">Sun</span><div class="lane"><div class="track"></div><div class="d meal" style="left:10%"></div><div class="d meal" style="left:67%"></div></div>
-                <span class="wl">Mon</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d note" style="left:38%"></div><div class="d meal" style="left:69%"></div><div class="d med" style="left:77%"></div></div>
-                <span class="wl">Tue</span><div class="lane nolog"><div class="track"></div><span class="nl">no log</span></div>
-                <span class="wl">Wed</span><div class="lane"><div class="track"></div><div class="d meal" style="left:11%"></div><div class="d meal" style="left:70%"></div><div class="d med" style="left:79%"></div></div>
-                <span class="wl">Thu</span><div class="lane"><div class="track"></div><div class="d meal" style="left:9%"></div><div class="d meal" style="left:66%"></div></div>
-                <span class="wl">Fri</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d meal" style="left:67%"></div><div class="d med" style="left:78%"></div></div>
-                <span class="wl today">Today</span><div class="lane today"><div class="track"></div><span class="gt" style="left:9%"></span><span class="gt" style="left:67%"></span></div>
-              </div>
-              <div class="laneax" style="margin-left:34px"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div>
+            <div class="dateline">Tuesday, August 8<small>Day 3 of the turkey trial · 1 meal so far</small></div>
+            <div class="cells">
+              <div class="cell">6<span class="m"><i></i><i></i></span></div><div class="cell">7<span class="m"><i></i><i></i></span></div><div class="cell today">8<span class="m"><i></i></span></div><div class="cell future">9</div><div class="cell future">10</div><div class="cell future">11</div><div class="cell future">12</div>
+              <div class="cell future">13</div><div class="cell future">14</div><div class="cell future">15</div><div class="cell future">16</div><div class="cell future">17</div><div class="cell future">18</div><div class="cell future">19</div>
+              <div class="cell future">20</div><div class="cell future">21</div><div class="cell future">22</div><div class="cell future">23</div><div class="cell future">24</div><div class="cell future">25</div><div class="cell future">26</div>
             </div>
+            <div class="samp" style="margin-top:6px">Turkey trial · day 3 of 42 · meals on 3 of 3 days · the first 3 weeks shown, 3 more to come</div>
+            <div class="annot ok">39 days to go, drawn as ground — the trial's shape is the promise</div>
           </div>
         </div>
-        <p class="frame-cap"><b>WeekLanes</b> Seven lanes plus today, same x-scale, 7pt dots with a surface ring so overlaps stay
-          separate (one beeswarm nudge). An unlogged day is a dashed track and the words <em>no log</em> — absence drawn,
-          never blank. Today's row carries two <em>ghost ticks</em> at the median meal times of the last 14 logged days (≥5 meals
-          required; never on a symptom): confirmation over entry, drawn. Thin data: under two logged days, today's lane
-          alone. A11y: one sentence per row, the block one element. A new dot crossfades under reduced motion.
-          <span class="cost">lib/weekLanes.ts over laneEventPosition · 126pt + axis · direction II's second grain, direction I's optional row</span>
-        </p>
+        <p class="frame-cap"><b>Day 3 of 42</b> Mostly future cells, and honestly so: the empty grid <em>is</em> the trial's length, the thing
+          Jordan is carrying in his head. Three lived cells with dots, today outlined. The grid shows three weeks at a
+          time and pages; the caption says what is off-screen. Nothing green, nothing counted that has not happened.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="dateline">Saturday, September 5<small>Nothing logged yet</small></div>
+            <div class="cells">
+              <div class="cell">30<span class="m"><i></i><i></i></span></div><div class="cell">31<span class="m"><i></i><i></i></span></div><div class="cell">1<span class="m"><i></i><i></i></span><span class="p"></span></div><div class="cell">2<span class="m"><i></i></span></div><div class="cell">3<span class="m"><i></i><i></i></span></div><div class="cell">4<span class="m"><i></i><i></i></span></div><div class="cell today">5</div>
+            </div>
+            <div class="samp" style="margin-top:6px">This week · meals on 6 of 6 days · 1 vomit day</div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>No trial — the week strip</b> The same grammar, seven cells, today at the right (Retro's film strip). A vomit
+          day carries its pip; a day with no meal logged would be hollow. Never a month grid with 25 empty days.</p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div>
           <div class="appbody">
             <div class="acard">
-              <div class="seclabel row">Vomiting since July <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">All patterns ›</span></div>
-              <div class="season">
-                <span class="lab" style="left:22.5%;top:-4px">8</span>
-                <div class="cols">
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span></div>
-                  <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span><span class="u"></span></div>
+              <div class="seclabel row">Vomiting by week <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">All patterns ›</span></div>
+              <div class="hs">
+                <div class="edge"></div><span class="edgelab">◂ May</span>
+                <div class="inner">
+                  <div class="season">
+                    <div class="cols" style="grid-template-columns:repeat(21,1fr)">
+                      <div class="wk"><span class="base"><i></i><i></i><i class="off"></i><i></i><i class="off"></i><i></i><i></i></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i class="off"></i><i></i><i></i><i></i><i class="off"></i><i></i></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span><span class="u"></span></div>
+                    </div>
+                    <div class="rule" style="left:66%"></div><span class="rulelab" style="left:67.5%;top:-2px">Turkey trial</span>
+                    <div class="mo" style="grid-template-columns:repeat(21,1fr)"><span>May</span><span></span><span></span><span></span><span>Jun</span><span></span><span></span><span></span><span></span><span>Jul</span><span></span><span></span><span></span><span>Aug</span><span></span><span></span><span></span><span></span><span>Sep</span><span></span><span></span></div>
+                  </div>
                 </div>
-                <div class="rule" style="left:63.5%"></div><span class="rulelab" style="left:65%;top:-2px">Turkey trial</span>
-                <div class="mo"><span>Jul</span><span></span><span></span><span></span><span>Aug</span><span></span><span></span><span></span><span></span><span>Sep</span><span></span></div>
               </div>
-              <div class="samp">Each dot one episode · the ticks beneath are the days you logged that week</div>
+              <div class="samp">Since May · swipe left for earlier weeks · the ticks beneath are the days you logged</div>
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>SeasonStrip</b> Weeks since the first log (max 13); each episode a countable 5pt dot stacked from
-          the base, never a bar height, never a line joining weeks. <strong>The base is the density gate drawn:</strong> seven 2×3pt
-          ticks per column for the days logged — a zero over seven ticks and a zero over two ticks look different, which is
-          the whole Change-Contract argument in one glyph. Same rose, same opacity every column (no fade on the low weeks).
-          The trial start is a dashed rule; only the max and the current column are labelled. Nyx's 4·6·8·4·4·4·4·2·0·1·1
-          reads as a shape without a word being spoken.
-          <span class="lens"><b>Adversarial gate (Data Scientist, before build):</b> a drawn falling series is <em>read</em> as improving with no word said; the mitigations are structural — the base always drawn, no line, no hue shift — and the compare sentence stays inside the gated safety card. TrendZone's CUL-372 ruling is the precedent.</span>
-          <span class="cost">lib/seasonStrip.ts from useTrend's day buckets extended to N weeks · static, no motion</span>
-        </p>
-      </div>
-      <div class="frame-slot">
-        <div class="phone"><div class="notch"></div>
-          <div class="appbody">
-            <div class="acard">
-              <div class="seclabel row">Turkey trial <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">Trial ›</span></div>
-              <div class="cellstrip" style="height:12px"><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="hollow"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i class="today"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i></div>
-              <div class="samp" style="margin-top:12px">Day 31 of 42 · meals on 29 of 31 days · 3 vomit days</div>
-              <div class="annot ok">covered · hollow = a day without a logged meal · pip = a vomit day · never a fill ratio</div>
-            </div>
-            <div class="acard">
-              <div class="seclabel">Weight</div>
-              <div style="position:relative;height:54px;margin-top:4px">
-                <div style="position:absolute;left:0;right:0;top:44px;height:1px;background:#EAEAEA"></div>
-                <div class="d" style="left:6%;top:32px;background:#8B87A8;border-color:#FFF"></div><div class="d" style="left:38%;top:26px;background:#8B87A8;border-color:#FFF"></div><div class="d" style="left:62%;top:20px;background:#8B87A8;border-color:#FFF"></div><div class="d" style="left:92%;top:24px;background:#0A0A0A;border-color:#FFF"></div>
-                <span style="position:absolute;left:0;top:44px;font-size:9px;color:#737373">4.5 · Jun 12</span><span style="position:absolute;right:0;top:44px;font-size:9px;color:#0A0A0A;font-weight:600">4.2 · Aug 30</span>
-              </div>
-              <div class="samp">4 readings · Jun 12 → Aug 30 · no line under 3 readings 2 weeks apart</div>
-            </div>
-          </div>
-        </div>
-        <p class="frame-cap"><b>TrialCells · Weight</b> Forty-two 6×10pt cells: covered filled with the accent's soft wash, an elapsed day
-          without a logged meal hollow, future cells ground, today outlined, a rose tick <em>under</em> a cell for an off-diet
-          exposure (positive marking only — a tick's absence is never "clean"). The line beneath is the shipped trial
-          sentence. Weight is a dot series with both ends printed and the count of readings; a line only when three
-          readings span two weeks; never an arrow (the Patterns card has one — it does not migrate).
-          <span class="cost">lib/trialCells.ts from computeTrialFacts · weight from getWeightHistory · both hand-rolled Views</span>
-        </p>
+        <p class="frame-cap"><b>SeasonStrip, across time</b> The recent thirteen weeks fill the card; a fade at the left edge and a month
+          word say there is more; the base ticks and the trial rule scroll with the columns so a sparse May is drawn as
+          sparse, not as calm. Direct labels only on the max column and today's. A horizontal scroll is sanctioned here by
+          the app's own rule for browsing time with a visible "there's more" cue (B-146).</p>
       </div>
     </div>
-  </section>
-
-  <!-- ================================================== 04 -->
-  <section id="briefs">
-    <div class="sec-head"><span class="sec-num">04</span><h2>The briefs, re-asked</h2></div>
-    <div class="col"><p>Round 1's D1–D6 stand on CUL-810 where they still apply; these are the calls round 2 made new or changed. Rule from the frames.</p></div>
-
-    <div class="brief"><p class="bid">DB-1 — Which direction does round 3 draw at fidelity?</p>
-      <p><strong>Deciding:</strong> the visual language every later frame inherits.</p>
-      <p><strong>Options:</strong> I The Board — densest, Jordan's and Dr. Chen's screen · <span class="rec">II The Long Lane — recommended: the only direction where the record is the hero and the findings annotate it, which is what "charts over text" asks for; its hero is the dot lane you like, grown up; the week lanes and the season strip (§03) are its second and third grain</span> · III The Daybook — thought 6 all the way, with the empty-field-on-a-safety-morning risk.</p>
-      <p><strong>Consequence:</strong> II needs DB-3's gate before fidelity; I and III draw from tokens today. Whichever wins, the Ask sheet (§02) and the three charts (§03) are shared.</p>
-    </div>
-
-    <div class="brief"><p class="bid">DB-2 — Where the composer lives, at what size</p>
-      <p><strong>Deciding:</strong> a resting composer on Home or a door to one.</p>
-      <p><strong>Options:</strong> <span class="rec">a two-line door on Home (64pt, the Whorl as its glyph, the AI micro-chip) that opens a composer sheet — 88pt minimum, grows to ~198pt, then a full-screen editor — recommended: paragraph-sized where typing happens, calm where it does not; the sheet is where the AI mark, the disclosure, and the cap are honest without touching Home</span> · a 52pt pill that grows in place to six lines (II's alternative; needs a new keyboard-avoidance path on Home) · the page body (III).</p>
-      <p><strong>Consequence:</strong> the sheet reuses the log sheet's shell and the built <code>/ask</code> screen presented modally, so the conversation survives (D8) and nothing is duplicated; the header pill becomes a scroll-to-and-focus of the same door, never a second composer.</p>
-    </div>
-
-    <div class="brief"><p class="bid">DB-3 — May the hero draw the symptom record at display size?</p>
-      <p><strong>Deciding:</strong> whether rose marks on dated cells or columns may sit above the plain safety card.</p>
-      <p><strong>Options:</strong> <span class="rec">yes — one ink-tinted pip per episode-day, never a filled cell, never a hue keyed to "good", the adversarial pass as the gate — recommended</span> · yes, but only below the safety card · no; the hero draws intake and meds only.</p>
-      <p><strong>Consequence:</strong> "no" forecloses II's thesis and the season strip; "below" makes the safety card the page's first element, which S1 already permits. Dr. Chen's standing rule holds either way: nothing calm-green in the safety card's viewport.</p>
-    </div>
-
-    <div class="brief"><p class="bid">DB-4 — Pets &gt; $ on Home: the free class</p>
-      <p><strong>Deciding:</strong> an amendment to the Ask spec so a Home door is honest under Principle 7.</p>
-      <p><strong>Options:</strong> <span class="rec">amend D3 to name a free-forever deterministic class (saving a note, on-device recall chips, counts, the vet rundown, every safety relay and deflection) and D5 to permit "chrome or the Today door, never a card"; typed questions, follow-ups, synthesis, general mode stay Premium; Home never shows a meter or a lock; the cap line lives inside the sheet before the send — recommended</span> · keep the spec as is and the door in the header only · make Ask free on Home entirely (revisits D-M1).</p>
-      <p><strong>Consequence:</strong> client-only; no dependency on the <code>ask</code> redeploy chain (CUL-557) because the recall chips move on-device; the Day One split (logging free, chat gated), not Strava's.</p>
-    </div>
-
-    <div class="brief"><p class="bid">DB-5 — The note lands on the lane</p>
-      <p><strong>Deciding:</strong> a one-line amendment to round 1's N2 rule ("a note joins no count, no lane").</p>
-      <p><strong>Options:</strong> <span class="rec">a note lands on the Today lane as a hollow ring at its time and joins no count — recommended (the lane is the record drawn; a note is in the record)</span> · no mark on the lane (round 1 as drawn).</p>
-      <p><strong>Consequence:</strong> "Dots land" (§02) applies to notes; History, the Recap and the report treatments from round 1 are unchanged; the note is still quoted, never counted.</p>
-    </div>
-
-    <div class="callout"><strong>Still open from round 1 (CUL-810):</strong> D1 is note capture the right feature (every direction here treats the note as the composer's default verb — a ruling of "no" removes the Save verb and leaves Ask alone) · D6 verbatim-only and report-by-default vs toggle. Not changed by round 2.</div>
   </section>
 
   <!-- ================================================== 05 -->
-  <section id="table">
-    <div class="sec-head"><span class="sec-num">05</span><h2>Who was at the table</h2></div>
-    <div class="col"><p>Three consultants seated for this round beside the Designer, each in isolation, each briefed with your seven reactions verbatim and the round-1 page. Their full briefs are in the session record.</p></div>
-    <div class="grid2">
-      <div class="voice"><b>Data-visualization designer (consultant)</b><q>The dot lane works because it draws the record itself.</q> The inventory of what the record can draw daily, each with the control it must carry and the verdict it must never encode; the Almanac composition (hours → days → weeks on one axis); WeekLanes, SeasonStrip, TrialCells at build detail; vetoed the wellness ring, the green week, the sparkline with no base, and migrating the Patterns heatmap ("a light month reads as a verdict on Home").</div>
-      <div class="voice"><b>Motion + haptics designer (consultant)</b><q>The dot never breaks.</q> Flourish rationed by frequency (once-ever · a few times a week · several times a day · continuous = nothing); the seven-beat Ask choreography; three new haptic verbs — <code>sendQuestion</code> light, <code>answerArrival</code> soft never Success and gated silent on deflection/cap/safety, <code>commitNote</code> soft; "Dots land"; the 7am open is a first paint. Vetoed streaming text, typing dots, a pulse while waiting, the NightMoment for Ask.</div>
-      <div class="voice"><b>AI-product designer (consultant)</b><q>The gap is the door, not the answer.</q> Prompt and journal-note lengths are sentence-shaped (cited, secondary-grade); a two-line door and a sheet that grows; one field, two verbs, Note default; the Whorl three ways as the AI signature; the free deterministic class vs Premium synthesis; crisis text gated before any model; consent on the first Ask tap, never on open; the deflection as a designed answer that always does something (the rundown chip).</div>
-      <div class="voice"><b>The Designer (round 2: look, not mechanism)</b><q>Round 1 was an information architecture drawn as the current screen.</q> Ten pinned compositions (Tide Guide's curve-as-page, Flighty's one-line-per-flight, Copilot's dotted denominator line, Retro's film strip, Things' paper register); three directions that differ in kind; the type and spacing system (Newsreader twice per viewport at most, every number tabular at the right rail, hairlines carry structure, a card is reserved for the safety finding). Kept D8 closed: Home stays daylight.</div>
+  <section id="arrange">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Arrange Home — "build your own home", drawn</h2></div>
+    <div class="col" id="arrange-copy">
+      <p>
+        Your stretch idea, taken seriously. The research answer from the design bar is a hybrid, not a free canvas: Apple
+        Health lets you <em>pin</em> but never remove Highlights; Oura's Shortcuts sit under a Today the system composes; the
+        pet category's answer is full customisation and the health-app answer is curation. So the shape drawn here is a
+        <strong>fixed spine the system owns</strong> (the Signals with any safety finding, the Today instrument, the FAB) plus
+        an <strong>arrangeable set of the drawn modules</strong> the owner can reorder and hide. The consult's research, cost map,
+        and Dr. Chen's read are in DC-5 and the session record.
+      </p>
     </div>
-    <h3>Where the consultants disagreed</h3>
-    <div class="conflict"><p><strong>Designer:</strong> the Long Lane's columns are days, height is the hour — the shipped lane rotated, ~8 days per screen, six weeks a scroll.</p><p><strong>Data-visualization designer:</strong> the almanac's grains are separate blocks (today's lane, then week lanes, then the season strip) — each a glance, no scroll to read the season.</p><p><strong>PM decision needed:</strong> DB-1 — one continuous scrolling lane (II as drawn) or stacked grains (II with §03's blocks beneath, no horizontal scroll)? Round 3 can draw both at fidelity if you want to see them side by side.</p></div>
-    <div class="conflict"><p><strong>AI-product designer:</strong> the sheet <em>is</em> <code>/ask</code> presented modally; answers never render on Home.</p><p><strong>Motion designer:</strong> agreed on the sheet; the arrival beat plays inside it, once per answer id.</p><p><strong>Designer (III):</strong> the page body composes inline, on Home, with the rule drawing in beneath it.</p><p><strong>PM decision needed:</strong> DB-2.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="sheet" style="margin-top:0">
+              <div class="grab"></div>
+              <div class="seclabel row">Arrange Home <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">Done</span></div>
+              <div class="arr">
+                <div class="it"><span class="h">≡</span><span class="lab">Today<small>the day instrument · yesterday beneath</small></span><span class="pin">ALWAYS</span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Signals<small>safety findings always show, and always first</small></span><span class="pin">ALWAYS</span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Tell or ask the record<small>the composer door</small></span><span class="tg"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Turkey trial<small>the 42 days</small></span><span class="tg"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">This week<small>seven lanes</small></span><span class="tg"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Vomiting by week<small>since May</small></span><span class="tg off"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Weight<small>last Aug 30</small></span><span class="tg off"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Medications<small>Cerenia · day 6 of 14</small></span><span class="tg"></span></div>
+              </div>
+              <div class="promise">Drag to reorder. Hidden modules are one tap away under All patterns. Safety findings can't be hidden.</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>The Arrange sheet</b> A list, drag handles, toggles; the spine shown but not toggleable, labelled why.
+          Hiding is a stated action the record can see (like the fold's "seen") — the safety Signals never hide and never
+          fall below the first viewport. The same module renders on Home and here, so the sheet is a preview by
+          construction (cohesion, thought 4).
+          <span class="cost">a typed module registry · per-pet layout in the fold store's shape (device-local first; a synced table is a later ruling) · flag-off byte-identical · every module needs its own empty / thin / safety states designed</span>
+        </p>
+      </div>
+    </div>
   </section>
 
   <!-- ================================================== 06 -->
-  <section id="round1">
-    <div class="sec-head"><span class="sec-num">06</span><h2>Round 1, for the record</h2></div>
+  <section id="name">
+    <div class="sec-head"><span class="sec-num">06</span><h2>The name — a surface that takes notes and questions</h2></div>
+    <div class="col" id="name-copy">
+      <p>
+        "Ask" shipped as a placeholder (Ask spec D7) with one standing constraint from Dr. Chen and the Lawyer: no name
+        may imply a vet answers. Now the surface has two verbs, and your favourite CTA already names the object: <em>the
+        record</em>. The workshop's candidates are below, each written out as the four strings it has to work as — the
+        header pill, the Home door, the sheet title, the receipt line.
+      </p>
+    </div>
+    <div class="names" id="name-cards">
+      <div class="name rec"><p class="w">Ask · Nyx's record</p><div class="verdict">recommended — the AI verb keeps its name; the surface is titled by its object; the note is a plain verb</div>
+        <div class="strs"><span><b>Pill</b> Ask</span><span><b>Door</b> Tell Nyx's record, or ask it · <i style="font-style:normal;font-size:9px;font-weight:600;color:#0B7B6C;background:#E0FBF7;border-radius:4px;padding:1px 4px">AI</i></span><span><b>Sheet</b> Nyx's record</span><span><b>Verbs</b> Save note · Ask</span><span><b>Receipts</b> Saved to Nyx's record · 7:10am · what you noticed &nbsp;/&nbsp; Counted from Nyx's record · worded by AI</span></div>
+        Changes no shipped string; the note never reads as AI input; D7's constraint holds by construction. Sam: "I asked Culprit" and "I put it in Juniper's record" — said without embarrassment.</div>
+      <div class="name"><p class="w">Noticed</p><div class="verdict">strong as the note's receipt, weak as a pill</div>
+        <div class="strs"><span><b>Pill</b> Noticed</span><span><b>Door</b> Tell Nyx's record what you noticed, or ask it</span><span><b>Sheet</b> What you noticed</span><span><b>Verbs</b> Noticed · Ask</span></div>
+        Names the note's true clinical status — an owner-reported observation, the word Dr. Chen wants on the report. Past-tense label is unusual at seven characters; the AI half goes unnamed. Kept as the receipt line above.</div>
+      <div class="name"><p class="w">Notes</p><div class="verdict">diary drift; hides the delightful half</div>
+        <div class="strs"><span><b>Pill</b> Notes</span><span><b>Door</b> Add a note about Nyx, or ask</span><span><b>Sheet</b> Notes</span><span><b>Verbs</b> Write · Ask</span></div>
+        The mood-journal shape every lens vetoed; collides with the per-event notes field, which is a different thing (attached, not standalone); demotes Ask under a capture noun.</div>
+      <div class="name"><p class="w">Record</p><div class="verdict">right as a sheet title, wrong as a pill</div>
+        <div class="strs"><span><b>Pill</b> Record</span><span><b>Door</b> Tell Nyx's record, or ask it</span><span><b>Sheet</b> Nyx's record</span><span><b>Verbs</b> Tell · Ask</span></div>
+        As a pill it is a verb with a red dot (audio), and History already <em>is</em> the record — one thing with two names beside the tab bar. Survives as the object every string names.</div>
+      <div class="name"><p class="w">Tell</p><div class="verdict">needs its object; a pun the register cannot afford</div>
+        <div class="strs"><span><b>Pill</b> Tell</span><span><b>Door</b> Tell Nyx's record</span><span><b>Sheet</b> Tell</span><span><b>Verbs</b> Tell · Ask</span></div>
+        Alone it is "tell on" — beside a brand called Culprit that reads as cute. A pill reading Tell does not say what to tell.</div>
+      <div class="name"><p class="w">Whorl · Log · Notebook</p><div class="verdict">out</div>
+        <div class="strs"><span><b>Whorl</b> names the AI as a character (Ask spec §4 forbids; the metaphor rule) — it stays the <em>mark</em> on the Ask verb, never the word</span><span><b>Log</b> collides with the FAB, the second create door you ruled out</span><span><b>Notebook</b> eight characters, skeuomorphic, "Nyx's notebook" is a pet-brand line</span></div>
+        The field agrees: every capture surface at the design bar is named by its object (Journal, Notes, Tags, Entries), never by the AI; the persona nouns (Advisor, Coach, Max) are the ones carrying regulatory and trust risk.</div>
+    </div>
+  </section>
+
+  <!-- ================================================== 07 -->
+  <section id="briefs">
+    <div class="sec-head"><span class="sec-num">07</span><h2>The briefs</h2></div>
+    <div class="col"><p>Rule from the frames. DB-1…DB-5 from round 2 are superseded where these overlap; D1 and D6 from round 1 still stand on CUL-810.</p></div>
+
+    <div class="brief"><p class="bid">DC-1 — The instrument that expands (replaces DB-1)</p>
+      <p><strong>Deciding:</strong> the Home's hero and how the three grains relate.</p>
+      <p><strong>Options:</strong> <span class="rec">one InstrumentZone — condensed today + yesterday by default, expanding to the week and the season in place, the grain remembered per pet — recommended</span> · the three grains always stacked (no expand; taller Home) · today only, the week and season behind All patterns.</p>
+      <p><strong>Consequence:</strong> the Long Lane retires as a screen; its content is the season grain. DB-3's adversarial gate on rose marks at display size still applies to the season grain.</p>
+    </div>
+    <div class="brief"><p class="bid">DC-2 — The door at the top, or after Signals (extends DB-2)</p>
+      <p><strong>Deciding:</strong> where the composer door sits.</p>
+      <p><strong>Options:</strong> A at the top under the header, the header pill retired, an unfolded safety card taking the top when present · <span class="rec">B after Signals, above the trial strip, the header pill kept — recommended by Dr. Chen and Sam; A is drawn because you asked and is honest at two lines</span>.</p>
+      <p><strong>Consequence:</strong> A makes the door the first tappable thing on Home on a quiet morning; B keeps the record first. Either way the sheet, the chips and the free class are unchanged.</p>
+    </div>
+    <div class="brief"><p class="bid">DC-3 — Full screen, and chat history</p>
+      <p><strong>Deciding:</strong> whether the sheet grows to the built full screen (a layout call) and whether conversations persist (a T&amp;S ruling).</p>
+      <p><strong>Options:</strong> <span class="rec">the sheet grows to full-screen /ask on drag, expand, or a second turn; no durable history (Ask D8 as ruled; B-375 stays parked) — recommended</span> · full screen plus a persisted, deletable history behind the title (reopens D8, the §10 T&amp;S posture, the export and deletion cascade).</p>
+      <p><strong>Consequence:</strong> persistence is a schema-and-privacy track of its own; the layout here does not depend on it.</p>
+    </div>
+    <div class="brief"><p class="bid">DC-4 — All logging through the FAB (re-rules B-614 D1)</p>
+      <p><strong>Deciding:</strong> whether Home keeps any one-tap write outside the FAB.</p>
+      <p><strong>Options:</strong> FAB only — the med row becomes context (as drawn), the "Given now" confirm retires · <span class="rec">keep the one confirmation the spec already carved out — a control that writes a row the app could already describe (the med dose) — and add no others — recommended by Principle 2 and Sam's 9pm; the Designer is fine either way</span>.</p>
+      <p><strong>Consequence:</strong> "FAB only" is a Tier-2 edit to the med-strip spec (D1 C → A) and removes a shipped write path; "keep" leaves Home with exactly one confirm and zero forms.</p>
+    </div>
+    <div class="brief" id="dc5"><p class="bid">DC-5 — Arrange Home</p>
+      <p><strong>Deciding:</strong> whether Home v2 ships any owner configuration.</p>
+      <p><strong>Options:</strong> none (curation only, the health-app answer) · <span class="rec">reorder + hide over a fixed spine (Signals with safety, Today, the FAB never move or hide), device-local, behind the same flag — recommended as a v2.1 rung once the modules exist</span> · a module gallery with add / settings (the resource-intensive version).</p>
+      <p><strong>Consequence:</strong> the module registry the hybrid needs is the same refactor the drawn Home needs anyway; the cost of configurability is mostly in the spec (every module's empty / thin / safety states) and the QA matrix, not the code.</p>
+    </div>
+    <div class="brief" id="dc6"><p class="bid">DC-6 — The name</p>
+      <p><strong>Deciding:</strong> what the two-verb surface is called on the pill, the door, and the sheet.</p>
+      <p><strong>Options:</strong> <span class="rec">(a) keep "Ask" as the AI verb's name; the composer is unnamed and titled by its object, "Nyx's record"; the note is a plain verb, "Save note", like every other free write — recommended: the CTA you liked already is the name, the note never reads as AI input, and D7's constraint holds by construction</span> · (b) rename the surface "Notes" and demote Ask to a verb inside it (diary drift; hides the delightful half) · (c) "Record" as the pill (collides with History; reads as a verb).</p>
+      <p><strong>Two rules for the spec when D7 closes:</strong> the note verb never gains a brand or a noun of its own (that is the diary), and the word "AI" appears as a chip and a receipt, never as a name.</p>
+      <p><strong>Consequence:</strong> one string on the header pill today; the door's copy; the sheet title; any store copy before public exposure (the D7 constraint).</p>
+    </div>
+    <div class="callout"><strong>Still open:</strong> D1 (is note capture the right feature — every frame here treats the note as the door's default verb) · D6 (verbatim-only; report by default vs toggle) · DB-3 (rose marks at display size, adversarial-gated) · DB-4 (the free class amendment to the Ask spec).</div>
+  </section>
+
+  <!-- ================================================== 08 -->
+  <section id="record">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Rounds 1 and 2, for the record</h2></div>
     <div class="col">
-      <p>Round 1 (2026-09-05, commit <code>13a06b5</code>) drew five directions on the same record: B′ "Since you last looked"
-      (a Moved line leads; parked by R2), D "The Open Page" (capture first), E "Ask-forward" (a metered field as hero; every
-      lens objected), C "The Briefing" (parked by R4), A "The Register" (the flag-off floor). It also drew the note's whole
-      life (the Tell row, the extraction proposal in the confirm register, History / report / Ask afterwards, the crisis
-      deflection, the consent moment) and Sam's and Jordan's frames. Those detail rules carry into round 2 unchanged
-      except DB-5; the six persona interviews and six briefs D1–D6 are on CUL-810.</p>
+      <p><strong>Round 1</strong> (<code>13a06b5</code>): five directions on the same record — B′ "Since you last looked", D "The Open Page", E
+      "Ask-forward", C "The Briefing", A "The Register" — the note's whole life, Sam's and Jordan's frames, six briefs D1–D6.
+      You parked the sentence-led directions and asked for the record drawn. <strong>Round 2</strong> (<code>62a5feb</code>): three
+      consultants seated; three Homes that differ in kind — I The Board, II The Long Lane, III The Daybook — the Ask moment
+      as a motion frame ("the dot that reads", "Dots land"), WeekLanes / SeasonStrip / TrialCells at build detail, briefs
+      DB-1–DB-5. You kept the instrument, the motion, the trial card, the strip; found the Long Lane chaotic; asked for the
+      expand, the door at the top, a sheet that scales, the FAB question, Arrange Home, and the name.</p>
     </div>
     <h3>What every lens still vetoes</h3>
     <ul class="veto">
       <li>Rotating cards to look alive; any entrance choreography on the 7am open</li>
-      <li>A chat box as the hero; the model routing intent; streaming or typewriter text on Home</li>
+      <li>A chat box as the hero; the model routing intent; streaming text on Home</li>
       <li>A score, a ring, a dial, a streak, a greeting, a green week, a days-since counter</li>
       <li>A chart with no denominator drawn; a bar height for a count; a line joining weeks; a heatmap that reads as a verdict</li>
       <li>A note re-quoted as a Home card, summarised, trended, or counted</li>
       <li>The LLM writing anything without the owner's tap</li>
-      <li>A capped or metered affordance on Home; a meter or lock anywhere on Home</li>
-      <li>A haptic while waiting, on a deflection, on a cap, or on anything safety-shaped; Success on an answer</li>
-      <li>A sparkle glyph; a glow; a breathing composer; the NightMoment for Ask; night ground on Home</li>
-      <li>Any drawing that outranks the plain safety card in colour (larger in area is fine; a filled rose cell is not)</li>
+      <li>A meter or lock anywhere on Home</li>
+      <li>A haptic while waiting, on a deflection, on a cap, or on anything safety-shaped</li>
+      <li>A sparkle glyph; a glow; a breathing composer; night ground on Home</li>
+      <li>Hiding, muting, or moving a safety finding below the first viewport — by the owner or the system</li>
       <li>A second composer behind the header pill; anything near the FAB</li>
       <li>Silently filing an unwitnessed event to the active pet</li>
     </ul>
@@ -786,64 +828,19 @@
 </div>
 <script>
 (function () {
-  var frame = document.getElementById('mframe');
-  var rm = document.getElementById('rmtoggle');
-  var composer = document.getElementById('composer'), conv = document.getElementById('conv');
-  var mdot = document.getElementById('mdot'), whorl = document.getElementById('whorl'), skel = document.getElementById('skel');
-  var reading = document.getElementById('reading'), ans = document.getElementById('ans'), slot = document.getElementById('slot');
-  var pilldot = document.getElementById('pilldot'), stage = document.getElementById('stage');
-  var timers = [];
-  function later(fn, ms) { timers.push(setTimeout(fn, rm.checked ? Math.min(ms, 200) : ms)); }
-  function clearAll() { timers.forEach(clearTimeout); timers = []; }
+  var x = document.getElementById('xinstr'), frame = document.getElementById('xframe');
+  var rm = document.getElementById('rmtoggle2');
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.grainbar .g'));
+  function setG(g) {
+    x.setAttribute('data-g', String(g));
+    [0,1,2].forEach(function (i) { document.getElementById('g' + i).classList.toggle('on', i === g); });
+    chips.forEach(function (c) { c.classList.toggle('on', Number(c.getAttribute('data-g')) === g); });
+  }
+  x.addEventListener('click', function () { setG((Number(x.getAttribute('data-g')) + 1) % 3); });
+  x.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setG((Number(x.getAttribute('data-g')) + 1) % 3); } });
+  chips.forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); setG(Number(c.getAttribute('data-g'))); }); });
   function applyRm() { frame.classList.toggle('rm', rm.checked); }
   rm.addEventListener('change', applyRm);
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { rm.checked = true; applyRm(); }
-  function reset() {
-    clearAll();
-    composer.hidden = false; conv.hidden = true;
-    mdot.style.opacity = '0'; mdot.style.transform = '';
-    whorl.classList.remove('on'); skel.classList.remove('on'); reading.style.opacity = '0';
-    ans.classList.remove('on'); pilldot.style.opacity = '1';
-  }
-  function play() {
-    reset();
-    // (c) send: the dot leaves the pill and travels to the answer slot
-    var pr = pilldot.getBoundingClientRect(), sr = stage.getBoundingClientRect();
-    mdot.style.left = (pr.left - sr.left) + 'px'; mdot.style.top = (pr.top - sr.top) + 'px';
-    mdot.style.opacity = '1'; pilldot.style.opacity = '0';
-    composer.hidden = true; conv.hidden = false;
-    var wr = whorl.getBoundingClientRect();
-    var tx = (wr.left + wr.width / 2 - 4) - (pr.left - sr.left) - sr.left, ty = (wr.top + wr.height / 2 - 4) - (pr.top - sr.top) - sr.top;
-    requestAnimationFrame(function () { mdot.style.transform = 'translate(' + tx + 'px,' + ty + 'px)'; });
-    // (d) thinking: ridges draw on around the dot
-    later(function () { whorl.classList.add('on'); skel.classList.add('on'); reading.style.opacity = '1'; }, 300);
-    // (e) arrival: ridges fade, the dot lifts, the rail grows down out of it
-    later(function () {
-      whorl.classList.remove('on'); skel.classList.remove('on'); reading.style.opacity = '0';
-      mdot.style.transform = 'translate(' + (tx - (wr.width / 2) + 2 - 13) + 'px,' + (ty + 26) + 'px)';
-    }, 2100);
-    later(function () { ans.classList.add('on'); slot.style.minHeight = '0'; }, 2260);
-    later(function () { mdot.style.opacity = '0'; }, 2400);
-  }
-  document.getElementById('play').addEventListener('click', play);
-  document.getElementById('bask').addEventListener('click', play);
-  document.getElementById('bsave').addEventListener('click', function () { reset(); });
-  document.getElementById('reset').addEventListener('click', function () { reset(); slot.style.minHeight = '56px'; });
-  // Dots land
-  var ld1 = document.getElementById('ld1'), ld2 = document.getElementById('ld2'), lbeat = document.getElementById('lbeat'), lcount = document.getElementById('lcount'), lbt = document.getElementById('lbeattext');
-  var lt = [];
-  function lclear() { lt.forEach(clearTimeout); lt = []; }
-  function land(dot, text, count) {
-    lclear();
-    lbt.innerHTML = text; lbeat.style.opacity = '1';
-    lt.push(setTimeout(function () { dot.classList.remove('pre'); }, 80));
-    lt.push(setTimeout(function () { lcount.style.opacity = '0'; }, 120));
-    lt.push(setTimeout(function () { lcount.innerHTML = count; lcount.style.opacity = '1'; }, 270));
-    lt.push(setTimeout(function () { lbeat.style.opacity = '0'; }, 2600));
-  }
-  lcount.style.transition = 'opacity 150ms';
-  document.getElementById('lmeal').addEventListener('click', function () { land(ld1, 'Breakfast · 8:10am · finished<br><small style="color:#C9C4E8;font-size:10.5px">Turkey · Nyx</small>', '<b>2</b> meals so far'); });
-  document.getElementById('lnote').addEventListener('click', function () { land(ld2, 'Note · 8:32am<br><small style="color:#C9C4E8;font-size:10.5px">Saved to Nyx’s record</small>', (ld1.classList.contains('pre') ? '<b>1</b> meal' : '<b>2</b> meals') + ' · 1 note'); });
-  document.getElementById('lreset').addEventListener('click', function () { lclear(); ld1.classList.add('pre'); ld2.classList.add('pre'); lbeat.style.opacity = '0'; lcount.innerHTML = '<b>1</b> meal so far'; });
 })();
 </script>
