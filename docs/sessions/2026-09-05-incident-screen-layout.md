@@ -2,8 +2,10 @@
 
 **Date:** 2026-09-05
 
-Shipped via **#806** (draft). Mode: BUILD. Also lands **CUL-660**. Second of the
-three build sub-issues under **CUL-800**; follows **CUL-802** (#805, the route).
+Shipped via **#806** (draft). Mode: BUILD. Second of the three build sub-issues
+under **CUL-800**; follows **CUL-802** (#805, the route).
+
+**It does not land CUL-660, and the spec was wrong to say it would** — see §4 below.
 
 ## What this was for
 
@@ -31,8 +33,8 @@ V1):
 - **`lib/observationFold.ts`** — the store, in `lib/signalFold.ts`'s shape: one
   key, epoch-guarded read-modify-write, sanitize-on-read, wiped by name in
   `wipeLocalSession`.
-- **`app/event/[id].tsx`** — `{pet}'s record` (CUL-660) and the two-line
-  `PhotoViewer` caption, both off the record's own row.
+- **`app/event/[id].tsx`** — `{pet}'s record` and the two-line `PhotoViewer`
+  caption, both off the record's own row.
 
 ## Three things worth keeping
 
@@ -126,6 +128,39 @@ The other half of that: **only the facts fold; the read never does.** An
 escalation and its sentence are on screen at every fold state, which is what makes
 folding a safety-adjacent surface defensible at all.
 
+### 4. A spec sentence claimed to close an issue it had not read
+
+§5.1 said the record-block line "lands CUL-660". I built it and attached the PR to
+that issue before reading it. Both wrong:
+
+- **CUL-660 settled the placement, and it is not this one.** The name goes in the
+  **header bar**, on B-550's reasoning — the bar sits outside the `ScrollView`, so
+  it survives the scroll and is still on screen *when the phone is turned around*.
+  My line is inside the scroll. The two answer different questions: mine says whose
+  record this is while you read it; the header says whose it is while you show it.
+  The clinic hand-over is the whole reason that issue exists, and it is the half
+  #806 does not touch.
+- **It has an open R1 decision** (three header forms), its own mock and its own
+  draft PR #784, plus a standing claim comment from that session. An open PR already
+  referencing an issue is *work in review, not a claim* — the ritual says surface
+  before touching it, and attaching a second PR to it was exactly the thing not to do.
+
+**And the interesting part: #806 moves a premise of R1's argument.** That brief
+chose pet-first word order on CUL-726's rule — which half yields to the ellipsis is
+decided by how many times the surface states each half — because "the pet is stated
+nowhere else on the screen." After this PR it is: the body names it too. The tally is
+now tied, so the recommendation has to rest on the gesture (the turned-around phone,
+where the body line is scrolled away) rather than on the count. A re-raised brief is
+on the issue.
+
+**The generalisation:** *a spec sentence asserting that one track closes another
+track's issue is a claim about a document nobody in this session had opened.* The
+incident spec's other cross-references were to its own frames and rulings and were
+fine; this one reached across a track boundary, and reaching across is the case that
+needs the other issue read first. CUL-803's §5.1a now carries the correction, in the
+additive shape the frozen-doc rule prescribes — the original wording stays, with a
+pointer to what corrects it.
+
 ## Copy
 
 Every new string through `nyx-voice`. `Hide this note` is one string beyond §5.5's
@@ -153,6 +188,9 @@ were fixed in-session (see 1a), two were filed as CUL-826 / CUL-827, and two are
 recorded as bounded residuals above. Findings and dispositions on the PR.
 
 ## Follow-ups
+
+- **CUL-660** is NOT closed by this. R1 is still the PM's, #784 is still its PR, and
+  the premise change above is on the issue.
 
 - **CUL-804** (PR 3, the arrival) is next, sequenced after CUL-788 so `foldMotion`
   is one shared module. The rail and its tick are already the two constants it
