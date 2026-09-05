@@ -59,7 +59,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
 
   it('capped (no flags): renders the calm cap state, no retry, no reassurance', async () => {
     mockRow = row({ status: 'capped' });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
 
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
     expect(await findByText(/If Rex's stool keeps looking off/)).toBeTruthy();
@@ -74,7 +74,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
 
   it('read_disabled (no flags): renders nothing — no dead affordance', async () => {
     mockRow = row({ status: 'read_disabled' });
-    const { toJSON } = render(<StoolAnalysisSection eventId="e2" petName="Rex" hasPhoto />);
+    const { toJSON } = render(<StoolAnalysisSection eventId="e2" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(toJSON()).toBeNull());
   });
 
@@ -88,7 +88,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
       recommendation: 'worth_a_call',
       read_text: 'Rex has had more than one loose stool in a short window. That is worth a call to your vet.',
     });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e3" petName="Rex" hasPhoto={false} />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e3" petId="pet-1" petName="Rex" hasPhoto={false} />);
 
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(queryByText(/photo reads are used up/i)).toBeNull(); // NOT the cap band
@@ -99,7 +99,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     // Guards the branch ORDER: `capped` must be caught before the `!row.recommendation`
     // fallback (which would otherwise offer a "Try analysis" retry on a capped row).
     mockRow = row({ status: 'capped' });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e4" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e4" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
     expect(queryByText(/Not enough to say about this one yet/i)).toBeNull();
   });
@@ -113,13 +113,13 @@ describe('StoolAnalysisSection — photoless suppression (B-363)', () => {
     // "Not enough to say about this one yet · Try analysis", where the retry just
     // loops (no photo to read). With no photo it now renders nothing.
     mockRow = row({ recommendation: null });
-    const { toJSON } = render(<StoolAnalysisSection eventId="p1" petName="Rex" hasPhoto={false} />);
+    const { toJSON } = render(<StoolAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto={false} />);
     await waitFor(() => expect(toJSON()).toBeNull());
   });
 
   it('photoless + not_enough_to_say: renders nothing', async () => {
     mockRow = row({ recommendation: 'not_enough_to_say' });
-    const { toJSON } = render(<StoolAnalysisSection eventId="p2" petName="Rex" hasPhoto={false} />);
+    const { toJSON } = render(<StoolAnalysisSection eventId="p2" petId="pet-1" petName="Rex" hasPhoto={false} />);
     await waitFor(() => expect(toJSON()).toBeNull());
   });
 
@@ -130,7 +130,7 @@ describe('StoolAnalysisSection — photoless suppression (B-363)', () => {
     // first (synchronous) frame is silent, then unmount before start()'s async
     // fetch resolves — so its poll loop never schedules a lingering timer.
     mockRow = row({ status: 'pending', recommendation: null });
-    const { queryByText, toJSON, unmount } = render(<StoolAnalysisSection eventId="p5" petName="Rex" hasPhoto={false} />);
+    const { queryByText, toJSON, unmount } = render(<StoolAnalysisSection eventId="p5" petId="pet-1" petName="Rex" hasPhoto={false} />);
     expect(toJSON()).toBeNull();
     expect(queryByText(/Reading this one/i)).toBeNull();
     unmount();
@@ -138,14 +138,14 @@ describe('StoolAnalysisSection — photoless suppression (B-363)', () => {
 
   it('WITH a photo + not_enough_to_say: keeps the retry (an unclear/unsynced photo is legitimately re-runnable)', async () => {
     mockRow = row({ recommendation: 'not_enough_to_say' });
-    const { findByText } = render(<StoolAnalysisSection eventId="p3" petName="Rex" hasPhoto />);
+    const { findByText } = render(<StoolAnalysisSection eventId="p3" petId="pet-1" petName="Rex" hasPhoto />);
     // The real read-path retry link survives when there IS a photo.
     expect(await findByText(/Re-run analysis/i)).toBeTruthy();
   });
 
   it('WITH a photo + no row/recommendation: keeps the "Try analysis" fallback', async () => {
     mockRow = row({ recommendation: null });
-    const { findByText } = render(<StoolAnalysisSection eventId="p4" petName="Rex" hasPhoto />);
+    const { findByText } = render(<StoolAnalysisSection eventId="p4" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/Not enough to say about this one yet/i)).toBeTruthy();
     expect(await findByText(/Try analysis/i)).toBeTruthy();
   });
@@ -161,7 +161,7 @@ describe('StoolAnalysisSection — Bristol-as-secondary framing (§3.4)', () => 
       read_text: 'A single photo on its own can’t tell you how Rex’s gut is doing.',
       stool_consistency: 'type_6_mushy',
     });
-    const { findByText } = render(<StoolAnalysisSection eventId="e5" petName="Rex" hasPhoto />);
+    const { findByText } = render(<StoolAnalysisSection eventId="e5" petId="pet-1" petName="Rex" hasPhoto />);
 
     // Plain-language label is present…
     expect(await findByText('Soft and mushy')).toBeTruthy();
@@ -179,7 +179,7 @@ describe('StoolAnalysisSection — Bristol-as-secondary framing (§3.4)', () => 
       read_text: 'Keep an eye on things.',
       stool_blood_present: 'no',
     });
-    const { findByText } = render(<StoolAnalysisSection eventId="e6" petName="Rex" hasPhoto />);
+    const { findByText } = render(<StoolAnalysisSection eventId="e6" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Blood')).toBeTruthy();
     expect(await findByText('None visible')).toBeTruthy();
   });
@@ -201,7 +201,7 @@ describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling
       foreign_material_present: 'unsure',
       foreign_material_note: 'a small pale fragment near the edge',
     });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f1" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f1" petId="pet-1" petName="Rex" hasPhoto />);
 
     // Surfaces as a deterministic label — NOT the model's free text.
     expect(await findByText('Foreign material')).toBeTruthy();
@@ -225,7 +225,7 @@ describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling
       foreign_material_present: 'unsure',
       foreign_material_note: 'looks like a piece of bone, probably from a raw diet and usually passes on its own',
     });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f1b" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f1b" petId="pet-1" petName="Rex" hasPhoto />);
 
     expect(await findByText('Possible — not identified')).toBeTruthy();  // the safe label
     expect(queryByText(/bone/)).toBeNull();                              // no diagnosis leaks
@@ -243,7 +243,7 @@ describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling
       foreign_material_note: null,
       stool_blood_present: 'no', // gives the observations block a row to render
     });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f2" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f2" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Blood')).toBeTruthy();          // the block did render
     expect(queryByText('Foreign material')).toBeNull();      // but no foreign-material row
   });
@@ -260,7 +260,7 @@ describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling
       foreign_material_note: '   ',
       stool_blood_present: 'no', // gives the observations block a row to render
     });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f5" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f5" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Blood')).toBeTruthy();
     expect(queryByText('Foreign material')).toBeNull();
   });
@@ -276,7 +276,7 @@ describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling
       foreign_material_note: 'nothing that looks non-food',
       stool_blood_present: 'no',
     });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f3" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f3" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Blood')).toBeTruthy();
     expect(queryByText('Foreign material')).toBeNull();
     expect(queryByText(/nothing that looks non-food/)).toBeNull();
@@ -292,7 +292,7 @@ describe('StoolAnalysisSection — foreign-material visibility (CUL-542, sibling
       foreign_material_present: 'yes',
       foreign_material_note: 'a piece of green plastic',
     });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f4" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="s-f4" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Foreign material')).toBeTruthy();
     expect(await findByText('a piece of green plastic')).toBeTruthy();
     // The 'yes' path shows the actual description, not the 'unsure' deterministic label.
@@ -307,7 +307,7 @@ describe('StoolAnalysisSection — realtime resolution (CUL-171)', () => {
     // Pending on mount (WITH a photo) → the working state, not an escalation yet.
     mockRow = row({ status: 'pending', recommendation: null });
     const { findByText, queryByText } = render(
-      <StoolAnalysisSection eventId="s-rt1" petName="Rex" hasPhoto />,
+      <StoolAnalysisSection eventId="s-rt1" petId="pet-1" petName="Rex" hasPhoto />,
     );
     // The section opened a realtime watch instead of polling.
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
@@ -330,7 +330,7 @@ describe('StoolAnalysisSection — realtime resolution (CUL-171)', () => {
     // No row is ever written; the watch exhausts its bounded fallback schedule.
     mockRow = null;
     const { findByText } = render(
-      <StoolAnalysisSection eventId="s-rt2" petName="Rex" hasPhoto />,
+      <StoolAnalysisSection eventId="s-rt2" petId="pet-1" petName="Rex" hasPhoto />,
     );
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     // Invoke the watch's give-up callback (3rd arg) → the section drops the
@@ -365,7 +365,7 @@ describe('StoolAnalysisSection — deferring to the log-path read (CUL-801)', ()
     mockRow = null;
     (awaitAnalysisChain as jest.Mock).mockResolvedValue(true);
 
-    render(<StoolAnalysisSection eventId="s-rt-claimed" petName="Rex" hasPhoto />);
+    render(<StoolAnalysisSection eventId="s-rt-claimed" petId="pet-1" petName="Rex" hasPhoto />);
 
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     expect(awaitAnalysisChain as jest.Mock).toHaveBeenCalledWith('s-rt-claimed');
@@ -381,7 +381,7 @@ describe('StoolAnalysisSection — deferring to the log-path read (CUL-801)', ()
     mockRow = null;
     (awaitAnalysisChain as jest.Mock).mockResolvedValue(false);
 
-    render(<StoolAnalysisSection eventId="s-rt-dead" petName="Rex" hasPhoto />);
+    render(<StoolAnalysisSection eventId="s-rt-dead" petId="pet-1" petName="Rex" hasPhoto />);
 
     await waitFor(() => expect(triggerStoolAnalysis as jest.Mock).toHaveBeenCalledWith('s-rt-dead'));
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
@@ -398,7 +398,7 @@ describe('StoolAnalysisSection — deferring to the log-path read (CUL-801)', ()
     let releaseChain!: (v: boolean) => void;
     (awaitAnalysisChain as jest.Mock).mockReturnValue(new Promise((r) => { releaseChain = r; }));
 
-    const { unmount } = render(<StoolAnalysisSection eventId="s-rt-left" petName="Rex" hasPhoto />);
+    const { unmount } = render(<StoolAnalysisSection eventId="s-rt-left" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(awaitAnalysisChain as jest.Mock).toHaveBeenCalledWith('s-rt-left'));
 
     unmount();            // the owner taps back, chain still live
@@ -414,7 +414,7 @@ describe('StoolAnalysisSection — deferring to the log-path read (CUL-801)', ()
     // claim is ever consulted, so re-opening a read incident costs nothing.
     mockRow = row({ status: 'completed', recommendation: 'monitor', read_text: 'Keep an eye out.' });
 
-    render(<StoolAnalysisSection eventId="s-rt-done" petName="Rex" hasPhoto />);
+    render(<StoolAnalysisSection eventId="s-rt-done" petId="pet-1" petName="Rex" hasPhoto />);
 
     await waitFor(() => expect(triggerStoolAnalysis as jest.Mock).not.toHaveBeenCalled());
     expect(awaitAnalysisChain as jest.Mock).not.toHaveBeenCalled();
@@ -431,7 +431,7 @@ describe('StoolAnalysisSection — an escalation outlives a failed re-read (CUL-
     // error where a "worth a call" belongs — which reads as nothing was found, on the
     // one surface built never to reassure.
     mockRow = row({ status: 'failed', recommendation: 'worth_a_call', read_text: 'There is blood visible in this one.', error: 'Claude API error 529' });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
 
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(await findByText(/blood visible/)).toBeTruthy();
@@ -447,7 +447,7 @@ describe('StoolAnalysisSection — an escalation outlives a failed re-read (CUL-
     // photo, so standing "keep an eye out" in front of it would be a claim about an
     // image nothing has read.
     mockRow = row({ status: 'failed', recommendation: 'monitor', read_text: 'Keep an eye on this one.' });
-    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
 
     expect(await findByText(/Couldn't finish reading this one/i)).toBeTruthy();
     expect(await findByText(/Try again/i)).toBeTruthy();
@@ -456,7 +456,7 @@ describe('StoolAnalysisSection — an escalation outlives a failed re-read (CUL-
 
   it('a failed row with no read at all is unchanged — the retry frame', async () => {
     mockRow = row({ status: 'failed' });
-    const { findByText } = render(<StoolAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    const { findByText } = render(<StoolAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/Couldn't finish reading this one/i)).toBeTruthy();
     expect(await findByText(/Try again/i)).toBeTruthy();
   });

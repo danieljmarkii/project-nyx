@@ -22,7 +22,7 @@
 // a small, muted secondary annotation — owners don't think in the Bristol scale, so
 // the number is a detail for relaying to a vet, never the primary framing.
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
@@ -49,6 +49,9 @@ import {
   CONTENT_OPTIONS,
 } from './stoolFields';
 import { ThemedText } from '../ui/ThemedText';
+import { IncidentReadCard, IncidentReadPending } from './IncidentReadCard';
+import { ObservationGrid } from './ObservationGrid';
+import { useObservationFold } from './useObservationFold';
 
 // 'capped' / 'read_disabled' are the two states the analyze-stool function writes
 // into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
@@ -90,7 +93,8 @@ const REC_LABEL: Record<Recommendation, string> = {
 };
 
 export function StoolAnalysisSection(
-  { eventId, petName, hasPhoto }: { eventId: string; petName?: string | null; hasPhoto: boolean },
+  { eventId, petId, petName, hasPhoto }:
+  { eventId: string; petId: string; petName?: string | null; hasPhoto: boolean },
 ) {
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
   const [working, setWorking] = useState(false); // analysis in flight (triggered or awaiting realtime)
@@ -99,6 +103,18 @@ export function StoolAnalysisSection(
   const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
   const watchTeardown = useRef<(() => void) | null>(null);
+
+  // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
+  // the grid so a re-render of the block never resets what the owner folded, and fed the
+  // observation set so the RECORD can re-open it: `Re-run analysis` renders in the folded
+  // state, so a re-analysis landing a new blood or foreign-material finding must not land
+  // it behind a strip. Derived from `row` on every render rather than mirrored into state
+  // (C-9's derive-in-the-render-body rule) — it is one join over at most six short values.
+  // `null`, NOT '', while the row has not loaded: the hook must be able to tell "not known
+  // yet" from "known to be empty", or the row's own arrival — nothing loaded, then four
+  // findings — reads as a change and releases every restored fold on mount.
+  const observationFingerprint = row ? buildObservations(row).map((o) => o.value).join('|') : null;
+  const [folded, setFolded] = useObservationFold(petId, eventId, observationFingerprint);
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -249,9 +265,7 @@ export function StoolAnalysisSection(
     return (
       <View style={styles.section}>
         <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
-        <View style={styles.pendingBox}>
-          <WhorlSpinner size="sm" ground="day" />
-        </View>
+        <IncidentReadPending />
       </View>
     );
   }
@@ -264,10 +278,7 @@ export function StoolAnalysisSection(
     return (
       <View style={styles.section}>
         <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>
-        <View style={styles.pendingBox}>
-          <WhorlSpinner size="sm" ground="day" />
-          <ThemedText style={styles.pendingText}>Reading this one…</ThemedText>
-        </View>
+        <IncidentReadPending />
       </View>
     );
   }
@@ -360,15 +371,6 @@ export function StoolAnalysisSection(
 
   const rec = row.recommendation;
   const dismissed = !!row.dismissed_at;
-  const tone =
-    rec === 'worth_a_call' ? styles.cardAttn
-    : rec === 'monitor' ? styles.neutralCard
-    : styles.mutedCard;
-  const labelTone =
-    rec === 'worth_a_call' ? styles.recLabelAttn
-    : rec === 'monitor' ? styles.recLabelNeutral
-    : styles.recLabelMuted;
-
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableStoolField>(
@@ -387,85 +389,57 @@ export function StoolAnalysisSection(
           </TouchableOpacity>
         </View>
       ) : (
-        <View style={[styles.readCard, tone]}>
-          <View style={styles.readHeader}>
-            <ThemedText style={[styles.recLabel, labelTone]}>{REC_LABEL[rec]}</ThemedText>
-            <TouchableOpacity
-              onPress={() => setDismissed(true)}
-              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-              style={styles.dismissBtn}
-            >
-              {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
-                  These stand in for vector glyphs (the B-745 GlyphSvg migration owns them), and Geist
-                  carries no ✓ / ✕ / ＋ in any loaded weight, so sweeping one buys OS fallback for
-                  nothing. CUL-364 §7. */}
-              <Text style={styles.dismissX}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          {row.read_text ? <ThemedText style={styles.readText}>{row.read_text}</ThemedText> : null}
-        </View>
+        <IncidentReadCard
+          verdict={rec}
+          label={REC_LABEL[rec]}
+          readText={row.read_text}
+          onHide={() => setDismissed(true)}
+        />
       )}
 
       {!dismissed && (observations.length > 0 || canEdit) ? (
-        <View style={styles.obsBlock}>
-          <View style={styles.obsHeaderRow}>
-            <ThemedText style={styles.obsHeading}>What's visible</ThemedText>
-            {!editing && canEdit ? (
-              <TouchableOpacity onPress={() => setEditing(true)} hitSlop={16}>
-                <ThemedText style={styles.editLink}>{observations.length > 0 ? 'Edit' : 'Add details'}</ThemedText>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {editing ? (
+        <ObservationGrid
+          rows={observations.map((o) => ({
+            key: o.field,
+            label: o.label,
+            value: o.value,
+            secondary: o.secondary,
+            edited: isObsRowEdited(editedSet, o.field),
+          }))}
+          description={row.description}
+          descriptionEdited={editedSet.has('description')}
+          editedAtLabel={row.edited_at ? `Edited ${formatEditedDate(row.edited_at)}` : null}
+          onEdit={!editing && canEdit ? () => setEditing(true) : null}
+          editLabel={observations.length > 0 ? 'Edit' : 'Add details'}
+          editor={editing ? (
             <StoolFieldsEditor
               initial={currentEditable(row)}
               saving={saving}
               onSave={handleSaveEdits}
               onCancel={() => setEditing(false)}
             />
-          ) : (
-            <>
-              {observations.map((o) => (
-                <View key={o.label} style={styles.obsRow}>
-                  <ThemedText style={styles.obsKey}>{o.label}</ThemedText>
-                  <View style={styles.obsValWrap}>
-                    <ThemedText style={styles.obsVal}>{o.value}</ThemedText>
-                    {o.secondary ? <ThemedText style={styles.obsSecondary}>{o.secondary}</ThemedText> : null}
-                    {isObsRowEdited(editedSet, o.field) ? (
-                      <ThemedText style={styles.editedTag}>Edited</ThemedText>
-                    ) : null}
-                  </View>
-                </View>
-              ))}
-              {row.description ? (
-                <View style={styles.descWrap}>
-                  <ThemedText style={styles.obsDescription}>{row.description}</ThemedText>
-                  {editedSet.has('description') ? <ThemedText style={styles.editedTag}>Edited</ThemedText> : null}
-                </View>
-              ) : null}
-              {/* One calm provenance line — never alarming (nyx-voice). The
-                  per-field markers say WHAT changed; this says WHEN. */}
-              {row.edited_at ? (
-                <ThemedText style={styles.editedLine}>Edited {formatEditedDate(row.edited_at)}</ThemedText>
-              ) : null}
-            </>
-          )}
-        </View>
+          ) : undefined}
+          escalating={rec === 'worth_a_call'}
+          folded={folded}
+          onToggleFold={setFolded}
+        />
       ) : null}
 
+      {/* CUL-803 — no `hitSlop`. This control's previous sibling used to be inert text
+          (the last observation row), and is now a touchable: the grid's `Keep it compact`
+          when open, the fold strip when shut, both flush against it with no separation.
+          Two slopped controls facing each other at a zero gap overlap (C-5), and the fix
+          for controls already flush is to grow the BOX — `rerunRow` carries the 44pt
+          floor in `minHeight` instead. */}
       {!dismissed && !editing ? (
         <TouchableOpacity
           onPress={handleRetry}
           disabled={retrying}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.rerunRow}
         >
           <ThemedText style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</ThemedText>
         </TouchableOpacity>
       ) : null}
-
-      <ThemedText style={styles.disclaimer}>This is a quick read of a single moment, not a diagnosis.</ThemedText>
     </View>
   );
 }
@@ -592,72 +566,12 @@ const styles = StyleSheet.create({
     letterSpacing: theme.trackingWidest,
     marginBottom: theme.space1,
   },
-  pendingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    padding: theme.space2,
-    minHeight: 48,
-  },
-  pendingText: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-  },
-  readCard: {
-    borderRadius: theme.radiusMedium,
-    padding: theme.space2,
-    borderWidth: 1,
-  },
-  cardAttn: {
-    backgroundColor: theme.colorAccentLight,
-    borderColor: theme.colorAccent,
-    borderLeftWidth: 3,
-  },
   neutralCard: {
     backgroundColor: theme.colorSurfaceSubtle,
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusMedium,
     padding: theme.space2,
     borderWidth: 1,
-  },
-  mutedCard: {
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderColor: theme.colorBorder,
-    borderStyle: 'dashed',
-    borderRadius: theme.radiusMedium,
-    padding: theme.space2,
-    borderWidth: 1,
-  },
-  readHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  recLabel: {
-    fontSize: theme.textXS,
-    fontWeight: theme.fontWeightMedium,
-    letterSpacing: theme.trackingWidest,
-  },
-  // CUL-744 — the ink, and this is the site in that sweep that mattered most. This is
-  // the escalation tone: `worth_a_call` renders on `cardAttn`, whose fill is
-  // colorAccentLight, so the bright accent here was 2.08:1 — the Badge tint-pair defect
-  // sitting on the one label that asks an owner to phone a vet. It was also the LEAST
-  // legible of the card's three tones (monitor 7.17:1, muted 4.35:1), which inverts the
-  // severity ordering: the escalation read faintest. The ink is 4.75:1 on that fill.
-  recLabelAttn: { color: theme.colorAccentInk },
-  recLabelNeutral: { color: theme.colorTextSecondary },
-  recLabelMuted: { color: theme.colorTextTertiary },
-  dismissBtn: {
-    marginLeft: theme.space1,
-  },
-  dismissX: {
-    fontSize: 14,
-    color: theme.colorTextTertiary,
   },
   readText: {
     fontSize: theme.textMD,
@@ -673,6 +587,10 @@ const styles = StyleSheet.create({
   rerunRow: {
     paddingVertical: theme.space1,
     alignSelf: 'flex-start',
+    justifyContent: 'center',
+    // Pinned explicitly because the 44pt floor depends on it and the slop that used to
+    // reach it is gone (C-5).
+    minHeight: 44,
   },
   dismissedRow: {
     flexDirection: 'row',
@@ -683,80 +601,6 @@ const styles = StyleSheet.create({
   dismissedText: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
-  },
-  obsBlock: {
-    marginTop: theme.space2,
-    gap: 4,
-  },
-  obsHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: theme.spaceMicro,
-  },
-  obsHeading: {
-    fontSize: theme.textSM,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-  },
-  editLink: {
-    fontSize: theme.textSM,
-    color: theme.colorAccentInk,
-    fontWeight: theme.fontWeightMedium,
-  },
-  obsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: theme.space2,
-  },
-  obsKey: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-  },
-  obsValWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    flexWrap: 'wrap',
-    flexShrink: 1,
-    gap: 6,
-  },
-  obsVal: {
-    fontSize: theme.textSM,
-    color: theme.colorTextPrimary,
-    fontWeight: theme.fontWeightMedium,
-    flexShrink: 1,
-    textAlign: 'right',
-  },
-  // The Bristol type — deliberately tertiary + small so the plain-language label
-  // stays the primary framing and the number reads as a quiet clinical annotation
-  // (§3.4, Designer).
-  obsSecondary: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    fontWeight: theme.fontWeightMedium,
-  },
-  // Per-field provenance marker — deliberately tertiary + small so it reads as a
-  // quiet annotation, never an alarm (Designer / nyx-voice).
-  editedTag: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    fontWeight: theme.fontWeightMedium,
-  },
-  descWrap: {
-    marginTop: 6,
-    gap: theme.spaceMicro,
-  },
-  obsDescription: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: 19,
-  },
-  editedLine: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    marginTop: 6,
   },
   disclaimer: {
     fontSize: theme.textXS,

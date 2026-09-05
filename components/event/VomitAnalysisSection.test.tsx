@@ -35,7 +35,9 @@ jest.mock('../../lib/analysis', () => ({
 jest.mock('./VomitFieldsEditor', () => ({ VomitFieldsEditor: () => null }));
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
-import { render, waitFor, act } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readObservationFold, setObservationFold } from '../../lib/observationFold';
+import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
 
@@ -55,7 +57,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
 
   it('row 5 — capped (no flags): renders the calm cap state, no retry, no reassurance', async () => {
     mockRow = row({ status: 'capped' });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
 
     // The §7.3 cap copy, personalized + the vet escalation.
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
@@ -72,7 +74,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
 
   it('read_disabled (no flags): renders nothing — no dead affordance', async () => {
     mockRow = row({ status: 'read_disabled' });
-    const { toJSON } = render(<VomitAnalysisSection eventId="e2" petName="Rex" hasPhoto />);
+    const { toJSON } = render(<VomitAnalysisSection eventId="e2" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(toJSON()).toBeNull());
   });
 
@@ -84,7 +86,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     // hasPhoto={false}: a photoless contextual escalation (repeated vomiting) must
     // still render — B-363's no-photo suppression only eats the not_enough_to_say
     // dead-end, never an escalation.
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e3" petName="Rex" hasPhoto={false} />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e3" petId="pet-1" petName="Rex" hasPhoto={false} />);
 
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(queryByText(/photo reads are used up/i)).toBeNull(); // NOT the cap band
@@ -95,7 +97,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     // Guards the branch ORDER: `capped` must be caught before the `!row.recommendation`
     // fallback (which would otherwise offer a "Try analysis" retry on a capped row).
     mockRow = row({ status: 'capped' });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e4" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e4" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
     expect(queryByText(/Not enough to say about this one yet/i)).toBeNull();
   });
@@ -106,13 +108,13 @@ describe('VomitAnalysisSection — photoless suppression (B-363)', () => {
 
   it('photoless + no recommendation: renders nothing — no looping "Try analysis"', async () => {
     mockRow = row({ recommendation: null });
-    const { toJSON } = render(<VomitAnalysisSection eventId="p1" petName="Rex" hasPhoto={false} />);
+    const { toJSON } = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto={false} />);
     await waitFor(() => expect(toJSON()).toBeNull());
   });
 
   it('photoless + not_enough_to_say: renders nothing', async () => {
     mockRow = row({ recommendation: 'not_enough_to_say' });
-    const { toJSON } = render(<VomitAnalysisSection eventId="p2" petName="Rex" hasPhoto={false} />);
+    const { toJSON } = render(<VomitAnalysisSection eventId="p2" petId="pet-1" petName="Rex" hasPhoto={false} />);
     await waitFor(() => expect(toJSON()).toBeNull());
   });
 
@@ -120,7 +122,7 @@ describe('VomitAnalysisSection — photoless suppression (B-363)', () => {
     // Assert the first (synchronous) frame is silent, then unmount before start()'s
     // async fetch resolves — so its poll loop never schedules a lingering timer.
     mockRow = row({ status: 'pending', recommendation: null });
-    const { queryByText, toJSON, unmount } = render(<VomitAnalysisSection eventId="p5" petName="Rex" hasPhoto={false} />);
+    const { queryByText, toJSON, unmount } = render(<VomitAnalysisSection eventId="p5" petId="pet-1" petName="Rex" hasPhoto={false} />);
     expect(toJSON()).toBeNull();
     expect(queryByText(/Reading this one/i)).toBeNull();
     unmount();
@@ -128,13 +130,13 @@ describe('VomitAnalysisSection — photoless suppression (B-363)', () => {
 
   it('WITH a photo + not_enough_to_say: keeps the retry (an unclear/unsynced photo is legitimately re-runnable)', async () => {
     mockRow = row({ recommendation: 'not_enough_to_say' });
-    const { findByText } = render(<VomitAnalysisSection eventId="p3" petName="Rex" hasPhoto />);
+    const { findByText } = render(<VomitAnalysisSection eventId="p3" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/Re-run analysis/i)).toBeTruthy();
   });
 
   it('WITH a photo + no row/recommendation: keeps the "Try analysis" fallback', async () => {
     mockRow = row({ recommendation: null });
-    const { findByText } = render(<VomitAnalysisSection eventId="p4" petName="Rex" hasPhoto />);
+    const { findByText } = render(<VomitAnalysisSection eventId="p4" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/Not enough to say about this one yet/i)).toBeTruthy();
     expect(await findByText(/Try analysis/i)).toBeTruthy();
   });
@@ -155,7 +157,7 @@ describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)
       foreign_material_present: 'unsure',
       foreign_material_note: 'a small pale fragment near the top',
     });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f1" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f1" petId="pet-1" petName="Rex" hasPhoto />);
 
     // Surfaces as a deterministic label — NOT the model's free text.
     expect(await findByText('Foreign material')).toBeTruthy();
@@ -178,7 +180,7 @@ describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)
       foreign_material_present: 'unsure',
       foreign_material_note: 'looks like a piece of bone, probably from a raw diet and usually passes on its own',
     });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f1b" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f1b" petId="pet-1" petName="Rex" hasPhoto />);
 
     expect(await findByText('Possible — not identified')).toBeTruthy();  // the safe label
     expect(queryByText(/bone/)).toBeNull();                              // no diagnosis leaks
@@ -196,7 +198,7 @@ describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)
       foreign_material_note: null,
       blood_present: 'none_visible', // gives the observations block a row to render
     });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f2" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f2" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Blood')).toBeTruthy();          // the block did render
     expect(queryByText('Foreign material')).toBeNull();      // but no foreign-material row
   });
@@ -211,7 +213,7 @@ describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)
       foreign_material_note: 'nothing that looks non-food',
       blood_present: 'none_visible',
     });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f3" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f3" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Blood')).toBeTruthy();
     expect(queryByText('Foreign material')).toBeNull();
     expect(queryByText(/nothing that looks non-food/)).toBeNull();
@@ -227,7 +229,7 @@ describe('VomitAnalysisSection — foreign-material visibility (CUL-240 / B-042)
       foreign_material_present: 'yes',
       foreign_material_note: 'a piece of green plastic',
     });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f4" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="f4" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Foreign material')).toBeTruthy();
     expect(await findByText('a piece of green plastic')).toBeTruthy();
     // The 'yes' path shows the actual description, not the 'unsure' deterministic label.
@@ -242,7 +244,7 @@ describe('VomitAnalysisSection — realtime resolution (CUL-171)', () => {
     // Pending on mount (WITH a photo) → the working state, not an escalation yet.
     mockRow = row({ status: 'pending', recommendation: null });
     const { findByText, queryByText } = render(
-      <VomitAnalysisSection eventId="rt1" petName="Rex" hasPhoto />,
+      <VomitAnalysisSection eventId="rt1" petId="pet-1" petName="Rex" hasPhoto />,
     );
     // The section opened a realtime watch instead of polling.
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
@@ -265,7 +267,7 @@ describe('VomitAnalysisSection — realtime resolution (CUL-171)', () => {
     // No row is ever written; the watch exhausts its bounded fallback schedule.
     mockRow = null;
     const { findByText } = render(
-      <VomitAnalysisSection eventId="rt2" petName="Rex" hasPhoto />,
+      <VomitAnalysisSection eventId="rt2" petId="pet-1" petName="Rex" hasPhoto />,
     );
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     // Invoke the watch's give-up callback (3rd arg) → the section drops the
@@ -300,7 +302,7 @@ describe('VomitAnalysisSection — deferring to the log-path read (CUL-801)', ()
     mockRow = null;
     (awaitAnalysisChain as jest.Mock).mockResolvedValue(true);
 
-    render(<VomitAnalysisSection eventId="rt-claimed" petName="Rex" hasPhoto />);
+    render(<VomitAnalysisSection eventId="rt-claimed" petId="pet-1" petName="Rex" hasPhoto />);
 
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     expect(awaitAnalysisChain as jest.Mock).toHaveBeenCalledWith('rt-claimed');
@@ -316,7 +318,7 @@ describe('VomitAnalysisSection — deferring to the log-path read (CUL-801)', ()
     mockRow = null;
     (awaitAnalysisChain as jest.Mock).mockResolvedValue(false);
 
-    render(<VomitAnalysisSection eventId="rt-dead" petName="Rex" hasPhoto />);
+    render(<VomitAnalysisSection eventId="rt-dead" petId="pet-1" petName="Rex" hasPhoto />);
 
     await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalledWith('rt-dead'));
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
@@ -333,7 +335,7 @@ describe('VomitAnalysisSection — deferring to the log-path read (CUL-801)', ()
     let releaseChain!: (v: boolean) => void;
     (awaitAnalysisChain as jest.Mock).mockReturnValue(new Promise((r) => { releaseChain = r; }));
 
-    const { unmount } = render(<VomitAnalysisSection eventId="rt-left" petName="Rex" hasPhoto />);
+    const { unmount } = render(<VomitAnalysisSection eventId="rt-left" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(awaitAnalysisChain as jest.Mock).toHaveBeenCalledWith('rt-left'));
 
     unmount();            // the owner taps back, chain still live
@@ -349,7 +351,7 @@ describe('VomitAnalysisSection — deferring to the log-path read (CUL-801)', ()
     // claim is ever consulted, so re-opening a read incident costs nothing.
     mockRow = row({ status: 'completed', recommendation: 'monitor', read_text: 'Keep an eye out.' });
 
-    render(<VomitAnalysisSection eventId="rt-done" petName="Rex" hasPhoto />);
+    render(<VomitAnalysisSection eventId="rt-done" petId="pet-1" petName="Rex" hasPhoto />);
 
     await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).not.toHaveBeenCalled());
     expect(awaitAnalysisChain as jest.Mock).not.toHaveBeenCalled();
@@ -366,7 +368,7 @@ describe('VomitAnalysisSection — an escalation outlives a failed re-read (CUL-
     // error where a "worth a call" belongs — which reads as nothing was found, on the
     // one surface built never to reassure.
     mockRow = row({ status: 'failed', recommendation: 'worth_a_call', read_text: 'There is blood visible in this one.', error: 'Claude API error 529' });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
 
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(await findByText(/blood visible/)).toBeTruthy();
@@ -382,7 +384,7 @@ describe('VomitAnalysisSection — an escalation outlives a failed re-read (CUL-
     // photo, so standing "keep an eye out" in front of it would be a claim about an
     // image nothing has read.
     mockRow = row({ status: 'failed', recommendation: 'monitor', read_text: 'Keep an eye on this one.' });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
 
     expect(await findByText(/Couldn't finish reading this one/i)).toBeTruthy();
     expect(await findByText(/Try again/i)).toBeTruthy();
@@ -391,8 +393,285 @@ describe('VomitAnalysisSection — an escalation outlives a failed re-read (CUL-
 
   it('a failed row with no read at all is unchanged — the retry frame', async () => {
     mockRow = row({ status: 'failed' });
-    const { findByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    const { findByText } = render(<VomitAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/Couldn't finish reading this one/i)).toBeTruthy();
     expect(await findByText(/Try again/i)).toBeTruthy();
+  });
+});
+
+// ── CUL-803 — the read card, the observations grid and the fold ───────────────
+//
+// The section's job in this PR is composition: it owns the fold's STATE (so a re-render
+// never drops what the owner folded) and hands the rest to the two shared components,
+// which carry their own tests. What is pinned here is the wiring — that the fold reaches
+// the store keyed by pet AND event, and that a device whose storage cannot answer shows
+// the owner every finding rather than hiding them.
+describe('VomitAnalysisSection — the observations fold (§5.3)', () => {
+  afterEach(async () => {
+    mockRow = null;
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  const READ = row({
+    status: 'completed', recommendation: 'monitor',
+    read_text: 'Yellow, foamy, mostly bile.',
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+  });
+
+  it('folds to a strip that names the findings and counts them, and re-opens from it', async () => {
+    mockRow = READ;
+    const { findByText, getByText, queryByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    expect(getByText('Yellow')).toBeTruthy();
+
+    fireEvent.press(getByText('Keep it compact'));
+    await waitFor(() => expect(queryByText('Yellow')).toBeNull());
+    expect(getByText(/4 findings/)).toBeTruthy();
+    // The READ is never folded — an escalation and its sentence stay on screen at every
+    // fold state, which is the whole reason only the facts are foldable.
+    expect(getByText('Keep an eye out')).toBeTruthy();
+    expect(getByText('Yellow, foamy, mostly bile.')).toBeTruthy();
+
+    fireEvent.press(getByText("What's visible"));
+    await waitFor(() => expect(getByText('Yellow')).toBeTruthy());
+  });
+
+  it('persists per pet AND per event — a fold on one incident is not a fold on the next', async () => {
+    mockRow = READ;
+    const first = render(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+    await first.findByText('Keep an eye out');
+    fireEvent.press(first.getByText('Keep it compact'));
+    await waitFor(() => expect(first.queryByText('Yellow')).toBeNull());
+    // The screen folds immediately and the store follows (the write is fire-and-forget by
+    // design), so wait on the WRITE, not on the render — otherwise the remount below races
+    // it and this test measures scheduling rather than persistence.
+    await waitFor(async () => expect(await readObservationFold('pet-A', 'ev-1')).toBe(true));
+    first.unmount();
+
+    // The same record, re-opened: folded.
+    const again = render(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+    await waitFor(() => expect(again.getByText(/4 findings/)).toBeTruthy());
+    again.unmount();
+
+    // A different incident, and the same event id under a different pet: both open.
+    const other = render(<VomitAnalysisSection eventId="ev-2" petId="pet-A" petName="Biscuit" hasPhoto />);
+    await waitFor(() => expect(other.getByText('Yellow')).toBeTruthy());
+    other.unmount();
+    const otherPet = render(<VomitAnalysisSection eventId="ev-1" petId="pet-B" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(otherPet.getByText('Yellow')).toBeTruthy());
+  });
+
+  it('a read that has not answered leaves the findings VISIBLE (C-12)', async () => {
+    // The direction matters: a storage failure must never hide a fact. `null` from the
+    // store is "did not answer", and only a true `folded` may collapse the grid.
+    // Restored in a `finally` rather than left to `restoreAllMocks`: AsyncStorage's own
+    // jest mock IS a jest.fn, so restoring a spy over it does not reliably drop the
+    // rejection — and a leaked one makes every later persistence assertion in this file
+    // read "did not answer" while still passing for the wrong reason.
+    const getItem = jest.spyOn(AsyncStorage, 'getItem').mockRejectedValue(new Error('storage gone'));
+    try {
+      mockRow = READ;
+      const { findByText, getByText } = render(
+        <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+      );
+      await findByText('Keep an eye out');
+      expect(getByText('Yellow')).toBeTruthy();
+    } finally {
+      getItem.mockRestore();
+    }
+  });
+});
+
+// ── CUL-803 — the seam the fold control created (C-5) ─────────────────────────
+//
+// `Re-run analysis` used to sit under inert text (the last observation row). The fold
+// put a touchable there instead — `Keep it compact` when the grid is open, the strip when
+// it is shut — flush against it, with no margin and no container gap between them. Two
+// controls with facing hitSlop at a zero gap overlap, and the overlap is asymmetric in
+// the worst direction: `Re-run analysis` costs an API call and replaces the read.
+//
+// The fix is the one C-5 prescribes for controls that are already flush — grow the BOX,
+// drop the slop — so the invariant to pin is that neither side reaches into the other.
+describe('VomitAnalysisSection — the fold control and Re-run analysis do not share hit area (C-5)', () => {
+  afterEach(async () => {
+    mockRow = null;
+    await AsyncStorage.clear();
+  });
+
+  const READ = row({
+    status: 'completed', recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.',
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+  });
+
+  /** The nearest responder host above a node — the thing that actually owns the touch. */
+  function owningTouchable(node: { parent: unknown } | null): Record<string, unknown> | null {
+    let cur = node as { parent: unknown; props?: Record<string, unknown> } | null;
+    while (cur) {
+      if (cur.props && typeof cur.props.onStartShouldSetResponder === 'function') {
+        return cur.props;
+      }
+      cur = cur.parent as typeof cur;
+    }
+    return null;
+  }
+
+  function facingSlop(props: Record<string, unknown> | null, edge: 'top' | 'bottom'): number {
+    const slop = props?.hitSlop as number | Record<string, number> | undefined;
+    if (slop == null) return 0;
+    return typeof slop === 'number' ? slop : (slop[edge] ?? 0);
+  }
+
+  it('neither the expanded fold control nor Re-run analysis reaches toward the other', async () => {
+    mockRow = READ;
+    const { findByText, getByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    const fold = owningTouchable(getByText('Keep it compact') as never);
+    const rerun = owningTouchable(getByText('Re-run analysis') as never);
+    expect(fold).not.toBeNull();
+    expect(rerun).not.toBeNull();
+    // They are separate responders (a shared one would be its own defect — C-6), and the
+    // rendered separation between them is zero, so the facing slop must be zero too.
+    expect(fold).not.toBe(rerun);
+    expect(facingSlop(fold, 'bottom') + facingSlop(rerun, 'top')).toBe(0);
+  });
+
+  it('the strip keeps its whole 44pt box when folded — Re-run does not reach into it', async () => {
+    mockRow = READ;
+    const { findByText, getByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    fireEvent.press(getByText('Keep it compact'));
+    await waitFor(() => expect(getByText(/4 findings/)).toBeTruthy());
+    const strip = owningTouchable(getByText("What's visible") as never);
+    const rerun = owningTouchable(getByText('Re-run analysis') as never);
+    expect(strip).not.toBe(rerun);
+    expect(facingSlop(strip, 'bottom') + facingSlop(rerun, 'top')).toBe(0);
+  });
+
+  it('both controls carry the 44pt floor in their own box, since the slop is gone', async () => {
+    const { StyleSheet } = require('react-native');
+    mockRow = READ;
+    const { findByText, getByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    for (const label of ['Keep it compact', 'Re-run analysis']) {
+      const props = owningTouchable(getByText(label) as never)!;
+      expect(StyleSheet.flatten(props.style as never).minHeight).toBe(44);
+    }
+  });
+});
+
+// ── CUL-803 — the two rules the adversarial pass added ────────────────────────
+describe('VomitAnalysisSection — an escalation’s facts never fold (§5.3)', () => {
+  afterEach(async () => {
+    mockRow = null;
+    await AsyncStorage.clear();
+    // The C-12 test above spies `AsyncStorage.getItem` into rejecting; without this, a
+    // later store read answers `null` ("did not answer") and every persistence assertion
+    // in this file silently measures the wrong thing.
+    jest.restoreAllMocks();
+  });
+
+  it('offers no fold on a worth_a_call — the facts justifying it stay on screen', async () => {
+    // The named slots go in row order and every builder pushes the descriptive rows
+    // first, so Blood / Foreign material are ALWAYS the rows a fold would compress. On an
+    // escalation that leaves the verdict on screen with every fact behind a tap, on the
+    // one surface D3 exists so an owner can turn the phone around to a vet.
+    mockRow = row({
+      status: 'completed', recommendation: 'worth_a_call',
+      read_text: 'There are streaks that look like blood in this photo.',
+      colour: 'brown', consistency: 'chunky', contents: ['undigested_food'],
+      blood_present: 'fresh_red', foreign_material_present: 'yes',
+      foreign_material_note: 'a piece of green plastic',
+    });
+    const { findByText, getByText, queryByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Worth a call');
+    expect(queryByText('Keep it compact')).toBeNull();
+    expect(getByText('Fresh red')).toBeTruthy();
+    expect(getByText('a piece of green plastic')).toBeTruthy();
+  });
+
+  it('a fold stored before the read escalated is overridden, never honoured', async () => {
+    // A re-analysis can turn a folded `monitor` into a `worth_a_call`. The stored fold is
+    // still in the blob; the gate has to beat it, not race it.
+    await setObservationFold('pet-A', 'ev-1', true, '2026-09-05T12:00:00.000Z');
+    mockRow = row({
+      status: 'completed', recommendation: 'worth_a_call', read_text: 'Blood is visible.',
+      colour: 'brown', consistency: 'liquid', blood_present: 'fresh_red',
+    });
+    const { findByText, getByText, queryByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Worth a call');
+    expect(getByText('Fresh red')).toBeTruthy();
+    expect(queryByText(/findings/)).toBeNull();
+  });
+});
+
+describe('VomitAnalysisSection — the RECORD re-opens a fold (§5.3)', () => {
+  afterEach(async () => {
+    mockRow = null;
+    await AsyncStorage.clear();
+    // The C-12 test above spies `AsyncStorage.getItem` into rejecting; without this, a
+    // later store read answers `null` ("did not answer") and every persistence assertion
+    // in this file silently measures the wrong thing.
+    jest.restoreAllMocks();
+  });
+
+  const BENIGN = row({
+    status: 'completed', recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.',
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+  });
+
+  it('a re-analysis landing NEW findings opens the grid it landed in', async () => {
+    // `Re-run analysis` renders in the folded state — it is the control directly under the
+    // strip. Without this rule a new blood finding lands behind a summary the owner has
+    // already dismissed as read. The verdict was never folded; the FACT was.
+    mockRow = BENIGN;
+    const { findByText, getByText, queryByText, rerender } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    fireEvent.press(getByText('Keep it compact'));
+    await waitFor(() => expect(queryByText('Yellow')).toBeNull());
+
+    // The owner presses the control that sits directly under the strip. The re-read
+    // carries a finding the folded summary did not.
+    mockRow = row({ ...BENIGN, blood_present: 'fresh_red' });
+    await act(async () => { fireEvent.press(getByText('Re-run analysis')); });
+    // …and the watch it opens resolves with the new row.
+    const call = (watchAnalysisRow as jest.Mock).mock.calls.at(-1);
+    expect(call).toBeTruthy();
+    await act(async () => { await (call![1] as () => Promise<unknown>)(); });
+    rerender(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+
+    await waitFor(() => expect(getByText('Fresh red')).toBeTruthy());
+    expect(queryByText(/findings/)).toBeNull();
+    // …and the store forgets it, so returning later meets the new findings open too.
+    await waitFor(async () => expect(await readObservationFold('pet-A', 'ev-1')).toBe(false));
+  });
+
+  it('a re-render that changes NOTHING leaves the fold alone', async () => {
+    // The other direction, and the one a naive implementation breaks: the fold must
+    // survive its own screen re-rendering, and must survive the row arriving at all.
+    mockRow = BENIGN;
+    const { findByText, getByText, queryByText, rerender } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    fireEvent.press(getByText('Keep it compact'));
+    await waitFor(() => expect(queryByText('Yellow')).toBeNull());
+    rerender(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+    rerender(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+    expect(getByText(/4 findings/)).toBeTruthy();
   });
 });

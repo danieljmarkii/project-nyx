@@ -73,6 +73,14 @@ interface Props {
   // costs the other callers nothing and adds no gesture (B-022 tap-dismiss and
   // B-036 pinch both stay untouched).
   caption?: string;
+  // A two-line caption UNDER the photo (CUL-803 · incident spec §5.4, mock frame V1).
+  // Distinct from `caption` above, which is a one-line label in the chrome strip: this
+  // one is for the callers whose lightbox IS the artifact a vet is being shown, so it has
+  // to survive beside Replace/Remove and carry a second line without truncating away the
+  // clinically load-bearing half. `secondary` renders the TIME through the caller's
+  // `describeOccurredAt` path, never a display string — so a found-not-witnessed incident
+  // shows its window here and never a point it was not witnessed at.
+  mediaCaption?: { primary: string; secondary?: string | null };
   onClose: () => void;
   // Optional actions — the button renders only when its callback is provided,
   // so single-photo callers can opt into Replace/Remove and the food viewer
@@ -96,7 +104,7 @@ interface Box {
 
 export function PhotoViewer({
   visible, uris, initialIndex = 0, onClose, onReplace, onRemove, onPageChange,
-  unavailableLabel = 'Photo unavailable', caption,
+  unavailableLabel = 'Photo unavailable', caption, mediaCaption,
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(initialIndex);
@@ -173,6 +181,19 @@ export function PhotoViewer({
             )
           )}
         </View>
+
+        {/* Under the photo, above the controls. Not truncated: on a window the secondary
+            line is a phrase ("found between 4:00 PM and 5:33 PM"), and clipping the half
+            that says the time was not witnessed is the one loss this caption exists to
+            prevent. */}
+        {mediaCaption ? (
+          <View style={styles.mediaCaption} pointerEvents="none">
+            <ThemedText style={styles.mediaCaptionPrimary}>{mediaCaption.primary}</ThemedText>
+            {mediaCaption.secondary ? (
+              <ThemedText style={styles.mediaCaptionSecondary}>{mediaCaption.secondary}</ThemedText>
+            ) : null}
+          </View>
+        ) : null}
 
         {multi && (
           <View style={styles.dotsRow} pointerEvents="none">
@@ -304,6 +325,21 @@ const styles = StyleSheet.create({
   },
   unavailableText: {
     fontSize: 15,
+    color: theme.colorTextOnDarkSubtle,
+  },
+  mediaCaption: {
+    width: '100%',
+    paddingHorizontal: theme.space3,
+    paddingTop: theme.space2,
+    gap: 2,
+  },
+  mediaCaptionPrimary: {
+    fontSize: theme.textSM,
+    color: theme.colorTextOnDark,
+    fontWeight: theme.weightSemibold,
+  },
+  mediaCaptionSecondary: {
+    fontSize: theme.textSM,
     color: theme.colorTextOnDarkSubtle,
   },
   dotsRow: {

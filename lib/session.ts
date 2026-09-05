@@ -12,6 +12,7 @@ import { clearBetaOptIns } from './betaFeatures';
 import { clearDailyRecapOffer } from './dailyRecapOffer';
 import { clearSignalArrival } from './signalArrival';
 import { clearSignalFold } from './signalFold';
+import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
@@ -227,4 +228,9 @@ export async function wipeLocalSession(): Promise<void> {
   // seen — and a fold left behind would compress a card the moment that account's own
   // finding set happened to share a key. Same FR-9 parity rule as the rest of this list.
   await clearSignalFold();
+  // CUL-803 (incident spec §5.3) — the per-record observation folds, the Signal fold's
+  // sibling and AsyncStorage-resident for the same reason. Same FR-9 parity rule: the
+  // next person on a shared device must not open an incident belonging to a pet they
+  // have never seen and find its findings already compressed.
+  await clearObservationFold();
 }

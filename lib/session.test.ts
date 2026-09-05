@@ -50,6 +50,7 @@ import { useBetaOptInStore, BETA_OPT_IN_STORAGE_KEY } from './betaFeatures';
 import { quietDailyRecapOffer, readOfferState } from './dailyRecapOffer';
 import { hasPlayedArrival, markArrivalPlayed } from './signalArrival';
 import { readFoldEntries, writeFoldEntries } from './signalFold';
+import { readObservationFold, setObservationFold } from './observationFold';
 import { triggerSignalRegenDebounced } from './signal';
 import { supabase } from './supabase';
 import { useSyncStore } from '../store/syncStore';
@@ -186,6 +187,17 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(await readFoldEntries('pet-a')).toHaveProperty('postprandial_timing:vomit');
     await wipeLocalSession();
     expect(await readFoldEntries('pet-a')).toEqual({});
+  });
+
+  // CUL-803 (incident spec §5.3). The Signal fold's sibling: the per-record observation
+  // folds also live in AsyncStorage, outside the SQLite wipe. Inherited by the next
+  // account on a shared device, they would compress the findings on an incident belonging
+  // to a pet that person has never seen. Asserted by name, through the module's own read.
+  it('clears the observation folds — a shared device never inherits the previous reader’s folds', async () => {
+    await setObservationFold('pet-a', 'ev-1', true, '2026-09-05T12:00:00.000Z');
+    expect(await readObservationFold('pet-a', 'ev-1')).toBe(true);
+    await wipeLocalSession();
+    expect(await readObservationFold('pet-a', 'ev-1')).toBe(false);
   });
 
   it('never throws when a wipe step fails — teardown always completes', async () => {
