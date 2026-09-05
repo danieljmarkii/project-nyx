@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-05
 
-Shipped via **#PRNUM** (draft). Mode: **DISCOVERY** (research + interviews + mock round 1 + decision briefs; no app code). Branch `claude/home-screen-redesign-32btrj`. Project **Home v2 — the redesign** (new, this session).
+Shipped via **#802** (draft). Mode: **DISCOVERY** (research + interviews + mock round 1 + decision briefs; no app code). Branch `claude/home-screen-redesign-32btrj`. Project **Home v2 — the redesign** (new, this session).
 
 ## What this was
 
