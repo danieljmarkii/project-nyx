@@ -818,3 +818,193 @@ Deciding: a resting composer on Home or a door to one. Options: a 52pt pill grow
 **DB-3 — May the hero draw the symptom record at display size?**
 Deciding: whether rose pips on dated cells/columns may sit above the plain safety card. Options: **yes — one ink-tinted pip per episode-day, never filled, the adversarial pass as the gate — recommended** · yes, but only below the safety card · no; the hero draws intake and meds only. Consequence: "no" forecloses II's thesis; "below" makes the safety card the page's first element, which S1 already permits.
 
+
+---
+
+## Part 3 — the PM's reactions to round 2, two workshops, round 3 drawn (same day)
+
+The PM's reactions to round 2, verbatim (also on CUL-810):
+
+> "love the day instrument that also shows yesterday." · "I dont know if i love the long lane. It reads a bit.. chaotic to me. But what I do love is that were thinking outside the box w this approach" · "I wonder if we could take an approach of allowing the condensed lane to expand into the long lane." · "The log cerenia dose.. not sure. I feel like all logging should just go through fab" · "Ok whoa.. i kind of like this calendar in iii. But it could be a big old empty state early on in the month." · "I wonder.. if Ask is going to be prominent. Should it appear prominently.. like.. towards the top of home." · "Love that were going w an ask bottom sheet. But that bottom sheet may not scale as well. Ex.. im sure well need additional screen real estate for things like.. chat history" · "Love the motion in Ask though" · "on I - the board.. I like the 'ask Nyx's record' CTA. But if we transition 'ask' to be a notes capture surface.. not sure how this would work" · "'Tell Nyx's record or ask it' is a great CTA." · "What if.. we had a 'build your own home' experience… This may be a bad.. resource intensive experience. But just a thought of a stretch idea." · "If we're transitioning the Ask layer to be note capture too. Maybe it needs its name/branding revisited." · "the seasonStrip is nice… could we make it hscrollable across time" · "The trial card! I like the design"
+
+**Two workshops run in isolation** (verbatim in Part 3's appendix): (1) **"Build your own Home"** — the Designer, Engineering and Dr. Chen in one brief with a ten-app research table (Apple Health, Oura, Garmin, Whoop, Fitbit, Strava, Copilot, Things/Linear, iOS Home, Notion); (2) **the name workshop** — ten apps' capture and AI names, eight candidates as the four strings each must work as, ranked by five lenses.
+
+**What round 3 drew** (`docs/culprit-home-v2-mockups.html`, republished at the same URL; round 2 is in git at `62a5feb`):
+- §01 **The instrument that expands** — a tappable frame: the Day Instrument (today + yesterday ghosted) opens to the week lanes and then to the season strip in place, the grain remembered per pet; the Long Lane retires as a screen and its content becomes the season grain.
+- §02 **The door at the top or after Signals** — two placements side by side; the med row drawn as context only (no one-tap) per "all logging through the FAB", raised as DC-4 because it re-rules the med strip's shipped D1.
+- §03 **The sheet that grows to full screen** — half sheet → grown → the built `/ask` full screen; chat history flagged as the D8 / B-375 persistence ruling, not a layout.
+- §04 **The trial calendar early** (day 3 of 42, the no-trial week strip) and **the season strip across time** (horizontal scroll with the base and the trial rule scrolling; the B-146 "there's more" cue).
+- §05 **Arrange Home** — the hybrid: a spine the system owns (banner · Signals · Today · live strips · FAB) and a tray the owner reorders and hides; a module carrying a safety receipt shown but locked; a hide is never a stated action the record may read.
+- §06 **The name** — six candidate cards; the recommendation keeps "Ask" as the AI verb's name, titles the sheet by its object ("Nyx's record"), and leaves the note as "Save note": no shipped string changes and the D7 constraint (no name may imply a vet answers) holds by construction.
+- §07 **DC-1…DC-6** (DC-1 the expanding instrument replaces DB-1; DC-2 the door's placement; DC-3 full screen + history; DC-4 FAB-only logging vs the one carved-out confirm; DC-5 Arrange Home; DC-6 the name). D1, D6, DB-3, DB-4 still open.
+
+**Conflicts recorded for the PM:** FAB-only logging vs B-614 D1 (the med strip's one-tap is a confirmation, not a second door; Principle 2 and Sam dissent); the door at the top (Dr. Chen and Sam prefer after Signals).
+
+**Decisions:** none PM-ratified in Part 3. The lenses converged on: the expand as the answer to "chaotic"; the hybrid, not a free canvas, for configurability; the name as a pair (Ask · the record). **Residuals:** the season grain's rose marks still ride DB-3's adversarial gate; four research sources for the Arrange consult were snippet-grade (Garmin, Whoop support, Strava community, Copilot Canny); no app code.
+
+### Appendix — the two round-3 workshop briefs, verbatim
+
+#### Brief — consult-byoh
+
+# Consult — "Build your own Home" (the PM's stretch idea, 2026-09-05)
+
+Three lenses, one question. Read against: the Home v2 brief, mock round 2 (the Board / Long Lane / Daybook; WeekLanes, SeasonStrip, TrialCells, Weight; the Ask door), `docs/personas.md`, principles §3, the two September research briefs, `lib/signalFold.ts`, `lib/widgetSnapshot.ts` + widget spec §1–§3, `app/(tabs)/index.tsx`, CLAUDE.md hard constraints. **Naming first:** in this repo "widget" already means the iOS Home Screen widget (App Group snapshot, `widgets/`). The PM's things are **modules** below, and in any issue title.
+
+---
+
+## 1. Research — configurable homes in the best daily-open apps
+
+V: **F** fetched today · **R** fetched earlier, cited in `docs/research/2026-09-home-insight-fold-and-freshness-patterns.md` §3 · **S** snippet-grade (page 401/403'd today; re-verify before a spec cites it).
+
+| App | Owner arranges | System reserves | Arrange UI | Lesson | V |
+|---|---|---|---|---|---|
+| **Apple Health** | Pinned: "Tap Edit next to Pinned. To add or remove a category… tap it" | Highlights: system-chosen; "There is no option to disable this" (2019) | Edit → tap-toggle list | Two registers, two owners, labelled apart; users feel Highlights as unremovable | F/R |
+| **Oura** Today | Shortcuts only: "select and reorder… tapping Customize. You need to select a minimum of three" | The page: "Each day will look different… depending on what is most timely"; no hide of cards documented | Swipe-left → Customize, with a **floor** | Control confined to a metric tray; the system places the warning | F |
+| **Garmin Connect** | In Focus (≤6, show/hide/reorder) + At a Glance (≤20 chosen, 8 shown) | Fixed sections ("Today's Activity") | See All → Edit, drag list | 2024 thread "How do I go back to the original… home screen": a customised home breaks when the shell changes | S |
+| **WHOOP** | "next to 'My Dashboard' it says 'Customize'… add any metrics"; swipe-left delete (mod, 2025-05-08) | Health Monitor colour-codes abnormalities; the briefing replaced the chatbot | In-place Customize | Marketing says customisable, the support doc says not — one surface, two stories | F/S |
+| **Fitbit / Google Health** | "tap Edit… Select one of the displayed metrics you want to replace" — replace-in-slot | Coach messages not dismissible | Pencil → slot → metric | Bounded pins keep the page's height; users keep asking to loosen them (5.02, Aug 2026) | F |
+| **Strava** 2025 | Nothing at the top of Home | Streak / predictions / goals cards above the feed | — | 2025-07-28 request to "prioritize or reorder cards… features they don't care about in their face every time": promotion without a why-today gate reads as clutter, and a reorder is the first ask | S |
+| **Copilot Money** | Tab order (Settings › Appearance, drag) | Six fixed dashboard modules | Settings list | Card reorder/hide sits as an unbuilt request; the product commits to three daily questions | F/S |
+| **Things / Linear** | Things: nothing on the lists; Linear mobile: "Rearrange the main navigation items, or pin specific projects…" | Things' fixed list set; Linear's toolbar | Item menu → pin to tab bar | Opinionated apps configure **navigation**, never the landing page's content | F |
+| **iOS Home / Lock Screen** | Everything: long-press, jiggle, gallery, resize, remove; Smart Stacks | Dock + system controls | Edit mode + gallery | Works because the OS has no opinion about what matters today; a health app does | F |
+| **Notion views** | Layout, filters, sorts, visible properties; "Each database view has its own settings" | The data | Per-view, personal or shared | Views are for many readers of one dataset — not the "is she okay" shape | F |
+
+Two findings the repo already holds and today confirms: **customization is the pet category's answer (Petfetti), curation is the health-app answer** (§7 #8); and in every mature health home the user arranges a **metric tray** while the system owns the **composed page and the warning**. Nobody lets a user pin or unpin a warning.
+
+---
+
+## 2. Designer's read
+
+**For:** the PM is right — one Home cannot fit Jordan-in-week-5, Sam-at-9pm and a pet with no trial and no meds; round 2's three Homes are already a menu, and the §03 charts are module-shaped (each over a shipped predicate, each carrying its denominator). Ownership is a real freshness engine: a page you arranged is one you look at differently.
+
+**Against:** it hands the owner the curation we are avoiding — the committee home. Most owners never open the sheet (defaults are permanent for the majority; Oura's floor exists because people deleted their way to nothing). Every hideable module has its empty, thin and safety states designed **twice** (Home + the sheet's preview). And it fights the PM's own reaction: the record *drawn* is the thesis; a drag-handle list is Settings, not "mindblowing".
+
+**The hybrid — the only version I would draw.** A **spine the system owns**, never a toggle: `CrossPetSafetyBanner` → **Signals** (fold included) → the **Today lane** (the record's pulse, and the confirmation-over-entry surface) → the **FAB**. `MedStrip` / `TrialStrip` ride the spine while a course or trial is live and self-remove when the record does. A **tray the owner reorders and hides**: Day Instrument, WeekLanes, SeasonStrip, TrialCells, Weight, the Ask/Tell door, the Patterns index. Default order = the Long Lane's; floor = the Patterns index never goes (the intelligence ladder keeps its door). **The honesty rule:** a tray module currently **carrying a safety finding's receipt** (SeasonStrip under a live chronicity card) is shown in the sheet but locked with the reason, and unlocks when the finding stands down — Apple's "shown, not toggleable".
+
+**Word-frames.** *Overflow → "Arrange Home":* the log sheet's shell. Top, a 1:3 live preview of Home built from the same module components at 33%, not a picture. Then **Always here** — Signals · Today · Cerenia · Turkey trial, dimmed, a lock glyph, no handle — then **Your modules**: drag handle at the left rail, inline mini-preview, toggle at the right; a locked row reads `SeasonStrip · carrying "Vomiting has recurred…" · unlocks when it stands down`. Footer `Reset to Culprit's order`; Undo for the session. *After hiding Weight:* the row is gone, the lane closes the gap, nothing announces it; hidden modules keep a named home (a hide with no listed home is a delete — fold brief §2). *A new pet:* inherits the account's order; a pet with no trial renders TrialCells' Principle-5 empty state, not a hole. Cohesion: one module = one component, identical on Home, in the preview, and on Patterns where it already exists (Day One's composite rule) — never a Home-only copy.
+
+---
+
+## 3. Engineering cost map
+
+**Registry.** `lib/homeModules.ts`: `HomeModule = { id, tier: 'spine'|'tray', useModel, Renderer, size: { minHeight, maxHeight }, carriesSafety(model, findings) }`. `useModel` wraps the module's existing read (`useTrend`, `computeTrialFacts`, `getWeightHistory`, `buildTodayLane`); renderers are the mock's `lib/weekLanes` / `seasonStrip` / `trialCells`. The sizing contract lets Home and the preview share layout math. **Hidden modules' hooks never run**: mount only what the layout names; each read is one local SQLite query, re-read on `hydrationTick` — no per-module Supabase call, nothing on scroll.
+
+**Layout state.** *(i) Device-local, fold-store shape:* one key `nyx.homeLayout`, blob `{ [petId]: { order, hidden, updatedAtIso } }`, pure core + shell, clear-epoch guard, **wiped by name** in `wipeLocalSession` and asserted in `lib/session.test.ts`. ~S. The spouse's phone and a reinstall lose it — the harmless direction, like a fold. *(ii) Synced:* `home_layouts (user_id, pet_id NOT NULL, order jsonb, hidden jsonb, updated_at)`, RLS default-deny like `notification_preferences` (050 — the sanctioned server-table + local-mirror precedent), own schema PR + pre-flight, a mirror in a schema constant + `LOCAL_WIPE_TABLES` (or `hydration.test.ts` reds), a queue through `serializeQueuePush`, `markSynced` by version. LWW on the whole array is fine — one document, never merged. New device: pull → mirror → render, default order meanwhile. ~M, and the first per-pet preference table. Pick (i) unless household (B-292) makes "same Home on both phones" a requirement.
+
+**Flag-off byte-identical.** `app_config` flag (`home_layout_v1`, the `log_picker_v2` shape). The spine/tray refactor of `index.tsx` lands *before* the flag, snapshot-proven identical, so `SignalZone` / `TodayZone` / `TrendZone` tests are untouched.
+
+**Guards.** `guards/haptics` (SignalZone's `hasSafetyFinding` gate keeps owning silence), `geistRollout` + `accentOnLight` per new module, `completionCard` / `reversePath` N/A (no writes). New: a **spine guard** — no safety type in any tray id set, `hidden` never contains a spine id — proven by mutation. Test the registry, not the permutations.
+
+**Sizes** (client, device-local; +M if synced): **(a) reorder-only M** — registry, sheet, store, guard · **(b) reorder + hide M+** — the lock rule, the floor, the named-home list · **(c) gallery + add L** — off-by-default modules, each a thumbnail + empty + thin + safety state, i.e. a mini-spec per row · **(d) per-module settings XL** — settings join every fingerprint; Home and the report can start disagreeing about a window.
+
+**Spec + QA cost.** Every tray module needs a row: default position, empty, thin, behaviour while carrying a safety receipt, a11y sentence, 33% preview form — seven modules × six rows before a pixel. On-device matrix for (b): (no trial / trial / post) × (meds / none) × (no safety / standing / acute) × (default / reordered / hidden-all) = 54 cells; the device pass alone is a session.
+
+---
+
+## 4. Dr. Chen's read
+
+The invariants do not move because the layout does. **Never hideable, movable below the fold, or muted:** any `priorityClass === 'safety'` finding; the **intake-decline lane** — the fold store already refuses it (`INTAKE_DECLINE_FOLDS = false`) for the reason that applies here: nothing in that finding moves daily, so a hidden "not eating" stays hidden as long as the decline lasts; the **cross-pet banner** (another animal's warning, the one thing the active pet's owner did not choose to look at — which is why it sits above Signals); a `MedStrip` while a course is open. The governance line is the standard's: the operator silences the *sound*, never selects whether the *state* clears (IEC 60601-1-8, fold brief §5); Dexcom lets you vibrate an Urgent Low, not remove it.
+
+**The failure mode is not hiding Signals — it is hiding the module that would have made the Signal.** An owner hides SeasonStrip in week 2 ("just dots"); by week 6 the chronicity card lands with no drawing beside it and reads as an ambush. Hence the lock rule, plus one: **a hidden module that begins to carry a safety receipt comes back**, with a "Back because" line the way a fold does — the record re-opens it, never a timer.
+
+**Is a hide a stated action the record should know?** No, and it must not be. A fold is "seen"; a hide is "I don't want to look"; a report or engine reading either as acknowledgement would infer compliance from UI state (FS-1). Device-local, off the report, out of `generate-signal`. A real stated action ("Booked the vet") is F4's own schema with its own consent, never a layout array. The one thing I would want from a tray: a place for a **clinician-requested module** (an adherence lane for a prescribed course) — as a system pick the owner cannot remove while the course runs.
+
+---
+
+## 5. Decision brief
+
+- **Deciding:** whether Home v2 gains owner-arranged modules, and in what shape.
+- **Options:** (A) full build-your-own — gallery, add, settings (XL; the pet-category answer; the committee home) · **(B) the hybrid — fixed spine (banner · Signals · Today · live strips · FAB) + a reorder/hide tray of the §03 modules, device-local, flagged, built after round 3 draws the tray in its default order — recommended:** it buys what the idea is right about (one Home can't fit every pet) without giving away what the health-app bar keeps (the system owns the page and the warning) · (C) no configuration; the phase machine (no trial / trial / post-visit) adapts, as Apple Weather's rain-first does.
+- **Consequence:** (B) is M+ *after* the modules exist — a **Home v2.1** issue, changing nothing in DB-1–DB-5. (C) costs nothing now and is where every lens started. (A) forecloses "the record drawn" as the thesis.
+
+**Is it a bad, resource-intensive idea?** It is a good instinct with an expensive default shape. The instinct — different pets need different Homes — is true, and the health-app category solved it with two devices, not one: the **condition** re-orders a stable module set (safety leads, a trial promotes its cells, a course its strip), and a **small tray** the owner arranges. Full build-your-own is expensive where it hurts most — not code (M–L) but spec and QA: every hideable module is a designed empty/thin/safety state times a permutation matrix — and the evidence says most owners never open the sheet, while the ones who do hide the module that would have warned them. So: build the modules, let the record arrange them, and ship the tray only if dogfooding shows two real owners wanting two real orders. Until then the PM's own reaction is the better brief — "charts over text, the dot lane is the reference" — a curation problem we could still lose by handing it to a drag handle.
+
+---
+*F:* Apple 104997 · Oura 42987005571859 "How to Use the Oura App" · Google Health 16959617 · community.whoop.com/t/…/570 (2025-05-08) · help.copilot.money 6045480 · linear.app/changelog/2026-01-22 · notion.com/help/views-filters-and-sorts · Apple iPhone guide iphb8f1bf206. *S (403/401 today):* Garmin support d7p0eCpRPJ4Q6bntYkdIb6 + forum 369887 · WHOOP support "The All-New Home" (says *not* customisable) · Strava community 10870 (2025-07-28) · Copilot Canny "reorder categories" · default-retention percentages (no controlled study found — quote none).
+
+
+#### Brief — consult-name
+
+# Name workshop — the composer that tells and asks (closes Ask spec D7)
+
+**Consultant:** naming / brand strategist, 2026-09-05 · **Inputs:** `home-v2-brief.md`; mock round 2 §02 (`docs/culprit-home-v2-mockups.html`); `nyx-voice`; `docs/nyx-ask-requirements.md` §0, §2 D7, §4; `docs/culprit-rename-requirements.md` §2–§3; `docs/culprit-in-app-brand-requirements.md` §1; `docs/culprit-icon-brand-direction.md`; `constants/monetizationCopy.ts`; `lib/ask.ts`; `lib/headerName.ts:97` (`ASK_PILL_LABEL = 'Ask'`).
+
+The PM's instinct is the finding. "Tell Nyx's record, or ask it" already names everything: the **object** (the pet's record) and the **two verbs**. What is missing is not a name for the composer — it is a decision about *which thing carries a name at all*. The recommendation below gives a name to exactly one thing (the AI verb) and leaves the note verb unbranded, on purpose.
+
+## 1. What the name has to do
+
+1. Never imply a vet, a clinician, or an advisor answers (Dr. Chen + Lawyer, non-negotiable; Ask spec §0, D7, §7.6) — and never a named character (Ask spec §4: "'I' only as the app's quiet working voice").
+2. Carry both verbs — a free, dated note (no AI) and a read-only question to AI — without making the note feel like the AI's input, or the question feel like a diary.
+3. Sit beside the tabs **Home · History · Foods · Pet** and the surfaces **Signals, Patterns, the Recap, the vet report, the log (FAB)** without a collision; "History" *is* the record, the FAB *is* Log.
+4. Work in four sizes: a header pill (one word, ≤5 chars), a Home door CTA, a sheet title, a section label — plus the a11y label and the cap copy (`askCapCopy`: "this month's free Ask conversations").
+5. Survive the Culprit register: warm, not cute (Sam: "not cutesy about a sick cat"); not a pet brand; not a medical app; no metaphor framing (brand spec §1.4); a name Sam says out loud on the phone to her vet.
+
+## 2. The field
+
+| App | AI surface | Capture surface | What they avoided |
+|---|---|---|---|
+| Oura | **Advisor** — "your in-app health and wellbeing assistant" with stored **Memories**; ships the caveat "Advisor can make mistakes" ([Oura](https://ouraring.com/blog/oura-advisor/), [9to5Google](https://9to5google.com/2025/03/31/oura-ring-app-launches-advisor-ai/)) | Tags | A human name; but "Advisor" is exactly the advice-implying noun our Lawyer rules out |
+| Whoop | **Coach** (GPT-4), **My Memory**, **Proactive Check-Ins** ([Whoop](https://www.whoop.com/us/en/thelocker/whoop-unveils-the-new-whoop-coach-powered-by-openai/), [Wareable](https://www.wareable.com/wearable-tech/whoop-healthex-partnership-my-memory-ai-features-navigator-bands)) | **Journal** (140+ behaviours; voice + text logging) | Nothing — and the persona noun is the one the FDA letter landed on (Ask spec §7.6) |
+| Day One | **Daily Chat** — Gold-gated; conversation becomes an entry ([Day One](https://dayoneapp.com/blog/introducing-daily-chat/), [9to5Mac](https://9to5mac.com/2026/04/08/day-one-journaling-app-introduces-gold-plan-with-ai-summaries-and-daily-chat/)) | Entries, journals — free | Naming the AI; "chat" is used because the product *is* a chat |
+| Apple | No persona but Siri; the system is **Apple Intelligence** ([Yahoo/TechRadar](https://tech.yahoo.com/computing/articles/apple-call-ai-features-apple-183653843.html)) | **Journal**, with "suggestions" ([Apple](https://www.apple.com/newsroom/2023/12/apple-launches-journal-app-a-new-app-for-reflecting-on-everyday-moments/)) | Naming a feature after the model; the word "AI" itself |
+| Notion | **Notion AI**; features are verbs on objects: **Q&A**, **Ask Anything**, **AI Meeting Notes** ([Notion](https://www.notion.com/blog/introducing-q-and-a)) | Notes / pages | A character |
+| Arc | **Max** (a character); **Ask on Page** (verb on object) — Ask on Page was removed in 2026 ([SupaSidebar](https://supasidebar.com/blog/arc-browser-ai-features-2026)) | — | The verb-on-object name outlived the feature's usefulness; the persona name "Max" is the one people mock |
+| Linear | **Agents** — you *delegate*, never assign; agents always disclosed as agents ([Linear](https://linear.app/docs/agents-in-linear)) | Issues, comments | A human-shaped noun; the human stays the assignee |
+| Strava | **Athlete Intelligence** — "insights and guidance", no coach/assistant word ([Strava](https://press.strava.com/articles/stravas-athlete-intelligence-translates-workout-data-into-simple-and)) | Activities | "Coach", "chat" |
+| Copilot Money | **Copilot Intelligence** — brand + Intelligence ([Copilot](https://help.copilot.money/en/articles/8182433-copilot-intelligence-for-spending)) | Transactions, notes | A second persona (the brand already is one) |
+| Bear | none | **Notes** | — |
+
+Three patterns. **Persona nouns** (Advisor, Coach, Max) — the health apps chose these, and they are the ones carrying regulatory and trust risk. **Verb-on-object** (Ask on Page, Q&A, Ask Anything, delegate) — the productivity apps chose these; the object does the disclosure. **Brand + Intelligence** (Apple, Strava, Copilot) — a system name, not a door. And one universal: **every capture surface is named by its object** (Journal, Notes, Tags, Entries), never by the AI. Nobody has a capture surface *called* their assistant; Day One, the closest analogue to our split (logging free, chat gated), keeps "entry" and "chat" as two words.
+
+## 3. Eight candidates
+
+Strings assume the pet Nyx. Pill · section label · door CTA · sheet title.
+
+| # | Name | Pill · section · door · sheet | Verbs implied | Risk | nyx-voice |
+|---|---|---|---|---|---|
+| 1 | **Ask** (keep; Tell as the sibling verb) | `Ask` · *Ask* · "Tell Nyx's record, or ask it" · **"Nyx's record"** | Save note / Ask | Names one of two verbs — but the *pill* is an Ask-shaped door and the *note* needs no brand (see §5). "Ask" alone could read as "ask someone"; "ask **it**" fixes it. Shipped in cap copy. | y |
+| 2 | **Record** ("Nyx's record") | `Record` (6) · *Nyx's record* · same door · "Nyx's record" | Tell / Ask | As a pill, "Record" is a verb with a red dot (audio). History already *is* the record — a "Record" tab-sized word beside "History" is one thing with two names. As the **sheet title** it is exactly right. | y |
+| 3 | **Notes** | `Notes` · *Notes* · "Add a note about Nyx, or ask" · "Notes" | Write / Ask | Diary drift — the mood-journal the team vetoed (D3, brief); hides Ask under a capture noun; collides with the per-event `notes` field, which is a different thing (attached, not dated-standalone). | y |
+| 4 | **Tell** | `Tell` · *Tell* · "Tell Nyx's record" · "Tell" | Tell / Ask | Needs its object; alone it is "tell on" — beside a brand called *Culprit* that is a pun the register cannot afford (cute). A pill reading "Tell" does not say what to tell. | y, marginal |
+| 5 | **Log** | `Log` · *Log* · "Log a note or ask" · "Log" | Log / Ask | Collides head-on with the FAB (`app/log.tsx`, "Log breakfast"); the second create door the PM ruled out (R3). Out. | y |
+| 6 | **Notebook** | `Notebook` (8) · *Nyx's notebook* · "Open Nyx's notebook" · "Nyx's notebook" | Write / Ask | Too long for the pill; skeuomorphic; possessive-cute ("Nyx's notebook" is a pet-brand line); diary drift again. | n (cute) |
+| 7 | **Whorl** (brand-derived: the fingerprint-crescent, already the AI signature in §02) | `Whorl` · *Whorl* · "Tell Nyx's record, or ask Whorl" · "Whorl" | Tell / Ask Whorl | Names the AI as a character — forbidden by Ask spec §4; and the detective reading (whorl = fingerprint = culprit caught) is metaphor framing, §1.4. Keep the Whorl as the *mark* on the Ask verb, never the word. | n |
+| 8 | **Noticed** (invented) | `Noticed` (7) · *What you noticed* · "Tell Nyx's record what you noticed, or ask it" · "What you noticed" | Noticed / Ask | Names the note's true clinical status — an owner-reported observation, the phrase already in the door subtitle and the one Dr. Chen wants on the report ("a dated quote"). Past-tense label is unusual; 7 chars; the AI half is unnamed. Strong as the **note's receipt**, weak as a pill. | y |
+
+Considered and dropped: *Jot* (cute, one verb), *Chat* (the field avoids it; it promises a persona), *Case / Case notes* (clinical noun — implies a clinical case), *Recall* (implies memory; no transcript persists, D8/§10).
+
+## 4. Ranking
+
+1. **Ask** as the AI's name + **Nyx's record** as the surface's name (candidates 1 + 2 as a pair) · 2. Noticed (as the note receipt, not the pill) · 3. Notes · 4. Tell · 5. Record alone · 6. Whorl · 7. Notebook · 8. Log.
+
+- **Designer:** the surface has no name — the sentence is the name; the pill stays one short word; nothing on Home gains a noun that argues with Signals/History. Vetoes Notebook (cute) and Whorl-as-word (a character).
+- **Dr. Chen:** "ask it" makes the answerer explicit — the record, worded by AI; no candidate above is an advisor. Vetoes anything with *Case*, *Advisor*, *Coach*; wants the note's receipt to say *observation*, not *note* — "Noticed" is the honest word.
+- **T&S / Lawyer:** Ask complies (rev-1 ruling); the receipt "Counted from Nyx's record · worded by AI" is the disclosure doing the work; a persona name would re-open the Whoop-FDA exposure. Vetoes Whorl, Advisor-class nouns.
+- **Sam:** says "I asked Culprit" and "I put it in Juniper's record" without embarrassment; would never say "I told the notebook." Vetoes Notebook, Tell alone.
+- **Jordan:** "I asked it if the vomits were near meals" — natural; "Log" would send him to the FAB and back. Vetoes Log.
+
+## 5. Decision brief
+
+- **Deciding:** what carries a name — the AI verb, the note verb, or the composer — before any store exposure (D7).
+- **Options:** **(a) keep "Ask" as the AI's name; the composer is unnamed and titled by its object, "Nyx's record"; the note is a plain verb, "Save note", like every other free write — recommended: the loved CTA already is the name, the note never reads as AI input, and D7's constraint holds by construction** · (b) rename the surface "Notes" and demote Ask to a verb inside it (hides the delightful half; diary drift) · (c) "Record" as the pill (collides with History; reads as a verb).
+- **Consequence:** (a) changes no shipped string; the pill remains an Ask-shaped door that opens the same sheet with the Ask verb pre-selected (DB-2's scroll-to-focus), while the Today door opens it note-first; the cap copy stays valid; DB-4 amends D3/D5, not D7.
+
+**The strings (recommended, nyx-voice-checked — no exclamation marks, the pet by name, the owner as "you", specific over generic):**
+
+| Slot | String |
+|---|---|
+| Header pill | `Ask` (unchanged; a11y "Ask about Nyx") |
+| Home door — title | **Tell Nyx's record, or ask it** `AI` |
+| Home door — subtitle | What happened, what you noticed, what you want to know. |
+| Sheet title | **Nyx's record** |
+| Field placeholder | Tell Nyx's record, or ask it… |
+| The two verbs | `Save note` · `Ask` (the teal dot on Ask only) |
+| Promise line (under the verbs) | A note is saved to Nyx's record with the time. Ask reads the record to answer. |
+| Note receipt | Saved to Nyx's record · 7:10am · what you noticed |
+| AI receipt | Counted from Nyx's record · worded by AI |
+| Disclosure (§6.5, verbatim) | Answers use your logged data — including your notes, and photos when your question needs them. |
+| Empty record (sheet, nothing logged yet) | Nyx's record is empty so far. Tell it what happened today — one note is enough to start. Once a few days are in, ask it what changed. |
+| Capped (inside the sheet only) | You've used this month's 3 free conversations. Notes, counts and the vet rundown always work here; questions resume Oct 1, or with Premium. |
+
+Two rules to write into the spec when D7 closes: the note verb never gains a brand or a noun of its own (that is the diary), and the word "AI" appears as a chip and a receipt, never as a name.
+

@@ -686,12 +686,23 @@
     <div class="sec-head"><span class="sec-num">05</span><h2>Arrange Home — "build your own home", drawn</h2></div>
     <div class="col" id="arrange-copy">
       <p>
-        Your stretch idea, taken seriously. The research answer from the design bar is a hybrid, not a free canvas: Apple
-        Health lets you <em>pin</em> but never remove Highlights; Oura's Shortcuts sit under a Today the system composes; the
-        pet category's answer is full customisation and the health-app answer is curation. So the shape drawn here is a
-        <strong>fixed spine the system owns</strong> (the Signals with any safety finding, the Today instrument, the FAB) plus
-        an <strong>arrangeable set of the drawn modules</strong> the owner can reorder and hide. The consult's research, cost map,
-        and Dr. Chen's read are in DC-5 and the session record.
+        Your stretch idea, taken seriously by three lenses and a research pass over ten apps. The finding: in every mature
+        health home the owner arranges a <em>metric tray</em> while the system owns the composed page and the warning.
+        Apple Health lets you pin categories but Highlights cannot be disabled; Oura's Customize is a tray with a floor of
+        three; Fitbit replaces metrics in fixed slots; Garmin's fully customised home broke when the shell changed; Strava's
+        ungated promotion drew "let me reorder" as its first request; Things and Linear configure navigation, never the
+        landing page. Nobody lets a user pin or unpin a warning. The pet category's answer is full customisation; the
+        health-app answer is curation; the shape below is the hybrid between them.
+      </p>
+      <p>
+        <strong>A spine the system owns, never a toggle:</strong> the cross-pet banner, Signals (fold included), the Today
+        instrument, a live medication or trial strip while its course runs, the FAB. <strong>A tray the owner reorders and
+        hides:</strong> the week lanes, the season strip, the trial cells, weight, the composer door, the Patterns index.
+        <strong>The honesty rule:</strong> a tray module currently carrying a safety finding's receipt (the season strip under a
+        live chronicity card) is shown in the sheet but locked with the reason, and a hidden module that begins to carry one
+        comes back with a "Back because" line, the way a fold does. Dr. Chen's line: the operator silences the sound, never
+        selects whether the state clears. A hide is not a stated action the record may read (that would infer acknowledgement
+        from UI state); it is device-local, off the report, out of the engine.
       </p>
     </div>
     <div class="frames">
@@ -707,19 +718,19 @@
                 <div class="it"><span class="h">≡</span><span class="lab">Tell or ask the record<small>the composer door</small></span><span class="tg"></span></div>
                 <div class="it"><span class="h">≡</span><span class="lab">Turkey trial<small>the 42 days</small></span><span class="tg"></span></div>
                 <div class="it"><span class="h">≡</span><span class="lab">This week<small>seven lanes</small></span><span class="tg"></span></div>
-                <div class="it"><span class="h">≡</span><span class="lab">Vomiting by week<small>since May</small></span><span class="tg off"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Vomiting by week<small>carrying "Vomiting has recurred…" · unlocks when it stands down</small></span><span class="pin">LOCKED</span></div>
                 <div class="it"><span class="h">≡</span><span class="lab">Weight<small>last Aug 30</small></span><span class="tg off"></span></div>
                 <div class="it"><span class="h">≡</span><span class="lab">Medications<small>Cerenia · day 6 of 14</small></span><span class="tg"></span></div>
               </div>
-              <div class="promise">Drag to reorder. Hidden modules are one tap away under All patterns. Safety findings can't be hidden.</div>
+              <div class="promise">Drag to reorder. Hidden modules stay one tap away under All patterns. Reset to Culprit's order.</div>
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>The Arrange sheet</b> A list, drag handles, toggles; the spine shown but not toggleable, labelled why.
-          Hiding is a stated action the record can see (like the fold's "seen") — the safety Signals never hide and never
-          fall below the first viewport. The same module renders on Home and here, so the sheet is a preview by
-          construction (cohesion, thought 4).
-          <span class="cost">a typed module registry · per-pet layout in the fold store's shape (device-local first; a synced table is a later ruling) · flag-off byte-identical · every module needs its own empty / thin / safety states designed</span>
+        <p class="frame-cap"><b>The Arrange sheet</b> The log sheet's shell; a list with drag handles and toggles; the spine shown but not
+          toggleable, labelled why; a module carrying a safety receipt shown but locked, with the reason; a footer to reset
+          to Culprit's order. The same module renders on Home and here (one component, never a Home-only copy), so the sheet
+          is a preview by construction. A pet with no trial renders the trial module's designed empty state, never a hole.
+          <span class="lens"><b>Engineering:</b> a typed module registry (each module = a model hook over an existing read + a renderer + a sizing contract; hidden modules' hooks never run) · the layout device-local in the fold store's shape, wiped by name (the synced per-pet table is a later ruling and would be the first per-pet preference table) · flag-off byte-identical · a spine guard proven by mutation. <b>Sizes:</b> reorder-only M · reorder + hide M+ · a gallery with add L · per-module settings XL. <b>The real cost is the spec and the QA matrix,</b> not the code: seven modules × six designed states, and a 54-cell device pass for hide.</span>
         </p>
       </div>
     </div>
@@ -783,10 +794,10 @@
       <p><strong>Options:</strong> FAB only — the med row becomes context (as drawn), the "Given now" confirm retires · <span class="rec">keep the one confirmation the spec already carved out — a control that writes a row the app could already describe (the med dose) — and add no others — recommended by Principle 2 and Sam's 9pm; the Designer is fine either way</span>.</p>
       <p><strong>Consequence:</strong> "FAB only" is a Tier-2 edit to the med-strip spec (D1 C → A) and removes a shipped write path; "keep" leaves Home with exactly one confirm and zero forms.</p>
     </div>
-    <div class="brief" id="dc5"><p class="bid">DC-5 — Arrange Home</p>
-      <p><strong>Deciding:</strong> whether Home v2 ships any owner configuration.</p>
-      <p><strong>Options:</strong> none (curation only, the health-app answer) · <span class="rec">reorder + hide over a fixed spine (Signals with safety, Today, the FAB never move or hide), device-local, behind the same flag — recommended as a v2.1 rung once the modules exist</span> · a module gallery with add / settings (the resource-intensive version).</p>
-      <p><strong>Consequence:</strong> the module registry the hybrid needs is the same refactor the drawn Home needs anyway; the cost of configurability is mostly in the spec (every module's empty / thin / safety states) and the QA matrix, not the code.</p>
+    <div class="brief" id="dc5"><p class="bid">DC-5 — Arrange Home ("build your own home")</p>
+      <p><strong>Deciding:</strong> whether Home v2 gains owner-arranged modules, and in what shape.</p>
+      <p><strong>Options:</strong> (A) full build-your-own — a gallery, add, per-module settings (XL; the pet-category answer; the committee home) · <span class="rec">(B) the hybrid — a fixed spine (banner · Signals · Today · live strips · FAB) plus a reorder/hide tray of the drawn modules, device-local, flagged, built after round 3 settles the tray's default order — recommended: it buys what the idea is right about (one Home cannot fit every pet) without giving away what the health-app bar keeps (the system owns the page and the warning)</span> · (C) no configuration; the record arranges the stable module set (a trial promotes its cells, a course its strip, safety always first), the way Apple Weather goes rain-first.</p>
+      <p><strong>Consequence:</strong> (B) is M+ <em>after</em> the modules exist — a Home v2.1 issue that changes nothing in DC-1–DC-4; (C) costs nothing now and is where every lens started; (A) forecloses "the record drawn" as the thesis. <strong>The honest answer to "is this a bad, resource-intensive idea":</strong> a good instinct with an expensive default shape. Build the modules, let the record arrange them, and ship the tray only if dogfooding shows two real owners wanting two real orders.</p>
     </div>
     <div class="brief" id="dc6"><p class="bid">DC-6 — The name</p>
       <p><strong>Deciding:</strong> what the two-verb surface is called on the pill, the door, and the sheet.</p>
