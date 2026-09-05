@@ -11,7 +11,7 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EmptyState } from '../ui/EmptyState';
 import { usePetStore } from '../../store/petStore';
-import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../../constants/eventTypes';
 import type { MomentTone } from '../../store/momentStore';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
@@ -136,6 +136,12 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // clock, and a beat that re-derived mid-dwell could change its own words at local
   // midnight. Null only before the first commit of a given open.
   const [beatSentence, setBeatSentence] = useState<string | null>(null);
+  // CUL-802 — the event id to land the owner on once the beat finishes, set only
+  // for a PHOTOGRAPHED vomit/stool (the logs with a per-incident read on the way).
+  // Null for everything else, which keeps the shipped "beat, then the sheet closes
+  // onto Home" path byte-identical. Decided at commit time rather than at onDone:
+  // by then the confirm is unmounted and its photo state is gone.
+  const [landOnEventId, setLandOnEventId] = useState<string | null>(null);
   // CUL-612 — what the confirm currently holds, reported up by SimpleEventConfirm.
   // It lives HERE because the gestures that destroy it are this component's: a
   // backdrop tap and the Android back button both unmount the confirm, so the
@@ -159,6 +165,11 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     // the next open, and it belongs with the four resets it sits beside.
     if (!visible) {
       setStage('grid'); setConfirm(null); setBeatSentence(null); setDraft(null);
+      // Symmetry with the four above rather than a live fix — handleLogged writes
+      // this field on every commit, and handleBeatDone only ever runs after one, so
+      // no stale value can reach a push today. It resets with its siblings so that
+      // stays true of a future path that shows the beat without re-deciding.
+      setLandOnEventId(null);
       setSwitcherVisible(false);
     }
   }, [visible]);
@@ -231,7 +242,9 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     setStage('confirm');
   }
 
-  function handleLogged(result: { eventId: string; occurredAtIso: string; record: LoggedRecord }) {
+  function handleLogged(result: {
+    eventId: string; occurredAtIso: string; record: LoggedRecord; hasAttachment: boolean;
+  }) {
     // If the sheet was dismissed while the write was in flight, don't resurface — the
     // event is written and will appear on Home; showing a beat on a hidden/reopened
     // sheet would be a stale flash (the reset effect already returned it to the grid).
@@ -246,7 +259,25 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     // vomit with the word "Logged": the app held the window it had just written and
     // said nothing about it, on the surface where the owner is least able to check.
     setBeatSentence(summarizeLoggedRecord(result.record, result.occurredAtIso));
+    // CUL-802 — the same scope the full-screen /log flow routes on, asked with the
+    // same predicate: a photo, on a type whose photo gets a read. `confirm` is the
+    // type this write was for (captured at grid→confirm), never a re-read.
+    setLandOnEventId(
+      result.hasAttachment && confirm && hasPerIncidentRead(confirm.type) ? result.eventId : null,
+    );
     setStage('done');
+  }
+
+  // Where the beat hands the owner off. The sheet is an RN <Modal>, and a pushed
+  // screen renders BEHIND one (CUL-662) — so the close comes FIRST and the push
+  // second, never the other way round, or the record would be invisible under a
+  // sheet the owner has to dismiss to discover it. onClose is a plain state set in
+  // the host, so both land in the same commit and the modal dismiss animation plays
+  // over a record that is already on the stack — the same ordering the full-screen
+  // path gets for free from replace().
+  function handleBeatDone() {
+    onClose();
+    if (landOnEventId) router.push(`/event/${landOnEventId}`);
   }
 
   return (
@@ -443,7 +474,7 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                 // active pet can have moved on by now (the multi-pet queue-then-switch
                 // guard the completion payloads carry for the same reason).
                 petName={confirm.petName}
-                onDone={onClose}
+                onDone={handleBeatDone}
               />
             )}
           </View>

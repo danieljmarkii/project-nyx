@@ -53,7 +53,18 @@ interface Props {
   // named card does (§5's sentence rule). Structured on purpose: there is nowhere
   // here to put a pre-composed "Logged", which is what makes the rule hold by shape
   // rather than by review (the CUL-606 argument, applied to the R2 register).
-  onLogged: (result: { eventId: string; occurredAtIso: string; record: LoggedRecord }) => void;
+  //
+  // `hasAttachment` rides along for CUL-802: the host decides where the owner lands
+  // after the beat, and a photographed vomit/stool lands on its record. Only this
+  // component knows whether a photo was attached, and the record shape deliberately
+  // cannot carry it (it describes the TIME claim, nothing else) — so it is its own
+  // field rather than a widening of `record`.
+  onLogged: (result: {
+    eventId: string;
+    occurredAtIso: string;
+    record: LoggedRecord;
+    hasAttachment: boolean;
+  }) => void;
   /** CUL-612 — what the owner has put into this confirm so far, so the HOST can
    *  guard its own dismissal paths (a backdrop tap destroys this component, and a
    *  component cannot guard the gesture that unmounts it). Reported on change
@@ -366,6 +377,10 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
       onLogged({
         eventId: res.eventId,
         occurredAtIso: res.occurredAtIso,
+        // The photo the write above actually carried, not the live `photo` state —
+        // same reason the record is built from `tf`: what the host acts on must be
+        // what landed in the row.
+        hasAttachment: !!photo,
         // Built from `tf` — the SAME buildTimeFields derivation the summary pill reads
         // and the write above used, so the beat cannot say something the row does not
         // hold. Passing the pill's own string instead would have been shorter and

@@ -156,6 +156,33 @@ export const SYMPTOM_TYPES: ReadonlySet<EventTypeKey> = new Set([
   'vomit', 'diarrhea', 'lethargy', 'itch', 'cough', 'sneeze',
 ]);
 
+// ── The per-incident read's scope (CUL-802) ──────────────────────────────────
+
+/** The two owner-classified stool event types. They share the analyze-stool read
+ *  (the diet-trial split between "formed" and "loose" is an owner judgement about
+ *  the same artifact), so every gate that asks "is this a stool?" asks it here. */
+export function isStoolEvent(type: string | null | undefined): boolean {
+  return type === 'stool_normal' || type === 'diarrhea';
+}
+
+/** Does a photo of THIS event type get a per-incident AI read?
+ *
+ *  One predicate, four consumers: the write side (lib/simpleEvent decides whether
+ *  to claim the analysis chain and which analyze-* function to invoke), the detail
+ *  screen (whether to render a read section at all), and — since CUL-802 — the two
+ *  log entry points, which route a photographed incident to its record instead of
+ *  back to Home. That routing rule is "the logs with a read to show" (spec D2), so
+ *  it must be the SAME question the write side answers, not a second list that
+ *  agrees today: a leaf added to one and not the other either routes an owner to a
+ *  screen with nothing on it, or writes a read nobody is shown.
+ *
+ *  Takes `string` rather than EventTypeKey because the callers hold a DB
+ *  event_type: the row is the authority, and an unrecognised value is simply not
+ *  readable (never a throw on a screen the owner is already looking at). */
+export function hasPerIncidentRead(type: string | null | undefined): boolean {
+  return type === 'vomit' || isStoolEvent(type);
+}
+
 // ── The family groups (presentation, §3) ─────────────────────────────────────
 
 /** Family display order + owner-facing labels for the EXPANDED (event_types_v2)
