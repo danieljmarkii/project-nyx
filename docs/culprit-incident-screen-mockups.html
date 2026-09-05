@@ -1,0 +1,663 @@
+<title>Incident arrival</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap">
+<style>
+  /* ============================================================
+     The incident screen — post-log routing + the AI read's arrival.
+     Mock ROUND 2 (BUILD-READY — D1–D4 PM-ruled 2026-09-05). Round 1 was the directions pass; its frames stay below, annotated.
+     Current-proposal page. Republish to the SAME artifact URL from here;
+     git is the history. Absorbs CUL-158 (B-029, per-incident AI
+     detail-screen design polish).
+
+     Document chrome is theme-aware; DEVICE FRAMES stay light in both
+     themes — they render the app's shipping light surfaces (the record
+     surface stays in daylight, Signal/Home D8). Frame values are the real
+     tokens from constants/theme.ts: teal #00C2A8 (interactive accent only),
+     accent ink #0B7B6C, symptom rose #F43F5E / ink #9F1239 / light #FFE4E6,
+     surfaceDark #101312, text #0A0A0A / #525252 / #737373 / #A3A3A3.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --serif: "Fraunces", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .revnew { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .revnew b { color: var(--ink); }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 .roundtag { vertical-align: middle; margin-left: 10px; font-family: var(--mono); }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+  .brief { margin: 28px 0 8px; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  table.spec { border-collapse: collapse; width: 100%; font-size: 14px; margin: 18px 0 8px; }
+  table.spec th, table.spec td { text-align: left; vertical-align: top; padding: 9px 10px; border-top: 1px solid var(--rule); }
+  table.spec th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .tablewrap { overflow-x: auto; }
+  ul.tight { margin: 0 0 16px; padding-left: 20px; }
+  ul.tight li { margin-bottom: 6px; }
+
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .phone { position: relative; width: 316px; max-width: 100%; height: 640px; background: #F5F5F5; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 12px 12px 0; color: #0A0A0A; font-family: var(--sans); overflow: hidden; display: flex; flex-direction: column; }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 10px; flex-shrink: 0; }
+  .screen { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin-bottom: 8px; }
+
+  /* Home pieces */
+  .hhead { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; }
+  .hhead .pet { font-weight: 600; font-size: 17px; }
+  .hhead .pet span { color: #737373; font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .acard { background: #FFFFFF; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .irow { display: flex; gap: 9px; padding: 6px 0 2px; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.85; align-self: stretch; }
+  .rail.safety { background: #F43F5E; }
+  .rail.insight { background: #00C2A8; }
+  .rail.quiet { background: #C9C9C9; }
+  .ibody { flex: 1; min-width: 0; }
+  .lead { font-family: var(--serif); font-size: 17px; line-height: 1.32; letter-spacing: -0.01em; color: #0A0A0A; margin: 0 0 4px; }
+  .samp { font-size: 10.5px; color: #737373; margin-top: 4px; }
+  .foldrow { display: flex; align-items: center; gap: 9px; min-height: 40px; }
+  .foldrow .ftext { flex: 1; min-width: 0; font-size: 12.5px; line-height: 17px; color: #525252; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foldrow .ftext b { color: #0A0A0A; font-weight: 500; }
+  .foldrow .chev { color: #A3A3A3; font-size: 14px; }
+  .foldrow .rail { height: 16px; align-self: center; }
+  .today { display: grid; gap: 8px; }
+  .trow { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: #0A0A0A; padding: 6px 0; }
+  .trow + .trow { border-top: 1px solid #EAEAEA; }
+  .trow .t { color: #737373; font-size: 11px; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .glyph { width: 22px; height: 22px; border-radius: 50%; background: #F5F5F5; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .glyph.sym { background: #FFE4E6; color: #9F1239; }
+  .glyph.meal { background: #E0FBF7; color: #0B7B6C; }
+  .tabbar { margin-top: auto; height: 54px; border-top: 1px solid #EAEAEA; background: #FFFFFF; display: flex; align-items: center; justify-content: space-around; font-size: 9.5px; color: #A3A3A3; margin-left: -12px; margin-right: -12px; flex-shrink: 0; }
+  .tabbar .on { color: #0A0A0A; font-weight: 600; }
+  .fab { position: absolute; right: 22px; bottom: 70px; width: 44px; height: 44px; border-radius: 50%; background: #00C2A8; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 6px 16px rgba(0,194,168,0.35); }
+
+  /* The named completion card (R1 register) + scrim */
+  .scrim { position: absolute; inset: 0; background: rgba(10,10,10,0.42); border-radius: 33px; }
+  .ncard { position: absolute; left: 14px; right: 14px; background: #101312; border-radius: 16px; padding: 14px 14px 12px; color: #FFFFFF; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+  .ncard.over-tabs { bottom: 70px; }
+  .ncard.over-screen { bottom: 22px; }
+  .ncard .row { display: flex; gap: 10px; align-items: flex-start; }
+  .ncard .chk { width: 26px; height: 26px; border-radius: 50%; background: rgba(0,194,168,0.18); color: #86D9CC; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  .ncard .ttl { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .ncard .sub { font-size: 11.5px; color: rgba(255,255,255,0.62); margin-top: 2px; }
+  .ncard .live { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: rgba(255,255,255,0.78); margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.10); }
+  .ncard .live .whorl { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(134,217,204,0.35); border-top-color: #86D9CC; }
+  .ncard .live .open { margin-left: auto; color: #86D9CC; font-weight: 600; }
+  .ncard .live.attn { color: #FFFFFF; }
+  .ncard .live.attn .dotr { width: 8px; height: 8px; border-radius: 50%; background: #FB7185; flex-shrink: 0; }
+  .ncard .acts { display: flex; gap: 22px; margin-top: 10px; font-size: 12.5px; font-weight: 600; color: #86D9CC; }
+
+  /* Sheet beat strip (R3 sticky strip) */
+  .sticky { background: #FFFFFF; border: 1px solid #FBCFD6; border-radius: 14px; padding: 10px 12px; display: flex; gap: 9px; align-items: center; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .sticky .rail { height: 16px; align-self: center; }
+  .sticky .st { flex: 1; min-width: 0; font-size: 12.5px; color: #0A0A0A; line-height: 1.3; }
+  .sticky .st span { color: #525252; }
+  .sticky .st small { display: block; font-size: 10.5px; color: #737373; margin-top: 2px; }
+  .sticky .go { color: #0B7B6C; font-weight: 600; font-size: 12px; }
+
+  /* Incident (event detail) screen pieces */
+  .dhead { display: flex; align-items: center; gap: 10px; padding: 2px 2px 4px; font-size: 15px; font-weight: 600; }
+  .dhead .bk { color: #0B7B6C; font-size: 18px; font-weight: 400; }
+  .dscroll { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+  .hero { height: 150px; border-radius: 14px; background: linear-gradient(135deg, #D9D2CB 0%, #C4BCB3 55%, #B7ADA2 100%); position: relative; flex-shrink: 0; }
+  .hero::after { content: "photo"; position: absolute; right: 10px; bottom: 8px; font-family: var(--mono); font-size: 9.5px; color: rgba(0,0,0,0.45); letter-spacing: 0.08em; text-transform: uppercase; }
+  .hero.tile { height: 64px; width: 64px; border-radius: 12px; }
+  .hero.tile::after { content: ""; }
+  .rec { padding: 0 2px; }
+  .rec .typ { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #9F1239; }
+  .rec .date { font-family: var(--serif); font-size: 22px; line-height: 1.15; margin: 3px 0 2px; }
+  .rec .time { font-size: 12.5px; color: #525252; }
+  .rec .who { font-size: 11px; color: #737373; margin-top: 3px; }
+  .rechead { display: flex; gap: 12px; align-items: center; }
+  .rechead .rec { flex: 1; min-width: 0; }
+  .readcard { border-radius: 14px; padding: 12px 12px 10px; background: #FFFFFF; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .readcard.attn { background: #FFF5F6; border: 1px solid #FBCFD6; }
+  .readcard.neutral { background: #FFFFFF; }
+  .readcard .rrow { display: flex; gap: 10px; }
+  .readcard .rail { align-self: stretch; }
+  .readcard .verdict { font-size: 14.5px; font-weight: 600; color: #0A0A0A; line-height: 1.25; }
+  .readcard .verdict.attn { color: #9F1239; }
+  .readcard .readtext { font-size: 12.5px; line-height: 1.45; color: #525252; margin-top: 5px; }
+  .readcard .disc { font-size: 10px; color: #A3A3A3; margin-top: 8px; }
+  .readcard .hide { font-size: 11px; color: #737373; font-weight: 500; margin-top: 8px; display: flex; gap: 14px; }
+  .pending { display: flex; align-items: center; gap: 9px; padding: 8px 2px; color: #737373; font-size: 12.5px; }
+  .pending .whorl { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(0,194,168,0.22); border-top-color: #00C2A8; }
+  .obs { border-radius: 14px; padding: 10px 12px; background: #FFFFFF; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .obs .ohead { display: flex; align-items: center; justify-content: space-between; }
+  .obs .ohead .seclabel { margin: 0; }
+  .obs .ohead .edit { font-size: 11px; color: #0B7B6C; font-weight: 600; }
+  .ogrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 8px; }
+  .okv { font-size: 12px; color: #0A0A0A; line-height: 1.3; }
+  .okv small { display: block; font-size: 9.5px; color: #737373; letter-spacing: 0.08em; text-transform: uppercase; }
+  .okv .ed { font-size: 9px; color: #0B7B6C; font-weight: 600; margin-left: 4px; }
+  .sect { padding: 0 2px; }
+  .sect .body { font-size: 12.5px; color: #525252; }
+  .notesrow { font-size: 12.5px; color: #525252; }
+  .kick { font-size: 11px; color: #737373; }
+
+  /* ── Live demo (arrival) ─────────────────────────────────── */
+  .demo .arrive { position: relative; }
+  .demo .arrive .pendingband { transition: opacity 180ms ease; }
+  .demo .arrive .readcard { overflow: hidden; }
+  .demo .arrive .readcard .rail { height: 0; transition: height 160ms cubic-bezier(.2,.7,.2,1); }
+  .demo .arrive .readcard .rbody { opacity: 0; transform: translateY(8px); transition: opacity 300ms ease 200ms, transform 300ms cubic-bezier(.2,.7,.2,1) 200ms; }
+  .demo .arrive .readcard { max-height: 0; padding-top: 0; padding-bottom: 0; transition: max-height 370ms cubic-bezier(.34,1.3,.5,1) 120ms, padding 370ms ease 120ms; }
+  .demo .arrive.landed .pendingband { opacity: 0; position: absolute; pointer-events: none; }
+  .demo .arrive.landed .readcard { max-height: 220px; padding-top: 12px; padding-bottom: 10px; }
+  .demo .arrive.landed .readcard .rail { height: 100%; }
+  .demo .arrive.landed .readcard .rbody { opacity: 1; transform: translateY(0); }
+  .demo .obs .ogrid { transition: opacity 180ms ease, transform 180ms ease; }
+  .demo .obs.folded .ogrid { display: none; }
+  .demo .obs .fstrip { display: none; }
+  .demo .obs.folded .fstrip { display: flex; }
+  .demo .obs.folded .ohead { display: none; }
+  .demo .obs .foldctl { font-size: 11px; color: #737373; font-weight: 600; margin-top: 8px; }
+  .demo .obs.folded .foldctl { display: none; }
+  .btnrow { display: flex; gap: 10px; margin: 12px 2px 0; }
+  .btn { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border: 1px solid rgba(11,123,108,0.25); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  .btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .demo .arrive .readcard, .demo .arrive .readcard .rail, .demo .arrive .readcard .rbody, .demo .arrive .pendingband { transition: opacity 200ms ease; transform: none; }
+  }
+  .beats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-top: 18px; }
+  .beat { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 14px 16px; font-size: 13.5px; color: var(--ink-2); }
+  .beat .bn { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin-bottom: 6px; }
+  .beat b { color: var(--ink); }
+  .beat .ms { font-family: var(--mono); font-size: 11px; color: var(--ink-3); display: block; margin-top: 6px; }
+  .annot { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.05em; color: #B4123B; background: #FFF1F2; border: 1px dashed rgba(180,18,59,0.35); border-radius: 6px; padding: 3px 7px; margin-top: 8px; display: inline-block; }
+  .annot.ok { color: #0B7B6C; background: #ECFDF9; border-color: rgba(11,123,108,0.3); }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span>Culprit · the incident screen</span><span>CUL-158 absorbed</span><span>2026-09-05</span><span class="roundtag">Round 2 · build-ready</span></p>
+    <h1>Where a logged vomit lands, and how the read arrives</h1>
+    <p class="standfirst">Today a photographed vomit ends on Home under the black card, and the one surface that holds the AI read is never shown. Round 1 mocked three routing directions, two shapes for the incident screen, and the read's <strong>arrival</strong> as a motion moment. <strong>Round 2 is the build-ready pass:</strong> the PM ruled all four briefs on 2026-09-05, the ruled frames are drawn in full below, and the round-1 alternatives stay as the deliberation record. Every frame renders the shipping light surfaces with the real tokens.</p>
+    <div class="revnew"><b>Ruled 2026-09-05 (§0).</b> D1 land on the record · D2 photographed vomit + stool only · D3 <b>the photo stays the hero</b> (overrides the round-1 recommendation: an owner must be able to pull a vomit up and show a vet) · D4 the rail-led arrival. Build: CUL-802 (route) → CUL-803 (screen) → CUL-804 (arrival), spec <code>docs/nyx-incident-screen-requirements.md</code>. Round 2 supersedes round 1 on this URL.</div>
+  </header>
+
+  <!-- ───────────────────────── §0 · Decision record ───────────────────────── -->
+  <section id="decisions">
+    <div class="sec-head"><span class="sec-num">§0</span><h2>Decision record</h2></div>
+    <div class="tablewrap"><table class="spec">
+      <tr><th>#</th><th>Decision</th><th>Ruling (PM, 2026-09-05)</th><th>What it binds</th></tr>
+      <tr><td>D1</td><td>Where a photographed vomit lands after Save</td><td><strong>R1 — land on the record.</strong> The log modal is replaced by <code>/event/[id]</code>; the named card lands over it; Back is one tap to Home.</td><td>CUL-802. Resolves the Designer's Principle-1 dissent by scope (D2), not by tie-break: the record is the confirmation.</td></tr>
+      <tr><td>D2</td><td>Which logs take the route</td><td><strong>The logs with an AI read: vomit and stool, when a photo was attached.</strong> "The logs where the owner should see the incident screen — just vomit and stool now."</td><td>A photoless vomit/stool and every other type keep the shipped path, byte-identical. A photoless contextual escalation is the Signal's acute card's job.</td></tr>
+      <tr><td>D3</td><td>Photo as hero or tile</td><td><strong>Keep the hero.</strong> "I want the pet owner to be able to pull up a vomit and show it to a vet." Overrides round 1's S-B recommendation.</td><td>PR 2 builds S-A: hero unchanged, the read moves up under the record. Adds the viewer caption (V1) so the vet also sees <em>when</em>.</td></tr>
+      <tr><td>D4</td><td>How the read arrives</td><td><strong>The rail-led arrival, the fold's physics.</strong> "Let's absolutely go with the motion arrival moment."</td><td>PR 3, after CUL-788 so the motion module is shared. No haptic on any verdict.</td></tr>
+    </table></div>
+  </section>
+
+  <!-- ───────────────────────── 1 · Today ───────────────────────── -->
+  <section id="today">
+    <div class="sec-head"><span class="sec-num">§1</span><h2>What ships today, and what the owner never sees</h2></div>
+    <div class="col">
+      <p>The log modal saves, calls <code>router.back()</code>, and the named card lands over Home for five seconds with Undo and Change time. The photo's read is kicked off in the background (compress, upload, then the vision call) and lands in <code>event_ai_analysis</code> some seconds later. Nothing routes to the incident screen. The read is reachable only through History, a row tap, and a scroll, which is why the differentiator is invisible to the person who just took the photo.</p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Biscuit <span>Fri, Sep 5</span></div></div>
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow"><div class="rail insight"></div><div class="ibody"><p class="lead">Chicken days and next-day vomiting keep lining up.</p><div class="samp">6 of 9 vomit days · 8 weeks</div></div></div>
+              <div class="foldrow"><div class="rail quiet"></div><div class="ftext"><b>Grazing pattern</b> · 3 findings</div><div class="chev">›</div></div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="today">
+                <div class="trow"><span class="glyph sym">✕</span>Vomit<span class="t">2:14 AM</span></div>
+                <div class="trow"><span class="glyph meal">●</span>Dinner · Farmina lamb<span class="t">Yesterday 7:05 PM</span></div>
+              </div>
+            </div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Biscuit</span></div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ncard over-tabs">
+            <div class="row"><div class="chk">✓</div><div><div class="ttl">Vomit · 2:14 AM</div><div class="sub">Saved to Biscuit's record</div></div></div>
+            <div class="acts"><span>Undo</span><span>Change time</span></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>T1 · Today, after Save</b>Home dims, the card speaks the record, and dismisses at 5s. The photo is being read right now, and the card does not know it.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · 6 min ago</div></div>
+              <div class="sect"><div class="seclabel">AI read</div><div class="pending"><div class="whorl"></div>Reading this one…</div></div>
+              <div class="sect"><div class="seclabel">Notes</div><div class="notesrow">Right after the 7pm meal, on the rug.</div></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>T2 · The incident screen, as built</b>Photo hero, the record, then the read under an <code>AI READ</code> label: spinner, then a recommendation card, then the observations. Reached only via History.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── 1 · Routing ───────────────────────── -->
+  <section id="routing">
+    <div class="sec-head"><span class="sec-num">§2</span><h2>Three routing directions <span class="roundtag">D1 ruled · R1</span></h2></div>
+    <div class="col">
+      <p>The constraint on every direction is Principle 1. The quick-log page of the design principles says the confirmation is <em>"a brief completion state, then back to home"</em>, and the 2am test is one hand, in the dark, under ten seconds. So a direction is honest only if it adds nothing to the log itself and takes the owner somewhere <strong>only when there is something to show</strong>. A photoless vomit has no read; routing it to a screen with an empty photo hero would be a punishment for not taking a photo.</p>
+    </div>
+
+    <h3>R1 · Land on the record <span class="annot ok">ruled — D1</span></h3>
+    <div class="col"><p>After Save, the modal is <em>replaced</em> by the incident screen rather than dismissed, so the owner arrives on the record with the photo they just took and the read pending. The named card still lands, now over the incident screen, so Undo and Change time survive the move. Back is one tap to Home. Scope: photographed vomit and stool only.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · just now</div><div class="who">Biscuit's record</div></div>
+              <div class="sect"><div class="seclabel">AI read</div><div class="pending"><div class="whorl"></div>Reading the photo…</div></div>
+              <div class="sect"><div class="seclabel">Notes</div><div class="notesrow">Right after the 7pm meal, on the rug.</div></div>
+            </div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ncard over-screen">
+            <div class="row"><div class="chk">✓</div><div><div class="ttl">Vomit · 2:14 AM</div><div class="sub">Saved to Biscuit's record</div></div></div>
+            <div class="acts"><span>Undo</span><span>Change time</span></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>R1a · Arrived, read pending</b>The card overlays the record it describes. The card's bottom offset must read the route: there is no tab bar here, so it sits at the safe-area, not 80pt up.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · 1 min ago</div><div class="who">Biscuit's record</div></div>
+              <div class="sect"><div class="seclabel">AI read</div>
+                <div class="readcard neutral"><div class="rrow"><div class="rail quiet"></div><div class="ibody"><div class="verdict">Keep an eye out</div><div class="readtext">Yellow, foamy, mostly bile. Nothing in this photo on its own stands out. If it happens again today, or Biscuit skips a meal, that's the moment to call.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div></div></div></div>
+              </div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Yellow</div><div class="okv"><small>Consistency</small>Foamy</div><div class="okv"><small>Contents</small>Bile</div><div class="okv"><small>Blood</small>None visible</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>R1b · The read landed</b>Card gone, the read in place. The verdict label is the shipped enum copy, verbatim. The owner watched it arrive; that is the whole point of the route.</p>
+      </div>
+    </div>
+
+    <h3>R2 · The card carries the read <span class="annot">not taken — D1</span></h3>
+    <div class="col"><p>Stay on Home. The named card grows a third line while the photo is being read, and when the read lands the line becomes the verdict with an <em>Open</em> that goes to the record. The dwell holds while pending, bounded at 20s, then dismisses whatever the state. Principle 1 stays intact; the cost is safety prose on a self-dismissing surface, the exact thing the dose card's fade rule forbids.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Biscuit <span>Fri, Sep 5</span></div></div>
+            <div class="acard"><div class="seclabel">Signal</div><div class="irow"><div class="rail insight"></div><div class="ibody"><p class="lead">Chicken days and next-day vomiting keep lining up.</p><div class="samp">6 of 9 vomit days · 8 weeks</div></div></div></div>
+            <div class="acard"><div class="seclabel">Today</div><div class="today"><div class="trow"><span class="glyph sym">✕</span>Vomit<span class="t">2:14 AM</span></div></div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Biscuit</span></div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ncard over-tabs">
+            <div class="row"><div class="chk">✓</div><div><div class="ttl">Vomit · 2:14 AM</div><div class="sub">Saved to Biscuit's record</div></div></div>
+            <div class="live"><div class="whorl"></div>Reading the photo…</div>
+            <div class="acts"><span>Undo</span><span>Change time</span></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>R2a · Pending, on the card</b>A third line under the record sentence. The dwell pauses while it reads.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Biscuit <span>Fri, Sep 5</span></div></div>
+            <div class="acard"><div class="seclabel">Signal</div><div class="irow"><div class="rail insight"></div><div class="ibody"><p class="lead">Chicken days and next-day vomiting keep lining up.</p><div class="samp">6 of 9 vomit days · 8 weeks</div></div></div></div>
+            <div class="acard"><div class="seclabel">Today</div><div class="today"><div class="trow"><span class="glyph sym">✕</span>Vomit<span class="t">2:14 AM</span></div></div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Biscuit</span></div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ncard over-tabs">
+            <div class="row"><div class="chk">✓</div><div><div class="ttl">Vomit · 2:14 AM</div><div class="sub">Saved to Biscuit's record</div></div></div>
+            <div class="live attn"><div class="dotr"></div>Worth a call · blood visible<span class="open">Open ›</span></div>
+            <div class="acts"><span>Undo</span><span>Change time</span></div>
+          </div>
+          <span class="annot" style="position:absolute;left:18px;bottom:18px">an escalation on a card that fades at 20s</span>
+        </div>
+        <p class="frame-cap"><b>R2b · The verdict, on the card</b>Works for a <em>Keep an eye out</em>. For a <em>Worth a call</em> it puts the most important sentence the app can say on a surface built to disappear.</p>
+      </div>
+    </div>
+
+    <h3>R3 · Nothing changes on the log; the record comes to you <span class="annot">not taken — D1</span></h3>
+    <div class="col"><p>Stay on Home and keep the card exactly as shipped. When the read lands, only an escalation surfaces: a strip above Today, rose-bordered, that does not auto-dismiss and opens the record. A <em>Keep an eye out</em> or <em>Not enough to say</em> surfaces nothing on Home. The never-reassure rule makes this honest: a non-escalating read has nothing urgent to say, so it does not chase the owner.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Biscuit <span>Fri, Sep 5</span></div></div>
+            <div class="sticky"><div class="rail safety"></div><div class="st">Worth a call <span>· 2:14 AM vomit</span><small>Blood visible in the photo</small></div><span class="go">Open ›</span></div>
+            <div class="acard"><div class="seclabel">Signal</div><div class="irow"><div class="rail insight"></div><div class="ibody"><p class="lead">Chicken days and next-day vomiting keep lining up.</p><div class="samp">6 of 9 vomit days · 8 weeks</div></div></div></div>
+            <div class="acard"><div class="seclabel">Today</div><div class="today"><div class="trow"><span class="glyph sym">✕</span>Vomit<span class="t">2:14 AM</span></div></div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Biscuit</span></div>
+            <div class="fab">+</div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>R3 · The escalation strip</b>Persists until opened. Overlaps CUL-208 (a standing flag for <em>worth_a_call</em>) and the Signal's own acute <code>incident_red_flag</code> card, which never folds. Two surfaces for one finding is the risk.</p>
+      </div>
+    </div>
+
+    <div class="conflict">
+      <p><strong>Designer:</strong> Principle 1 ends the log on Home. R1 adds a screen the owner has to leave. At 2am that is a tax.</p>
+      <p><strong>PM, Dr. Chen:</strong> The read is the differentiator and, when it escalates, the one sentence the owner must see. Today it is three taps deep and nobody reads it.</p>
+      <p><strong>Jordan:</strong> If the app is about to tell me something about the thing I just photographed, I will wait eight seconds. If it is going to spin for a minute, I will not.</p>
+      <p><strong>Resolution — ruled by the PM as D1 + D2 (2026-09-05):</strong> R1 scoped to the photographed vomit and stool, because that is the only log with a read to show, and the record already IS the confirmation. The escalation-after-you-left case is not R1's to solve: the Signal's acute card already exists for it. Verify it fires from the per-incident row at <code>generate-signal/detection.ts</code> before relying on it.</p>
+    </div>
+
+    <div class="brief">
+      <p class="bid">R-1 · Where does a photographed vomit land?</p>
+      <p><strong>Deciding:</strong> the screen the owner is on when the read arrives, and whether the completion card moves with them.</p>
+      <p><strong>Ruled:</strong> <span class="rec">R1, land on the record</span> (PM, 2026-09-05, D1). Not taken: R2 the card carries the read (safety prose on a fading surface) · R3 escalation strip only (duplicates the Signal's acute card).</p>
+      <p><strong>Consequence:</strong> CUL-802: a routing change in <code>app/log.tsx</code> and the beta sheet, plus a route-aware bottom offset on the card. Blocked by CUL-801 (the trigger race).</p>
+    </div>
+    <div class="brief">
+      <p class="bid">R-2 · Which logs take the new route?</p>
+      <p><strong>Deciding:</strong> the scope of the landing.</p>
+      <p><strong>Ruled:</strong> <span class="rec">the logs with an AI read — photographed vomit and stool</span> (PM, 2026-09-05, D2). Not taken: every symptom log (a photoless vomit would land on an empty hero) · every photographed event.</p>
+      <p><strong>Consequence:</strong> the narrow scope keeps every other log on the shipped Principle 1 path, byte-identical.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── 2 · The screen ───────────────────────── -->
+  <section id="screen">
+    <div class="sec-head"><span class="sec-num">§3</span><h2>The incident screen <span class="roundtag">D3 ruled · S-A, hero kept</span></h2></div>
+    <div class="col">
+      <p>Once the route lands here, the screen has to earn it. Both shapes keep the record in daylight (the D8 rule), keep the verdict copy verbatim from the shipped enum, and keep the read dismissible and never editable while the observations stay editable. What changes is <strong>what leads</strong>.</p>
+    </div>
+
+    <h3>S-A · The read leads, the photo stays the hero <span class="annot ok">ruled — D3</span></h3>
+    <div class="col"><p>The shipped order, tightened. The read moves up under the record with a rail, rose when it escalates, quiet otherwise, and the observations become a compact two-column grid that folds to a strip once seen. The photo stays full-width because it is what the owner just took and how they confirm this is the right incident.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · 3 min ago</div><div class="who">Biscuit's record</div></div>
+              <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">There are streaks that look like blood in this photo. That is worth a call to your vet today, even if Biscuit seems fine now.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div><div class="hide"><span>Hide this note</span></div></div></div></div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Brown</div><div class="okv"><small>Consistency</small>Liquid</div><div class="okv"><small>Contents</small>Food, bile</div><div class="okv"><small>Blood</small>Streaks<span class="ed">Edited</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>S-A · Escalating read</b>Rose rail, rose ink for the verdict on the rose-light ground, no glyph, no haptic. Plainness is the severity signal. The disclaimer stays on the card.</p>
+      </div>
+    </div>
+
+    <h3>S-B · The photo steps back <span class="annot">not taken — D3</span></h3>
+    <div class="col"><p>Sam's point: nobody wants to look at a vomit photo full-bleed at 8am. Here the photo is a 64pt tile beside the record header, tap for the viewer, and the read takes the hero position. The owner still confirms the incident from the tile; the screen is about what the app made of it, not the thing itself. Photoless incidents keep the tap-to-add hero, unchanged.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="rechead"><div class="hero tile"></div><div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · 3 min ago</div><div class="who">Biscuit's record</div></div></div>
+              <div class="readcard neutral"><div class="rrow"><div class="rail quiet"></div><div class="ibody"><div class="verdict">Keep an eye out</div><div class="readtext">Yellow, foamy, mostly bile. Nothing in this photo on its own stands out. If it happens again today, or Biscuit skips a meal, that's the moment to call.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div><div class="hide"><span>Hide this note</span></div></div></div></div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Yellow</div><div class="okv"><small>Consistency</small>Foamy</div><div class="okv"><small>Contents</small>Bile</div><div class="okv"><small>Blood</small>None visible</div></div>
+              </div>
+              <div class="sect"><div class="seclabel">Notes</div><div class="notesrow">Right after the 7pm meal, on the rug.</div></div>
+              <div class="sect"><div class="seclabel">Time</div><div class="body">Witnessed · 2:14 AM</div></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>S-B · Non-escalating read</b>Neutral rail, plain ink. The <em>Blood: none visible</em> row is a photo fact about this frame, never a wellness claim; CUL-531 tracks when a contextual escalation should drop it.</p>
+      </div>
+    </div>
+
+
+    <h3>Round 2 · the frames the build needs</h3>
+    <div class="col"><p>Three frames round 1 did not draw: the stool sibling on the same layout, Undo taken from the card while it sits over the record, and the full-screen viewer with the caption that lets a vet read <em>when</em> as well as <em>what</em> (the D3 rationale, finished).</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Diarrhea</div>
+            <div class="dscroll">
+              <div class="hero" style="background: linear-gradient(135deg, #CFC6B8 0%, #B9AE9C 55%, #A99C88 100%);"></div>
+              <div class="rec"><div class="typ">Diarrhea</div><div class="date">Today</div><div class="time">7:40 AM · 2 min ago</div><div class="who">Biscuit's record</div></div>
+              <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">This is the third loose stool in two days, and there was a vomit overnight. Together that is worth a call to your vet today.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div><div class="hide"><span>Hide this note</span></div></div></div></div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Consistency</small>Liquid</div><div class="okv"><small>Colour</small>Tan</div><div class="okv"><small>Blood</small>None visible</div><div class="okv"><small>Mucus</small>Some</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>S-A2 · Stool sibling, contextual escalation</b>Same layout, same rail. The escalation here came from context (repeat + concurrent vomit), not the photo, and the read text says so: the floor forces <em>Worth a call</em> and the model cannot downgrade it.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · just now</div><div class="who">Biscuit's record</div></div>
+              <div class="sect"><div class="seclabel">AI read</div><div class="pending"><div class="rail quiet" style="height:16px;width:3px;border-radius:2px;background:#C9C9C9"></div><div class="whorl"></div>Reading the photo…</div></div>
+            </div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ncard over-screen">
+            <div class="row"><div class="chk">✓</div><div><div class="ttl">Vomit · 2:14 AM</div><div class="sub">Saved to Biscuit's record</div></div></div>
+            <div class="acts"><span style="text-decoration:underline">Undo</span><span>Change time</span></div>
+          </div>
+          <span class="annot ok" style="position:absolute;left:18px;bottom:18px">Undo confirms first: the photo is named</span>
+        </div>
+        <p class="frame-cap"><b>U1 · Undo, from over the record</b>A photo-bearing record's Undo confirms and names the photo (CUL-645), as shipped. On confirm the reversal runs, the screen underneath is a deleted row, so the screen dismisses…</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Biscuit <span>Fri, Sep 5</span></div></div>
+            <div class="acard"><div class="seclabel">Signal</div><div class="irow"><div class="rail insight"></div><div class="ibody"><p class="lead">Chicken days and next-day vomiting keep lining up.</p><div class="samp">6 of 9 vomit days · 8 weeks</div></div></div></div>
+            <div class="acard"><div class="seclabel">Today</div><div class="today"><div class="trow"><span class="glyph meal">●</span>Dinner · Farmina lamb<span class="t">Yesterday 7:05 PM</span></div></div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Biscuit</span></div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ncard over-tabs">
+            <div class="row"><div><div class="ttl">Removed</div><div class="sub">Taken out of Biscuit's record</div></div></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>U2 · …and the Removed line lands on Home</b>The quiet line, no mark, as shipped. The in-flight read is orphaned by the soft delete; the analyze function's row is never shown for a deleted event.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone" style="background:#0B0B12;">
+          <div class="notch"></div>
+          <div class="screen" style="justify-content:center;">
+            <div class="hero" style="height:300px;border-radius:6px;"></div>
+            <div style="color:#FFFFFF;font-size:13px;font-weight:600;padding:12px 4px 0;">Biscuit · Vomit</div>
+            <div style="color:rgba(255,255,255,0.7);font-size:12px;padding:2px 4px 0;font-variant-numeric:tabular-nums;">Friday, Sep 5 · 2:14 AM · witnessed</div>
+            <div style="color:rgba(255,255,255,0.45);font-size:10.5px;padding:2px 4px 0;">Found-not-witnessed renders its window here, never a point.</div>
+            <div style="position:absolute;top:44px;right:22px;color:#FFFFFF;font-size:18px;">✕</div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>V1 · The viewer, captioned</b>Tap the hero and the vet sees the photo with pet, event, date and time under it, derived through the same <code>describeOccurredAt</code> path the card and History use. The one place a dark ground is right: a photo viewer.</p>
+      </div>
+    </div>
+
+    <div class="brief">
+      <p class="bid">R-3 · Photo as hero, or as a tile?</p>
+      <p><strong>Deciding:</strong> what the owner sees first on the record of a photographed incident.</p>
+      <p><strong>Ruled:</strong> <span class="rec">S-A, keep the hero</span> (PM, 2026-09-05, D3): "I want the pet owner to be able to pull up a vomit and show it to a vet." The round-1 recommendation (S-B tile) is overridden and stays below as the record. Round 2 adds the viewer caption (V1) so the vet also sees when.</p>
+      <p><strong>Consequence:</strong> PR 2 is a reorder inside the existing tree plus the rail, the grid, the fold, and the caption. The tile composition is not built.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── 3 · Arrival ───────────────────────── -->
+  <section id="arrival" class="demo">
+    <div class="sec-head"><span class="sec-num">§4</span><h2>The arrival, drawn with the fold's physics <span class="roundtag">D4 ruled</span></h2></div>
+    <div class="col">
+      <p>The design principles allow exactly one considered animation: <em>the transition from "building your picture" to a real insight should feel like something arrived.</em> The per-incident read is that class of moment, one incident down. So the arrival borrows the fold's rule, <strong>the rail is the continuous thread</strong>: the pending line is a 16pt tick of rail beside the whorl; when the read lands, the rail grows first, the box opens around it with one felt settle, and the sentence lands a beat after the box. Nothing is added that was not already there; the line the owner watched while waiting is the line beside the verdict.</p>
+      <p>Same physics on every verdict. A <em>Worth a call</em> does not arrive harder or louder; it arrives on a rose rail with no haptic, because silence on safety is structural. Reduced motion is a crossfade. App blur finishes the arrival, never pauses it.</p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Today</div><div class="time">2:14 AM · just now</div><div class="who">Biscuit's record</div></div>
+              <div class="arrive" id="arrive">
+                <div class="pendingband readcard neutral" style="max-height:none;padding:12px 12px 10px"><div class="rrow"><div class="rail quiet" style="height:16px;align-self:center"></div><div class="pending" style="padding:0"><div class="whorl"></div>Reading the photo…</div></div></div>
+                <div class="readcard neutral"><div class="rrow"><div class="rail quiet"></div><div class="ibody rbody"><div class="verdict">Keep an eye out</div><div class="readtext">Yellow, foamy, mostly bile. Nothing in this photo on its own stands out. If it happens again today, or Biscuit skips a meal, that's the moment to call.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div></div></div></div>
+              </div>
+              <div class="obs" id="obs">
+                <div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Yellow</div><div class="okv"><small>Consistency</small>Foamy</div><div class="okv"><small>Contents</small>Bile</div><div class="okv"><small>Blood</small>None visible</div></div>
+                <div class="foldctl" id="foldbtn">Keep it compact</div>
+                <div class="foldrow fstrip" id="unfoldbtn"><div class="rail quiet"></div><div class="ftext"><b>What's visible</b> · Yellow, foamy, bile · 4 findings</div><div class="chev">›</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="btnrow"><button class="btn" id="play" type="button">Play the arrival</button><button class="btn" id="reset" type="button">Reset</button></div>
+        <p class="frame-cap"><b>Live · tap Play, then fold the observations</b>Round 2: drawn on the ruled S-A layout (hero kept). The rail leads, the box follows with a settle, the sentence lands last. The observations fold to a strip that names the findings and the count, and re-opens from the strip.</p>
+      </div>
+    </div>
+    <div class="beats">
+      <div class="beat"><div class="bn">Beat 1 · the rail grows</div><b>16pt tick → the card's height</b>, ahead of the box. The whorl and "Reading the photo…" fade in the same beat.<span class="ms">160 ms · railLeadMs, as the fold</span></div>
+      <div class="beat"><div class="bn">Beat 2 · the box opens</div><b>Spring on iOS, ease on Android</b>, one felt settle of about 4pt, never a bounce on close.<span class="ms">370 ms · openMs, damping 0.7</span></div>
+      <div class="beat"><div class="bn">Beat 3 · the sentence lands</div><b>−8pt → 0, fade in</b>, starting a beat after the box begins. The verdict and the read text move as one block.<span class="ms">300 ms, delay 40 ms · landMs</span></div>
+      <div class="beat"><div class="bn">Never</div>No haptic on any verdict. No gold, no wash, no loop. No automatic re-run animates: a read that was already there on open paints on the first frame.<span class="ms">FS-9 · haptics guard</span></div>
+    </div>
+    <div class="brief">
+      <p class="bid">R-4 · How does the read arrive?</p>
+      <p><strong>Deciding:</strong> whether the arrival is a motion moment or a swap.</p>
+      <p><strong>Ruled:</strong> <span class="rec">the rail-led arrival, fold physics</span> (PM, 2026-09-05, D4). It reuses <code>foldMotion.ts</code>'s constants and its two-engine split, so it costs one component, not a new vocabulary. Crossfade stays as the reduced-motion frame only.</p>
+      <p><strong>Consequence:</strong> PR 3 lifts the fold's motion hook into a shared <code>components/motion/</code> home, which the fold PR 3 (CUL-788) is about to land; sequence after it.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── 4 · States the route must survive ───────────────────────── -->
+  <section id="states">
+    <div class="sec-head"><span class="sec-num">§5</span><h2>The states the landing has to survive</h2></div>
+    <div class="col"><p>Routing to a screen that is waiting on a server means the screen must be honest about every way that wait ends. These are all already states of <code>VomitAnalysisSection</code>; the route just makes them visible on arrival instead of on a later visit.</p></div>
+    <div class="tablewrap"><table class="spec">
+      <tr><th>State</th><th>What the owner sees on arrival</th><th>Rule it honours</th></tr>
+      <tr><td>Pending, then lands</td><td>The tick and whorl, then the arrival.</td><td>§3</td></tr>
+      <tr><td>Slow (upload on a bad signal)</td><td>Pending stays. The card dismisses at 5s as today; the screen does not. Back is always available; the read lands in the row and is there next time.</td><td>Real work on the pet's behalf earns a wait; a spinner never blocks Back</td></tr>
+      <tr><td>Failed</td><td>"Couldn't finish reading this one." with Try again, as shipped.</td><td>Error copy names the repair</td></tr>
+      <tr><td>Daily cap reached</td><td>The calm cap copy, no retry, no Premium mention.</td><td>Pets &gt; $; monetization §7.3</td></tr>
+      <tr><td>Consent off (CUL-552)</td><td>No read section at all. The screen is the record: photo tile, time, notes.</td><td>Consent gate is server-side and client-side; never a spinner that cannot end</td></tr>
+      <tr><td>Photo unclear</td><td>"Not enough to say about this one yet." with Try analysis.</td><td>Not-enough is the floor, never reassurance</td></tr>
+      <tr><td>Undo from the card</td><td>The screen underneath is now a deleted record. The card's Undo dismisses the screen and lands the "Removed" line on Home.</td><td>A screen never shows a row that is no longer in the record</td></tr>
+    </table></div>
+    <div class="callout warn"><strong>Two triggers race today.</strong> The log path kicks the read after upload; the detail screen mounts and kicks it again. Both are idempotent on <code>event_id</code>, but on arrival the mount trigger would fire before the photo has uploaded, and the function would answer "not enough to say" on a photo that is still in flight. The build has to gate the mount trigger while a pending row exists or the upload chain is running. Adjacent to CUL-143.</div>
+  </section>
+
+  <!-- ───────────────────────── 5 · Build shape ───────────────────────── -->
+  <section id="build">
+    <div class="sec-head"><span class="sec-num">§6</span><h2>Build shape (ruled)</h2></div>
+    <div class="col">
+      <ul class="tight">
+        <li><strong>CUL-801 first · the trigger race.</strong> A correctness fix the route makes urgent: on arrival the detail-mount trigger must not fire a second analyze call before the photo has landed.</li>
+        <li><strong>PR 1 · the route (CUL-802).</strong> <code>app/log.tsx</code> and the beta sheet: a photographed vomit or stool replaces the modal with <code>/event/[id]</code>; the named card still fires, with a route-aware bottom offset; Undo from over the record dismisses the screen and lands the Removed line on Home. Every other path byte-identical, snapshot-pinned.</li>
+        <li><strong>PR 2 · the screen (CUL-803).</strong> Hero kept (D3); the read moves up under the record with its rail; "{pet}'s record" on the record block (lands CUL-660); the observations grid and its fold; the viewer caption (V1). Static.</li>
+        <li><strong>PR 3 · the arrival (CUL-804).</strong> The rail-led arrival on both analysis sections, sharing the fold's motion module after CUL-788 lands. Reduced-motion crossfade, blur completion, no haptic, snapshot proves no node is added when idle.</li>
+      </ul>
+      <p>Spec: <code>docs/nyx-incident-screen-requirements.md</code> v1.0. Parent issue: CUL-800.</p>
+    </div>
+  </section>
+
+  <section id="react">
+    <div class="sec-head"><span class="sec-num">§7</span><h2>React</h2></div>
+    <div class="col">
+      <p>All four briefs are ruled (§0). What round 2 asks of the PM is a read of the four new frames (S-A2, U1, U2, V1) for anything that reads wrong; silence is a go. The one open detail is V1's third line for a found-not-witnessed time: the window ("found by 5:33 PM"), as the card and History already say it, is the proposal.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    var arrive = document.getElementById('arrive');
+    var obs = document.getElementById('obs');
+    var play = document.getElementById('play');
+    var reset = document.getElementById('reset');
+    var foldbtn = document.getElementById('foldbtn');
+    var unfoldbtn = document.getElementById('unfoldbtn');
+    if (!arrive || !obs) return;
+    play.addEventListener('click', function () {
+      arrive.classList.remove('landed');
+      void arrive.offsetHeight;
+      arrive.classList.add('landed');
+    });
+    reset.addEventListener('click', function () {
+      arrive.classList.remove('landed');
+      obs.classList.remove('folded');
+    });
+    foldbtn.addEventListener('click', function () { obs.classList.add('folded'); });
+    unfoldbtn.addEventListener('click', function () { obs.classList.remove('folded'); });
+  })();
+</script>
