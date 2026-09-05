@@ -1008,3 +1008,8 @@ Considered and dropped: *Jot* (cute, one verb), *Chat* (the field avoids it; it 
 
 Two rules to write into the spec when D7 closes: the note verb never gains a brand or a noun of its own (that is the diary), and the word "AI" appears as a chip and a receipt, never as a name.
 
+## Part 4 — the click-through prototype (same day)
+
+> PM: "Give me an artifact mock that I can click through"
+
+Published as its own artifact (a prototype is a different object from the mock rounds, so a different URL): https://claude.ai/code/artifact/458a8d14-0394-435c-ac1b-c5e7abb2afac — committed as `docs/culprit-home-v2-prototype.html`. One phone on the round-3 composite, in-memory state, no app code. Live: the instrument's three grains; the safety card's script / fold / strip / re-open-on-a-new-episode with the "Back because" line; the composer sheet with Save note (a hollow ring on the lane, quoted in History, never counted) and Ask (the dot-that-reads arrival; recall answers; a designed deflection for "should I worry"; a no-model crisis card; full screen after a second turn); the FAB picker landing dots with the completion beat and Undo; Arrange Home (reorder + hide over a fixed spine); the History tab; a 7:05am / 9:15pm switch; reduce motion; a simulated cap shown only inside the sheet.
