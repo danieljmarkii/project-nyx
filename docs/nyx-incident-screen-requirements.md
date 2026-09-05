@@ -1,6 +1,6 @@
 # Culprit — The Incident Screen: post-log routing + the AI read's arrival
 
-**Version:** 1.0 (**BUILD-READY** — D1–D4 PM-ruled 2026-09-05) · **Date:** 2026-09-05 · **Owner:** Sr. Product Designer (design authority), Dr. Alex Chen (clinical conditions), Dir. of Engineering (the route + the motion contract) · **Track:** CUL-800 (parent; absorbs CUL-158 / B-029) → CUL-802 (PR 1, the route), PR 2 (the screen), PR 3 (the arrival); CUL-801 (the trigger race) blocks PR 1 · **Design authority:** `docs/culprit-incident-screen-mockups.html` round 2 (the artifact re-publishes to the same URL)
+**Version:** 1.0 (**BUILD-READY** — D1–D4 PM-ruled 2026-09-05) · **Date:** 2026-09-05 · **Owner:** Sr. Product Designer (design authority), Dr. Alex Chen (clinical conditions), Dir. of Engineering (the route + the motion contract) · **Track:** CUL-800 (parent; absorbs CUL-158 / B-029) → CUL-802 (PR 1, the route), CUL-803 (PR 2, the screen), CUL-804 (PR 3, the arrival); CUL-801 (the trigger race) blocks PR 1 · **Design authority:** `docs/culprit-incident-screen-mockups.html` round 2 (the artifact re-publishes to the same URL)
 
 **Read this when:** touching what happens after a vomit or stool is logged, `app/event/[id].tsx`, `VomitAnalysisSection` / `StoolAnalysisSection`, the named completion card's placement, or any surface where a per-incident AI read appears.
 

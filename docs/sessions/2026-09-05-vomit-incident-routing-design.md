@@ -37,7 +37,7 @@ Not taken (frames stay in the mock as the record): R2 the card carries the read 
 
 - **CUL-800** (parent, Aug. 2026 Design Polish) — the track; absorbs **CUL-158** (commented). Attachments: PR #801 + the artifact.
 - **CUL-802** — PR 1, the route (blocked by CUL-801).
-- **PR 2** (the screen) and **PR 3** (the arrival) — sub-issues of CUL-800; **Linear's write API timed out repeatedly this session** (three attempts each, 60s), so if they are absent at the next kickoff, file them from the spec's §5 / §7 and the mock's §6. The TL;DRs are drafted in this session's transcript and in the spec.
+- **CUL-803** — PR 2, the screen. **CUL-804** — PR 3, the arrival (blocked by CUL-788). Both filed on the PM's second ask after Linear's write API timed out on every earlier attempt; the creates only went through stripped of `parentId` / `project`, patched on afterwards. Worth knowing for the next session that hits a 60s `save_issue` timeout: the comment write succeeded while the same-sized issue create did not.
 - **CUL-801** — the analysis-trigger race the route makes urgent (the detail-mount trigger can fire before the log-path upload lands and answer `not_enough_to_say` on a photo still in flight). Blocks CUL-802.
 
 ## Known issues / tech debt
@@ -47,7 +47,7 @@ Not taken (frames stay in the mock as the record): R2 the card carries the read 
 
 ## PM action items
 
-None beyond the rulings already given. If PR 2 / PR 3 are missing from Linear at the next kickoff, that is a session task, not a PM one.
+None.
 
 ## Next session kickoff
 
@@ -56,6 +56,6 @@ None beyond the rulings already given. If PR 2 / PR 3 are missing from Linear at
 
 **Alternate prompts:**
 - Build CUL-802 (PR 1, the route) from `docs/nyx-incident-screen-requirements.md` §3 once CUL-801 is merged; verify `router.replace` on the log modal on iOS first.
-- Build PR 2 (the screen) from spec §5 and mock round 2 frames S-A / S-A2 / V1 — independent of PR 1, disjoint files (`app/event/[id].tsx`, the two analysis sections, `PhotoViewer`).
+- Build CUL-803 (PR 2, the screen) from spec §5 and mock round 2 frames S-A / S-A2 / V1 — independent of PR 1, disjoint files (`app/event/[id].tsx`, the two analysis sections, `PhotoViewer`).
 
-**Parallel / efficiencies:** PR 2 and CUL-801 are disjoint and can run concurrently. PR 3 waits on CUL-788 (the fold motion) for the shared module. CUL-660 ("whose record") lands inside PR 2 for free.
+**Parallel / efficiencies:** CUL-803 and CUL-801 are disjoint and can run concurrently. CUL-804 waits on CUL-788 (the fold motion) for the shared module. CUL-660 ("whose record") lands inside PR 2 for free.
