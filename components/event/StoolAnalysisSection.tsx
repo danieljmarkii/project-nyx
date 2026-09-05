@@ -30,7 +30,6 @@ import {
   triggerStoolAnalysis,
   awaitAnalysisChain,
   watchAnalysisRow,
-  escalationSurvivesFailure,
   saveStoolFieldEdits,
   deriveEditedStoolFields,
   extractStoolEditableFromPayload,
@@ -38,6 +37,7 @@ import {
   StoolEditableFields,
   EditableStoolField,
 } from '../../lib/analysis';
+import { escalationSurvivesFailure } from '../../lib/incidentReadState';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {

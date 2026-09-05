@@ -23,7 +23,6 @@ import {
   triggerVomitAnalysis,
   awaitAnalysisChain,
   watchAnalysisRow,
-  escalationSurvivesFailure,
   saveVomitFieldEdits,
   deriveEditedFields,
   extractEditableFromPayload,
@@ -31,6 +30,7 @@ import {
   VomitEditableFields,
   EditableVomitField,
 } from '../../lib/analysis';
+import { escalationSurvivesFailure } from '../../lib/incidentReadState';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
 import {

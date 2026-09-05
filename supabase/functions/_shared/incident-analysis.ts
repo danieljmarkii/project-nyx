@@ -313,10 +313,14 @@ export type FailureWrite =
   | { mode: 'error-only'; values: { error: string } }
   | { mode: 'skip' }
 
-// `existing` is the step-3b read of the row as it stood BEFORE this attempt.
-// null (or no id) means there is nothing to protect and nothing to update.
+// `existing` is the row read AT THE MOMENT OF THIS DECISION, not at step 3b — see
+// the call site for why the difference matters. `existingReadFailed` says that read
+// itself errored, which is NOT the same as "no row": the caller cannot tell an empty
+// table from an unreachable one, and on this surface an unproven write is worse than
+// a missing retry button, so it fails CLOSED.
 export function buildFailureWrite(params: {
   existing: { recommendation?: string | null } | null
+  existingReadFailed: boolean
   eventId: string
   petId: string | null
   incidentType: string | null
@@ -325,6 +329,10 @@ export function buildFailureWrite(params: {
   // The table requires pet_id + incident_type NOT NULL: if we failed before the
   // event loaded we have nothing valid to write at all.
   if (!params.petId || !params.incidentType) return { mode: 'skip' }
+
+  // We could not read what is there. Writing 'failed' blind is exactly the bug this
+  // guard exists to stop, so write nothing: the row keeps whatever it holds.
+  if (params.existingReadFailed) return { mode: 'skip' }
 
   if (params.existing?.recommendation === 'worth_a_call') {
     // Record the error alongside for observability; leave status, recommendation
@@ -723,10 +731,6 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // table requires pet_id + incident_type NOT NULL).
   let petIdForFailure: string | null = null
   let incidentTypeForFailure: string | null = null
-  // The row as it stood BEFORE this attempt (step 3b). The catch needs it to know
-  // whether an escalation is already in the record — see buildFailureWrite. The
-  // step-3b consts live inside the try and are out of scope down there.
-  let existingForFailure: { recommendation?: string | null } | null = null
 
   try {
     // 0. Verify the caller uid from the JWT (§4.6). record_ai_usage derives the
@@ -791,10 +795,19 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       .select('id, edited_at, status, recommendation')
       .eq('event_id', eventId)
       .maybeSingle()
-    existingForFailure = existing ?? null
     const humanEdited = !!existing?.edited_at
+    // A row holding a `worth_a_call` is a real analysis whatever its STATUS says
+    // (CUL-812). A 'failed' row can still carry the escalation a previous read
+    // earned — the pre-guard failure write flipped only status + error, and the
+    // client now renders those rows as the escalations they are. Without this
+    // clause the cap / disabled branch below treats them as "nothing to protect"
+    // and writes 'capped' over one, which the client checks BEFORE the card: the
+    // owner taps re-run on a live "Worth a call" and watches it become a cap band.
     const existingRealAnalysis =
-      !!existing && existing.status !== 'pending' && existing.status !== 'failed'
+      !!existing && (
+        (existing.status !== 'pending' && existing.status !== 'failed') ||
+        existing.recommendation === 'worth_a_call'
+      )
 
     // 4. Flag + cap gate (§5.4 step 3) — immediately before the vision call, AFTER
     //    the escalation-flag computation above. The cap/flag gate the MODEL CALL, so
@@ -1048,8 +1061,29 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // EXCEPT over an escalation the record already earned, which is preserved and
     // only annotated with the error. The rule, and why it is asymmetric, is on
     // buildFailureWrite.
+    // Re-read the row HERE rather than reusing step 3b's copy. Step 3b runs before
+    // the vision call, so by the time we reach this catch its answer is 10-60s old,
+    // and two things can have happened inside that window: this run's own later
+    // write-backs, and a SIBLING invocation's (Ask's A8 live read runs in a separate
+    // process and holds no analysis-chain claim, so CUL-801's in-memory claim cannot
+    // serialize it). Reading at the moment of the write decision is the only version
+    // of this check whose window is worth nothing. A read error is not "no row" — it
+    // fails closed in buildFailureWrite.
+    let latest: { recommendation?: string | null } | null = null
+    let latestReadFailed = false
+    if (petIdForFailure && incidentTypeForFailure) {
+      const { data: latestRow, error: latestErr } = await adminClient
+        .from('event_ai_analysis')
+        .select('recommendation')
+        .eq('event_id', eventId)
+        .maybeSingle()
+      latest = latestRow ?? null
+      latestReadFailed = !!latestErr
+    }
+
     const failureWrite = buildFailureWrite({
-      existing: existingForFailure,
+      existing: latest,
+      existingReadFailed: latestReadFailed,
       eventId,
       petId: petIdForFailure,
       incidentType: incidentTypeForFailure,

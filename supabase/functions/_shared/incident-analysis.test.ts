@@ -364,6 +364,7 @@ const FAILURE_BASE = {
   petId: 'pet-1',
   incidentType: 'vomit',
   message: 'Claude API error 529',
+  existingReadFailed: false,
 }
 
 Deno.test('buildFailureWrite — a worth_a_call already in the record is NEVER overwritten by a failure', () => {
@@ -408,6 +409,19 @@ Deno.test('buildFailureWrite — failing before the event loads writes NOTHING (
   // And an escalation still short-circuits to skip rather than a bogus write.
   assertStrictEquals(
     buildFailureWrite({ ...FAILURE_BASE, petId: null, existing: { recommendation: 'worth_a_call' } }).mode,
+    'skip',
+  )
+})
+
+Deno.test('buildFailureWrite — an UNREADABLE row fails closed: write nothing rather than blind', () => {
+  // The caller cannot tell "no row" from "could not reach the table". Writing
+  // 'failed' on that ambiguity is the original bug with a different cause, so the
+  // row keeps whatever it holds — including an escalation we could not see.
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: null, existingReadFailed: true })
+  assertStrictEquals(write.mode, 'skip')
+  // Even when the read came back with a benign row alongside the error.
+  assertStrictEquals(
+    buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'monitor' }, existingReadFailed: true }).mode,
     'skip',
   )
 })

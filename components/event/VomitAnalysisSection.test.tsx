@@ -27,11 +27,6 @@ jest.mock('../../lib/analysis', () => ({
   // The realtime watch (CUL-171) is exercised on its own in lib/analysis.test.ts;
   // here it's a jest.fn so a test can grab the re-read callback it was handed.
   watchAnalysisRow: jest.fn(() => () => {}),
-  // The real predicate is pinned in lib/analysis.test.ts; mirrored here because the
-  // whole module is replaced. What THIS file tests is the section's render ORDER —
-  // that a failed row carrying an escalation reaches the card at all (CUL-812).
-  escalationSurvivesFailure: (r: { recommendation?: string | null } | null | undefined) =>
-    r?.recommendation === 'worth_a_call',
   saveVomitFieldEdits: jest.fn(() => Promise.resolve({ error: null })),
   deriveEditedFields: jest.fn(() => []),
   extractEditableFromPayload: jest.fn(() => null),
