@@ -524,7 +524,12 @@ describe('analysis-chain claim (CUL-801)', () => {
     expect(claimAnalysisChain('ev-claim-2')).toBeNull();
 
     first!.settle(true);
-    expect(claimAnalysisChain('ev-claim-2')).not.toBeNull();
+    const second = claimAnalysisChain('ev-claim-2');
+    expect(second).not.toBeNull();
+    // Settle it: this module's Map is real state and jest does not reset modules
+    // between cases in a file, so a claim left outstanding here would silently
+    // suppress any later test that reuses the key.
+    second!.settle(true);
   });
 
   it('settle is idempotent — a second settle neither throws nor changes the outcome', async () => {

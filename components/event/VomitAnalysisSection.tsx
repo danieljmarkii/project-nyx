@@ -144,12 +144,19 @@ export function VomitAnalysisSection(
     setRow(first ?? null);
     setWorking(true);
     const readAlreadyRunning = await awaitAnalysisChain(eventId);
-    if (cancelled.current) return;
     if (!readAlreadyRunning) {
+      // The invoke is a SERVER-side side effect and must OUTLIVE this screen, so
+      // it is issued whether or not we are still mounted. Guarding it on
+      // `cancelled` here is what the adversarial pass broke: the wait can run for
+      // the whole upload, an owner who glances at the photo and taps back inside
+      // it would bail before the call, and a chain that then settled false (its
+      // upload failed) would leave the incident with NO read and no deterministic
+      // contextual escalation — the one outcome await-not-skip exists to prevent.
+      // Only the state writes and the watch below are guarded.
       const { error } = await triggerVomitAnalysis(eventId);
-      if (cancelled.current) return;
       if (error) console.warn('[vomit-analysis] trigger error:', error);
     }
+    if (cancelled.current) return;
     // Either way the realtime watch carries the result. Its fallback schedule
     // starts HERE, after the chain settles, so a slow upload no longer eats the
     // give-up budget.

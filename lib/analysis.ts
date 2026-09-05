@@ -23,11 +23,21 @@ import { syncPendingEvents, ensureEventAttachmentsSynced } from './sync';
 // AWAITS it rather than starting a second one.
 //
 // WHY IN MEMORY, and not the `pending` row migration 013 originally described.
-// Both sections treat a stale 'pending' as "re-trigger" (their start()), and
-// that branch is the only recovery for an app killed mid-upload. A row would
-// have to delete it to gate anything. An in-memory claim dies with the process,
-// so the recovery survives by construction — the claim can only ever suppress a
-// trigger while the runtime that owns the chain is still alive to finish it.
+// A persisted row would have to survive a process death to be worth writing, and
+// that is exactly when it becomes a trap: an app killed mid-upload would leave a
+// 'pending' row no chain is coming back for. The recovery today is that start()
+// finds NO row and triggers; a persisted claim would have to be distinguishable
+// from a stuck one to keep it, and nothing can make that distinction from the
+// row alone. An in-memory claim dies with the process, so the recovery survives
+// by construction — the claim can only ever suppress a trigger while the runtime
+// that owes the read is still alive to make it.
+//
+// (Migration 013's header says analysis rows are "created by the client on log
+// (status='pending')" and the column defaults to it. That was never built: every
+// write of `status` is the Edge Function's — completed / uncertain / capped /
+// read_disabled / failed — and no client inserts the row. The sections' "stale
+// pending → re-trigger" branch is therefore dead code against today's server, not
+// the live recovery an earlier draft of this comment claimed it was.)
 //
 // WHY AWAIT, and not skip-if-claimed. A chain can settle without ever invoking
 // (the upload threw, the attachment upsert errored). A skip would then leave the
@@ -112,8 +122,13 @@ export function awaitAnalysisChain(eventId: string): Promise<boolean> {
 // write-back), so the claim above is what keeps it to one read per photo.
 export async function triggerVomitAnalysis(eventId: string): Promise<{ error: string | null }> {
   // Claim the chain if nobody owns it yet (CUL-801), so a concurrent mount awaits
-  // this invoke instead of making a second one. A null claim means the LOG path
-  // already owns the chain and will settle it around this call.
+  // this invoke instead of making a second one. A null claim means SOMEONE ELSE
+  // owns the chain and will settle it around this call — the log path, another
+  // section's mount, or the photo-add path. Note this does NOT gate the invoke:
+  // a direct call always invokes, which is what keeps the owner's explicit
+  // "Try analysis" working. Gating is the CALLER's job, by awaiting the chain
+  // first — and a caller that takes a null claim and then invokes anyway without
+  // awaiting is the double-invoke this whole module exists to stop.
   const claim = claimAnalysisChain(eventId);
   let invoked = false;
   try {
@@ -147,8 +162,13 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
 // call corrupts nothing but costs a cap unit and races the first (CUL-801).
 export async function triggerStoolAnalysis(eventId: string): Promise<{ error: string | null }> {
   // Claim the chain if nobody owns it yet (CUL-801), so a concurrent mount awaits
-  // this invoke instead of making a second one. A null claim means the LOG path
-  // already owns the chain and will settle it around this call.
+  // this invoke instead of making a second one. A null claim means SOMEONE ELSE
+  // owns the chain and will settle it around this call — the log path, another
+  // section's mount, or the photo-add path. Note this does NOT gate the invoke:
+  // a direct call always invokes, which is what keeps the owner's explicit
+  // "Try analysis" working. Gating is the CALLER's job, by awaiting the chain
+  // first — and a caller that takes a null claim and then invokes anyway without
+  // awaiting is the double-invoke this whole module exists to stop.
   const claim = claimAnalysisChain(eventId);
   let invoked = false;
   try {

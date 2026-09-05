@@ -322,6 +322,28 @@ describe('VomitAnalysisSection — deferring to the log-path read (CUL-801)', ()
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
   });
 
+  it('issues the read even when the owner leaves DURING the wait — the invoke outlives the screen', async () => {
+    // The break the adversarial pass found. The wait can span the whole upload;
+    // an owner routed here by CUL-800 who glances at the photo and taps back is
+    // inside it. If the unmount guard sat between the wait and the trigger, a
+    // chain that then died before its read (a failed upload) would leave the
+    // incident with NO descriptive read and NO deterministic contextual
+    // escalation — nothing on the record, nothing on Home, nothing in the report.
+    mockRow = null;
+    let releaseChain!: (v: boolean) => void;
+    (awaitAnalysisChain as jest.Mock).mockReturnValue(new Promise((r) => { releaseChain = r; }));
+
+    const { unmount } = render(<VomitAnalysisSection eventId="rt-left" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(awaitAnalysisChain as jest.Mock).toHaveBeenCalledWith('rt-left'));
+
+    unmount();            // the owner taps back, chain still live
+    releaseChain(false);  // ...and the chain then dies without ever invoking
+
+    await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalledWith('rt-left'));
+    // The state writes ARE still guarded: no watch is opened on a dead instance.
+    expect(watchAnalysisRow as jest.Mock).not.toHaveBeenCalled();
+  });
+
   it('never waits on a chain when the row has already resolved — no trigger, no watch', async () => {
     // start() reads the row first; a completed read short-circuits before the
     // claim is ever consulted, so re-opening a read incident costs nothing.

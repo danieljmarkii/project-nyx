@@ -30,7 +30,7 @@ import { kgToLbs } from '../../lib/weight';
 import { supabase } from '../../lib/supabase';
 import { syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { reverseLoggedEvent } from '../../lib/undoLog';
-import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain } from '../../lib/analysis';
+import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
@@ -536,6 +536,15 @@ export default function EventDetailScreen() {
           // with a compressed one) — the per-incident section triggers on mount, but
           // a photo added after mount needs this nudge to get its first read.
           if (isReadable) {
+            // A null claim means another chain already owns this event's read —
+            // typically the section's own mount trigger on the photoless incident
+            // this photo is being added to. WAIT for it, then read anyway: unlike
+            // the sections, this call site exists because the PHOTO CHANGED, and a
+            // read of the previous state does not answer the new one. Waiting is
+            // what removes the concurrency (the two calls serialize, so the photo
+            // read lands last and wins); skipping would silently drop the very
+            // re-read this path exists for.
+            if (readClaim === null) await awaitAnalysisChain(event.id);
             const { error: readErr } = event.event_type === 'vomit'
               ? await triggerVomitAnalysis(event.id)
               : await triggerStoolAnalysis(event.id);
