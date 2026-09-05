@@ -167,6 +167,56 @@ describe('PhotoViewer — caption (B-590)', () => {
     expect(tree.getByText('Pixel · Bloodwork from May')).toBeTruthy();
   });
 
+  // CUL-803 §5.4 — the two-line caption UNDER the photo, for the caller whose lightbox
+  // IS the artifact a vet is shown.
+  it('stacks the media caption under the photo, without touching the chrome strip', () => {
+    const tree = render(
+      <PhotoViewer
+        visible
+        uris={['file:///a.jpg']}
+        mediaCaption={{ primary: 'Biscuit · Vomit', secondary: 'Friday, Sep 5 · 2:14 AM · witnessed' }}
+        onClose={() => {}}
+        onReplace={() => {}}
+        onRemove={() => {}}
+      />,
+    );
+    layout(tree);
+    expect(tree.getByText('Biscuit · Vomit')).toBeTruthy();
+    expect(tree.getByText('Friday, Sep 5 · 2:14 AM · witnessed')).toBeTruthy();
+    // It lives outside the actions row on purpose: this caller passes Replace AND Remove,
+    // so the chrome strip has no room for a label that must not truncate.
+    expect(tree.getByText('Replace')).toBeTruthy();
+    expect(tree.getByText('Remove')).toBeTruthy();
+  });
+
+  it('never truncates the media caption — the window is the half that must survive', () => {
+    // A found-not-witnessed incident's secondary line is a phrase, not a timestamp, and
+    // clipping the half that says the time was not witnessed is the one loss this caption
+    // exists to prevent.
+    const tree = render(
+      <PhotoViewer
+        visible
+        uris={['file:///a.jpg']}
+        mediaCaption={{
+          primary: 'Biscuit · Diarrhea',
+          secondary: 'Saturday, Sep 5 · between 4:00 PM and 5:33 PM',
+        }}
+        onClose={() => {}}
+      />,
+    );
+    layout(tree);
+    const line = tree.getByText('Saturday, Sep 5 · between 4:00 PM and 5:33 PM');
+    expect(line.props.numberOfLines).toBeUndefined();
+  });
+
+  it('renders the primary alone when there is no second line', () => {
+    const tree = render(
+      <PhotoViewer visible uris={['file:///a.jpg']} mediaCaption={{ primary: 'Biscuit · Vomit' }} onClose={() => {}} />,
+    );
+    layout(tree);
+    expect(tree.getByText('Biscuit · Vomit')).toBeTruthy();
+  });
+
   it('renders no caption for the callers that pass none — the strip is unchanged', () => {
     // The four existing callers (event, edit-event, medication, food) never pass a
     // caption; the render-only-when-passed contract is what keeps this change free

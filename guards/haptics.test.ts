@@ -60,10 +60,17 @@ const MARKERS = [
 
 /**
  * Belt-and-braces: these are safety surfaces whatever the markers say. Listed by hand
- * because the marker derivation is a heuristic over source text and these four are the
- * ones whose silence is load-bearing enough that a rename or refactor must not quietly
- * drop them out of scope. A file here that no longer exists fails the test loudly
- * rather than shrinking coverage in silence.
+ * because the marker derivation is a heuristic over source text and these are the ones
+ * whose silence is load-bearing enough that a rename or refactor must not quietly drop
+ * them out of scope. A file here that no longer exists fails the test loudly rather than
+ * shrinking coverage in silence.
+ *
+ * CUL-803 added the last two, and they are the reason this list exists rather than the
+ * markers alone. That PR moved the per-incident read's whole RENDERING out of the two
+ * analysis sections and into these shared components — so the surface that paints a
+ * `worth_a_call` no longer contains any of the MARKERS, and a haptic added there would
+ * have fired on the escalation with the guard green. Moving a safety render is exactly
+ * the "never move a call to an unscanned file" case (incident spec G4).
  */
 const ALWAYS_SCANNED = [
   'components/home/InsightCard.tsx',
@@ -71,6 +78,8 @@ const ALWAYS_SCANNED = [
   'components/home/CrossPetSafetyBanner.tsx',
   'components/event/VomitAnalysisSection.tsx',
   'components/event/StoolAnalysisSection.tsx',
+  'components/event/IncidentReadCard.tsx',
+  'components/event/ObservationGrid.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

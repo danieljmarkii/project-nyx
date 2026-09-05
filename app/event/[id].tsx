@@ -99,6 +99,24 @@ function formatDate(iso: string): string {
   });
 }
 
+// The lightbox caption's date (§5.4). Shorter than the record block's — the caption is
+// one line under a photo on a black ground, and the weekday is what a vet actually asks
+// for ("when was this?"), so the month abbreviates rather than the weekday.
+function formatCaptionDate(iso: string): string {
+  return new Date(iso).toLocaleDateString([], {
+    weekday: 'long', month: 'short', day: 'numeric',
+  });
+}
+
+// The caption's third token. Only the two confidences the record actually STORES speak;
+// a window's time already says "found"/"between", and an unclassified legacy row says
+// nothing rather than inheriting "witnessed" it never claimed (C-10).
+function confidenceWord(confidence: string | null | undefined): string | null {
+  if (confidence === 'witnessed') return 'witnessed';
+  if (confidence === 'estimated') return 'estimated';
+  return null;
+}
+
 // B-156 PR B4 — the combo cross-link on the detail screen, the larger sibling of
 // EventRow's ComboCrossLink. A combo is two independent, cross-linked events (the G2
 // model — never merged): each one's detail screen shows a tappable link to the other so
@@ -635,6 +653,24 @@ export default function EventDetailScreen() {
   const weightLbs = event.event_type === 'weight_check' && event.weight_kg != null
     ? `${kgToLbs(event.weight_kg)} lbs`
     : null;
+  // §5.4 — the lightbox caption. This is the frame an owner turns around to show a vet
+  // (D3: the photo stays the hero precisely so they can), so it has to name WHOSE and
+  // WHEN as well as WHAT. The time comes off `timeDisplay`, the same `describeOccurredAt`
+  // the record block, the completion card and History all render, so a found-not-witnessed
+  // incident shows its WINDOW here and can never be read off as a witnessed point.
+  //
+  // The confidence word is taken from the stored `occurred_at_confidence`, not from
+  // `timeDisplay.tag`: a legacy row with no confidence also reports `tag: null`, and
+  // labelling that "witnessed" would put a claim on the photo the record does not hold
+  // (C-10). A window says "found"/"between" in the time itself, so it adds no third token.
+  const viewerCaption = eventPetName
+    ? {
+        primary: `${eventPetName} · ${label}`,
+        secondary: [formatCaptionDate(event.occurred_at), timeDisplay.primary, confidenceWord(event.occurred_at_confidence)]
+          .filter(Boolean)
+          .join(' · '),
+      }
+    : undefined;
   const drugPrimary = dose?.genericName ?? label;
   const drugSecondary = dose
     ? [dose.brandName, dose.strength].filter(Boolean).join(' · ') || null
@@ -652,7 +688,11 @@ export default function EventDetailScreen() {
         {/* Hero photo — present when a photo exists; on symptom events without
             a photo, an empty-state tap-to-add hero. Meals skip the empty hero. */}
         {photoUri ? (
-          <TouchableOpacity activeOpacity={0.95} onPress={() => setPhotoViewerVisible(true)}>
+          <TouchableOpacity
+            testID="event-hero-photo"
+            activeOpacity={0.95}
+            onPress={() => setPhotoViewerVisible(true)}
+          >
             <Image
               source={{ uri: photoUri }}
               style={styles.hero}
@@ -717,6 +757,16 @@ export default function EventDetailScreen() {
               {formatExifAttribution(event.occurred_at)}
             </ThemedText>
           ) : null}
+          {/* CUL-660 (the B-550 class, one surface over) — a record screen should SAY
+              whose record it is. The name comes from the RECORD's pet id, never the
+              active one: on a multi-pet account the tap-through from a cross-pet surface
+              lands here on a pet who is not the active one, and a confidently wrong name
+              on a vomit's read is the expensive direction. `resolveRecordPetName` has no
+              active-pet rung by design (C-9); a blank resolves to nothing and this line
+              simply does not render — correct-but-anonymous beats confidently wrong. */}
+          {eventPetName ? (
+            <ThemedText style={styles.recordOwner}>{`${eventPetName}'s record`}</ThemedText>
+          ) : null}
 
           {/* The measured weight. NO section label: the type heading above already
               reads "WEIGHT", and the value IS the event — there is no badge to pair it
@@ -733,11 +783,21 @@ export default function EventDetailScreen() {
           ) : null}
 
           {event.event_type === 'vomit' ? (
-            <VomitAnalysisSection eventId={event.id} petName={eventPetName} hasPhoto={!!attachment} />
+            <VomitAnalysisSection
+              eventId={event.id}
+              petId={event.pet_id}
+              petName={eventPetName}
+              hasPhoto={!!attachment}
+            />
           ) : null}
 
           {isStoolEvent(event.event_type) ? (
-            <StoolAnalysisSection eventId={event.id} petName={eventPetName} hasPhoto={!!attachment} />
+            <StoolAnalysisSection
+              eventId={event.id}
+              petId={event.pet_id}
+              petName={eventPetName}
+              hasPhoto={!!attachment}
+            />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (
@@ -921,6 +981,7 @@ export default function EventDetailScreen() {
         onClose={() => setPhotoViewerVisible(false)}
         onReplace={() => { setPhotoViewerVisible(false); handleAddPhoto(); }}
         onRemove={handleRemovePhoto}
+        mediaCaption={viewerCaption}
       />
     </SafeAreaView>
   );
@@ -997,6 +1058,13 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     marginTop: 2,
+  },
+  // Quiet and under the time — the record's subject, not its headline. The date stays
+  // the biggest thing on the block.
+  recordOwner: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    marginTop: 4,
   },
   confidenceNote: {
     fontSize: theme.textSM,
