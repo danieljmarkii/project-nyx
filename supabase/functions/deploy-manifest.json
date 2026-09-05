@@ -4,17 +4,17 @@
   "functions": {
     "analyze-stool": {
       "status": "pending",
-      "fingerprint": "sha256:0ccdcdeaebfe137e8a7e0579966583dc61c71040312845e138c429de5a814e70",
-      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy, CUL-258 Anthropic fetch timeouts (via _shared/http.ts), and CUL-542 (#682, foreign-material fragments on the stool read).",
-      "ref": "CUL-135",
-      "updated": "2026-08-19"
+      "fingerprint": "sha256:140150a64cc932147ce71e10e23dfd94563bb1e88a91bf91eea65bc8fae0d803",
+      "reason": "RE-FINGERPRINTED 2026-09-05 for CUL-812 (also closes CUL-539): the outer catch's best-effort failure write no longer upserts status:'failed' over a row already holding a worth_a_call — it records the error alongside and leaves status/recommendation/read_text as the record earned them (buildFailureWrite), the row is re-read AT the write decision rather than reused from before the vision call (the step-3b copy is 10-60s stale and a sibling invocation can write inside that window), a failed read of it fails CLOSED, and existingRealAnalysis now counts a worth_a_call as real WHATEVER its status says — without that last clause the cap branch writes 'capped' over exactly the rows the client renders as escalations. A benign prior read is deliberately NOT preserved (the failed attempt may have been reading a REPLACED photo, so a stale 'monitor' would be reassurance about an image nothing read). Behaviour change on the failure path only; no model, prompt, cap or floor change. Deploy still rides the held CUL-557 chain (analyze-vomit → analyze-stool → ask). — Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy, CUL-258 Anthropic fetch timeouts (via _shared/http.ts), and CUL-542 (#682, foreign-material fragments on the stool read).",
+      "ref": "CUL-812",
+      "updated": "2026-09-05"
     },
     "analyze-vomit": {
       "status": "pending",
-      "fingerprint": "sha256:e0415ea99f90ed968db2f283fa837601f20090e642467f9ad1dc096765c6dacc",
-      "reason": "Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy, CUL-152/B-179 free-text `description` gate (#671, 'one post-merge deploy'), CUL-258 fetch timeouts, and CUL-240 (#681, foreign-material fragments on the vomit read).",
-      "ref": "CUL-135",
-      "updated": "2026-08-19"
+      "fingerprint": "sha256:258cd9b40837bff55470d03953d95a04f47b2e1f5acf6358ddba107d252475f4",
+      "reason": "RE-FINGERPRINTED 2026-09-05 for CUL-812 (also closes CUL-539): the outer catch's best-effort failure write no longer upserts status:'failed' over a row already holding a worth_a_call — it records the error alongside and leaves status/recommendation/read_text as the record earned them (buildFailureWrite), the row is re-read AT the write decision rather than reused from before the vision call (the step-3b copy is 10-60s stale and a sibling invocation can write inside that window), a failed read of it fails CLOSED, and existingRealAnalysis now counts a worth_a_call as real WHATEVER its status says — without that last clause the cap branch writes 'capped' over exactly the rows the client renders as escalations. A benign prior read is deliberately NOT preserved (the failed attempt may have been reading a REPLACED photo, so a stale 'monitor' would be reassurance about an image nothing read). Behaviour change on the failure path only; no model, prompt, cap or floor change. Deploy still rides the held CUL-557 chain (analyze-vomit → analyze-stool → ask). — Baseline at ledger creation (CUL-135); live-vs-main not verified. Known undeployed work: A8 transform_only redeploy, CUL-152/B-179 free-text `description` gate (#671, 'one post-merge deploy'), CUL-258 fetch timeouts, and CUL-240 (#681, foreign-material fragments on the vomit read).",
+      "ref": "CUL-812",
+      "updated": "2026-09-05"
     },
     "ask": {
       "status": "pending",

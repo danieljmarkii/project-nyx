@@ -30,6 +30,7 @@ import {
   VomitEditableFields,
   EditableVomitField,
 } from '../../lib/analysis';
+import { escalationSurvivesFailure } from '../../lib/incidentReadState';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -262,8 +263,12 @@ export function VomitAnalysisSection(
     );
   }
 
-  // Failed.
-  if (status === 'failed') {
+  // Failed — UNLESS the record already holds an escalation, which outlives a failed
+  // re-read (CUL-812). Showing "Couldn't finish reading this one" over a live
+  // worth_a_call reads to an owner as nothing was found; the escalation falls through
+  // to the card below instead. A benign read is deliberately NOT rescued — see
+  // escalationSurvivesFailure for why the rule is asymmetric.
+  if (status === 'failed' && !escalationSurvivesFailure(row)) {
     return (
       <View style={styles.section}>
         <ThemedText style={styles.sectionLabel}>AI READ</ThemedText>

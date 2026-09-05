@@ -274,6 +274,85 @@ export function buildAnalysisWriteBack<TFlag extends string>(params: {
   }
 }
 
+// ── The failure write (CUL-812 / CUL-539) ────────────────────────────────────
+//
+// THE RULE, stated once: an ESCALATION already in the record survives a failed
+// re-analysis. A benign or uncertain read does not.
+//
+// The outer catch's best-effort failure write exists so the detail screen can
+// offer a retry CTA. It upserts on event_id, so before this guard it overwrote
+// whatever was already there — including a `worth_a_call` a previous read had
+// earned. The client renders `status === 'failed'` ahead of the recommendation,
+// so the owner then saw "Couldn't finish reading this one." where an escalation
+// belonged: to them, that reads as NOTHING WAS FOUND. On a never-reassure
+// surface that is the one failure mode the whole module is built to prevent.
+//
+// WHY THE ASYMMETRY, and not the blanket `existingRealAnalysis || humanEdited`
+// guard the rest of the function uses. One of the ways a second analysis is
+// reached is a PHOTO REPLACEMENT. Preserving a benign prior read across a failed
+// re-read would leave a `monitor` — "keep an eye out" — standing in for a read of
+// a photo it never saw. That is reassurance-on-absence dressed as a completed
+// read, which is exactly the n=1 invariant (escalate on presence, never reassure
+// on absence). So presence is preserved and absence is not: an escalation is a
+// fact the record already holds, a benign verdict is a claim about a photo we may
+// no longer be looking at. Falling to `failed` + retry is the honest outcome there
+// and is what shipped before this guard.
+//
+// `humanEdited` deliberately does NOT widen this. The failure write touches only
+// status + error, never a structured column, so an owner's edits are never lost —
+// only hidden behind the retry frame until the read succeeds. Widening on
+// edited_at would re-admit the stale-benign-read hazard above for no data gain.
+//
+// The client half of this rule is `escalationSurvivesFailure` in lib/analysis.ts
+// — defence in depth, and the half that reaches owners first (this function's
+// deploy rides the held CUL-557 chain, and it cannot repair rows already flipped).
+// The two must move together.
+
+export type FailureWrite =
+  | { mode: 'upsert'; values: Record<string, unknown> }
+  | { mode: 'error-only'; values: { error: string } }
+  | { mode: 'skip' }
+
+// `existing` is the row read AT THE MOMENT OF THIS DECISION, not at step 3b — see
+// the call site for why the difference matters. `existingReadFailed` says that read
+// itself errored, which is NOT the same as "no row": the caller cannot tell an empty
+// table from an unreachable one, and on this surface an unproven write is worse than
+// a missing retry button, so it fails CLOSED.
+export function buildFailureWrite(params: {
+  existing: { recommendation?: string | null } | null
+  existingReadFailed: boolean
+  eventId: string
+  petId: string | null
+  incidentType: string | null
+  message: string
+}): FailureWrite {
+  // The table requires pet_id + incident_type NOT NULL: if we failed before the
+  // event loaded we have nothing valid to write at all.
+  if (!params.petId || !params.incidentType) return { mode: 'skip' }
+
+  // We could not read what is there. Writing 'failed' blind is exactly the bug this
+  // guard exists to stop, so write nothing: the row keeps whatever it holds.
+  if (params.existingReadFailed) return { mode: 'skip' }
+
+  if (params.existing?.recommendation === 'worth_a_call') {
+    // Record the error alongside for observability; leave status, recommendation
+    // and read_text exactly as the record earned them. A later successful read
+    // clears `error` via readFields (error: null).
+    return { mode: 'error-only', values: { error: params.message } }
+  }
+
+  return {
+    mode: 'upsert',
+    values: {
+      event_id: params.eventId,
+      pet_id: params.petId,
+      incident_type: params.incidentType,
+      status: 'failed',
+      error: params.message,
+    },
+  }
+}
+
 // ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
 // docs/monetization-and-throttling-requirements.md §4–§5. Consolidated here from
 // the per-function copies (the S6 "no _shared yet" era ended with D2). Incident
@@ -713,12 +792,22 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     (it must never bury an already-completed or owner-edited read).
     const { data: existing } = await adminClient
       .from('event_ai_analysis')
-      .select('id, edited_at, status')
+      .select('id, edited_at, status, recommendation')
       .eq('event_id', eventId)
       .maybeSingle()
     const humanEdited = !!existing?.edited_at
+    // A row holding a `worth_a_call` is a real analysis whatever its STATUS says
+    // (CUL-812). A 'failed' row can still carry the escalation a previous read
+    // earned — the pre-guard failure write flipped only status + error, and the
+    // client now renders those rows as the escalations they are. Without this
+    // clause the cap / disabled branch below treats them as "nothing to protect"
+    // and writes 'capped' over one, which the client checks BEFORE the card: the
+    // owner taps re-run on a live "Worth a call" and watches it become a cap band.
     const existingRealAnalysis =
-      !!existing && existing.status !== 'pending' && existing.status !== 'failed'
+      !!existing && (
+        (existing.status !== 'pending' && existing.status !== 'failed') ||
+        existing.recommendation === 'worth_a_call'
+      )
 
     // 4. Flag + cap gate (§5.4 step 3) — immediately before the vision call, AFTER
     //    the escalation-flag computation above. The cap/flag gate the MODEL CALL, so
@@ -968,22 +1057,48 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const message = err instanceof Error ? err.message : String(err)
     console.error(`${descriptor.functionName} error:`, message)
 
-    // Best-effort failure write so the detail screen can surface a retry CTA.
-    // Only possible once we know pet_id (the table requires it NOT NULL); if we
-    // failed before loading the event we have nothing valid to write.
+    // Best-effort failure write so the detail screen can surface a retry CTA —
+    // EXCEPT over an escalation the record already earned, which is preserved and
+    // only annotated with the error. The rule, and why it is asymmetric, is on
+    // buildFailureWrite.
+    // Re-read the row HERE rather than reusing step 3b's copy. Step 3b runs before
+    // the vision call, so by the time we reach this catch its answer is 10-60s old,
+    // and two things can have happened inside that window: this run's own later
+    // write-backs, and a SIBLING invocation's (Ask's A8 live read runs in a separate
+    // process and holds no analysis-chain claim, so CUL-801's in-memory claim cannot
+    // serialize it). Reading at the moment of the write decision is the only version
+    // of this check whose window is worth nothing. A read error is not "no row" — it
+    // fails closed in buildFailureWrite.
+    let latest: { recommendation?: string | null } | null = null
+    let latestReadFailed = false
     if (petIdForFailure && incidentTypeForFailure) {
+      const { data: latestRow, error: latestErr } = await adminClient
+        .from('event_ai_analysis')
+        .select('recommendation')
+        .eq('event_id', eventId)
+        .maybeSingle()
+      latest = latestRow ?? null
+      latestReadFailed = !!latestErr
+    }
+
+    const failureWrite = buildFailureWrite({
+      existing: latest,
+      existingReadFailed: latestReadFailed,
+      eventId,
+      petId: petIdForFailure,
+      incidentType: incidentTypeForFailure,
+      message,
+    })
+    if (failureWrite.mode === 'error-only') {
       await adminClient
         .from('event_ai_analysis')
-        .upsert(
-          {
-            event_id: eventId,
-            pet_id: petIdForFailure,
-            incident_type: incidentTypeForFailure,
-            status: 'failed',
-            error: message,
-          },
-          { onConflict: 'event_id' },
-        )
+        .update(failureWrite.values)
+        .eq('event_id', eventId)
+        .then(() => undefined)
+    } else if (failureWrite.mode === 'upsert') {
+      await adminClient
+        .from('event_ai_analysis')
+        .upsert(failureWrite.values, { onConflict: 'event_id' })
         .then(() => undefined)
     }
 

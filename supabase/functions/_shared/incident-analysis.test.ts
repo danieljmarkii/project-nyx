@@ -18,6 +18,7 @@ import {
   shouldCollapsePartialRead,
   selectReadText,
   buildAnalysisWriteBack,
+  buildFailureWrite,
   fetchUsableImageBlob,
   getToolUseInput,
   sanitizeEnum,
@@ -350,4 +351,77 @@ Deno.test('sanitizeEnum / sanitizeEnumArray — drop hallucinated values, never 
   assertStrictEquals(sanitizeEnum(42, allowed), null)
   assertEquals(sanitizeEnumArray(['a', 'z', 'b', 3], allowed), ['a', 'b'])
   assertEquals(sanitizeEnumArray('not-an-array', allowed), [])
+})
+
+// ── buildFailureWrite — an escalation survives a failed re-analysis (CUL-812) ──
+// The rule under test is asymmetric on purpose: presence is preserved, absence is
+// not. Each case below is one half of that, and the two `monitor`/`not_enough`
+// cases are what stop the fix from becoming the stale-benign-read defect it would
+// be if the guard were widened to "any real analysis".
+
+const FAILURE_BASE = {
+  eventId: 'evt-1',
+  petId: 'pet-1',
+  incidentType: 'vomit',
+  message: 'Claude API error 529',
+  existingReadFailed: false,
+}
+
+Deno.test('buildFailureWrite — a worth_a_call already in the record is NEVER overwritten by a failure', () => {
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'worth_a_call' } })
+  assertStrictEquals(write.mode, 'error-only')
+  // Exactly one key: the error. Nothing that could move the verdict off the card.
+  assertEquals(write.mode === 'error-only' ? Object.keys(write.values) : [], ['error'])
+  assertEquals(write.mode === 'error-only' ? write.values.error : null, 'Claude API error 529')
+})
+
+Deno.test('buildFailureWrite — a benign monitor read does NOT survive (it may describe a replaced photo)', () => {
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'monitor' } })
+  assertStrictEquals(write.mode, 'upsert')
+  assertEquals(write.mode === 'upsert' ? write.values.status : null, 'failed')
+})
+
+Deno.test('buildFailureWrite — not_enough_to_say does not survive either (retry is the honest state)', () => {
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'not_enough_to_say' } })
+  assertStrictEquals(write.mode, 'upsert')
+})
+
+Deno.test('buildFailureWrite — no prior row: the plain failure upsert, identity keys intact', () => {
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: null })
+  assertStrictEquals(write.mode, 'upsert')
+  assertEquals(write.mode === 'upsert' ? write.values : {}, {
+    event_id: 'evt-1',
+    pet_id: 'pet-1',
+    incident_type: 'vomit',
+    status: 'failed',
+    error: 'Claude API error 529',
+  })
+})
+
+Deno.test('buildFailureWrite — a prior row with a null recommendation (pending/failed) takes the upsert', () => {
+  assertStrictEquals(buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: null } }).mode, 'upsert')
+  assertStrictEquals(buildFailureWrite({ ...FAILURE_BASE, existing: {} }).mode, 'upsert')
+})
+
+Deno.test('buildFailureWrite — failing before the event loads writes NOTHING (pet_id/incident_type NOT NULL)', () => {
+  assertStrictEquals(buildFailureWrite({ ...FAILURE_BASE, petId: null, existing: null }).mode, 'skip')
+  assertStrictEquals(buildFailureWrite({ ...FAILURE_BASE, incidentType: null, existing: null }).mode, 'skip')
+  // And an escalation still short-circuits to skip rather than a bogus write.
+  assertStrictEquals(
+    buildFailureWrite({ ...FAILURE_BASE, petId: null, existing: { recommendation: 'worth_a_call' } }).mode,
+    'skip',
+  )
+})
+
+Deno.test('buildFailureWrite — an UNREADABLE row fails closed: write nothing rather than blind', () => {
+  // The caller cannot tell "no row" from "could not reach the table". Writing
+  // 'failed' on that ambiguity is the original bug with a different cause, so the
+  // row keeps whatever it holds — including an escalation we could not see.
+  const write = buildFailureWrite({ ...FAILURE_BASE, existing: null, existingReadFailed: true })
+  assertStrictEquals(write.mode, 'skip')
+  // Even when the read came back with a benign row alongside the error.
+  assertStrictEquals(
+    buildFailureWrite({ ...FAILURE_BASE, existing: { recommendation: 'monitor' }, existingReadFailed: true }).mode,
+    'skip',
+  )
 })
