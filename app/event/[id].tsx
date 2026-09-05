@@ -47,12 +47,7 @@ import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSectio
 import { destructiveConfirm } from '../../lib/haptics';
 import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
-
-// The two owner-classified stool event types share the analyze-stool read (D1 keeps
-// the stool_normal/diarrhea split). One predicate so the render + photo-retrigger
-// gates can't drift.
-const isStoolEvent = (t: string | null | undefined): boolean =>
-  t === 'stool_normal' || t === 'diarrhea';
+import { isStoolEvent, hasPerIncidentRead } from '../../constants/eventTypes';
 
 const HERO_HEIGHT = 320;
 const SIGNED_URL_TTL_SEC = 60 * 60;
@@ -517,7 +512,7 @@ export default function EventDetailScreen() {
       // CUL-801 — same claim the log path takes: this chain owns the event's next
       // read, so a section that re-mounts mid-upload (navigate away and back)
       // awaits it instead of firing a second invoke against the same photo.
-      const isReadable = event.event_type === 'vomit' || isStoolEvent(event.event_type);
+      const isReadable = hasPerIncidentRead(event.event_type);
       const readClaim = isReadable ? claimAnalysisChain(event.id) : null;
       let readInvoked = false;
       // Fire-and-forget upload; sync retries on reconnect if it fails

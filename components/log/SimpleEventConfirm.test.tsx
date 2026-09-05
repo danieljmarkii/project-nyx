@@ -209,6 +209,9 @@ describe('AC-FOUND — witnessed / open-ended / bounded', () => {
       eventId: 'e1',
       occurredAtIso: '2026-08-13T17:33:00.000Z',
       record: { kind: 'event', typeLabel: 'Vomit', confidence: 'witnessed', earliest: null, latest: null },
+      // CUL-802 — reported up so the host can decide where the owner lands. False
+      // here: nothing was attached, so this vomit goes back to Home as it always has.
+      hasAttachment: false,
     });
   });
 
@@ -523,6 +526,58 @@ describe('SimpleEventConfirm — photo permissions (CUL-577)', () => {
       );
     });
     expect(launchCamera).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-802 — the host routes a PHOTOGRAPHED vomit/stool onto its record, and only
+// this component knows whether a photo was attached. So the flag it reports up is
+// asserted in both directions: the false case rides the witnessed-write test above
+// (a bare assertion that a photoless log reports false), and this is the true case.
+// Without both, a hard-coded `false` would pass the suite and silently delete the
+// route for the sheet's entire entry point.
+describe('SimpleEventConfirm — the attachment flag the host routes on (CUL-802)', () => {
+  const launchCamera = ImagePicker.launchCameraAsync as jest.Mock;
+
+  beforeEach(() => {
+    jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+    launchCamera.mockResolvedValue({ canceled: true });
+  });
+  afterEach(() => { (Alert.alert as unknown as jest.Mock).mockRestore?.(); });
+
+  /** Press a button on the most recent Alert.alert by its label. */
+  function pressAlert(label: string) {
+    const spy = Alert.alert as unknown as jest.Mock;
+    const buttons = spy.mock.calls[spy.mock.calls.length - 1][2] as { text: string; onPress?: () => void }[];
+    buttons.find((b) => b.text === label)?.onPress?.();
+  }
+
+  it('reports the photo up once one is attached', async () => {
+    // No EXIF on the asset: the point stays the clock default, so this test is about
+    // the flag and nothing else (the EXIF path is its own subject above).
+    launchCamera.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///tmp/vomit.jpg', width: 3024, height: 4032, exif: {} }],
+    });
+    const { getByText, onLogged } = renderConfirm('vomit');
+    fireEvent.press(getByText('Add a photo'));
+    pressAlert('Take photo');
+    await waitFor(() => expect(getByText('Photo attached · tap to replace')).toBeTruthy());
+
+    fireEvent.press(getByText(/^Vomit · today at /));
+    await waitFor(() => expect(onLogged).toHaveBeenCalled());
+    expect(onLogged.mock.calls[0][0].hasAttachment).toBe(true);
+  });
+
+  it('reports false when the picker was cancelled — an opened chooser is not a photo', async () => {
+    const { getByText, onLogged } = renderConfirm('vomit');
+    fireEvent.press(getByText('Add a photo'));
+    pressAlert('Take photo');
+    await waitFor(() => expect(launchCamera).toHaveBeenCalled());
+
+    fireEvent.press(getByText(/^Vomit · today at /));
+    await waitFor(() => expect(onLogged).toHaveBeenCalled());
+    expect(onLogged.mock.calls[0][0].hasAttachment).toBe(false);
   });
 });
 

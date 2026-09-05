@@ -21,7 +21,7 @@ import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
 import { EventIcon } from '../components/event/EventIcon';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
-import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../constants/eventTypes';
 import { usePetStore, resolveRecordPetName } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
@@ -924,12 +924,38 @@ export default function LogModal() {
     // insertSimpleEvent (non-meal path). Meals never carry a photo — the food step
     // has no attach affordance — so nothing photo-related belongs on the meal path.
 
+    // ── LEAVING THE MODAL (CUL-802) ──────────────────────────────────────────
     // Dismiss the modal, then land the earned completion card at the root layer.
     // Meals are the exception: their confirmation is the meal completion card
     // (handlePickFood) — the warmed bottom-card presentation that carries the
     // intake follow-up. Firing both would double the surface (B-064 unifies meals
     // into a single warm surface).
-    router.back();
+    //
+    // A PHOTOGRAPHED vomit or stool goes somewhere else: onto its own record. That
+    // log is the only kind with a per-incident AI read on the way (the same
+    // `hasPerIncidentRead` question insertSimpleEvent just answered when it claimed
+    // the analysis chain), and until now the read was reachable only through
+    // History → row → scroll, so the owner who took the photo never saw it (the PM
+    // dogfood that opened CUL-800). Principle 1 survives by SCOPE, not by a
+    // tie-break: a log with nothing to show never gains a screen to leave, so every
+    // other type — and a photoless vomit — keeps the shipped router.back() exactly.
+    //
+    // REPLACE, not back-then-push. The modal must be gone from the stack so Back
+    // from the record is one tap to Home. expo-router's REPLACE swaps the route at
+    // the current index for a NEW route object (react-navigation/routers/
+    // StackRouter.js:154) rather than re-presenting the live one, so nothing tries
+    // to mutate a presented screen's stackPresentation — the failure mode that
+    // makes modal transitions glitch. react-native-screens then re-partitions by
+    // presentation (RNSScreenStack.mm updateContainer): the record is PUSHED behind
+    // the still-presented modal first, and the modal is dismissed animated second,
+    // so it slides down onto a record that is already there. The alternative —
+    // back() then push() — would push INTO a dismissing modal, which is the racier
+    // half of the fork the spec left open (§3.1).
+    if (!isMeal && attachmentUri && hasPerIncidentRead(selectedType)) {
+      router.replace(`/event/${eventId}`);
+    } else {
+      router.back();
+    }
     // Non-meal events land the named card here; the sync push + Signal regen
     // that used to live here now belong to insertSimpleEvent (so the in-sheet
     // confirm gets them too), and insertMeal already owns both for the meal branch.

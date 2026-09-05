@@ -10,7 +10,7 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EventIcon } from '../event/EventIcon';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
-import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../../constants/eventTypes';
 import {
   buildTimeFields, resolveTimeModeChange, resolveFoundModeChange,
   sourceAfterPointEdit, refreshedNowPoint, DEFAULT_WINDOW_SPAN_MS,
@@ -53,7 +53,18 @@ interface Props {
   // named card does (§5's sentence rule). Structured on purpose: there is nowhere
   // here to put a pre-composed "Logged", which is what makes the rule hold by shape
   // rather than by review (the CUL-606 argument, applied to the R2 register).
-  onLogged: (result: { eventId: string; occurredAtIso: string; record: LoggedRecord }) => void;
+  //
+  // `hasAttachment` rides along for CUL-802: the host decides where the owner lands
+  // after the beat, and a photographed vomit/stool lands on its record. Only this
+  // component knows whether a photo was attached, and the record shape deliberately
+  // cannot carry it (it describes the TIME claim, nothing else) — so it is its own
+  // field rather than a widening of `record`.
+  onLogged: (result: {
+    eventId: string;
+    occurredAtIso: string;
+    record: LoggedRecord;
+    hasAttachment: boolean;
+  }) => void;
   /** CUL-612 — what the owner has put into this confirm so far, so the HOST can
    *  guard its own dismissal paths (a backdrop tap destroys this component, and a
    *  component cannot guard the gesture that unmounts it). Reported on change
@@ -73,13 +84,6 @@ type OpenPicker = 'point' | 'latest' | 'earliest' | null;
 function isRoseType(type: EventTypeKey): boolean {
   return SYMPTOM_TYPES.has(type) || type === 'stool_normal';
 }
-
-// The types whose attached photo actually gets an AI read (insertSimpleEvent fires
-// analyze-vomit / analyze-stool for exactly these). The photo sub-line only PROMISES
-// a read for these — for lethargy / itch / Other the photo is just an attachment, so
-// claiming "I can read it for signs" there would promise a read that never happens
-// (clinical-guardrails: never assert a capability the record won't deliver).
-const PHOTO_READ_TYPES: ReadonlySet<EventTypeKey> = new Set(['vomit', 'diarrhea', 'stool_normal']);
 
 // The leading disc on this sheet's header, shared with the GRID stage's title row
 // (CUL-679) so stage 1 → stage 2 is a disc swapping its contents in place rather
@@ -112,7 +116,18 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
 
   const typeLabel = EVENT_TYPES[type].label;
   const rose = isRoseType(type);
-  const readsPhoto = PHOTO_READ_TYPES.has(type);
+  // The photo sub-line only PROMISES a read for the types that actually get one —
+  // for lethargy / itch / Other the photo is just an attachment, so claiming "I can
+  // read it for signs" there would promise a read that never happens
+  // (clinical-guardrails: never assert a capability the record won't deliver).
+  //
+  // Asked through the shared predicate rather than a local set (CUL-802). This was a
+  // hand-listed `PHOTO_READ_TYPES` whose membership happened to match — exactly the
+  // "second list that agrees today" hasPerIncidentRead's docstring names as the
+  // failure mode. It now cannot disagree with what insertSimpleEvent actually fires,
+  // or with where this very confirm sends the owner afterwards: one leaf added in
+  // one place would otherwise promise a read on a screen that never shows one.
+  const readsPhoto = hasPerIncidentRead(type);
   // Per-leaf capture contract (taxonomy §6/§7, D10 — CUL-675). A witnessed-by-
   // construction leaf (cough/sneeze) renders NO Saw it / Found it pair — there is
   // nothing to "find", so a window claim is unwritable by construction (the B-448
@@ -366,6 +381,10 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
       onLogged({
         eventId: res.eventId,
         occurredAtIso: res.occurredAtIso,
+        // The photo the write above actually carried, not the live `photo` state —
+        // same reason the record is built from `tf`: what the host acts on must be
+        // what landed in the row.
+        hasAttachment: !!photo,
         // Built from `tf` — the SAME buildTimeFields derivation the summary pill reads
         // and the write above used, so the beat cannot say something the row does not
         // hold. Passing the pill's own string instead would have been shorter and
