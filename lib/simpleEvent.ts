@@ -30,6 +30,7 @@ import { triggerSignalRegenDebounced } from './signal';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain } from './analysis';
 import { uploadPhoto, compressForUpload, persistCapture } from './storage';
 import { uuid, OccurredConfidence } from './utils';
+import { isStoolEvent } from '../constants/eventTypes';
 
 // A photo the owner attached in the confirm. `takenAt` is the trusted EXIF ISO (or
 // null); width/height are the source pixel dims kept only so compressForUpload can
@@ -159,7 +160,10 @@ async function attachPhotoBestEffort(
     );
     const isVomit = eventType === 'vomit';
     // Both stool event_type values (formed + loose) carry a photographed read.
-    const isStool = eventType === 'stool_normal' || eventType === 'diarrhea';
+    // The shared predicate (CUL-802) is the same one the log surfaces route on and
+    // the detail screen renders on, so "which logs get a read" cannot mean one
+    // thing here and another at the door.
+    const isStool = isStoolEvent(eventType);
     // CUL-801 — claim this event's first read BEFORE the compress/upload starts.
     // The claim is taken SYNCHRONOUSLY, inside the await this function's caller
     // is already holding, so it is in place before insertSimpleEvent resolves and

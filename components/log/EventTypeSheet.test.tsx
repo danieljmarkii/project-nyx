@@ -54,10 +54,32 @@ jest.mock('./SimpleEventConfirm', () => {
                 earliest: null,
                 latest: null,
               },
+              hasAttachment: false,
             })
           }
         >
           stub-logged
+        </Text>
+        {/* CUL-802 — the same commit WITH a photo. Two doors rather than a prop on
+            one, so every existing test keeps pressing the photoless one and the
+            shipped landing stays byte-identical by construction. */}
+        <Text
+          onPress={() =>
+            onLogged({
+              eventId: 'e1',
+              occurredAtIso: '2026-08-13T17:33:00.000Z',
+              record: {
+                kind: 'event',
+                typeLabel: 'Vomit',
+                confidence: 'witnessed',
+                earliest: null,
+                latest: null,
+              },
+              hasAttachment: true,
+            })
+          }
+        >
+          stub-logged-with-photo
         </Text>
         {/* CUL-612 — stand-ins for the three things the real confirm reports up.
             The DERIVATION of those booleans is SimpleEventConfirm.test's subject;
@@ -205,6 +227,84 @@ describe('EventTypeSheet', () => {
     fireEvent.press(getByText('Other'));
     fireEvent.press(getByText('stub-logged'));
     expect(getByText('beat:celebrate')).toBeTruthy();
+  });
+
+  // ── CUL-802: WHERE THE BEAT HANDS THE OWNER OFF ─────────────────────────
+  //
+  // A photographed vomit/stool lands on its own record — the only logs with a
+  // per-incident AI read on the way, and until now the read was reachable only
+  // through History → row → scroll, so the owner who took the photo never saw it.
+  // Everything else keeps closing onto Home exactly as it shipped.
+  //
+  // Every assertion COUNTS the navigation calls rather than matching arguments
+  // (CUL-170): toHaveBeenCalledWith cannot see an identical second fire, and a
+  // double push here would put two copies of the record on the stack, so Back
+  // would need two taps — the exact thing the route exists to avoid.
+  describe('the landing (CUL-802)', () => {
+    it('a PHOTOGRAPHED vomit lands on its record, once', () => {
+      const onClose = jest.fn();
+      const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
+      fireEvent.press(getByText('Vomit'));
+      fireEvent.press(getByText('stub-logged-with-photo'));
+      // Not before the beat: the confirmation plays first, on the sheet.
+      expect(router.push).not.toHaveBeenCalled();
+      fireEvent.press(getByText('stub-done'));
+      expect(router.push).toHaveBeenCalledTimes(1);
+      expect((router.push as jest.Mock).mock.calls[0][0]).toBe('/event/e1');
+      // The sheet closes FIRST — a pushed screen renders behind an RN Modal
+      // (CUL-662), so a record under a still-open sheet is a record nobody sees.
+      // Asserted as an ORDER, not as "both happened": the wrong order is the whole
+      // defect, and two `toHaveBeenCalled`s cannot tell the two apart.
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onClose.mock.invocationCallOrder[0])
+        .toBeLessThan((router.push as jest.Mock).mock.invocationCallOrder[0]);
+    });
+
+    it('a photographed LOOSE STOOL lands too — both stool types carry a read', () => {
+      const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      fireEvent.press(getByText('Loose'));
+      fireEvent.press(getByText('stub-logged-with-photo'));
+      fireEvent.press(getByText('stub-done'));
+      expect(router.push).toHaveBeenCalledTimes(1);
+    });
+
+    it('a PHOTOLESS vomit does not — nothing has arrived to show', () => {
+      const onClose = jest.fn();
+      const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
+      fireEvent.press(getByText('Vomit'));
+      fireEvent.press(getByText('stub-logged'));
+      fireEvent.press(getByText('stub-done'));
+      expect(router.push).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('a photographed OTHER does not — the scope is the read, not the photo', () => {
+      const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      fireEvent.press(getByText('Other'));
+      fireEvent.press(getByText('stub-logged-with-photo'));
+      fireEvent.press(getByText('stub-done'));
+      expect(router.push).not.toHaveBeenCalled();
+    });
+
+    // The landing is decided at COMMIT time — handleLogged re-answers the question
+    // on every write — so a second log cannot inherit the first one's destination.
+    // (The reset in the visibility effect is symmetry with its four siblings, not
+    // what makes this pass: mutating it away leaves this green, which is why the
+    // source says so rather than this test claiming otherwise.)
+    it('re-decides the landing on every commit, so the next log cannot inherit it', () => {
+      const { getByText, rerender } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      fireEvent.press(getByText('Vomit'));
+      fireEvent.press(getByText('stub-logged-with-photo'));
+      fireEvent.press(getByText('stub-done'));
+      expect(router.push).toHaveBeenCalledTimes(1);
+
+      rerender(<EventTypeSheet visible={false} onClose={jest.fn()} />);
+      rerender(<EventTypeSheet visible onClose={jest.fn()} />);
+      fireEvent.press(getByText('Other'));
+      fireEvent.press(getByText('stub-logged'));
+      fireEvent.press(getByText('stub-done'));
+      expect(router.push).toHaveBeenCalledTimes(1); // still just the first one
+    });
   });
 
   // ── CUL-662: THE PET SWITCHER IS A LAYER, NEVER A SIBLING MODAL ──────────

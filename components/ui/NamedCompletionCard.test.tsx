@@ -14,6 +14,19 @@
 //   • the ground is a DIM that takes no touches — Home stays live for the dwell;
 //   • the card names the RECORD's pet, not a since-switched active one.
 
+// CUL-802 — the card now reads the ROUTE (where it is being shown) and the safe
+// area (how low it can sit there). Both come from providers this suite renders the
+// card bare of, so both are stubbed. `mockPathname` is the knob the offset describe
+// turns; every other test leaves it on a tabs route, which is the shipped geometry.
+let mockPathname = '/(tabs)';
+const mockBack = jest.fn();
+jest.mock('expo-router', () => ({
+  usePathname: () => mockPathname,
+  router: { back: (...a: unknown[]) => mockBack(...a) },
+}));
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 47, right: 0, bottom: 34, left: 0 }),
+}));
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../lib/db', () => ({
@@ -81,6 +94,9 @@ beforeEach(() => {
   // literal, for the B-514 reason in the OCCURRED comment above.
   jest.setSystemTime(new Date(2026, 5, 7, 18, 0));
   jest.clearAllMocks();
+  // Every test starts over a tabs screen — the shipped case — so a describe that
+  // moves the card onto a record has to say so explicitly.
+  mockPathname = '/(tabs)';
   useMomentStore.getState().hide();
   useMomentStore.setState({ payload: null, removed: false });
   (reverseLoggedEvent as jest.Mock).mockResolvedValue(undefined);
@@ -196,6 +212,122 @@ describe('NamedCompletionCard — tone', () => {
     const view = render(<NamedCompletionCard />);
     seed({ tone: 'calm', record: { kind: 'weight', weightKg: 5.62 } });
     expect(badgeStyles(view).shadowColor).toBeUndefined();
+  });
+});
+
+// ── CUL-802: THE CARD READS THE ROUTE ───────────────────────────────────────
+//
+// The card can now be shown over the incident record, which has no tab bar and no
+// FAB. The 80pt of clearance that keeps it off the tab bar would leave it floating
+// in the middle of nothing there, so the offset asks where it is.
+//
+// The offset is asserted off the RENDERED style rather than by restating the
+// tokens (CUL-612's lesson): a test that recomputed TAB_BAR_HEIGHT + 64 would pass
+// against a component that had stopped applying it at all.
+describe('NamedCompletionCard — where it sits (CUL-802)', () => {
+  /** The animated wrapper's flattened style — the node that owns `bottom`. The
+   *  scrim is absolutely positioned too and its absoluteFill sets bottom:0, so the
+   *  inset gutter (which only the card wrapper has) is what tells them apart. */
+  function wrapperStyle(view: ReturnType<typeof render>) {
+    const nodes = view.UNSAFE_root.findAll((n: StyledNode) => {
+      const st = StyleSheet.flatten(n.props?.style) as
+        { position?: string; bottom?: number; left?: number } | undefined;
+      return st?.position === 'absolute'
+        && typeof st?.bottom === 'number'
+        && st?.left === theme.space2;
+    });
+    // Animated.View surfaces the same style at more than one level of the tree
+    // (the file's existing scrim predicate takes [0] for the same reason); assert
+    // they agree so this never silently reads a different node's geometry.
+    const bottoms = nodes.map(
+      (n: StyledNode) => (StyleSheet.flatten(n.props.style) as { bottom: number }).bottom,
+    );
+    expect(new Set(bottoms).size).toBe(1);
+    return StyleSheet.flatten(nodes[0].props.style) as { bottom: number };
+  }
+
+  it('clears the tab bar and the FAB on a tabs screen — the shipped berth', () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    // 80 (iOS tab bar) + 64 (FAB clearance). Stated as the literal it has always
+    // been so a silent change to either constant is visible in the diff.
+    expect(wrapperStyle(view).bottom).toBe(80 + 64);
+  });
+
+  it('sits at the safe-area inset over the record, where there is no tab bar', () => {
+    mockPathname = '/event/e1';
+    const view = render(<NamedCompletionCard />);
+    seed();
+    // 34 (the stubbed home indicator) + the standard gutter every other
+    // bottom-anchored surface uses. Neither half of the tabs offset survives:
+    // there is no tab bar and no FAB to clear.
+    expect(wrapperStyle(view).bottom).toBe(34 + theme.space2);
+  });
+
+  // Fail toward the SHIPPED geometry: /event/ is the only non-tabs destination a
+  // log path can reach, and anything else — a route added later, a modal — keeps
+  // the tab-bar offset rather than inheriting the record's.
+  it('keeps the tabs berth on any other route', () => {
+    mockPathname = '/day-summary';
+    const view = render(<NamedCompletionCard />);
+    seed();
+    expect(wrapperStyle(view).bottom).toBe(80 + 64);
+  });
+});
+
+// ── CUL-802 / G5: A SCREEN NEVER SHOWS A ROW THAT IS NO LONGER IN THE RECORD ──
+//
+// Over the incident record the card is sitting on top of the very event it just
+// soft-deleted: the hero photo, the read, the observations below it all describe
+// something the owner has removed. So the record dismisses and the removal line
+// lands on Home, where it lands from every other log path.
+describe('NamedCompletionCard — Undo over the record (CUL-802)', () => {
+  it('dismisses the record once the reversal lands', async () => {
+    mockPathname = '/event/e1';
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    // Counted, not matched: a second dismiss would pop past Home (CUL-170).
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(view.getByText('Removed')).toBeTruthy();
+  });
+
+  it('stays put when the reversal FAILED — the row is still there to look at', async () => {
+    mockPathname = '/event/e1';
+    (reverseLoggedEvent as jest.Mock).mockRejectedValue(new Error('nope'));
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  // The reversal is AWAITED, so the owner can leave the record while it is in
+  // flight (Back is never blocked — the spec's own rule for the pending read). A
+  // dismissal decided from the render closure would then pop a screen they had
+  // already left, taking them off Home. Proved by mutation: reading `overRecord`
+  // instead of the ref reds exactly this test.
+  it('does not dismiss if the owner already left the record mid-reversal', async () => {
+    mockPathname = '/event/e1';
+    let release: () => void = () => {};
+    (reverseLoggedEvent as jest.Mock).mockReturnValue(new Promise<void>((r) => { release = r; }));
+    const view = render(<NamedCompletionCard />);
+    seed();
+    act(() => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+
+    // The owner taps Back themselves while the soft delete is still writing.
+    mockPathname = '/(tabs)';
+    view.rerender(<NamedCompletionCard />);
+    await act(async () => { release(); });
+
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it('never navigates from a tabs screen — there is nothing to dismiss', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(view.getByText('Removed')).toBeTruthy();
   });
 });
 

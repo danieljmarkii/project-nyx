@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated, Platform, Alert } from 'react-native';
 import { Check } from 'lucide-react-native';
+import { router, usePathname } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme, shadows } from '../../constants/theme';
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
@@ -19,6 +21,29 @@ import { TimeEditSheet } from './TimeEditSheet';
 // Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it isn't
 // occluded when the owner lands back on a tabs screen after a log.
 const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
+// Clearance above the FAB, which sits over every tabs screen. Unchanged: the
+// shipped berth is TAB_BAR_HEIGHT + this, and the meal card and Snackbar use the
+// same pair so all three transient surfaces land where the owner's eye already is.
+const FAB_CLEARANCE = 64;
+
+// ── WHERE THE CARD SITS (CUL-802) ───────────────────────────────────────────
+// A record screen has neither a tab bar nor a FAB, so BOTH halves of the shipped
+// offset are clearance for things that are not there — 144pt of it would leave the
+// card floating in the middle of nothing. Over the record it takes the shape every
+// other bottom-anchored surface in the app uses (`insets.bottom + theme.space2` —
+// the sheets, the report bar, the rundown bar): clear of the home indicator, with
+// the standard gutter under it, and no invented allowance for absent chrome.
+//
+// The offset reads the ROUTE, not the payload. The card outlives the navigation it
+// was fired over — Undo dismisses the record and the removal line lands on Home —
+// so a landing baked into the payload would be stale exactly when it mattered: the
+// card would sit at the record's offset while over Home, right on the tab bar.
+//
+// Path prefix rather than a segments match: `/event/[id]` is the only non-tabs
+// destination any log path can reach, and a prefix keeps every other route —
+// today's four tabs, and anything added later — on the shipped offset by default.
+// Fail toward the shipped geometry, never toward the new one.
+const RECORD_ROUTE_PREFIX = '/event/';
 
 // Root-mounted NAMED COMPLETION CARD — register R1 of the two-register completion
 // system (CUL-606; docs/nyx-app-polish-requirements.md §5).
@@ -72,6 +97,21 @@ export function NamedCompletionCard() {
   const { patchInToday } = useEventStore();
   const { pets } = usePetStore();
   const reduced = useReducedMotion();
+  // Both are provider-safe from here: app/_layout.tsx renders this INSIDE ExpoRoot,
+  // which wraps the tree in a SafeAreaProvider, and expo-router's route info falls
+  // back to a default when no navigator has mounted.
+  const insets = useSafeAreaInsets();
+  const pathname = usePathname();
+  const overRecord = pathname.startsWith(RECORD_ROUTE_PREFIX);
+  const bottomOffset = overRecord
+    ? insets.bottom + theme.space2
+    : TAB_BAR_HEIGHT + FAB_CLEARANCE;
+  // Read inside the async reversal below rather than off that closure: the write is
+  // awaited, and the owner can leave the record while it is in flight. A stale
+  // `true` there would pop a screen they had already left (CUL-170's shape — the
+  // one-shot navigation lives in a ref, never in a captured value).
+  const overRecordRef = useRef(overRecord);
+  overRecordRef.current = overRecord;
 
   const translateY = useRef(new Animated.Value(80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -194,6 +234,15 @@ export function NamedCompletionCard() {
     // A card that is still on screen has a hide to re-arm: only the 'removed' path
     // arms its own (the removal dwell, which clears the pause through armHide).
     if (result !== 'removed') resumeDwell();
+    // ── G5 (CUL-802): a screen never shows a row that is no longer in the record.
+    // Over the incident record this card is sitting on top of the very event it
+    // just soft-deleted — every section below it (the hero photo, the read, the
+    // observations) is describing something the owner has removed. So the record
+    // dismisses and the removal line lands on Home, where it lands from every other
+    // log path. Only on 'removed': a failed or ignored reversal left the row in
+    // place, and dismissing there would take the owner away from a record that
+    // still exists, on the one path where they were told it might not have worked.
+    if (result === 'removed' && overRecordRef.current) router.back();
   }
 
   async function handleUndo() {
@@ -281,7 +330,7 @@ export function NamedCompletionCard() {
 
       <Animated.View
         pointerEvents={shown ? 'box-none' : 'none'}
-        style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
+        style={[styles.wrapper, { bottom: bottomOffset, opacity, transform: [{ translateY }] }]}
       >
         <View style={styles.card}>
           {notice ? (
@@ -389,7 +438,8 @@ const styles = StyleSheet.create({
   // owner's eye already is.
   wrapper: {
     position: 'absolute',
-    bottom: TAB_BAR_HEIGHT + 64,
+    // `bottom` is supplied at render (route-aware, see the header) — the shipped
+    // tabs value lives in bottomOffset, not here, so there is one owner of it.
     left: theme.space2,
     right: theme.space2,
     zIndex: 50,
