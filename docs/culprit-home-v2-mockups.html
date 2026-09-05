@@ -1,0 +1,857 @@
+<title>Home v2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     Home v2 — the redesign. Mock ROUND 3 — "the instrument that expands".
+     Current-proposal page for the Home v2 project (CUL-808 discovery,
+     CUL-809 round 1, CUL-810 the briefs). Round 2 supersedes round 1 in
+     place (same URL, same <title>, same favicon): the PM's seven reactions
+     are the ledger below; rounds 1 and 2 are kept in git (13a06b5, 62a5feb)
+     and summarised in §08, not redrawn.
+     Design authorities that bind the frames: nyx-signal-home-requirements
+     (S1–S10, the Change Contract, receipt shapes A/C), nyx-signal-fold-
+     requirements (the shipped fold), app-polish (chrome — the FAB is
+     untouched), med-strip, the diet-trial pre-ship review (positive marking
+     only), ask-requirements §3 (the answer anatomy). Frames render the real
+     tokens (constants/theme.ts); Home stays a daylight surface (S7).
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .revnew { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .revnew b { color: var(--ink); }
+  a { color: var(--teal-ink); }
+  .ledger { display: grid; gap: 10px; margin: 22px 0 8px; }
+  .ledger div { display: grid; grid-template-columns: 74px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 10px; }
+  .ledger b { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; color: var(--ink); padding-top: 2px; }
+  .ruled { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; }
+  .ruled.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .ruled.dir { color: var(--ink-2); background: var(--rule-soft); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+  .brief { margin: 28px 0 8px; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 28px; margin-top: 18px; }
+  .voice { border-top: 1px solid var(--rule); padding-top: 12px; font-size: 14px; color: var(--ink-2); }
+  .voice b { color: var(--ink); display: block; margin-bottom: 4px; }
+  .voice q { font-style: italic; }
+  .veto { columns: 2; column-gap: 32px; font-size: 14px; color: var(--ink-2); margin: 14px 0 0; padding-left: 18px; }
+  .veto li { break-inside: avoid; margin-bottom: 6px; }
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-slot.wide { width: 660px; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .cost { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 8px; color: var(--ink-3); display: block; }
+  .lens { display: block; margin-top: 6px; font-size: 12.5px; color: var(--ink-3); }
+  .lens b { display: inline; font-size: 12.5px; color: var(--ink-2); margin: 0; }
+  .phone { width: 316px; max-width: 100%; background: #FAFAFA; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 12px 12px 14px; color: #0A0A0A; font-family: var(--sans); font-variant-numeric: tabular-nums; }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 8px; }
+  .hdr { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; }
+  .hdr .who { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .hdr .av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg,#C9C4E8,#8B87A8); }
+  .hdr .who small { color: #737373; font-weight: 500; }
+  .askpill { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #D4D4D4; border-radius: 999px; padding: 3px 9px; font-size: 11.5px; font-weight: 600; color: #0A0A0A; }
+  .askpill i { width: 6px; height: 6px; border-radius: 50%; background: #00C2A8; display: inline-block; }
+  .ownerav { width: 22px; height: 22px; border-radius: 50%; background: #E5E5E5; display: inline-grid; place-items: center; font-size: 10px; font-weight: 600; color: #525252; margin-left: 7px; }
+  .appbody { display: grid; gap: 10px; }
+  .acard { background: #FFFFFF; border-radius: 16px; padding: 12px 14px 10px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin-bottom: 6px; }
+  .seclabel.receded { color: #A3A3A3; }
+  .seclabel.row { display: flex; justify-content: space-between; align-items: baseline; }
+  .seclabel .door { text-transform: none; letter-spacing: 0; font-weight: 500; color: #0B7B6C; font-size: 10.5px; }
+  .irow { display: flex; gap: 9px; padding: 8px 0; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.85; align-self: stretch; }
+  .rail.safety { background: #F43F5E; }
+  .rail.insight { background: #00C2A8; }
+  .ibody { flex: 1; min-width: 0; }
+  .lead { font-family: var(--serif); font-size: 19px; line-height: 1.3; letter-spacing: -0.012em; color: #0A0A0A; margin: 0 0 6px; }
+  .samp { font-size: 10.5px; color: #737373; margin-top: 5px; }
+  .hintrow { display: flex; gap: 14px; margin-top: 7px; align-items: center; }
+  .hintrow .why { font-size: 11px; color: #0B7B6C; font-weight: 600; }
+  .hintrow .fold { font-size: 11px; color: #737373; font-weight: 600; }
+  /* rows (the Board's unit) */
+  .rows { display: grid; }
+  .r { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 2px; border-top: 1px solid #EAEAEA; font-size: 13px; color: #0A0A0A; }
+  .r:first-child { border-top: 0; }
+  .r .lab { flex: 1; min-width: 0; }
+  .r .lab small { display: block; font-size: 10.5px; color: #737373; margin-top: 1px; }
+  .r .num { font-variant-numeric: tabular-nums; font-size: 13px; color: #0A0A0A; white-space: nowrap; }
+  .r .num small { color: #737373; font-size: 10.5px; margin-left: 4px; }
+  .r .chev { color: #A3A3A3; font-size: 15px; width: 12px; text-align: center; }
+  .r .confirm { flex-shrink: 0; font-size: 11px; font-weight: 600; color: #0B7B6C; border: 1px solid rgba(11,123,108,0.3); border-radius: 999px; padding: 4px 10px; }
+  .r .wh { width: 20px; height: 20px; flex-shrink: 0; }
+  .aichip { font-size: 8.5px; font-weight: 600; letter-spacing: 0.08em; color: #0B7B6C; background: #E0FBF7; border-radius: 4px; padding: 1px 4px; margin-left: 6px; vertical-align: 1px; }
+  /* the day instrument (Board hero) */
+  .instr { padding: 6px 4px 2px; }
+  .instr .ax { display: flex; justify-content: space-between; font-size: 9.5px; color: #737373; padding: 0 2px; margin-bottom: 4px; }
+  .instr .plot { position: relative; height: 22px; }
+  .instr .base { position: absolute; left: 0; right: 0; top: 10px; height: 1px; background: #D4D4D4; }
+  .instr .plot.ghost .base { border-top: 1px dashed #E5E5E5; background: none; }
+  .instr .needle { position: absolute; top: -6px; bottom: -6px; width: 2px; background: #00C2A8; border-radius: 1px; }
+  .instr .needle b { position: absolute; top: -13px; left: 4px; font-size: 9px; color: #0B7B6C; font-weight: 600; white-space: nowrap; }
+  .d { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; transform: translate(-50%,-50%); border: 1.5px solid #FFFFFF; }
+  .instr .d { top: 10px; }
+  .d.meal { background: #00C2A8; } .d.sym { background: #F43F5E; } .d.med { background: #5B7A9E; }
+  .d.note { background: #FFFFFF; border: 1.5px solid #6B6890; }
+  .d.ghost { opacity: 0.32; }
+  .instr .lab { font-size: 9px; color: #A3A3A3; position: absolute; right: 0; top: -12px; }
+  .instr .capt { font-size: 12px; color: #525252; margin-top: 14px; }
+  /* the long lane (direction II hero) */
+  .longlane { position: relative; height: 196px; margin: 4px 0 0; overflow: hidden; }
+  .longlane .month { position: absolute; left: 0; top: 0; font-family: var(--serif); font-size: 15px; color: #0A0A0A; }
+  .longlane .cols { position: absolute; left: 0; right: 0; top: 24px; bottom: 18px; display: grid; grid-template-columns: repeat(8, 1fr); }
+  .longlane .c { position: relative; border-left: 1px solid #EFEFEF; }
+  .longlane .c.wk { border-left: 1px solid #D4D4D4; }
+  .longlane .c .d { left: 50%; }
+  .longlane .c.today { background: linear-gradient(180deg, rgba(0,194,168,0.06), rgba(0,194,168,0)); }
+  .longlane .dates { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(8, 1fr); font-size: 9px; color: #A3A3A3; text-align: center; }
+  .longlane .dates b { color: #0A0A0A; font-weight: 600; }
+  .longlane .needle { position: absolute; top: 20px; bottom: 16px; right: 0; width: 2px; background: #00C2A8; }
+  .longlane .hours { position: absolute; left: 0; top: 24px; bottom: 18px; width: 0; }
+  .longlane .hours span { position: absolute; left: 2px; font-size: 8.5px; color: #B4B4B4; transform: translateY(-50%); }
+  .longlane .tick { position: absolute; left: 0; font-size: 9px; color: #B4123B; top: 6px; }
+  .longlane .tick.trial { color: #0B7B6C; left: auto; right: 110px; }
+  /* the season strip (weeks) */
+  .season { position: relative; margin-top: 8px; }
+  .season .cols { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; align-items: end; height: 74px; }
+  .season .wk { display: flex; flex-direction: column-reverse; align-items: center; gap: 2px; position: relative; }
+  .season .u { width: 5px; height: 5px; border-radius: 50%; background: #F43F5E; }
+  .season .base { display: flex; gap: 1px; margin-top: 3px; }
+  .season .base i { width: 2px; height: 3px; background: #C9C9C9; display: block; }
+  .season .base i.off { background: transparent; }
+  .season .rule { position: absolute; top: 0; bottom: 14px; border-left: 1px dashed #0B7B6C; }
+  .season .rulelab { position: absolute; font-size: 8.5px; color: #0B7B6C; white-space: nowrap; }
+  .season .mo { display: grid; grid-template-columns: repeat(11, 1fr); font-size: 8.5px; color: #A3A3A3; margin-top: 3px; }
+  .season .lab { position: absolute; font-size: 9px; color: #0A0A0A; font-weight: 600; transform: translateX(-50%); }
+  /* the trial cells */
+  .cells { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 8px; }
+  .cell { aspect-ratio: 1; border-radius: 6px; border: 1px solid #EAEAEA; background: #FFFFFF; position: relative; font-size: 9px; color: #737373; padding: 3px 0 0 4px; }
+  .cell.future { background: #F5F5F5; border-color: transparent; color: #C9C9C9; }
+  .cell.today { border: 2px solid #00C2A8; color: #0A0A0A; font-weight: 600; }
+  .cell.untracked { background: transparent; border: 1px dashed #E5E5E5; color: #C9C9C9; }
+  .cell .m { position: absolute; left: 4px; bottom: 4px; display: flex; gap: 2px; }
+  .cell .m i { width: 5px; height: 5px; border-radius: 50%; background: #00C2A8; display: block; }
+  .cell .p { position: absolute; right: 4px; bottom: 4px; width: 5px; height: 5px; background: #F43F5E; border-radius: 1px; }
+  .cellstrip { display: flex; gap: 1.5px; margin-top: 8px; height: 10px; }
+  .cellstrip i { flex: 1; display: block; border-radius: 1px; background: #E0FBF7; position: relative; }
+  .cellstrip i.hollow { background: transparent; border: 1px solid #C9C9C9; }
+  .cellstrip i.future { background: #F0F0F0; }
+  .cellstrip i.today { outline: 1.5px solid #0A0A0A; outline-offset: -1px; }
+  .cellstrip i.off::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 3px; height: 3px; background: #F43F5E; transform: translateX(-50%); }
+  /* the dot lane (shipped) */
+  .lane { position: relative; height: 18px; margin-top: 6px; }
+  .lane .track { position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: #E5E5E5; border-radius: 1px; }
+  .lane .d { top: 9px; }
+  .laneax { display: flex; justify-content: space-between; font-size: 9px; color: #737373; margin-top: 3px; padding: 0 2px; }
+  .count { font-size: 12.5px; color: #0A0A0A; }
+  .count b { font-weight: 600; }
+  /* week lanes */
+  .weeks { display: grid; grid-template-columns: 34px 1fr; row-gap: 2px; align-items: center; margin-top: 6px; }
+  .weeks .wl { font-size: 9.5px; color: #737373; }
+  .weeks .wl.today { color: #0A0A0A; font-weight: 600; }
+  .weeks .lane { margin: 0; height: 16px; }
+  .weeks .lane .track { top: 7px; height: 1px; }
+  .weeks .lane.today .track { height: 1.5px; background: #C9C9C9; }
+  .weeks .lane.nolog .track { border-top: 1px dashed #E0E0E0; background: none; height: 0; }
+  .weeks .lane .nl { position: absolute; right: 0; top: 0; font-size: 8.5px; color: #B4B4B4; }
+  .weeks .d { width: 7px; height: 7px; top: 8px; }
+  .weeks .gt { position: absolute; top: 4px; width: 1px; height: 7px; background: #C9C9C9; }
+  /* composer + sheet */
+  .door { display: flex; align-items: flex-start; gap: 10px; border: 1px solid #E5E5E5; border-radius: 12px; padding: 10px 12px; background: #FFFFFF; min-height: 64px; font-size: 13px; color: #8B8B8B; margin-top: 8px; }
+  .door .wh { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; }
+  .door .txt { flex: 1; line-height: 1.4; }
+  .door .txt b { display: block; color: #0A0A0A; font-weight: 500; font-size: 12px; margin-bottom: 1px; }
+  .sheet { background: #FFFFFF; border-radius: 22px 22px 0 0; padding: 12px 14px 10px; box-shadow: 0 -6px 24px rgba(19,17,46,0.10); margin: 0 -12px -14px; }
+  .sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: #E0E0E0; margin: 0 auto 10px; }
+  .sheet .field { min-height: 88px; border-radius: 8px; background: #F7F6FA; padding: 9px 11px; font-size: 13.5px; line-height: 1.45; color: #0A0A0A; position: relative; }
+  .sheet .field.ph { color: #8B8B8B; }
+  .sheet .field .caret { display: inline-block; width: 1px; height: 14px; background: #0A0A0A; vertical-align: -2px; }
+  .sheet .verbs { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .pill { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 7px 13px; display: inline-flex; align-items: center; gap: 6px; }
+  .pill.save { background: #1B1A2E; color: #FFFFFF; }
+  .pill.ask { background: #E0FBF7; color: #0B7B6C; }
+  .pill.ask i { width: 8px; height: 8px; border-radius: 50%; background: #00C2A8; display: inline-block; }
+  .pill.ghost { color: #525252; border: 1px solid #E5E5E5; }
+  .chiprow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-size: 11.5px; font-weight: 600; color: #0B7B6C; background: #E0FBF7; border: 1px solid rgba(11,123,108,0.25); border-radius: 999px; padding: 4px 10px; }
+  .chip.quiet { color: #525252; background: #F5F5F5; border-color: #EAEAEA; font-weight: 500; }
+  .sheet .promise { font-size: 10.5px; color: #737373; margin-top: 8px; }
+  .sheet .capline { font-size: 11px; color: #525252; background: #F7F6FA; border-radius: 8px; padding: 7px 10px; margin-top: 8px; }
+  .kb { margin: 10px -14px -10px; height: 74px; background: #E9E8EE; border-radius: 0 0 22px 22px; display: grid; place-items: center; font-size: 10px; color: #8B8B8B; letter-spacing: 0.2em; }
+  .qb { align-self: flex-end; max-width: 86%; background: #F0EFF5; border-radius: 14px 14px 4px 14px; padding: 8px 11px; font-size: 12.5px; color: #0A0A0A; margin-left: auto; }
+  .answer { border-left: 3px solid #00C2A8; padding: 2px 0 2px 10px; }
+  .answer .h { font-family: var(--serif); font-size: 17px; line-height: 1.3; color: #0A0A0A; }
+  .answer .s { font-size: 11px; color: #525252; margin-top: 4px; }
+  .answer .prov { font-size: 10.5px; color: #0B7B6C; font-weight: 600; margin-top: 6px; }
+  .answer .rc { font-size: 10px; color: #737373; margin-top: 6px; display: flex; align-items: center; gap: 5px; }
+  .annot { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.05em; color: #B4123B; background: #FFF1F2; border: 1px dashed rgba(180,18,59,0.35); border-radius: 6px; padding: 3px 7px; margin-top: 8px; display: inline-block; }
+  .annot.ok { color: #0B7B6C; background: #ECFDF9; border-color: rgba(11,123,108,0.3); }
+  .dateline { font-family: var(--serif); font-size: 24px; line-height: 1.15; color: #0A0A0A; padding: 2px 2px 0; }
+  .dateline small { display: block; font-family: var(--sans); font-size: 12px; color: #737373; margin-top: 3px; }
+  .pagebody { border-top: 1px solid #E5E5E5; border-bottom: 1px solid #E5E5E5; padding: 12px 2px; min-height: 120px; font-family: var(--serif); font-style: italic; font-size: 15.5px; color: #A3A3A3; }
+  .tabbar { display: flex; justify-content: space-around; align-items: center; margin-top: 4px; padding: 8px 4px 0; border-top: 1px solid #E5E5E5; font-size: 9.5px; color: #737373; font-weight: 500; position: relative; }
+  .tabbar .on { color: #0A0A0A; font-weight: 600; }
+  .tabbar .fab { position: absolute; right: 10px; top: -30px; width: 40px; height: 40px; border-radius: 50%; background: #1B1A2E; color: #FFF; display: grid; place-items: center; font-size: 20px; box-shadow: 0 6px 14px rgba(19,17,46,0.25); }
+  /* ── the motion frame ─────────────────────────────────────── */
+  .motion { position: relative; }
+  .motion .stage { position: relative; min-height: 250px; }
+  .mdot { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #00C2A8; transition: transform 260ms cubic-bezier(.215,.61,.355,1), opacity 150ms; z-index: 3; }
+  .whorl { position: absolute; width: 44px; height: 44px; transform: translate(-50%,-50%); opacity: 0; transition: opacity 150ms; }
+  .whorl circle { fill: none; stroke: #00C2A8; stroke-width: 1.4; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset 400ms ease-out; transform-origin: 50% 50%; }
+  .whorl.on { opacity: 1; }
+  .whorl.on circle { stroke-dashoffset: 0; }
+  .whorl.on circle:nth-child(1) { transition-delay: 0ms; animation: spin 9s linear infinite; }
+  .whorl.on circle:nth-child(2) { transition-delay: 60ms; animation: spin 14s linear infinite reverse; }
+  .whorl.on circle:nth-child(3) { transition-delay: 120ms; animation: spin 19s linear infinite; }
+  .whorl.on circle:nth-child(4) { transition-delay: 180ms; animation: spin 25s linear infinite reverse; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .skel { display: grid; gap: 7px; opacity: 0; transition: opacity 150ms; }
+  .skel i { display: block; height: 10px; border-radius: 5px; background: #EEEDF3; }
+  .skel.on { opacity: 1; }
+  .ans { position: relative; padding-left: 13px; overflow: hidden; max-height: 0; transition: max-height 380ms cubic-bezier(.3,1.18,.5,1); }
+  .ans .arail { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 2px; background: #00C2A8; transform: scaleY(0); transform-origin: top; transition: transform 160ms cubic-bezier(.215,.61,.355,1); }
+  .ans .body { opacity: 0; transform: translateY(-8px); transition: opacity 300ms, transform 300ms cubic-bezier(.215,.61,.355,1); transition-delay: 120ms; }
+  .ans .later { opacity: 0; transition: opacity 200ms; transition-delay: 420ms; }
+  .ans.on { max-height: 220px; }
+  .ans.on .arail { transform: scaleY(1); }
+  .ans.on .body { opacity: 1; transform: none; }
+  .ans.on .later { opacity: 1; }
+  .mbtn { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 7px 13px; border: 0; cursor: pointer; font-family: inherit; }
+  .mbtn.ask { background: #E0FBF7; color: #0B7B6C; }
+  .mbtn.save { background: #1B1A2E; color: #FFF; }
+  .mbtn.reset { background: none; color: #737373; border: 1px solid #E5E5E5; }
+  .mbtn:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 3px; }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-2); margin-top: 10px; }
+  .toggle input { width: 16px; height: 16px; accent-color: #00C2A8; }
+  .beats { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); line-height: 1.7; margin-top: 12px; }
+  .beats b { color: var(--ink); }
+  .landing .d { transition: transform 320ms cubic-bezier(.3,1.18,.5,1), opacity 150ms; }
+  .landing .d.pre { transform: translate(-50%,-50%) scale(.4); opacity: 0; }
+  .rm .mdot, .rm .whorl, .rm .whorl circle, .rm .ans, .rm .ans .arail, .rm .ans .body, .rm .ans .later, .rm .landing .d, .rm .skel { transition-duration: 150ms !important; transition-delay: 0ms !important; animation: none !important; transform: none !important; }
+  .rm .ans .arail { transform: scaleY(1) !important; }
+  .rm .landing .d.pre { transform: translate(-50%,-50%) !important; }
+  @media (prefers-reduced-motion: reduce) { .whorl.on circle { animation: none !important; } }
+  @media (max-width: 720px) { .veto { columns: 1; } .ledger div { grid-template-columns: 1fr; gap: 4px; } .frame-slot.wide { width: 100%; } }
+</style>
+<style>
+  /* ── Round 3 additions ───────────────────────────────────── */
+  .xinstr { position: relative; overflow: hidden; transition: height 380ms cubic-bezier(.3,1.18,.5,1); }
+  .xinstr .grain { position: absolute; left: 0; right: 0; top: 0; opacity: 0; transition: opacity 200ms; pointer-events: none; }
+  .xinstr .grain.on { opacity: 1; pointer-events: auto; }
+  .xinstr[data-g="0"] { height: 92px; } .xinstr[data-g="1"] { height: 196px; } .xinstr[data-g="2"] { height: 236px; }
+  .grainbar { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  .grainbar .g { font-size: 10.5px; font-weight: 600; color: #737373; border: 1px solid #EAEAEA; border-radius: 999px; padding: 3px 9px; background: #FFF; cursor: pointer; font-family: inherit; }
+  .grainbar .g.on { color: #0B7B6C; background: #E0FBF7; border-color: rgba(11,123,108,0.3); }
+  .grainbar .hint { margin-left: auto; font-size: 9.5px; color: #A3A3A3; }
+  .rm .xinstr { transition: none !important; }
+  .fullask { background: #FFFFFF; border-radius: 22px; padding: 10px 14px 12px; min-height: 520px; display: flex; flex-direction: column; gap: 10px; margin: -4px -12px -14px; }
+  .fullask .top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #525252; }
+  .fullask .top b { font-weight: 600; color: #0A0A0A; }
+  .fullask .thread { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  .fullask .qb { align-self: flex-end; }
+  .fullask .comp { border: 1px solid #E5E5E5; border-radius: 12px; padding: 8px 10px; font-size: 12.5px; color: #8B8B8B; display: flex; align-items: center; gap: 8px; }
+  .arr { display: grid; gap: 0; }
+  .arr .it { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-top: 1px solid #EAEAEA; font-size: 12.5px; }
+  .arr .it:first-child { border-top: 0; }
+  .arr .h { color: #C9C9C9; font-size: 14px; width: 12px; }
+  .arr .lab { flex: 1; }
+  .arr .lab small { display: block; font-size: 10px; color: #737373; }
+  .arr .tg { width: 30px; height: 18px; border-radius: 999px; background: #00C2A8; position: relative; flex-shrink: 0; }
+  .arr .tg::after { content: ""; position: absolute; right: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #FFF; }
+  .arr .tg.off { background: #D4D4D4; } .arr .tg.off::after { right: auto; left: 2px; }
+  .arr .pin { font-size: 9px; font-weight: 600; letter-spacing: 0.08em; color: #737373; background: #F5F5F5; border-radius: 4px; padding: 2px 5px; }
+  .names { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 18px; }
+  .name { border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 16px; font-size: 13.5px; color: var(--ink-2); }
+  .name .w { font-family: var(--serif); font-size: 22px; color: var(--ink); margin: 0 0 6px; }
+  .name .strs { display: grid; gap: 4px; font-size: 12.5px; margin: 6px 0 8px; }
+  .name .strs span { display: block; }
+  .name .strs b { color: var(--ink); font-weight: 500; }
+  .name .verdict { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+  .name.rec { border-color: var(--teal); }
+  .name.rec .verdict { color: var(--teal-ink); }
+  .hs { overflow: hidden; position: relative; }
+  .hs .inner { width: 190%; }
+  .hs .edge { position: absolute; left: 0; top: 0; bottom: 0; width: 28px; background: linear-gradient(90deg, #FFFFFF, rgba(255,255,255,0)); pointer-events: none; }
+  .hs .edgelab { position: absolute; left: 4px; top: 2px; font-size: 9px; color: #737373; }
+</style>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">
+      <span class="roundtag">Round 3 — the instrument that expands</span>
+      <span>Home v2 · the redesign · 2026-09-05</span>
+      <span>Project Home v2 — the redesign · CUL-808 · CUL-810 the briefs</span>
+    </p>
+    <h1>One instrument, three grains — and a record you can tell</h1>
+    <p class="standfirst">
+      Round 2 drew the record at three grains as three separate Homes. You loved the <strong>Day Instrument</strong> with
+      yesterday beneath it, found the Long Lane chaotic, and asked whether the condensed lane could <em>expand</em> into it.
+      That is round 3's spine: one instrument that opens from today, to the week, to the season, on one gesture. Around
+      it: the Ask door moved to the top, the sheet grown to full screen, the trial calendar's early days, a season strip
+      that scrolls across time, logging returned to the FAB as a question rather than a change, an <em>Arrange Home</em>
+      sheet for "build your own home", and a name workshop for a surface that now takes notes as well as questions.
+    </p>
+    <div class="revnew">
+      <b>Round 3 supersedes round 2 in place</b> (same URL; round 2 is in git at <code>62a5feb</code>, round 1 at <code>13a06b5</code>; both summarised in <a href="#record">§08</a>).
+      Read: <a href="#instrument">§01</a> the instrument, tap it ·
+      <a href="#home">§02</a> the Home it sits in, with the door at the top ·
+      <a href="#sheet">§03</a> the sheet that grows to full screen ·
+      <a href="#trial">§04</a> the trial calendar early, and the strip across time ·
+      <a href="#arrange">§05</a> Arrange Home ·
+      <a href="#name">§06</a> the name ·
+      <a href="#briefs">§07</a> the briefs.
+    </div>
+    <div class="ledger" id="ledger">
+      <div><b>R2·1</b><span><span class="ruled">kept</span>&nbsp; "love the day instrument that also shows yesterday." — it is the hero of every frame here.</span></div>
+      <div><b>R2·2</b><span><span class="ruled dir">direction</span>&nbsp; "I dont know if i love the long lane. It reads a bit.. chaotic… I wonder if we could take an approach of allowing the condensed lane to expand into the long lane." — §01.</span></div>
+      <div><b>R2·3</b><span><span class="ruled open">brief</span>&nbsp; "The log cerenia dose.. not sure. I feel like all logging should just go through fab" — the med strip's one-tap is a shipped ruling (B-614 D1); drawn without it in §02, re-ruled in DC-4, not changed silently.</span></div>
+      <div><b>R2·4</b><span><span class="ruled dir">direction</span>&nbsp; "i kind of like this calendar in iii. But it could be a big old empty state early on in the month." — its cells are trial days, not month days; the day-3 and no-trial states are §04.</span></div>
+      <div><b>R2·5</b><span><span class="ruled dir">direction</span>&nbsp; "if Ask is going to be prominent. Should it appear prominently.. like.. towards the top of home." — §02 draws the door at the top and after Signals, side by side.</span></div>
+      <div><b>R2·6</b><span><span class="ruled dir">direction</span>&nbsp; "that bottom sheet may not scale… chat history" — §03 grows the sheet to full screen; chat history is a persistence ruling (Ask D8 / B-375), flagged in DC-3.</span></div>
+      <div><b>R2·7</b><span><span class="ruled">kept</span>&nbsp; "Love the motion in Ask though" · "'Tell Nyx's record or ask it' is a great CTA." · "The trial card! I like the design" · "the seasonStrip is nice… could we make it hscrollable across time" — §04.</span></div>
+      <div><b>R2·8</b><span><span class="ruled open">brief</span>&nbsp; "What if.. we had a 'build your own home' experience… This may be a bad.. resource intensive experience." — §05, DC-5.</span></div>
+      <div><b>R2·9</b><span><span class="ruled open">brief</span>&nbsp; "If we're transitioning the Ask layer to be note capture too. Maybe it needs its name/branding revisited." — §06, DC-6.</span></div>
+    </div>
+  </header>
+
+  <!-- ================================================== 01 -->
+  <section id="instrument">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The instrument that expands — tap it</h2></div>
+    <div class="col">
+      <p>
+        Condensed, it is the Day Instrument you liked: today's lane at page width, a NOW needle, yesterday's dots ghosted
+        beneath. Tap the lane (or the grain chips) and it opens to <em>the week</em> — seven lanes on the same axis, the
+        unlogged day drawn as a dashed track — and again to <em>the season</em>, the Long Lane's content on a calmer
+        drawing: weeks as columns, each episode a countable dot over a logged-days base, the trial's start as a rule. Same
+        axis language at every grain; position and colour never change meaning. Collapse returns to today. The state is
+        remembered per pet on the device (the fold store's shape), so an owner who lives at the week grain opens to it.
+      </p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot wide">
+        <div class="phone" id="xframe" style="width:316px"><div class="notch"></div>
+          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span><span class="askpill"><i></i>Ask</span><span class="ownerav">D</span></span></div>
+          <div class="appbody">
+            <div class="instr" style="padding-bottom:0">
+              <div class="xinstr" id="xinstr" data-g="0" role="button" tabindex="0" aria-label="Today's instrument. Tap to expand to the week, then the season.">
+                <div class="grain on" id="g0">
+                  <div class="ax"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>
+                  <div class="plot"><div class="base"></div><div class="needle" style="left:6%"><b>7:05</b></div></div>
+                  <div class="plot ghost" style="margin-top:10px"><span class="lab">yesterday</span><div class="base"></div><div class="d meal ghost" style="left:8%"></div><div class="d meal ghost" style="left:67%"></div><div class="d med ghost" style="left:78%"></div></div>
+                  <div class="capt">Nothing yet today · last vomit Aug 26</div>
+                </div>
+                <div class="grain" id="g1">
+                  <div class="ax" style="margin-left:34px"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>
+                  <div class="weeks" style="margin-top:2px">
+                    <span class="wl">Sat</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d meal" style="left:66%"></div><div class="d med" style="left:78%"></div></div>
+                    <span class="wl">Sun</span><div class="lane"><div class="track"></div><div class="d meal" style="left:10%"></div><div class="d meal" style="left:67%"></div></div>
+                    <span class="wl">Mon</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d note" style="left:38%"></div><div class="d meal" style="left:69%"></div><div class="d med" style="left:77%"></div></div>
+                    <span class="wl">Tue</span><div class="lane nolog"><div class="track"></div><span class="nl">no log</span></div>
+                    <span class="wl">Wed</span><div class="lane"><div class="track"></div><div class="d meal" style="left:11%"></div><div class="d meal" style="left:70%"></div><div class="d med" style="left:79%"></div></div>
+                    <span class="wl">Thu</span><div class="lane"><div class="track"></div><div class="d meal" style="left:9%"></div><div class="d meal" style="left:66%"></div></div>
+                    <span class="wl">Fri</span><div class="lane"><div class="track"></div><div class="d meal" style="left:8%"></div><div class="d meal" style="left:67%"></div><div class="d med" style="left:78%"></div></div>
+                    <span class="wl today">Today</span><div class="lane today"><div class="track"></div><span class="gt" style="left:9%"></span><span class="gt" style="left:67%"></span><div class="needle" style="left:6%;top:-3px;bottom:-3px;position:absolute;width:2px;background:#00C2A8"></div></div>
+                  </div>
+                  <div class="capt" style="margin-top:8px">This week · meals on 6 of 7 days · Tuesday not logged</div>
+                </div>
+                <div class="grain" id="g2">
+                  <div class="season" style="margin-top:2px">
+                    <span class="lab" style="left:22.5%;top:-4px">8</span>
+                    <div class="cols">
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span><span class="u"></span></div>
+                    </div>
+                    <div class="rule" style="left:63.5%"></div><span class="rulelab" style="left:65%;top:-2px">Turkey trial</span>
+                    <div class="mo"><span>Jul</span><span></span><span></span><span></span><span>Aug</span><span></span><span></span><span></span><span></span><span>Sep</span><span></span></div>
+                  </div>
+                  <div class="weeks" style="margin-top:10px"><span class="wl">Today</span><div class="lane today"><div class="track"></div><span class="gt" style="left:9%"></span><span class="gt" style="left:67%"></span></div></div>
+                  <div class="capt" style="margin-top:6px">Since July · vomiting by week, each dot one episode · ticks are the days you logged</div>
+                </div>
+              </div>
+              <div class="grainbar"><button class="g on" type="button" data-g="0">Today</button><button class="g" type="button" data-g="1">Week</button><button class="g" type="button" data-g="2">Season</button><span class="hint">tap the lane to expand</span></div>
+            </div>
+            <div class="seclabel" style="margin-top:4px">Signals</div>
+            <div class="acard"><div class="irow" style="padding:2px 0"><div class="rail safety"></div><div class="ibody"><p class="lead">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26</div></div></div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Nyx</span><span class="fab">+</span></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center">
+          <label class="toggle" style="margin:0"><input type="checkbox" id="rmtoggle2"> Reduce motion</label>
+        </div>
+        <p class="frame-cap"><b>Today → Week → Season, one instrument</b>
+          The box grows with one settle (the fold's unfold spring; ease on Android); the axis words stay put; today's
+          row is the constant node — it is the same lane at every grain, so the eye never re-finds itself. Collapse is
+          the fold's close: subtraction, no bounce. Reduced motion: crossfade. What the Long Lane tried to show in one
+          scrolling drawing is here as three calm ones the owner chooses between. The season grain keeps the Long Lane's
+          honesty (every episode a countable mark, the logged-days base) without its noise (no hour axis on a six-week
+          drawing).
+          <span class="lens"><b>Data-viz consult:</b> this is the almanac, entered from the top grain. <b>Dr. Chen's gate (DB-3) still applies</b> to the season grain's rose marks at display size; the safety card stays plain beneath at every grain.</span>
+          <span class="cost">one InstrumentZone owning three renderers (DayLane · WeekLanes · SeasonStrip) + a per-pet grain key in the fold store · LayoutAnimation only</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 02 -->
+  <section id="home">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The Home it sits in — the door at the top, or after Signals</h2></div>
+    <div class="col">
+      <p>
+        You asked whether Ask, if prominent, should sit toward the top. Two placements, side by side, otherwise
+        identical: the Board's rows for standing facts (you liked the "Ask Nyx's record" CTA; the door now carries the
+        one you liked more), the trial card's strip, and — per your "all logging through the FAB" — the Cerenia row drawn
+        as <em>context only</em>, no one-tap. That last change is a re-ruling of a shipped spec, so it is DC-4, not a
+        silent edit.
+      </p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span class="ownerav">D</span></div>
+          <div class="appbody">
+            <div class="door" style="margin-top:0"><svg class="wh" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="#00C2A8"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#00C2A8" stroke-width="1.2" stroke-dasharray="26 15"/><circle cx="12" cy="12" r="10" fill="none" stroke="#00C2A8" stroke-width="1" stroke-dasharray="40 23" opacity=".55"/></svg><span class="txt"><b>Tell Nyx's record, or ask it<span class="aichip">AI</span></b>What happened, what you noticed, what you want to know.</span></div>
+            <div class="instr">
+              <div class="ax"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>
+              <div class="plot"><div class="base"></div><div class="needle" style="left:6%"><b>7:05</b></div></div>
+              <div class="plot ghost" style="margin-top:10px"><span class="lab">yesterday</span><div class="base"></div><div class="d meal ghost" style="left:8%"></div><div class="d meal ghost" style="left:67%"></div><div class="d med ghost" style="left:78%"></div></div>
+              <div class="capt">Nothing yet today · last vomit Aug 26</div>
+            </div>
+            <div class="seclabel">Signals</div>
+            <div class="acard"><div class="irow" style="padding:2px 0"><div class="rail safety"></div><div class="ibody"><p class="lead">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26</div></div></div></div>
+            <div class="rows">
+              <div class="r"><span class="lab">Vomiting soon after eating<small>within 30 min of a meal</small></span><span class="num">8 / 8</span><span class="chev">›</span></div>
+              <div class="r"><span class="lab">Cerenia<small>day 6 of 14 · last dose yesterday 8:00pm</small></span><span class="num">6 / 14</span><span class="chev">›</span></div>
+            </div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Nyx</span><span class="fab">+</span></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>A — the door at the top</b> Directly under the header; the header pill retires (one door, not two).
+          Prominent, and honest at rest: two lines, the Whorl, the AI chip, no keyboard until tapped. <strong>The bypass class:</strong>
+          when an <em>unfolded</em> safety card is on screen it takes the top and the door follows it — safety leads by position
+          (S1) whatever else is prominent.
+          <span class="lens"><b>Dr. Chen:</b> prominence makes "should I worry" the daily question — the deflection must stay identical on the thousandth ask, and the recall chips are what keep the question mix honest. <b>Sam:</b> "not the thing I must get past to see the record" — at two lines it is not.</span>
+        </p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="hdr"><span class="who"><span class="av"></span>Nyx <small>▾</small></span><span class="ownerav">D</span></div>
+          <div class="appbody">
+            <div class="instr">
+              <div class="ax"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>
+              <div class="plot"><div class="base"></div><div class="needle" style="left:6%"><b>7:05</b></div></div>
+              <div class="plot ghost" style="margin-top:10px"><span class="lab">yesterday</span><div class="base"></div><div class="d meal ghost" style="left:8%"></div><div class="d meal ghost" style="left:67%"></div><div class="d med ghost" style="left:78%"></div></div>
+              <div class="capt">Nothing yet today · last vomit Aug 26</div>
+            </div>
+            <div class="seclabel">Signals</div>
+            <div class="acard"><div class="irow" style="padding:2px 0"><div class="rail safety"></div><div class="ibody"><p class="lead">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26</div></div></div></div>
+            <div class="door"><svg class="wh" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="#00C2A8"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#00C2A8" stroke-width="1.2" stroke-dasharray="26 15"/><circle cx="12" cy="12" r="10" fill="none" stroke="#00C2A8" stroke-width="1" stroke-dasharray="40 23" opacity=".55"/></svg><span class="txt"><b>Tell Nyx's record, or ask it<span class="aichip">AI</span></b>What happened, what you noticed, what you want to know.</span></div>
+            <div class="acard">
+              <div class="seclabel row">Turkey trial <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">Trial ›</span></div>
+              <div class="cellstrip" style="height:12px"><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="hollow"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i class="today"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i></div>
+              <div class="samp" style="margin-top:12px">Day 31 of 42 · meals on 29 of 31 days · 3 vomit days</div>
+            </div>
+            <div class="rows">
+              <div class="r"><span class="lab">Cerenia<small>day 6 of 14 · last dose yesterday 8:00pm</small></span><span class="num">6 / 14</span><span class="chev">›</span></div>
+            </div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Nyx</span><span class="fab">+</span></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>B — the door after Signals</b> The instrument and the safety card read first; the door sits where the
+          record's present tense is, above the trial strip; the header pill stays as a second way in. The med row is the
+          same in both: context, its count at the rail, the chevron to the medication — the one-tap confirm gone per
+          "all logging through the FAB."
+          <span class="lens"><b>The re-ruling this drawing implies (DC-4):</b> the med strip's one-tap confirm was ruled in B-614 D1 as a <em>confirmation</em>, not a second door ("a control that writes a row the app could already describe"); FAB-only logging retires it. Principle 2 (confirmation over entry) and Sam's grazer are the dissent.</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 03 -->
+  <section id="sheet">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The sheet that grows to full screen</h2></div>
+    <div class="col">
+      <p>
+        The bottom sheet is the door's first state, not its ceiling. It opens at half height with the composer and the
+        recall chips; it grows with the text; it becomes full screen on a drag, on the expand control, or the moment a
+        conversation has a second turn. Full screen is the built <code>/ask</code> screen — the same thread, the same answer
+        cards — presented from the sheet rather than the header. That is where a longer conversation, the vet rundown, and
+        any future history would live. <strong>Chat history is a ruling, not a layout:</strong> the Ask spec keeps no durable
+        transcript (D8; the T&amp;S lean, B-375), so "history" today means the current conversation. DC-3 asks whether that
+        changes.
+      </p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="sheet" style="margin-top:120px">
+              <div class="grab"></div>
+              <div class="field ph">Tell Nyx's record, or ask it…</div>
+              <div class="chiprow"><span class="chip">What's new since last night?</span><span class="chip">How many vomits this month?</span><span class="chip quiet">Vet visit rundown</span></div>
+              <div class="promise"><span style="width:6px;height:6px;border-radius:50%;background:#00C2A8;display:inline-block;margin-right:5px"></span>Answers use your logged data — including your notes, and photos when your question needs them.</div>
+              <div class="kb">K E Y B O A R D</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>1 — Half sheet</b> Home stays visible above it; the composer is three lines; chips are recall-only. A note saved here never opens the full screen — it commits with the R2 beat and the sheet closes.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="sheet" style="margin-top:20px">
+              <div class="grab"></div>
+              <div class="qb">when did Nyx last throw up, and was it near a meal?</div>
+              <div class="answer" style="margin-top:10px"><div class="h">Nyx last vomited on Aug 26 — 10 days ago, 25 minutes after breakfast.</div><div class="s">2 episodes in the last 4 weeks · 12 in the 4 before · counted from days you logged: 28 of 28 each</div><div class="prov">Open the event ›</div><div class="rc"><span style="width:6px;height:6px;border-radius:50%;background:#00C2A8;display:inline-block"></span>Counted from Nyx's record · worded by AI</div></div>
+              <div class="chiprow"><span class="chip">And before that?</span><span class="chip">Show all 14</span></div>
+              <div class="field ph" style="min-height:44px;margin-top:10px">Ask a follow-up…<span style="float:right;color:#737373">↗</span></div>
+              <div class="kb">K E Y B O A R D</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>2 — Grown</b> One answer in; the sheet took the height it needed; the follow-up composer shrinks to a line beneath the answer. The expand control is the ↗.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="fullask">
+              <div class="top"><span>‹ Home</span><b>Nyx's record</b><span>＋</span></div>
+              <div class="thread">
+                <div class="qb">when did Nyx last throw up, and was it near a meal?</div>
+                <div class="answer"><div class="h">Nyx last vomited on Aug 26 — 10 days ago, 25 minutes after breakfast.</div><div class="s">2 episodes in the last 4 weeks · 12 in the 4 before</div><div class="prov">Open the event ›</div></div>
+                <div class="qb">and before that?</div>
+                <div class="answer"><div class="h">Aug 19, 40 minutes after dinner — and Aug 8, in the night.</div><div class="s">The 3 most recent of 14 since July · all 8 timed episodes were within 30 min of a meal</div><div class="prov">Show all 14 ›</div><div class="rc"><span style="width:6px;height:6px;border-radius:50%;background:#00C2A8;display:inline-block"></span>Counted from Nyx's record · worded by AI</div></div>
+                <div class="chiprow"><span class="chip">Vet visit rundown</span><span class="chip">What did she eat before each?</span></div>
+              </div>
+              <div class="comp"><span style="flex:1">Ask a follow-up, or tell the record…</span><span style="width:22px;height:22px;border-radius:50%;background:#1B1A2E;color:#FFF;display:grid;place-items:center;font-size:12px">↑</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>3 — Full screen</b> The built <code>/ask</code> screen, reached from the sheet. The conversation survives
+          navigation (D8) and ends on background, idle, or ＋. If a durable history is ruled in (DC-3), it lives behind the
+          title here — never on Home.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 04 -->
+  <section id="trial">
+    <div class="sec-head"><span class="sec-num">04</span><h2>The trial calendar early, and the strip across time</h2></div>
+    <div class="col">
+      <p>
+        The calendar's cells are the trial's days, not the month's — so "early in the month" is not the empty case;
+        "early in the trial" is, and "no trial" is. Both are drawn. The season strip gains a horizontal scroll: the
+        thirteen most recent weeks fill the card and earlier weeks are one swipe left, the base and the trial rule
+        scrolling with them.
+      </p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="dateline">Tuesday, August 8<small>Day 3 of the turkey trial · 1 meal so far</small></div>
+            <div class="cells">
+              <div class="cell">6<span class="m"><i></i><i></i></span></div><div class="cell">7<span class="m"><i></i><i></i></span></div><div class="cell today">8<span class="m"><i></i></span></div><div class="cell future">9</div><div class="cell future">10</div><div class="cell future">11</div><div class="cell future">12</div>
+              <div class="cell future">13</div><div class="cell future">14</div><div class="cell future">15</div><div class="cell future">16</div><div class="cell future">17</div><div class="cell future">18</div><div class="cell future">19</div>
+              <div class="cell future">20</div><div class="cell future">21</div><div class="cell future">22</div><div class="cell future">23</div><div class="cell future">24</div><div class="cell future">25</div><div class="cell future">26</div>
+            </div>
+            <div class="samp" style="margin-top:6px">Turkey trial · day 3 of 42 · meals on 3 of 3 days · the first 3 weeks shown, 3 more to come</div>
+            <div class="annot ok">39 days to go, drawn as ground — the trial's shape is the promise</div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>Day 3 of 42</b> Mostly future cells, and honestly so: the empty grid <em>is</em> the trial's length, the thing
+          Jordan is carrying in his head. Three lived cells with dots, today outlined. The grid shows three weeks at a
+          time and pages; the caption says what is off-screen. Nothing green, nothing counted that has not happened.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="dateline">Saturday, September 5<small>Nothing logged yet</small></div>
+            <div class="cells">
+              <div class="cell">30<span class="m"><i></i><i></i></span></div><div class="cell">31<span class="m"><i></i><i></i></span></div><div class="cell">1<span class="m"><i></i><i></i></span><span class="p"></span></div><div class="cell">2<span class="m"><i></i></span></div><div class="cell">3<span class="m"><i></i><i></i></span></div><div class="cell">4<span class="m"><i></i><i></i></span></div><div class="cell today">5</div>
+            </div>
+            <div class="samp" style="margin-top:6px">This week · meals on 6 of 6 days · 1 vomit day</div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>No trial — the week strip</b> The same grammar, seven cells, today at the right (Retro's film strip). A vomit
+          day carries its pip; a day with no meal logged would be hollow. Never a month grid with 25 empty days.</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel row">Vomiting by week <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">All patterns ›</span></div>
+              <div class="hs">
+                <div class="edge"></div><span class="edgelab">◂ May</span>
+                <div class="inner">
+                  <div class="season">
+                    <div class="cols" style="grid-template-columns:repeat(21,1fr)">
+                      <div class="wk"><span class="base"><i></i><i></i><i class="off"></i><i></i><i class="off"></i><i></i><i></i></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i class="off"></i><i></i><i></i><i></i><i class="off"></i><i></i></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="u"></span></div>
+                      <div class="wk"><span class="base"><i></i><i></i><i></i><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span><span class="u"></span></div>
+                    </div>
+                    <div class="rule" style="left:66%"></div><span class="rulelab" style="left:67.5%;top:-2px">Turkey trial</span>
+                    <div class="mo" style="grid-template-columns:repeat(21,1fr)"><span>May</span><span></span><span></span><span></span><span>Jun</span><span></span><span></span><span></span><span></span><span>Jul</span><span></span><span></span><span></span><span>Aug</span><span></span><span></span><span></span><span></span><span>Sep</span><span></span><span></span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="samp">Since May · swipe left for earlier weeks · the ticks beneath are the days you logged</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>SeasonStrip, across time</b> The recent thirteen weeks fill the card; a fade at the left edge and a month
+          word say there is more; the base ticks and the trial rule scroll with the columns so a sparse May is drawn as
+          sparse, not as calm. Direct labels only on the max column and today's. A horizontal scroll is sanctioned here by
+          the app's own rule for browsing time with a visible "there's more" cue (B-146).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 05 -->
+  <section id="arrange">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Arrange Home — "build your own home", drawn</h2></div>
+    <div class="col" id="arrange-copy">
+      <p>
+        Your stretch idea, taken seriously by three lenses and a research pass over ten apps. The finding: in every mature
+        health home the owner arranges a <em>metric tray</em> while the system owns the composed page and the warning.
+        Apple Health lets you pin categories but Highlights cannot be disabled; Oura's Customize is a tray with a floor of
+        three; Fitbit replaces metrics in fixed slots; Garmin's fully customised home broke when the shell changed; Strava's
+        ungated promotion drew "let me reorder" as its first request; Things and Linear configure navigation, never the
+        landing page. Nobody lets a user pin or unpin a warning. The pet category's answer is full customisation; the
+        health-app answer is curation; the shape below is the hybrid between them.
+      </p>
+      <p>
+        <strong>A spine the system owns, never a toggle:</strong> the cross-pet banner, Signals (fold included), the Today
+        instrument, a live medication or trial strip while its course runs, the FAB. <strong>A tray the owner reorders and
+        hides:</strong> the week lanes, the season strip, the trial cells, weight, the composer door, the Patterns index.
+        <strong>The honesty rule:</strong> a tray module currently carrying a safety finding's receipt (the season strip under a
+        live chronicity card) is shown in the sheet but locked with the reason, and a hidden module that begins to carry one
+        comes back with a "Back because" line, the way a fold does. Dr. Chen's line: the operator silences the sound, never
+        selects whether the state clears. A hide is not a stated action the record may read (that would infer acknowledgement
+        from UI state); it is device-local, off the report, out of the engine.
+      </p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div>
+          <div class="appbody">
+            <div class="sheet" style="margin-top:0">
+              <div class="grab"></div>
+              <div class="seclabel row">Arrange Home <span class="door" style="border:0;padding:0;min-height:0;margin:0;font-size:10.5px;color:#0B7B6C;font-weight:500">Done</span></div>
+              <div class="arr">
+                <div class="it"><span class="h">≡</span><span class="lab">Today<small>the day instrument · yesterday beneath</small></span><span class="pin">ALWAYS</span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Signals<small>safety findings always show, and always first</small></span><span class="pin">ALWAYS</span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Tell or ask the record<small>the composer door</small></span><span class="tg"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Turkey trial<small>the 42 days</small></span><span class="tg"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">This week<small>seven lanes</small></span><span class="tg"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Vomiting by week<small>carrying "Vomiting has recurred…" · unlocks when it stands down</small></span><span class="pin">LOCKED</span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Weight<small>last Aug 30</small></span><span class="tg off"></span></div>
+                <div class="it"><span class="h">≡</span><span class="lab">Medications<small>Cerenia · day 6 of 14</small></span><span class="tg"></span></div>
+              </div>
+              <div class="promise">Drag to reorder. Hidden modules stay one tap away under All patterns. Reset to Culprit's order.</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>The Arrange sheet</b> The log sheet's shell; a list with drag handles and toggles; the spine shown but not
+          toggleable, labelled why; a module carrying a safety receipt shown but locked, with the reason; a footer to reset
+          to Culprit's order. The same module renders on Home and here (one component, never a Home-only copy), so the sheet
+          is a preview by construction. A pet with no trial renders the trial module's designed empty state, never a hole.
+          <span class="lens"><b>Engineering:</b> a typed module registry (each module = a model hook over an existing read + a renderer + a sizing contract; hidden modules' hooks never run) · the layout device-local in the fold store's shape, wiped by name (the synced per-pet table is a later ruling and would be the first per-pet preference table) · flag-off byte-identical · a spine guard proven by mutation. <b>Sizes:</b> reorder-only M · reorder + hide M+ · a gallery with add L · per-module settings XL. <b>The real cost is the spec and the QA matrix,</b> not the code: seven modules × six designed states, and a 54-cell device pass for hide.</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 06 -->
+  <section id="name">
+    <div class="sec-head"><span class="sec-num">06</span><h2>The name — a surface that takes notes and questions</h2></div>
+    <div class="col" id="name-copy">
+      <p>
+        "Ask" shipped as a placeholder (Ask spec D7) with one standing constraint from Dr. Chen and the Lawyer: no name
+        may imply a vet answers. Now the surface has two verbs, and your favourite CTA already names the object: <em>the
+        record</em>. The workshop's candidates are below, each written out as the four strings it has to work as — the
+        header pill, the Home door, the sheet title, the receipt line.
+      </p>
+    </div>
+    <div class="names" id="name-cards">
+      <div class="name rec"><p class="w">Ask · Nyx's record</p><div class="verdict">recommended — the AI verb keeps its name; the surface is titled by its object; the note is a plain verb</div>
+        <div class="strs"><span><b>Pill</b> Ask</span><span><b>Door</b> Tell Nyx's record, or ask it · <i style="font-style:normal;font-size:9px;font-weight:600;color:#0B7B6C;background:#E0FBF7;border-radius:4px;padding:1px 4px">AI</i></span><span><b>Sheet</b> Nyx's record</span><span><b>Verbs</b> Save note · Ask</span><span><b>Receipts</b> Saved to Nyx's record · 7:10am · what you noticed &nbsp;/&nbsp; Counted from Nyx's record · worded by AI</span></div>
+        Changes no shipped string; the note never reads as AI input; D7's constraint holds by construction. Sam: "I asked Culprit" and "I put it in Juniper's record" — said without embarrassment.</div>
+      <div class="name"><p class="w">Noticed</p><div class="verdict">strong as the note's receipt, weak as a pill</div>
+        <div class="strs"><span><b>Pill</b> Noticed</span><span><b>Door</b> Tell Nyx's record what you noticed, or ask it</span><span><b>Sheet</b> What you noticed</span><span><b>Verbs</b> Noticed · Ask</span></div>
+        Names the note's true clinical status — an owner-reported observation, the word Dr. Chen wants on the report. Past-tense label is unusual at seven characters; the AI half goes unnamed. Kept as the receipt line above.</div>
+      <div class="name"><p class="w">Notes</p><div class="verdict">diary drift; hides the delightful half</div>
+        <div class="strs"><span><b>Pill</b> Notes</span><span><b>Door</b> Add a note about Nyx, or ask</span><span><b>Sheet</b> Notes</span><span><b>Verbs</b> Write · Ask</span></div>
+        The mood-journal shape every lens vetoed; collides with the per-event notes field, which is a different thing (attached, not standalone); demotes Ask under a capture noun.</div>
+      <div class="name"><p class="w">Record</p><div class="verdict">right as a sheet title, wrong as a pill</div>
+        <div class="strs"><span><b>Pill</b> Record</span><span><b>Door</b> Tell Nyx's record, or ask it</span><span><b>Sheet</b> Nyx's record</span><span><b>Verbs</b> Tell · Ask</span></div>
+        As a pill it is a verb with a red dot (audio), and History already <em>is</em> the record — one thing with two names beside the tab bar. Survives as the object every string names.</div>
+      <div class="name"><p class="w">Tell</p><div class="verdict">needs its object; a pun the register cannot afford</div>
+        <div class="strs"><span><b>Pill</b> Tell</span><span><b>Door</b> Tell Nyx's record</span><span><b>Sheet</b> Tell</span><span><b>Verbs</b> Tell · Ask</span></div>
+        Alone it is "tell on" — beside a brand called Culprit that reads as cute. A pill reading Tell does not say what to tell.</div>
+      <div class="name"><p class="w">Whorl · Log · Notebook</p><div class="verdict">out</div>
+        <div class="strs"><span><b>Whorl</b> names the AI as a character (Ask spec §4 forbids; the metaphor rule) — it stays the <em>mark</em> on the Ask verb, never the word</span><span><b>Log</b> collides with the FAB, the second create door you ruled out</span><span><b>Notebook</b> eight characters, skeuomorphic, "Nyx's notebook" is a pet-brand line</span></div>
+        The field agrees: every capture surface at the design bar is named by its object (Journal, Notes, Tags, Entries), never by the AI; the persona nouns (Advisor, Coach, Max) are the ones carrying regulatory and trust risk.</div>
+    </div>
+  </section>
+
+  <!-- ================================================== 07 -->
+  <section id="briefs">
+    <div class="sec-head"><span class="sec-num">07</span><h2>The briefs</h2></div>
+    <div class="col"><p>Rule from the frames. DB-1…DB-5 from round 2 are superseded where these overlap; D1 and D6 from round 1 still stand on CUL-810.</p></div>
+
+    <div class="brief"><p class="bid">DC-1 — The instrument that expands (replaces DB-1)</p>
+      <p><strong>Deciding:</strong> the Home's hero and how the three grains relate.</p>
+      <p><strong>Options:</strong> <span class="rec">one InstrumentZone — condensed today + yesterday by default, expanding to the week and the season in place, the grain remembered per pet — recommended</span> · the three grains always stacked (no expand; taller Home) · today only, the week and season behind All patterns.</p>
+      <p><strong>Consequence:</strong> the Long Lane retires as a screen; its content is the season grain. DB-3's adversarial gate on rose marks at display size still applies to the season grain.</p>
+    </div>
+    <div class="brief"><p class="bid">DC-2 — The door at the top, or after Signals (extends DB-2)</p>
+      <p><strong>Deciding:</strong> where the composer door sits.</p>
+      <p><strong>Options:</strong> A at the top under the header, the header pill retired, an unfolded safety card taking the top when present · <span class="rec">B after Signals, above the trial strip, the header pill kept — recommended by Dr. Chen and Sam; A is drawn because you asked and is honest at two lines</span>.</p>
+      <p><strong>Consequence:</strong> A makes the door the first tappable thing on Home on a quiet morning; B keeps the record first. Either way the sheet, the chips and the free class are unchanged.</p>
+    </div>
+    <div class="brief"><p class="bid">DC-3 — Full screen, and chat history</p>
+      <p><strong>Deciding:</strong> whether the sheet grows to the built full screen (a layout call) and whether conversations persist (a T&amp;S ruling).</p>
+      <p><strong>Options:</strong> <span class="rec">the sheet grows to full-screen /ask on drag, expand, or a second turn; no durable history (Ask D8 as ruled; B-375 stays parked) — recommended</span> · full screen plus a persisted, deletable history behind the title (reopens D8, the §10 T&amp;S posture, the export and deletion cascade).</p>
+      <p><strong>Consequence:</strong> persistence is a schema-and-privacy track of its own; the layout here does not depend on it.</p>
+    </div>
+    <div class="brief"><p class="bid">DC-4 — All logging through the FAB (re-rules B-614 D1)</p>
+      <p><strong>Deciding:</strong> whether Home keeps any one-tap write outside the FAB.</p>
+      <p><strong>Options:</strong> FAB only — the med row becomes context (as drawn), the "Given now" confirm retires · <span class="rec">keep the one confirmation the spec already carved out — a control that writes a row the app could already describe (the med dose) — and add no others — recommended by Principle 2 and Sam's 9pm; the Designer is fine either way</span>.</p>
+      <p><strong>Consequence:</strong> "FAB only" is a Tier-2 edit to the med-strip spec (D1 C → A) and removes a shipped write path; "keep" leaves Home with exactly one confirm and zero forms.</p>
+    </div>
+    <div class="brief" id="dc5"><p class="bid">DC-5 — Arrange Home ("build your own home")</p>
+      <p><strong>Deciding:</strong> whether Home v2 gains owner-arranged modules, and in what shape.</p>
+      <p><strong>Options:</strong> (A) full build-your-own — a gallery, add, per-module settings (XL; the pet-category answer; the committee home) · <span class="rec">(B) the hybrid — a fixed spine (banner · Signals · Today · live strips · FAB) plus a reorder/hide tray of the drawn modules, device-local, flagged, built after round 3 settles the tray's default order — recommended: it buys what the idea is right about (one Home cannot fit every pet) without giving away what the health-app bar keeps (the system owns the page and the warning)</span> · (C) no configuration; the record arranges the stable module set (a trial promotes its cells, a course its strip, safety always first), the way Apple Weather goes rain-first.</p>
+      <p><strong>Consequence:</strong> (B) is M+ <em>after</em> the modules exist — a Home v2.1 issue that changes nothing in DC-1–DC-4; (C) costs nothing now and is where every lens started; (A) forecloses "the record drawn" as the thesis. <strong>The honest answer to "is this a bad, resource-intensive idea":</strong> a good instinct with an expensive default shape. Build the modules, let the record arrange them, and ship the tray only if dogfooding shows two real owners wanting two real orders.</p>
+    </div>
+    <div class="brief" id="dc6"><p class="bid">DC-6 — The name</p>
+      <p><strong>Deciding:</strong> what the two-verb surface is called on the pill, the door, and the sheet.</p>
+      <p><strong>Options:</strong> <span class="rec">(a) keep "Ask" as the AI verb's name; the composer is unnamed and titled by its object, "Nyx's record"; the note is a plain verb, "Save note", like every other free write — recommended: the CTA you liked already is the name, the note never reads as AI input, and D7's constraint holds by construction</span> · (b) rename the surface "Notes" and demote Ask to a verb inside it (diary drift; hides the delightful half) · (c) "Record" as the pill (collides with History; reads as a verb).</p>
+      <p><strong>Two rules for the spec when D7 closes:</strong> the note verb never gains a brand or a noun of its own (that is the diary), and the word "AI" appears as a chip and a receipt, never as a name.</p>
+      <p><strong>Consequence:</strong> one string on the header pill today; the door's copy; the sheet title; any store copy before public exposure (the D7 constraint).</p>
+    </div>
+    <div class="callout"><strong>Still open:</strong> D1 (is note capture the right feature — every frame here treats the note as the door's default verb) · D6 (verbatim-only; report by default vs toggle) · DB-3 (rose marks at display size, adversarial-gated) · DB-4 (the free class amendment to the Ask spec).</div>
+  </section>
+
+  <!-- ================================================== 08 -->
+  <section id="record">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Rounds 1 and 2, for the record</h2></div>
+    <div class="col">
+      <p><strong>Round 1</strong> (<code>13a06b5</code>): five directions on the same record — B′ "Since you last looked", D "The Open Page", E
+      "Ask-forward", C "The Briefing", A "The Register" — the note's whole life, Sam's and Jordan's frames, six briefs D1–D6.
+      You parked the sentence-led directions and asked for the record drawn. <strong>Round 2</strong> (<code>62a5feb</code>): three
+      consultants seated; three Homes that differ in kind — I The Board, II The Long Lane, III The Daybook — the Ask moment
+      as a motion frame ("the dot that reads", "Dots land"), WeekLanes / SeasonStrip / TrialCells at build detail, briefs
+      DB-1–DB-5. You kept the instrument, the motion, the trial card, the strip; found the Long Lane chaotic; asked for the
+      expand, the door at the top, a sheet that scales, the FAB question, Arrange Home, and the name.</p>
+    </div>
+    <h3>What every lens still vetoes</h3>
+    <ul class="veto">
+      <li>Rotating cards to look alive; any entrance choreography on the 7am open</li>
+      <li>A chat box as the hero; the model routing intent; streaming text on Home</li>
+      <li>A score, a ring, a dial, a streak, a greeting, a green week, a days-since counter</li>
+      <li>A chart with no denominator drawn; a bar height for a count; a line joining weeks; a heatmap that reads as a verdict</li>
+      <li>A note re-quoted as a Home card, summarised, trended, or counted</li>
+      <li>The LLM writing anything without the owner's tap</li>
+      <li>A meter or lock anywhere on Home</li>
+      <li>A haptic while waiting, on a deflection, on a cap, or on anything safety-shaped</li>
+      <li>A sparkle glyph; a glow; a breathing composer; night ground on Home</li>
+      <li>Hiding, muting, or moving a safety finding below the first viewport — by the owner or the system</li>
+      <li>A second composer behind the header pill; anything near the FAB</li>
+      <li>Silently filing an unwitnessed event to the active pet</li>
+    </ul>
+  </section>
+</div>
+<script>
+(function () {
+  var x = document.getElementById('xinstr'), frame = document.getElementById('xframe');
+  var rm = document.getElementById('rmtoggle2');
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.grainbar .g'));
+  function setG(g) {
+    x.setAttribute('data-g', String(g));
+    [0,1,2].forEach(function (i) { document.getElementById('g' + i).classList.toggle('on', i === g); });
+    chips.forEach(function (c) { c.classList.toggle('on', Number(c.getAttribute('data-g')) === g); });
+  }
+  x.addEventListener('click', function () { setG((Number(x.getAttribute('data-g')) + 1) % 3); });
+  x.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setG((Number(x.getAttribute('data-g')) + 1) % 3); } });
+  chips.forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); setG(Number(c.getAttribute('data-g'))); }); });
+  function applyRm() { frame.classList.toggle('rm', rm.checked); }
+  rm.addEventListener('change', applyRm);
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { rm.checked = true; applyRm(); }
+})();
+</script>
