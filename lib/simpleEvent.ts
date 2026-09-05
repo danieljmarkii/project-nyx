@@ -27,7 +27,7 @@ import { getDb } from './db';
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { triggerSignalRegenDebounced } from './signal';
-import { triggerVomitAnalysis, triggerStoolAnalysis } from './analysis';
+import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain } from './analysis';
 import { uploadPhoto, compressForUpload, persistCapture } from './storage';
 import { uuid, OccurredConfidence } from './utils';
 
@@ -160,10 +160,18 @@ async function attachPhotoBestEffort(
     const isVomit = eventType === 'vomit';
     // Both stool event_type values (formed + loose) carry a photographed read.
     const isStool = eventType === 'stool_normal' || eventType === 'diarrhea';
+    // CUL-801 — claim this event's first read BEFORE the compress/upload starts.
+    // The claim is taken SYNCHRONOUSLY, inside the await this function's caller
+    // is already holding, so it is in place before insertSimpleEvent resolves and
+    // the incident screen (CUL-800) can never mount into a gap ahead of it. A
+    // screen that mounts mid-upload then awaits this chain instead of starting a
+    // second read. Photo events with no per-incident read hold no claim.
+    const readClaim = isVomit || isStool ? claimAnalysisChain(eventId) : null;
     // Async so it doesn't delay the caller's completion beat. Self-contained: a
     // failure here is logged and dropped (the local row stays synced=0 and the
     // queue retries; the lazy detail-open trigger analyzes once the row is up).
     void (async () => {
+      let invoked = false;
       try {
         const uploadUri = await compressForUpload(attachment.uri, attachment.width, attachment.height);
         await uploadPhoto('nyx-event-attachments', storagePath, uploadUri);
@@ -178,10 +186,26 @@ async function attachPhotoBestEffort(
         // returns errors rather than throwing) — the trap B-027 documented.
         if (attErr) { console.warn('[insertSimpleEvent] event_attachment upsert failed:', attErr.message); return; }
         await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
-        if (isVomit) triggerVomitAnalysis(eventId).catch(() => {});
-        else if (isStool) triggerStoolAnalysis(eventId).catch(() => {});
+        // AWAITED, where this was fire-and-forget: the claim has to settle on the
+        // invoke's real outcome, because that is what releases a waiting incident
+        // screen — at the right moment, and with a truthful flag. The trigger
+        // itself never throws (it returns { error }), and nothing downstream of
+        // here waits on this IIFE, so the await costs the owner nothing.
+        if (isVomit || isStool) {
+          const { error: readErr } = isVomit
+            ? await triggerVomitAnalysis(eventId)
+            : await triggerStoolAnalysis(eventId);
+          if (readErr) console.warn('[insertSimpleEvent] per-incident read trigger failed:', readErr);
+          invoked = !readErr;
+        }
       } catch (e) {
         console.error('[insertSimpleEvent] photo upload failed:', e);
+      } finally {
+        // Every exit settles — including the attErr early return and the catch.
+        // A chain that died before its read settles FALSE, which is what lets a
+        // waiting screen trigger its own rather than watch for a row nothing is
+        // going to write.
+        readClaim?.settle(invoked);
       }
     })();
   } catch (e) {

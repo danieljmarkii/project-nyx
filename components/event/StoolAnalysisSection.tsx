@@ -28,6 +28,7 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
   triggerStoolAnalysis,
+  awaitAnalysisChain,
   watchAnalysisRow,
   saveStoolFieldEdits,
   deriveEditedStoolFields,
@@ -140,12 +141,27 @@ export function StoolAnalysisSection(
       setRow(first);
       return;
     }
-    // No row yet, or a stale 'pending' — (re)trigger and watch.
+    // No row yet, or a stale 'pending'. CUL-801 — the LOG path may already own
+    // this event's first read (it claims before its upload starts), so await that
+    // chain rather than starting a second one: two invocations burn two units of
+    // the daily cap and race each other's write-back, and a second call that
+    // crosses the cap can write 'capped' over the first call's real read.
+    // awaitAnalysisChain resolves false when no chain is outstanding, and false
+    // when one settled WITHOUT ever invoking (its upload failed) — then, and only
+    // then, we trigger, so a suppressed trigger can never leave this incident
+    // with no read and no escalation.
     setRow(first ?? null);
     setWorking(true);
-    const { error } = await triggerStoolAnalysis(eventId);
+    const readAlreadyRunning = await awaitAnalysisChain(eventId);
     if (cancelled.current) return;
-    if (error) console.warn('[stool-analysis] trigger error:', error);
+    if (!readAlreadyRunning) {
+      const { error } = await triggerStoolAnalysis(eventId);
+      if (cancelled.current) return;
+      if (error) console.warn('[stool-analysis] trigger error:', error);
+    }
+    // Either way the realtime watch carries the result. Its fallback schedule
+    // starts HERE, after the chain settles, so a slow upload no longer eats the
+    // give-up budget.
     beginWatch();
   }, [eventId, fetchRow, beginWatch]);
 
