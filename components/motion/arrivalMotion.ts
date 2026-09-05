@@ -331,6 +331,14 @@ export function useIncidentArrival({
   // Seeded from the first render's own value, so a read that was already in the record when
   // the screen opened is never an arrival — `wasAwaiting` starts false and this effect's
   // guard never opens.
+  //
+  // Declared BEFORE the identity effect, which matters only for a host that re-keys this
+  // hook IN PLACE. Both of today's call sites pass `identity: eventId` on a screen that
+  // `router.push`es a fresh instance per id, so the two never change in one commit. If a
+  // future host does re-key in place — an incident pager, say — this effect would run first
+  // and could open on the OLD `wasAwaiting` against the new incident's value; the identity
+  // effect below then stops and resets it in the same batch, before any native frame, so it
+  // self-heals rather than misfiring visibly. Reorder the two if that stops being true.
   const wasAwaiting = useRef(awaitingRead);
   useEffect(() => {
     const was = wasAwaiting.current;
