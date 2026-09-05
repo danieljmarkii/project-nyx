@@ -1,0 +1,534 @@
+<title>Home v2 Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* Home v2 — click-through prototype (2026-09-05). The recommended composite from mock round 3
+     on Nyx's record: the instrument that expands · Signals (fold) · the composer door + sheet
+     (the dot that reads) · the trial cells · the Patterns index · Arrange Home · the FAB.
+     Every state is in-memory; nothing is real. Tokens from constants/theme.ts. */
+  :root { --paper:#F5F4F9; --paper-2:#FFFFFF; --ink:#1B1A2E; --ink-2:#5F5C7A; --ink-3:#8B87A8; --rule:#DEDCE9; --teal:#00C2A8; --teal-ink:#0B7B6C; --teal-wash:#E0FBF7; --rose:#F43F5E; --rose-ink:#B4123B;
+    --serif:"Newsreader", ui-serif, Charter, Georgia, serif; --sans:"Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --paper:#13112E; --paper-2:#1D1A42; --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6; --rule:rgba(196,190,255,0.2); --teal-ink:#4FD8C4; --teal-wash:rgba(0,194,168,0.14); } }
+  :root[data-theme="dark"] { --paper:#13112E; --paper-2:#1D1A42; --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6; --rule:rgba(196,190,255,0.2); --teal-ink:#4FD8C4; --teal-wash:rgba(0,194,168,0.14); }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1080px; margin:0 auto; padding:32px 20px 64px; display:grid; grid-template-columns: 1fr minmax(0, 420px) 1fr; gap: 24px; align-items:start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } .side { order: 2; } }
+  .side { font-size:14px; color:var(--ink-2); }
+  .side h1 { font-family:var(--serif); font-weight:500; font-size:26px; line-height:1.15; margin:0 0 8px; color:var(--ink); }
+  .side p { margin:0 0 12px; }
+  .side .eyebrow { font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); margin-bottom:10px; }
+  .side ul { padding-left:18px; margin:0 0 14px; }
+  .side li { margin-bottom:6px; }
+  .side b { color:var(--ink); font-weight:600; }
+  .ctl { display:grid; gap:8px; margin-top:14px; border-top:1px solid var(--rule); padding-top:14px; }
+  .ctl label { display:flex; align-items:center; gap:8px; font-size:13.5px; }
+  .ctl input { accent-color:#00C2A8; }
+  .seg { display:inline-flex; border:1px solid var(--rule); border-radius:999px; overflow:hidden; }
+  .seg button { border:0; background:none; padding:6px 12px; font-family:inherit; font-size:12.5px; color:var(--ink-2); cursor:pointer; }
+  .seg button.on { background:var(--teal-wash); color:var(--teal-ink); font-weight:600; }
+  .btn { border:1px solid var(--rule); background:var(--paper-2); color:var(--ink-2); border-radius:999px; padding:6px 12px; font-family:inherit; font-size:12.5px; cursor:pointer; }
+  .btn:focus-visible, .seg button:focus-visible { outline:2px solid var(--teal-ink); outline-offset:2px; }
+  /* ── the phone ── */
+  .phone { width:390px; max-width:100%; height:800px; margin:0 auto; background:#FAFAFA; border-radius:44px; border:1px solid rgba(27,26,46,.18); box-shadow:0 24px 60px rgba(19,17,46,.2); position:relative; overflow:hidden; color:#0A0A0A; font-family:var(--sans); font-variant-numeric:tabular-nums; }
+  .notch { position:absolute; left:50%; top:12px; transform:translateX(-50%); width:110px; height:26px; background:#0B0B12; border-radius:14px; z-index:5; }
+  .screen { position:absolute; inset:0; display:flex; flex-direction:column; }
+  .hdr { padding:50px 18px 10px; display:flex; align-items:center; justify-content:space-between; background:#FFFFFF; border-bottom:1px solid #EFEFEF; }
+  .hdr .who { display:flex; align-items:center; gap:10px; font-weight:600; font-size:16px; }
+  .hdr .av { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#C9C4E8,#8B87A8); }
+  .hdr .who small { color:#737373; font-weight:500; }
+  .hdr .right { display:flex; align-items:center; gap:8px; }
+  .askpill { display:inline-flex; align-items:center; gap:6px; border:1px solid #D4D4D4; border-radius:999px; padding:5px 11px; font-size:12.5px; font-weight:600; background:#FFF; cursor:pointer; font-family:inherit; }
+  .askpill i { width:7px; height:7px; border-radius:50%; background:#00C2A8; display:inline-block; }
+  .ownerav { width:26px; height:26px; border-radius:50%; background:#E5E5E5; display:grid; place-items:center; font-size:11px; font-weight:600; color:#525252; }
+  .more { border:0; background:none; font-size:18px; color:#737373; cursor:pointer; padding:0 2px; font-family:inherit; }
+  .body { flex:1; overflow-y:auto; padding:12px 14px 110px; display:grid; gap:10px; align-content:start; }
+  .acard { background:#FFF; border-radius:16px; padding:12px 14px 10px; box-shadow:0 2px 10px rgba(19,17,46,.05); }
+  .seclabel { font-size:10.5px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; color:#737373; margin-bottom:6px; display:flex; justify-content:space-between; align-items:baseline; }
+  .seclabel .door { text-transform:none; letter-spacing:0; font-weight:500; color:#0B7B6C; font-size:11px; cursor:pointer; }
+  .tap { cursor:pointer; }
+  /* instrument */
+  .instr { padding:6px 4px 2px; }
+  .ax { display:flex; justify-content:space-between; font-size:10px; color:#737373; padding:0 2px; margin-bottom:6px; }
+  .plot { position:relative; height:24px; }
+  .base { position:absolute; left:0; right:0; top:11px; height:1px; background:#D4D4D4; }
+  .plot.ghost .base { border-top:1px dashed #E5E5E5; background:none; }
+  .needle { position:absolute; top:-6px; bottom:-6px; width:2px; background:#00C2A8; border-radius:1px; transition:left 400ms; }
+  .needle b { position:absolute; top:-14px; left:5px; font-size:10px; color:#0B7B6C; font-weight:600; white-space:nowrap; }
+  .d { position:absolute; width:10px; height:10px; border-radius:50%; transform:translate(-50%,-50%); border:1.5px solid #FFF; top:11px; transition:transform 320ms cubic-bezier(.3,1.18,.5,1), opacity 150ms; }
+  .d.meal{background:#00C2A8} .d.sym{background:#F43F5E} .d.med{background:#5B7A9E} .d.note{background:#FFF;border:1.5px solid #6B6890}
+  .d.ghost{opacity:.32} .d.pre{transform:translate(-50%,-50%) scale(.4);opacity:0}
+  .lab { font-size:9.5px; color:#A3A3A3; position:absolute; right:0; top:-13px; }
+  .capt { font-size:12.5px; color:#525252; margin-top:14px; }
+  .xinstr { position:relative; overflow:hidden; transition:height 380ms cubic-bezier(.3,1.18,.5,1); }
+  .xinstr[data-g="0"]{height:96px} .xinstr[data-g="1"]{height:214px} .xinstr[data-g="2"]{height:236px}
+  .grain { position:absolute; left:0; right:0; top:0; opacity:0; transition:opacity 200ms; pointer-events:none; }
+  .grain.on { opacity:1; pointer-events:auto; }
+  .grainbar { display:flex; gap:6px; margin-top:8px; align-items:center; }
+  .grainbar .g { font-size:11px; font-weight:600; color:#737373; border:1px solid #EAEAEA; border-radius:999px; padding:4px 10px; background:#FFF; cursor:pointer; font-family:inherit; }
+  .grainbar .g.on { color:#0B7B6C; background:#E0FBF7; border-color:rgba(11,123,108,.3); }
+  .grainbar .hint { margin-left:auto; font-size:10px; color:#A3A3A3; }
+  .weeks { display:grid; grid-template-columns:36px 1fr; row-gap:3px; align-items:center; }
+  .weeks .wl { font-size:10px; color:#737373; } .weeks .wl.today { color:#0A0A0A; font-weight:600; }
+  .lane { position:relative; height:18px; }
+  .lane .track { position:absolute; left:0; right:0; top:8px; height:1px; background:#E5E5E5; }
+  .lane.today .track { height:1.5px; background:#C9C9C9; }
+  .lane.nolog .track { border-top:1px dashed #E0E0E0; background:none; height:0; }
+  .lane .nl { position:absolute; right:0; top:1px; font-size:9px; color:#B4B4B4; }
+  .lane .d { width:8px; height:8px; top:9px; }
+  .lane .gt { position:absolute; top:5px; width:1px; height:8px; background:#C9C9C9; }
+  .season { position:relative; }
+  .season .cols { display:grid; grid-template-columns:repeat(11,1fr); gap:4px; align-items:end; height:78px; }
+  .season .wk { display:flex; flex-direction:column-reverse; align-items:center; gap:2px; }
+  .season .u { width:5px; height:5px; border-radius:50%; background:#F43F5E; }
+  .season .bs { display:flex; gap:1px; margin-top:3px; } .season .bs i { width:2px; height:3px; background:#C9C9C9; display:block; } .season .bs i.off { background:transparent; }
+  .season .rule { position:absolute; top:0; bottom:16px; border-left:1px dashed #0B7B6C; }
+  .season .rulelab { position:absolute; font-size:9px; color:#0B7B6C; white-space:nowrap; }
+  .season .mo { display:grid; grid-template-columns:repeat(11,1fr); font-size:9px; color:#A3A3A3; margin-top:3px; }
+  .season .mx { position:absolute; font-size:9.5px; color:#0A0A0A; font-weight:600; transform:translateX(-50%); }
+  /* signals */
+  .irow { display:flex; gap:10px; padding:4px 0; }
+  .rail { width:3px; border-radius:2px; flex-shrink:0; align-self:stretch; background:#F43F5E; opacity:.85; }
+  .rail.insight { background:#00C2A8; }
+  .lead { font-family:var(--serif); font-size:20px; line-height:1.3; letter-spacing:-.012em; margin:0 0 6px; }
+  .samp { font-size:11px; color:#737373; margin-top:5px; }
+  .hintrow { display:flex; gap:16px; margin-top:8px; }
+  .hintrow button { border:0; background:none; padding:0; font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; }
+  .hintrow .why { color:#0B7B6C; } .hintrow .fold { color:#737373; }
+  .script { margin-top:8px; border:1px solid #EAEAEA; border-radius:8px; padding:8px 10px; display:grid; gap:4px; font-size:11.5px; color:#525252; }
+  .script b { color:#0A0A0A; font-weight:500; }
+  .script div { display:grid; grid-template-columns:80px 1fr; gap:8px; }
+  .foldrow { display:flex; align-items:center; gap:10px; min-height:44px; cursor:pointer; }
+  .foldrow .rail { height:16px; align-self:center; }
+  .foldrow .ft { flex:1; font-size:13px; line-height:16px; color:#525252; }
+  .foldrow .ft b { display:block; color:#0A0A0A; font-weight:500; }
+  .foldrow .ft .ask { display:block; color:#0A0A0A; }
+  .foldrow .ft .cnt { display:block; font-size:11px; color:#737373; }
+  .foldrow .chev { color:#A3A3A3; }
+  .back { font-size:11px; color:#737373; border-top:1px solid #EAEAEA; padding-top:6px; margin-top:4px; }
+  .rows .r { display:flex; align-items:center; gap:10px; min-height:46px; padding:6px 2px; border-top:1px solid #EAEAEA; font-size:13.5px; cursor:pointer; }
+  .rows .r:first-child { border-top:0; }
+  .r .l { flex:1; } .r .l small { display:block; font-size:11px; color:#737373; }
+  .r .n { white-space:nowrap; } .r .chev { color:#A3A3A3; }
+  /* door */
+  .doorc { display:flex; gap:10px; border:1px solid #E5E5E5; border-radius:14px; padding:11px 13px; background:#FFF; min-height:66px; font-size:13px; color:#8B8B8B; cursor:pointer; align-items:flex-start; }
+  .doorc .wh { width:22px; height:22px; flex-shrink:0; margin-top:1px; }
+  .doorc .t { flex:1; line-height:1.4; } .doorc .t b { display:block; color:#0A0A0A; font-weight:500; font-size:13px; margin-bottom:1px; }
+  .aichip { font-size:9px; font-weight:600; letter-spacing:.08em; color:#0B7B6C; background:#E0FBF7; border-radius:4px; padding:1px 4px; margin-left:6px; vertical-align:1px; }
+  /* trial cells */
+  .cellstrip { display:flex; gap:2px; margin-top:8px; height:12px; }
+  .cellstrip i { flex:1; display:block; border-radius:1px; background:#E0FBF7; position:relative; }
+  .cellstrip i.hollow { background:transparent; border:1px solid #C9C9C9; } .cellstrip i.future { background:#F0F0F0; } .cellstrip i.today { outline:1.5px solid #0A0A0A; outline-offset:-1px; }
+  .cellstrip i.off::after { content:""; position:absolute; left:50%; bottom:-5px; width:3px; height:3px; background:#F43F5E; transform:translateX(-50%); }
+  /* tab bar + fab */
+  .tabbar { position:absolute; left:0; right:0; bottom:0; background:#FFF; border-top:1px solid #E5E5E5; display:flex; justify-content:space-around; align-items:center; padding:10px 8px 24px; font-size:10.5px; color:#737373; font-weight:500; }
+  .tabbar button { border:0; background:none; font-family:inherit; font-size:10.5px; color:#737373; font-weight:500; cursor:pointer; display:grid; gap:2px; justify-items:center; }
+  .tabbar button.on { color:#0A0A0A; font-weight:600; }
+  .tabbar .ico { width:20px; height:20px; border-radius:6px; background:#EFEFEF; } .tabbar button.on .ico { background:#1B1A2E; }
+  .fab { position:absolute; right:18px; bottom:76px; width:52px; height:52px; border-radius:50%; background:#1B1A2E; color:#FFF; display:grid; place-items:center; font-size:26px; box-shadow:0 8px 18px rgba(19,17,46,.28); border:0; cursor:pointer; z-index:4; font-family:inherit; }
+  /* toast + beat */
+  .beat { position:absolute; left:14px; right:14px; bottom:140px; background:#1B1A2E; color:#FFF; border-radius:14px; padding:11px 14px; font-size:13px; display:flex; justify-content:space-between; align-items:center; opacity:0; transform:translateY(8px); transition:opacity 180ms, transform 220ms cubic-bezier(.215,.61,.355,1); pointer-events:none; z-index:6; }
+  .beat.on { opacity:1; transform:none; pointer-events:auto; }
+  .beat small { display:block; color:#C9C4E8; font-size:11px; }
+  .beat .undo { color:#4FD8C4; font-weight:600; font-size:12px; border:0; background:none; font-family:inherit; cursor:pointer; }
+  .toast { position:absolute; left:50%; bottom:150px; transform:translateX(-50%); background:#FFF; border:1px solid #E5E5E5; border-radius:999px; padding:6px 12px; font-size:12px; color:#525252; opacity:0; transition:opacity 150ms; pointer-events:none; z-index:6; white-space:nowrap; }
+  .toast.on { opacity:1; }
+  /* overlays: sheet, picker, arrange, full */
+  .scrim { position:absolute; inset:0; background:rgba(19,17,46,.28); opacity:0; transition:opacity 200ms; pointer-events:none; z-index:7; }
+  .scrim.on { opacity:1; pointer-events:auto; }
+  .sheet { position:absolute; left:0; right:0; bottom:0; background:#FFF; border-radius:22px 22px 0 0; padding:10px 16px 18px; box-shadow:0 -6px 24px rgba(19,17,46,.12); transform:translateY(105%); transition:transform 300ms cubic-bezier(.215,.61,.355,1); z-index:8; max-height:92%; display:flex; flex-direction:column; }
+  .sheet.on { transform:none; }
+  .sheet.full { border-radius:0; max-height:100%; top:0; padding-top:50px; }
+  .grab { width:36px; height:4px; border-radius:2px; background:#E0E0E0; margin:0 auto 10px; flex-shrink:0; }
+  .sheet .stitle { display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#525252; margin-bottom:8px; }
+  .sheet .stitle b { font-weight:600; color:#0A0A0A; font-size:14px; }
+  .sheet .stitle button { border:0; background:none; font-family:inherit; font-size:13px; color:#0B7B6C; cursor:pointer; padding:0; }
+  .thread { flex:1; overflow-y:auto; display:grid; gap:10px; align-content:start; padding-bottom:6px; }
+  .qb { justify-self:end; max-width:86%; background:#F0EFF5; border-radius:14px 14px 4px 14px; padding:8px 12px; font-size:13px; }
+  .field { min-height:88px; border-radius:10px; background:#F7F6FA; padding:10px 12px; font-size:14px; line-height:1.45; border:1px solid transparent; font-family:inherit; width:100%; resize:none; color:#0A0A0A; outline:none; }
+  .field:focus { border-color:#C9C9C9; background:#FFF; }
+  .field::placeholder { color:#8B8B8B; }
+  .verbs { display:flex; gap:8px; margin-top:10px; align-items:center; min-height:34px; }
+  .pill { font-size:12.5px; font-weight:600; border-radius:999px; padding:8px 14px; display:inline-flex; align-items:center; gap:7px; border:0; font-family:inherit; cursor:pointer; opacity:0; transition:opacity 150ms; pointer-events:none; }
+  .pill.show { opacity:1; pointer-events:auto; }
+  .pill.save { background:#1B1A2E; color:#FFF; } .pill.ask { background:#E0FBF7; color:#0B7B6C; }
+  .pill.ask i { width:8px; height:8px; border-radius:50%; background:#00C2A8; display:inline-block; }
+  .pill.ghost { color:#525252; border:1px solid #E5E5E5; background:#FFF; opacity:1; pointer-events:auto; }
+  .exp { margin-left:auto; border:0; background:none; font-family:inherit; font-size:14px; color:#737373; cursor:pointer; }
+  .chiprow { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .chip { font-size:12px; font-weight:600; color:#0B7B6C; background:#E0FBF7; border:1px solid rgba(11,123,108,.25); border-radius:999px; padding:5px 11px; cursor:pointer; font-family:inherit; }
+  .chip.quiet { color:#525252; background:#F5F5F5; border-color:#EAEAEA; font-weight:500; }
+  .promise { font-size:11px; color:#737373; margin-top:8px; }
+  .capline { font-size:11.5px; color:#525252; background:#F7F6FA; border-radius:8px; padding:8px 10px; margin-top:8px; }
+  .kb { margin:10px -16px -18px; height:120px; background:#E9E8EE; display:grid; place-items:center; font-size:10px; color:#8B8B8B; letter-spacing:.2em; flex-shrink:0; }
+  /* the dot that reads */
+  .slot { position:relative; min-height:64px; }
+  .mdot { position:absolute; width:9px; height:9px; border-radius:50%; background:#00C2A8; z-index:3; transition:transform 260ms cubic-bezier(.215,.61,.355,1), opacity 150ms; }
+  .whorl { position:absolute; left:50%; top:50%; width:48px; height:48px; transform:translate(-50%,-50%); opacity:0; transition:opacity 150ms; }
+  .whorl circle { fill:none; stroke:#00C2A8; stroke-width:1.4; stroke-dasharray:100; stroke-dashoffset:100; transition:stroke-dashoffset 400ms ease-out; transform-origin:50% 50%; }
+  .whorl.on { opacity:1; } .whorl.on circle { stroke-dashoffset:0; }
+  .whorl.on circle:nth-child(1){transition-delay:0ms;animation:spin 9s linear infinite} .whorl.on circle:nth-child(2){transition-delay:60ms;animation:spin 14s linear infinite reverse} .whorl.on circle:nth-child(3){transition-delay:120ms;animation:spin 19s linear infinite} .whorl.on circle:nth-child(4){transition-delay:180ms;animation:spin 25s linear infinite reverse}
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .skel { display:grid; gap:7px; opacity:0; transition:opacity 150ms; padding-top:52px; } .skel i { display:block; height:10px; border-radius:5px; background:#EEEDF3; } .skel.on { opacity:1; }
+  .reading { font-size:11px; color:#737373; text-align:center; opacity:0; transition:opacity 150ms; }
+  .ans { position:relative; padding-left:13px; overflow:hidden; max-height:0; transition:max-height 380ms cubic-bezier(.3,1.18,.5,1); }
+  .ans .arail { position:absolute; left:0; top:0; bottom:0; width:3px; border-radius:2px; background:#00C2A8; transform:scaleY(0); transform-origin:top; transition:transform 160ms cubic-bezier(.215,.61,.355,1); }
+  .ans .abody { opacity:0; transform:translateY(-8px); transition:opacity 300ms, transform 300ms cubic-bezier(.215,.61,.355,1); transition-delay:120ms; }
+  .ans .later { opacity:0; transition:opacity 200ms; transition-delay:420ms; }
+  .ans.on { max-height:320px; } .ans.on .arail { transform:scaleY(1); } .ans.on .abody { opacity:1; transform:none; } .ans.on .later { opacity:1; }
+  .ah { font-family:var(--serif); font-size:18px; line-height:1.3; } .as { font-size:11.5px; color:#525252; margin-top:4px; } .aprov { font-size:11px; color:#0B7B6C; font-weight:600; margin-top:6px; cursor:pointer; }
+  .arc { font-size:10.5px; color:#737373; margin-top:6px; display:flex; align-items:center; gap:5px; } .arc i { width:6px; height:6px; border-radius:50%; background:#00C2A8; display:inline-block; }
+  .deflect { border-left:3px solid #A3A3A3; }
+  /* picker */
+  .picker { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:6px; }
+  .tile { border:1px solid #EAEAEA; border-radius:14px; padding:14px 6px 10px; text-align:center; font-size:12px; font-weight:500; cursor:pointer; background:#FFF; font-family:inherit; display:grid; gap:6px; justify-items:center; }
+  .tile .g { width:22px; height:22px; border-radius:50%; } .tile .g.meal{background:#00C2A8} .tile .g.sym{background:#F43F5E} .tile .g.med{background:#5B7A9E} .tile .g.note{background:#FFF;border:2px solid #6B6890} .tile .g.o{background:#C9C9C9}
+  /* arrange */
+  .arr .it { display:flex; align-items:center; gap:10px; padding:10px 2px; border-top:1px solid #EAEAEA; font-size:13px; }
+  .arr .it:first-child { border-top:0; }
+  .arr .lab { flex:1; } .arr .lab small { display:block; font-size:10.5px; color:#737373; }
+  .arr .pin { font-size:9px; font-weight:600; letter-spacing:.08em; color:#737373; background:#F5F5F5; border-radius:4px; padding:2px 6px; }
+  .arr .mv { display:flex; gap:2px; } .arr .mv button { border:1px solid #EAEAEA; background:#FFF; border-radius:6px; width:26px; height:24px; font-size:11px; cursor:pointer; color:#525252; font-family:inherit; }
+  .arr .mv button:disabled { opacity:.35; cursor:default; }
+  .tg { width:32px; height:19px; border-radius:999px; background:#00C2A8; position:relative; border:0; cursor:pointer; flex-shrink:0; }
+  .tg::after { content:""; position:absolute; right:2px; top:2px; width:15px; height:15px; border-radius:50%; background:#FFF; transition:left 150ms, right 150ms; }
+  .tg.off { background:#D4D4D4; } .tg.off::after { right:auto; left:2px; }
+  /* history screen */
+  .hist .row { display:flex; gap:10px; padding:10px 0; border-top:1px solid #EAEAEA; font-size:13px; align-items:flex-start; }
+  .hist .row:first-child { border-top:0; }
+  .hist .row .d { position:static; transform:none; width:10px; height:10px; margin-top:5px; }
+  .hist .row .t { flex:1; } .hist .row .t small { display:block; color:#737373; font-size:11px; }
+  .hist .row .tm { color:#737373; font-size:11px; white-space:nowrap; }
+  .reduce .xinstr, .reduce .sheet, .reduce .mdot, .reduce .ans, .reduce .ans *, .reduce .d, .reduce .beat, .reduce .whorl, .reduce .whorl circle, .reduce .needle { transition-duration:120ms !important; transition-delay:0ms !important; animation:none !important; }
+  .reduce .ans .arail { transform:scaleY(1) !important; }
+  .reduce .d.pre { transform:translate(-50%,-50%) !important; }
+  @media (prefers-reduced-motion: reduce) { .whorl.on circle { animation:none !important; } }
+</style>
+<div class="wrap">
+  <aside class="side">
+    <div class="eyebrow">Home v2 · click-through prototype · round 3 composite · 2026-09-05</div>
+    <h1>Tap everything.</h1>
+    <p>Nyx's record on the recommended composite from mock round 3. Nothing is real; every state is in this page's memory.</p>
+    <ul>
+      <li><b>The instrument</b> — tap the lane (or Today · Week · Season) to expand it in place.</li>
+      <li><b>Signals</b> — tap the card for the vet script; <i>Keep it compact</i> folds it; tap the strip to bring it back.</li>
+      <li><b>The door</b> — opens the sheet. Type a note and <i>Save note</i>; type a question (or tap a chip) and <i>Ask</i> to watch the dot read the record. Try "should I worry".</li>
+      <li><b>The FAB</b> — logs land as dots on the lane, with the completion beat and Undo.</li>
+      <li><b>Arrange Home</b> — the ··· in the header. Reorder and hide the tray; the spine stays.</li>
+      <li><b>History</b> tab shows where a note lives afterwards.</li>
+    </ul>
+    <div class="ctl">
+      <div class="seg" role="group" aria-label="Time of day"><button type="button" class="on" data-tod="am">7:05am</button><button type="button" data-tod="pm">9:15pm</button></div>
+      <label><input type="checkbox" id="rm"> Reduce motion</label>
+      <label><input type="checkbox" id="capped"> Simulate the monthly cap</label>
+      <button type="button" class="btn" id="resetAll">Reset the prototype</button>
+    </div>
+  </aside>
+
+  <div class="phone" id="phone">
+    <div class="notch"></div>
+    <!-- HOME -->
+    <div class="screen" id="home">
+      <div class="hdr">
+        <span class="who"><span class="av"></span>Nyx <small>▾</small></span>
+        <span class="right"><button class="askpill" id="pillAsk" type="button"><i></i>Ask</button><span class="ownerav">D</span><button class="more" id="moreBtn" type="button" aria-label="More">···</button></span>
+      </div>
+      <div class="body" id="homeBody"></div>
+      <button class="fab" id="fab" type="button" aria-label="Log">+</button>
+      <div class="beat" id="beat"><span id="beatText"></span><button class="undo" id="undo" type="button">Undo</button></div>
+      <div class="toast" id="toast"></div>
+      <div class="tabbar">
+        <button class="on" data-tab="home"><span class="ico"></span>Home</button>
+        <button data-tab="history"><span class="ico"></span>History</button>
+        <button data-tab="foods"><span class="ico"></span>Foods</button>
+        <button data-tab="pet"><span class="ico"></span>Nyx</button>
+      </div>
+    </div>
+    <!-- HISTORY -->
+    <div class="screen" id="history" hidden>
+      <div class="hdr"><span class="who">History</span><span class="right"><span class="ownerav">D</span></span></div>
+      <div class="body hist" id="histBody"></div>
+      <div class="tabbar">
+        <button data-tab="home"><span class="ico"></span>Home</button>
+        <button class="on" data-tab="history"><span class="ico"></span>History</button>
+        <button data-tab="foods"><span class="ico"></span>Foods</button>
+        <button data-tab="pet"><span class="ico"></span>Nyx</button>
+      </div>
+    </div>
+    <!-- overlays -->
+    <div class="scrim" id="scrim"></div>
+    <div class="sheet" id="sheet">
+      <div class="grab"></div>
+      <div class="stitle"><button type="button" id="sheetBack" hidden>‹ Home</button><b>Nyx's record</b><button type="button" id="sheetNew" title="Start fresh">＋</button></div>
+      <div class="thread" id="thread"></div>
+      <div id="composer">
+        <textarea class="field" id="field" rows="3" placeholder="Tell Nyx's record, or ask it…"></textarea>
+        <div class="verbs"><button class="pill save" id="btnSave" type="button">Save note</button><button class="pill ask" id="btnAsk" type="button"><i id="pilldot"></i>Ask</button><button class="exp" id="btnExpand" type="button" title="Full screen">↗</button></div>
+        <div class="capline" id="capline" hidden>You've used this month's 3 free conversations. Notes, counts and the vet rundown always work here; questions resume Oct 1, or with Premium.</div>
+        <div class="chiprow" id="chips"></div>
+        <div class="promise" id="promise"><i style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#00C2A8;margin-right:5px"></i>Answers use your logged data — including your notes, and photos when your question needs them.</div>
+      </div>
+      <div class="kb">K E Y B O A R D</div>
+    </div>
+    <div class="sheet" id="pickerSheet">
+      <div class="grab"></div>
+      <div class="stitle"><span>Log for <b>Nyx</b></span><button type="button" id="pickerClose">Close</button></div>
+      <div class="picker">
+        <button class="tile" data-log="meal"><span class="g meal"></span>Meal</button>
+        <button class="tile" data-log="sym"><span class="g sym"></span>Vomit</button>
+        <button class="tile" data-log="med"><span class="g med"></span>Dose</button>
+        <button class="tile" data-log="note"><span class="g note"></span>Note</button>
+        <button class="tile" data-log="o"><span class="g o"></span>Stool</button>
+        <button class="tile" data-log="o"><span class="g o"></span>More…</button>
+      </div>
+      <div class="promise">The FAB is untouched by this work — it stays the one create door. A Note tile opens the same composer.</div>
+    </div>
+    <div class="sheet" id="arrSheet">
+      <div class="grab"></div>
+      <div class="stitle"><b>Arrange Home</b><button type="button" id="arrDone">Done</button></div>
+      <div class="arr" id="arrList" style="overflow-y:auto"></div>
+      <div class="promise">Move or hide the tray. The spine stays: safety findings can't be hidden, and a module carrying one locks until it stands down. Hidden modules stay under All patterns.</div>
+      <div class="verbs" style="margin-top:8px"><button class="pill ghost" id="arrReset" type="button">Reset to Culprit's order</button></div>
+    </div>
+  </div>
+
+  <aside class="side">
+    <div class="eyebrow">What you are looking at</div>
+    <p><b>The spine</b> the system owns: the instrument, Signals with any safety finding, the FAB. <b>The tray</b> the owner can arrange: the door, the trial cells, the medication row, the Patterns index.</p>
+    <p><b>The rules the prototype keeps:</b> the safety card stays plain and never hides; a folded card comes back when the record moves, never on a timer; a note is quoted, never counted; nothing green about a quiet day; the cap shows only inside the sheet; no haptic on anything safety-shaped (the arrival beat is silent on a deflection).</p>
+    <p><b>Not in this prototype:</b> real data, the Foods and Pet tabs, the trial screen, the full History filters, Patterns.</p>
+    <div class="eyebrow" style="margin-top:18px">Where this lives</div>
+    <p>Mock rounds: <code>docs/culprit-home-v2-mockups.html</code>. Briefs: CUL-810. This page: <code>docs/culprit-home-v2-prototype.html</code>.</p>
+  </aside>
+</div>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var phone = $('phone');
+  var state = {
+    tod: 'am', grain: 0, folded: false, expanded: false, capped: false,
+    events: [], // {kind, t (0..1 of 6a→12a), label, at}
+    notes: [],
+    order: ['door', 'trial', 'meds', 'patterns'], hidden: {},
+    conv: [], answerCount: 0, full: false
+  };
+  var timers = [];
+  function later(fn, ms) { var rm = $('rm').checked; timers.push(setTimeout(fn, rm ? Math.min(ms, 160) : ms)); }
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+  function pct(h) { return ((h - 6) / 18) * 100; } // 6am→midnight
+  var TOD = { am: { needle: pct(7.08), label: '7:05', name: '7:05am' }, pm: { needle: pct(21.25), label: '9:15', name: '9:15pm' } };
+  function seedEvening() { return [{ kind: 'meal', t: pct(7.5), label: 'Breakfast · 7:30am · finished', at: '7:30am' }, { kind: 'med', t: pct(8.05), label: 'Cerenia · 8:03am', at: '8:03am' }, { kind: 'meal', t: pct(18.2), label: 'Dinner · 6:12pm · finished', at: '6:12pm' }]; }
+
+  // ── render Home ──
+  function dot(e, cls) { return '<div class="d ' + e.kind + (cls || '') + '" style="left:' + e.t + '%"></div>'; }
+  function countLine() {
+    var m = state.events.filter(function (e) { return e.kind === 'meal'; }).length, d = state.events.filter(function (e) { return e.kind === 'med'; }).length, s = state.events.filter(function (e) { return e.kind === 'sym'; }).length, n = state.events.filter(function (e) { return e.kind === 'note'; }).length;
+    var parts = [];
+    if (s) parts.push('<b>' + s + '</b> vomit' + (s > 1 ? 's' : ''));
+    if (m) parts.push('<b>' + m + '</b> meal' + (m > 1 ? 's' : ''));
+    if (d) parts.push('<b>' + d + '</b> dose' + (d > 1 ? 's' : ''));
+    if (n) parts.push('<b>' + n + '</b> note' + (n > 1 ? 's' : ''));
+    return parts.length ? parts.join(' · ') + ' so far · last vomit Aug 26' : 'Nothing yet today · last vomit Aug 26';
+  }
+  function grainToday() {
+    var t = TOD[state.tod];
+    return '<div class="ax"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div>' +
+      '<div class="plot" id="todayPlot"><div class="base"></div>' + state.events.map(function (e) { return dot(e); }).join('') + '<div class="needle" style="left:' + t.needle + '%"><b>' + t.label + '</b></div></div>' +
+      '<div class="plot ghost" style="margin-top:12px"><span class="lab">yesterday</span><div class="base"></div><div class="d meal ghost" style="left:' + pct(7.4) + '%"></div><div class="d meal ghost" style="left:' + pct(18.1) + '%"></div><div class="d med ghost" style="left:' + pct(20) + '%"></div></div>' +
+      '<div class="capt" id="countLine">' + countLine() + '</div>';
+  }
+  function lane(dots, cls, extra) { return '<div class="lane ' + (cls || '') + '"><div class="track"></div>' + (dots || '') + (extra || '') + '</div>'; }
+  function grainWeek() {
+    var days = [['Sat', dot({ kind: 'meal', t: 8 }) + dot({ kind: 'meal', t: 66 }) + dot({ kind: 'med', t: 78 })], ['Sun', dot({ kind: 'meal', t: 10 }) + dot({ kind: 'meal', t: 67 })], ['Mon', dot({ kind: 'meal', t: 8 }) + dot({ kind: 'note', t: 38 }) + dot({ kind: 'meal', t: 69 }) + dot({ kind: 'med', t: 77 })], ['Tue', null], ['Wed', dot({ kind: 'meal', t: 11 }) + dot({ kind: 'meal', t: 70 }) + dot({ kind: 'med', t: 79 })], ['Thu', dot({ kind: 'meal', t: 9 }) + dot({ kind: 'meal', t: 66 })], ['Fri', dot({ kind: 'meal', t: 8 }) + dot({ kind: 'meal', t: 67 }) + dot({ kind: 'med', t: 78 })]];
+    var rows = days.map(function (d) { return '<span class="wl">' + d[0] + '</span>' + (d[1] === null ? lane('', 'nolog', '<span class="nl">no log</span>') : lane(d[1])); }).join('');
+    rows += '<span class="wl today">Today</span>' + lane(state.events.map(function (e) { return dot(e); }).join(''), 'today', '<span class="gt" style="left:9%"></span><span class="gt" style="left:67%"></span>');
+    return '<div class="ax" style="margin-left:36px"><span>6am</span><span>noon</span><span>6pm</span><span>mid</span></div><div class="weeks">' + rows + '</div><div class="capt" style="margin-top:8px">This week · meals on 6 of 7 days · Tuesday not logged</div>';
+  }
+  function grainSeason() {
+    var counts = [4, 6, 8, 4, 4, 4, 4, 2, 0, 1, 1];
+    var cols = counts.map(function (c, i) {
+      var base = '<span class="bs">' + (i === 10 ? '<i></i><i></i><i></i><i></i><i class="off"></i><i class="off"></i><i class="off"></i>' : '<i></i><i></i><i></i><i></i><i></i><i></i><i></i>') + '</span>';
+      var us = ''; for (var k = 0; k < c; k++) us += '<span class="u"></span>';
+      return '<div class="wk">' + base + us + '</div>';
+    }).join('');
+    return '<div class="season"><span class="mx" style="left:22.5%;top:-4px">8</span><div class="cols">' + cols + '</div><div class="rule" style="left:63.5%"></div><span class="rulelab" style="left:65%;top:-2px">Turkey trial</span><div class="mo"><span>Jul</span><span></span><span></span><span></span><span>Aug</span><span></span><span></span><span></span><span></span><span>Sep</span><span></span></div></div>' +
+      '<div class="weeks" style="margin-top:10px"><span class="wl today">Today</span>' + lane(state.events.map(function (e) { return dot(e); }).join(''), 'today') + '</div><div class="capt" style="margin-top:6px">Since July · vomiting by week, each dot one episode · ticks are the days you logged</div>';
+  }
+  function instrument() {
+    return '<div class="instr"><div class="xinstr tap" id="xinstr" data-g="' + state.grain + '" role="button" tabindex="0" aria-label="Today\'s instrument. Tap to expand.">' +
+      '<div class="grain' + (state.grain === 0 ? ' on' : '') + '">' + grainToday() + '</div><div class="grain' + (state.grain === 1 ? ' on' : '') + '">' + grainWeek() + '</div><div class="grain' + (state.grain === 2 ? ' on' : '') + '">' + grainSeason() + '</div></div>' +
+      '<div class="grainbar">' + ['Today', 'Week', 'Season'].map(function (n, i) { return '<button class="g' + (state.grain === i ? ' on' : '') + '" type="button" data-g="' + i + '">' + n + '</button>'; }).join('') + '<span class="hint">tap the lane to expand</span></div></div>';
+  }
+  function signals() {
+    var card;
+    if (state.folded) {
+      card = '<div class="foldrow" id="foldStrip" role="button" tabindex="0"><div class="rail"></div><div class="ft"><b>Recurring vomiting</b><span class="ask">Worth a vet visit</span><span class="cnt">14 episodes, 5 of 8 weeks · last Aug 26</span></div><span class="chev">›</span></div>';
+    } else {
+      card = '<div class="irow"><div class="rail"></div><div class="ibody"><p class="lead tap" id="leadTap">Vomiting has recurred across 5 of the last 8 weeks — 14 episodes since July. Worth booking a vet visit.</p><div class="samp">14 episodes, 5 of 8 weeks · last Aug 26 · a read of your logs, not a diagnosis</div>' +
+        (state.expanded ? '<div class="script"><b>If you call your clinic, the facts to have ready</b><div><span>Symptom</span><b>vomiting</b></div><div><span>Count</span><b>14 episodes</b></div><div><span>Span</span><b>5 of the last 8 weeks</b></div><div><span>Most recent</span><b>Aug 26 · 10 days ago</b></div><div><span>Recent 4 weeks</span><b>2 · the 4 before: 12</b></div><div><span>Logged days</span><b>28 of 28 in each</b></div><div><span>Medication</span><b>Cerenia, day 6 of 14</b></div></div>' : '') +
+        '<div class="hintrow"><button type="button" id="whyBtn" class="why">' + (state.expanded ? 'Hide details' : 'Why we\'re showing this') + '</button><button type="button" id="foldBtn" class="fold">Keep it compact</button></div></div></div>';
+    }
+    if (state.backBecause) card += '<div class="back">Back because the record moved — a new vomit was logged today.</div>';
+    card += '<div class="foldrow" style="border-top:1px solid #EAEAEA;margin-top:4px" id="timingRow"><div class="rail insight"></div><div class="ft"><b>Vomiting soon after eating</b><span class="cnt">8 of 8 timed within 30 min of eating</span></div><span class="chev">›</span></div>';
+    return '<div class="seclabel">Signals</div><div class="acard" id="sigCard">' + card + '</div>';
+  }
+  var MODULES = {
+    door: { name: 'Tell or ask the record', sub: 'the composer door', html: function () { return '<div class="doorc" id="door"><svg class="wh" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="#00C2A8"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#00C2A8" stroke-width="1.2" stroke-dasharray="26 15"/><circle cx="12" cy="12" r="10" fill="none" stroke="#00C2A8" stroke-width="1" stroke-dasharray="40 23" opacity=".55"/></svg><span class="t"><b>Tell Nyx\'s record, or ask it<span class="aichip">AI</span></b>' + (state.tod === 'am' ? 'What happened, what you noticed, what you want to know.' : 'Anything about today worth remembering?') + '</span></div>'; } },
+    trial: { name: 'Turkey trial', sub: 'the 42 days', html: function () { return '<div class="acard tap" data-toast="Opens the trial (day 31 of 42)"><div class="seclabel">Turkey trial <span class="door">Trial ›</span></div><div class="cellstrip"><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="hollow"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i class="today"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i></div><div class="samp" style="margin-top:12px">Day 31 of 42 · meals on 29 of 31 days · 3 vomit days</div></div>'; } },
+    meds: { name: 'Medications', sub: 'Cerenia · day 6 of 14', html: function () { var given = state.events.some(function (e) { return e.kind === 'med'; }); return '<div class="acard rows"><div class="r" data-toast="Opens Cerenia (logging is the FAB — DC-4)"><span class="l">Cerenia<small>' + (given ? 'day 6 of 14 · dose logged today' : 'day 6 of 14 · last dose yesterday 8:00pm') + '</small></span><span class="n">6 / 14</span><span class="chev">›</span></div></div>'; } },
+    patterns: { name: 'Patterns index', sub: 'weight · meals finished', html: function () { return '<div class="acard rows"><div class="seclabel">Patterns <span class="door" data-toast="Opens the Patterns dashboard">All patterns ›</span></div><div class="r" data-toast="Opens weight history"><span class="l">Weight<small>last Aug 30 · 4.4 on Jul 12</small></span><span class="n">4.2 kg</span><span class="chev">›</span></div><div class="r" data-toast="Opens the meals lens"><span class="l">Meals finished this week<small>wet food · dry bowl not counted</small></span><span class="n">8 / 10</span><span class="chev">›</span></div></div>'; } }
+  };
+  function renderHome() {
+    var h = instrument() + signals();
+    state.order.forEach(function (id) { if (!state.hidden[id]) h += MODULES[id].html(); });
+    h += '<div class="samp" style="text-align:center;padding:6px 0 0"><span class="door tap" id="arrangeLink" style="color:#0B7B6C;font-weight:500">Arrange Home</span></div>';
+    $('homeBody').innerHTML = h;
+    bindHome();
+  }
+  function bindHome() {
+    var x = $('xinstr');
+    function setG(g) { state.grain = g; x.setAttribute('data-g', g); Array.prototype.forEach.call(x.children, function (c, i) { c.classList.toggle('on', i === g); }); Array.prototype.forEach.call(document.querySelectorAll('.grainbar .g'), function (b) { b.classList.toggle('on', Number(b.getAttribute('data-g')) === g); }); }
+    x.addEventListener('click', function () { setG((state.grain + 1) % 3); });
+    x.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setG((state.grain + 1) % 3); } });
+    Array.prototype.forEach.call(document.querySelectorAll('.grainbar .g'), function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); setG(Number(b.getAttribute('data-g'))); }); });
+    if ($('whyBtn')) $('whyBtn').addEventListener('click', function () { state.expanded = !state.expanded; renderHome(); });
+    if ($('leadTap')) $('leadTap').addEventListener('click', function () { state.expanded = !state.expanded; renderHome(); });
+    if ($('foldBtn')) $('foldBtn').addEventListener('click', function () { state.folded = true; state.expanded = false; state.backBecause = false; renderHome(); toast('Folded — it comes back when the picture changes, never on a timer'); });
+    if ($('foldStrip')) $('foldStrip').addEventListener('click', function () { state.folded = false; state.backBecause = false; renderHome(); });
+    if ($('timingRow')) $('timingRow').addEventListener('click', function () { toast('Timing pattern: 8 of 8 within 30 min of eating'); });
+    if ($('door')) $('door').addEventListener('click', function () { openSheet('note'); });
+    $('arrangeLink').addEventListener('click', openArrange);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-toast]'), function (el) { el.addEventListener('click', function (e) { e.stopPropagation(); toast(el.getAttribute('data-toast')); }); });
+  }
+  // ── toast + beat ──
+  var toastT;
+  function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('on'); }, 1800); }
+  var beatT, lastEvent = null;
+  function showBeat(html, undoable) { $('beatText').innerHTML = html; $('undo').hidden = !undoable; $('beat').classList.add('on'); clearTimeout(beatT); beatT = setTimeout(function () { $('beat').classList.remove('on'); }, 4200); }
+  $('undo').addEventListener('click', function () { if (lastEvent) { state.events = state.events.filter(function (e) { return e !== lastEvent; }); if (lastEvent.kind === 'note') state.notes = state.notes.filter(function (n) { return n.ev !== lastEvent; }); if (lastEvent.kind === 'sym' && state.backBecause) { state.folded = true; state.backBecause = false; } lastEvent = null; renderHome(); } $('beat').classList.remove('on'); });
+  function landEvent(kind, label, at) {
+    var now = state.tod === 'am' ? 8.17 : 21.4; var t = pct(now);
+    var e = { kind: kind, t: t, label: label, at: at || (state.tod === 'am' ? '8:10am' : '9:24pm') }; state.events.push(e); lastEvent = e;
+    // the fold's re-open on a material change (a new episode)
+    if (kind === 'sym' && state.folded) { state.folded = false; state.backBecause = true; }
+    renderHome();
+    var el = document.querySelector('#todayPlot .d:last-of-type'); if (el) { el.classList.add('pre'); void el.offsetWidth; later(function () { el.classList.remove('pre'); }, 80); }
+    return e;
+  }
+  // ── FAB picker ──
+  $('fab').addEventListener('click', function () { openOverlay('pickerSheet'); });
+  $('pickerClose').addEventListener('click', closeOverlays);
+  Array.prototype.forEach.call(document.querySelectorAll('.tile'), function (t) {
+    t.addEventListener('click', function () {
+      var k = t.getAttribute('data-log'); closeOverlays();
+      if (k === 'note') { openSheet('note'); return; }
+      if (k === 'o') { toast('The rest of the log picker is out of this prototype'); return; }
+      var labels = { meal: 'Breakfast · finished<small>Turkey · Nyx</small>', sym: 'Vomit · just now<small>Saw it · photo optional · Nyx</small>', med: 'Cerenia · given<small>Dose 6 of 14 · Nyx</small>' };
+      landEvent(k, labels[k]); showBeat(labels[k], true);
+    });
+  });
+  // ── overlays ──
+  function openOverlay(id) { $('scrim').classList.add('on'); $(id).classList.add('on'); }
+  function closeOverlays() { $('scrim').classList.remove('on'); ['sheet', 'pickerSheet', 'arrSheet'].forEach(function (id) { $(id).classList.remove('on'); }); $('sheet').classList.remove('full'); state.full = false; $('sheetBack').hidden = true; }
+  $('scrim').addEventListener('click', closeOverlays);
+  // ── the sheet ──
+  var CHIPS = { am: ["What's new since last night?", 'How many vomits this month?', 'Vet visit rundown'], pm: ['What did I log today?', 'Is this week worse than last?', 'Vet visit rundown'] };
+  function renderChips() { $('chips').innerHTML = CHIPS[state.tod].map(function (c, i) { return '<button class="chip' + (i === 2 ? ' quiet' : '') + '" type="button">' + c + '</button>'; }).join(''); Array.prototype.forEach.call($('chips').children, function (b) { b.addEventListener('click', function () { $('field').value = b.textContent; onType(); ask(); }); }); }
+  function openSheet(mode) { renderChips(); $('capline').hidden = !state.capped; openOverlay('sheet'); $('field').value = ''; onType(); setTimeout(function () { $('field').focus(); }, 320); }
+  $('pillAsk').addEventListener('click', function () { openSheet('ask'); });
+  function onType() { var has = $('field').value.trim().length > 0; $('btnSave').classList.toggle('show', has); $('btnAsk').classList.toggle('show', has && !state.capped); $('promise').hidden = has; }
+  $('field').addEventListener('input', onType);
+  $('btnSave').addEventListener('click', function () {
+    var text = $('field').value.trim(); if (!text) return;
+    var at = state.tod === 'am' ? '8:32am' : '9:24pm';
+    var e = landEvent('note', 'Note · ' + at + '<small>Saved to Nyx\'s record · what you noticed</small>', at);
+    state.notes.push({ text: text, at: at, ev: e });
+    closeOverlays(); showBeat('Note · ' + at + '<small>Saved to Nyx\'s record · what you noticed</small>', true);
+  });
+  $('btnAsk').addEventListener('click', ask);
+  $('btnExpand').addEventListener('click', goFull);
+  $('sheetBack').addEventListener('click', closeOverlays);
+  $('sheetNew').addEventListener('click', function () { state.conv = []; $('thread').innerHTML = ''; state.answerCount = 0; $('field').value = ''; onType(); toast('Started fresh — nothing was kept'); });
+  function goFull() { state.full = true; $('sheet').classList.add('full'); $('sheetBack').hidden = false; }
+  function answerFor(q) {
+    var lq = q.toLowerCase();
+    if (/worry|okay|ok\?|fine|sick|serious|should i/.test(lq)) return { deflect: true, h: "That's a call for your vet, not for a read of the record.", s: 'What the record can carry to that call: 14 vomits since July across 5 of 8 weeks, the most recent Aug 26, all 8 timed episodes within 30 min of a meal, Cerenia day 6 of 14.', prov: 'Open the vet visit rundown ›', chips: ['Vet visit rundown', 'When did she last vomit?'] };
+    if (/breath|breathing|collapse|poison|seizure|unresponsive/.test(lq)) return { deflect: true, crisis: true, h: 'If Nyx is struggling to breathe, that\'s an emergency — call your vet or an emergency clinic now.', s: 'Your note is saved. Nothing here was read by AI.', prov: 'Call the clinic ›', chips: [] };
+    if (/last/.test(lq) && /vomit|throw|sick/.test(lq)) return { h: 'Nyx last vomited on Aug 26 — 10 days ago, 25 minutes after breakfast.', s: '2 episodes in the last 4 weeks · 12 in the 4 before · counted from days you logged: 28 of 28 each', prov: 'Open the event ›', chips: ['And before that?', 'Show all 14'] };
+    if (/how many|count|this month/.test(lq)) return { h: 'Two vomits so far this month for Nyx — Sep 1 and Sep 3.', s: 'September, counted from days you logged: 5 of 5 · August: 4 · July: 8', prov: 'Show the two events ›', chips: ['Were they near meals?', 'Compare to August'] };
+    if (/since last night|new/.test(lq)) return { h: state.events.length ? 'Since last night: ' + state.events.length + ' thing' + (state.events.length > 1 ? 's' : '') + ' logged today, nothing overnight.' : 'Nothing new in Nyx\'s record since 9:40pm last night.', s: 'Last vomit Aug 26 · logged on 4 of 4 days this week', prov: 'Open today ›', chips: ['How many vomits this month?', 'Vet visit rundown'] };
+    if (/today|log/.test(lq)) return { h: state.events.length ? 'Today: ' + countLine().replace(/<\/?b>/g, '').replace(' · last vomit Aug 26', '') + '.' : 'Nothing logged yet today.', s: 'From Nyx\'s record · the full day is in the Recap', prov: 'Full day ›', chips: ['Is this week worse than last?'] };
+    if (/worse|better|compare|week/.test(lq)) return { h: 'This week: 1 vomit. Last week: 1. The four weeks before that: 2, 0, 1, 1.', s: 'Counted from days you logged: 7 of 7 each week · no direction word — the counts are the answer', prov: 'Open the season strip ›', chips: ['And the four before that?', 'Vet visit rundown'] };
+    if (/rundown|vet visit/.test(lq)) return { h: 'Nyx\'s rundown for the vet is ready.', s: 'Symptoms · timing · the turkey trial · Cerenia · weight — from the record, no model call', prov: 'Open the rundown ›', chips: ['Share as a report'] };
+    if (/eat|food|finish|meal/.test(lq)) return { h: 'Nyx finished 8 of the last 10 wet meals logged.', s: 'This week · dry bowl always down, not counted', prov: 'Open the meals lens ›', chips: ['Which foods does she finish?'] };
+    return { deflect: true, h: 'I can only answer from what\'s in Nyx\'s record.', s: 'Try a count, a date, a food, a medication — or tell the record something and it\'s saved as a note.', prov: '', chips: ['When did Nyx last vomit?', 'Vet visit rundown'] };
+  }
+  function ask() {
+    var q = $('field').value.trim(); if (!q || state.capped) return;
+    clearTimers();
+    var rm = $('rm').checked;
+    var a = answerFor(q);
+    $('field').value = ''; onType();
+    var thread = $('thread');
+    var qb = document.createElement('div'); qb.className = 'qb'; qb.textContent = q; thread.appendChild(qb);
+    var slot = document.createElement('div'); slot.className = 'slot';
+    slot.innerHTML = '<svg class="whorl" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="9"/><circle cx="24" cy="24" r="13"/><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="21"/></svg><div class="skel"><i style="width:80%"></i><i style="width:55%"></i><i style="width:35%"></i></div><div class="reading">Reading Nyx\'s record…</div>';
+    thread.appendChild(slot);
+    var ans = document.createElement('div'); ans.className = 'ans';
+    ans.innerHTML = '<div class="arail"' + (a.deflect ? ' style="background:#A3A3A3"' : '') + '></div><div class="abody"><div class="ah">' + a.h + '</div><div class="as">' + a.s + '</div></div><div class="later">' + (a.prov ? '<div class="aprov">' + a.prov + '</div>' : '') + '<div class="arc"><i></i>' + (a.crisis ? 'No model was called' : a.deflect ? 'A deflection · nothing was inferred from your record' : 'Counted from Nyx\'s record · worded by AI') + '</div><div class="chiprow">' + a.chips.map(function (c) { return '<button class="chip" type="button">' + c + '</button>'; }).join('') + '</div></div>';
+    thread.appendChild(ans);
+    thread.scrollTop = thread.scrollHeight;
+    // the dot leaves the pill
+    var mdot = document.createElement('div'); mdot.className = 'mdot'; mdot.style.opacity = '0'; $('sheet').appendChild(mdot);
+    var pr = $('pilldot').getBoundingClientRect(), sr = $('sheet').getBoundingClientRect();
+    mdot.style.left = (pr.left - sr.left) + 'px'; mdot.style.top = (pr.top - sr.top) + 'px'; mdot.style.opacity = '1'; $('pilldot').style.opacity = '0';
+    var wr = slot.querySelector('.whorl').getBoundingClientRect();
+    var tx = (wr.left + wr.width / 2 - pr.left - 4), ty = (wr.top + wr.height / 2 - pr.top - 4);
+    if (a.crisis) { // no model: the deflection lands at once, no whorl
+      mdot.remove(); $('pilldot').style.opacity = '1'; slot.remove(); ans.classList.add('on'); bindAnsChips(ans); return;
+    }
+    requestAnimationFrame(function () { mdot.style.transform = 'translate(' + tx + 'px,' + ty + 'px)'; });
+    later(function () { slot.querySelector('.whorl').classList.add('on'); slot.querySelector('.skel').classList.add('on'); slot.querySelector('.reading').style.opacity = '1'; }, 300);
+    later(function () { slot.querySelector('.whorl').classList.remove('on'); slot.querySelector('.skel').classList.remove('on'); slot.querySelector('.reading').style.opacity = '0'; mdot.style.transform = 'translate(' + (tx - wr.width / 2 - 9) + 'px,' + (ty + 30) + 'px)'; }, rm ? 600 : 2000);
+    later(function () { slot.style.minHeight = '0'; slot.style.height = '0'; ans.classList.add('on'); state.answerCount++; thread.scrollTop = thread.scrollHeight; }, rm ? 760 : 2160);
+    later(function () { mdot.style.opacity = '0'; $('pilldot').style.opacity = '1'; setTimeout(function () { mdot.remove(); }, 200); if (state.answerCount >= 2 && !state.full) goFull(); bindAnsChips(ans); }, rm ? 900 : 2400);
+  }
+  function bindAnsChips(ans) {
+    Array.prototype.forEach.call(ans.querySelectorAll('.chip'), function (b) { b.addEventListener('click', function () { if (/rundown/i.test(b.textContent)) { toast('The rundown opens — deterministic, free, no model call'); return; } $('field').value = b.textContent; onType(); ask(); }); });
+    var prov = ans.querySelector('.aprov'); if (prov) prov.addEventListener('click', function () { toast('Opens the source — the conversation survives (D8)'); });
+  }
+  // ── arrange ──
+  function openArrange() { renderArrange(); openOverlay('arrSheet'); }
+  function renderArrange() {
+    var spine = '<div class="it"><span class="lab">Today<small>the instrument · yesterday beneath</small></span><span class="pin">ALWAYS</span></div><div class="it"><span class="lab">Signals<small>safety findings always show, and always first</small></span><span class="pin">ALWAYS</span></div>';
+    var tray = state.order.map(function (id, i) {
+      var m = MODULES[id];
+      return '<div class="it"><span class="mv"><button type="button" data-mv="' + id + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + '>▲</button><button type="button" data-mv="' + id + '" data-dir="1"' + (i === state.order.length - 1 ? ' disabled' : '') + '>▼</button></span><span class="lab">' + m.name + '<small>' + m.sub + '</small></span><button class="tg' + (state.hidden[id] ? ' off' : '') + '" type="button" data-tg="' + id + '" aria-label="Show ' + m.name + '"></button></div>';
+    }).join('');
+    $('arrList').innerHTML = spine + tray;
+    Array.prototype.forEach.call($('arrList').querySelectorAll('[data-mv]'), function (b) { b.addEventListener('click', function () { var id = b.getAttribute('data-mv'), dir = Number(b.getAttribute('data-dir')); var i = state.order.indexOf(id), j = i + dir; if (j < 0 || j >= state.order.length) return; state.order.splice(i, 1); state.order.splice(j, 0, id); renderArrange(); renderHome(); }); });
+    Array.prototype.forEach.call($('arrList').querySelectorAll('[data-tg]'), function (b) { b.addEventListener('click', function () { var id = b.getAttribute('data-tg'); state.hidden[id] = !state.hidden[id]; renderArrange(); renderHome(); }); });
+  }
+  $('arrDone').addEventListener('click', closeOverlays);
+  $('arrReset').addEventListener('click', function () { state.order = ['door', 'trial', 'meds', 'patterns']; state.hidden = {}; renderArrange(); renderHome(); });
+  $('moreBtn').addEventListener('click', openArrange);
+  // ── tabs + history ──
+  function renderHistory() {
+    var rows = [];
+    state.events.slice().reverse().forEach(function (e) { var n = state.notes.filter(function (x) { return x.ev === e; })[0]; rows.push('<div class="row"><div class="d ' + e.kind + '"></div><div class="t">' + (n ? '<i>' + n.text.replace(/</g, '&lt;') + '</i><small>Note · what you noticed</small>' : e.label.replace(/<small>/g, '<small>')) + '</div><span class="tm">' + (e.at || '') + '</span></div>'); });
+    rows.push('<div class="row"><div class="d meal ghost"></div><div class="t">Dinner · finished<small>Turkey · yesterday</small></div><span class="tm">6:10pm</span></div><div class="row"><div class="d med ghost"></div><div class="t">Cerenia · given<small>Dose 5 of 14 · yesterday</small></div><span class="tm">8:00pm</span></div><div class="row"><div class="d note"></div><div class="t"><i>gagged twice on the walk, nothing came up</i><small>Note · Sep 3 · what you noticed</small></div><span class="tm">9:02pm</span></div>');
+    $('histBody').innerHTML = '<div class="acard"><div class="seclabel">Today <span class="door">Full day ›</span></div>' + rows.join('') + '</div><div class="samp" style="text-align:center">A note lives here, in the Recap, and on the vet report as a dated quote — never counted.</div>';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.tabbar button'), function (b) {
+    b.addEventListener('click', function () { var t = b.getAttribute('data-tab'); if (t === 'foods' || t === 'pet') { toast((t === 'foods' ? 'Foods' : 'Nyx') + ' is out of this prototype'); return; } $('home').hidden = t !== 'home'; $('history').hidden = t !== 'history'; if (t === 'history') renderHistory(); });
+  });
+  // ── controls ──
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tod]'), function (b) { b.addEventListener('click', function () { Array.prototype.forEach.call(document.querySelectorAll('[data-tod]'), function (x) { x.classList.toggle('on', x === b); }); state.tod = b.getAttribute('data-tod'); state.events = state.tod === 'pm' ? seedEvening() : []; state.notes = []; renderHome(); renderChips(); }); });
+  $('rm').addEventListener('change', function () { phone.classList.toggle('reduce', $('rm').checked); });
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { $('rm').checked = true; phone.classList.add('reduce'); }
+  $('capped').addEventListener('change', function () { state.capped = $('capped').checked; $('capline').hidden = !state.capped; onType(); });
+  $('resetAll').addEventListener('click', function () { clearTimers(); state.grain = 0; state.folded = false; state.expanded = false; state.backBecause = false; state.events = state.tod === 'pm' ? seedEvening() : []; state.notes = []; state.order = ['door', 'trial', 'meds', 'patterns']; state.hidden = {}; state.conv = []; state.answerCount = 0; $('thread').innerHTML = ''; closeOverlays(); renderHome(); });
+  renderHome();
+})();
+</script>
