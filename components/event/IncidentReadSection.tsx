@@ -13,15 +13,17 @@
 //   · the CLIP — the content slot held at the pending box's height, `overflow: hidden`
 //     for the whole flight so the box opens AROUND the content rather than revealing it
 //     all at once when the height is released;
-//   · the LAND — the content's own fade-and-drift (beat 3), and the measurement the rail's
-//     explicit height comes from;
+//   · the LAND — the content's own fade-and-drift (beat 3). It does NOT measure: it wraps
+//     the card AND the observations AND the re-run row, and the rail lives inside the card
+//     and is clipped by it. The card reports its own height (G4 — block height is
+//     verdict-correlated, because an escalation's facts never fold);
 //   · the GHOST — the pending box, out of the flow at the slot's own offset, fading over
 //     the card that replaced it. It is hidden from assistive tech: a screen reader must
 //     hear the read that landed, never the spinner copy that is on its way out.
-import { type ReactNode } from 'react';
+import { useLayoutEffect, type ReactNode } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
-import { type IncidentArrival } from '../motion/arrivalMotion';
+import { type IncidentArrival, type StageKind } from '../motion/arrivalMotion';
 import { ThemedText } from '../ui/ThemedText';
 import { IncidentReadPending } from './IncidentReadCard';
 
@@ -39,6 +41,16 @@ export function IncidentReadSection({
   children?: ReactNode;
 }) {
   const { phase, inFlight, heldHeight, slotTop, values } = arrival;
+
+  // What the arrival's edge reads for its other half. Reported from a LAYOUT effect so it
+  // is written before the section's own edge effect runs (child before parent), and nulled
+  // on unmount so a landing whose branch renders nothing cannot look like an arrival.
+  const stageKind: StageKind = pending ? 'pending' : children != null ? 'content' : null;
+  const { noteStage } = arrival;
+  useLayoutEffect(() => {
+    noteStage(stageKind);
+  }, [stageKind, noteStage]);
+  useLayoutEffect(() => () => noteStage(null), [noteStage]);
 
   let slot: ReactNode;
   if (pending) {
@@ -59,7 +71,6 @@ export function IncidentReadSection({
       <View testID="incident-read-clip" style={[styles.clip, heldHeight != null ? { height: heldHeight } : null]}>
         <Animated.View
           testID="incident-read-land"
-          onLayout={(e) => arrival.onContentLayout(e.nativeEvent.layout.height)}
           style={{ opacity: values.bodyOpacity, transform: [{ translateY: values.bodyShift }] }}
         >
           {children}

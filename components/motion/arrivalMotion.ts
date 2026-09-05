@@ -34,16 +34,24 @@
 // and a re-analysis after an owner edit, which is suppressed by `suppressed` because a
 // read the owner has corrected did not arrive, it was answered. The states that DO arrive
 // include `failed` / `capped` / `not_enough_to_say`: they take the same choreography on
-// their own card, never a special error motion. Those two of them that render NOTHING
-// (`read_disabled`, and a photoless event with no recommendation) leave the stage
-// unmounted; the beats then run against an empty tree and settle in ~450ms with no visual
-// effect, which is cheaper than duplicating the sections' branch cascade to predict it.
+// their own card, never a special error motion.
+//
+// TWO CONDITIONS, NOT ONE, and each excludes a case the other cannot see. `awaitingRead`
+// is the section's fact — a read is being produced — and it alone excludes the FETCH
+// frame, where the same pending box paints while a local row is read. The STAGE's own
+// transition (it was showing the pending box, it is now showing content) is what excludes
+// everything the fact cannot: a landing whose branch renders NOTHING (`read_disabled`, a
+// photoless event with no recommendation), and a photo removed mid-wait, which changes
+// which branch is on screen without any read having arrived. An earlier revision gated on
+// the fact alone and called the empty-tree case harmless — it is not: `configureNext` is
+// a GLOBAL next-commit config, so a beat fired over an unrendered section lands its 370ms
+// spring on whatever else happens to lay out in that commit.
 //
 // APP BLUR FINISHES, NEVER PAUSES (the arrival moment's rule): a transition cut by a blur
 // jumps to its end state and commits it un-animated, so the owner never returns to a card
 // half-arrived.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Animated, Easing, LayoutAnimation } from 'react-native';
 import { theme } from '../../constants/theme';
 import { FOLD_MOTION, UNFOLD_LAYOUT } from './foldMotion';
@@ -77,6 +85,10 @@ export interface ArrivalRail {
   shift: Animated.Value;
 }
 
+/** What the stage is showing: the pending box, the landed content, or nothing at all
+ *  (the branches that render no read section). */
+export type StageKind = 'pending' | 'content' | null;
+
 export interface IncidentArrival {
   phase: ArrivalPhase;
   /** A beat is in flight — the content slot clips and holds a height, the overlay paints. */
@@ -90,8 +102,15 @@ export interface IncidentArrival {
   rail: ArrivalRail | null;
   /** The pending box's own layout, read while it is the one thing on screen. */
   onPendingLayout: (height: number, y: number) => void;
-  /** The landed content's natural height, read on the first frame it is mounted. */
+  /** The READ CARD's own height — never the section block's. The rail is painted inside
+   *  the card and clipped by it, so a height taken from the block would seed the rail's
+   *  scale against geometry it cannot reach; and block height is verdict-correlated (an
+   *  escalation's facts never fold, §5.3a), which would make the rail's apparent growth
+   *  rate differ by verdict. G4 says it must not. */
   onContentLayout: (height: number) => void;
+  /** The stage reports what it is showing, every commit, from a layout effect — so the
+   *  parent's edge effect below sees the CURRENT pair. */
+  noteStage: (kind: StageKind) => void;
 }
 
 interface Params {
@@ -150,9 +169,14 @@ export function useIncidentArrival({
   const pendingH = useRef<number | null>(null);
   const slotY = useRef<number | null>(null);
   const [slotTop, setSlotTop] = useState<number | null>(null);
-  // The rail beat waits for the content's first layout, which lands a frame after the
-  // commit that mounts it — well inside beat 2's 80ms lag.
+  // The rail beat waits for the card's first layout, which lands a frame after the commit
+  // that mounts it — well inside beat 2's 80ms lag.
   const railBeatArmed = useRef(false);
+  // What the stage is showing, and what it was showing before that. Written from the
+  // stage's own layout effect, which React runs BEFORE this hook's (a child's layout
+  // effects run before its parent's), so the edge below always reads the current pair.
+  const stageNow = useRef<StageKind>(null);
+  const stageWas = useRef<StageKind>(null);
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const running = useRef<Animated.CompositeAnimation[]>([]);
@@ -296,6 +320,10 @@ export function useIncidentArrival({
         values.bodyOpacity.setValue(1);
         goIdle();
       });
+      // The same safety valve the animated path has. A crossfade that loses its callback
+      // would otherwise leave the content mounted at opacity 0 with nothing to end it —
+      // and this is the ACCESSIBILITY path, where an invisible read is least acceptable.
+      later(theme.durationFast + FOLD_MOTION.settleSlackMs * 2, settle);
       return;
     }
     values.pendingOpacity.setValue(1);
@@ -322,10 +350,21 @@ export function useIncidentArrival({
     later(
       FOLD_MOTION.railLagMs + FOLD_MOTION.openMs + FOLD_MOTION.settleSlackMs * 2,
       () => {
-        if (phaseRef.current === 'arriving') goIdle();
+        // `settle`, not `goIdle`: a beat still running when the valve trips must be
+        // STOPPED, or it keeps driving values `rest()` has just pinned. Defence in depth,
+        // not a tested behaviour — the idle tree binds none of those values, so no test
+        // through the public surface can tell the two apart. Kept because the next state
+        // added to the idle tree could bind one.
+        if (phaseRef.current === 'arriving') settle();
       },
     );
-  }, [reducedMotion, values, run, timing, later, openBox, goIdle, go]);
+  }, [reducedMotion, values, run, timing, later, openBox, goIdle, settle, go]);
+
+  const noteStage = useCallback((kind: StageKind) => {
+    if (stageNow.current === kind) return;
+    stageWas.current = stageNow.current;
+    stageNow.current = kind;
+  }, []);
 
   // ── The edge: awaiting → landed, observed on THIS mount ──────────────────────
   // Seeded from the first render's own value, so a read that was already in the record when
@@ -340,11 +379,21 @@ export function useIncidentArrival({
   // effect below then stops and resets it in the same batch, before any native frame, so it
   // self-heals rather than misfiring visibly. Reorder the two if that stops being true.
   const wasAwaiting = useRef(awaitingRead);
-  useEffect(() => {
+  // A LAYOUT effect, not a passive one. `begin()` is what mounts the clip and seeds the
+  // content at opacity 0, and a passive effect is not guaranteed to flush before the host
+  // paints — so the landed card could be committed unwrapped, unclipped and fully opaque
+  // for one frame, then collapse into a 48pt spinner box and re-arrive. On an escalation
+  // that is the worst frame this surface could show. A layout effect's own state update
+  // is flushed before paint, so the owner only ever sees the seeded tree.
+  useLayoutEffect(() => {
     const was = wasAwaiting.current;
     wasAwaiting.current = awaitingRead;
     if (!was || awaitingRead) return;
     if (suppressedRef.current) return;
+    // The stage's half: it must have been showing the pending box and be showing content
+    // now. Without this, a landing whose branch renders nothing still fires beat 2's
+    // `configureNext` — which is global, and lands its spring on an unrelated commit.
+    if (stageWas.current !== 'pending' || stageNow.current !== 'content') return;
     begin();
   }, [awaitingRead, begin]);
 
@@ -366,6 +415,14 @@ export function useIncidentArrival({
   );
 
   // Blur FINISHES the arrival (never pauses it — see the header).
+  //
+  // An EDGE, never a gate, and that is not a shortcut. `useAppActive()` seeds itself from
+  // `AppState.currentState`, which is `undefined` under jest and can be `'unknown'` at iOS
+  // cold start — so a false reading is available exactly when an owner logs a vomit on a
+  // freshly launched app, which is the arrival that matters most. Gating `begin()` on it
+  // would trade a bounded, invisible residual (an arrival that starts while backgrounded
+  // runs its beats unseen and is closed by the valve within ~510ms) for a silent loss of
+  // the moment itself. The transition is trustworthy; the initial value is not.
   useEffect(() => {
     if (!appActive) settle();
   }, [appActive, settle]);
@@ -404,5 +461,6 @@ export function useIncidentArrival({
         : null,
     onPendingLayout,
     onContentLayout,
+    noteStage,
   };
 }

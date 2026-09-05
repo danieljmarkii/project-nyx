@@ -130,9 +130,12 @@ export function StoolAnalysisSection(
   // undefined — is this component reading the local row, which it also does when the read
   // landed weeks ago; treating that as a wait would replay the arrival every time an owner
   // opened an old incident from History. `working` is set only where the server has
-  // actually been asked, which is the wait §7 means. And with no photo there is no pending
-  // box at all, so there was no wait for anything to arrive out of.
-  const awaitingRead = hasPhoto && (working || row?.status === 'pending');
+  // actually been asked, which is the wait §7 means.
+  //
+  // And NOT `&& hasPhoto`: removing the photo mid-wait would make this fall with no read
+  // having landed. Whether a pending box was ever on screen is the STAGE's half of the
+  // edge, and it is the half that owns every question about which branch is rendering.
+  const awaitingRead = working || row?.status === 'pending';
   const arrival = useIncidentArrival({
     awaitingRead,
     // §7: a re-analysis after an owner edit swaps un-animated. A read the owner has
@@ -410,6 +413,7 @@ export function StoolAnalysisSection(
           readText={row.read_text}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}
+          onMeasure={arrival.onContentLayout}
         />
       )}
 

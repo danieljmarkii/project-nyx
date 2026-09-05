@@ -38,7 +38,7 @@ jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { readObservationFold, setObservationFold } from '../../lib/observationFold';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
-import { LayoutAnimation } from 'react-native';
+import { LayoutAnimation, StyleSheet } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
@@ -729,5 +729,37 @@ describe('VomitAnalysisSection — the arrival fires only for a read the screen 
     // Beat 2 is 80ms behind the rail, and fires exactly once.
     await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
     expect(configureNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('the section wires the CARD\'s own measurement to the rail, not the block\'s', async () => {
+    // The motion suite proves the rail must not measure the section block; only this
+    // proves the real section actually hands the card's `onMeasure` to the arrival. A
+    // section that forgot it would degrade silently to "the rail rides the box".
+    mockRow = row({ status: 'pending', recommendation: null });
+    const view = render(
+      <VomitAnalysisSection eventId="new-2" petId="pet-1" petName="Rex" hasPhoto />,
+    );
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    // The pending box's own geometry — without it the rail beat degrades to riding the
+    // box, which would make the assertions below pass for the wrong reason.
+    await act(async () => {
+      fireEvent(view.getByTestId('incident-read-section').children[1] as never, 'layout', {
+        nativeEvent: { layout: { x: 0, y: 22, width: 320, height: 48 } },
+      });
+    });
+
+    mockRow = row({ status: 'completed', recommendation: 'monitor', read_text: 'Yellow, foamy.' });
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+
+    const card = await view.findByTestId('incident-read-card');
+    expect(card.props.onLayout).toBeDefined();
+    await act(async () => {
+      fireEvent(card, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 320, height: 152 } } });
+    });
+    // The rail took the card's height and left the flow — the beat actually ran.
+    const rail = StyleSheet.flatten(view.getByTestId('incident-read-rail').props.style as never) as Record<string, unknown>;
+    expect(rail.height).toBe(152);
+    expect(rail.position).toBe('absolute');
   });
 });

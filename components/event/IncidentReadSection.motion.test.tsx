@@ -22,7 +22,9 @@ jest.mock('../../hooks/useAppActive', () => ({
 }));
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
+import { type ReactNode } from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
+import { Text, View } from 'react-native';
 import { Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import { FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
@@ -88,6 +90,8 @@ function Host({
   pending,
   suppressed = false,
   verdict = 'monitor',
+  hasContent = true,
+  tail = null,
 }: {
   /** Stands for both of the section's states: the pending box is the slot, and a read is
    *  being produced. The two come apart in the section (see `awaitingRead` there); here
@@ -95,6 +99,12 @@ function Host({
   pending: boolean;
   suppressed?: boolean;
   verdict?: IncidentVerdict;
+  /** A landing whose branch renders NOTHING — `read_disabled`, or a photoless event with
+   *  no recommendation. The section returns null and the stage never mounts. */
+  hasContent?: boolean;
+  /** Content BELOW the card, inside the same land wrapper — the observations grid and the
+   *  re-run row in the real sections. The rail must not measure it. */
+  tail?: ReactNode;
 }) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
@@ -106,16 +116,21 @@ function Host({
     identity: 'e1',
     tickHeight: RAIL_TICK_HEIGHT,
   });
+  if (!pending && !hasContent) return null;
   return (
     <IncidentReadSection arrival={arrival} pending={pending}>
       {pending ? null : (
-        <IncidentReadCard
-          verdict={verdict}
-          label={verdict === 'worth_a_call' ? 'Worth a call' : 'Keep an eye out'}
-          readText="Yellow, foamy, mostly bile."
-          onHide={jest.fn()}
-          arrival={arrival.rail}
-        />
+        <>
+          <IncidentReadCard
+            verdict={verdict}
+            label={verdict === 'worth_a_call' ? 'Worth a call' : 'Keep an eye out'}
+            readText="Yellow, foamy, mostly bile."
+            onHide={jest.fn()}
+            arrival={arrival.rail}
+            onMeasure={arrival.onContentLayout}
+          />
+          {tail}
+        </>
       )}
     </IncidentReadSection>
   );
@@ -133,7 +148,7 @@ function arrive(opts: { verdict?: IncidentVerdict; measurePending?: boolean; mea
   act(() => {
     view.rerender(<Host pending={false} verdict={verdict} />);
   });
-  if (measureCard) act(() => layout(view.getByTestId('incident-read-land'), CARD_H));
+  if (measureCard) act(() => layout(view.getByTestId('incident-read-card'), CARD_H));
   return view;
 }
 
@@ -382,5 +397,137 @@ describe('app blur finishes the arrival, never pauses it', () => {
     const before = configureNext.mock.calls.length;
     act(() => jest.advanceTimersByTime(1000));
     expect(configureNext).toHaveBeenCalledTimes(before);
+  });
+});
+
+describe('the two conditions — the adversarial pass (§7, both halves of the edge)', () => {
+  it('a landing whose branch renders NOTHING never fires beat 2\'s global configureNext', () => {
+    // `read_disabled`, and a photoless event with no recommendation, resolve to no read
+    // section at all. `configureNext` is a GLOBAL next-commit config, so a beat fired over
+    // an unrendered section lands its 370ms spring on whatever else lays out in that
+    // commit — which is why "it settles with no visual effect" was the wrong answer.
+    const view = render(<Host pending />);
+    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    act(() => {
+      view.rerender(<Host pending={false} hasContent={false} />);
+    });
+    act(() => jest.advanceTimersByTime(1000));
+
+    expect(configureNext).not.toHaveBeenCalled();
+    expect(view.toJSON()).toBeNull();
+  });
+
+  it('the stage going pending → content is required, not just the fact falling', () => {
+    // A photo removed mid-wait moves the section to a different branch with no read having
+    // landed. The stage was never showing the pending box on the commit before this one.
+    const view = render(<Host pending={false} />);
+    act(() => jest.advanceTimersByTime(FRAME_MS));
+    act(() => {
+      view.rerender(<Host pending={false} verdict="worth_a_call" />);
+    });
+    act(() => jest.advanceTimersByTime(1000));
+
+    expect(configureNext).not.toHaveBeenCalled();
+    expect(view.queryByTestId('incident-read-ghost', { includeHiddenElements: true })).toBeNull();
+  });
+});
+
+describe('G4 — the rail measures the CARD, never the section block', () => {
+  it('a tail below the card does not stretch the rail or slow its growth', () => {
+    // The land wrapper holds the card AND the observations AND the re-run row. Block height
+    // is verdict-correlated (an escalation's facts never fold, §5.3a), so a rail seeded from
+    // the block would grow at a rate that depends on the verdict — which G4 forbids, and
+    // which the same-timeline test cannot see, because it renders identical children.
+    const tail = (
+      <View>
+        <Text>What's visible</Text>
+        <Text>Yellow · Foamy · Bile · None visible</Text>
+      </View>
+    );
+    const view = render(<Host pending tail={tail} />);
+    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    act(() => {
+      view.rerender(<Host pending={false} tail={tail} />);
+    });
+    // The BLOCK reports first. If anything but the card is wired to the rail's
+    // measurement, it wins the arming race and the rail takes the wrong height — so this
+    // ordering is what makes the assertion below mean something.
+    act(() => layout(view.getByTestId('incident-read-land'), CARD_H + 210));
+    act(() => layout(view.getByTestId('incident-read-card'), CARD_H));
+
+    const rail = view.getByTestId('incident-read-rail');
+    expect(flat(rail).height).toBe(CARD_H);
+    const { scale } = transformValues(rail);
+    expect(valueOf(scale!)).toBeCloseTo(TICK / CARD_H, 5);
+  });
+});
+
+describe('the reduced-motion crossfade ends on its own', () => {
+  it('has the safety valve the animated path has — an invisible read is worst here', () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const view = render(<Host pending />);
+    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    act(() => {
+      view.rerender(<Host pending={false} />);
+    });
+    expect(view.getByTestId('incident-read-land')).toBeTruthy();
+
+    act(() => jest.advanceTimersByTime(theme.durationFast + FOLD_MOTION.settleSlackMs * 2 + FRAME_MS));
+
+    // Back to the shipped tree, with the content visible — never mounted at opacity 0.
+    expect(view.queryByTestId('incident-read-land')).toBeNull();
+    expect(view.getByText('Keep an eye out')).toBeTruthy();
+  });
+});
+
+describe('the safety valves — what happens when a beat never calls back', () => {
+  /** An animation that starts and then never finishes: the case `run`'s `finished: false`
+   *  drop is silent about, and the only case either valve exists for. */
+  const stall = () =>
+    timing.mockImplementation(
+      () => ({ start: () => {}, stop: () => {}, reset: () => {} }) as never,
+    );
+
+  it('the arrival recovers, visible and unwrapped, and stops what it started', () => {
+    const view = render(<Host pending />);
+    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    stall();
+    act(() => {
+      view.rerender(<Host pending={false} />);
+    });
+    act(() => layout(view.getByTestId('incident-read-card'), CARD_H));
+    act(() => jest.advanceTimersByTime(FOLD_MOTION.railLagMs));
+    // Wrapped, clipped, invisible — and nothing running will ever end it.
+    expect(view.getByTestId('incident-read-land')).toBeTruthy();
+    const { opacity } = transformValues(view.getByTestId('incident-read-land'));
+    expect(valueOf(opacity!)).toBe(0);
+
+    act(() =>
+      jest.advanceTimersByTime(FOLD_MOTION.openMs + FOLD_MOTION.settleSlackMs * 2 + FRAME_MS),
+    );
+
+    expect(view.queryByTestId('incident-read-land')).toBeNull();
+    expect(view.queryByTestId('incident-read-ghost', { includeHiddenElements: true })).toBeNull();
+    // The values are at rest, not left wherever a stalled beat abandoned them.
+    expect(valueOf(opacity!)).toBe(1);
+    expect(flat(view.getByTestId('incident-read-rail')).position).toBeUndefined();
+  });
+
+  it('the reduced-motion crossfade recovers too — an invisible read is worst on this path', () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const view = render(<Host pending />);
+    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    stall();
+    act(() => {
+      view.rerender(<Host pending={false} />);
+    });
+    const { opacity } = transformValues(view.getByTestId('incident-read-land'));
+    expect(valueOf(opacity!)).toBe(0);
+
+    act(() => jest.advanceTimersByTime(theme.durationFast + FOLD_MOTION.settleSlackMs * 2 + FRAME_MS));
+
+    expect(view.queryByTestId('incident-read-land')).toBeNull();
+    expect(valueOf(opacity!)).toBe(1);
+    expect(view.getByText('Keep an eye out')).toBeTruthy();
   });
 });

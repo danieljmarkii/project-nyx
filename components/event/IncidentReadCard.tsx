@@ -70,6 +70,7 @@ export function IncidentReadCard({
   readText,
   onHide,
   arrival,
+  onMeasure,
 }: {
   verdict: IncidentVerdict;
   /** The enum's copy, verbatim from the section's own REC_LABEL map. */
@@ -79,10 +80,17 @@ export function IncidentReadCard({
   /** Beat 1 of the arrival (CUL-804), while it is running; null every other moment —
    *  including a read that was already here on open, which never animates at all. */
   arrival?: ArrivalRail | null;
+  /** The card's own height, for the arrival's rail. Taken here rather than off the section
+   *  block because the rail is painted inside this box and clipped by it — and the block
+   *  is taller on an escalation, whose facts never fold (§5.3a), which would make the
+   *  rail's apparent growth rate depend on the verdict. G4 says it must not. */
+  onMeasure?: (height: number) => void;
 }) {
   const attn = !CALM_VERDICTS.includes(verdict);
   return (
     <View
+      testID="incident-read-card"
+      onLayout={onMeasure ? (e) => onMeasure(e.nativeEvent.layout.height) : undefined}
       style={[
         styles.card,
         attn ? styles.cardAttn : verdict === 'monitor' ? styles.cardNeutral : styles.cardMuted,

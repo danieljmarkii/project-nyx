@@ -105,6 +105,86 @@ both, and asserts equality. "Same physics on every verdict" is the kind of claim
 that decays under a later edit to one branch; a structural comparison notices, a
 reviewer's eye does not.
 
+## The adversarial pass returned FAIL, and four of the six were mine
+
+Worth reading in full, because the two that generalise are not about animation.
+
+**The empty tree was not harmless, and I had written that it was.** The hook's header
+claimed a landing whose branch renders nothing would "settle in ~450ms with no
+visual effect". False: `LayoutAnimation.configureNext` is a **global next-commit
+config**, so beat 2 fired over an unrendered section applies its 370ms spring to
+whatever else lays out in that commit — measured landing on the hero collapsing to
+its empty state. I had reached for that claim to avoid duplicating the sections'
+branch cascade, which was the right instinct and the wrong conclusion.
+
+The fix is that the arrival now needs **two conditions, and each excludes a case
+the other cannot see**: `awaitingRead` (the section's fact) excludes the fetch
+frame; the **stage's own transition** — it was showing the pending box, it is now
+showing content — excludes every question about which branch is rendering, which
+is not a question the fact can answer. `hasPhoto` came out of the fact at the same
+time: a photo removed mid-wait made it fall with nothing having landed.
+
+**The rail was measuring the wrong box, and the G4 test was structurally blind to
+it.** The rail's explicit height came from the wrapper holding the card *and* the
+observations grid *and* the re-run row — while the rail is painted inside the
+card, which clips. Block height is verdict-correlated (an escalation's facts never
+fold, §5.3a), so an escalation's rail visibly lunged where a folded benign read's
+crept: 0.92 of the card covered at t=20ms versus 0.60. G4 says the verdict changes
+a colour and nothing else.
+
+The G4 test could not see it because **both arms rendered identical children**, so
+content height was held constant by construction, and the seed never appears in a
+timing config. A same-timeline assertion is only as good as the inputs it varies.
+The card now reports its own height, and a new test puts a tail below it and fires
+the block's layout *first*, so the assertion cannot pass by ordering luck.
+
+**Two more:** the edge moved to a `useLayoutEffect`, so the landed card can never be
+committed unwrapped, unclipped and opaque for a frame before collapsing into the
+spinner box — the worst frame this surface could show, on an escalation. And the
+reduced-motion crossfade gained the safety valve the animated path already had,
+because that is the accessibility path and an invisible read is least acceptable
+there.
+
+## The fix I tried that was worse than the bug
+
+The pass also found that a blur landing *before* an arrival starts is never
+settled, since the blur effect is edge-triggered. I gated `begin()` on `appActive`
+— and the section tests went red, which is how I found that `AppState.currentState`
+is `undefined` under jest **and can be `'unknown'` at iOS cold start**.
+
+So the gate would have silently suppressed the first arrival after a cold launch:
+log a vomit, navigate, and the moment never plays. That is a worse outcome than the
+residual it fixed (beats running unseen while backgrounded, closed by the valve
+within ~510ms and invisible throughout). The guard came out and the reason is in
+the file: **`useAppActive()` is trustworthy as a transition and not as an initial
+value.** The fold uses it as an edge too, which now reads as load-bearing rather
+than incidental.
+
+## Two things the suite cannot prove, said plainly
+
+The `useLayoutEffect` change and the valve's `settle`-over-`goIdle` both survive
+mutation — the tests stay green either way — and neither is a test I could write
+honestly. `act()` flushes passive effects, so jest cannot distinguish effect
+timing; and the idle tree binds none of the values a stalled beat would keep
+driving, so no assertion through the public surface can see the difference. Both
+changes are strictly more correct and are kept as such, marked in the code as
+defence in depth rather than tested behaviour. The paint-order question is on the
+manual QA script instead, where the reviewer put it: log a photographed vomit on a
+throttled network and watch the frame the card lands.
+
+## Filed, not folded in
+
+- **CUL-830** — the arrival re-parents the read twice, resetting VoiceOver focus at
+  the settle. New behaviour from this PR, but every fix trades against the §7
+  no-node-when-idle proof this PR establishes, so it is a decision rather than a
+  patch.
+- **CUL-827** — commented rather than duplicated. The pass found two paths where a
+  live `worth_a_call` does not merely blink out but is gone until the screen is
+  rebuilt: `handleRetry`'s optimistic `'pending'` has no rollback when the trigger
+  errors, and the watch's give-up leaves the same wedge. Both pre-existing, both
+  reproduce before this track started, and both are covered by that issue's
+  proposed shape — but only if its acceptance criteria name them.
+
 ## Judgment call flagged, not buried
 
 §7 excludes "a re-analysis after an owner edit". Read literally, that is
