@@ -69,10 +69,39 @@ describe('ObservationGrid — folded (§5.3)', () => {
   it('names some values, counts them all, and keeps the block’s heading on the strip', () => {
     const { getByText, queryByText } = grid({ folded: true });
     expect(getByText(OBSERVATIONS_HEADING)).toBeTruthy();
-    expect(getByText(' · Yellow, foamy, bile · 4 findings')).toBeTruthy();
+    expect(getByText(' · Yellow, foamy, bile')).toBeTruthy();
+    expect(getByText(' · 4 findings')).toBeTruthy();
     // The facts themselves are gone from the screen…
     expect(queryByText('None visible')).toBeNull();
     expect(queryByText('Colour')).toBeNull();
+  });
+
+  it('the COUNT is pinned against truncation and the named values are what yield (C-8)', () => {
+    // The count is what makes naming three of four rows honest rather than silently
+    // partial (C-3). Clip it and the strip stops admitting it is a summary — so the
+    // heading and the count are `flexShrink: 0` + `maxWidth` (the AC-CHIP composition)
+    // and exactly one node carries `numberOfLines`.
+    const { StyleSheet } = require('react-native');
+    const { getByText } = grid({
+      folded: true,
+      rows: ROWS.map((r, i) => ({ ...r, value: `${r.value} a very long finding value ${i}` })),
+    });
+    const count = getByText(/findings$/);
+    const named = getByText(/very long finding value/);
+    const heading = getByText(OBSERVATIONS_HEADING);
+
+    expect(count.props.numberOfLines).toBeUndefined();
+    expect(heading.props.numberOfLines).toBeUndefined();
+    expect(named.props.numberOfLines).toBe(1);
+
+    for (const pinned of [count, heading]) {
+      const st = StyleSheet.flatten(pinned.props.style);
+      expect(st.flexShrink).toBe(0);
+      // Without the max-width a pinned node overflows instead of ellipsing when it alone
+      // overruns its line (C-8's AC-CHIP note).
+      expect(st.maxWidth).toBe('100%');
+    }
+    expect(StyleSheet.flatten(named.props.style).flexShrink).toBe(1);
   });
 
   it('the strip is the way back — one tap re-opens it', () => {

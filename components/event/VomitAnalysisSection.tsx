@@ -406,11 +406,16 @@ export function VomitAnalysisSection(
         />
       ) : null}
 
+      {/* CUL-803 — no `hitSlop`. This control's previous sibling used to be inert text
+          (the last observation row), and is now a touchable: the grid's `Keep it compact`
+          when open, the fold strip when shut, both flush against it with no separation.
+          Two slopped controls facing each other at a zero gap overlap (C-5), and the fix
+          for controls already flush is to grow the BOX — `rerunRow` carries the 44pt
+          floor in `minHeight` instead. */}
       {!dismissed && !editing ? (
         <TouchableOpacity
           onPress={handleRetry}
           disabled={retrying}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.rerunRow}
         >
           <ThemedText style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</ThemedText>
@@ -542,6 +547,10 @@ const styles = StyleSheet.create({
   rerunRow: {
     paddingVertical: theme.space1,
     alignSelf: 'flex-start',
+    justifyContent: 'center',
+    // Pinned explicitly because the 44pt floor depends on it and the slop that used to
+    // reach it is gone (C-5).
+    minHeight: 44,
   },
   dismissedRow: {
     flexDirection: 'row',

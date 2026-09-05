@@ -25,8 +25,13 @@ export function useObservationFold(
     // rather than write a record we could never wipe per pet.
     if (!petId || !eventId) return;
     readObservationFold(petId, eventId).then((stored) => {
-      // `null` is "storage did not answer" — leave the grid open (rule 1).
-      if (!cancelled && stored === true) setFolded(true);
+      // `null` is "storage did not answer" — leave the grid open (rule 1). A definite
+      // `false` is written back rather than assumed: today the initial state already
+      // holds it, because expo-router mints a fresh screen instance per navigation and
+      // this hook remounts with it. Relying on that would make the hook correct only by
+      // its caller's lifecycle — add a `getId` to the `event/[id]` route and a fold from
+      // one incident would ride onto the next with nothing able to clear it.
+      if (!cancelled && stored !== null) setFolded(stored);
     });
     return () => { cancelled = true; };
   }, [petId, eventId]);

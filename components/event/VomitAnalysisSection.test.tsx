@@ -471,3 +471,86 @@ describe('VomitAnalysisSection — the observations fold (§5.3)', () => {
     expect(getByText('Yellow')).toBeTruthy();
   });
 });
+
+// ── CUL-803 — the seam the fold control created (C-5) ─────────────────────────
+//
+// `Re-run analysis` used to sit under inert text (the last observation row). The fold
+// put a touchable there instead — `Keep it compact` when the grid is open, the strip when
+// it is shut — flush against it, with no margin and no container gap between them. Two
+// controls with facing hitSlop at a zero gap overlap, and the overlap is asymmetric in
+// the worst direction: `Re-run analysis` costs an API call and replaces the read.
+//
+// The fix is the one C-5 prescribes for controls that are already flush — grow the BOX,
+// drop the slop — so the invariant to pin is that neither side reaches into the other.
+describe('VomitAnalysisSection — the fold control and Re-run analysis do not share hit area (C-5)', () => {
+  afterEach(async () => {
+    mockRow = null;
+    await AsyncStorage.clear();
+  });
+
+  const READ = row({
+    status: 'completed', recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.',
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+  });
+
+  /** The nearest responder host above a node — the thing that actually owns the touch. */
+  function owningTouchable(node: { parent: unknown } | null): Record<string, unknown> | null {
+    let cur = node as { parent: unknown; props?: Record<string, unknown> } | null;
+    while (cur) {
+      if (cur.props && typeof cur.props.onStartShouldSetResponder === 'function') {
+        return cur.props;
+      }
+      cur = cur.parent as typeof cur;
+    }
+    return null;
+  }
+
+  function facingSlop(props: Record<string, unknown> | null, edge: 'top' | 'bottom'): number {
+    const slop = props?.hitSlop as number | Record<string, number> | undefined;
+    if (slop == null) return 0;
+    return typeof slop === 'number' ? slop : (slop[edge] ?? 0);
+  }
+
+  it('neither the expanded fold control nor Re-run analysis reaches toward the other', async () => {
+    mockRow = READ;
+    const { findByText, getByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    const fold = owningTouchable(getByText('Keep it compact') as never);
+    const rerun = owningTouchable(getByText('Re-run analysis') as never);
+    expect(fold).not.toBeNull();
+    expect(rerun).not.toBeNull();
+    // They are separate responders (a shared one would be its own defect — C-6), and the
+    // rendered separation between them is zero, so the facing slop must be zero too.
+    expect(fold).not.toBe(rerun);
+    expect(facingSlop(fold, 'bottom') + facingSlop(rerun, 'top')).toBe(0);
+  });
+
+  it('the strip keeps its whole 44pt box when folded — Re-run does not reach into it', async () => {
+    mockRow = READ;
+    const { findByText, getByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    fireEvent.press(getByText('Keep it compact'));
+    await waitFor(() => expect(getByText(/4 findings/)).toBeTruthy());
+    const strip = owningTouchable(getByText("What's visible") as never);
+    const rerun = owningTouchable(getByText('Re-run analysis') as never);
+    expect(strip).not.toBe(rerun);
+    expect(facingSlop(strip, 'bottom') + facingSlop(rerun, 'top')).toBe(0);
+  });
+
+  it('both controls carry the 44pt floor in their own box, since the slop is gone', async () => {
+    const { StyleSheet } = require('react-native');
+    mockRow = READ;
+    const { findByText, getByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    for (const label of ['Keep it compact', 'Re-run analysis']) {
+      const props = owningTouchable(getByText(label) as never)!;
+      expect(StyleSheet.flatten(props.style as never).minHeight).toBe(44);
+    }
+  });
+});

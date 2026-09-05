@@ -18,7 +18,7 @@
 // thing that moves these facts is the owner editing them, and an owner editing is already
 // looking at the open grid.
 import { ReactNode } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { observationStripLine } from './observationStrip';
@@ -85,16 +85,27 @@ export function ObservationGrid({
         accessibilityHint={OBSERVATION_UNFOLD_HINT}
       >
         <View style={styles.stripRail} />
-        {/* Two nodes because the heading carries a weight the rest does not, and under an
-            explicit family a nested weight is inert (C-2). The second starts with its own
-            separator so the grouped announcement reads as the one sentence it looks like,
-            with no invented label (C-7). The heading is pinned (`flexShrink: 0`) and the
-            values take the truncation — they are the half a tap restores (C-8). */}
+        {/* THREE nodes, not one string, and the split is load-bearing twice over.
+            (1) The heading carries a weight the others do not, and under an explicit family
+            a nested weight is inert (C-2). (2) Only separate nodes can be pinned
+            separately: the heading and the COUNT are `flexShrink: 0` + `maxWidth: '100%'`
+            (the AC-CHIP composition C-8 names) and the named values are the one node that
+            ellipses. The count is what makes naming three of four rows honest instead of
+            silently partial (C-3) — clipping it would delete the strip's own admission
+            that it is a summary, while the values it clips are restored by the tap this
+            row already is.
+            Each node after the first carries its own leading separator, so the grouped
+            announcement reads as the one sentence it looks like and needs no invented
+            label (C-7). */}
         <ThemedText style={styles.stripHeading}>{OBSERVATIONS_HEADING}</ThemedText>
-        <ThemedText style={styles.stripLine} numberOfLines={1}>{` · ${stripLine}`}</ThemedText>
-        {/* geist-ok: icon glyph, not copy — Geist carries no ›, so a family here buys OS
-            fallback for nothing. Matches the dismissX / chevron carve-out of CUL-364 §7. */}
-        <ThemedText style={styles.stripChevron}>›</ThemedText>
+        <ThemedText style={styles.stripNamed} numberOfLines={1}>
+          {` · ${stripLine.named}`}
+        </ThemedText>
+        <ThemedText style={styles.stripCount}>{` · ${stripLine.count}`}</ThemedText>
+        {/* geist-ok: icon glyph, not copy — stays a raw <Text> and keeps the system face.
+            Geist carries no › in any loaded weight, so sweeping one buys OS fallback for
+            nothing. Matches `InsightCard`'s own strip chevron and CUL-364 §7. */}
+        <Text style={styles.stripChevron}>›</Text>
       </TouchableOpacity>
     );
   }
@@ -143,10 +154,14 @@ export function ObservationGrid({
           {editedAtLabel ? (
             <ThemedText style={styles.editedLine}>{editedAtLabel}</ThemedText>
           ) : null}
+          {/* No `hitSlop` (C-5). This control's next sibling is the section's own
+              `Re-run analysis`, flush beneath it with no separation — two slopped
+              touchables facing each other at a zero gap is the overlap C-5 exists to
+              stop, and the fix for controls that are already flush is to grow the BOX
+              rather than the slop. `minHeight` carries the 44pt floor instead. */}
           {foldable ? (
             <TouchableOpacity
               onPress={() => onToggleFold(true)}
-              hitSlop={12}
               style={styles.foldControlRow}
               accessibilityRole="button"
               accessibilityHint={OBSERVATION_FOLD_HINT}
@@ -245,8 +260,11 @@ const styles = StyleSheet.create({
   },
   foldControlRow: {
     alignSelf: 'flex-start',
+    justifyContent: 'center',
     marginTop: theme.space1,
-    paddingVertical: theme.spaceMicro,
+    // The tap target, in the box rather than in a slop that would reach into the control
+    // below it. Pinned explicitly because the floor depends on it (C-5).
+    minHeight: 44,
   },
   foldControl: {
     fontSize: theme.textXS,
@@ -256,7 +274,8 @@ const styles = StyleSheet.create({
   strip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.space1,
+    // No `gap`: each text node carries its own leading separator, so a row gap would
+    // render a second one beside every "·". The rail and the chevron space themselves.
     marginTop: theme.space2,
     paddingVertical: theme.space1,
     // The floor an adjacent-control geometry depends on is pinned explicitly (C-5); the
@@ -267,10 +286,13 @@ const styles = StyleSheet.create({
   stripRail: {
     width: RAIL_WIDTH,
     alignSelf: 'stretch',
+    marginRight: theme.space1,
     marginVertical: theme.space1,
     borderRadius: 2,
     backgroundColor: theme.colorBorderStrong,
   },
+  // Pinned halves: `flexShrink: 0` PLUS `maxWidth: '100%'` — without the max-width a
+  // protected node overflows instead of ellipsing when it alone overruns the line (C-8).
   stripHeading: {
     fontSize: theme.textSM,
     fontWeight: theme.fontWeightMedium,
@@ -278,7 +300,14 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     maxWidth: '100%',
   },
-  stripLine: {
+  stripCount: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    flexShrink: 0,
+    maxWidth: '100%',
+  },
+  // The one node that yields.
+  stripNamed: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     flexShrink: 1,

@@ -17,11 +17,10 @@
 // never maps a recommendation to words, so neither section's clinical copy can be edited
 // from here (clinical-guardrails Pattern 1: the enum has no reassuring value, and there is
 // no path through this file that adds one).
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { ThemedText } from '../ui/ThemedText';
-import { TouchableOpacity } from 'react-native';
 
 /** The shipped recommendation enum. Named here only to pick a tone. */
 export type IncidentVerdict = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
