@@ -27,6 +27,11 @@ jest.mock('../../lib/analysis', () => ({
   // The realtime watch (CUL-171) is exercised on its own in lib/analysis.test.ts;
   // here it's a jest.fn so a test can grab the re-read callback it was handed.
   watchAnalysisRow: jest.fn(() => () => {}),
+  // The real predicate is pinned in lib/analysis.test.ts; mirrored here because the
+  // whole module is replaced. What THIS file tests is the section's render ORDER —
+  // that a failed row carrying an escalation reaches the card at all (CUL-812).
+  escalationSurvivesFailure: (r: { recommendation?: string | null } | null | undefined) =>
+    r?.recommendation === 'worth_a_call',
   saveVomitFieldEdits: jest.fn(() => Promise.resolve({ error: null })),
   deriveEditedFields: jest.fn(() => []),
   extractEditableFromPayload: jest.fn(() => null),
@@ -354,5 +359,45 @@ describe('VomitAnalysisSection — deferring to the log-path read (CUL-801)', ()
     await waitFor(() => expect(triggerVomitAnalysis as jest.Mock).not.toHaveBeenCalled());
     expect(awaitAnalysisChain as jest.Mock).not.toHaveBeenCalled();
     expect(watchAnalysisRow as jest.Mock).not.toHaveBeenCalled();
+  });
+});
+
+describe('VomitAnalysisSection — an escalation outlives a failed re-read (CUL-812)', () => {
+  afterEach(() => { mockRow = null; });
+
+  it('a failed row still holding worth_a_call renders the ESCALATION, not the error frame', async () => {
+    // The defect: the failure write upserts status:'failed' over a row the record
+    // already escalated, and 'failed' renders BEFORE the card. The owner is shown an
+    // error where a "worth a call" belongs — which reads as nothing was found, on the
+    // one surface built never to reassure.
+    mockRow = row({ status: 'failed', recommendation: 'worth_a_call', read_text: 'There is blood visible in this one.', error: 'Claude API error 529' });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+
+    expect(await findByText('Worth a call')).toBeTruthy();
+    expect(await findByText(/blood visible/)).toBeTruthy();
+    // The error frame and its retry are gone — the escalation is the state now.
+    expect(queryByText(/Couldn't finish reading this one/i)).toBeNull();
+    expect(queryByText(/Try again/i)).toBeNull();
+    // The stored transport error never reaches the owner (copy guard).
+    expect(queryByText(/529/)).toBeNull();
+  });
+
+  it('a failed row with a BENIGN read keeps the honest error frame — no stale reassurance', async () => {
+    // Not rescued on purpose: the failed attempt may have been reading a replaced
+    // photo, so standing "keep an eye out" in front of it would be a claim about an
+    // image nothing has read.
+    mockRow = row({ status: 'failed', recommendation: 'monitor', read_text: 'Keep an eye on this one.' });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+
+    expect(await findByText(/Couldn't finish reading this one/i)).toBeTruthy();
+    expect(await findByText(/Try again/i)).toBeTruthy();
+    expect(queryByText('Keep an eye out')).toBeNull();
+  });
+
+  it('a failed row with no read at all is unchanged — the retry frame', async () => {
+    mockRow = row({ status: 'failed' });
+    const { findByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
+    expect(await findByText(/Couldn't finish reading this one/i)).toBeTruthy();
+    expect(await findByText(/Try again/i)).toBeTruthy();
   });
 });
