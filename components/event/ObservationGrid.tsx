@@ -14,9 +14,27 @@
 // above this block and has no fold, so an escalation and its sentence are on screen at
 // every fold state. The strip names some of the values and counts all of the rows
 // (`observationStrip.ts`, where the honesty of that pairing is tested), and the strip
-// itself is the way back: there is no timer and no rule that re-opens it, because the only
-// thing that moves these facts is the owner editing them, and an owner editing is already
-// looking at the open grid.
+// itself is the way back.
+//
+// TWO RULES THE FIRST CUT DID NOT HAVE, both from the adversarial pass:
+//
+//  1. AN ESCALATION'S FACTS DO NOT FOLD (`foldable` gates on `escalating`). The named
+//     slots are spent in row order, and every builder pushes the descriptive rows first —
+//     so on a fully-populated read, Blood, Mucus and Foreign material are ALWAYS the rows
+//     compressed to a count. On a `worth_a_call` that puts the verdict on screen and every
+//     fact justifying it behind a tap, on the one surface D3 exists so an owner can turn
+//     the phone around to a vet. Rather than rank the rows clinically — a second symptom
+//     predicate, which the house forbids — the acute case simply does not fold. That is
+//     the Signal fold's own DF-2 shape: standing findings fold, acute ones never.
+//  2. THE RECORD RE-OPENS A FOLD. The first cut argued no re-open rule was needed because
+//     "the only thing that moves these facts is the owner editing them, and an owner
+//     editing is already looking at the open grid." That is false, and the counterexample
+//     sits directly under the strip: `Re-run analysis` is rendered in the folded state,
+//     and a re-analysis (or a late realtime resolution, or the add-photo re-read) lands
+//     new observations into a folded grid — a new blood finding arriving unseen. So the
+//     host releases the fold when the observation set changes (`useObservationFold`),
+//     which is the fold spec's rule verbatim: the record re-opens a fold, the calendar
+//     never.
 import { ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
@@ -53,6 +71,7 @@ export function ObservationGrid({
   onEdit,
   editLabel,
   editor,
+  escalating,
   folded,
   onToggleFold,
 }: {
@@ -66,14 +85,17 @@ export function ObservationGrid({
   editLabel?: string;
   /** When given, the editor replaces the grid and the fold is not offered. */
   editor?: ReactNode;
+  /** The read is a `worth_a_call`. Its facts never fold — see rule 1 in the header. */
+  escalating?: boolean;
   folded: boolean;
   onToggleFold: (next: boolean) => void;
 }) {
   const stripLine = observationStripLine(rows.map((r) => r.value));
 
   // The fold is offered only when there is a grid to fold AND a line to fold it to. An
-  // editor open, or a block carrying only a description, keeps everything visible.
-  const foldable = !editor && stripLine !== null;
+  // editor open, a block carrying only a description, or an ESCALATING read (header rule
+  // 1) keeps everything visible.
+  const foldable = !editor && !escalating && stripLine !== null;
 
   if (foldable && folded) {
     return (

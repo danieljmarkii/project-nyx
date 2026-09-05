@@ -663,14 +663,21 @@ export default function EventDetailScreen() {
   // `timeDisplay.tag`: a legacy row with no confidence also reports `tag: null`, and
   // labelling that "witnessed" would put a claim on the photo the record does not hold
   // (C-10). A window says "found"/"between" in the time itself, so it adds no third token.
-  const viewerCaption = eventPetName
-    ? {
-        primary: `${eventPetName} · ${label}`,
-        secondary: [formatCaptionDate(event.occurred_at), timeDisplay.primary, confidenceWord(event.occurred_at_confidence)]
-          .filter(Boolean)
-          .join(' · '),
-      }
-    : undefined;
+  //
+  // The pet's name is the one part that can be missing (C-9: a record whose pet is not in
+  // the store names nobody rather than naming the wrong animal). It must not take the
+  // date and time down with it — §5.4's stated purpose is that the vet also sees WHEN,
+  // and nothing else on this screen gates the date on the name.
+  const viewerCaption = {
+    primary: eventPetName ? `${eventPetName} · ${label}` : label,
+    secondary: [
+      formatCaptionDate(event.occurred_at),
+      timeDisplay.primary,
+      confidenceWord(event.occurred_at_confidence),
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  };
   const drugPrimary = dose?.genericName ?? label;
   const drugSecondary = dose
     ? [dose.brandName, dose.strength].filter(Boolean).join(' · ') || null

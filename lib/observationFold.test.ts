@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  MAX_FOLDS_PER_PET,
   OBSERVATION_FOLD_STORAGE_KEY,
   clearObservationFold,
   readObservationFold,
@@ -86,6 +87,45 @@ describe('observationFold — the store', () => {
     await inFlight;
 
     expect(await AsyncStorage.getItem(OBSERVATION_FOLD_STORAGE_KEY)).toBeNull();
+  });
+
+  it('a write that STARTS after the clear begins is also caught (the second bump)', async () => {
+    // The interleaving the first cut missed, and the one its comment claimed to prevent:
+    // the write starts AFTER the epoch bump, so it snapshots the already-bumped value,
+    // reads the pre-wipe blob, and its re-check compares EQUAL — restoring the previous
+    // account's map after `wipeLocalSession()` had returned clean. Bumping again once the
+    // removal lands is what makes the re-check see a change.
+    await setObservationFold('pet-a', 'ev-1', true, T0);
+    let releaseRemoval: () => void = () => {};
+    const removalGate = new Promise<void>((r) => { releaseRemoval = r; });
+    const realRemove = AsyncStorage.removeItem.bind(AsyncStorage);
+    jest.spyOn(AsyncStorage, 'removeItem').mockImplementationOnce(async (k: string) => {
+      await removalGate;
+      await realRemove(k);
+    });
+
+    const clearing = clearObservationFold();
+    // Starts now — after the first bump, before the removal has landed.
+    const inFlight = setObservationFold('pet-a', 'ev-2', true, T0);
+    releaseRemoval();
+    await clearing;
+    await inFlight;
+
+    expect(await AsyncStorage.getItem(OBSERVATION_FOLD_STORAGE_KEY)).toBeNull();
+  });
+
+  it('keeps the blob bounded, dropping the OLDEST folds first', async () => {
+    // Nothing enumerates a pet's incidents, so there is no natural caller for a prune —
+    // the cap is what stops an install accumulating an entry per folded record forever.
+    for (let i = 0; i <= MAX_FOLDS_PER_PET; i++) {
+      // Ascending timestamps: ev-0 is the oldest and the one that must go.
+      await setObservationFold('pet-a', `ev-${i}`, true, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString());
+    }
+    const raw = JSON.parse((await AsyncStorage.getItem(OBSERVATION_FOLD_STORAGE_KEY))!);
+    expect(Object.keys(raw['pet-a'])).toHaveLength(MAX_FOLDS_PER_PET);
+    // Eviction fails in the only harmless direction: an evicted record opens.
+    expect(await readObservationFold('pet-a', 'ev-0')).toBe(false);
+    expect(await readObservationFold('pet-a', `ev-${MAX_FOLDS_PER_PET}`)).toBe(true);
   });
 
   it('clearing is idempotent and never throws', async () => {

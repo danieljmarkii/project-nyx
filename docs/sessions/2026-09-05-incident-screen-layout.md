@@ -56,6 +56,42 @@ heuristic has never heard of.** Any future extraction out of a scanned safety
 surface owes the same check — the guard stays green through exactly the change
 that removes its coverage.
 
+### 1a. The adversarial pass returned FAIL, and four of its findings were the build's
+
+Worth recording in full, because the pattern in them is more useful than any one:
+
+- **The C-3 defect an example list could never catch.** A row's value can itself be a
+  list — vomit `contents` joins its labels with ", " — and joining values with ", " on top
+  of that flattened two nesting levels into one: four rows rendering
+  `Yellow, foamy, bile, Foam, Hair · 4 findings`, five comma-separated items beside a
+  count of four, with a casing seam as the only tell. Every example anyone writes by hand
+  uses single-label values, which is exactly why the fix ships with a **property** (the
+  commas in the named half are always `namedRows - 1`, over six value shapes) rather than
+  another example.
+- **The named slots go to the least clinical rows, by construction.** Every builder pushes
+  the descriptive rows first, so on a full read Blood / Mucus / Foreign material are
+  *always* the ones a fold compresses. On a `worth_a_call` that leaves the verdict on
+  screen and every fact justifying it behind a tap — on the surface D3 exists for. The fix
+  is not a clinical ranking (a second symptom predicate, forbidden) but the Signal fold's
+  own DF-2 shape: **an escalation's facts do not fold.**
+- **The design premise in my own comment was false.** I argued no re-open rule was needed
+  because "the only thing that moves these facts is the owner editing them, and an owner
+  editing is already looking at the open grid." `Re-run analysis` renders *in* the folded
+  state — it is the control directly under the strip — and a re-analysis lands new
+  observations into a folded grid. The verdict was never folded; the *fact* was. The fix
+  is the fold spec's rule verbatim: the record re-opens a fold, the calendar never.
+- **A grey rail is a positive claim.** `verdict === 'worth_a_call'` sent every unknown
+  recommendation to the calm rail — absence of a *known* escalation rendered as calm, which
+  is Pattern 1's failure mode wearing a colour. Now an allowlist: only `monitor` and
+  `not_enough_to_say` may render grey, and anything else fails toward the rose.
+
+**The generalisation:** three of those four are the same mistake — *a rule justified by an
+argument about what can happen, where the counterexample is on the same screen.* The fold
+control and `Re-run analysis` are eight points apart; the clinical rows are the ones the
+row order guarantees get cut; the unknown verdict is one server deploy away. An adversarial
+pass is worth its cost precisely because it reads the argument and then goes looking for
+the thing standing next to it.
+
 ### 2. The strip names some and counts all, and the pairing is the thing tested
 
 `observationStripLine` names the first three values and counts every row. That is
@@ -68,13 +104,14 @@ The rule was chosen because it reproduces the mock's line exactly (`Yellow, foam
 bile · 4 findings` from four rows) with nothing keyed to measured width — a rule
 that names "as many as fit" is a rule no test can pin.
 
-**The residual, stated rather than closed:** with only a blood row present the
+**Two residuals, stated rather than closed.** With only a blood row present the
 strip reads `What's visible · None visible · 1 finding` — a value whose referent
-is dropped. It is bounded: the verdict card above never folds, and on that input
-(two of three descriptive fields unreadable) the floor gives `not_enough_to_say`,
-so the strip sits under "Not enough to say yet" and nothing reassuring is
-asserted. Recorded on CUL-803 for a later pass to decide whether an absence
-finding should carry its label into the strip.
+is dropped (`Unclear, unclear, unclear · 4 findings` is the same shape). And an
+owner-corrected value renders identically to an AI one under the fold, since the
+`Edited` markers go with the grid. Both are bounded by the escalation gate: the
+case where either costs anything is a `worth_a_call`, which no longer folds at
+all. Recorded for a later pass to decide whether an absence finding should carry
+its label into the strip.
 
 ### 3. This fold is not the Signal's fold, and its hint had to say so
 
@@ -110,12 +147,19 @@ the photo nobody ever made (C-10).
 
 `tsc --noEmit` clean. 6771 tests pass, including under UTC+14 and UTC−10. Two new
 guards proven by mutation (the fold store's clear epoch; the wipe assertion), plus
-the haptics `ALWAYS_SCANNED` addition. `code-reviewer` and `adversarial-reviewer`
-both run — findings and dispositions on the PR.
+the haptics `ALWAYS_SCANNED` addition. `code-reviewer` and `adversarial-reviewer` both
+run; the adversarial pass returned **FAIL** on the first cut and six of its findings
+were fixed in-session (see 1a), two were filed as CUL-826 / CUL-827, and two are
+recorded as bounded residuals above. Findings and dispositions on the PR.
 
 ## Follow-ups
 
 - **CUL-804** (PR 3, the arrival) is next, sequenced after CUL-788 so `foldMotion`
   is one shared module. The rail and its tick are already the two constants it
   animates.
-- The strip's absence-value residual, above.
+- The two residuals above.
+- **CUL-826** — `lib/signalFold.ts` carries the clear-epoch hole this module inherited
+  and then fixed; the sibling still has it, and its comment says it does not.
+- **CUL-827** — `Re-run analysis` over a live `worth_a_call` replaces the escalation with
+  the pending frame. Pre-existing and the CUL-812 shape one status over; the fold makes
+  that control more prominent, which is how it surfaced.

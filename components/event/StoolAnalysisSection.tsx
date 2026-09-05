@@ -96,9 +96,6 @@ export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
   { eventId: string; petId: string; petName?: string | null; hasPhoto: boolean },
 ) {
-  // §5.3 — the observations fold, device-local per pet per event. Held here rather than
-  // in the grid so a re-render of the block never resets what the owner folded.
-  const [folded, setFolded] = useObservationFold(petId, eventId);
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
   const [working, setWorking] = useState(false); // analysis in flight (triggered or awaiting realtime)
   const [retrying, setRetrying] = useState(false);
@@ -106,6 +103,18 @@ export function StoolAnalysisSection(
   const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
   const watchTeardown = useRef<(() => void) | null>(null);
+
+  // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
+  // the grid so a re-render of the block never resets what the owner folded, and fed the
+  // observation set so the RECORD can re-open it: `Re-run analysis` renders in the folded
+  // state, so a re-analysis landing a new blood or foreign-material finding must not land
+  // it behind a strip. Derived from `row` on every render rather than mirrored into state
+  // (C-9's derive-in-the-render-body rule) — it is one join over at most six short values.
+  // `null`, NOT '', while the row has not loaded: the hook must be able to tell "not known
+  // yet" from "known to be empty", or the row's own arrival — nothing loaded, then four
+  // findings — reads as a change and releases every restored fold on mount.
+  const observationFingerprint = row ? buildObservations(row).map((o) => o.value).join('|') : null;
+  const [folded, setFolded] = useObservationFold(petId, eventId, observationFingerprint);
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -410,6 +419,7 @@ export function StoolAnalysisSection(
               onCancel={() => setEditing(false)}
             />
           ) : undefined}
+          escalating={rec === 'worth_a_call'}
           folded={folded}
           onToggleFold={setFolded}
         />

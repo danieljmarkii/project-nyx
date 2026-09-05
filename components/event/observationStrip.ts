@@ -13,6 +13,20 @@
 /** How many values the strip names before deferring to the count. */
 export const STRIP_NAMED_MAX = 3;
 
+/**
+ * The separator a MULTI-LABEL value uses inside the strip, replacing the ", " its row
+ * renders in the grid.
+ *
+ * This is the whole C-3 fix. A row's value can itself be a list — vomit `contents` joins
+ * its labels with ", " — and joining values with ", " on top of that flattens two nesting
+ * levels into one: four rows rendered `Yellow, foamy, bile, Foam, Hair · 4 findings`, five
+ * comma-separated items beside a count of four. The count and the list then describe
+ * different populations *visibly*, which is the exact failure C-3 names, and the only tell
+ * was a casing seam. Re-separating the inner list restores the invariant the count depends
+ * on: the commas in the named half are always `namedRows - 1`, pinned as a property below.
+ */
+const VALUE_PART_SEPARATOR = ' / ';
+
 /** The two halves of the strip's line, kept APART on purpose. The renderer lays them out
  *  as separate nodes so the count can be pinned against truncation while the named list
  *  shrinks — see `observationStripLine`'s note on which half yields. */
@@ -43,7 +57,10 @@ export interface ObservationStripLine {
 export function observationStripLine(values: readonly string[]): ObservationStripLine | null {
   const clean = values.map((v) => v.trim()).filter((v) => v.length > 0);
   if (clean.length === 0) return null;
-  const named = clean.slice(0, STRIP_NAMED_MAX).map((v, i) => (i === 0 ? v : lowerFirst(v)));
+  const named = clean
+    .slice(0, STRIP_NAMED_MAX)
+    .map((v) => v.split(', ').join(VALUE_PART_SEPARATOR))
+    .map((v, i) => (i === 0 ? v : lowerFirst(v)));
   return {
     named: named.join(', '),
     count: `${clean.length} finding${clean.length === 1 ? '' : 's'}`,

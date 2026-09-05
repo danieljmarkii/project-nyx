@@ -101,6 +101,22 @@ describe('the record block says whose record it is (CUL-660, §5.1)', () => {
     expect(mockResolveRecordPetName).toHaveBeenCalledWith(expect.anything(), 'pet-A');
   });
 
+  it('the caption keeps its date and time when the pet name will not resolve', async () => {
+    // The name is the one part that can be missing, and §5.4 exists so the vet also sees
+    // WHEN. An all-or-nothing caption drops the time along with the name — the half that
+    // was never in doubt.
+    mockResolveRecordPetName.mockReturnValue('');
+    mockGetEventById.mockResolvedValue(baseRow);
+    mockGetEventAttachment.mockResolvedValue({ id: 'att-1', local_uri: 'file:///photo.jpg', storage_path: 'p/1.jpg' });
+    const { findByTestId, getByText, getAllByText, queryByText } = render(<EventDetailScreen />);
+    fireEvent.press(await findByTestId('event-hero-photo'));
+    await waitFor(() => expect(getByText(/^Saturday, Sep 5 · 0?2:14 AM · witnessed$/)).toBeTruthy());
+    // The primary line degrades to the bare event label — the screen header carries the
+    // other one — and never to a dangling separator with nothing in front of it.
+    expect(getAllByText('Vomit').length).toBeGreaterThan(1);
+    expect(queryByText(/·\s*Vomit/)).toBeNull();
+  });
+
   it('says nothing rather than something wrong when the name will not resolve', async () => {
     // C-9: correct-but-anonymous beats confidently wrong. There is no active-pet rung to
     // fall back to — a miss here means the record's pet is not the active pet either.

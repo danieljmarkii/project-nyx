@@ -20,12 +20,23 @@
 //  - DEVICE-LOCAL, NOT SYNCED. The spouse's phone folds independently; a reinstall
 //    un-folds (the harmless direction).
 //
-// Keyed pet → event because the wipe and the prune both work in pets (`pruneFoldStore`'s
-// sibling), even though an event id is already unique on its own.
+// Keyed pet → event because the WIPE works in pets, even though an event id is already
+// unique on its own — and because the per-pet cap below needs somewhere to count.
+//
+// BOUNDED, unlike its sibling. There is no natural caller for a `pruneFoldStore`-style
+// sweep here (nothing enumerates a pet's incidents), and an entry is written every time
+// an owner folds a record, so the blob would otherwise grow for the life of the install
+// and keep entries for pets and events the device no longer knows. `MAX_FOLDS_PER_PET`
+// caps it by dropping the oldest folds, which is what `foldedAtIso` is for.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const OBSERVATION_FOLD_STORAGE_KEY = 'nyx.observationFold';
+
+/** Folds kept per pet before the oldest are dropped. Generous — an owner who folds this
+ *  many incidents has long since stopped caring about the first — and the eviction is
+ *  harmless in the only direction it can fail: an evicted record opens. */
+export const MAX_FOLDS_PER_PET = 200;
 
 /** One folded record. `state` is a discriminant so a future entry kind (a release rule, if
  *  one is ever ruled) can join without re-reading old blobs as garbage. */
@@ -41,6 +52,19 @@ export type ObservationFoldStore = Record<string, PetObservationFolds>;
 
 // See the header: a write's read-modify-write must not resurrect a wiped map.
 let clearEpoch = 0;
+
+/** Keep the newest `MAX_FOLDS_PER_PET`. Ties and unparseable timestamps sort last, so a
+ *  hand-edited blob loses its own junk before it loses a real fold. */
+function capOldest(entries: PetObservationFolds): PetObservationFolds {
+  const keys = Object.keys(entries);
+  if (keys.length <= MAX_FOLDS_PER_PET) return entries;
+  const newestFirst = keys.sort(
+    (a, b) => (Date.parse(entries[b].foldedAtIso) || 0) - (Date.parse(entries[a].foldedAtIso) || 0),
+  );
+  const kept: PetObservationFolds = {};
+  for (const k of newestFirst.slice(0, MAX_FOLDS_PER_PET)) kept[k] = entries[k];
+  return kept;
+}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -116,12 +140,24 @@ export async function setObservationFold(
     // A wipe landed while we were reading; writing now would restore the map the sign-out
     // just destroyed. Losing this one fold is the correct outcome.
     if (clearEpoch !== epoch) return;
-    const entries = { ...(store[petId] ?? {}) };
+    let entries = { ...(store[petId] ?? {}) };
     if (folded) entries[eventId] = { state: 'folded', foldedAtIso: nowIso };
     else delete entries[eventId];
+    entries = capOldest(entries);
     if (Object.keys(entries).length === 0) delete store[petId];
     else store[petId] = entries;
     await AsyncStorage.setItem(OBSERVATION_FOLD_STORAGE_KEY, JSON.stringify(store));
+    // AND REPAIR AFTERWARDS. The pre-write check alone cannot close this: a clear's
+    // removal can land in the window between that check and this `setItem`, so the write
+    // lands last and restores the map anyway. Re-checking the epoch AFTER the write, and
+    // removing the key if a clear happened at any point during this call, is what makes
+    // the guard hold for every interleaving rather than most of them — and it is why
+    // `clearObservationFold` bumps on both sides of its removal. After a wipe, "empty" is
+    // the correct state, so removing here can only ever discard this call's own entry;
+    // the next legitimate fold writes it back.
+    if (clearEpoch !== epoch) {
+      await AsyncStorage.removeItem(OBSERVATION_FOLD_STORAGE_KEY);
+    }
   } catch (e) {
     console.warn('[observationFold] write failed:', e);
   }
@@ -134,12 +170,21 @@ export async function setObservationFold(
  * findings already compressed.
  */
 export async function clearObservationFold(): Promise<void> {
-  // Bumped BEFORE the removal, so a write whose read straddles this clear is caught by
-  // the re-check rather than racing the removal itself.
+  // Bumped TWICE, and the second bump is the one the sibling module is missing.
+  //
+  // Bumping only before the removal catches a write already in flight. It does NOT catch
+  // a write that STARTS after the bump and whose read straddles the removal: that write
+  // snapshots the already-bumped epoch, reads the pre-wipe blob, and its re-check compares
+  // equal — so it writes the previous account's map back after `wipeLocalSession()` has
+  // returned clean, which is the exact thing the guard exists to prevent (found by the
+  // CUL-803 adversarial pass; `lib/signalFold.ts` has the same hole, filed separately).
+  // The second bump makes any write whose read spans the removal see a changed epoch.
   clearEpoch++;
   try {
     await AsyncStorage.removeItem(OBSERVATION_FOLD_STORAGE_KEY);
   } catch (e) {
     console.warn('[observationFold] clear failed:', e);
+  } finally {
+    clearEpoch++;
   }
 }

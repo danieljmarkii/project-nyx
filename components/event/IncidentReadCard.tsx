@@ -52,6 +52,17 @@ export function IncidentReadPending() {
   );
 }
 
+/**
+ * The two verdicts that may render CALM. Deliberately an allowlist, not
+ * `verdict === 'worth_a_call'`: a value outside the shipped enum — a server that gains a
+ * fourth recommendation before this build does — would otherwise take the grey rail, and
+ * a grey rail is a positive claim that this is not an escalation. Absence of a known
+ * escalation is not calm (Pattern 1's shape, applied to the presentation layer), so the
+ * unknown case fails toward the rose. It costs a false alarm at worst; the other
+ * direction costs a missed one.
+ */
+const CALM_VERDICTS: readonly string[] = ['monitor', 'not_enough_to_say'];
+
 export function IncidentReadCard({
   verdict,
   label,
@@ -64,7 +75,7 @@ export function IncidentReadCard({
   readText?: string | null;
   onHide: () => void;
 }) {
-  const attn = verdict === 'worth_a_call';
+  const attn = !CALM_VERDICTS.includes(verdict);
   return (
     <View
       style={[

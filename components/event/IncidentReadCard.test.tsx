@@ -46,6 +46,25 @@ describe('IncidentReadCard — the rail is the severity signal (§5.2, G4)', () 
     expect(attn.queryByText('⚠')).toBeNull();
   });
 
+  it('an UNKNOWN verdict rails rose, never grey — absence of a known escalation is not calm', () => {
+    // A grey rail is a positive claim that this is not an escalation. A server that gains
+    // a fourth recommendation before this build does would otherwise get that claim for
+    // free, which is Pattern 1's failure mode wearing a colour. Fail toward the rose: a
+    // false alarm at worst, against a missed one.
+    const { StyleSheet } = require('react-native');
+    const { getByTestId } = render(
+      <IncidentReadCard
+        verdict={'urgent_now' as never}
+        label="Call your vet now"
+        readText="x"
+        onHide={() => {}}
+      />,
+    );
+    const rail = StyleSheet.flatten(getByTestId('incident-read-rail').props.style);
+    expect(rail.backgroundColor).toBe(theme.colorEventSymptom);
+    expect(rail.backgroundColor).not.toBe(theme.colorBorderStrong);
+  });
+
   it('never renders a verdict word of its own — the label passes straight through', () => {
     // clinical-guardrails Pattern 1: the enum has no reassuring value, and there is no
     // path through this component that could add one. Handed nonsense, it renders the

@@ -36,6 +36,7 @@ jest.mock('./VomitFieldsEditor', () => ({ VomitFieldsEditor: () => null }));
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readObservationFold, setObservationFold } from '../../lib/observationFold';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
@@ -444,6 +445,10 @@ describe('VomitAnalysisSection — the observations fold (§5.3)', () => {
     await first.findByText('Keep an eye out');
     fireEvent.press(first.getByText('Keep it compact'));
     await waitFor(() => expect(first.queryByText('Yellow')).toBeNull());
+    // The screen folds immediately and the store follows (the write is fire-and-forget by
+    // design), so wait on the WRITE, not on the render — otherwise the remount below races
+    // it and this test measures scheduling rather than persistence.
+    await waitFor(async () => expect(await readObservationFold('pet-A', 'ev-1')).toBe(true));
     first.unmount();
 
     // The same record, re-opened: folded.
@@ -462,13 +467,21 @@ describe('VomitAnalysisSection — the observations fold (§5.3)', () => {
   it('a read that has not answered leaves the findings VISIBLE (C-12)', async () => {
     // The direction matters: a storage failure must never hide a fact. `null` from the
     // store is "did not answer", and only a true `folded` may collapse the grid.
-    jest.spyOn(AsyncStorage, 'getItem').mockRejectedValue(new Error('storage gone'));
-    mockRow = READ;
-    const { findByText, getByText } = render(
-      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
-    );
-    await findByText('Keep an eye out');
-    expect(getByText('Yellow')).toBeTruthy();
+    // Restored in a `finally` rather than left to `restoreAllMocks`: AsyncStorage's own
+    // jest mock IS a jest.fn, so restoring a spy over it does not reliably drop the
+    // rejection — and a leaked one makes every later persistence assertion in this file
+    // read "did not answer" while still passing for the wrong reason.
+    const getItem = jest.spyOn(AsyncStorage, 'getItem').mockRejectedValue(new Error('storage gone'));
+    try {
+      mockRow = READ;
+      const { findByText, getByText } = render(
+        <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+      );
+      await findByText('Keep an eye out');
+      expect(getByText('Yellow')).toBeTruthy();
+    } finally {
+      getItem.mockRestore();
+    }
   });
 });
 
@@ -552,5 +565,113 @@ describe('VomitAnalysisSection — the fold control and Re-run analysis do not s
       const props = owningTouchable(getByText(label) as never)!;
       expect(StyleSheet.flatten(props.style as never).minHeight).toBe(44);
     }
+  });
+});
+
+// ── CUL-803 — the two rules the adversarial pass added ────────────────────────
+describe('VomitAnalysisSection — an escalation’s facts never fold (§5.3)', () => {
+  afterEach(async () => {
+    mockRow = null;
+    await AsyncStorage.clear();
+    // The C-12 test above spies `AsyncStorage.getItem` into rejecting; without this, a
+    // later store read answers `null` ("did not answer") and every persistence assertion
+    // in this file silently measures the wrong thing.
+    jest.restoreAllMocks();
+  });
+
+  it('offers no fold on a worth_a_call — the facts justifying it stay on screen', async () => {
+    // The named slots go in row order and every builder pushes the descriptive rows
+    // first, so Blood / Foreign material are ALWAYS the rows a fold would compress. On an
+    // escalation that leaves the verdict on screen with every fact behind a tap, on the
+    // one surface D3 exists so an owner can turn the phone around to a vet.
+    mockRow = row({
+      status: 'completed', recommendation: 'worth_a_call',
+      read_text: 'There are streaks that look like blood in this photo.',
+      colour: 'brown', consistency: 'chunky', contents: ['undigested_food'],
+      blood_present: 'fresh_red', foreign_material_present: 'yes',
+      foreign_material_note: 'a piece of green plastic',
+    });
+    const { findByText, getByText, queryByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Worth a call');
+    expect(queryByText('Keep it compact')).toBeNull();
+    expect(getByText('Fresh red')).toBeTruthy();
+    expect(getByText('a piece of green plastic')).toBeTruthy();
+  });
+
+  it('a fold stored before the read escalated is overridden, never honoured', async () => {
+    // A re-analysis can turn a folded `monitor` into a `worth_a_call`. The stored fold is
+    // still in the blob; the gate has to beat it, not race it.
+    await setObservationFold('pet-A', 'ev-1', true, '2026-09-05T12:00:00.000Z');
+    mockRow = row({
+      status: 'completed', recommendation: 'worth_a_call', read_text: 'Blood is visible.',
+      colour: 'brown', consistency: 'liquid', blood_present: 'fresh_red',
+    });
+    const { findByText, getByText, queryByText } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Worth a call');
+    expect(getByText('Fresh red')).toBeTruthy();
+    expect(queryByText(/findings/)).toBeNull();
+  });
+});
+
+describe('VomitAnalysisSection — the RECORD re-opens a fold (§5.3)', () => {
+  afterEach(async () => {
+    mockRow = null;
+    await AsyncStorage.clear();
+    // The C-12 test above spies `AsyncStorage.getItem` into rejecting; without this, a
+    // later store read answers `null` ("did not answer") and every persistence assertion
+    // in this file silently measures the wrong thing.
+    jest.restoreAllMocks();
+  });
+
+  const BENIGN = row({
+    status: 'completed', recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.',
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+  });
+
+  it('a re-analysis landing NEW findings opens the grid it landed in', async () => {
+    // `Re-run analysis` renders in the folded state — it is the control directly under the
+    // strip. Without this rule a new blood finding lands behind a summary the owner has
+    // already dismissed as read. The verdict was never folded; the FACT was.
+    mockRow = BENIGN;
+    const { findByText, getByText, queryByText, rerender } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    fireEvent.press(getByText('Keep it compact'));
+    await waitFor(() => expect(queryByText('Yellow')).toBeNull());
+
+    // The owner presses the control that sits directly under the strip. The re-read
+    // carries a finding the folded summary did not.
+    mockRow = row({ ...BENIGN, blood_present: 'fresh_red' });
+    await act(async () => { fireEvent.press(getByText('Re-run analysis')); });
+    // …and the watch it opens resolves with the new row.
+    const call = (watchAnalysisRow as jest.Mock).mock.calls.at(-1);
+    expect(call).toBeTruthy();
+    await act(async () => { await (call![1] as () => Promise<unknown>)(); });
+    rerender(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+
+    await waitFor(() => expect(getByText('Fresh red')).toBeTruthy());
+    expect(queryByText(/findings/)).toBeNull();
+    // …and the store forgets it, so returning later meets the new findings open too.
+    await waitFor(async () => expect(await readObservationFold('pet-A', 'ev-1')).toBe(false));
+  });
+
+  it('a re-render that changes NOTHING leaves the fold alone', async () => {
+    // The other direction, and the one a naive implementation breaks: the fold must
+    // survive its own screen re-rendering, and must survive the row arriving at all.
+    mockRow = BENIGN;
+    const { findByText, getByText, queryByText, rerender } = render(
+      <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    fireEvent.press(getByText('Keep it compact'));
+    await waitFor(() => expect(queryByText('Yellow')).toBeNull());
+    rerender(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+    rerender(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+    expect(getByText(/4 findings/)).toBeTruthy();
   });
 });
