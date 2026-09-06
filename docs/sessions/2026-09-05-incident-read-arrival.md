@@ -62,10 +62,14 @@ excludes by name ("a read that already exists on open paints on the first frame"
 arriving through the back door of a predicate that never mentions it.
 
 `working` is the discriminator: the sections set it only on the path where the
-server has actually been asked. The predicate is now
+server has actually been asked. The predicate became
 `hasPhoto && (working || row?.status === 'pending')`, and the parameter is named
 `awaitingRead` rather than `pending` so the next reader has to notice that the
 stage's `pending` prop and the hook's question are different questions.
+
+(The `hasPhoto` half came out again a few hours later, when the adversarial pass
+showed it made the fact fall on a photo *removal* with no read having landed. What
+survives is the `working` discriminator and the naming — see below.)
 
 **The generalisation: two states that render identically are not therefore the same
 state.** The pending box is a *presentation*; "a read is being produced" is a
@@ -84,10 +88,11 @@ was asserting about could have happened. It measured nothing, twice.
 The fix was to the test (advance past `railLagMs`, then assert), and the rule it
 re-earns is C-3's, verbatim: *a mutation that does not change behaviour has not
 tested the guard.* Reading the test would not have found this; only running the
-mutation did. Nineteen tests here, and every one of them was proven by breaking the
-source — eight mutations on the hook and the stage, two directions of the
-fetch-vs-wait split on each section, and a real haptics import dropped into the
-real tree for the guard registration.
+mutation did. Twenty-five tests here in the end, and every one that *can* be proven
+by breaking the source was — fourteen mutations across the hook, the stage and the
+sections, both directions of the fetch-vs-wait split on each section, and a real
+haptics import dropped into the real tree for each guard registration. The two that
+cannot be are named as such at the foot of this record.
 
 ## Two smaller things worth keeping
 
