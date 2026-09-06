@@ -17,8 +17,9 @@
 // never maps a recommendation to words, so neither section's clinical copy can be edited
 // from here (clinical-guardrails Pattern 1: the enum has no reassuring value, and there is
 // no path through this file that adds one).
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { Animated, View, StyleSheet, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
+import { type ArrivalRail } from '../motion/arrivalMotion';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { ThemedText } from '../ui/ThemedText';
 
@@ -42,9 +43,9 @@ export const RAIL_TICK_HEIGHT = 16;
  * PR 3 grows into the card's rail, so the read does not arrive from nowhere — it arrives
  * from the mark that was already standing there.
  */
-export function IncidentReadPending() {
+export function IncidentReadPending({ onLayout }: { onLayout?: (e: LayoutChangeEvent) => void }) {
   return (
-    <View style={styles.pendingBox}>
+    <View style={styles.pendingBox} onLayout={onLayout}>
       <View style={styles.pendingTick} />
       <WhorlSpinner size="sm" ground="day" />
       <ThemedText style={styles.pendingText}>{INCIDENT_READ_PENDING_LABEL}</ThemedText>
@@ -68,26 +69,59 @@ export function IncidentReadCard({
   label,
   readText,
   onHide,
+  arrival,
+  onMeasure,
 }: {
   verdict: IncidentVerdict;
   /** The enum's copy, verbatim from the section's own REC_LABEL map. */
   label: string;
   readText?: string | null;
   onHide: () => void;
+  /** Beat 1 of the arrival (CUL-804), while it is running; null every other moment —
+   *  including a read that was already here on open, which never animates at all. */
+  arrival?: ArrivalRail | null;
+  /** The card's own height, for the arrival's rail. Taken here rather than off the section
+   *  block because the rail is painted inside this box and clipped by it — and the block
+   *  is taller on an escalation, whose facts never fold (§5.3a), which would make the
+   *  rail's apparent growth rate depend on the verdict. G4 says it must not. */
+  onMeasure?: (height: number) => void;
 }) {
   const attn = !CALM_VERDICTS.includes(verdict);
   return (
     <View
+      testID="incident-read-card"
+      onLayout={onMeasure ? (e) => onMeasure(e.nativeEvent.layout.height) : undefined}
       style={[
         styles.card,
         attn ? styles.cardAttn : verdict === 'monitor' ? styles.cardNeutral : styles.cardMuted,
       ]}
     >
-      <View
-        testID="incident-read-rail"
-        style={[styles.rail, attn ? styles.railAttn : styles.railQuiet]}
-      />
-      <View style={styles.body}>
+      {/* The rail LEAVES the row's flow for the commit that animates layout, and takes an
+          explicit height: a layout keyframe re-applies a view's committed props when it
+          ends, so a view that is both layout-animated and carrying an in-flight
+          native-driver transform snaps back on Fabric (foldMotion's header, verbatim).
+          The card already clips, so a rail taller than the opening box is hidden by it
+          until the box catches up. */}
+      {arrival ? (
+        <Animated.View
+          testID="incident-read-rail"
+          style={[
+            styles.rail,
+            attn ? styles.railAttn : styles.railQuiet,
+            styles.railOut,
+            {
+              height: arrival.height,
+              transform: [{ translateY: arrival.shift }, { scaleY: arrival.scale }],
+            },
+          ]}
+        />
+      ) : (
+        <View
+          testID="incident-read-rail"
+          style={[styles.rail, attn ? styles.railAttn : styles.railQuiet]}
+        />
+      )}
+      <View style={arrival ? [styles.body, styles.bodyRailOut] : styles.body}>
         <ThemedText
           style={[
             styles.verdict,
@@ -142,12 +176,22 @@ const styles = StyleSheet.create({
   rail: {
     width: RAIL_WIDTH,
   },
+  // Out of the flow for the arrival only. The body takes the width back as a margin so
+  // nothing moves sideways on the frame the rail leaves or rejoins the row.
+  railOut: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
   railAttn: { backgroundColor: theme.colorEventSymptom },
   railQuiet: { backgroundColor: theme.colorBorderStrong },
   body: {
     flex: 1,
     padding: theme.space2,
     gap: 6,
+  },
+  bodyRailOut: {
+    marginLeft: RAIL_WIDTH,
   },
   verdict: {
     fontSize: theme.textXS,

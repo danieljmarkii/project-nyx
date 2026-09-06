@@ -39,6 +39,8 @@ jest.mock('./StoolFieldsEditor', () => ({ StoolFieldsEditor: () => null }));
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
 import { render, waitFor, act } from '@testing-library/react-native';
+import { LayoutAnimation } from 'react-native';
+import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
 import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis } from '../../lib/analysis';
 
@@ -459,5 +461,45 @@ describe('StoolAnalysisSection — an escalation outlives a failed re-read (CUL-
     const { findByText } = render(<StoolAnalysisSection eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/Couldn't finish reading this one/i)).toBeTruthy();
     expect(await findByText(/Try again/i)).toBeTruthy();
+  });
+});
+
+// ── The read's arrival (CUL-804, §7) ─────────────────────────────────────────
+// The stool sibling of the vomit pair. The wiring is identical by construction — the
+// stage and the hook are shared — so what this pins is that the SECTION passes the same
+// `awaitingRead`, which is the half that is written per file and can drift.
+describe('StoolAnalysisSection — the arrival fires only for a read the screen waited for', () => {
+  let configureNext: jest.SpyInstance;
+  beforeEach(() => {
+    configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    (watchAnalysisRow as jest.Mock).mockClear();
+  });
+  afterEach(() => { configureNext.mockRestore(); mockRow = null; });
+
+  it('a read already in the record on open: no arrival, not one `configureNext`', async () => {
+    mockRow = row({ status: 'completed', recommendation: 'monitor', read_text: 'Formed, brown.' });
+    const { findByText } = render(
+      <StoolAnalysisSection eventId="old-s1" petId="pet-1" petName="Rex" hasPhoto />,
+    );
+    expect(await findByText('Keep an eye out')).toBeTruthy();
+    // Past beat 2's lag — an assertion taken when the text appears proves nothing.
+    await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
+    expect(configureNext).not.toHaveBeenCalled();
+  });
+
+  it('a read that lands while the screen waits: the box opens once', async () => {
+    mockRow = row({ status: 'pending', recommendation: null });
+    const { findByText } = render(
+      <StoolAnalysisSection eventId="new-s1" petId="pet-1" petName="Rex" hasPhoto />,
+    );
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+
+    mockRow = row({ status: 'completed', recommendation: 'worth_a_call', read_text: 'Worth a call.' });
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+    expect(await findByText('Worth a call')).toBeTruthy();
+
+    await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
+    expect(configureNext).toHaveBeenCalledTimes(1);
   });
 });

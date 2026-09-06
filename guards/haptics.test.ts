@@ -79,7 +79,18 @@ const ALWAYS_SCANNED = [
   'components/event/VomitAnalysisSection.tsx',
   'components/event/StoolAnalysisSection.tsx',
   'components/event/IncidentReadCard.tsx',
+  'components/event/IncidentReadSection.tsx',
   'components/event/ObservationGrid.tsx',
+  // The two motion hooks. `walk()` derives its scan set from `.tsx` files only, so a
+  // `.ts` hook is invisible to it however safety-bearing the surface it drives — and
+  // these two ARE the surface: the beat callbacks in `arrivalMotion.ts` and
+  // `foldMotion.ts` are exactly where a "landed" haptic would read as natural, on a card
+  // that paints `worth_a_call` (G4) and on a safety fold (S1). `unexemptedHapticImports`
+  // reads by path and does not care about the extension, so listing them here is enough.
+  // C-16's lesson, one turn further: a scan set tracks where the words are, and the
+  // behaviour has now moved twice.
+  'components/motion/arrivalMotion.ts',
+  'components/motion/foldMotion.ts',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;
