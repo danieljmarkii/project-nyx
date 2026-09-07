@@ -499,6 +499,17 @@ const uuidAt = (i: number, nibble: string) =>
 describe('ingestCaptureInbox (wrapper: ordering + file lifecycle)', () => {
   let raw: RawDb;
 
+  // The wrapper reads the REAL clock for its age-out check (INBOX_MAX_AGE_DAYS
+  // = 45), unlike the suites above, which are handed an explicit `now`. So a
+  // wrapper fixture pinned to an absolute date silently ages out 45 days after
+  // that date and the suite starts failing on a calendar boundary — this one
+  // did, on 2026-09-07, 45 days after its 2026-07-24 fixtures. Anchor wrapper
+  // fixtures to now instead. Per CLAUDE.md's B-514 rule the production
+  // signature is NOT widened to take a `now` just to make this pinnable.
+  const freshIso = (msAgo = 60_000) => new Date(Date.now() - msAgo).toISOString();
+  const freshRecord = (overrides: Partial<MealCaptureRecord> = {}) =>
+    validRecord({ occurredAt: freshIso(), createdAt: freshIso(), ...overrides });
+
   beforeEach(() => {
     raw = freshDb();
     raw
@@ -512,12 +523,12 @@ describe('ingestCaptureInbox (wrapper: ordering + file lifecycle)', () => {
   }
 
   it('deletes applied and dropped files, leaves deferred ones for the next pass', async () => {
-    const applied = fakeFile('a.json', JSON.stringify(validRecord()));
+    const applied = fakeFile('a.json', JSON.stringify(freshRecord()));
     const dropped = fakeFile('b.json', '{broken');
     const deferred = fakeFile(
       'c.json',
       JSON.stringify(
-        validRecord({
+        freshRecord({
           id: '66666666-6666-4666-9666-666666666666',
           mealId: '77777777-7777-4777-9777-777777777777',
           petId: '99999999-9999-4999-9999-999999999999', // foreign pet
@@ -541,10 +552,13 @@ describe('ingestCaptureInbox (wrapper: ordering + file lifecycle)', () => {
     // (the adversarial enumeration order). The oldest capture must be applied
     // this pass; the NEWEST is the one that waits.
     const count = MAX_INGEST_PER_PASS + 1;
+    // Anchored to now (see freshIso above): i=0 is the oldest and must still be
+    // inside the age-out window, or the pass drops every record and applies 0.
+    const oldestMs = Date.now() - count * 1000 - 60_000;
     const entries: FakeFile[] = [];
     for (let i = count - 1; i >= 0; i--) {
       // i=0 is the oldest capture; createdAt encodes the order.
-      const createdAt = new Date(Date.parse('2026-07-24T00:00:00.000Z') + i * 1000).toISOString();
+      const createdAt = new Date(oldestMs + i * 1000).toISOString();
       entries.push(
         fakeFile(
           `${i}.json`,

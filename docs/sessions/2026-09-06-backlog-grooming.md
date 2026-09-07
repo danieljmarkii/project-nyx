@@ -179,3 +179,38 @@ Plus the Linear mechanics that have bitten a pass before: `labels` replaces the 
 
 The 12 untriaged quick-win candidates; the 13 PM-blocked `In Progress` issues (a convention ruling,
 raised in Part 1); all five of CUL-719's calls, still unruled at nine days.
+
+## The pre-push hook caught something neither of us was looking for (CUL-831)
+
+Pushing Part 2 was blocked by a jest failure in `lib/captureInbox.test.ts` — a file this branch does
+not touch. `Expected: 200, Received: 0` on a test named *"drains oldest-first under the apply cap"*,
+which reads like an ordering bug.
+
+It is a **calendar time bomb**, and it detonated today. `ingestCaptureInbox` (the wrapper) checks
+age-out against the **real** clock — `now - Date.parse(createdAt) > INBOX_MAX_AGE_DAYS`, with
+`INBOX_MAX_AGE_DAYS = 45`. The pure-function suites above it are handed an explicit `now` and are
+immune. The two wrapper tests were not, and used fixtures pinned to `2026-07-24`. 24 July plus 45
+days is 7 September: the `00:00Z` fixture aged out at midnight UTC today, and the `18:00Z` fixtures
+were about four hours from doing the same.
+
+Three things made it look like mine and it was not:
+
+* `git diff main...HEAD` showed 67 files — because the **local `main` ref was stale** (`f3963e7b`
+  against `origin/main` at `e5947c7b`). Against `origin/main` the diff is two markdown files.
+* CI was green on the same tree yesterday.
+* The failure names ordering, not time.
+
+Since `.githooks/pre-push` runs the full suite, this blocked **every push in the repo**, on a date
+rather than on a change — so it was fixed here rather than reported, and filed as **CUL-831**.
+
+**Fix (test-only):** anchor the wrapper fixtures to the clock (`freshIso()` / `freshRecord()` scoped
+to the wrapper `describe`; the ordering test's base derived from `Date.now()`). The production
+signature is deliberately **not** widened to take a `now` — CLAUDE.md's B-514 rule forbids exactly
+that. Proved by mutation under a `Date.now`-skewed harness set 90 days forward: pre-fix reds,
+post-fix greens, so the class is closed and not just today's instance.
+
+**The lesson generalises.** This is the B-514 family one axis over: B-514 is a fixture pinned to an
+absolute *time zone* when the question is a local day; this is a fixture pinned to an absolute
+*date* when the question is a rolling window against the real clock. Same shape — a fixture whose
+correctness silently depends on when it runs. The sweep for the rest of that family (retention,
+TTL, staleness, age-out, the 24h Signal cache) is CUL-832.
