@@ -302,6 +302,37 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(src).not.toMatch(MANUAL_MIDNIGHT);
   });
 
+  // CUL-393 (B-632) — the last two private copies of the epoch-day inverse. Both
+  // were correct, and that is the point: `dietTrialOutcomeFacts` was correct too
+  // until PR 6 edited it and inverted the read for every owner behind UTC. The
+  // guard could not see that one because the file was not on a list; these two
+  // were not on a list either, so they are added here rather than left to the same
+  // discovery path.
+  //
+  // They are asserted on BOTH operators plus the absence of a local re-definition:
+  // a file that indexes days correctly imports the inverse and contains neither.
+  //
+  // `dietTrialFacts` keeps ONE multiplication and so is carved out of
+  // DAY_MULTIPLICATION, in the shape the header above describes: line ~233 offsets
+  // a REAL INSTANT by a duration (`nowMs - ENDED_TRIAL_GRACE_DAYS * 86_400_000`)
+  // and reads it back with the LOCAL getter, which is correct for that shape. The
+  // dangerous inverse is the one that multiplies an epoch-DAY INDEX and reads it
+  // back locally — that is what `not.toMatch(/function dayKeyFromIndex/)` forbids
+  // here, and it is the assertion that actually pins CUL-393. Widening the pattern
+  // to catch the grace offset would have cost a carve-out comment on the source and
+  // bought nothing.
+  it.each([
+    ['lib/dietTrialFacts.ts', false],
+    ['lib/trialExposuresScreen.ts', true],
+  ])('%s delegates the epoch-day inverse rather than redefining it (CUL-393)', (file, noMultiply) => {
+    const src = readCode(file);
+    expect(src).toMatch(/dayKeyFromIndex\(/); // the shared inverse, imported not redefined
+    expect(src).not.toMatch(/function dayKeyFromIndex/);
+    expect(src).not.toMatch(/const MS_PER_DAY/);
+    expect(src).not.toMatch(DAY_DIVISION);
+    if (noMultiply) expect(src).not.toMatch(DAY_MULTIPLICATION);
+  });
+
   it('the boundary is defined once, in lib/utils', () => {
     const analytics = read('lib/analytics.ts');
     const progress = analytics.slice(analytics.indexOf('export function getDietTrialProgress'));

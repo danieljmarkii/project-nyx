@@ -54,7 +54,7 @@ import {
   type TrialFacts,
   type VerdictReason,
 } from './dietTrial';
-import { formatLongDate, formatTime, toLocalDayKey } from './utils';
+import { dayKeyFromIndex, formatLongDate, formatTime, toLocalDayKey } from './utils';
 
 // ── Copy this module owns ───────────────────────────────────────────────────
 
@@ -250,15 +250,6 @@ function windowLabel(facts: TrialFacts): string | null {
   const from = formatLongDate(dayKeyFromIndex(r.startDayIndex));
   const to = formatLongDate(dayKeyFromIndex(r.endDayIndex));
   return from !== null && to !== null ? `${from} – ${to}` : null;
-}
-
-/** Day index → day key. The index is an epoch-day of the owner's LOCAL calendar
- *  day (`localDayIndex` builds it from local components via `Date.UTC`), so the
- *  inverse must be read back in UTC or the day shifts for anyone behind it. Two
- *  private copies of this already exist (`dietTrialFacts`, `dietTrialOutcomeFacts`);
- *  consolidating the three is B-632, not this PR. */
-function dayKeyFromIndex(index: number): string {
-  return new Date(index * 86_400_000).toISOString().slice(0, 10);
 }
 
 /**
