@@ -140,3 +140,50 @@ describe('the Remove confirm names the photo (CUL-825, CUL-645 parity)', () => {
     expect(alertBody()).not.toContain('photo');
   });
 });
+
+// The hydration window (found by `code-reviewer` on this change, session
+// 2026-09-07). `loadAll` sets `event` and only THEN awaits `getEventAttachment`,
+// while the screen's full-render gate is `loading && !event` — so the footer,
+// Remove included, is interactive for as long as that read takes. Reading
+// `attachment` there would answer null on a genuinely photographed record and
+// print the confirm with no photo sentence: silent destruction of exactly the
+// unrecreatable photo this dialog exists to warn about.
+//
+// The tests above cannot see it — their mocks resolve inside the same `waitFor`
+// poll, so the intermediate state never renders. This one holds the attachment
+// read open across the tap, which is the only way to observe the window.
+describe('the confirm survives the attachment-read window (C-12)', () => {
+  it('still names the photo when Remove is tapped before the read has answered', async () => {
+    let release!: (v: unknown) => void;
+    mockGetEventAttachment.mockReturnValueOnce(new Promise((r) => { release = r; }));
+
+    const view = render(<EventDetailScreen />);
+    // The footer is reachable while the attachment read is still in flight — that
+    // it renders at all here IS the window under test.
+    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+
+    // The record does have a photo; the screen just has not been told yet. The
+    // re-check inside handleDelete is what has to find it.
+    mockGetEventAttachment.mockResolvedValue(withPhoto);
+    fireEvent.press(view.getByText('Remove'));
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(alertBody()).toContain('The photo you attached will be removed with it.');
+
+    release(null);
+  });
+
+  // The other direction: a re-check that throws must not invent a photo. The
+  // owner is told no less than they were before CUL-825, and never something false.
+  it('makes no photo claim when the re-check fails', async () => {
+    mockGetEventAttachment.mockResolvedValueOnce(null);
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+
+    mockGetEventAttachment.mockRejectedValue(new Error('database is locked'));
+    fireEvent.press(view.getByText('Remove'));
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+    expect(alertBody()).toBe('This will remove the Vomit from history.');
+  });
+});
