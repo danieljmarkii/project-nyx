@@ -88,3 +88,94 @@ Three findings that only appear once the board is read against the repo:
 
 Nothing yet. The `In Progress`-means-two-things collision is a real convention defect and would earn
 a rule, but the rule depends on the PM's ruling — recorded here and raised, not written.
+
+---
+
+# Part 2 — 2026-09-07: quick wins, and what the pass itself was missing
+
+The PM asked for two things: fold quick-win triage into the grooming workflow, and say what else
+the workflow should include. Both are now in `.claude/skills/backlog-groomer/SKILL.md`. Applying
+them surfaced a correction to Part 1.
+
+## The correction: Part 1 ran on 6% of the history
+
+**The repo arrives as a shallow clone** — 51 commits, bottoming out at 2026-08-29. Full history is
+810 commits back to 2026-05-15. Part 1's `git log` scan could not have seen a shipping commit older
+than eight days, and nothing about the output said so: `grep CUL-` over 51 commits returns plenty of
+hits and looks like a complete sweep.
+
+Part 1's stated conclusion survives — its window happened to bottom out almost exactly at the
+previous grooming pass, so "every issue in the last 26 merged PRs is `Done`" was true and correctly
+scoped. But it held by coincidence, not by design, and a pass whose shallow boundary fell elsewhere
+would have under-scanned in silence.
+
+Re-run un-shallowed: **143 unique `CUL-NNN` ids across 810 commits** (Part 1 saw 61), intersected
+against every open-state issue. **Three open issues have a commit on `main`** — CUL-663 (a device QA
+pass), CUL-684 (a track umbrella), CUL-683 (a watch item whose PR #757 recorded a ruling rather than
+a fix). All three are correctly open. So the conclusion is unchanged and now rests on sixteen times
+the evidence. This is why `git fetch --unshallow` is step 0 of the skill.
+
+The 2026-08-29 pass knew about the shallow clone — it is written down in
+`docs/sessions/2026-08-29-linear-backlog-grooming.md`. That file is stranded on the unmerged
+branch of PR #754, so no session has been able to read it. Five hard-won mechanical lessons went
+with it; they are now in the skill.
+
+## Quick wins: 11 labelled, and the method matters more than the count
+
+Reused the canonical definition rather than inventing a second one (recovered from the stranded
+record): *small **AND** grabbable today* — one focused session, ~1 PR, no schema/deploy chain, no
+pending PM/design/clinical ruling, not on a standing deploy hold, not a device chore, not carrying
+`Waiting on PM`, and genuinely worth doing.
+
+**Labelled (11):** CUL-813, CUL-816, CUL-818, CUL-822, CUL-823, CUL-825, CUL-826, CUL-827, CUL-716,
+CUL-723, CUL-724.
+
+**The finding worth keeping: titles are not sufficient, measured.** 21 candidates were judged from
+their titles, then verified against their bodies. **10 of 21 failed**, and every disqualifier was
+invisible from the title:
+
+| Issue | Title reads as | Body says |
+|---|---|---|
+| CUL-820 | a copy fix | "The product call inside it (a PM decision, not a build choice)" |
+| CUL-743 | one timeout | twelve queues, and names its own "single highest-risk detail" |
+| CUL-830 | an a11y fix | "Options, none obviously right" — four of them, against a proof |
+| CUL-765 | route through the shared gate | "needs one small call, which is why this isn't mechanical" |
+| CUL-770 | clear a banner | a data-modelling choice; one option costs a migration |
+| CUL-700 | a guard fix | "not a recommendation, a menu" |
+| CUL-702 | a picker bug | blocks only an Android build we do not ship |
+| CUL-828 | a render fix | "design call, not a mechanical fix" |
+| CUL-722 | a copy fix | "This is a PM call, not a foregone conclusion" |
+| CUL-764 | a scope fix | half of it inherits CUL-660's unruled R1 |
+
+A 52% hit rate means title-based bulk labelling would have put a "grabbable today" badge on ten
+issues that will stall a session on contact — the precise failure the label exists to prevent.
+
+The positive signal, conversely, is a body that names the fix shape **and** a precedent already in
+the tree ("the `pending` sibling of `escalationSurvivesFailure`", "as shipped for the sibling in
+#806"). Those really are one session.
+
+**Not yet triaged** (12 candidates, next pass): CUL-814, CUL-798, CUL-792, CUL-782, CUL-767,
+CUL-768, CUL-771, CUL-772, CUL-745, CUL-720, CUL-697, CUL-737.
+
+## What else the workflow was missing
+
+Six additions beyond quick wins, each from a gap this pass or Part 1 actually hit:
+
+1. **Step 0 — un-shallow.** Above.
+2. **Reconcile against open PRs, not only merged ones.** A merged-only scan cannot see work living
+   in an unmerged branch, and this repo has 30 open PRs. Two issues were mis-stated this way.
+3. **Reconcile against the deploy ledger.** Merged is not live. A cluster of separate "redeploy X"
+   issues usually means one command discharges several.
+4. **`In Progress` means three things** — in flight, in review, blocked on the PM — and the fourth
+   case, an abandoned claim, looks identical to all of them. The skill now carries a sorting table.
+5. **Verify against the tree, never the issue text.** Two issues had changed underneath.
+6. **Audit recently-closed issues.** Grooming only ever looked at open ones, which misses the
+   tracker's own failure mode: an attachment closes an issue on merge, unfinished business included.
+
+Plus the Linear mechanics that have bitten a pass before: `labels` replaces the whole set (use
+`addLabels`), and the search index lags writes.
+
+## Not done, on purpose
+
+The 12 untriaged quick-win candidates; the 13 PM-blocked `In Progress` issues (a convention ruling,
+raised in Part 1); all five of CUL-719's calls, still unruled at nine days.
