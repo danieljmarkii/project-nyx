@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -153,6 +153,8 @@ export default function EventDetailScreen() {
 
   const [event, setEvent] = useState<TimelineRow | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
+  // The id `loadAll` last ran for, so a refocus can be told from a navigation (CUL-302).
+  const loadedEventIdRef = useRef<string | null>(null);
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
   // Raw (non-transformed) signed URL, resolved in parallel as a fallback for when
   // the transformed URL can't load (image transformations unavailable). B-207.
@@ -206,8 +208,30 @@ export default function EventDetailScreen() {
     setAdherence(null);
     setHowGiven(null);
     setDoubleDose(null);
-    setRemoteUrl(null);
-    setRemoteUrlFull(null);
+    // CUL-302 — the signed URLs are reset only when the EVENT actually changes.
+    //
+    // `loadAll` runs on every `useFocusEffect` refire, not only on a new id, so
+    // returning to this same record (back from Edit is the common one) used to null
+    // both URLs and leave a remote-only photo — one with no local file on this
+    // device — as a blank hero until two `getSignedUrl` round-trips came back. The
+    // reset above it is still unconditional and still right: those fields are A's
+    // food label and rating, and flashing them over B is the defect they prevent.
+    // A signed URL is different in kind. It is not a fact about the event that can
+    // be wrong on refocus; it is a handle on the same photo, and it is replaced
+    // below on every load anyway, so holding the previous one costs nothing and
+    // spares the blank.
+    //
+    // `attachment` deliberately stays out of this reset entirely (B-207): adding it
+    // reopens the mid-fallback flash of the add-photo target over an existing photo.
+    // `transformFailed` stays unconditional too — it is per-PHOTO, not per-event, so
+    // a same-event refocus is the one moment a replaced photo gets its transform
+    // retried rather than inheriting the previous photo's failure.
+    const isSameEvent = loadedEventIdRef.current === id;
+    loadedEventIdRef.current = id;
+    if (!isSameEvent) {
+      setRemoteUrl(null);
+      setRemoteUrlFull(null);
+    }
     setTransformFailed(false);
     try {
       const row = await getEventById(id);
