@@ -208,3 +208,69 @@ describe('FAB — no pet to log for', () => {
     expect(view.getByLabelText('Close menu')).toBeTruthy();
   });
 });
+
+// ── CUL-723 ──────────────────────────────────────────────────────────────────
+//
+// The pet FLIP, which is a different transition from CUL-717's pet LOSS above and
+// is not covered by it: `selectPet` goes A → B with no null in between, so the
+// no-pet render gate never fires.
+//
+// The two are guards in DIFFERENT directions, and the run is what established it —
+// the first draft claimed both went red pre-fix, and only one did. Test 1 reds
+// against the pre-fix tree (A's rows survive the flip). Test 2 does NOT: pre-fix the
+// stale list is non-empty, so the empty copy never renders and the test passes over
+// the defect. What test 2 discriminates is the OTHER fix — a `setRecentFoods([])` on
+// the flip — and it was proven by mutating this fix into that one and watching it
+// red. Neither test is redundant; neither covers the other's mutant.
+describe('FAB — a pet flip never leaves the previous pet’s foods on screen', () => {
+  it('drops the outgoing pet’s one-tap rows the moment the chip changes name', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' },
+    ]);
+    const view = await openMenu();
+    expect(view.getByText(/Hills/)).toBeTruthy();
+    expect(view.getByLabelText('Logging for Nyx — switch pet')).toBeTruthy();
+
+    // Pet B's foods are still in flight — precisely the frame this issue is about.
+    // Held open rather than resolved, because the defect lives in the gap and a
+    // mock that resolves immediately closes it before the assertion can look.
+    let releaseB: (foods: unknown[]) => void = () => {};
+    getRecentFoods.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseB = resolve as never; }),
+    );
+    await act(async () => {
+      usePetStore.setState({ activePet: { id: 'p2', name: 'Mochi' } as never });
+    });
+
+    // The chip has already repainted to B — it reads `activePet` directly...
+    expect(view.getByLabelText('Logging for Mochi — switch pet')).toBeTruthy();
+    // ...so A's rows must be GONE, not merely stale. Pre-fix they were still here,
+    // under B's name, each one a meal written in a single press.
+    expect(view.queryByText(/Hills/)).toBeNull();
+
+    await act(async () => {
+      releaseB([{ id: 'f2', brand: 'Royal Canin', product_name: 'GI', format: 'dry', food_type: 'meal' }]);
+    });
+    expect(view.getByText(/Royal Canin/)).toBeTruthy();
+  });
+
+  it('does not call the incoming pet foodless while its read is in flight', async () => {
+    // The other half, and the reason the fix keys the list rather than clearing it:
+    // `setRecentFoods([])` on the flip would also drop A's rows, and would replace
+    // them with "No foods logged yet" — a statement about B's record made before
+    // anything has read it (C-12). Absent, then correct; never wrong in between.
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' },
+    ]);
+    const view = await openMenu();
+
+    getRecentFoods.mockImplementationOnce(() => new Promise(() => {}));
+    await act(async () => {
+      usePetStore.setState({ activePet: { id: 'p2', name: 'Mochi' } as never });
+    });
+
+    expect(view.queryByText('No foods logged yet')).toBeNull();
+    // The section header stays — it is the stable label for what is arriving.
+    expect(view.getByText('Recent foods')).toBeTruthy();
+  });
+});

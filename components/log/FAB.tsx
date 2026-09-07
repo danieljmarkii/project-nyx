@@ -37,7 +37,24 @@ export function FAB() {
   const [open, setOpen] = useState(false);
   const [switcherVisible, setSwitcherVisible] = useState(false);
   const [eventSheetVisible, setEventSheetVisible] = useState(false);
-  const [recentFoods, setRecentFoods] = useState<PickerFood[]>([]);
+  // CUL-723 — the recent-food rows are keyed by the pet they were loaded FOR, and
+  // render only on a match. `null` is "this pet's foods have not answered yet",
+  // which is not the same fact as "this pet has no foods" (C-12).
+  //
+  // The menu deliberately stays open across a pet flip, and `selectPet` swaps A → B
+  // with no null in between, so CUL-717's render gate — which un-renders this whole
+  // block when there is no pet at all — never fires on that transition. The chip
+  // above these rows reads `activePet` directly and repaints at once, so for the
+  // width of one `getRecentFoods` round-trip the menu read "Logging for Mochi" over
+  // Nyx's foods. Every row here writes a meal in ONE press, and `menuAction`'s own
+  // comment names the stake: a mis-resolved tap means logging the WRONG food, into
+  // a diet trial.
+  //
+  // Keyed rather than cleared. A bare `setRecentFoods([])` at the top of the effect
+  // also closes the hole, but it renders "No foods logged yet" to an owner whose pet
+  // has foods — trading a wrong list for a wrong sentence. Holding the id alongside
+  // the list makes the mismatch unrenderable instead of briefly empty.
+  const [recentFoods, setRecentFoods] = useState<{ petId: string; foods: PickerFood[] } | null>(null);
   const [logging, setLogging] = useState<string | null>(null);
   const fabAnim = useRef(new Animated.Value(0)).current;
 
@@ -79,10 +96,17 @@ export function FAB() {
     // effectively random 3. `null` window = no time bound (re-offer staples of
     // any age). Async now, so guard against a resolve after the menu closes.
     getRecentFoods(activePet.id, null, 3)
-      .then((foods) => { if (!cancelled) setRecentFoods(foods); })
+      .then((foods) => { if (!cancelled) setRecentFoods({ petId: activePet.id, foods }); })
       .catch((e) => console.warn('[FAB] recent foods load failed:', e));
     return () => { cancelled = true; };
   }, [open, activePet]);
+
+  // Derived in the render body rather than mirrored into state (the C-9 shape): the
+  // list is only ever this pet's, or nothing. Note a reopen for the SAME pet still
+  // shows the held rows immediately while the refetch runs — the key matches, so
+  // there is no flash to pay for the safety.
+  const foodsForActivePet =
+    activePet && recentFoods?.petId === activePet.id ? recentFoods.foods : null;
 
   // B-351 slice 4 / B-693 — resolve the log-time trial heads-up (contents OR
   // membership, whichever fires) and land it on the card that is already showing.
@@ -298,12 +322,20 @@ export function FAB() {
                 )}
 
                 {/* Recent foods — meals AND treats the pet actually ate (the recency
-                    query is food_type-agnostic), so "foods" not "meals". */}
+                    query is food_type-agnostic), so "foods" not "meals".
+
+                    Three states, not two (C-12). While `foodsForActivePet` is null the
+                    read has not answered for THIS pet, so the section is left empty:
+                    the rows would be another pet's and the empty copy would be a claim
+                    about a record nobody has read yet. Absent is the only honest thing
+                    to offer, and it is what the header sits over for the width of one
+                    query — no skeleton, because these rows animate in with the menu and
+                    a placeholder row inside a popover reads as content arriving. */}
                 <ThemedText style={styles.sectionHeader}>Recent foods</ThemedText>
-                {recentFoods.length === 0 ? (
+                {foodsForActivePet === null ? null : foodsForActivePet.length === 0 ? (
                   <ThemedText style={styles.emptyFoods}>No foods logged yet</ThemedText>
                 ) : (
-                  recentFoods.map((food) => (
+                  foodsForActivePet.map((food) => (
                     <TouchableOpacity
                       key={food.id}
                       style={styles.menuAction}
