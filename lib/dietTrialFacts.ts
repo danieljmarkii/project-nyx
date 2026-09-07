@@ -72,7 +72,7 @@ import {
 } from './trialResponseCounts';
 import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './trialContaminant';
 import { trialTargetProtein } from './trialProtein';
-import { localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
+import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
 
 export interface DietTrialFactsPet {
@@ -589,12 +589,6 @@ export async function loadDietTrialFacts(args: {
       : null,
     standingNote: resolvedStandingNote,
   };
-}
-
-/** The inverse of `localDayIndexOf`, which must be a UTC read — see
- *  `lib/utils.dayKeyFromIndex` (the canonical copy) for what happens when it isn't. */
-function dayKeyFromIndex(index: number): string {
-  return new Date(index * 86_400_000).toISOString().slice(0, 10);
 }
 
 /** Day key shifted by N local days, via the UTC-anchored index. */

@@ -397,11 +397,47 @@ export default function EventDetailScreen() {
     });
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!event) return;
+    // CUL-825 — name the photo when the record carries one (CUL-645 parity). The
+    // completion card's Undo already delivers this fact; this confirm is the same
+    // destructive action against the same unrecreatable photo and used to say
+    // nothing about it. That is a COMPREHENSION gap, not a mistouch one: an owner
+    // reversing a mis-logged event has no way to know the photo of the thing goes
+    // with it. Same sentence as the card (components/ui/NamedCompletionCard.tsx)
+    // so the two doors out of a record read as one voice, and the same predicate
+    // — `!!attachment`, which is what the hero and the moment payload already
+    // switch on. Silent when there is no photo: never warn about one that is not
+    // there.
+    //
+    // The predicate ASKS THE RECORD rather than trusting `attachment` alone, which
+    // is a C-12 ambiguity this confirm cannot afford: `attachment === null` means
+    // both "no photo" and "the read has not answered yet". `loadAll` sets `event`
+    // and only THEN awaits `getEventAttachment`, while the screen's gate is
+    // `loading && !event` — so the footer is live during that gap, and a Remove tap
+    // inside it would read null on a genuinely photographed record. Every other
+    // consumer of this state degrades harmlessly (a hero that fills in a moment
+    // later); this one would silently destroy the photo it exists to warn about, so
+    // it is the one place the ambiguity has to be resolved rather than tolerated.
+    //
+    // The read only runs when the state cannot already answer YES, so a record whose
+    // attachment has hydrated pays nothing. On a read failure we fall back to the
+    // state — no false claim about a photo we cannot see, and a local SQLite failure
+    // here means the delete below is about to fail too and say so.
+    let hasPhoto = attachment !== null;
+    if (!hasPhoto) {
+      try {
+        hasPhoto = (await getEventAttachment(event.id)) !== null;
+      } catch (e) {
+        console.warn('[event-detail] attachment re-check before delete failed:', e);
+      }
+    }
+    const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
     Alert.alert(
       'Remove this log?',
-      `This will remove the ${EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event'} from history.`,
+      hasPhoto
+        ? `This will remove the ${label} from history. The photo you attached will be removed with it.`
+        : `This will remove the ${label} from history.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -973,7 +1009,7 @@ export default function EventDetailScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.removeButton}
-          onPress={handleDelete}
+          onPress={() => { void handleDelete(); }}
           activeOpacity={0.7}
           hitSlop={8}
         >

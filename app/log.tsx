@@ -722,12 +722,16 @@ export default function LogModal() {
   // the optimistic store update (prependEvent), the pets.weight_kg snapshot refresh,
   // and the completion card. Witnessed by construction (you read the scale), with a
   // "Change time" escape hatch for a back-dated reading.
-  async function handleConfirmWeight() {
+  // Returns whether a reading was COMMITTED — the double-submit guard's contract
+  // (B-336, extended to this path by CUL-251). `false` means nothing was written
+  // (no active pet, an unparseable value, or a failed write the owner was alerted
+  // about), so the button must go live again for the retry they are looking at.
+  async function handleConfirmWeight(): Promise<boolean> {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment of
     // write, never the render-time closure, so the reading lands on the pet that's
     // active when the log is confirmed (the queue-then-switch edge).
     const pet = usePetStore.getState().activePet;
-    if (!pet) return;
+    if (!pet) return false;
     // CUL-641 — the snapshot this write is about to displace, read BEFORE the
     // re-point below, so the card's Undo can put it back. Captured into its own
     // const rather than read off `pet` at the end: `pet` is a write-time snapshot
@@ -738,7 +742,7 @@ export default function LogModal() {
     const weightKg = parseWeightLbsToKg(weightLbsStr);
     // The Log button is disabled on an invalid value, so this is a belt-and-braces
     // guard — never store a 0/NaN that would corrupt a trend line.
-    if (weightKg == null) return;
+    if (weightKg == null) return false;
 
     let result: Awaited<ReturnType<typeof insertWeightCheck>>;
     try {
@@ -752,7 +756,7 @@ export default function LogModal() {
     } catch (e) {
       console.error('[log] weight check write failed:', e);
       Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
-      return;
+      return false;
     }
 
     // Optimistic timeline insert. The weight value rides along so a future History/
@@ -822,6 +826,7 @@ export default function LogModal() {
       },
       { delayMs: 300 },
     );
+    return true;
   }
 
   async function handleConfirm(override?: {
@@ -1342,7 +1347,7 @@ export default function LogModal() {
           <View style={styles.bottomAction}>
             <TouchableOpacity
               style={[styles.confirmBtn, !canConfirmWeight && styles.confirmBtnDisabled]}
-              onPress={handleConfirmWeight}
+              onPress={() => { void guardSubmit(handleConfirmWeight); }}
               disabled={!canConfirmWeight}
             >
               <ThemedText style={styles.confirmBtnText}>Log weight</ThemedText>
@@ -1394,7 +1399,10 @@ export default function LogModal() {
             )}
           </ScrollView>
           <View style={styles.bottomAction}>
-            <TouchableOpacity style={styles.confirmBtn} onPress={() => handleConfirm()}>
+            <TouchableOpacity
+              style={styles.confirmBtn}
+              onPress={() => { void guardSubmit(async () => (await handleConfirm()) !== null); }}
+            >
               <ThemedText style={styles.confirmBtnText}>
                 {eventLabel === 'Other' ? 'Log event' : `Log ${eventLabel.toLowerCase()}`}
               </ThemedText>

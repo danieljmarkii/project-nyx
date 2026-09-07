@@ -168,7 +168,10 @@ const COMPARISON_OPS = new Set<number>([
 // ternary's condition and a comparison's operands (both yield booleans, never
 // the shown string), so `e.code === 'x' ? 'lit' : 'lit'` is not a leak while
 // `` `failed: ${e.message}` `` and `'x' + e.message` still are.
-function extractsErrorString(node: TSNode): string | null {
+// `recordDotError` opts IN to treating a bare `.error` PROPERTY as a stored error
+// column (CUL-818). It is off by default and on at exactly one sink — see the
+// <Text> child walk below for why that sink, and only that sink, can afford it.
+function extractsErrorString(node: TSNode, recordDotError = false): string | null {
   let hit: string | null = null;
   const sf = node.getSourceFile();
   const visit = (raw: TSNode) => {
@@ -187,7 +190,7 @@ function extractsErrorString(node: TSNode): string | null {
     // the Supabase `{ data, error }` shape — an error OBJECT, whose storage for
     // mapping-at-render is a sanctioned pattern (`setFailureError(result.error)`).
     const storedErrorField = (name: string) =>
-      name.toLowerCase() !== 'error' && isErrorishName(name);
+      (recordDotError || name.toLowerCase() !== 'error') && isErrorishName(name);
     if (ts.isPropertyAccessExpression(n) && storedErrorField(n.name.text)) {
       hit = `${n.expression.getText(sf)}.${n.name.text}`;
       return;
@@ -274,15 +277,15 @@ function resolveLocalInit(name: string, from: TSNode): TSExpr | null {
 // The leak verdict for one sink argument. `immediate` = the value is stringified
 // for display right here (an alert body, a `<Text>` child), so a bare error
 // object also leaks; a stored/props value is checked for extraction only.
-function leakDetail(arg: TSExpr, immediate: boolean): string | null {
+function leakDetail(arg: TSExpr, immediate: boolean, recordDotError = false): string | null {
   const a = unwrap(arg);
-  const direct = extractsErrorString(a);
+  const direct = extractsErrorString(a, recordDotError);
   if (direct) return direct;
   if (immediate && isBareError(a)) return `the bare error object \`${a.getText(a.getSourceFile())}\``;
   if (ts.isIdentifier(a)) {
     const init = resolveLocalInit(a.text, a);
     if (init) {
-      const viaInit = extractsErrorString(init);
+      const viaInit = extractsErrorString(init, recordDotError);
       if (viaInit) return `${a.text} = ${viaInit}`;
       if (immediate && isBareError(init)) return `the bare error object via \`${a.text}\``;
     }
@@ -367,8 +370,8 @@ function scanSource(relFile: string, src: string): Finding[] {
   // A displayed value that is NOT error copy (a <Text> child, a copy prop): LEAK
   // (extraction only, or bare-error when immediate) + BANG. No jargon (app-wide
   // jargon fights the vet report's clinical register).
-  const checkDisplay = (node: TSExpr, sink: string, immediate: boolean) => {
-    const leak = leakDetail(node, immediate);
+  const checkDisplay = (node: TSExpr, sink: string, immediate: boolean, recordDotError = false) => {
+    const leak = leakDetail(node, immediate, recordDotError);
     if (leak) add(node, 'leak', sink, `${immediate ? 'renders' : 'passes'} \`${leak}\` — a raw provider string`);
     checkBang(node, sink);
   };
@@ -436,9 +439,33 @@ function scanSource(relFile: string, src: string): Finding[] {
     // rule stays off here (the crash argument is still sound for objects); the
     // stored-error-field rule in `extractsErrorString` is what covers the gap, and
     // it fires under `immediate=false` like every other extraction.
+    //
+    // CUL-818 closes the last hole in that rule, HERE and nowhere else. The rule
+    // spares the bare name `error` because `result.error` is the Supabase
+    // `{ data, error }` OBJECT — but `event_ai_analysis.error` is a real stored
+    // column holding a raw Claude / transport string, so `{row.error}` in a <Text>
+    // child was the one leak shape still shipping green. (`Alert.alert('X',
+    // row.error)` was already caught, by the bare-error rule under immediate=true.)
+    //
+    // It is safe at THIS sink for the same reason the paragraph above is written:
+    // an error OBJECT as a <Text> child crashes RN, so any `.error` that survives
+    // here is a STRING — either a stored column (the leak) or nothing at all. The
+    // crash argument does not license silence here, it licenses the opposite; that
+    // is the half CUL-651 falsified and this is the rest of the correction.
+    //
+    // Scoped to a PROPERTY access, never a bare identifier: `{error}` is React
+    // state holding already-mapped copy (`error` / `loadError`), which is the
+    // correct pattern the paragraph above defends. `{row.error}` is a column read
+    // off a record, which is not.
+    //
+    // KNOWN LIMIT, in this file's convention of naming these rather than closing
+    // them on speculation: a copy ATTRIBUTE (`label={row.error}`) is still spared.
+    // That sink cannot make the crash argument — a prop takes an object without
+    // complaint — so flagging there needs a discriminator this scan does not have.
+    // No such site exists in the tree today.
     if (ts.isJsxElement(node) && isTextTag(node.openingElement.tagName.getText(sf))) {
       for (const child of node.children) {
-        if (ts.isJsxExpression(child) && child.expression) checkDisplay(child.expression, '<Text>{…}', false);
+        if (ts.isJsxExpression(child) && child.expression) checkDisplay(child.expression, '<Text>{…}', false, true);
       }
     }
 
@@ -673,6 +700,37 @@ describe('the detector itself', () => {
 // the boundary is known, not accidental (see the file header).
 describe('documented limits (characterization, not a guarantee)', () => {
   const kinds2 = (src: string, kind: Kind) => scanSource('fixture.tsx', src).filter((f) => f.kind === kind).length;
+
+  // CUL-818 — a bare `.error` PROPERTY at a <Text> child is a stored column.
+  // `event_ai_analysis.error` holds a raw Claude / transport string, and the
+  // stored-error-field rule skipped it because the column is named plain `error`.
+  it('FLAGS a record`s bare `.error` rendered as a <Text> child (CUL-818)', () => {
+    expect(kinds2(`const C = () => <ThemedText>{row.error}</ThemedText>;`, 'leak')).toBe(1);
+    expect(kinds2(`const C = () => <ThemedText>{analysis.error}</ThemedText>;`, 'leak')).toBe(1);
+    // Reached the other syntax — a one-character bypass otherwise, exactly as the
+    // sibling stored-error rule already argues for bracket notation.
+    expect(kinds2(`const C = () => <ThemedText>{row['error']}</ThemedText>;`, 'leak')).toBe(1);
+    // Inside a conditional's shown branch, since that is how a real section would
+    // render it (`{row.error ? row.error : '…'}`).
+    expect(kinds2(`const C = () => <ThemedText>{ok ? 'fine' : row.error}</ThemedText>;`, 'leak')).toBe(1);
+  });
+
+  // The three directions the CUL-818 rule must NOT move, each spared for its own
+  // reason. A rule this close to the `{ data, error }` shape is one careless
+  // widening away from flagging the sanctioned pattern app-wide.
+  it('SPARES mapped error state, and the `.error` object away from a <Text> child (CUL-818)', () => {
+    // A bare IDENTIFIER at a Text child is React state holding already-mapped copy
+    // — the correct pattern, and the one the sink's own comment defends.
+    expect(kinds2(`const C = () => <ThemedText>{error}</ThemedText>;`, 'leak')).toBe(0);
+    expect(kinds2(`const C = () => <ThemedText>{loadError}</ThemedText>;`, 'leak')).toBe(0);
+    // The rule is opt-in at ONE sink: storing the Supabase error object for
+    // mapping-at-render stays spared, which is what the whole carve-out is for.
+    expect(kinds2(`function f(){ setFailureError(result.error); }`, 'leak')).toBe(0);
+    expect(kinds2(`function f(){ const o = isOffline(result.error); }`, 'leak')).toBe(0);
+    // And the documented limit, pinned so closing it later is a visible decision:
+    // a copy attribute cannot make the object-crash argument, so it stays spared.
+    expect(kinds2(`const C = () => <Row label={row.error} />;`, 'leak')).toBe(0);
+  });
 
   // The CUL-651 rule's over-reach, pinned so widening the carve-out is a visible
   // decision rather than a silent one. Neither shape exists in the tree today.

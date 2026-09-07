@@ -16,7 +16,7 @@ jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { LayoutAnimation } from 'react-native';
 import { FoldedStrip, InsightCard } from './InsightCard';
-import { commonAncestor, facing, flat, owningTouchable } from '../../testUtils/tree';
+import { commonAncestor, facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
 import * as signalCopy from '../../lib/signalCopy';
 import { FOLD_CAPTION, FOLD_CONTROL_LABEL } from '../../lib/signalCopy';
 import type {
@@ -106,15 +106,19 @@ describe('the control row is a sibling of the face (DF-3, C-6)', () => {
     const why = owningTouchable(getByText("Why we're showing this"));
     expect(face).not.toBeNull();
     expect(why).not.toBeNull();
-    expect(why).not.toBe(face);
+    expect(touchableToken(why)).not.toBe(touchableToken(face));
   });
 
   it('`Keep it compact` is its own button beside the evidence verb', () => {
     const { getByText } = render(<InsightCard cached={benign} petName="Nyx" onFold={jest.fn()} />);
     const fold = owningTouchable(getByText(FOLD_CONTROL_LABEL));
     expect(fold).not.toBeNull();
-    expect(fold).not.toBe(owningTouchable(getByText("Why we're showing this")));
-    expect(fold).not.toBe(owningTouchable(getByText(SENTENCE)));
+    // The negative form serialises both operands on failure exactly as the
+    // positive one does, so it carries the identical OOM (CUL-783).
+    expect(touchableToken(getByText(FOLD_CONTROL_LABEL)))
+      .not.toBe(touchableToken(getByText("Why we're showing this")));
+    expect(touchableToken(getByText(FOLD_CONTROL_LABEL)))
+      .not.toBe(touchableToken(getByText(SENTENCE)));
   });
 
   it('the evidence control toggles the evidence and reads `Hide details` when open', () => {
@@ -238,9 +242,8 @@ describe('the Back-because line (DF-8 / §7)', () => {
       `Back because a new episode was logged. ${SENTENCE}`,
     )).toBe(true);
     // Inside the face, so a tap on it is a touch of the card.
-    expect(owningTouchable(getByText('Back because a new episode was logged.'))).toBe(
-      owningTouchable(getByText(SENTENCE)),
-    );
+    expect(touchableToken(getByText('Back because a new episode was logged.')))
+      .toBe(touchableToken(getByText(SENTENCE)));
   });
 
   it('renders nothing and adds nothing to the label when there is no reason', () => {
@@ -314,8 +317,8 @@ describe('FoldedStrip (§3.1 / §7)', () => {
     const { getByText, getByTestId } = render(<FoldedStrip cached={benign} onPress={onPress} />);
     const strip = owningTouchable(getByTestId('insight-folded-strip'));
     expect(strip).not.toBeNull();
-    expect(owningTouchable(getByText('Vomiting soon after eating'))).toBe(strip);
-    expect(owningTouchable(getByText('8 of 8 timed within 30 min of eating'))).toBe(strip);
+    expect(touchableToken(getByText('Vomiting soon after eating'))).toBe(touchableToken(strip));
+    expect(touchableToken(getByText('8 of 8 timed within 30 min of eating'))).toBe(touchableToken(strip));
     fireEvent.press(getByText('8 of 8 timed within 30 min of eating'));
     expect(onPress).toHaveBeenCalledWith(postprandial);
   });
@@ -453,7 +456,7 @@ describe('FoldedStrip — the safety strip', () => {
     const onPress = jest.fn();
     const { getByText, getByTestId } = render(<FoldedStrip cached={safety} onPress={onPress} />);
     const strip = owningTouchable(getByTestId('insight-folded-strip'));
-    expect(owningTouchable(getByText('Worth a vet visit'))).toBe(strip);
+    expect(touchableToken(getByText('Worth a vet visit'))).toBe(touchableToken(strip));
     fireEvent.press(getByText('Worth a vet visit'));
     expect(onPress).toHaveBeenCalledWith(chronicity);
   });

@@ -49,7 +49,7 @@ jest.mock('../../lib/haptics', () => ({ insightArrival: jest.fn() }));
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { SignalZone } from './SignalZone';
-import { facing, flat, owningTouchable } from '../../testUtils/tree';
+import { facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
 import * as signalCopy from '../../lib/signalCopy';
 import { usePetStore } from '../../store/petStore';
 import { useSyncStore } from '../../store/syncStore';
@@ -238,7 +238,7 @@ describe('SignalZone — the fold, end to end', () => {
     expect(view.queryByText(postprandial.text)).toBeNull();
     // The name line is INSIDE the strip's touchable — the control that unmounted is replaced
     // by the row that took its place.
-    expect(owningTouchable(view.getByText(STRIP_NAME))).toBe(owningTouchable(strip));
+    expect(touchableToken(view.getByText(STRIP_NAME))).toBe(touchableToken(strip));
     // Persisted, so a relaunch reads it back.
     await waitFor(async () => expect(await readFoldEntries('pet-1')).toHaveProperty(KEY));
     expect((await readFoldEntries('pet-1'))?.[KEY]?.state).toBe('folded');
@@ -391,7 +391,7 @@ describe('SignalZone — the standing safety strip', () => {
     expect(view.getByText('Recurring vomiting')).toBeTruthy();
     expect(view.getByText('Worth a vet visit')).toBeTruthy();
     expect(view.getByText('14 episodes, 5 of 8 weeks · last Aug 26')).toBeTruthy();
-    expect(owningTouchable(view.getByText('Worth a vet visit'))).toBe(owningTouchable(strip));
+    expect(touchableToken(view.getByText('Worth a vet visit'))).toBe(touchableToken(strip));
     // Position is rank: the strip is the FIRST row; both benign faces sit beneath it (FS-5).
     // CUL-788: a folded finding is still an `insight-row` (one row, one rail); the strip is
     // that row's content — so the safety strip is the FIRST row, and it holds the strip.
