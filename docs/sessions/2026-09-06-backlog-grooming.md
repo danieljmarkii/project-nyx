@@ -1,7 +1,8 @@
 # Session — Backlog grooming (Linear, team Culprit)
 
-**Date:** 2026-09-06
-**Mode:** DISCOVERY (Product Owner / Backlog Steward lens)
+**Date:** 2026-09-06 (continued 2026-09-07)
+**Mode:** DISCOVERY (Product Owner / Backlog Steward lens) + one urgent CI fix
+**Outcome:** shipped via #810
 **Branch:** `claude/backlog-grooming-overview-oi80vu`
 **Predecessor:** `docs/sessions/2026-08-29-linear-backlog-grooming.md` (CUL-719 — its five calls are still unruled)
 
