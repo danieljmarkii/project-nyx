@@ -1,4 +1,4 @@
-import { commonAncestor, flat, owningTouchable } from '../../testUtils/tree';
+import { commonAncestor, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
 import { render, fireEvent } from '@testing-library/react-native';
 import { TimeConfidenceField } from './TimeConfidenceField';
 
@@ -45,7 +45,10 @@ describe('TimeConfidenceField', () => {
 
       const onLabel = owningTouchable(getByText(label));
       expect(onLabel).not.toBeNull();               // the label was in no button at all
-      expect(onLabel).toBe(owningTouchable(getByText(/·/)));  // ...and it is the value's button
+      // ...and it is the value's button. Compared through the token, not the nodes:
+      // identical assertion, but a mismatch prints two short strings instead of
+      // pretty-formatting two whole rendered trees into an OOM (CUL-783).
+      expect(touchableToken(getByText(label))).toBe(touchableToken(getByText(/·/)));
 
       expect(queryByTestId(picker)).toBeNull();
       fireEvent.press(getByText(label));
@@ -62,7 +65,7 @@ describe('TimeConfidenceField', () => {
       const to = owningTouchable(getByText('To'));
       expect(from).not.toBeNull();
       expect(to).not.toBeNull();
-      expect(from).not.toBe(to);
+      expect(touchableToken(from)).not.toBe(touchableToken(to));
 
       fireEvent.press(getByText('From'));
       expect(queryByTestId('picker-earliest')).not.toBeNull();

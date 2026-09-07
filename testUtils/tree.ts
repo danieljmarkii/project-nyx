@@ -63,3 +63,50 @@ export function flat(node: TreeNode | null): Record<string, number | undefined> 
   const style = node?.props?.style as StyleProp<ViewStyle>;
   return (StyleSheet.flatten(style) ?? {}) as Record<string, number | undefined>;
 }
+
+// ── Identity, reported readably (CUL-783) ────────────────────────────────────
+//
+// `expect(owningTouchable(a)).toBe(owningTouchable(b))` is the RIGHT assertion —
+// node identity is the thing `fireEvent.press` cannot fake — but it is the wrong
+// FAILURE. On a mismatch jest pretty-formats both operands for the diff, and a
+// `ReactTestInstance` is a circular graph (`parent` / `children`) spanning the
+// whole rendered tree: the process dies with `node::OOMErrorHandler` instead of
+// saying which button was wrong. Met while mutation-proving CUL-710, where two
+// sibling suites went red cleanly and `TimeConfidenceField.test.tsx` OOMed.
+//
+// So the fix is in how the failure reports, never in what is asserted. This
+// returns a SHORT token standing in for the host, and the token is minted per
+// host INSTANCE from a WeakMap — not derived from the label. That distinction is
+// the whole point: two different buttons carrying identical labels must still
+// compare unequal, or the readable version would be a weaker assertion than the
+// one it replaces, which is exactly the CUL-579 defect class going quiet.
+const hostTokens = new WeakMap<TreeNode, string>();
+let nextHostToken = 0;
+
+/** How a host names itself, for the failure message only. */
+function hostLabel(node: TreeNode): string {
+  const label = node.props?.accessibilityLabel;
+  if (typeof label === 'string' && label) return `"${label}"`;
+  const testID = node.props?.testID;
+  if (typeof testID === 'string' && testID) return `testID=${testID}`;
+  return '(unlabelled)';
+}
+
+/**
+ * A stable, readable stand-in for `owningTouchable(node)`, for use with `toBe` /
+ * `not.toBe`. Identity is preserved exactly — same host in, same token out;
+ * different hosts, different tokens, whatever they are called.
+ *
+ *   expect(touchableToken(label)).toBe(touchableToken(value));
+ *   // AssertionError: expected "touchable#2 \"Around\"" to be "touchable#3 (unlabelled)"
+ */
+export function touchableToken(node: TreeNode | null | undefined): string {
+  const host = owningTouchable(node);
+  if (!host) return 'no touchable';
+  let token = hostTokens.get(host);
+  if (token === undefined) {
+    token = `touchable#${(nextHostToken += 1)} ${hostLabel(host)}`;
+    hostTokens.set(host, token);
+  }
+  return token;
+}

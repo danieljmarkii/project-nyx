@@ -31,7 +31,7 @@ jest.mock('../../lib/simpleEvent', () => ({
 
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { StyleSheet, Alert } from 'react-native';
-import { commonAncestor, facing, flat, owningTouchable } from '../../testUtils/tree';
+import { commonAncestor, facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
 import * as ImagePicker from 'expo-image-picker';
 import { SimpleEventConfirm } from './SimpleEventConfirm';
 import { theme } from '../../constants/theme';
@@ -692,7 +692,7 @@ describe('CUL-688 — the found-mode radio rows', () => {
     const { getByText } = openWindowEditor();
     const before = owningTouchable(getByText('Sometime before'));
     const between = owningTouchable(getByText('Between two times'));
-    expect(before).not.toBe(between);
+    expect(touchableToken(before)).not.toBe(touchableToken(between));
 
     const panel = commonAncestor(before, between);
     const gap = flat(panel).rowGap ?? flat(panel).gap ?? 0;
