@@ -1,0 +1,992 @@
+<title>Five Pencil Homes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     Home v2 — the divergent round. Low-fidelity prototypes.
+     Design plan: the PAGE keeps the mock family's paper (Newsreader +
+     Geist, the paper/ink tokens) so it reads as the same project; the
+     FRAMES are pencil — grey rule, hatch, mono labels, no product colour
+     — because fidelity is the point being withheld. Two exceptions, both
+     deliberate: rose marks the one safety element in every frame (S1: the
+     only warm mark), and §01's colour study shows How We Feel's four hues
+     because there colour IS the mechanism under discussion.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    /* pencil — the wireframe's own greys, hue-biased toward the paper's violet */
+    --pencil: #6F6B8F; --pencil-2: #A9A6C2; --pencil-3: #D9D7E6; --pencil-fill: #F0EFF6; --wf-paper: #FBFBFD;
+    /* How We Feel's four quadrants, used ONLY in the colour study */
+    --q-yellow: #F5C542; --q-red: #E5544B; --q-blue: #4C7BD9; --q-green: #4CAF7A;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --pencil: #B9B5D6; --pencil-2: #7C78A3; --pencil-3: #3B3766; --pencil-fill: #221F4C; --wf-paper: #191640;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --pencil: #B9B5D6; --pencil-2: #7C78A3; --pencil-3: #3B3766; --pencil-fill: #221F4C; --wf-paper: #191640;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 3px; padding: 3px 8px; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .revnew { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .revnew b { color: var(--ink); }
+  a { color: var(--teal-ink); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+  .brief { margin: 28px 0 8px; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 28px; margin-top: 18px; }
+  .voice { border-top: 1px solid var(--rule); padding-top: 12px; font-size: 14px; color: var(--ink-2); }
+  .voice b { color: var(--ink); display: block; margin-bottom: 4px; }
+  .voice q { font-style: italic; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13.5px; margin-top: 18px; }
+  .tablewrap { overflow-x: auto; }
+  table.cmp th, table.cmp td { text-align: left; vertical-align: top; padding: 10px 12px; border-top: 1px solid var(--rule); }
+  table.cmp th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; border-top: 0; }
+  table.cmp td:first-child { font-weight: 600; color: var(--ink); white-space: nowrap; }
+  table.cmp td { color: var(--ink-2); }
+  .tag { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 3px; padding: 2px 7px; }
+  .tag.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .tag.dim { color: var(--ink-2); background: var(--rule-soft); }
+  /* ── pencil frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 300px; max-width: 100%; }
+  .frame-cap { margin: 12px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .lens { display: block; margin-top: 6px; font-size: 12.5px; color: var(--ink-3); }
+  .lens b { display: inline; font-size: 12.5px; color: var(--ink-2); margin: 0; }
+  .wf { width: 300px; max-width: 100%; min-height: 560px; background: var(--wf-paper); border: 1.5px solid var(--pencil); border-radius: 26px; padding: 14px 12px 16px; color: var(--ink); font-family: var(--sans); display: flex; flex-direction: column; gap: 8px; position: relative; }
+  .wf .st { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9.5px; color: var(--pencil-2); padding: 0 6px 2px; }
+  .wf .hd { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 6px; border-bottom: 1px dashed var(--pencil-3); }
+  .wf .hd .who { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; }
+  .wf .hd .av { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--pencil); background: repeating-linear-gradient(45deg, transparent 0 3px, var(--pencil-3) 3px 4px); }
+  .wf .pill { font-family: var(--mono); font-size: 9.5px; border: 1px solid var(--pencil-2); border-radius: 999px; padding: 2px 8px; color: var(--ink-2); }
+  .wf .b { border: 1px solid var(--pencil-3); border-radius: 10px; padding: 9px 10px; background: var(--paper-2); }
+  .wf .b.flat { background: transparent; border-style: dashed; }
+  .wf .b.safety { border-left: 3px solid var(--rose); border-radius: 6px; }
+  .wf .b.hero { min-height: 110px; }
+  .wf .lab { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pencil); margin-bottom: 5px; display: flex; justify-content: space-between; align-items: baseline; }
+  .wf .lab .door { text-transform: none; letter-spacing: 0; color: var(--teal-ink); font-family: var(--sans); font-weight: 600; font-size: 10.5px; }
+  .wf .lead { font-family: var(--serif); font-size: 17px; line-height: 1.28; color: var(--ink); margin: 0 0 4px; }
+  .wf .t { font-size: 12px; color: var(--ink-2); line-height: 1.4; }
+  .wf .t b { color: var(--ink); font-weight: 600; }
+  .wf .l { height: 7px; border-radius: 4px; background: var(--pencil-3); margin: 5px 0; }
+  .wf .l.s { width: 55%; } .wf .l.m { width: 75%; } .wf .l.xs { width: 35%; }
+  .wf .ph { border: 1px dashed var(--pencil-2); background: repeating-linear-gradient(135deg, transparent 0 6px, var(--pencil-fill) 6px 7px); border-radius: 8px; display: grid; place-items: center; font-family: var(--mono); font-size: 9.5px; color: var(--pencil); min-height: 64px; }
+  .wf .row { display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 12px; color: var(--ink); border-top: 1px dashed var(--pencil-3); padding: 4px 0; }
+  .wf .row:first-of-type { border-top: 0; }
+  .wf .row .g { flex: 1; min-width: 0; }
+  .wf .row small { display: block; font-size: 10px; color: var(--ink-3); }
+  .wf .row .n { font-family: var(--mono); font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+  .wf .row .chev { color: var(--pencil-2); font-size: 14px; }
+  .wf .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .wf .chip { font-size: 10.5px; border: 1px solid var(--pencil-2); border-radius: 999px; padding: 2px 8px; color: var(--ink-2); background: var(--paper-2); }
+  .wf .chip.on { border-color: var(--ink); color: var(--ink); font-weight: 600; }
+  .wf .chip.ai::before { content: "AI"; font-family: var(--mono); font-size: 8px; letter-spacing: 0.08em; margin-right: 4px; color: var(--teal-ink); }
+  .wf .fab { position: absolute; right: 14px; bottom: 54px; width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--pencil); background: var(--paper-2); display: grid; place-items: center; font-size: 20px; color: var(--pencil); }
+  .wf .tabs { margin-top: auto; border-top: 1px dashed var(--pencil-3); padding-top: 8px; display: grid; grid-template-columns: repeat(4, 1fr); font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pencil-2); text-align: center; }
+  .wf .tabs b { color: var(--ink); font-weight: 600; }
+  .wf .note { position: absolute; font-family: var(--mono); font-size: 9.5px; color: var(--teal-ink); background: var(--teal-wash); border-radius: 3px; padding: 2px 6px; right: -10px; transform: rotate(1.5deg); box-shadow: 0 1px 0 rgba(0,0,0,0.06); max-width: 150px; line-height: 1.3; }
+  /* the dot lane (the shipped Today lane, in pencil) */
+  .wf .lane { position: relative; height: 16px; margin-top: 4px; }
+  .wf .lane .track { position: absolute; left: 0; right: 0; top: 7px; height: 1.5px; background: var(--pencil-3); }
+  .wf .d { position: absolute; top: 8px; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%,-50%); background: var(--pencil); }
+  .wf .d.sym { background: var(--rose); }
+  .wf .d.hollow { background: var(--paper-2); border: 1.5px solid var(--pencil); }
+  .wf .d.ghost { opacity: 0.35; }
+  .wf .laneax { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 8.5px; color: var(--pencil-2); margin-top: 2px; }
+  /* the two-axis grid (the How We Feel variant) */
+  .wf .grid { position: relative; aspect-ratio: 1; border: 1px solid var(--pencil-2); border-radius: 8px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; overflow: hidden; margin: 6px 0 4px; }
+  .wf .grid .q { display: grid; place-items: center; font-family: var(--mono); font-size: 9px; color: var(--pencil); border: 0.5px solid var(--pencil-3); text-align: center; padding: 6px; line-height: 1.3; }
+  .wf .grid .q.on { background: var(--pencil-fill); color: var(--ink); font-weight: 600; }
+  .wf .grid .ax { position: absolute; font-family: var(--mono); font-size: 8.5px; color: var(--pencil-2); letter-spacing: 0.06em; }
+  .wf .grid .ax.top { top: 4px; left: 50%; transform: translateX(-50%); }
+  .wf .grid .ax.bottom { bottom: 4px; left: 50%; transform: translateX(-50%); }
+  .wf .grid .ax.left { left: 4px; top: 50%; transform: translateY(-50%) rotate(-90deg); transform-origin: left center; }
+  .wf .grid .ax.right { right: 4px; top: 50%; transform: translateY(-50%) rotate(90deg); transform-origin: right center; }
+  .wf .grid .pt { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 2px solid var(--paper-2); transform: translate(-50%,-50%); }
+  .wf .words { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .wf .words span { font-size: 12px; border: 1px solid var(--pencil-2); border-radius: 999px; padding: 3px 10px; color: var(--ink-2); }
+  .wf .words span.on { background: var(--ink); color: var(--paper-2); border-color: var(--ink); }
+  /* a month / trial calendar in pencil */
+  .wf .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 6px; }
+  .wf .cal i { aspect-ratio: 1; border: 1px solid var(--pencil-3); border-radius: 4px; display: grid; place-items: center; font-family: var(--mono); font-size: 8px; color: var(--pencil-2); font-style: normal; position: relative; }
+  .wf .cal i.w { background: var(--paper-2); }
+  .wf .cal i.today { border: 1.5px solid var(--ink); color: var(--ink); font-weight: 600; }
+  .wf .cal i.future { border-style: dashed; }
+  .wf .cal i.word::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--pencil); transform: translateX(-50%); }
+  .wf .cal i.sym::before { content: ""; position: absolute; right: 3px; top: 3px; width: 4px; height: 4px; background: var(--rose); border-radius: 1px; }
+  /* the postcard */
+  .wf .card-photo { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--pencil-2); background: repeating-linear-gradient(135deg, transparent 0 8px, var(--pencil-fill) 8px 9px); min-height: 150px; }
+  .wf .card-photo .over { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 12px; background: linear-gradient(180deg, transparent, rgba(27,26,46,0.8)); color: #FFFFFF; }
+  .wf .card-photo .over .lead { color: #FFFFFF; margin: 0; }
+  .wf .card-photo .over small { font-family: var(--mono); font-size: 9px; opacity: 0.85; }
+  /* the household register */
+  .wf .who { display: flex; align-items: center; gap: 6px; }
+  .wf .who i { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--pencil); background: var(--paper-2); display: grid; place-items: center; font-family: var(--mono); font-size: 8px; font-style: normal; color: var(--ink-2); }
+  /* the colour study */
+  .study { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-top: 18px; }
+  .study .sw { border: 1px solid var(--rule); border-radius: 3px; padding: 14px 16px; background: var(--paper-2); font-size: 13.5px; color: var(--ink-2); }
+  .study .sw b { color: var(--ink); display: block; margin-bottom: 6px; }
+  .study .qgrid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; aspect-ratio: 1; border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+  .study .qgrid i { display: grid; place-items: center; font-family: var(--mono); font-size: 9.5px; font-style: normal; color: rgba(0,0,0,0.65); }
+  .study .qgrid .y { background: var(--q-yellow); } .study .qgrid .r { background: var(--q-red); } .study .qgrid .bl { background: var(--q-blue); } .study .qgrid .g { background: var(--q-green); }
+  .study .qgrid.nyx i { color: var(--ink-2); border: 0.5px solid var(--rule); }
+  .study .qgrid.nyx .a { background: var(--pencil-fill); } .study .qgrid.nyx .b2 { background: var(--paper-2); }
+  .study .qgrid.nyx .c { background: var(--pencil-fill); } .study .qgrid.nyx .d2 { background: var(--paper-2); }
+  .who-table { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 24px; margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+  .who-table div { border-top: 1px solid var(--rule); padding-top: 10px; }
+  .who-table b { color: var(--ink); display: block; }
+  .qlist { counter-reset: q; list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 14px; }
+  .qlist li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; border-top: 1px solid var(--rule); padding-top: 12px; font-size: 15px; color: var(--ink-2); }
+  .qlist li::before { counter-increment: q; content: "Q" counter(q); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--teal-ink); padding-top: 3px; }
+  .qlist li b { color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  @media (max-width: 700px) { .wrap { padding: 36px 18px 72px; } section { margin-top: 56px; } }
+</style>
+<style>
+  /* additions over the shared pencil system */
+  .wf .grid:not(.three) .q { padding-top: 16px; padding-bottom: 14px; }
+  .wf .grid.three { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+  .wf .grid .q.mid { background: transparent; }
+  .wf .grid .q.mid.on { background: var(--pencil-fill); }
+  .wf .grid .q small { display: block; font-size: 8px; color: var(--pencil-2); margin-top: 2px; text-transform: none; letter-spacing: 0; }
+  .wf .clock { position: relative; height: 330px; margin: 6px 0 4px 34px; border-left: 1px solid var(--pencil-2); }
+  .wf .clock .hr { position: absolute; left: -34px; width: 28px; text-align: right; font-family: var(--mono); font-size: 8.5px; color: var(--pencil-2); transform: translateY(-50%); }
+  .wf .clock .hr::after { content: ""; position: absolute; right: -6px; top: 50%; width: 5px; height: 1px; background: var(--pencil-3); }
+  .wf .clock .past { position: absolute; left: 0; right: 0; top: 0; background: repeating-linear-gradient(135deg, transparent 0 7px, var(--pencil-fill) 7px 8px); }
+  .wf .clock .now { position: absolute; left: -34px; right: 0; height: 1.5px; background: var(--ink); }
+  .wf .clock .now b { position: absolute; left: 0; top: -13px; font-family: var(--mono); font-size: 9px; color: var(--ink); font-weight: 600; }
+  .wf .clock .ev { position: absolute; left: 10px; right: 0; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink); transform: translateY(-50%); }
+  .wf .clock .ev small { color: var(--ink-3); font-size: 9.5px; }
+  .wf .clock .ev .b2 { width: 9px; height: 9px; border-radius: 50%; background: var(--pencil); flex-shrink: 0; margin-left: -15px; border: 1.5px solid var(--wf-paper); }
+  .wf .clock .ev .b2.sym { background: var(--rose); }
+  .wf .clock .ev .b2.ring { background: var(--wf-paper); border: 1.5px solid var(--pencil-2); }
+  .wf .clock .ev .conf { margin-left: auto; font-size: 10px; font-weight: 600; color: var(--teal-ink); border: 1px solid var(--pencil-3); border-radius: 999px; padding: 1px 7px; }
+  .wf .clock .ev .pho { width: 14px; height: 14px; border: 1px dashed var(--pencil-2); border-radius: 3px; }
+  .wf .swim { margin-top: 6px; }
+  .wf .swim .sl { display: grid; grid-template-columns: 44px 1fr; align-items: center; height: 26px; border-top: 1px solid var(--pencil-3); }
+  .wf .swim .sl:first-child { border-top: 0; }
+  .wf .swim .sl span { font-family: var(--mono); font-size: 8.5px; color: var(--pencil); letter-spacing: 0.06em; }
+  .wf .swim .sl .tr { position: relative; height: 100%; }
+  .wf .swim .sl .tr .d { top: 50%; }
+  .wf .swim .sl .tr .tick { position: absolute; top: 5px; bottom: 5px; width: 2px; background: var(--rose); transform: translateX(-50%); }
+  .wf .swim .past { position: absolute; left: 0; top: 0; bottom: 0; background: var(--pencil-fill); opacity: 0.7; }
+  .wf .swim .nowl { position: absolute; top: -2px; bottom: -2px; width: 1.5px; background: var(--ink); }
+  .wf .cal.wk { margin-top: 4px; }
+  .wf .cal i.two { display: grid; grid-template-rows: 1fr 1fr; place-items: center; }
+  .wf .cal i.two b { width: 5px; height: 5px; border-radius: 50%; background: var(--pencil); display: block; }
+  .wf .cal i.two b.q { background: var(--paper-2); border: 1px solid var(--pencil); }
+  .wf .cal .dow { aspect-ratio: auto; border: 0; font-size: 8px; color: var(--pencil-2); }
+  .wf .cal i.trial { border-bottom: 2px solid var(--pencil); }
+  .wf .disp { font-family: var(--serif); font-size: 21px; line-height: 1.2; color: var(--ink); margin: 2px 0 2px; }
+  .wf .disp small { font-family: var(--sans); font-size: 11px; color: var(--ink-3); display: block; margin-top: 2px; }
+  .wf .target { border: 1.5px solid var(--ink); border-radius: 12px; padding: 12px 10px; text-align: center; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .wf .target small { display: block; font-weight: 400; font-size: 10px; color: var(--ink-3); margin-top: 3px; }
+  .wf .beat { display: flex; gap: 6px; margin-top: 8px; }
+  .wf .beat span { flex: 1; text-align: center; font-size: 11px; border: 1px dashed var(--pencil-2); border-radius: 8px; padding: 6px 4px; color: var(--ink-2); }
+  .wf .receipt { font-family: var(--mono); font-size: 10px; color: var(--ink-2); border-top: 1px dashed var(--pencil-3); padding-top: 6px; margin-top: 6px; }
+  .wf .idx { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-2); padding: 4px 2px; }
+  .wf .idx b { color: var(--ink); font-weight: 600; }
+  .wf .strip7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 4px; }
+  .wf .strip7 i { height: 34px; border: 1px solid var(--pencil-3); border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; padding-bottom: 4px; font-style: normal; position: relative; }
+  .wf .strip7 i::before { content: attr(data-d); position: absolute; top: 2px; font-family: var(--mono); font-size: 7.5px; color: var(--pencil-2); }
+  .wf .strip7 i b { width: 5px; height: 5px; border-radius: 50%; background: var(--pencil); display: block; }
+  .wf .strip7 i b.s { background: var(--rose); border-radius: 1px; }
+  .wf .strip7 i.today { border: 1.5px solid var(--ink); }
+  .wf .strip7 i.future { border-style: dashed; }
+  .wf .strip7 i.none { border-style: dashed; opacity: 0.6; }
+  .beats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 22px; }
+  .beats .bt { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 12px 13px; font-size: 13px; color: var(--ink-2); display: grid; gap: 6px; align-content: start; }
+  .beats .bt .n { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+  .beats .bt b { color: var(--ink); font-size: 14px; }
+  .beats .bt .v { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; padding-top: 4px; border-top: 1px solid var(--rule-soft); }
+  .beats .bt .v.yes { color: var(--teal-ink); } .beats .bt .v.half { color: var(--ink-2); } .beats .bt .v.no { color: var(--rose-ink); }
+  .proto-head { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: start; margin-top: 10px; }
+  .proto-meta { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); display: grid; gap: 4px; text-align: right; white-space: nowrap; }
+  .proto-meta b { color: var(--ink-2); font-weight: 600; }
+  .keep { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 28px; margin-top: 22px; font-size: 14.5px; color: var(--ink-2); }
+  .keep div { border-top: 1px solid var(--rule); padding-top: 10px; }
+  .keep b { color: var(--ink); }
+  .kicker { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin: 26px 0 6px; }
+</style>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">
+      <span class="roundtag">Divergent round · pencil</span>
+      <span>Home v2 · the redesign · 2026-09-05</span>
+      <span>CUL-829 · after rounds 1–3 (#802)</span>
+    </p>
+    <h1>Five Homes that differ in kind, drawn in pencil</h1>
+    <p class="standfirst">
+      Rounds 1–3 converged on one Home. Before aligning on it you asked for more divergence, and named
+      <strong>How We Feel</strong> as the adjacent app to learn from. This page is that round: a teardown of How We Feel read for what
+      transfers to a pet, four consultants seated for it, six core-team lenses interviewed in isolation, and
+      <strong>five low-fidelity prototypes</strong> that each start from a different organising object. Nothing here is polished on purpose.
+      The safety morning is drawn for every one of them, because a Home that only works on a quiet day fails the owner who needs it.
+    </p>
+    <div class="revnew">
+      <b>This is a separate page from round 3</b> (<code>docs/culprit-home-v2-mockups.html</code> stays intact as the converged candidate).
+      Read: <a href="#hwf">§00</a> How We Feel in one screen ·
+      <a href="#look">§01</a> The Look ·
+      <a href="#bowl">§02</a> The Bowl ·
+      <a href="#daypage">§03</a> The Day Page ·
+      <a href="#almanac">§04</a> The Almanac ·
+      <a href="#chapters">§05</a> Chapters ·
+      <a href="#household">§06</a> The Household, as a brief ·
+      <a href="#table">§07</a> where the table converged and split ·
+      <a href="#compare">§08</a> side by side ·
+      <a href="#briefs">§09</a> the briefs ·
+      <a href="#questions">§10</a> your questions ·
+      <a href="#who">§11</a> who was at the table.
+      <br><br>
+      <b>How to read a pencil frame:</b> grey is layout, real words are the copy that matters, hatch is a photo, a hollow ring is something the record expects but has not seen, and <span style="color:var(--rose-ink)">rose</span> marks the one safety element in every frame and nothing else. The FAB is drawn in the same place on every frame so its presence is never mistaken for a proposal.
+    </div>
+  </header>
+
+  <!-- ================================================== 00 -->
+  <section id="hwf">
+    <div class="sec-head"><span class="sec-num">00</span><h2>How We Feel, in one screen — and what a pet version may keep</h2></div>
+    <div class="col">
+      <p>How We Feel is a free, nonprofit emotion journal (Ben Silbermann's product team, Marc Brackett's Yale science). Its whole product is one object: the <strong>Mood Meter</strong>, a two-axis grid of energy × pleasantness with four coloured quadrants and 144 words. A check-in is <em>quadrant → word → optional "say more"</em>; a tap-and-hold saves the word alone; every extra step is skippable. Around that object sit a Sunday Weekly Review (gated on three check-ins, AI, opt-in, answers stored on device), a Calendar tab it moved to slot 2 this July, a Friends tab with three share levels, strategies after a check-in, and a postcard of the moment. The full sourced teardown is <code>docs/research/2026-09-how-we-feel-teardown.md</code>.</p>
+      <p><strong>The finding every scientific and clinical lens reached independently:</strong> the Mood Meter measures a self-reporting subject. A pet cannot report, so an owner's placement is an observation, not a feeling, and the pleasantness axis has no honest pet equivalent — no validated owner instrument asks for it, and How We Feel's green "calm" corner is, in a cat, the early sickness-behaviour phenotype in colour. What transfers is the <em>owner as informant</em>: the precise observation word, the one-gesture save, structured-first-text-attached, the ritual, the cadenced review as counts, and one datum the record lacks today — the <strong>observed-absence day</strong> ("I looked; nothing unusual"), which is a denominator, never wellness.</p>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="wf" style="min-height:auto">
+          <div class="st"><span>How We Feel · as documented</span><span>[F]/[S]</span></div>
+          <div class="b flat">
+            <div class="lab">the mood meter</div>
+            <div class="lead" style="font-size:15px">How are you?</div>
+            <div class="grid" style="border-color:var(--pencil-2)">
+              <div class="q" style="background:var(--q-red);color:rgba(0,0,0,.65)">angry · anxious<br>frustrated</div>
+              <div class="q" style="background:var(--q-yellow);color:rgba(0,0,0,.65)">excited · inspired<br>joyful</div>
+              <div class="q" style="background:var(--q-blue);color:rgba(255,255,255,.85)">sad · bored<br>tired</div>
+              <div class="q" style="background:var(--q-green);color:rgba(0,0,0,.65)">calm · relaxed<br>content</div>
+              <span class="ax top" style="color:rgba(0,0,0,.6)">high energy</span>
+              <span class="ax bottom" style="color:rgba(0,0,0,.6)">low energy</span>
+            </div>
+            <div class="t">quadrant, then one of 144 words · deeper colour = stronger · <b>tap and hold</b> saves the word alone</div>
+          </div>
+          <div class="b flat"><div class="lab">say more · each step skippable</div><div class="chips"><span class="chip">where</span><span class="chip">who</span><span class="chip">what</span><span class="chip">body</span><span class="chip">sleep · steps</span><span class="chip">note · voice · photo</span></div></div>
+          <div class="b flat"><div class="lab">then</div><div class="t">Strategies (4 themes, under 2 min) · the postcard · Sunday's Weekly Review (≥3 check-ins) · Friends (don't share · just the feeling · everything)</div></div>
+          <div class="t" style="font-family:var(--mono);font-size:9.5px;color:var(--pencil)">[U] what the first screen rests on today — the grid, a "How are you?" prompt, or a Today tab with a week strip and a streak ring (iOS beta, July 2026)</div>
+        </div>
+        <p class="frame-cap"><b>The only frame on this page in How We Feel's colours.</b> The colour is the user's own tap, which is why it works for them and cannot work for a pet.</p>
+      </div>
+      <div class="frame-slot wide" style="width:560px">
+        <div class="study" style="margin-top:0">
+          <div class="sw">
+            <div class="qgrid"><i class="r">red</i><i class="y">yellow</i><i class="bl">blue</i><i class="g">green</i></div>
+            <b>Theirs: four hues, one meaning each</b>
+            The hue is the state and its depth is the intensity. No quadrant is "bad"; the user assigned it. Shape doubles the colour (jagged vs smooth forms), which is the accessibility layer under it.
+          </div>
+          <div class="sw">
+            <div class="qgrid nyx"><i class="a">restless · pacing</i><i class="b2">playful · keen</i><i class="c">hiding · hunched</i><i class="d2">sleepy · quiet</i></div>
+            <b>Ours: one ink, two observable axes</b>
+            Energy against her usual × settled/unsettled. No pleasant side, because neither axis has one. The low row is the sickness-behaviour row and never gets a colour. Reads in greyscale by construction.
+          </div>
+          <div class="sw">
+            <div class="qgrid nyx"><i class="b2" style="border-left:3px solid var(--rose)">safety</i><i class="b2" style="border-left:3px solid var(--teal)">meal</i><i class="b2" style="border-left:3px solid #5B7A9E">medication</i><i class="a">a day, never</i></div>
+            <b>What colour may still mean</b>
+            The four shipped families only — rose symptom, teal meal, slate medication, ink for everything else. Colour names <em>what kind of thing was logged</em>, never how the pet is. The three tinted washes are one colour to a deuteranope, so a colour field is paper plus marks. No fifth hue.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="beats">
+      <div class="bt"><span class="n">beat 1</span><b>The schedule</b>She sets the times; the app never asks first. <span class="v half">◐ the ritual transfers · the clock is the conflict (§07)</span></div>
+      <div class="bt"><span class="n">beat 2</span><b>The grid</b>Energy × pleasantness, four colours. <span class="v half">◐ energy × settledness, one ink, no pleasant side</span></div>
+      <div class="bt"><span class="n">beat 3</span><b>The word</b>One of 144, add your own. <span class="v yes">✓ a closed, species-keyed observation vocabulary; "add your own" is a note</span></div>
+      <div class="bt"><span class="n">beat 4</span><b>Tap and hold</b>The save is one gesture; everything after is optional. <span class="v yes">✓ the floor of every prototype here</span></div>
+      <div class="bt"><span class="n">beat 5</span><b>Say more</b>Tags, body, note, voice, photo. <span class="v yes">✓ round 3's composer already is this door</span></div>
+      <div class="bt"><span class="n">beat 6</span><b>Strategies</b>Change your thinking · move · be mindful · reach out. <span class="v half">◐ only "reach out" survives: what to watch for, what to log next, when to call</span></div>
+      <div class="bt"><span class="n">beat 7</span><b>The postcard</b>The word and colour over a photo. <span class="v half">◐ the incident record already made the photo the hero; no word over a vomit</span></div>
+      <div class="bt"><span class="n">beat 8</span><b>Sunday</b>An AI review with a "because". <span class="v half">◐ the cadence and the ≥3 gate, as counts with denominators; the cause never</span></div>
+      <div class="bt"><span class="n">beat 9</span><b>Friends</b>Three share levels, a feelings widget. <span class="v half">◐ the household, as a track, not a feed (§06)</span></div>
+      <div class="bt"><span class="n">beat 10</span><b>Colour as system</b>Grid, postcard, calendar, faces, sounds. <span class="v no">✗ a hue on a day or a state is a verdict; identity colour we already have</span></div>
+      <div class="bt"><span class="n">beat 11</span><b>The streak ring</b>The July Today tab adds one. <span class="v no">✗ every lens, every round</span></div>
+      <div class="bt"><span class="n">beat 12</span><b>The posture</b>"Not here to diagnose anyone or tell people how they should feel." <span class="v yes">✓ identical to ours: escalate, never diagnose, never cheer</span></div>
+    </div>
+  </section>
+
+  <!-- ================================================== 01 -->
+  <section id="look">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The Look — the How We Feel variant</h2></div>
+    <div class="proto-head">
+      <div class="col">
+        <p><strong>Organising object: the owner's observation.</strong> Home opens on one question the owner can answer in a breath — <em>how does Mochi seem this morning, compared with her usual?</em> — placed on a two-axis field that resolves to a precise observation word. Hold to save. "Haven't really looked yet" is an honest answer. The centre cell writes the one new datum: an observed-absence day. The record is what accumulates beneath the question.</p>
+        <p>What was refused, on the evidence: the pleasantness axis, the four colours, intensity as depth, any word that names the animal's insides (anxious, in pain), any verdict (fine, better). A low-energy placement <em>proposes</em> "Log lethargy?" and never writes it silently; the rating never enters a count, a floor, a trial verdict, or the coverage line — it may only raise.</p>
+      </div>
+      <div class="proto-meta"><span>cost <b>M–L</b> · a <code>check_in</code> leaf + child table</span><span>freshness · <b>the ritual, and her usual moving</b></span><span>breaks · <b>Principle 3 (read first) · bends 1</b></span><span>objects · <b>Dr. Chen, Data, Jordan</b></span><span>needs ruled · <b>DV-2 the write class · DV-3 the cadence</b></span></div>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="b flat">
+            <div class="lab"><span>the look · this morning</span><span class="door">Haven't really looked yet</span></div>
+            <div class="lead">How does Mochi seem this morning, compared with her usual?</div>
+            <div class="grid">
+              <div class="q">restless · pacing<br>clingy · vocal</div>
+              <div class="q">playful · bright<br>keen · nosy</div>
+              <div class="q">hiding · hunched<br>flat · trembling</div>
+              <div class="q">sleepy · quiet<br>slow · dozy</div>
+              <span class="ax top">more energy than usual</span>
+              <span class="ax bottom">less than usual</span>
+              <span class="ax left">unsettled</span>
+              <span class="ax right">settled</span>
+              <span class="pt" style="left:50%;top:50%;background:var(--paper-2);border:1.5px solid var(--pencil)"></span>
+            </div>
+            <div class="t">tap a word · <b>hold to save</b> · the ring is her usual (from the fifth look) · the centre writes "looked, nothing unusual"</div>
+          </div>
+          <div class="row"><div class="g">Last night · 9:40pm · <b>sleepy</b><small>say more ›</small></div><span class="chev">›</span></div>
+          <div class="b"><div class="lab"><span>signals</span><span class="door">2 findings ›</span></div><div class="t">Nothing new since last night.</div></div>
+          <div class="row"><div class="g">Day 33 of 56 · hydrolyzed<small>logged 5 of the last 7 days</small></div><span class="chev">›</span></div>
+          <div class="b flat"><div class="lab"><span>today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="t">Nothing logged yet — how's Mochi doing?</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>7:05am, quiet.</b> The question is the only display-face element. One ink; no fills; the words sit small in their regions. Yesterday's answer is a row, not a card. Signals keep their name beneath the ritual.<span class="lens"><b>Vet behaviourist:</b> the low row is the sickness-behaviour row — there is no good corner, so nothing here can read as one.</span></p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="b safety">
+            <div class="lead" style="font-size:15px">Mochi has vomited on 14 days across 5 of the last 8 weeks — most recently Sep 2. That's a pattern worth a vet visit.</div>
+            <div class="t">14 episodes · 8 weeks · <b>Why we're showing this</b> · Keep it compact</div>
+          </div>
+          <div class="b flat">
+            <div class="lab"><span>the look · this morning</span><span class="door">Haven't really looked yet</span></div>
+            <div class="t" style="font-family:var(--serif);font-size:14px;color:var(--ink)">How does Mochi seem this morning, compared with her usual?</div>
+            <div class="grid" style="max-width:190px;margin:6px auto 2px">
+              <div class="q">restless · clingy</div><div class="q">playful · keen</div><div class="q">hiding · flat</div><div class="q">sleepy · quiet</div>
+              <span class="pt" style="left:50%;top:50%;background:var(--paper-2);border:1.5px solid var(--pencil)"></span>
+            </div>
+            <div class="t">same question, same words, same order — the card does not read the look and the look never touches the card</div>
+          </div>
+          <div class="row"><div class="g">Last night · 9:40pm · <b>sleepy</b></div><span class="chev">›</span></div>
+          <div class="b"><div class="lab"><span>signals</span><span class="door">1 more ›</span></div><div class="t">Day 33 of 56 · hydrolyzed</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The same morning with a standing safety finding.</b> The card leads, plain and full (S1); the question drops beneath it, shrunk, unchanged in wording. A "settled" tap is corroboration the phone script can carry, never a counterweight: it folds nothing, softens nothing, and the engine is told nothing.<span class="lens"><b>Dr. Chen:</b> on an intake-decline morning the ratings run is withheld beside the card, and for a cat the chips become the finding's ask — <em>Did Pixel eat this morning? Ate · Some · Refused · Not sure, shared bowl</em>.</span></p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>8:30pm</span><span>Sun 10 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="b flat">
+            <div class="lab"><span>the look · tonight</span></div>
+            <div class="t" style="font-family:var(--serif);font-size:14px;color:var(--ink)">How does Mochi seem tonight?</div>
+            <div class="grid" style="max-width:150px;margin:6px auto 2px"><div class="q"></div><div class="q"></div><div class="q"></div><div class="q"></div><span class="pt" style="left:62%;top:58%"></span><span class="pt" style="left:50%;top:50%;background:var(--paper-2);border:1.5px solid var(--pencil)"></span></div>
+          </div>
+          <div class="b">
+            <div class="lab"><span>this week · 5 looks</span><span class="door">Read the week ›</span></div>
+            <div class="cal wk">
+              <i class="dow">M</i><i class="dow">T</i><i class="dow">W</i><i class="dow">T</i><i class="dow">F</i><i class="dow">S</i><i class="dow">S</i>
+              <i class="w word">4</i><i class="w word sym">5</i><i class="w">6</i><i class="w word">7</i><i class="w word sym">8</i><i class="w">9</i><i class="w word today">10</i>
+            </div>
+            <div class="t" style="margin-top:6px">quiet · sleepy · — · keen · flat · — · quiet</div>
+            <div class="t">Vomiting on 2 days this week, 3 the week before · looked on 5 of 7 days</div>
+          </div>
+          <div class="row"><div class="g"><b>Mochi's week is ready to read</b><small>counts and dates · nothing is summarised on Home</small></div><span class="chev">›</span></div>
+          <div class="b flat"><div class="lab"><span>today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div><span class="d" style="left:12%"></span><span class="d hollow" style="left:14%"></span><span class="d" style="left:66%"></span><span class="d hollow" style="left:92%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="t">2 meals logged · 2 looks</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>Sunday evening.</b> The week grain carries one mark per day with its word beneath; the marks draw from the third look, and before that one line says so (How We Feel's own ≥3 gate). The review is a door, deterministic, counts with denominators, never a "because". A look lands on the Today lane as a hollow ring at its time and joins no count.<span class="lens"><b>Data:</b> position, never colour; no average, no slope; nothing at the season grain but the rated-days base.</span></p>
+      </div>
+    </div>
+
+    <p class="kicker">three shapes of the same field — the PM picks the honesty-to-speed trade</p>
+    <div class="frames" style="margin-top:8px">
+      <div class="frame-slot" style="width:200px"><div class="wf" style="min-height:auto;width:200px"><div class="lab">A · two plain axes</div><div class="grid"><div class="q"></div><div class="q"></div><div class="q"></div><div class="q"></div><span class="ax top">more</span><span class="ax bottom">less</span><span class="ax left">unsettled</span><span class="ax right">settled</span></div><div class="t">a position, then the words of that region · Dr. Chen's shape</div></div></div>
+      <div class="frame-slot" style="width:200px"><div class="wf" style="min-height:auto;width:200px"><div class="lab">B · three by three</div><div class="grid three"><div class="q">lively<br><small>keeping away</small></div><div class="q">lively</div><div class="q">lively<br><small>with you</small></div><div class="q">usual<br><small>keeping away</small></div><div class="q mid on">usual<br><small>usual</small></div><div class="q">usual<br><small>with you</small></div><div class="q">subdued<br><small>keeping away</small></div><div class="q">subdued</div><div class="q">subdued<br><small>with you</small></div></div><div class="t">energy × company · the centre is the observed-absence day · the vet behaviourist's shape</div></div></div>
+      <div class="frame-slot" style="width:200px"><div class="wf" style="min-height:auto;width:200px"><div class="lab">C · chips in the Tell sheet</div><div class="t" style="font-family:var(--serif);font-size:14px;color:var(--ink)">What did you see this morning?</div><div class="chips"><span class="chip on">Nothing unusual — I looked</span><span class="chip">Subdued</span><span class="chip">Hiding</span><span class="chip">Restless</span><span class="chip">Not grooming</span><span class="chip">Say more…</span></div><div class="t" style="margin-top:6px">no field at all · lives inside round 3's door · Jordan's, Sam's and Data's shape · survives a FAB-only ruling as a door</div></div></div>
+    </div>
+    <div class="conflict"><p><strong>The conflict this prototype cannot draw around — the write class.</strong> The med strip's carve-out (B-614 D1) allows one kind of one-tap write on Home: a control that writes a row the app could already describe. A look writes something the app cannot know, so by that test it is entry, and under "all logging through the FAB" it becomes a tile in the picker — where, every lens agrees, it stops being daily. Ruled in <a href="#briefs">DV-2</a>.</p></div>
+  </section>
+
+  <!-- ================================================== 02 -->
+  <section id="bowl">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The Bowl — the ritual without the grid</h2></div>
+    <div class="proto-head">
+      <div class="col">
+        <p><strong>Organising object: the act that already happens every day.</strong> A diet trial runs ten weeks and a daily habit takes a median 66 days to form, so this is a scaffold, not a habit: the check-in is anchored to breakfast, not a clock. The trial food leads as one large target; hold means "as usual" and that is the whole floor. A second beat asks how much went and <em>stays unrated until tapped</em> — an untouched card never claims "finished", because intake is the disease signal. Two prefilled one-word Tells ride behind it. The evening belongs to the recap that already ships; Sunday gets a named reading.</p>
+        <p>This is what Jordan, Sam and the habit consultant each said survives the invariants: How We Feel's <em>ritual</em> (a set time, a one-gesture save, an optional say-more) transferred to a confirmation the app can describe, with the impression as a free rider rather than the hero.</p>
+      </div>
+      <div class="proto-meta"><span>cost <b>S–M</b> · rides insertMeal + the med confirm</span><span>freshness · <b>the card clears, the register moves</b></span><span>breaks · <b>the FAB-only ruling (DC-4), head on</b></span><span>objects · <b>affective scientist (morning is the compliance trough)</b></span><span>needs ruled · <b>DV-2 · DV-3 · G4 on "usually around 8pm"</b></span></div>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi</div><span class="pill">Day 33 · re-check Thu 14 Sep</span></div>
+          <div class="b hero">
+            <div class="lab"><span>mochi's breakfast</span></div>
+            <div class="target">Hydrolyzed kibble<small>hold for as usual</small></div>
+            <div class="chips" style="justify-content:flex-end"><span class="chip">something else</span></div>
+            <div class="beat"><span>finished</span><span>left some</span><span>didn't touch it</span></div>
+            <div class="t" style="margin-top:5px">how much went — stays unrated until you tap</div>
+          </div>
+          <div class="b flat"><div class="lab"><span>today</span></div><div class="lane" style="width:30%"><div class="track"></div></div><div class="laneax" style="width:30%"><span>6a</span><span>8a</span></div><div class="t">The day starts here.</div></div>
+          <div class="b flat">
+            <div class="lab"><span>later today</span></div>
+            <div class="row"><div class="g">Evening dose · Apoquel<small>not yet logged</small></div></div>
+            <div class="row"><div class="g">Weigh-in<small>last logged 19 days ago</small></div></div>
+          </div>
+          <div class="b"><div class="lab"><span>signals</span></div><div class="t">Watching. Nothing has cleared the bar yet — that isn't an all-clear.</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>7:05am, quiet.</b> The bowl leads. The re-check date, not the trial's end date, is on the header — the date Jordan is living toward. The register is Things' "This Evening": what is later today stays visible, described as the record's history, never as a reminder.<span class="lens"><b>Habit consultant:</b> the ritual is the bowl, the reward is the dot landing, the accrual is the trial day and the coverage line; nothing needs a streak.</span></p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:13</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi</div><span class="pill">Day 33 · re-check Thu 14 Sep</span></div>
+          <div class="b flat">
+            <div class="lab"><span>today</span><span class="door">Full day ›</span></div>
+            <div class="lane"><div class="track"></div><span class="d" style="left:7%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div>
+            <div class="receipt">Breakfast · hydrolyzed · finished · 7:12<br>Timing — 5 of the 6 episodes a pattern needs</div>
+            <div class="t" style="margin-top:8px">Anything you noticed?</div>
+            <div class="chips"><span class="chip">Herself</span><span class="chip">Off</span><span class="chip">Say more…</span></div>
+            <div class="note" style="top:118px">the card collapsed to its dot · the mark grows up out of the axis · one quiet haptic</div>
+          </div>
+          <div class="b flat">
+            <div class="lab"><span>later today</span></div>
+            <div class="row"><div class="g">Evening dose · Apoquel<small>not yet logged</small></div></div>
+            <div class="row"><div class="g">Weigh-in<small>last logged 19 days ago</small></div></div>
+          </div>
+          <div class="b"><div class="lab"><span>signals</span></div><div class="t">Watching. Nothing has cleared the bar yet — that isn't an all-clear.</div></div>
+          <div class="row"><div class="g"><b>Mochi's week is ready to read</b><small>Sundays only · counts and dates</small></div><span class="chev">›</span></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>7:13am, after the hold.</b> The bowl card is gone and its dot is on the lane at 7:12; the receipt speaks the record and what it fed. The two one-word Tells are the impression as a free rider: "Off" writes a dated observation the vet will read, never a severity, never a colour, and a week of "Herself" earns nothing. The Sunday row appears on Sundays only.<span class="lens"><b>Jordan:</b> the word lives on the meal tap, not on a clock; the app never asks first.</span></p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi</div><span class="pill">Day 33 · re-check Thu 14 Sep</span></div>
+          <div class="b safety">
+            <div class="lead" style="font-size:15px">Mochi vomited on 3 of the last 4 days. Check with your vet.</div>
+            <div class="t">Last episode Mon 4 Sep · <b>If you call your clinic, the facts to have ready ›</b></div>
+          </div>
+          <div class="b hero">
+            <div class="lab"><span>mochi's breakfast</span></div>
+            <div class="target">Hydrolyzed kibble<small>hold for as usual</small></div>
+            <div class="beat"><span>finished</span><span>left some</span><span>didn't touch it</span></div>
+          </div>
+          <div class="b flat"><div class="lab"><span>today</span></div><div class="lane" style="width:30%"><div class="track"></div></div><div class="t">The day starts here.</div></div>
+          <div class="b flat"><div class="lab"><span>later today</span></div><div class="row"><div class="g">Evening dose · Apoquel<small>not yet logged</small></div></div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The same morning with a live safety finding.</b> The card leads with the phone script one tap away and no haptic. The bowl sits second, byte-identical to the quiet frame, because the ritual must read the same on a bad morning for an anxious owner to do it at all — and the vet said keep going.<span class="lens"><b>Sam:</b> "didn't touch it" three days running is the one fact that matters, and it never softens to fussy.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 03 -->
+  <section id="daypage">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The Day Page — the clock is the page</h2></div>
+    <div class="proto-head">
+      <div class="col">
+        <p><strong>Organising object: time.</strong> Home <em>is</em> today: one vertical page ruled by the clock from 6am to midnight, the record's events at their real times, a NOW rule that moves, and no cards at all. The lane you love becomes the whole screen. Above NOW is the past's paper; below it, the day ahead, where a hollow ring marks a row the record can already describe — breakfast most days around 7:30, the evening dose — drawn as the record's habit, never as an obligation, and gone without trace when its window passes. Benign findings move below the page behind one index line; a safety card is the only card and sits above the clock.</p>
+        <p>It is the cheapest honest freshness on this page: the NOW rule and the tint move every minute, and no word is ever generated. The 200th open is a different hour of a different day and the page shows it without saying so.</p>
+      </div>
+      <div class="proto-meta"><span>cost <b>M</b> · DaySpine exists, a time scale + two ghost predicates</span><span>freshness · <b>the clock</b></span><span>breaks · <b>Principle 3's benign dominance</b></span><span>objects · <b>Data and Jordan on the ghosts</b></span><span>needs ruled · <b>DC-4 (rings confirm, or only draw)</b></span></div>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="idx"><span>Signals · nothing new since last night</span><b>›</b></div>
+          <div class="clock">
+            <div class="past" style="height:6%"></div>
+            <span class="hr" style="top:0">6a</span><span class="hr" style="top:11%">8a</span><span class="hr" style="top:22%">10a</span><span class="hr" style="top:33%">noon</span><span class="hr" style="top:44%">2p</span><span class="hr" style="top:55%">4p</span><span class="hr" style="top:66%">6p</span><span class="hr" style="top:77%">8p</span><span class="hr" style="top:88%">10p</span><span class="hr" style="top:100%">12a</span>
+            <div class="now" style="top:6%"><b>7:05</b></div>
+            <div class="ev" style="top:13%"><span class="b2 ring"></span>Breakfast <small>most days around 7:30</small><span class="conf">Log breakfast</span></div>
+            <div class="ev" style="top:66.5%"><span class="b2 ring"></span>Dinner <small>most days around 6:00</small></div>
+            <div class="ev" style="top:77.5%"><span class="b2 ring"></span>Apoquel <small>dose 10 of 14</small></div>
+          </div>
+          <div class="t">Nothing yet today.</div>
+          <div class="idx"><span>14 days</span><b>›</b></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>7:05am, quiet.</b> Hatch is elapsed time. Three hollow rings, each a habit the record can already describe (a meal ring needs five of the last fourteen days inside a 60-minute window). Tapping an empty hour does nothing in v1: a reading surface with two confirmations, not a grid of doors.<span class="lens"><b>Designer:</b> the most different from round 3 in mechanism — no cards, no zoom, no composer, no tray.</span></p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>9:00pm</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="idx"><span>Signals · nothing new today · 2 findings</span><b>›</b></div>
+          <div class="clock">
+            <div class="past" style="height:83%"></div>
+            <span class="hr" style="top:0">6a</span><span class="hr" style="top:11%">8a</span><span class="hr" style="top:33%">noon</span><span class="hr" style="top:55%">4p</span><span class="hr" style="top:66%">6p</span><span class="hr" style="top:77%">8p</span><span class="hr" style="top:88%">10p</span><span class="hr" style="top:100%">12a</span>
+            <div class="ev" style="top:8.5%"><span class="b2"></span>Breakfast · hydrolyzed <small>7:31</small></div>
+            <div class="ev" style="top:9.5%;visibility:hidden"></div>
+            <div class="ev" style="top:14%"><span class="b2"></span>Apoquel <small>7:40</small></div>
+            <div class="ev" style="top:34%"><span class="b2 sym"></span>Vomit <small>12:10</small><span class="pho"></span></div>
+            <div class="ev" style="top:66.5%"><span class="b2"></span>Dinner · hydrolyzed <small>6:02</small></div>
+            <div class="ev" style="top:78%"><span class="b2"></span>Apoquel <small>8:05</small></div>
+            <div class="now" style="top:83%"><b>9:00</b></div>
+          </div>
+          <div class="t">2 meals · 2 doses · 1 vomit logged · <b>Full day ›</b></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>9:00pm, a full day.</b> Mostly past-paper now; the Recap is one tap away as the night read while Home stays in daylight. The vomit is on the page once, at its time, with its photo as a small cap — never repeated as a card unless the read escalated or a count crossed the engine's floor.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="b safety">
+            <div class="lead" style="font-size:15px">Mochi has vomited on 14 days across 5 of the last 8 weeks — most recently Sep 2. That's a pattern worth a vet visit.</div>
+            <div class="t">14 episodes · 8 weeks · <b>Why we're showing this</b> · Keep it compact</div>
+          </div>
+          <div class="clock" style="height:230px">
+            <div class="past" style="height:6%"></div>
+            <span class="hr" style="top:0">6a</span><span class="hr" style="top:33%">noon</span><span class="hr" style="top:66%">6p</span><span class="hr" style="top:100%">12a</span>
+            <div class="now" style="top:6%"><b>7:05</b></div>
+            <div class="ev" style="top:16%"><span class="b2 ring"></span>Breakfast <small>around 7:30</small><span class="conf">Log breakfast</span></div>
+            <div class="ev" style="top:66.5%"><span class="b2 ring"></span>Dinner <small>around 6:00</small></div>
+            <div class="ev" style="top:77.5%"><span class="b2 ring"></span>Apoquel <small>dose 10 of 14</small></div>
+          </div>
+          <div class="t">Nothing yet today.</div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The same morning with a standing safety finding.</b> The only card on the page, above the clock. The page beneath is byte-identical to the quiet frame — no rose on the hours, no marker on Sep 2. The card carries the severity; the beads carry the facts.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="b"><div class="lab"><span>signals</span><span class="door">2 findings ›</span></div><div class="t">Nothing new since last night.</div></div>
+          <div class="b flat">
+            <div class="lab"><span>today · tue 5 sep</span><span class="door">Full day ›</span></div>
+            <div class="swim" style="position:relative">
+              <div class="past" style="width:6%"></div>
+              <div class="nowl" style="left:6%"></div>
+              <div class="sl"><span>seen</span><div class="tr"></div></div>
+              <div class="sl"><span>fed</span><div class="tr"><span class="d hollow" style="left:8%"></span><span class="d hollow" style="left:67%"></span></div></div>
+              <div class="sl"><span>given</span><div class="tr"><span class="d hollow" style="left:11%"></span><span class="d hollow" style="left:78%"></span></div></div>
+              <div class="sl"><span>noted</span><div class="tr"></div></div>
+            </div>
+            <div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div>
+            <div class="lab" style="margin-top:8px"><span>yesterday</span></div>
+            <div class="lane"><div class="track"></div><span class="d ghost" style="left:8%"></span><span class="d ghost" style="left:12%"></span><span class="d sym ghost" style="left:34%"></span><span class="d ghost" style="left:67%"></span><span class="d ghost" style="left:78%"></span></div>
+            <div class="t">Nothing logged yet — how's Mochi doing?</div>
+          </div>
+          <div class="b flat"><div class="lab"><span>trend</span></div><div class="l m"></div><div class="l s"></div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The horizontal cousin — "the kept day".</b> The colour consultant's re-cut of the instrument's day grain: category as row (seen · fed · given · noted), the routine as hollow rings in the lane it belongs to, elapsed time as the ground, yesterday condensed beneath. It answers your "chaotic" by structure instead of by a gesture, and it is identical on a finding day.<span class="lens"><b>Colour:</b> paper and four marks; a fifth hue would be the first thing a Calm designer removed.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 04 -->
+  <section id="almanac">
+    <div class="sec-head"><span class="sec-num">04</span><h2>The Almanac — the month as Home</h2></div>
+    <div class="proto-head">
+      <div class="col">
+        <p><strong>Organising object: the calendar.</strong> A health record is a record of days and the wedge is a span of them, so Home is the current page of the pet's calendar: a grid of days, each cell a glyph of what that day's record holds, today's cell open beneath. How We Feel's own evidence that the calendar wants to sit beside Home is that they renamed Analyze to Calendar and moved it to tab position 2 this July. A cell holds at most one micro-mark per category, so the month can never become a heat map; a past day with no log is plain paper, identical to a future day, so the grid shows what happened and never whether you obeyed.</p>
+        <p>Your "big old empty state early in the month" is answered by structure: the grid is the trailing five weeks, not the calendar month, so it is never empty on the 3rd. The on-this-day line is a dated fact from the record ("the trial started on Aug 4"), new whenever there is one, or absent.</p>
+      </div>
+      <div class="proto-meta"><span>cost <b>M</b> · FrequencyCalendarCard exists</span><span>freshness · <b>the cell fills; the page advances; on-this-day</b></span><span>breaks · <b>the no-streak veto, in spirit</b></span><span>objects · <b>Jordan and Sam (shame), Data (apophenia)</b></span><span>needs ruled · <b>CUL-807 for the two-cat frame</b></span></div>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="idx"><span>Signals · nothing new since last night · 2 findings</span><b>›</b></div>
+          <div class="b flat">
+            <div class="lab"><span>the last five weeks</span><span class="door">Day 33 of 56 · hydrolyzed</span></div>
+            <div class="cal">
+              <i class="dow">M</i><i class="dow">T</i><i class="dow">W</i><i class="dow">T</i><i class="dow">F</i><i class="dow">S</i><i class="dow">S</i>
+              <i class="w word trial">7</i><i class="w word trial">8</i><i class="w word sym trial">9</i><i class="w word trial">10</i><i class="w trial">11</i><i class="w word trial">12</i><i class="w word trial">13</i>
+              <i class="w word trial">14</i><i class="w word sym trial">15</i><i class="w word trial">16</i><i class="w word trial">17</i><i class="w word trial">18</i><i class="w trial">19</i><i class="w word trial">20</i>
+              <i class="w word trial">21</i><i class="w word trial">22</i><i class="w word sym trial">23</i><i class="w word trial">24</i><i class="w word trial">25</i><i class="w word trial">26</i><i class="w word trial">27</i>
+              <i class="w word trial">28</i><i class="w word trial">29</i><i class="w word trial">30</i><i class="w word trial">31</i><i class="w word trial">1</i><i class="w word sym trial">2</i><i class="w word trial">3</i>
+              <i class="w word trial">4</i><i class="w today trial">5</i><i class="future trial">6</i><i class="future trial">7</i><i class="future trial">8</i><i class="future trial">9</i><i class="future trial">10</i>
+            </div>
+            <div class="t" style="margin-top:6px">● a day with a meal logged · <span style="color:var(--rose-ink)">▪</span> a symptom day · the rule is the trial</div>
+          </div>
+          <div class="b flat"><div class="lab"><span>today</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="t">Nothing logged yet — how's Mochi doing?</div></div>
+          <div class="row"><div class="g">The trial started on Aug 4 — 4 weeks ago this Thursday.</div></div>
+          <div class="idx"><span>All patterns</span><b>›</b></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>7:05am, quiet.</b> One mark per category per cell, never one per episode. The un-logged Aug 11 and 19 are paper, exactly like Sep 6. No weekly totals in the margin, no column sums, no colour by anything but category: the Signal is the only surface allowed to claim a pattern.<span class="lens"><b>Data:</b> a month grid invites "she vomits on Tuesdays" — the mitigation is what the margin refuses to add.</span></p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="b safety">
+            <div class="lead" style="font-size:15px">Mochi has vomited on 14 days across 5 of the last 8 weeks — most recently Sep 2. That's a pattern worth a vet visit.</div>
+            <div class="t">14 episodes · 8 weeks · <b>Why we're showing this</b> · Keep it compact</div>
+          </div>
+          <div class="b flat">
+            <div class="lab"><span>the last five weeks</span><span class="door">Day 33 of 56</span></div>
+            <div class="cal">
+              <i class="w word">7</i><i class="w word">8</i><i class="w word sym">9</i><i class="w word">10</i><i class="w">11</i><i class="w word">12</i><i class="w word">13</i>
+              <i class="w word">14</i><i class="w word sym">15</i><i class="w word">16</i><i class="w word">17</i><i class="w word">18</i><i class="w">19</i><i class="w word">20</i>
+              <i class="w word">21</i><i class="w word">22</i><i class="w word sym">23</i><i class="w word">24</i><i class="w word">25</i><i class="w word">26</i><i class="w word">27</i>
+              <i class="w word">28</i><i class="w word">29</i><i class="w word">30</i><i class="w word">31</i><i class="w word">1</i><i class="w word sym">2</i><i class="w word">3</i>
+              <i class="w word">4</i><i class="w today">5</i><i class="future">6</i><i class="future">7</i><i class="future">8</i><i class="future">9</i><i class="future">10</i>
+            </div>
+          </div>
+          <div class="b flat"><div class="lab"><span>today</span></div><div class="lane"><div class="track"></div></div><div class="t">Nothing logged yet — how's Mochi doing?</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The same morning with a standing safety finding.</b> The card and the calendar agree by construction — same record. Sep 2's cell carries its mark like any day, and the calendar never colours a day by the finding. The owner can see Sep 2 for themselves; the card says what it means.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Mon 3 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Pixel · Juniper</div><span class="pill">● Ask</span></div>
+          <div class="b safety" style="border-left-color:var(--pencil)">
+            <div class="row" style="border-top:0"><span class="ph" style="width:40px;min-height:40px"></span><div class="g">Vomit · <b>found</b> · 6:55<small>cat unconfirmed · Pixel / Juniper / still not sure</small></div></div>
+          </div>
+          <div class="b"><div class="lab"><span>signals</span></div><div class="t">Nothing standing for either cat. Watching intake and repeats.</div></div>
+          <div class="b flat">
+            <div class="lab"><span>the last five weeks · both cats</span></div>
+            <div class="cal">
+              <i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b style="background:var(--rose)"></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i>
+              <i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i>
+              <i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i>
+              <i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i>
+              <i class="two w"><b></b><b></b></i><i class="two w"><b></b><b></b></i><i class="two w today"><b class="q"></b><b class="q"></b></i><i class="future"></i><i class="future"></i><i class="future"></i><i class="future"></i>
+            </div>
+            <div class="t" style="margin-top:6px">top row Pixel · bottom row Juniper · a hollow mark on both is "not sure which" and counts for neither</div>
+          </div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>Sam's morning — the 3rd of the month, vomit on the rug, nobody saw it.</b> Both names in the header, always. The found row takes the first slot because Sam just wrote it, and it asks the one question the record cannot answer by itself, after the log, not before. The trailing window means the 3rd is not empty.<span class="lens"><b>Sam:</b> every round-3 frame is one pet mid-trial; this is the morning most of my weeks look like. If the instrument cannot draw an unattributed event, CUL-807 is a Home v2 blocker.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 05 -->
+  <section id="chapters">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Chapters — the phase-rendered Home</h2></div>
+    <div class="proto-head">
+      <div class="col">
+        <p><strong>Organising object: where in the story the pet is.</strong> A pet is always in a chapter — first week, a trial, a course, after the vet, a 48-hour watch, day to day — and Home is that chapter's page and nothing else. Flighty is the exemplar: its pre-flight, boarding, in-air and landed screens render different needs. Our phases are already in the data, and the precedence is the record's, never the owner's: a safety card is not a chapter, it is an override above every chapter; then trial › course › after the vet › watching › first week › day to day. Every chapter is composed from components the other tabs already own, so Home never grows a Home-only rendering of a fact.</p>
+        <p>This is the undrawn option C of round 3's Arrange Home brief — the record arranges the modules — taken to its conclusion. A Home that knows which phase you are in is the app that earns the daily open; a Home that changes shape is the one the owner cannot learn. The title always sits at the same height and the Today lane is always the last thing above the fold.</p>
+      </div>
+      <div class="proto-meta"><span>cost <b>L</b> · a precedence resolver, six compositions, the state matrix</span><span>freshness · <b>the chapter advances; it changes only at real boundaries</b></span><span>breaks · <b>the cohesion of one Home</b></span><span>objects · <b>Engineering and QA (6 × 3 × 2 × empty)</b></span><span>needs · <b>the state matrix argued before paper</b></span></div>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="disp">Week 5 of 8<small>hydrolyzed · re-check Thu 14 Sep</small></div>
+          <div class="strip7"><i data-d="M"><b></b><b></b></i><i data-d="T"><b></b><b></b></i><i data-d="W"><b></b><b></b><b class="s"></b></i><i data-d="T"><b></b><b></b></i><i data-d="F" class="none"></i><i data-d="S"><b></b></i><i data-d="S" class="today"></i></div>
+          <div class="t">1 day this week without a log</div>
+          <div class="row"><div class="g">On the trial<small>hydrolyzed kibble · rice — positive marking only</small></div></div>
+          <div class="b"><div class="lab"><span>signals</span><span class="door">2 findings ›</span></div><div class="t">Nothing new since last night.</div></div>
+          <div class="row"><div class="g">Also · Apoquel · dose 10 of 14<small>last logged 8:05pm</small></div><span class="chip">Log dose</span></div>
+          <div class="b flat"><div class="lab"><span>today</span></div><div class="lane"><div class="track"></div></div><div class="t">Nothing logged yet — how's Mochi doing?</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The Trial chapter, 7:05am.</b> The title is a count, which the spine permits. The week strip is one row of the Almanac; coverage is the un-logged days only, or nothing. A concurrent lower chapter renders as one "Also" line, never as a second page.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="b safety">
+            <div class="lead" style="font-size:15px">Mochi has vomited on 14 days across 5 of the last 8 weeks — most recently Sep 2. That's a pattern worth a vet visit.</div>
+            <div class="t">14 episodes · 8 weeks · <b>Why we're showing this</b> · Keep it compact</div>
+          </div>
+          <div class="disp">Week 5 of 8<small>hydrolyzed · re-check Thu 14 Sep</small></div>
+          <div class="strip7"><i data-d="M"><b></b><b></b></i><i data-d="T"><b></b><b></b></i><i data-d="W"><b></b><b></b><b class="s"></b></i><i data-d="T"><b></b><b></b></i><i data-d="F" class="none"></i><i data-d="S"><b></b></i><i data-d="S" class="today"></i></div>
+          <div class="b"><div class="lab"><span>signals</span><span class="door">1 more ›</span></div></div>
+          <div class="b flat"><div class="lab"><span>today</span></div><div class="lane"><div class="track"></div></div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The override.</b> The safety card leads every chapter; the chapter title is second; nothing else moves. If the finding is the trial's own, suppression beats fold and beats chapter — a refusing animal never sees a reassuring trial page.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="disp">Day to day</div>
+          <div class="row"><div class="g">Weight 14.2 kg<small>logged Aug 30</small></div><span class="chev">›</span></div>
+          <div class="row"><div class="g">Last logged symptom<small>Aug 12 — a date, never a days-since counter</small></div><span class="chev">›</span></div>
+          <div class="b"><div class="lab"><span>signals</span></div><div class="t">Nothing new — no established patterns. That isn't an all-clear.</div></div>
+          <div class="b flat"><div class="lab"><span>today</span></div><div class="lane"><div class="track"></div></div><div class="t">Nothing logged yet — how's Mochi doing?</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The quiet chapter.</b> "Day to day" is the least reassuring name the Designer could find; Dr. Chen would still rather the dated facts led and the title went. That disagreement is the whole cost of this direction in miniature.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>day 1</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="disp">Day 1 of 7<small>getting to know Mochi</small></div>
+          <div class="strip7"><i data-d="M" class="today"></i><i data-d="T" class="future"></i><i data-d="W" class="future"></i><i data-d="T" class="future"></i><i data-d="F" class="future"></i><i data-d="S" class="future"></i><i data-d="S" class="future"></i></div>
+          <div class="b flat">
+            <div class="lab"><span>what we're watching for</span></div>
+            <div class="row"><div class="g"><b>Timing</b><small>do symptoms follow meals, and how closely</small></div></div>
+            <div class="row"><div class="g"><b>Food connections</b><small>what tends to come before a reaction</small></div></div>
+            <div class="row"><div class="g"><b>Change</b><small>this week against last, counted from your logs</small></div></div>
+            <div class="t" style="margin-top:6px">If something needs attention sooner, it won't wait for the week.</div>
+          </div>
+          <div class="b flat"><div class="lab"><span>today</span></div><div class="lane"><div class="track"></div></div><div class="t">Nothing logged yet — how's Mochi doing?</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>The First-week chapter — day 1.</b> The cadence gate is stated up front, the way How We Feel states its "three check-ins" gate; the watching rows are the shipped copy. The first week is a chapter, which is the honest thing to call it.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 06 -->
+  <section id="household">
+    <div class="sec-head"><span class="sec-num">06</span><h2>The Household — drawn once, presented as a brief</h2></div>
+    <div class="proto-head">
+      <div class="col">
+        <p><strong>Organising object: the unit of care.</strong> How We Feel's Friends tab, its three share levels and its feelings widget are the closest thing on the market to the household we keep naming: the PM's own house shares one login, the spouse logs too, and "the unwitnessed spouse-treat is the canonical diet-trial contaminant". The only genuinely new information a Home can carry is what the other hand logged.</p>
+        <p>It is drawn once because you asked for divergence, and presented as a brief rather than a prototype because Engineering sized it honestly: 89 policies, 123 ownership predicates and 56 storage-policy lines all resolve through one owner column; the per-account food library breaks for the spouse; the invite is the app's second unauthenticated-adjacent path. XL, a track. And nothing about <em>who</em> can be shown before it exists — two phones on one credential are indistinguishable by construction, and faking "on this phone" is the one thing Engineering refused to draw.</p>
+      </div>
+      <div class="proto-meta"><span>cost <b>XL</b> · B-292, rls-privacy-reviewer is the PR</span><span>freshness · <b>the other phone</b></span><span>breaks · <b>the single-writer account</b></span><span>objects · <b>T&amp;S first, rightly</b></span><span>needs · <b>DV-6 · real accounts (CUL-194) first</b></span></div>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="wf">
+          <div class="st"><span>7:05</span><span>Tue 5 Sep</span></div>
+          <div class="hd"><div class="who"><i class="av"></i>Pixel ▾</div><span class="pill">● Ask</span></div>
+          <div class="b"><div class="lab"><span>signals</span></div><div class="t">Nothing new since last night.</div></div>
+          <div class="row"><div class="g">Since last night · <b>Ari logged Pixel's breakfast at 7:02</b></div></div>
+          <div class="row"><div class="g">Apoquel · dose 9 of 14<small>Ari logged it at 8:10pm yesterday — the fact replaces the confirm</small></div></div>
+          <div class="b flat"><div class="lab"><span>today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div><span class="d" style="left:6%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="t">1 meal logged</div><div class="row"><div class="g">● Breakfast · wet · 7:02 · <b>Ari</b></div></div></div>
+          <div class="row"><div class="who"><i>S</i><i>A</i></div><div class="g"><small>two avatars, nothing under them</small></div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div>
+        <p class="frame-cap"><b>Sam's phone, Ari's morning.</b> The delta line is the whole direction: the other phone's writes since this one last looked, bounded, of the record. Attribution is on the row and nowhere else. The double-dosing guard on the strip is the single best clinical reason to build any of it.<span class="lens"><b>T&amp;S:</b> "Ari hasn't logged in three days" must be unbuildable, not merely unbuilt; no per-person counts, no partner-directed pings, no faces with states, no presence.</span></p>
+      </div>
+      <div class="frame-slot wide" style="width:560px">
+        <div class="keep" style="margin-top:0">
+          <div><b>What "friends" becomes</b> A shared record with a hand-off register — the same Home on every carer's phone, "who logged" as provenance on a row, and "I fed her, you're on meds tonight" shown by the record, never sent by a person.</div>
+          <div><b>The three share levels map to roles, not entries</b> Co-carer (read, write, sees who) · helper (the sitter: writes meals and incidents, reads today only) · vet (the report). A per-entry share choice is a decision at the moment of event.</div>
+          <div><b>What must precede it</b> Real accounts (CUL-194) — the PM's household moves off the shared credential to dogfood it; the food library becomes membership-shared; delete-account un-members, never cascades a pet another carer keeps.</div>
+          <div><b>What a Home may do before it exists</b> Nothing about who. Rows another device pushed already appear on the next hydration tick, unattributed. That is the honest pre-B-292 household affordance, and it ships today.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== 07 -->
+  <section id="table">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Where the table converged without being asked, and where it split</h2></div>
+    <div class="col"><p>Eleven briefs were written in isolation — none saw another, and each formed its view before reading round 3. These are the places they landed together, and the three places they did not.</p></div>
+    <div class="keep">
+      <div><b>The valence axis does not transfer.</b> Vet behaviourist, affective scientist, Dr. Chen, Data, colour — five lenses, five different grounds. No validated owner instrument asks for a pet's pleasantness; the green corner is the sickness-behaviour row in colour.</div>
+      <div><b>The owner is the informant, not the subject.</b> Anchored "than usual" observation words, observable only, species-keyed, a closed set; "add your own" is a note. Owners are reliable on features and counts and biased on global change (the caregiver placebo effect ran ~57% in one trial).</div>
+      <div><b>The real prize is the observed-absence day.</b> "I looked; nothing unusual" is a denominator the record lacks — it turns "vomit on 6 of 33 days" from a floor into a fraction, and makes the un-logged track two honest states. Never phrased as a good day.</div>
+      <div><b>No colour on a day, a state or a run.</b> Four shipped families, no fifth hue; the washes fail a deuteranope; a whole-day hue is a score. Every frame on this page reads in greyscale.</div>
+      <div><b>The look never enters a count, a floor, a verdict, or the coverage line.</b> It may only raise: a low-energy placement proposes "Log lethargy?"; a calm run is withheld beside an intake finding, fail-closed, the B-789 gate extended.</div>
+      <div><b>Sunday is counts with denominators, deterministic first.</b> The Daily Recap's builder over seven days; a model only ever as phrasing over it, on tap, consent-gated, cached on the device. How We Feel's "because" sentence is the one thing a pet-health review may never say.</div>
+      <div><b>The household is a track, not a prototype.</b> Provenance on a row, never a scoreboard; the hand-off shown by the record, never sent; a helper role that never reads the history.</div>
+      <div><b>The ritual reads the same on a bad morning.</b> Habit, Jordan, Sam, Dr. Chen: the card leads, the ritual sits second and unchanged, no register shift, no haptic.</div>
+    </div>
+
+    <div class="conflict">
+      <p><strong>Conflict 1 — the write class (extends DC-4).</strong></p>
+      <p><strong>Dr. Chen / Data / Engineering:</strong> a look is neither a confirmation (the app cannot describe the owner's observation in advance) nor a form (two taps, no typing). Under a strict "one confirm and zero forms" ruling it is a second door and dies; as a FAB tile it survives but is made daily by almost no one.</p>
+      <p><strong>Jordan / Sam / the habit consultant:</strong> the whole How We Feel mechanism is the first-screen tap-and-hold; a check-in routed through a picker is a check-in that stops happening. And The Bowl's one write is the med strip's own carve-out applied to breakfast.</p>
+      <p><strong>PM decision needed:</strong> is a look a third class — a diary entry a running trial or a vet-directed watch places on Home for its duration — or a FAB tile, gaps and all? (DV-2)</p>
+    </div>
+    <div class="conflict">
+      <p><strong>Conflict 2 — when the ritual happens.</strong></p>
+      <p><strong>Affective scientist:</strong> one skippable evening read at a fixed owner-chosen time; morning is the experience-sampling compliance trough and Jordan's 7am is the rush; the evening piggybacks the recap that already ships.</p>
+      <p><strong>Habit consultant / Jordan / vet behaviourist:</strong> anchor to the bowl, not the clock — breakfast is the one thing that happens every day without an app; the app never asks first.</p>
+      <p><strong>Dr. Chen:</strong> either, but gated to a trial or a vet-directed watch; a daily "as usual" on a maintenance pet is reassurance-by-habit.</p>
+      <p><strong>PM decision needed:</strong> bowl-anchored, evening-scheduled, or trial-gated — and is a consented schedule acceptable before B-288's self-pruning ships? (DV-3)</p>
+    </div>
+    <div class="conflict">
+      <p><strong>Conflict 3 — the quiet chapter's name.</strong></p>
+      <p><strong>Designer:</strong> "Day to day" is the least reassuring title for the chapter with nothing in it, and a title at a stable height is what lets an owner learn a Home that changes shape.</p>
+      <p><strong>Dr. Chen:</strong> the dated facts should lead and the title should go; any name for the quiet chapter is a verdict by placement.</p>
+      <p><strong>PM decision needed:</strong> only if Chapters goes to paper (DV-1).</p>
+    </div>
+  </section>
+
+  <!-- ================================================== 08 -->
+  <section id="compare">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Side by side</h2></div>
+    <div class="tablewrap">
+      <table class="cmp">
+        <thead><tr><th>Prototype</th><th>Organising object</th><th>Why the 200th open differs</th><th>Where Signals sit</th><th>Capture beyond the FAB</th><th>Principle it breaks</th><th>Who objects</th><th>Cost</th><th>Needs ruled</th></tr></thead>
+        <tbody>
+          <tr><td>01 The Look</td><td>the owner's observation</td><td>the question's time-word, her usual moving, yesterday's answer</td><td>beneath the ritual; a safety card overrides to the top</td><td>the look (hold to save); a proposal, never a silent write</td><td>3 (Home is read first); bends 1</td><td>Dr. Chen, Data, Jordan</td><td>M–L</td><td>DV-2, DV-3, DV-4</td></tr>
+          <tr><td>02 The Bowl</td><td>the act that already happens</td><td>the card clears; the register moves; the trial day advances</td><td>below the register, as shipped</td><td>one confirmation (breakfast) + two prefilled Tells</td><td>none; collides with FAB-only</td><td>affective scientist (the hour)</td><td>S–M</td><td>DV-2, DV-3</td></tr>
+          <tr><td>03 The Day Page</td><td>time</td><td>the NOW rule and the tint, every minute; a ring appears, confirms, or leaves</td><td>one index line; benign findings below the page</td><td>the rings' confirms (or nothing, if FAB-only)</td><td>3's benign dominance</td><td>Data, Jordan (the ghosts)</td><td>M</td><td>DC-4</td></tr>
+          <tr><td>04 The Almanac</td><td>the calendar</td><td>the cell fills; the page advances; on-this-day</td><td>top, unchanged</td><td>none</td><td>the no-streak veto, in spirit</td><td>Jordan, Sam, Data</td><td>M</td><td>CUL-807</td></tr>
+          <tr><td>05 Chapters</td><td>the phase</td><td>the chapter advances; changes at real boundaries only</td><td>inside the chapter, below its facts; safety overrides</td><td>the dose confirm inside its sub-section</td><td>the cohesion of one Home</td><td>Engineering, QA, the Designer's own doubt</td><td>L</td><td>the state matrix</td></tr>
+          <tr><td>06 The Household</td><td>the unit of care</td><td>the other phone</td><td>top, identical on both phones</td><td>none new</td><td>the single-writer account</td><td>T&amp;S, Engineering</td><td>XL</td><td>DV-6</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col" style="margin-top:22px"><p>Every prototype keeps four things without argument: the safety finding leads and stays plain; the record never colours itself with a verdict; the FAB is untouched; and Signals keep their name.</p></div>
+  </section>
+
+  <!-- ================================================== 09 -->
+  <section id="briefs">
+    <div class="sec-head"><span class="sec-num">09</span><h2>The briefs — seven rulings, each from the frames</h2></div>
+
+    <div class="brief"><p class="bid">DV-1 — Which two go to paper first</p>
+      <p><strong>Deciding:</strong> which prototypes get a 1:1 pencil sheet per frame (quiet, safety, evening, day 1, the transition between two opens) and go into the spouse's hands.</p>
+      <p><strong>Options:</strong> <span class="rec">The Look + The Day Page — recommended</span>: the one you asked for by name, whose risks a paper test settles faster than any drawing, and the cheapest one that differs most in mechanism · The Bowl + The Day Page (the ritual without the impression) · The Almanac in place of either.</p>
+      <p><strong>Consequence:</strong> The Bowl's mechanics (hold on the meal, intake unrated by default, the re-check date) are candidates for any winner regardless; Chapters waits on Engineering's state matrix; the Household goes to a track brief.</p></div>
+
+    <div class="brief"><p class="bid">DV-2 — The write class of a look (extends DC-4)</p>
+      <p><strong>Deciding:</strong> whether a daily look is "logging" (the FAB) or "the question Home asks" (one gesture on the first screen).</p>
+      <p><strong>Options:</strong> (A) a FAB tile plus a Home door — consistent with FAB-only, loses the tap-and-hold · <span class="rec">(B) a Home write carved out as the look's own D1-class exception, placed on Home only while a trial or a vet-directed watch runs — recommended if the look is wanted at all</span> · (C) no look; the chips live in the Tell sheet.</p>
+      <p><strong>Consequence:</strong> (B) makes the look the only write on Home beside the med confirm DC-4 is deciding, so the two rulings belong together; (C) keeps everything already drawn in round 3.</p></div>
+
+    <div class="brief"><p class="bid">DV-3 — When the ritual happens</p>
+      <p><strong>Deciding:</strong> the cue for a daily look or bowl, and whether it may be scheduled.</p>
+      <p><strong>Options:</strong> <span class="rec">anchored to breakfast, no clock, on by default only during a trial or watch, with the evening recap as the "say more" — recommended</span> · one consented evening schedule at an owner-chosen time (the compliance evidence) · both, under the notification budget.</p>
+      <p><strong>Consequence:</strong> any schedule ships with a stand-down in the same PR (B-288's self-pruning is unshipped) or waits for it; the morning nudge line is replaced, not added to.</p></div>
+
+    <div class="brief"><p class="bid">DV-4 — The observed-absence day as a record fact</p>
+      <p><strong>Deciding:</strong> whether "I looked and saw nothing unusual" is stored — a row, a base tick, a report denominator.</p>
+      <p><strong>Options:</strong> <span class="rec">yes, as an events row with a child (the weight_checks precedent), rendered as coverage and never as wellness — recommended</span> · no; the look records words only.</p>
+      <p><strong>Consequence:</strong> the schema PR is irreversible on the enum; the report row rides the held generate-report redeploy (CUL-19); the season strip's base gains its second honest state.</p></div>
+
+    <div class="brief"><p class="bid">DV-5 — Sunday</p>
+      <p><strong>Deciding:</strong> what the weekly reading is made of.</p>
+      <p><strong>Options:</strong> <span class="rec">deterministic, riding the Daily Recap's builder over seven local days; counts with denominators; the floor line verbatim — recommended (M, no hold)</span> · plus a model phrasing over it, on tap, consent-gated, cached on the device (L, a generate-signal deploy) · none.</p>
+      <p><strong>Consequence:</strong> a model never writes the review without the deterministic one underneath as its fallback and its floor; a "because" sentence is out under every option.</p></div>
+
+    <div class="brief"><p class="bid">DV-6 — The household</p>
+      <p><strong>Deciding:</strong> whether B-292 is a 2026 track or a 2027 one.</p>
+      <p><strong>Options:</strong> <span class="rec">a track brief now, sequenced after real accounts (CUL-194), with the six guardrails written before the invite — recommended</span> · defer entirely · fake it on Home first (refused by Engineering and T&amp;S).</p>
+      <p><strong>Consequence:</strong> nothing in this round changes; everything in the next does.</p></div>
+
+    <div class="brief"><p class="bid">DV-7 — Two cats (CUL-807)</p>
+      <p><strong>Deciding:</strong> whether an unattributed event may live in the record at all.</p>
+      <p><strong>Options:</strong> <span class="rec">(a) an attribution flag — disclosed on both cats, excluded from either's certain count — recommended</span> · (b) a household-scoped row · (c) pick the likeliest and note the doubt.</p>
+      <p><strong>Consequence:</strong> every two-cat frame on this page assumes (a); under (c) Sam's morning cannot be drawn honestly and CUL-807 is a Home v2 blocker.</p></div>
+  </section>
+
+  <!-- ================================================== 10 -->
+  <section id="questions">
+    <div class="sec-head"><span class="sec-num">10</span><h2>Your questions — the ones only your household can answer</h2></div>
+    <div class="col"><p>You asked what questions the team had as it ramped up. Every lens ended with a list; these are the ones that changed the work, deduplicated. The first group is for the person who uses How We Feel; the second is for you.</p></div>
+    <ol class="qlist">
+      <li><b>What is on the first screen when she opens it today?</b> The grid, a "How are you?" with today's check-ins beneath, or a Today tab with a week strip and a ring? Nobody could verify this without installing it, and it decides whether How We Feel's calm comes from one object or one question.</li>
+      <li><b>How does she actually check in?</b> On the reminder or when she feels something; tap-and-hold or the full walk; how many a day after the first fortnight; what the reminder says, verbatim.</li>
+      <li><b>The nothing-day.</b> On a day she feels nothing in particular, does she skip, log "calm", or pick a word she does not mean? That one data point is the whole quiet-day problem.</li>
+      <li><b>The Weekly Review.</b> Has she opened one; what did it say; did it give a "because", and did she believe it or act on it?</li>
+      <li><b>Friends and the colours.</b> Does she share, at which level, and has it ever felt like being watched? After a hard week, does the month read as a record or as a verdict about her?</li>
+      <li><b>A three-morning experiment.</b> Would she rate your pet on the How We Feel grid for three mornings and tell us which quadrant she could not choose, and whether "calm" ever felt like a guess? The vet behaviourist would trade every citation in his brief for that.</li>
+      <li><b>For you: what drew her to it?</b> The look, the ritual, the words, the Sunday review, the friends? The five prototypes weight those differently, and your answer reorders DV-1.</li>
+      <li><b>Is a look an event?</b> On the timeline, in History, on the vet report's appendix as an owner-reported observation. "Yes" is the recommended schema shape and an irreversible enum add.</li>
+      <li><b>The write class and the hour</b> — DV-2 and DV-3 together, because The Look and The Bowl both stand on them.</li>
+      <li><b>Would your household log the treats on the second phone if it were two taps and nobody was keeping score?</b> Honestly. If "no, even then", the household track is wrong and the fix is the rule card on the trial strip.</li>
+      <li><b>The re-check date.</b> Is it something you would enter at trial setup? It is one line on Home and the only date Jordan cares about, and it is worth nothing if nobody enters it.</li>
+      <li><b>The next medium.</b> Pencil on paper in her hands, or a click-through of two of these? The recommendation is paper first, because the questions above are answered by watching someone try, not by a screen.</li>
+    </ol>
+  </section>
+
+  <!-- ================================================== 11 -->
+  <section id="who">
+    <div class="sec-head"><span class="sec-num">11</span><h2>Who was at the table</h2></div>
+    <div class="col"><p>Every brief was an isolated agent with a fresh context: none saw the build conversation or another brief, and each formed its view before reading round 3. The consultants were seated for this engagement only. The briefs are verbatim in <code>docs/sessions/2026-09-05-home-v2-divergent-round.md</code>.</p></div>
+    <div class="who-table">
+      <div><b>Affective scientist</b> (consultant) The circumplex, affect labelling, experience-sampling compliance. Position: the owner as informant; evening, skippable, one a day; the witnessed-day denominator; colour is a verdict by hue.</div>
+      <div><b>Veterinary behaviourist</b> (consultant) HHHHHMM, the Feline Grimace Scale, CMPS-SF, CBPI, VetMetrica, FMPI; the sickness-behaviour construct. Position: no valence axis; a chip-based morning look; the observed-absence day; strategies stop at watch, log, call.</div>
+      <div><b>Behavioural / habit designer</b> (consultant) Lally's 66 days, Gentler Streak, Retro, Finch. Position: a scaffold not a habit; the bowl as the cue; intake unrated by default; a Sunday reading of counts; the household as a hand-off register.</div>
+      <div><b>Colour-systems designer</b> (consultant) Computed contrast and deuteranope simulation on the theme. Position: four families, no fifth hue, paper plus marks, the greyscale test as a standing rule; the mark grows out of the axis.</div>
+      <div><b>Sr. Product Designer</b> Five directions that differ in organising object; paper picks B then A; the anti-patterns of rounds 1–3 named.</div>
+      <div><b>Jordan</b> The bowl is the check-in; the re-check date on the strip; never a scheduled question; the vomit on Home once.</div>
+      <div><b>Sam</b> Both names in the header; "not sure which" decided before the write; a check-in dies in four days and then lies in green.</div>
+      <div><b>Dr. Chen</b> The vet's diary, gated to trials and watches; a 16-row reassurance ledger; ratings only ever raise; the frame that would make him angry.</div>
+      <div><b>Data Scientist + Trust &amp; Safety</b> A proxy-rated ordinal series with informative missingness; context never evidence; D10 whole-boundary before a word leaves; six guardrails against partner surveillance.</div>
+      <div><b>Dir. of Engineering</b> Four premises verified at file:line; every mechanic costed; the household is XL; flag content, never chrome; useHomeModel is still the first PR.</div>
+      <div><b>The researcher</b> The frozen teardown: 40 web calls, 144 quotes, one award corrected, a 20-row transfer table.</div>
+    </div>
+  </section>
+</div>
