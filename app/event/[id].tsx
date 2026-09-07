@@ -399,9 +399,22 @@ export default function EventDetailScreen() {
 
   function handleDelete() {
     if (!event) return;
+    // CUL-825 — name the photo when the record carries one (CUL-645 parity). The
+    // completion card's Undo already delivers this fact; this confirm is the same
+    // destructive action against the same unrecreatable photo and used to say
+    // nothing about it. That is a COMPREHENSION gap, not a mistouch one: an owner
+    // reversing a mis-logged event has no way to know the photo of the thing goes
+    // with it. Same sentence as the card (components/ui/NamedCompletionCard.tsx)
+    // so the two doors out of a record read as one voice, and the same predicate
+    // — `!!attachment`, which is what the hero and the moment payload already
+    // switch on. Silent when there is no photo: never warn about one that is not
+    // there.
+    const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
     Alert.alert(
       'Remove this log?',
-      `This will remove the ${EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event'} from history.`,
+      attachment
+        ? `This will remove the ${label} from history. The photo you attached will be removed with it.`
+        : `This will remove the ${label} from history.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
