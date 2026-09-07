@@ -42,6 +42,7 @@ import { LayoutAnimation, StyleSheet } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
+import { facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
 
 const REASSURANCE = /\b(fine|okay|ok|healthy|all clear|no worries|nothing to worry|probably fine)\b/i;
 
@@ -508,38 +509,20 @@ describe('VomitAnalysisSection — the fold control and Re-run analysis do not s
     colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
   });
 
-  /** The nearest responder host above a node — the thing that actually owns the touch. */
-  function owningTouchable(node: { parent: unknown } | null): Record<string, unknown> | null {
-    let cur = node as { parent: unknown; props?: Record<string, unknown> } | null;
-    while (cur) {
-      if (cur.props && typeof cur.props.onStartShouldSetResponder === 'function') {
-        return cur.props;
-      }
-      cur = cur.parent as typeof cur;
-    }
-    return null;
-  }
-
-  function facingSlop(props: Record<string, unknown> | null, edge: 'top' | 'bottom'): number {
-    const slop = props?.hitSlop as number | Record<string, number> | undefined;
-    if (slop == null) return 0;
-    return typeof slop === 'number' ? slop : (slop[edge] ?? 0);
-  }
-
   it('neither the expanded fold control nor Re-run analysis reaches toward the other', async () => {
     mockRow = READ;
     const { findByText, getByText } = render(
       <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
     );
     await findByText('Keep an eye out');
-    const fold = owningTouchable(getByText('Keep it compact') as never);
-    const rerun = owningTouchable(getByText('Re-run analysis') as never);
+    const fold = owningTouchable(getByText('Keep it compact'));
+    const rerun = owningTouchable(getByText('Re-run analysis'));
     expect(fold).not.toBeNull();
     expect(rerun).not.toBeNull();
     // They are separate responders (a shared one would be its own defect — C-6), and the
     // rendered separation between them is zero, so the facing slop must be zero too.
-    expect(fold).not.toBe(rerun);
-    expect(facingSlop(fold, 'bottom') + facingSlop(rerun, 'top')).toBe(0);
+    expect(touchableToken(fold)).not.toBe(touchableToken(rerun));
+    expect(facing(fold, 'bottom') + facing(rerun, 'top')).toBe(0);
   });
 
   it('the strip keeps its whole 44pt box when folded — Re-run does not reach into it', async () => {
@@ -550,22 +533,20 @@ describe('VomitAnalysisSection — the fold control and Re-run analysis do not s
     await findByText('Keep an eye out');
     fireEvent.press(getByText('Keep it compact'));
     await waitFor(() => expect(getByText(/4 findings/)).toBeTruthy());
-    const strip = owningTouchable(getByText("What's visible") as never);
-    const rerun = owningTouchable(getByText('Re-run analysis') as never);
-    expect(strip).not.toBe(rerun);
-    expect(facingSlop(strip, 'bottom') + facingSlop(rerun, 'top')).toBe(0);
+    const strip = owningTouchable(getByText("What's visible"));
+    const rerun = owningTouchable(getByText('Re-run analysis'));
+    expect(touchableToken(strip)).not.toBe(touchableToken(rerun));
+    expect(facing(strip, 'bottom') + facing(rerun, 'top')).toBe(0);
   });
 
   it('both controls carry the 44pt floor in their own box, since the slop is gone', async () => {
-    const { StyleSheet } = require('react-native');
     mockRow = READ;
     const { findByText, getByText } = render(
       <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
     );
     await findByText('Keep an eye out');
     for (const label of ['Keep it compact', 'Re-run analysis']) {
-      const props = owningTouchable(getByText(label) as never)!;
-      expect(StyleSheet.flatten(props.style as never).minHeight).toBe(44);
+      expect(flat(owningTouchable(getByText(label))).minHeight).toBe(44);
     }
   });
 });
