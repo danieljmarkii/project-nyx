@@ -35,6 +35,9 @@ describe('createFixtureRoot keeps detector fixtures out of the scanned tree', ()
     // The probe directory sits at the repo ROOT, which no guard walks (they walk
     // `app/`, `components/`, `lib/`, …), and holds no files — so even mid-test it is
     // invisible to every scan.
+    // fixture-root-ok: the probe is the mutation — driving the rejection branch needs a
+    // REAL in-repo base, so this write cannot use the temp root. It sits at the repo
+    // ROOT, which no guard walks, holds no files, and is removed in the `finally`.
     const probe = path.join(REPO_ROOT, '.guard-fixture-probe');
     fs.mkdirSync(probe, { recursive: true });
     try {
@@ -86,6 +89,9 @@ describe('createFixtureRoot keeps detector fixtures out of the scanned tree', ()
     // The probe proves the identical invariant with no blast radius, and it still
     // discriminates: with the containment check broken the provenance check throws a
     // DIFFERENT message, so the regex fails and nothing is deleted either way.
+    // fixture-root-ok: same reason as the probe above — an out-of-repo path cannot
+    // exercise `removeFixtureRoot`'s in-repo refusal. Disposable, at the repo root that
+    // no guard walks, removed in the `finally`.
     const probe = path.join(REPO_ROOT, '.guard-fixture-probe-delete');
     fs.mkdirSync(probe, { recursive: true });
     fs.writeFileSync(path.join(probe, 'keep.txt'), 'must survive\n', 'utf8');

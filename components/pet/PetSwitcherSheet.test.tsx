@@ -49,8 +49,22 @@ function seed() {
   useAuthStore.setState({ user: { id: 'u1' } as never });
 }
 
-// The archived-pets count lands asynchronously; settle it so its setState is inside
-// act() rather than trailing a finished test as a warning.
+// Wait for the archived-pets row itself. Use this ONLY where the row is part of what
+// the test claims (CUL-716) — it is a 1 s `waitFor` on one specific piece of copy, so a
+// test with no stake in that row pays the wait and, worse, inherits its failure mode.
+//
+// The cost is real and it is front-loaded: jest bills babel's first-compile of this file
+// to whichever test runs first, so on a cold cache (`--clearCache`, or a fresh clone)
+// that test can spend seconds before `waitFor` even starts its clock and then lose the
+// race inside it. The observed symptom is this suite reporting a red on an assertion
+// about Modals — a test that never had anything to do with archived pets — which is a
+// phantom failure someone then has to chase. Measured here at 4101 ms for the first
+// test on a cold cache against a 1 s window; reported at ~5949 ms and actually red on
+// the machine that filed it.
+//
+// That noise is not cosmetic. CLAUDE.md § Git Workflow forbids fixing a red run by
+// weakening the check, so an intermittent red pointing at an unrelated test is exactly
+// the pressure that gets a suite dropped (the CUL-712 argument, in a different file).
 const settled = (view: ReturnType<typeof render>) =>
   waitFor(() => expect(view.getByText('Archived pets')).toBeTruthy());
 
@@ -61,7 +75,15 @@ beforeEach(() => {
   seed();
 });
 
-/** Let a pending archived-count fetch settle, so "no row" means it never came. */
+/**
+ * Let a pending archived-count fetch settle, so "no row" means it never came — and the
+ * default for every test that does not assert the archived row.
+ *
+ * Deterministic where `settled` is a race: the supabase mock's thenable resolves
+ * synchronously, so one `act(async () => {})` drains it in a single microtask turn. It
+ * puts the count's `setState` inside `act()` — which is all most of these tests ever
+ * wanted from `settled` — with no clock to lose.
+ */
 const flush = () => act(async () => {});
 
 describe('PetSwitcherPanel', () => {
@@ -69,7 +91,9 @@ describe('PetSwitcherPanel', () => {
     const view = render(<PetSwitcherPanel visible onClose={jest.fn()} />);
     expect(view.getByText('Your pets')).toBeTruthy();
     expect(view.UNSAFE_queryAllByType(Modal)).toHaveLength(0);
-    await settled(view);
+    // `flush`, not `settled`: this is about Modals. It is also the test that runs first
+    // and so pays the file's compile cost, which is how it became the one that reds.
+    await flush();
   });
 
   it('renders nothing when not visible', () => {
@@ -80,7 +104,7 @@ describe('PetSwitcherPanel', () => {
   it('a pet row switches the active pet and closes', async () => {
     const onClose = jest.fn();
     const view = render(<PetSwitcherPanel visible onClose={onClose} />);
-    await settled(view);
+    await flush(); // the switch has no stake in the archived row
     fireEvent.press(view.getByLabelText('Switch to Mochi'));
     expect(usePetStore.getState().activePet?.id).toBe('p2');
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -254,7 +278,7 @@ describe('PetSwitcherSheet', () => {
     const view = render(<PetSwitcherSheet visible onClose={jest.fn()} />);
     expect(view.UNSAFE_getAllByType(Modal).filter((m) => m.props.visible)).toHaveLength(1);
     expect(view.getByText('Your pets')).toBeTruthy();
-    await settled(view);
+    await flush(); // asserts the Modal wrapper; the archived row is not its subject
   });
 
   // The FAB menu is a capture surface that presents from the root, so it needs the
