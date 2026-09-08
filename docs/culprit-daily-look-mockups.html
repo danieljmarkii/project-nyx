@@ -117,11 +117,22 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { font-size: 12px; font-weight: 500; color: var(--d-ink-2); background: var(--d-surface); border: 1px solid var(--d-border); border-radius: 999px; padding: 6px 11px; line-height: 1.2; min-height: 30px; display: inline-flex; align-items: center; }
   .chip.on { color: var(--d-surface); background: var(--d-ink); border-color: var(--d-ink); font-weight: 600; }
-  .chip.door { color: var(--d-teal-ink); border-color: transparent; background: var(--d-teal-wash); font-weight: 600; }
-  .chip.ghost { border-style: dashed; color: var(--d-ink-3); }
+  /* every chip ending in › is a door: the same weight as a word, ink text, the chevron in the door colour */
+  .chip.door, .chip.ghost { color: var(--d-ink); border-color: var(--d-border); background: var(--d-surface); font-weight: 500; }
+  .chip.door b, .chip.ghost b { color: var(--d-teal-ink); font-weight: 600; margin-left: 3px; }
+  .donebar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--d-border); font-size: 11px; color: var(--d-ink-3); }
+  .donebtn { background: var(--d-ink); color: var(--d-surface); border-radius: 999px; padding: 7px 16px; font-size: 12.5px; font-weight: 600; }
+  .prop { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--d-border); font-size: 12px; color: var(--d-ink-2); }
+  .prop .pt { flex-basis: 100%; }
+  .prop .pt b { color: var(--d-ink); }
+  .pbtn { border: 1px solid var(--d-ink); color: var(--d-ink); border-radius: 999px; padding: 6px 13px; font-size: 12px; font-weight: 600; min-height: 30px; display: inline-flex; align-items: center; }
+  .petrow span.done::after { content: " ◎"; color: var(--d-ink-3); }
+  .tbars { display: flex; align-items: flex-end; gap: 3px; height: 22px; margin-top: 6px; }
+  .tbars i { flex: 1; background: var(--d-empty); border-radius: 2px 2px 0 0; height: 3px; }
+  .tbars i.h { background: var(--d-rose); height: 14px; }
   .hint { font-size: 10.5px; color: var(--d-ink-3); margin-top: 8px; }
   .hint b { color: var(--d-ink-2); font-weight: 600; }
-  .skip { font-size: 11px; color: var(--d-ink-3); text-decoration: underline; text-underline-offset: 2px; }
+  .skip { display: none; }
   .petrow { display: flex; gap: 6px; margin-bottom: 8px; }
   .petrow span { font-size: 12px; font-weight: 600; border: 1px solid var(--d-border); border-radius: 999px; padding: 4px 11px; color: var(--d-ink-2); }
   .petrow span.on { background: var(--d-ink); color: var(--d-surface); border-color: var(--d-ink); }
@@ -320,9 +331,9 @@
               <span class="ring"></span>
             </div>
             <div class="hint">tap a word · <b>hold to save</b> · the ring is her usual, from the fifth look · the centre writes "looked, nothing unusual"</div>
-            <div class="chips" style="margin-top:8px"><span class="chip door">Something else ›</span></div>
+            <div class="chips" style="margin-top:8px"><span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span></div>
           </div>
-          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
@@ -381,14 +392,14 @@
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q">How does Mochi seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span>
               <span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
-            <div class="hint">tap what you saw · <b>hold to save</b> · two words can be true on one morning · nothing is pre-selected, ever</div>
+            <div class="hint">tap what you saw, then <b>Done</b> · hold any chip to save it alone · two words can be true on one morning · nothing is pre-selected, ever</div>
           </div>
-          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
@@ -404,11 +415,11 @@
             <div class="petrow"><span class="on">Pixel</span><span>Juniper</span></div>
             <p class="q sm">How does Pixel seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't come to eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't come to eat<b>›</b></span><span class="chip ghost">Not herself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Hiding</span><span class="chip">Not grooming</span><span class="chip">Restless</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
-            <div class="hint">same question, same chips, same order — the finding's ask belongs to the card, never to the look</div>
+            <div class="hint">same question, same chips, same order — the finding's ask belongs to the card, never to the look · "Didn't come to eat" opens the meal path where "not sure — shared bowl" already lives</div>
           </div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
@@ -422,20 +433,20 @@
           <div class="acard"><div class="seclabel"><span>Signals</span><span class="door">›</span></div><div class="quiet">Nothing standing for either cat. Watching intake and repeats.</div></div>
           <div class="acard">
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
-            <div class="petrow"><span>Pixel</span><span class="on">Juniper</span></div>
+            <div class="petrow"><span class="done">Pixel</span><span class="on">Juniper</span></div>
             <p class="q sm">How does Juniper seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't come to eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't come to eat<b>›</b></span><span class="chip ghost">Not herself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Hiding</span><span class="chip">Not grooming</span><span class="chip">Restless</span><span class="chip">Clingy</span><span class="chip on">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
-            <div class="hint"><b>Done</b> · Juniper's look; Pixel's is still open above — a cat not tapped is unrated, per cat</div>
+            <div class="donebar"><span>Juniper · lively</span><span class="donebtn">Done</span></div>
+            <div class="answered" style="margin-top:9px"><span class="mk"></span><b>Looked</b> · Pixel · nothing unusual · 7:02<span class="chev">›</span></div>
           </div>
-          <div class="answered" style="padding:0 6px"><span class="mk"></span>Pixel · looked · <b>nothing unusual</b> · 7:02<span class="chev">›</span></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>C · two cats, Sunday, nothing happening.</b> One card, both names. Pixel's look is answered and collapsed to its row; Juniper's grid is open with "Lively" selected. Nothing on this frame is coloured, counted, or summarised.<span class="lens"><b>Sam:</b> one row for both cats, not two forms; skip costs nothing, and nothing is written when I have nothing to say.</span></p>
+        <p class="frame-cap"><b>C · two cats, Sunday, nothing happening.</b> One card, both names; the small ring on Pixel's chip is today's state (answered), never a streak. Pixel's look is collapsed to its row inside the card; Juniper's grid is open with "Lively" selected and the Done bar showing. A cat not tapped is unrated, and nothing on this frame says so. Nothing here is coloured, counted, or summarised.<span class="lens"><b>Sam:</b> one row for both cats, not two forms; skip costs nothing, and nothing is written when I have nothing to say.</span></p>
       </div>
     </div>
 
@@ -465,11 +476,11 @@
           <div class="acard"><div class="seclabel"><span>Signals</span><span class="door">›</span></div><div class="quiet">No established patterns yet. That isn't an all-clear.</div></div>
           <div class="acard"><div class="seclabel"><span>The look · this morning</span></div><div class="doorrow">How does Mochi seem this morning?<span class="chev">›</span></div></div>
           <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
-          <div class="acard"><div class="seclabel"><span>Trend</span><span class="door">All patterns ›</span></div><div class="quiet">A few more days of logs and we'll be able to show Mochi's pattern.</div></div>
+          <div class="acard"><div class="seclabel"><span>Trend · 14 days</span><span class="door">All patterns ›</span></div><div class="tbars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="count">Vomit · <b>0</b> logged on the 13 of 14 days with logs</div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>A · 7:05am, quiet.</b> One row, one chevron. It opens the picker at the look tile (§04); the write happens there. Nothing on Home writes.<span class="lens"><b>Bends:</b> nothing — D1 and "all logging through the FAB" intact. <b>Objects:</b> Jordan, Sam, the habit designer: a look routed through a picker is a look that stops happening. <b>Cost:</b> S–M.</span></p>
+        <p class="frame-cap"><b>A · 7:05am, quiet.</b> One row, one chevron. It opens the picker at the look tile (§04); the write happens there. Nothing on Home writes — and because nothing on Home answers, the Today nudge cannot yield to it: two asks stack on the morning Home, which is one of this door's costs.<span class="lens"><b>Bends:</b> nothing — D1 and "all logging through the FAB" intact. <b>Objects:</b> Jordan, Sam, the habit designer: a look routed through a picker is a look that stops happening. <b>Cost:</b> S–M.</span></p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -505,13 +516,13 @@
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q">How does Mochi seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
-            <div class="hint">the absence chip <b>writes on tap</b> · a word writes on hold or <b>Done</b> · no FAB tile in this door</div>
+            <div class="hint">every answer costs the same: tap, then <b>Done</b>, or hold to save alone · no FAB tile in this door</div>
           </div>
-          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
@@ -525,9 +536,9 @@
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q sm">How does Mochi seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
           </div>
           <div class="fab">+</div>
@@ -544,9 +555,9 @@
             <div class="petrow"><span class="on">Pixel</span><span>Juniper</span></div>
             <p class="q sm">How does Pixel seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't come to eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't come to eat<b>›</b></span><span class="chip ghost">Not herself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Hiding</span><span class="chip">Not grooming</span><span class="chip">Restless</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
           </div>
           <div class="fab">+</div>
@@ -566,13 +577,13 @@
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q">How does Mochi seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
-            <div class="hint">the same row the FAB's look tile writes — one <code>insertLook</code>, two doors · "Something else ›" opens the tile's full grid</div>
+            <div class="hint">the same row the FAB's look tile writes — one <code>insertLook</code>, two doors · "Something else" opens the tile's full grid</div>
           </div>
-          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
@@ -588,14 +599,14 @@
             <div class="chips">
               <span class="chip">Nothing unusual — I looked</span>
               <span class="chip on">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
-            <div class="row" style="margin-top:8px"><span>Log this as <b>lethargy</b> too?</span><span class="door">Log it &nbsp;·&nbsp; Just the look</span></div>
+            <div class="prop"><span class="pt">Also log this as <b>low energy</b> (the record calls it lethargy)? Either answer is kept.</span><span class="pbtn">Log it</span><span class="pbtn">Just the look</span></div>
           </div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>C · the safety morning, "Subdued" held.</b> The card leads; the look beneath is unchanged. A low-energy word <em>proposes</em> the leaf in the shipped confirm register with two equal controls — the owner's tap writes the lethargy row, never the look — and the look row records the answer (accepted · declined · unanswered), so the cheap path and the real path cost the same and the null action is never silence. The look raises nothing on its own.</p>
+        <p class="frame-cap"><b>C · the safety morning, "Subdued" saved.</b> The card leads; the look beneath is unchanged. A low-energy word <em>proposes</em> the leaf in plain language with two equal controls — the owner's tap writes the lethargy row, never the look — and the look row records the answer (accepted · declined · unanswered), so the cheap path and the real path cost the same and the null action is never silence. The look raises nothing on its own.</p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -608,9 +619,9 @@
             <div class="chips">
               <span class="chip">Nothing unusual — I looked</span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip on">Hiding</span><span class="chip on">Not grooming</span><span class="chip">Restless</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
-            <div class="hint"><b>Done</b> · two words on one morning are two observations, one look</div>
+            <div class="donebar"><span>Pixel · hiding, not grooming — two observations, one look</span><span class="donebtn">Done</span></div>
           </div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
@@ -628,10 +639,10 @@
           <div class="acard">
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q">How does Mochi seem this morning, compared with her usual?</p>
-            <div class="chips"><span class="chip on">Looked, nothing unusual</span><span class="chip door">Something I noticed ›</span></div>
+            <div class="chips"><span class="chip on">Looked, nothing unusual</span><span class="chip door">Something I noticed<b>›</b></span><span class="chip door">Haven't really looked yet</span></div>
             <div class="hint">the one write is a row the app can describe in advance — a confirmation under D1 · any word goes through the FAB</div>
           </div>
-          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
@@ -644,7 +655,7 @@
           <div class="acard">
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q sm">How does Mochi seem this morning, compared with her usual?</p>
-            <div class="chips"><span class="chip">Looked, nothing unusual</span><span class="chip door">Something I noticed ›</span></div>
+            <div class="chips"><span class="chip">Looked, nothing unusual</span><span class="chip door">Something I noticed<b>›</b></span><span class="chip door">Haven't really looked yet</span></div>
           </div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
@@ -659,7 +670,7 @@
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <div class="petrow"><span class="on">Pixel</span><span>Juniper</span></div>
             <p class="q sm">How does Pixel seem this morning, compared with her usual?</p>
-            <div class="chips"><span class="chip">Looked, nothing unusual</span><span class="chip door">Something I noticed ›</span></div>
+            <div class="chips"><span class="chip">Looked, nothing unusual</span><span class="chip door">Something I noticed<b>›</b></span><span class="chip door">Haven't really looked yet</span></div>
             <div class="annot">FAILS Sam's fussy-vs-sick morning: the reassuring answer costs one tap on Home, "hiding" costs four through the FAB — the safety asymmetry inverted by design</div>
           </div>
           <div class="fab">+</div>
@@ -691,12 +702,12 @@
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q">How does Mochi seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
           </div>
-          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
@@ -706,24 +717,24 @@
         <div class="phone"><div class="notch"></div><div class="appbody">
           <div class="hdr"><div class="who"><span class="av"></span>Mochi ▾</div><span class="pill">● Ask</span></div>
           <div class="acard"><div class="seclabel"><span>Signals</span><span class="door">›</span></div><div class="quiet">No established patterns yet. That isn't an all-clear.</div></div>
-          <div class="acard"><div class="seclabel"><span>The look · this morning</span></div><div class="answered"><span class="mk"></span>Looked this morning · <b>nothing unusual</b> · 7:12<span class="chev">›</span></div></div>
+          <div class="acard"><div class="seclabel"><span>The look · this morning</span><span class="door">Patterns ›</span></div><div class="answered"><span class="mk"></span><b>Looked</b> this morning · nothing unusual · 7:12<span class="chev">›</span></div></div>
           <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div><span class="d look" style="left:8%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
-          <div class="acard"><div class="seclabel"><span>Trend</span><span class="door">All patterns ›</span></div><div class="quiet">A few more days of logs and we'll be able to show Mochi's pattern.</div></div>
+          <div class="acard"><div class="seclabel"><span>Trend · 14 days</span><span class="door">All patterns ›</span></div><div class="tbars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="count">Vomit · <b>0</b> logged on the 13 of 14 days with logs</div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>The 40th open, answered.</b> The card collapses to its row — the subject of the row is the look, the owner's act, never the pet — in ink, with a chevron to the record. The look lands on the Today lane as a hollow ring at 7:12 and joins no count; the meal nudge stays, because the look is not the day's chore done. No haptic on the absence.<span class="lens"><b>Dr. Chen's ledger, row 5:</b> a rating never substitutes for an event; Home never says "logged" for it.</span></p>
+        <p class="frame-cap"><b>The 40th open, answered.</b> The card collapses to its row — the bold word is the act, never the outcome — in ink, with a chevron to the record (where a word can be changed; a second look goes through the FAB). "Patterns ›" is the one signpost to where the looks go: a door, never a number. The look lands on the Today lane as a hollow ring at 7:12 and joins no count; the meal nudge returns, because the look is not the day's chore done. No haptic on the absence.<span class="lens"><b>Dr. Chen's ledger, row 5:</b> a rating never substitutes for an event; Home never says "logged" for it.</span></p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
           <div class="hdr"><div class="who"><span class="av"></span>Pixel · Juniper</div><span class="pill">● Ask</span></div>
           <div class="acard"><div class="seclabel"><span>Signals</span></div><div class="safety"><div class="rail"></div><div><p class="lead">Pixel has eaten less than usual for 3 days, compared with 9 recent meals. In a cat that's the one to call about today.</p><div class="ask">Call your vet today</div><div class="meta">3 days below the usual, 9 recent meals · <b>Why we're showing this</b> · Keep it compact</div></div></div></div>
-          <div class="acard"><div class="seclabel"><span>The look · this morning</span></div><div class="answered"><span class="mk"></span>Pixel · looked this morning · 7:12<span class="chev">›</span></div><div class="answered" style="margin-top:6px"><span class="mk"></span>Juniper · not looked yet<span class="chev"></span></div></div>
+          <div class="acard"><div class="seclabel"><span>The look · this morning</span><span class="door">Patterns ›</span></div><div class="petrow"><span class="done">Pixel</span><span>Juniper</span></div><div class="answered"><span class="mk"></span><b>Looked</b> · Pixel · 7:12<span class="chev">›</span></div><div class="hint" style="margin-top:4px">Recorded — it's on Pixel's report, beside her meals.</div></div>
           <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div><span class="d look" style="left:8%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>Answered under a live intake concern.</b> Sam tapped "nothing unusual" on Pixel. The row keeps the act and withholds the words — Home refuses to draw "nothing unusual" one card below "Call your vet today". The look is in the record and on the report beside her meals, where the disagreement is said. A symptom-class word would still render on the row.<span class="lens"><b>Dr. Chen's ledger, row 15:</b> a calm run beside a falling record is the most dangerous one — suppression beats drawing, failing closed while the facts are unloaded (B-789's own gate).</span></p>
+        <p class="frame-cap"><b>Answered under a live intake concern.</b> Sam tapped "nothing unusual" on Pixel. The row keeps the act, withholds the words, and says why in one line that does not reprint the claim — otherwise a wordless row reads as a failed save. Home refuses to draw "nothing unusual" one card below "Call your vet today"; the report says the disagreement in its own words (§08, second frame). Juniper's chip carries no state and no chore: a cat not tapped is simply unrated. A symptom-class word would still render on the row.<span class="lens"><b>Dr. Chen's ledger, row 15:</b> a calm run beside a falling record is the most dangerous one — suppression beats drawing, failing closed while the facts are unloaded (B-789's own gate).</span></p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -733,9 +744,9 @@
             <div class="seclabel"><span>The look · tonight</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q">How does Mochi seem tonight, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
           </div>
           <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div><span class="d" style="left:12%"></span><span class="d med" style="left:16%"></span><span class="d" style="left:66%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="count"><b>2</b> meals · <b>1</b> dose logged</div></div>
@@ -752,17 +763,56 @@
             <div class="seclabel"><span>The look · this morning</span><span class="skip">Haven't really looked yet</span></div>
             <p class="q">How does Mochi seem this morning, compared with her usual?</p>
             <div class="chips">
-              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat ›</span>
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span>
               <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
-              <span class="chip door">Something else ›</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
             </div>
           </div>
-          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="nudge">Nothing logged yet — how's Mochi doing? <b>→</b></div></div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="annot ok" style="margin:0 6px">BYTE-IDENTICAL to the 40th open. Four months of "nothing unusual" changed nothing here — it changed §07 and §08.</div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
         <p class="frame-cap"><b>The 200th open.</b> Identical to the 40th. A healthy month accrues in the record, in Patterns and on the report — the three places that can hold a denominator honestly — and nowhere on Home.<span class="lens"><b>Sam's test:</b> a check-in that dies in four days and then lies in green. Under this proposal it can die quietly and it cannot lie, because no surface ever sums it into a state.</span></p>
+      </div>
+    </div>
+    <p class="kicker">two more resting states the reviews asked for — minute zero, and the year Sam actually lives in</p>
+    <div class="frames" style="margin-top:8px">
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="hdr"><div class="who"><span class="av"></span>Mochi ▾</div><span class="pill">● Ask</span></div>
+          <div class="acard"><div class="seclabel"><span>Signals</span></div><div class="quiet">Keep logging and Mochi's first pattern will surface in about a week.</div></div>
+          <div class="acard">
+            <div class="seclabel"><span>The look · this morning</span></div>
+            <p class="q">How does Mochi seem this morning, compared with her usual?</p>
+            <div class="hint" style="margin:-4px 0 8px">Her usual is what you know of her. The app never works one out — it only counts what you tell it.</div>
+            <div class="chips">
+              <span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span>
+              <span class="chip">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span>
+              <span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span>
+            </div>
+          </div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>The first look, day 1.</b> The same card, with one line it carries only until the first look is made: her usual is the owner's, never the app's. There is no ring, no "no usual yet — that's what the first week is for": the instrument is complete on day one.<span class="lens"><b>Jordan:</b> on day 3 "compared with her usual" asked whose usual; this line answers it once and then gets out of the way.</span></p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="hdr"><div class="who"><span class="av"></span>Pixel · Juniper</div><span class="pill">● Ask</span></div>
+          <div class="acard"><div class="seclabel"><span>Signals</span><span class="door">›</span></div><div class="quiet">Nothing standing for either cat. Watching intake and repeats.</div></div>
+          <div class="acard">
+            <div class="seclabel"><span>The look · this morning</span><span class="door">Patterns ›</span></div>
+            <div class="petrow"><span class="done">Pixel</span><span>Juniper</span></div>
+            <div class="answered"><span class="mk"></span><b>Looked</b> · Pixel · nothing unusual · 7:04<span class="chev">›</span></div>
+          </div>
+          <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div><span class="d look" style="left:6%"></span><span class="d" style="left:11%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="count"><b>1</b> meal logged · both cats</div></div>
+          <div class="acard"><div class="seclabel"><span>Trend · 14 days</span><span class="door">All patterns ›</span></div><div class="tbars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="count">Vomit · <b>0</b> logged on the 12 of 14 days with logs</div></div>
+          <div class="fab">+</div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>Day 200, two cats, both fine — the year Sam lives in.</b> Pixel answered; Juniper untouched, and nothing says so. No count of looks, no ring that grew, no "Juniper · not looked yet". The signpost is the same one door. This is the frame L-4 asks the PM to rule on.<span class="lens"><b>Sam:</b> I answer Pixel and never tap Juniper. Juniper is fine. "You haven't checked in on Juniper" must never appear — and here it does not, in any voice.</span></p>
       </div>
     </div>
     <div class="callout"><strong>The rows of Dr. Chen's reassurance ledger that bite harder on a healthy pet</strong> and the rule for each: row 12, reassurance by habit → nothing pre-selected, no "same as yesterday", and "Haven't really looked yet" gives the reflex a truthful exit that is recorded as its own outcome ("didn't look"), so the reflex tap and the honest exit are two different rows · row 4, the absent day rendered as fine → a skipped day writes nothing; Patterns and the report count it as <em>not looked</em> · row 6, the streak → no consecutive count anywhere · row 2, a calendar that colours a week calm → the day-spine mark is a neutral glyph; the Patterns calendar never colours a day by a look · row 8, the biggest word → words render in a fixed order with denominators, never sized · row 5, the look as the day's chore done → the row names the look, not the day, and the meal nudge stays.</div>
@@ -793,12 +843,12 @@
           <div class="sheet"><div class="grab"></div>
             <div class="seclabel"><span>‹ Look · Pixel</span></div>
             <p class="q sm">How does Pixel seem right now, compared with her usual?</p>
-            <div class="chips" style="margin-bottom:4px"><span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't come to eat ›</span><span class="chip ghost">Not herself ›</span></div>
-            <div class="row" style="border-top:0;padding-top:2px"><span>Worried about something more serious?</span><span class="door">›</span></div>
-            <div class="grp"><div class="gl">Energy</div><div class="chips"><span class="chip">Subdued</span><span class="chip on">Sleeping more</span><span class="chip">Restless</span><span class="chip">Lively</span></div></div>
+            <div class="chips" style="margin-bottom:4px"><span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't come to eat<b>›</b></span><span class="chip ghost">Not herself<b>›</b></span></div>
+            <div class="row" style="border-top:0;padding-top:2px"><span>Signs that mean call today</span><span class="door">›</span></div>
+            <div class="grp"><div class="gl">Energy</div><div class="chips"><span class="chip">Subdued, flat</span><span class="chip on">Sleeping more</span><span class="chip">Restless, can't settle</span><span class="chip">Lively, playful</span></div></div>
             <div class="grp"><div class="gl">Company</div><div class="chips"><span class="chip">Hiding</span><span class="chip">Clingy</span><span class="chip">Not coming to say hello</span><span class="chip">Meowing more</span></div></div>
             <div class="grp"><div class="gl">Grooming &amp; coat</div><div class="chips"><span class="chip">Not grooming</span><span class="chip">Licking one spot</span><span class="chip">Scratching more</span><span class="chip">Coat dull</span></div></div>
-            <div class="grp"><div class="gl">Face · Mouth</div><div class="chips"><span class="chip">Squinting</span><span class="chip">Third eyelid showing</span><span class="chip on">Lip-licking</span><span class="chip">Drooling</span></div></div>
+            <div class="grp"><div class="gl">Face · Mouth</div><div class="chips"><span class="chip">Squinting</span><span class="chip">A film across the eye</span><span class="chip on">Lip-licking, swallowing a lot</span><span class="chip">Drooling</span></div></div>
             <div class="grp"><div class="gl">Moving</div><div class="chips"><span class="chip">Hunched</span><span class="chip">Stiff</span><span class="chip">Not jumping up</span><span class="chip">Limping</span><span class="chip">Trembling</span></div></div>
             <div class="grp"><div class="gl">Litter box · Drinking</div><div class="chips"><span class="chip">Went outside the box</span><span class="chip">Drinking more</span><span class="chip">Drinking less</span></div></div>
             <div class="grp"><div class="gl">Did today</div><div class="chips"><span class="chip">Played</span><span class="chip">Jumped up somewhere high</span></div></div>
@@ -807,7 +857,7 @@
             <div class="save">Save · sleeping more, lip-licking</div>
           </div>
         </div></div>
-        <p class="frame-cap"><b>The confirm — the cat's full grid.</b> Twenty-six words in nine groups, in the order the vet ruled; the absence chip first; "Not herself ›" is the opening chip that asks what you saw. The intake router sits in the first row beside the absence chip, at equal cost, and opens the meal path at the intake step — the owner names the arm (a quarter eaten is not a refusal). The emergency door sits beneath the first row; it writes nothing, and it reads the record's own predicates so a "call today if…" whose condition is already met collapses to "Call your vet today." Witnessed by construction, so no Saw it / Found it; "Change time" covers a look made about this morning at noon.<span class="lens"><b>Dr. Chen signs the emergency list before any of it is a string;</b> a cat panting at rest and a male cat straining are calls, never chips; the dog's "panting at rest" is withdrawn from the chips until he signs a threshold.</span></p>
+        <p class="frame-cap"><b>The confirm — the cat's full grid.</b> Twenty-six words in nine groups, in the order the vet ruled, at their full ruled labels (Home shows the head word); the absence chip, the intake router and "Not herself" share the first row at the same weight — a door is a chip with a chevron, never a dimmed chip. The intake router sits in the first row beside the absence chip, at equal cost, and opens the meal path at the intake step — the owner names the arm (a quarter eaten is not a refusal). The door beneath the first row is labelled for the ambiguous morning, not the alarmed one — "Signs that mean call today" — because the owner it exists for is the one who is not yet worried; it writes nothing, and it reads the record's own predicates so a "call today if…" whose condition is already met collapses to "Call your vet today." Witnessed by construction, so no Saw it / Found it; "Change time" covers a look made about this morning at noon.<span class="lens"><b>Dr. Chen signs the emergency list before any of it is a string;</b> a cat panting at rest and a male cat straining are calls, never chips; the dog's "panting at rest" is withdrawn from the chips until he signs a threshold.</span></p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -835,14 +885,14 @@
           <div class="acard">
             <div class="seclabel"><span>The look · this morning</span></div>
             <p class="q sm">How does Mochi seem this morning, compared with her usual?</p>
-            <div class="chips"><span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat ›</span><span class="chip on">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip on">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span><span class="chip door">Something else ›</span></div>
-            <div class="row" style="margin-top:8px"><span>Log this as <b>lethargy</b> too?</span><span class="door">Log it &nbsp;·&nbsp; Just the look</span></div>
+            <div class="chips"><span class="chip">Nothing unusual — I looked</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>›</b></span><span class="chip on">Subdued</span><span class="chip">Sleeping more</span><span class="chip">Restless</span><span class="chip on">Didn't want the walk</span><span class="chip">Not greeting</span><span class="chip">Clingy</span><span class="chip">Lively</span><span class="chip door">Something else<b>›</b></span><span class="chip door">Haven't really looked yet</span></div>
+            <div class="prop"><span class="pt">Also log this as <b>low energy</b> (the record calls it lethargy)? Either answer is kept.</span><span class="pbtn">Log it</span><span class="pbtn">Just the look</span></div>
           </div>
           <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>The beat, step one — "Subdued" and "Didn't want the walk" held.</b> The proposal line appears in the shipped confirm register with two equal controls, neither pre-selected. "Just the look" is a full answer and is recorded as a decline; "Log it" writes a second row (lethargy) to the look's pet through the FAB's own insert path and its own card; leaving it unanswered is recorded as unanswered. This is how the look stops being a softer door to the leaves the engine reads.</p>
+        <p class="frame-cap"><b>The beat, step one — "Subdued" and "Didn't want the walk" saved.</b> The proposal appears in plain language ("low energy", with the record's word in parentheses because that is what History will show) with two equal controls, neither pre-selected, and says that either answer is kept. "Just the look" is a full answer and is recorded as a decline; "Log it" writes a second row (lethargy) to the look's pet through the FAB's own insert path and its own card; leaving it unanswered is recorded as unanswered. This is how the look stops being a softer door to the leaves the engine reads.</p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -850,11 +900,11 @@
           <div class="acard"><div class="seclabel"><span>Signals</span><span class="door">›</span></div><div class="quiet">No established patterns yet. That isn't an all-clear.</div></div>
           <div class="acard"><div class="seclabel"><span>The look · this morning</span></div><div class="answered"><span class="mk"></span>Looked this morning · <b>subdued, didn't want the walk</b> · 7:12<span class="chev">›</span></div></div>
           <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div><span class="d look" style="left:8%"></span><span class="d sym" style="left:9.5%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div><div class="count"><b>1</b> lethargy logged</div></div>
-          <div class="acard"><div class="seclabel"><span>Trend</span><span class="door">All patterns ›</span></div><div class="quiet">A few more days of logs and we'll be able to show Mochi's pattern.</div></div>
+          <div class="acard"><div class="seclabel"><span>Trend · 14 days</span><span class="door">All patterns ›</span></div><div class="tbars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="count">Vomit · <b>0</b> logged on the 13 of 14 days with logs</div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>The beat, step two — after "Log it".</b> The card is its row; the lane carries two marks at 7:12: the hollow look and the rose lethargy pip. The count line counts the lethargy and never the look. One soft impact, at the moment store's reveal, for the symptom commit — and none for the look itself.</p>
+        <p class="frame-cap"><b>The beat, step two — after "Log it".</b> The card is its row; the lane carries two marks at 7:12: the hollow look and the rose lethargy pip. The count line counts the lethargy and never the look (the owner's own words stay on the row above it). One soft impact, at the moment store's reveal, for the symptom commit — and none for the look itself.</p>
       </div>
     </div>
   </section>
@@ -912,27 +962,38 @@
           <div class="hdr"><div class="who">‹ Patterns</div><span class="pill">28 days ▾</span></div>
           <div class="acard">
             <div class="seclabel"><span>The daily look</span><span class="door">›</span></div>
-            <div class="quiet" style="margin-bottom:6px">Looked on 24 of the last 28 days · not looked on 4.</div>
+            <div class="quiet" style="margin-bottom:6px">Counted across the 24 of the last 28 days you looked.</div>
             <div class="prow first"><div>Subdued<small>first marked Sep 12 · lethargy logged on 2 of the 6 · 4 weeks before: 0 of 22</small></div><div class="n"><b>6</b> of 24 looked days</div></div>
             <div class="prow"><div>Lip-licking</div><div class="n"><b>2</b> of 24</div></div>
             <div class="prow"><div>Nothing unusual</div><div class="n"><b>16</b> of 24</div></div>
             <div class="prow"><div>Played</div><div class="n"><b>12</b> of 24</div></div>
             <div class="prow"><div>Full walk</div><div class="n"><b>14</b> of 24</div></div>
           </div>
+          <div class="tabs"><span>Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>Mochi's card — after the intake cards, never above them.</b> The first line is always the denominator, even at full coverage: the look's denominator is self-selected, so the one day the line may not vanish is the day the reflex risk peaks. Rows in a fixed order — symptom-class words first, then the absence, then activity positives in ink, never as a pair. A symptom-class pair prints time-ordered with both denominators and no direction word. Under a live intake concern (Pixel) the absence and positive rows are withheld and the card says so; the symptom-class rows stay. Below the floor (Juniper) the card says what it needs.<span class="lens"><b>Data:</b> a rising symptom-class count is never withheld — not by density, not by the floor; a falling pair is withheld when looked-day density fell, and a falling pair whose earlier half is the first month of looks is withheld too.</span></p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="hdr"><div class="who">‹ Patterns</div><span class="pill">28 days ▾</span></div>
+          <div class="acard">
+            <div class="seclabel"><span>Intake · Pixel</span><span class="door">›</span></div>
+            <div class="prow first"><div>Meals finished<small>a health watch, never "picky"</small></div><div class="n"><b>4</b> of 9 rated meals</div></div>
+          </div>
           <div class="acard">
             <div class="seclabel"><span>The daily look · Pixel</span><span class="door">›</span></div>
-            <div class="quiet" style="margin-bottom:6px">Looked on 19 of the last 28 days · not looked on 9.</div>
+            <div class="quiet" style="margin-bottom:6px">Counted across the 19 of the last 28 days you looked.</div>
             <div class="prow first"><div>Hiding<small>first marked Sep 9</small></div><div class="n"><b>3</b> of 19 looked days</div></div>
-            <div class="prow"><div>Subdued</div><div class="n"><b>2</b> of 19</div></div>
-            <div class="calib" style="border-top:1px solid var(--d-border);padding-top:7px;margin-top:2px">Withheld while Pixel's intake needs attention — her looks are on the report, beside her meals.</div>
+            <div class="prow"><div>Subdued, flat</div><div class="n"><b>2</b> of 19</div></div>
+            <div class="calib" style="border-top:1px solid var(--d-border);padding-top:7px;margin-top:2px">While Pixel's eating needs attention, her quiet-day counts aren't shown — a run of ordinary days isn't a sign she's well. Her looks are on the report, beside her meals.</div>
           </div>
           <div class="acard">
             <div class="seclabel"><span>The daily look · Juniper</span><span class="door">›</span></div>
-            <div class="calib">Looks build up over time — 5 so far this month.</div>
+            <div class="calib">Looks build up over time — 5 so far this month. Nothing here needs you to look at a cat who is fine.</div>
           </div>
           <div class="tabs"><span>Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>The card — after the intake cards, never above them.</b> The first line is always the denominator, even at full coverage: the look's denominator is self-selected, so the one day the line may not vanish is the day the reflex risk peaks. Rows in a fixed order — symptom-class words first, then the absence, then activity positives in ink, never as a pair. A symptom-class pair prints time-ordered with both denominators and no direction word. Under a live intake concern (Pixel) the absence and positive rows are withheld and the card says so; the symptom-class rows stay. Below the floor (Juniper) the card says what it needs.<span class="lens"><b>Data:</b> a rising symptom-class count is never withheld — not by density, not by the floor; a falling pair is withheld when looked-day density fell, and a falling pair whose earlier half is the first month of looks is withheld too.</span></p>
+        <p class="frame-cap"><b>Sam's account.</b> Pixel's look card sits below her intake card and, while her intake needs attention, withholds the absence and positive rows and says exactly what is withheld and why — otherwise the hidden number reads as the bad one. The symptom-class rows stay. Juniper's card is the calibration state and asks nothing of Sam.<span class="lens"><b>Sam:</b> "withheld while her intake needs attention" told me the hidden number was the bad one, on the worst week. It is the reassuring half, and the card now says so.</span></p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -988,8 +1049,15 @@
               <tr><td class="mono">Sep 15</td><td class="mono">07:15</td><td>played · full walk</td><td class="dim">—</td><td class="dim">—</td></tr>
             </tbody>
           </table>
-          <div class="prov">Every look in the range, one row per look; a day with no look is a blank, and "didn't look" (the owner opened the app and said so) is its own glyph. The leaf column is the proposal's answer. No average, no score, no colour. Notes are quoted, never summarised. Observer initials appear when a second caregiver exists (not in this record).</div>
+          <div class="prov">Every look in the range, one row per look; a day with no look is a blank, and "didn't look" (the owner opened the app at that time and said so — the time is when she said it) is its own glyph. The leaf column is the proposal's answer. No average, no score, no colour. Notes are quoted, never summarised. Observer initials appear when a second caregiver exists (not in this record).</div>
         </div>
+        <div class="report" style="margin-top:22px">
+          <div class="rh"><span>Pixel · Aug 18 – Sep 15, 2026 · 29 days · 27 logged</span><span>Page 1 · At a glance</span></div>
+          <div class="rt">Owner's daily look</div>
+          <div class="rl">Looked on <b>19 of 29 days</b> · hiding on <b>3</b> (first Sep 9) · subdued on <b>2</b> · nothing unusual on <b>12</b> of the 19 — <b>including both days she left most of her food</b> (Sep 13, Sep 14; see Intake). Not looked on 10.</div>
+          <div class="rl dim" style="font-size:11px;margin-top:4px">The owner's read and the intake record disagree on Sep 13–14. Both are printed; neither is averaged. In a cat, quiet with reduced intake is the presentation to ask about.</div>
+        </div>
+        <p class="frame-cap"><b>Pixel's line, beside a live intake concern.</b> The disagreement is said in the report's own words (the proposed honesty rule 12), never hidden and never averaged — Dr. Chen's §3 point 2 — because the pairing is the finding.</p>
         <p class="frame-cap"><b>The SOAP-line test.</b> "Owner reports subdued on 6 of 42 looked days, first Sep 12; lip-licking ×2 the same week" is a line a vet would write into History verbatim. "Mood trending up" never appears here, or anywhere.<span class="lens"><b>Dr. Chen:</b> the first day the impression changed is the sentence I currently extract with four questions; a series stamped on the day gives me it in five seconds.</span></p>
       </div>
     </div>
@@ -1018,7 +1086,7 @@
     <div class="brief"><p class="bid">L-4 — The resting state on a healthy pet</p>
       <p><strong>Deciding:</strong> what Home shows after months of looks with nothing wrong.</p>
       <p><strong>Options:</strong> <span class="rec">Home never accrues the look; the baseline lives in Patterns and on the report (§03) — recommended</span>: the instrument does not move, and no Home object can grow into a state · a coverage line on the card · the field's "usual" ring.</p>
-      <p><strong>Consequence:</strong> the 200th open is byte-identical to the 40th; the return for a healthy month is §07's counts and §08's line, never a Home change.</p></div>
+      <p><strong>Consequence:</strong> the 200th open is byte-identical to the 40th; the return for a healthy month is §07's counts and §08's line, never a Home change — with one signpost on the answered card ("Patterns ›", a door, never a number) so the looks are never invisible.</p></div>
 
     <div class="brief"><p class="bid">L-5 — The record shape</p>
       <p><strong>Deciding:</strong> a <code>check_in</code> leaf with a <code>looks</code> child (one timeline, one reversal, History and the spine for free) or a standalone table (the exclusion structural, a second timeline).</p>
@@ -1027,7 +1095,7 @@
 
     <div class="brief"><p class="bid">L-6 — The observed-absence row (continues DV-4; implied by the every-account ruling)</p>
       <p><strong>Deciding:</strong> whether "I looked and saw nothing unusual" is stored — a row, a spine mark, a report denominator.</p>
-      <p><strong>Options:</strong> <span class="rec">yes, a look row with no words — recommended</span> (confirm, do not re-argue) · no. Sub-question: should "Haven't really looked yet" write a <em>not observed</em> row so the report can draw "didn't look" as its own glyph? v0.1 writes nothing.</p>
+      <p><strong>Options:</strong> <span class="rec">yes, a look row with outcome "nothing unusual" — recommended</span> (confirm, do not re-argue) · no. Ruled in-session and vetoable (T-2): "Haven't really looked yet" records <em>not observed</em>, so the reflex tap and the honest exit are two different rows and the report draws "didn't look" as its own glyph.</p>
       <p><strong>Consequence:</strong> the baseline exists; the season strip and the trial's logged-day denominator never learn it.</p></div>
 
     <div class="brief"><p class="bid">L-7 — The report edit (Tier 2)</p>
@@ -1045,6 +1113,7 @@
       <div><b>Jordan · Sam</b> Eight words at 7am; one row for two cats; skip is free; the observation that matters costs no more than the absence.</div>
       <div><b>Data + Trust &amp; Safety</b> The record-shape guard; the baseline's floors and its two traps; D10 whole-boundary before a word leaves; the observer column reserved.</div>
       <div><b>Dir. of Engineering</b> Shape A with one timeline and one reversal; the build checklist at the rule that enforces each item; the enum add named as irreversible.</div>
+      <div><b>Jordan and Sam (pm-feature-review, isolated)</b> Walked these frames cold and returned NEEDS-WORK on the Home card and the beat: no visible save for a word, the intake router drawn as a disabled chip, "lethargy" verbatim in the proposal, a wordless row that read as a failed save, "Juniper · not looked yet" under a call-today card, a stale Trend state on day 40, and the L-6 brief on this page contradicting the spec. All fixed in these frames; the two-cat day-200 Home, the day-1 look and Pixel's report line were drawn because they asked.</div>
       <div><b>The adversarial reviewer</b> Returned FAIL on the first draft with twelve ranked gaps — the softer door on the two leaves the engine reads, no suppression beside a live intake concern, the emergency door breaking the rule it cited, four holes in the home-writes guard, the reflex left unrecorded — all folded into the spec and into these frames the same day. A second pass is owed on v0.2.</div>
       <div><b>The consultants (from #808, not re-seated)</b> The behaviourist's §4 draft and §2 report contract; the affective scientist's evening slot and never-words; the habit designer's skip-is-free; the colour consultant's greyscale test.</div>
     </div>
