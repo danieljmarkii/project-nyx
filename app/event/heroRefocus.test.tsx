@@ -132,6 +132,32 @@ describe('event detail — a remote-only photo survives a refocus of the same ev
     expect(heroUri(view)).toBe('https://signed/transform.jpg');
   });
 
+  it('drops the held URL when the PHOTO changed under a screen that never unmounted', async () => {
+    // Found by `code-reviewer` on the first version of this fix, which gated the hold on
+    // the event id alone. The attachment can change beneath a mounted screen —
+    // `app/edit-event.tsx` has its own replace flow writing a new `storage_path` and
+    // detaching the prior — and when the replacement carries no local file HERE (it was
+    // made on another device, or the cache was reclaimed) `localUri` is null, so
+    // `resolveEventPhotoDisplay` falls through to the held remote URL and the screen
+    // renders a photo that is no longer attached to this record.
+    //
+    // That is worse than the blank hero this fix was written to remove: a blank is the
+    // screen saying nothing, and this is the screen saying something false, on the one
+    // surface whose job is "show it to a vet" (G5, incident-screen spec).
+    mockGetSignedUrl.mockResolvedValue('https://signed/P1.jpg');
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(heroUri(view)).toBe('https://signed/P1.jpg'));
+
+    // Same event id, DIFFERENT attachment — and its re-sign held open.
+    mockGetEventAttachment.mockResolvedValue({
+      id: 'att-2', local_uri: '', storage_path: 'pet-A/evt-1-replaced.jpg',
+    });
+    mockGetSignedUrl.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { refocus(); });
+
+    expect(heroUri(view)).not.toBe('https://signed/P1.jpg');
+  });
+
   it('still clears the previous event’s URL when the id actually changes', async () => {
     // The regression guard, and the reason the reset is gated rather than deleted: the
     // whole point of the up-front reset is that event A's material must never render

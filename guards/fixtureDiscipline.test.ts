@@ -73,15 +73,60 @@ const EXEMPTION = /\/\/\s*fixture-root-ok:\s*\S+/;
  * exemption lookup reads ten unrelated lines and the failure message points at the wrong
  * code. The first draft did exactly that and its exemption test still passed — the
  * fixture had no block comments, so the two numbering schemes happened to agree.
+ *
+ * ONE PASS, not a chain of `.replace()` calls, and that is the second correction this
+ * function needed. Independent passes each read delimiters the other one owns, and
+ * `code-reviewer` reproduced two false negatives from it — both of which swallowed a real
+ * violation, and neither of which needs an adversary:
+ *
+ *   • `const note = 'see https://x'; fs.writeFileSync(path.join(ROOT, …))` — the
+ *     line-comment pass ran first, so the `//` inside a string ate the rest of the line.
+ *   • `const a = "it's fine"; fs.writeFileSync(path.join(ROOT, "won't fail"), …)` — an
+ *     apostrophe inside a double-quoted string paired with the next stray `'` in the
+ *     single-quote pass and blanked everything between them.
+ *
+ * A single left-to-right walk cannot have either bug, because whichever delimiter opens
+ * first owns everything until it closes. Documented residual, of the same kind as the
+ * one-hop limit: a REGEX LITERAL is not tracked, so `/['"]/` opens a phantom string. It
+ * costs at most the rest of that line — a quote-run cannot cross a newline — and no
+ * regex literal in `guards/` today contains an unbalanced quote.
  */
 function blankNonCode(src: string): string {
-  const keepLines = (text: string) => text.replace(/[^\n]/g, ' ');
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, keepLines)
-    .replace(/\/\/[^\n]*/g, keepLines)
-    .replace(/`(?:\\.|[^`\\])*`/g, keepLines)
-    .replace(/'(?:\\.|[^'\\\n])*'/g, keepLines)
-    .replace(/"(?:\\.|[^"\\\n])*"/g, keepLines);
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  const blank = (ch: string) => (ch === '\n' ? '\n' : ' ');
+  while (i < n) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === '/' && next === '/') {
+      while (i < n && src[i] !== '\n') { out += ' '; i += 1; }
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      out += '  ';
+      i += 2;
+      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) { out += blank(src[i]); i += 1; }
+      if (i < n) { out += '  '; i += 2; }
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      out += ' ';
+      i += 1;
+      while (i < n) {
+        if (src[i] === '\\' && i + 1 < n) { out += ' ' + blank(src[i + 1]); i += 2; continue; }
+        if (src[i] === c) { out += ' '; i += 1; break; }
+        // An unterminated ' or " cannot cross a newline; a template literal can.
+        if (src[i] === '\n' && c !== '`') break;
+        out += blank(src[i]);
+        i += 1;
+      }
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
 }
 
 /**
@@ -243,6 +288,23 @@ describe('the detector itself', () => {
     expect(scanGuardWrites(root)).toEqual([]);
 
     write(`// fixture-root-ok: too far above to govern this call\n${'\n'.repeat(12)}fs.mkdirSync(path.join(ROOT, '.probe'), { recursive: true });`);
+    expect(scanGuardWrites(root)).toHaveLength(1);
+  });
+
+  // ── The two shapes `code-reviewer` found in the multi-pass strip (CUL-714) ─────
+  //
+  // Both were reported as zero violations where one was due, and both are ordinary
+  // prose rather than an adversarial construction — a URL in a message string, a
+  // contraction in an adjacent one. They are pinned separately from the cases above
+  // because they are about the SCANNER, not about the anchor detection: each one
+  // swallowed a violation the detector would otherwise have reported.
+  it('a `//` inside an earlier string does not eat a later violation on that line', () => {
+    write(`const note = 'ok see https://x'; fs.writeFileSync(path.join(ROOT, 'components', 'evil.tsx'), 'x');`);
+    expect(scanGuardWrites(root)).toHaveLength(1);
+  });
+
+  it('an apostrophe inside a double-quoted string does not pair with a later quote', () => {
+    write(`const a = "it's fine"; fs.writeFileSync(path.join(ROOT, "won't fail"), 'x');`);
     expect(scanGuardWrites(root)).toHaveLength(1);
   });
 

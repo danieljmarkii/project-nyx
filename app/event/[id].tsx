@@ -155,6 +155,9 @@ export default function EventDetailScreen() {
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   // The id `loadAll` last ran for, so a refocus can be told from a navigation (CUL-302).
   const loadedEventIdRef = useRef<string | null>(null);
+  // The storage_path the signed URLs in state are a handle ON. Holding a URL across a
+  // refocus is only sound while the photo behind it is the same photo (CUL-302 review).
+  const signedForPathRef = useRef<string | null>(null);
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
   // Raw (non-transformed) signed URL, resolved in parallel as a fallback for when
   // the transformed URL can't load (image transformations unavailable). B-207.
@@ -226,11 +229,17 @@ export default function EventDetailScreen() {
     // `transformFailed` stays unconditional too — it is per-PHOTO, not per-event, so
     // a same-event refocus is the one moment a replaced photo gets its transform
     // retried rather than inheriting the previous photo's failure.
+    //
+    // The event id is the FIRST of two gates, not the whole test. It answers "is this a
+    // different record", which is what makes the up-front clear necessary; whether the
+    // held URL is still a handle on the same PHOTO cannot be known until the attachment
+    // is read, and is settled below.
     const isSameEvent = loadedEventIdRef.current === id;
     loadedEventIdRef.current = id;
     if (!isSameEvent) {
       setRemoteUrl(null);
       setRemoteUrlFull(null);
+      signedForPathRef.current = null;
     }
     setTransformFailed(false);
     try {
@@ -245,6 +254,19 @@ export default function EventDetailScreen() {
         const usableLocalUri =
           att.local_uri.length > 0 && localFileExists(att.local_uri) ? att.local_uri : '';
         setAttachment({ id: att.id, local_uri: usableLocalUri, storage_path: att.storage_path });
+        // The second CUL-302 gate. The attachment can change underneath a screen that
+        // never unmounted — `app/edit-event.tsx` has its own replace flow that writes a
+        // new `storage_path` and detaches the prior — and it can change from ANOTHER
+        // device, where nothing lands a local file here. In that case `localUri` is null,
+        // `resolveEventPhotoDisplay` falls through to the held remote URL, and the screen
+        // renders a photo that is no longer attached to this record: G5, on the one
+        // surface whose stated job is "show it to a vet". Held only while the path is
+        // unchanged, so the comment above states an invariant the code actually enforces.
+        if (att.storage_path !== signedForPathRef.current) {
+          setRemoteUrl(null);
+          setRemoteUrlFull(null);
+          signedForPathRef.current = att.storage_path;
+        }
         // Fall back to a signed URL when the local file isn't on this device.
         // Resolve a screen-sized transform (fast) AND the raw URL in parallel; the
         // hero prefers the transform and swaps to raw if it can't load — so image
@@ -256,6 +278,7 @@ export default function EventDetailScreen() {
         setAttachment(null);
         setRemoteUrl(null);
         setRemoteUrlFull(null);
+        signedForPathRef.current = null;
       }
 
       if (EVENT_TYPES[row.event_type as EventTypeKey]?.hasFood) {
