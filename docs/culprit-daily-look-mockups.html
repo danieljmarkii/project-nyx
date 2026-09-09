@@ -129,18 +129,20 @@
      hairline, the accent ink — carried by a check that draws in and a ring that settles. Never an ink fill. */
   /* Geometry never changes on selection (the round-3 product read): the check is drawn INSIDE the pill's own
      padding (padding-left 14 → 4 + a 7px glyph + 3px), the weight stays 500, and the settle ring is transient —
-     it draws out to 3px and settles to nothing, so no halo ever sits in the 6px gap between two chosen chips (C-5). */
+     it draws out to 4px and settles to nothing, so no halo ever sits in the 6px gap between two chosen chips (C-5).
+     The round-4 product read measured the accent ink at 4.40:1 on the deeper wash, so a chosen chip takes a selected ink one
+     notch darker (#08685B, 5.7:1 on the wash) and its gloss uses the same ink at full opacity (never a 75% tint). */
   /* Round 4 — "ramp it up by about 20 percent": a deeper wash, a heavier hairline (drawn as an inset ring so the
      box never grows), a larger check, a 4 pt settle ring with a touch more overshoot. Geometry still never changes. */
-  .chip.on { color: var(--d-teal-ink); background: #CDF5EC; border-color: var(--d-teal); box-shadow: inset 0 0 0 0.6px var(--d-teal); padding-left: 4px; animation: chipIn 300ms cubic-bezier(.2,.8,.2,1.18); }
+  .chip.on { color: #08685B; background: #CDF5EC; border-color: var(--d-teal); box-shadow: inset 0 0 0 0.6px var(--d-teal); padding-left: 4px; animation: chipIn 300ms cubic-bezier(.2,.8,.2,1.18); }
   .chip.on::before { content: "✓"; font-size: 10px; width: 8px; margin-right: 2px; font-weight: 800; line-height: 1; animation: checkIn 200ms cubic-bezier(.2,.8,.2,1.25) both; }
-  @keyframes chipIn { 0% { transform: scale(.98); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 0 rgba(0,194,168,0.0); } 45% { transform: scale(1.03); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 4px rgba(0,194,168,0.22); } 100% { transform: scale(1); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 0 rgba(0,194,168,0); } }
+  @keyframes chipIn { 0% { transform: scale(.98); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 0 rgba(0,194,168,0.0); } 45% { transform: scale(1.02); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 4px rgba(0,194,168,0.22); } 100% { transform: scale(1); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 0 rgba(0,194,168,0); } }
   @keyframes checkIn { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
   .chip.door, .chip.ghost { color: var(--d-ink); border-color: var(--d-border); background: var(--d-surface); font-weight: 500; }
   .chip.door b, .chip.ghost b { color: var(--d-teal-ink); font-weight: 600; margin-left: 3px; }
   .chip.door b.lead { margin: 0 4px 0 0; }
   .chip small.gloss { font-size: 11px; font-weight: 400; color: var(--d-ink-3); }
-  .chip.on small.gloss { color: var(--d-teal-ink); opacity: 0.75; }
+  .chip.on small.gloss { color: #08685B; opacity: 1; font-weight: 400; }
   /* the OPTION selected state (L-12 alternative): an outline that lifts, with a leading teal dot */
   .chip.alt-on { color: var(--d-ink); background: var(--d-surface); border: 1.5px solid var(--d-ink); font-weight: 600; box-shadow: 0 2px 6px rgba(10,10,10,0.10); }
   .chip.alt-on::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--d-teal); margin-right: 6px; }
@@ -152,13 +154,19 @@
      so the way out never needs a scroll; the way back (‹ Show fewer words) sits where the door was tapped, at the top. */
   .proto .appbody { max-height: 640px; overflow-y: auto; scrollbar-width: none; }
   .proto .donebar.pinned { position: sticky; bottom: -1px; background: var(--d-surface); padding-bottom: 8px; margin-bottom: -2px; z-index: 2; }
+  /* the round-4 product read: once the owner has scrolled, a way back at the top of the grid is off-screen and the only visible
+     exit commits a look — so the way back pins to the top of the screen as the Done bar pins to the bottom, and the FAB steps
+     aside while the grid is open (a second capture door during a capture is the two-asks shape). */
+  .proto .foldrow.pinned-top { position: sticky; top: -1px; background: var(--d-surface); z-index: 2; padding: 6px 0 8px; margin: 0; }
+  .proto.gridopen .fab { display: none; }
   /* the note after a look (round 4): the link on the newest entry, the one-line field in place, the note in quotes */
-  .notelink { font-size: 11.5px; color: var(--d-ink-3); padding: 0 0 4px 26px; cursor: pointer; }
+  .notelink { font-size: 11.5px; color: var(--d-ink-3); padding: 0 0 0 26px; min-height: 32px; display: flex; align-items: center; cursor: pointer; } /* its own 32pt row: never shares hit area with the entry's chevron (C-5) */
   .notelink b { color: var(--d-teal-ink); font-weight: 600; }
   .noteinput { display: flex; gap: 8px; align-items: center; margin: 2px 0 6px 26px; }
   .noteinput input { flex: 1; min-width: 0; font: inherit; font-size: 12.5px; color: var(--d-ink); background: var(--d-surface); border: 1px solid var(--d-teal); border-radius: 10px; padding: 7px 10px; outline: none; }
   .noteinput b { color: var(--d-teal-ink); font-weight: 600; font-size: 12px; cursor: pointer; }
-  .enote { font-size: 12px; color: var(--d-ink-2); font-style: italic; padding: 0 0 4px 26px; line-height: 1.4; }
+  .enote { font-size: 12px; color: var(--d-ink); font-style: italic; padding: 0 0 6px 26px; line-height: 1.4; } /* hers: the primary ink, no rule; the receipt beneath is the app's: secondary ink, a rule */
+  .notemark { color: var(--d-ink-3); font-size: 11px; margin-right: 4px; }
   .donebtn { background: var(--d-ink); color: var(--d-surface); border-radius: 999px; padding: 7px 16px; font-size: 12.5px; font-weight: 600; flex-shrink: 0; }
   .donebtn.dim { background: var(--d-empty); color: var(--d-ink-3); }
   .hint { font-size: 10.5px; color: var(--d-ink-3); margin-top: 8px; }
@@ -338,15 +346,15 @@
       <table class="cmp">
         <thead><tr><th>Your reaction</th><th>How the team read it</th><th>What changed on this page</th></tr></thead>
         <tbody>
-          <tr><td>"Didn't eat · entry to meal path. Not 100 percent sure how we'll know which meal"</td><td><span class="w">Answered, not changed.</span> The door opens the meal path at the intake step with the pet's <em>most recent food</em> filled in — the same "recent" shelf the picker and the FAB already read (this pet's last meal of each food, newest first) — and the food is one tap to change. The owner names how much, never the app.</td><td>§01 (the intro and the prototype's sheet), spec §4.5.</td></tr>
+          <tr><td>"Didn't eat · entry to meal path. Not 100 percent sure how we'll know which meal"</td><td><span class="w">Answered.</span> It is always a <em>new</em> meal, now — never an edit of an earlier one — and the sheet says so in its first line. The food defaults to the pet's most recent (during a diet trial, the trial diet), one tap to change; the owner names how much, never the app; and nothing is saved until she does, which the sheet also says.</td><td>§01 (the intro and the prototype's sheet), spec §4.5.</td></tr>
           <tr><td>"The design delight of selecting a behavior … ramp it up by like 20 percent"</td><td><span class="w">Ruled: L-12 as recommended, louder.</span> A deeper wash, a heavier hairline, a larger check, a 4 pt ring that settles, a touch more overshoot. Geometry still never changes.</td><td>§02, every selected chip on this page.</td></tr>
           <tr><td>"Difficult to expand a long list … scroll to the bottom to collapse all the chips. Maybe a collapse button towards the top"</td><td><span class="w">You were using it right; the control was at the foot by design, and that design was wrong.</span> The door that opens the grid now stays where it was tapped and reads <em>‹ Show fewer words</em> at the top; the Done bar pins to the bottom of the screen while the grid is open, so neither control ever needs a scroll.</td><td>§02 beat 2, the prototype, the storyboard.</td></tr>
-          <tr><td>"The 'notes' style experience … I'd love to support something like that here"</td><td><span class="w">Drawn.</span> After Done the new entry carries <em>Add a note ›</em>; it opens a one-line field in place; the note lands under the words in quotes and follows the look to History and the report's appendix. Optional, after the save, never a field on the way in (Principle 1). The record already had the column; the surface did not.</td><td>§02 beat 4b, the prototype, spec §3.1a / §5.2 / §9.</td></tr>
+          <tr><td>"The 'notes' style experience … I'd love to support something like that here"</td><td><span class="w">Drawn.</span> After Done the new entry carries <em>Say more ›</em>; it opens a one-line field in place; the note lands under the words in quotes and follows the look to History and the report's appendix. Optional, after the save, never a field on the way in (Principle 1). The record already had the column; the surface did not.</td><td>§02 beat 4b, the prototype, spec §3.1a / §5.2 / §9.</td></tr>
           <tr><td>"I think I like 'noticed' the best"</td><td><span class="w">Ruled: L-14. Noticed.</span> CUL-839 closed.</td><td>§08.</td></tr>
           <tr><td>"L12 — let's go w/ the recommendation"</td><td><span class="w">Ruled.</span> The wash and the check; the outline that lifts is retired.</td><td>§02; the option box removed.</td></tr>
           <tr><td>"L13 — let's go w/ the recommendation"</td><td><span class="w">Ruled.</span> Bars for the symptom-class words, the absence as a sentence, the dated strip.</td><td>§06; the option box removed.</td></tr>
           <tr><td>"L15 / L16 — I'll defer to the product team"</td><td><span class="w">The recommendations stand as ruled.</span> The coverage line's three forms; the quiet entry.</td><td>§03, §04; the briefs closed.</td></tr>
-          <tr><td>"We're at the point where we can start to write up the final requirements … if not, let me know"</td><td><span class="w">The team agrees, with one gate it owed itself:</span> the fourth adversarial pass on the rules round 3 added (T-16 – T-20, the graph, and now the note and the pinned Done). It ran on this page and the v1.0 draft; the result is in §10 and the spec's §12.</td><td>The spec at v1.0; no Linear decomposition, as asked.</td></tr>
+          <tr><td>"We're at the point where we can start to write up the final requirements … if not, let me know"</td><td><span class="w">Yes — the team agrees we are at that point.</span> One check first, because the last round added rules nobody had yet tried to break (the coverage line's three forms, the receipts' floors, the one day key, the withheld state's trigger, the report's graph) and this round added the note and the pinned bars: a fourth adversarial pass and a product read ran on this page and the v1.0 draft, both failed it, and what they found is folded here (the contrast, the pinned way back, Undo over a note, the sheet naming its meal, the pairing's both sides, the withheld arm's real predicate, the note's one column and its exit through the report) and recorded in §10 and the spec's §12. One decision came back to you from it: L-17, the pairing's family correction (§09).</td><td>The spec at v1.0; no Linear decomposition, as asked.</td></tr>
         </tbody>
       </table>
     </div>
@@ -381,7 +389,7 @@
   <section id="card">
     <div class="sec-head"><span class="sec-num">01</span><h2>The card at rest <span class="tag cur">current</span></h2></div>
     <div class="col">
-      <p>One question on Home, answered with the owner's own words, at any hour. The first row is the absence chip, the intake doorway and <em>Not himself</em> at equal cost — a safety rule. Then seven head words per species, chosen on clinical yield and signed by Dr. Chen, and one door to the rest. Nothing is pre-selected. The card reads the same on a quiet day and under a safety card. <b>Which meal the intake door means:</b> it opens the meal path at the intake step with the pet's most recent food filled in — the "recent" shelf the picker and the FAB already read, this pet's last meal of each food, newest first — and the food is one tap to change; the owner names how much (<em>refused · some · most · all of it</em>), because that is what the intake detectors read, and the app never pre-selects it.</p>
+      <p>One question on Home, answered with the owner's own words, at any hour. The first row is the absence chip, the intake doorway and <em>Not himself</em> at equal cost — a safety rule. Then seven head words per species, chosen on clinical yield and signed by Dr. Chen, and one door to the rest. Nothing is pre-selected. The card reads the same on a quiet day and under a safety card. <b>Which meal the intake door means:</b> a new meal, now — never an edit of an earlier one — opened at the intake step with the pet's most recent food filled in (this pet's last meal of each food, newest first; during a diet trial, the trial diet), one tap to change; the owner names how much (<em>refused · picked · some · most · all of it</em>, the shipped scale), because that is what the intake detectors read, the app never pre-selects it, and nothing is saved until she does. Saving the meal raises the meal's own completion card over Home; the Noticed card keeps its selections beneath it, and the look is still hers to finish or leave.</p>
     </div>
     <div class="frames">
       <div class="frame-slot">
@@ -408,7 +416,7 @@
           <div class="acard">
             <div class="seclabel"><span>Noticed</span><span class="door">Patterns ›</span></div>
             <p class="q">How does Pixel seem right now, compared with her usual?</p>
-            <div class="chips"><span class="chip">Nothing unusual</span><span class="chip ghost">Food left in the bowl<b>›</b></span><span class="chip ghost">Not herself<b>▾</b></span></div>
+            <div class="chips"><span class="chip">Nothing unusual</span><span class="chip ghost">Left her food<b>›</b></span><span class="chip ghost">Not herself<b>▾</b></span></div>
             <div class="chips"><span class="chip">Off</span><span class="chip">Sleeping more</span><span class="chip">Hiding</span><span class="chip">Not grooming</span><span class="chip">Lip-licking</span><span class="chip">Outside the box</span><span class="chip">Lively</span><span class="chip door">Something else<b>›</b></span></div>
             <div class="hint">Tap what you saw · more than one can be true</div>
           </div>
@@ -416,7 +424,7 @@
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>7:05am, quiet — a cat, on a two-cat account.</b> Species-keyed head words: <em>Hiding</em>, <em>Not grooming</em>, <em>Lip-licking</em>, <em>Outside the box</em>. One pet per card, the header's pet; the intake doorway reads <em>Food left in the bowl ›</em> because the chip sits on one cat's card and must not assert that she did not eat.<span class="lens"><b>Sam:</b> the one that matters ("hiding") costs the same tap as "nothing unusual".</span></p>
+        <p class="frame-cap"><b>7:05am, quiet — a cat, on a two-cat account.</b> Species-keyed head words: <em>Hiding</em>, <em>Not grooming</em>, <em>Lip-licking</em>, <em>Outside the box</em>. One pet per card, the header's pet; the intake doorway reads <em>Left her food ›</em> — per cat, never a bowl-level claim, because a shared bowl is not knowable and no copy may imply it is (CUL-222) — because the chip sits on one cat's card and must not assert that she did not eat.<span class="lens"><b>Sam:</b> the one that matters ("hiding") costs the same tap as "nothing unusual".</span></p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -491,9 +499,9 @@
           <thead><tr><th>Beat</th><th>What moves</th><th>Time</th></tr></thead>
           <tbody>
             <tr><td>Select</td><td>The chip takes the deeper wash and the heavier hairline in place; the check draws in at the leading edge; a 4 pt ring settles with one felt overshoot. Nothing else on the card moves. One selection tick.</td><td class="ms">200 / 300 ms</td></tr>
-            <tr><td>Unfold</td><td>The card grows with one felt settle; the families land a beat after the box; each head word keeps its word and gains its gloss; the door stays where it was tapped and reads "‹ Show fewer words"; the Done bar pins to the bottom of the screen until the grid folds.</td><td class="ms">370 + 40 / 300 ms</td></tr>
+            <tr><td>Unfold</td><td>The card grows with one felt settle; the families land a beat after the box; each head word keeps its word and gains its gloss; the way back takes its own row at the top of the grid, reads "‹ Show fewer words", and pins to the top of the screen while the grid is open; the Done bar pins to the bottom; the FAB steps aside until the grid folds.</td><td class="ms">370 + 40 / 300 ms</td></tr>
             <tr><td>Fold back</td><td>The unchosen words leave first; the box eases shut; a word chosen in the grid travels up and lands after the head words, before the door.</td><td class="ms">180 → 300 ms</td></tr>
-            <tr><td>Done</td><td>The chips leave; the entry arrives at the top of <em>today</em>: the ring draws itself, the words land in the serif, the time stamps in; <em>Add a note ›</em> sits under the words; the question folds to one line beneath; the look lands on the Today lane. <em>Undo</em> holds on the entry for five seconds, fades, then settles to its chevron.</td><td class="ms">320 + 300 ms · 5 s</td></tr>
+            <tr><td>Done</td><td>The chips leave; the entry arrives at the top of <em>today</em>: the ring draws itself, the words land in the serif, the time stamps in; <em>Say more ›</em> sits under the words; the question folds to one line beneath; the look lands on the Today lane. <em>Undo</em> holds on the entry for five seconds, fades, then settles to its chevron.</td><td class="ms">320 + 300 ms · 5 s</td></tr>
             <tr><td>A note</td><td>The link opens a one-line field in place; return saves; the note lands under the words in quotes, in the secondary ink. Optional, after the save; the field never appears on the way in.</td><td class="ms">200 ms</td></tr>
             <tr><td>Again</td><td>The folded question opens the chips in place, cleared; a second look becomes a second entry above the first, newest first, each with its own hour.</td><td class="ms">370 ms</td></tr>
             <tr><td>Haptics</td><td><b>One rule:</b> every chip tap plays the selection tick; the save is silent. A look writes nothing else, so nothing else can buzz.</td><td class="ms">—</td></tr>
@@ -525,18 +533,19 @@
           <div class="acard">
             <div class="seclabel"><span>Noticed</span><span class="door">Patterns ›</span></div>
             <p class="q sm">How does Mochi seem right now, compared with his usual?</p>
-            <div class="chips"><span class="chip">Nothing unusual</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>▾</b></span><span class="chip door"><b class="lead">‹</b>Show fewer words</span></div>
+            <div class="chips"><span class="chip">Nothing unusual</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>▾</b></span></div>
             <div class="row emerg"><span>Signs that mean call today</span><span class="door">›</span></div>
+            <div class="chips" style="margin:6px 0 8px"><span class="chip door"><b class="lead">‹</b>Show fewer words</span></div>
             <div class="fam"><div class="fl">Energy</div><div class="chips"><span class="chip on">Off<small class="gloss">, not getting up for the usual things</small></span><span class="chip">Sleeping more</span><span class="chip">Restless<small class="gloss">, pacing</small></span><span class="chip">Can't settle at night</span><span class="chip on">Didn't want the walk</span><span class="chip">Lively<small class="gloss">, bouncy</small></span></div></div>
             <div class="fam"><div class="fl">With you</div><div class="chips"><span class="chip">Not greeting<small class="gloss"> at the door</small></span><span class="chip">Not coming when called</span><span class="chip">Clingy<small class="gloss">, following you</small></span><span class="chip">Keeping away<small class="gloss">, hiding</small></span><span class="chip">Tail down</span></div></div>
             <div class="fam"><div class="fl">Mouth</div><div class="chips"><span class="chip">Lip-licking<small class="gloss">, swallowing a lot</small></span><span class="chip">Drooling</span><span class="chip on">Eating grass</span></div></div>
             <div class="fam"><div class="fl">…</div><div class="hint" style="margin-top:0">Sounds · Skin &amp; coat · Moving · Toilet &amp; drinking · What he did, below the fold of this frame</div></div>
             <div class="donebar"><span>Mochi · off, didn't want the walk, eating grass</span><span class="donebtn">Done</span></div>
-            <div class="annot ok" style="margin:6px 0 0">THE WAY BACK IS AT THE TOP, WHERE THE DOOR WAS TAPPED; THE DONE BAR PINS TO THE BOTTOM OF THE SCREEN WHILE THE GRID IS OPEN (drawn pinned in the prototype). Neither needs a scroll.</div>
+            <div class="annot ok" style="margin:6px 0 0">WHILE THE GRID IS OPEN THE WAY BACK PINS TO THE TOP OF THE SCREEN AND THE DONE BAR TO THE BOTTOM; THE FAB STEPS ASIDE (drawn pinned in the prototype). Neither exit needs a scroll, and the one that commits a look is never the only one visible.</div>
           </div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>Beat 2 — unfolded, a third word from a family.</b> As you passed it in round 2: families in the vet's order, each head word keeping its word and gaining its gloss, the emergency door under the first row. <strong>Round 4:</strong> the way back sits where the door was tapped, at the top of the grid, and the Done bar pins to the bottom of the screen while the grid is open — you were using the prototype correctly; the foot control was round 2's design and it was wrong for a list this long. Still INSUFFICIENT on one thing this page cannot measure: the unfolded grid's height against a device screen (§10).</p>
+        <p class="frame-cap"><b>Beat 2 — unfolded, a third word from a family.</b> As you passed it in round 2: families in the vet's order, each head word keeping its word and gaining its gloss, the emergency door under the first row. <strong>Round 4:</strong> the way back takes its own row at the top of the grid and pins to the top of the screen while the grid is open, the Done bar pins to the bottom, and the FAB steps aside — you were using the prototype correctly; the foot control was round 2's design and it was wrong for a list this long, and a top control that scrolled away (round 4's first draft) would have left Done, which commits a look, as the only visible exit. Still INSUFFICIENT on one thing this page cannot measure: the unfolded grid's height against a device screen (§10).</p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -578,7 +587,7 @@
           <div class="acard">
             <div class="seclabel"><span>Noticed · today</span><span class="door">Patterns ›</span></div>
             <div class="today"><div class="entry"><svg class="ring" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6"/></svg><div class="w">Off, didn't want the walk, eating grass</div><div class="tm">7:12 <b>Undo</b></div></div></div>
-            <div class="notelink">Add a note <b>›</b></div>
+            <div class="notelink">Say more <b>›</b></div>
             <div class="nug">First day Mochi has seemed <b>off</b> — in the <b>118</b> days you'd answered before it, since May 3.</div>
             <div class="askrow"><span>How does Mochi seem now?</span><b>▾</b></div>
             <div class="cov"><span>Answered <span class="n">24</span> of the last <span class="n">28</span> days</span></div>
@@ -593,7 +602,7 @@
           </div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>Beat 4b — a note, after the save.</b> How We Feel's shape, "structured first, say more after": the words are the record, the note is the context. <em>Add a note ›</em> sits under the newest entry's words until a note exists or the next look arrives (older entries take a note from the record screen); it opens a one-line field in place, return saves, and the note lands in quotes in the secondary ink. It is optional and it comes after Done, never before it — nothing on the way in asks for typing (Principle 1). The note follows the look to History and to the report's appendix, quoted and never counted; it never reaches the engine, Ask, or a log line (the record already had the column, §5.2; the surface did not).<span class="lens"><b>Trust &amp; Safety:</b> free text about a household stays inside the account — quoted on the owner's own surfaces and the vet's appendix, never summarised, never sent to a model.</span></p>
+        <p class="frame-cap"><b>Beat 4b — a note, after the save.</b> How We Feel's shape, "structured first, say more after": the words are the record, the note is the context. <em>Say more ›</em> sits under the newest entry's words until a note exists or the next look arrives (an older entry's <em>›</em> opens the record, where every look — the absence and the withheld entry included — has the field); it opens a one-line field in place, return saves, and the note lands in quotes in the secondary ink. It is optional and it comes after Done, never before it — nothing on the way in asks for typing (Principle 1). A look carrying a note is no longer recreatable, so its Undo confirms and names the note (the photo rule, C-21); in the today list a saved note renders under the newest entry only, an older entry carries a small ❞ beside its hour, so an engaged day never stacks nine lines. The note follows the look to History and to the report's appendix, quoted and never counted; it never reaches the engine, Ask, or a log line (the record already had the column, §5.2; the surface did not).<span class="lens"><b>Trust &amp; Safety:</b> free text about a household stays inside the account — quoted on the owner's own surfaces and the vet's appendix, never summarised, never sent to a model.</span></p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -652,8 +661,8 @@
           <div class="acard">
             <div class="seclabel"><span>What you noticed</span><span class="door">›</span></div>
             <div class="quiet" style="margin-bottom:6px">Counted across the 24 of the last 28 days you answered.</div>
-            <div class="prow2"><div>Lip-licking<small>on 2 of the 3 vomit days you answered · 1 vomit day not answered</small></div><div class="n"><b>3</b> of 24 days</div></div>
-            <div class="annot ok" style="margin:8px 0 0">THE PAIRING LIVES ON PATTERNS, NOT HOME: both sides answered days, the unanswered vomit day said, never a zero on the left, never fewer than three answered vomit days, never beside a gated card.</div>
+            <div class="prow2"><div>Lip-licking<small>on 2 of the 3 vomit days you answered · and on 1 of the 21 other days · 1 vomit day not answered<br>Of the words you marked, this one lined up most often with a vomit day.</small></div><div class="n"><b>3</b> of 24 days</div></div>
+            <div class="annot ok" style="margin:8px 0 0">THE PAIRING LIVES ON PATTERNS, NOT HOME: both sides answered days with the control fraction between the vomit-day fraction and the word's own count, the unanswered vomit day said, never a zero or a one on the left, never fewer than three answered vomit days and ten other days, only when the vomit-day rate exceeds the other-day rate, at most ONE per card (the largest margin) and said to be one of several words checked — the family correction is the PM's brief, L-17.</div>
           </div>
           <div class="acard" style="margin-top:2px">
             <div class="seclabel"><span>Noticed · today</span><span class="door">Patterns ›</span></div>
@@ -743,14 +752,14 @@
           <div class="acard">
             <div class="seclabel"><span>Noticed · today</span><span class="door">Patterns ›</span></div>
             <div class="today"><div class="entry"><svg class="ring" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6"/></svg><div class="w">Hiding, not grooming</div><div class="tm">7:12<span class="chev">›</span></div></div></div>
-            <div class="nug">First marked <b>hiding</b> Sep 9.</div>
+            <div class="nug">First marked <b>hiding</b> Sep 2.</div>
             <div class="askrow"><span>How does Pixel seem now?</span><b>▾</b></div>
           </div>
           <div class="acard"><div class="seclabel"><span>Today so far</span><span class="door">Full day ›</span></div><div class="lane"><div class="track"></div><span class="d look" style="left:8%"></span></div><div class="laneax"><span>6a</span><span>noon</span><span>6p</span><span>12a</span></div></div>
           <div class="fab">+</div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>A symptom word under the same concern.</b> Sam tapped <em>Hiding</em> and <em>Not grooming</em>. The words render in full — a symptom-class word can only raise, so nothing withholds it — and the receipt is the bare first date, never a rate the withheld absence count could be read back out of by subtraction. The footer stays withheld: Home does not count answered days one card below "Call your vet today", whatever today's words were.</p>
+        <p class="frame-cap"><b>A symptom word under the same concern.</b> Sam tapped <em>Hiding</em> and <em>Not grooming</em>. The words render in full — a symptom-class word can only raise, so nothing withholds it — and the receipt is the bare first date — never a rate the withheld absence count could be read back out of by subtraction, and never today's own date, which would only repeat the entry's hour. The footer stays withheld: Home does not count answered days one card below "Call your vet today", whatever today's words were.</p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -827,7 +836,7 @@
             <div class="seclabel"><span>What you noticed</span><span class="door">›</span></div>
             <div class="quiet" style="margin-bottom:6px">Counted across the 24 of the last 28 days you answered.</div>
             <div class="prow2"><div>Off<small>first Sep 3 · 4 weeks before: 0 of 22</small></div><div class="n"><b>3</b> of 24 days</div></div>
-            <div class="prow2"><div>Lip-licking<small>on 2 of the 3 vomit days you answered · 1 vomit day not answered</small></div><div class="n"><b>3</b> of 24</div></div>
+            <div class="prow2"><div>Lip-licking<small>on 2 of the 3 vomit days you answered · and on 1 of the 21 other days · 1 vomit day not answered<br>Of the words you marked, this one lined up most often with a vomit day.</small></div><div class="n"><b>3</b> of 24</div></div>
             <div class="prow2"><div>Eating grass</div><div class="n"><b>1</b> of 24</div></div>
             <div class="grp">Marked — the owner's claim</div>
             <div class="prow2 quiet"><div>Nothing unusual</div><div class="n"><b>19</b> of 24</div></div>
@@ -951,6 +960,10 @@
       <p><strong>Options:</strong> <span class="rec">Noticed — recommended</span> · Spotted · Observed.</p>
       <p><strong>Consequence:</strong> a string across the card, History, the spine, Patterns and the report; the record's key stays <code>check_in</code> whatever the name.</p></div>
 
+    <div class="brief"><p class="bid">L-17 — the pairing's family correction (§03, §06) · the one decision round 4's reviews sent back</p>
+      <p><strong>Deciding:</strong> how Patterns may print a same-day pairing (<em>lip-licking on 2 of the 3 vomit days you answered · and on 1 of the 21 other days</em>) when twenty-six words are each a candidate — the engine's lane ① pays a Bonferroni correction for exactly this shape, and the receipt pays nothing.</p>
+      <p><strong>Options:</strong> <span class="rec">at most one pairing per card — the largest positive margin among the words marked — said to be one of several words checked, never "linked", never a tier — recommended</span> (the disclosure is the correction a reader can use; the floors already stop the smallest samples) · a corrected floor like lane ①'s (a margin that clears the family — most records never render one) · no pairing on Patterns in v1 (counts only; the report's strip shows the pairing visually beside the record).</p>
+      <p><strong>Consequence:</strong> gates DL-5 only; the report's strip is unaffected.</p></div>
     <div class="brief"><p class="bid">Q-12 · Q-13 — two questions that survive from round 2 · L-15 · L-16 — two briefs the reviews added (below)</p>
       <p><strong>Q-12:</strong> on a two-cat account, may the done pet's row on the header's switcher carry a neutral "answered today" mark, or nothing (as drawn)? <strong>Q-13:</strong> the receipt's coverage floor — the number of answered days below which a receipt drops its denominator (provisional: fourteen).</p></div>
 
@@ -971,6 +984,7 @@
       <div><b>Data</b> Every count moved from mornings to days; one day-count module and a local day key stored on the row, because the client and the report bucket days on two clocks; the receipts derived at render; the pairing moved to Patterns with both sides answered days; the footer's saturation named.</div>
       <div><b>Jordan · Sam</b> Any time of day; one tap to a second look; the withheld state now withholds the footer too.</div>
       <div><b>The two isolated reviews, run on this round and folded the same day.</b> <em>pm-feature-review</em> (Jordan and Sam, static): NEEDS-WORK on §01–§06 with the concept passed — "the arrival beat is genuinely good … the receipts pay an owner back on the morning it matters"; its blocking findings (the footer defeating the receipt's floor, the check glyph moving the next tap target, the nudge contradicting the lane, the withheld state's missing reason, the strip's misaligned annotations, the Recap lead saying "nothing" beside "off") are fixed on this page. <em>adversarial-reviewer</em> (third pass): FAIL, seven blockers, every one folded — the pairing receipt's asymmetric denominators, its renderable zero and its uncorrected family (moved to Patterns, both sides answered, floored); the footer's saturation (the three forms); the two day counters (a local day key on the row); the naked first-day receipt below the floor (no receipt below it); the withheld arm latching on ignorance (a positive intake fact only); the absence bar (a sentence); the Ask and zero-count escapes of the residual (CUL-845's two gates). HELD: the engine boundary (a look row reaches no lane, gate or verdict), the day model's denominators, the spread floor, the reflex tapper against every count. Both reports verbatim in the session record.</div>
+      <div><b>Round 4's two reviews, run on the page as drawn and folded the same day.</b> <em>pm-feature-review</em> (the four changes only): NEEDS-WORK on all four — the deeper wash dropped the accent ink to 4.40:1 (a selected ink one notch darker now clears 5.7:1, the gloss at full opacity); a way back at the top that scrolled away left Done, which commits a look, as the only visible exit (the way back now pins to the top as the Done bar pins to the bottom, and the FAB steps aside); Undo silently destroyed a typed note (a look with a note now confirms on Undo and names it, the photo rule); the intake sheet named a food, not a meal, and never said that closing saved nothing (it now opens "a new meal, now", says nothing is saved until she picks how much, and pre-fills the trial diet during a trial). Every finding folded; the ledger's first row rewritten to answer the question that was asked. <em>adversarial-reviewer</em> (fourth pass): FAIL — eight blockers and eleven gaps, every one in a rule added since the third pass, every one folded: the withheld arm now reads the intake detector's own qualifying set (rated, non-treat, non-free-fed meals within its recency bound); the note lives on `looks.notes` only, with a guard that keeps it out of every Edge Function but the report's appendix, and the spec now says plainly that a note leaves the account whenever the report does (a cue at the field, a toggle on the report); the pairing draws both sides with the control fraction between, renders only when the vomit-day rate exceeds the other-day rate, at most one per card, and its family correction is the PM's brief (L-17); after a withheld period the footer stays absent until the window is clear of withheld days, never the saturation form; the first-day receipt's floor is its own denominator and a receipt attaches to the earliest look of the day; the pinned bars are overlays owned by the Home screen (React Native has no sticky), the FAB hides, and no overlay ever sits over a safety card; two L-9 survivors struck (the floor's "the leaf it proposes", §5.3's "a proposal writes"). HELD: the engine boundary, the day model, the n=1 rules, the note against the sync logs. Its verdict on build-readiness is carried into the spec's §12 as written: DL-0 – DL-2 signable with the rules folded; DL-4 needs the device render; DL-5 needs L-17; the note's column needs the privacy review, which ran.</div>
       <div><b>Reviews this round</b> Appended once run: an isolated product read of the new states, and an adversarial pass on the coverage line under "every account, always on", on the any-time day model's denominators, and on the report graph's honesty.</div>
     </div>
     <div class="col" style="margin-top:22px">
@@ -1096,10 +1110,10 @@
       html += '<div class="today">' + state.today.slice(0, TODAY_CAP).map(function (e) {
         var tail = state.undoId === e.id ? '<b data-act="undo" data-id="' + e.id + '" role="button" tabindex="0">Undo</b>' : '<span class="chev">›</span>';
         var noteHtml = '';
-        if (e.note) noteHtml = '<div class="enote">“' + esc(e.note) + '”</div>';
-        else if (state.noteFor === e.id) noteHtml = '<div class="noteinput"><input id="proto-note" type="text" maxlength="140" placeholder="Say more — what did you see?" aria-label="A note on this look"><b data-act="notesave" data-id="' + e.id + '" role="button" tabindex="0">Save</b></div>';
-        else if (e === state.today[0] && !e.absence) noteHtml = '<div class="notelink" data-act="note" data-id="' + e.id + '" role="button" tabindex="0">Add a note <b>›</b></div>';
-        return '<div class="entry' + (e.fresh ? ' arrive' : '') + (e.absence ? ' quiet' : '') + '" data-k="e-' + e.id + '"><svg class="ring" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6"/></svg><div class="w">' + esc(entryWords(e)) + '</div><div class="tm">' + e.t + ' ' + tail + '</div></div>' + noteHtml + nugget(e);
+        if (e.note && e === state.today[0]) noteHtml = '<div class="enote">“' + esc(e.note) + '”</div>';
+        else if (state.noteFor === e.id) noteHtml = '<div class="noteinput"><input id="proto-note" type="text" maxlength="300" placeholder="Say more — what did you see?" aria-label="A note on this look"><b data-act="notesave" data-id="' + e.id + '" role="button" tabindex="0">Save</b></div>';
+        else if (e === state.today[0] && !e.absence) noteHtml = '<div class="notelink" data-act="note" data-id="' + e.id + '" role="button" tabindex="0">Say more <b>›</b></div>';
+        return '<div class="entry' + (e.fresh ? ' arrive' : '') + (e.absence ? ' quiet' : '') + '" data-k="e-' + e.id + '"><svg class="ring" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6"/></svg><div class="w">' + esc(entryWords(e)) + '</div><div class="tm">' + (e.note && e !== state.today[0] ? '<span class="notemark" title="has a note">❞</span>' : '') + e.t + ' ' + tail + '</div></div>' + noteHtml + nugget(e);
       }).join('') + '</div>';
       if (state.today.length > TODAY_CAP) html += '<div class="more" data-k="more">' + (state.today.length - TODAY_CAP) + ' more today ›</div>';
     }
@@ -1113,8 +1127,9 @@
       } else {
         if (state.nh) html += '<div class="hint whatsaw" style="margin:2px 0 6px">What did you see? Done on its own keeps "not himself".</div>';
         // round 4: the way back sits where the door was tapped — at the top of the grid, never at its foot
-        html += '<div class="chips" style="margin:2px 0 8px">' + chip('door', 'Show fewer words', false, { cls: 'door', lead: '‹' }) + '</div>';
+        // the emergency door stays directly beneath the first row (a safety rule, §3.1); the way back sits after it and pins to the top once scrolled
         html += '<div class="row emerg" data-act="emerg"><span>Signs that mean call today</span><span class="door">›</span></div>';
+        html += '<div class="chips foldrow pinned-top">' + chip('door', 'Show fewer words', false, { cls: 'door', lead: '‹' }) + '</div>';
         FAMILIES.forEach(function (f) {
           html += '<div class="fam"><div class="fl">' + esc(f[0]) + '</div><div class="chips">' + f[1].map(function (k) { return wordChip(k, true); }).join('') + '</div></div>';
         });
@@ -1126,6 +1141,7 @@
     // the footer: the ratio below full coverage; the window alone at 28 of 28; nothing below the receipt's floor (L-15). The fixture is at 24.
     if (answered) html += '<div class="cov" data-k="cov"><span>Answered <span class="n">24</span> of the last <span class="n">28</span> days</span></div>';
     card.innerHTML = html;
+    phone.classList.toggle('gridopen', !!(state.open && state.expanded));
     state.today.forEach(function (e) { e.fresh = false; });
   }
 
@@ -1172,6 +1188,16 @@
     leaving.forEach(function (el) { try { el.animate([{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(-8px)' }], { duration: 180, fill: 'forwards', easing: 'ease-in' }); } catch (e) {} });
     setTimeout(function () { state.expanded = false; commit(render); }, 180);
   }
+  function doUndo(id) {
+      if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+      if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
+      var gone = state.today.filter(function (e) { return e.id === id; })[0];
+      state.today = state.today.filter(function (e) { return e.id !== id; });
+      state.undoId = null;
+      if (gone) { state.sel = gone.words.slice(); state.absence = !!gone.absence; state.nh = !!gone.nh; state.open = true; if (gone.firstOff) state.firstOffSeen = false; }
+      commit(render); updateLane();
+      setBeat('4a', 'undone', ['The entry is out of the record and the words are back on the card, still selected.', 'A slip costs nothing; the look is the only thing that was written, so the only thing taken back.']);
+  }
   function saveNote(id, text) {
     var t = (text || '').trim();
     state.noteFor = null;
@@ -1197,7 +1223,7 @@
     // the intake router's sheet says the way back and that the look in progress survives it (the round-3 product read)
     var isRouter = /the intake step/.test(title);
     var closeLabel = isRouter ? '‹ Back to Noticed' : 'Close';
-    if (isRouter) body += '<div class="hint" style="color:var(--d-teal-ink)">Your words on the Noticed card stay selected while you\'re here.</div>';
+    if (isRouter) body += '<div class="hint" style="color:var(--d-teal-ink)">Nothing is saved until you pick how much. Your words on the Noticed card stay selected while you\'re here.</div>';
     ov.innerHTML = '<div class="sheet"><div class="grab"></div><div class="seclabel"><span>' + esc(title) + '</span><span class="x" data-act="close">' + closeLabel + '</span></div>' + body + '</div>';
     phone.appendChild(ov);
   }
@@ -1230,17 +1256,18 @@
       setBeat(5, 'the next look', ['The folded question opened the chips in place, cleared.', 'A second look, at any hour, is one tap away; it becomes its own entry above the first, with its own time.']);
       return;
     }
+    if (act === 'undo-confirm') { closeSheet(); doUndo(Number(target.getAttribute('data-id'))); return; }
     if (act === 'undo') {
-      var id = Number(target.getAttribute('data-id'));
-      if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
-      if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
-      var gone = state.today.filter(function (e) { return e.id === id; })[0];
-      state.today = state.today.filter(function (e) { return e.id !== id; });
-      state.undoId = null;
-      if (gone) { state.sel = gone.words.slice(); state.absence = !!gone.absence; state.nh = !!gone.nh; state.open = true; if (gone.firstOff) state.firstOffSeen = false; }
-      commit(render); updateLane();
-      setBeat('4a', 'undone', ['The entry is out of the record and the words are back on the card, still selected.', 'A slip costs nothing; the look is the only thing that was written, so the only thing taken back.']);
-      return;
+      var uid = Number(target.getAttribute('data-id'));
+      var ent = state.today.filter(function (e) { return e.id === uid; })[0];
+      if (ent && ent.note) {
+        // a look carrying a note is not recreatable: its Undo confirms and NAMES the note (the photo rule, C-21)
+        if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+        sheet('Take back this look?', '<div class="hint" style="margin-top:0;color:var(--d-ink)">Its note goes with it: “' + esc(ent.note) + '”</div><div class="chips" style="margin-top:10px"><span class="chip" data-act="undo-confirm" data-id="' + uid + '" role="button" tabindex="0">Take it back</span><span class="chip door" data-act="close" role="button" tabindex="0">Keep it</span></div>');
+        setBeat('4c', 'Undo over a note', ['A look with a note is no longer recreatable, so Undo confirms and names the note.', 'Every destructive action carries exactly one safety net: a confirm before, or a way back after — never neither, never both (C-21).']);
+        return;
+      }
+      doUndo(uid); return;
     }
     if (act === 'done') {
       if (!(state.sel.length || state.absence || state.nh)) return;
@@ -1260,8 +1287,8 @@
     var k = target.getAttribute('data-k');
     if (!k) return;
     if (k === 'router') {
-      sheet('Meal · Royal Canin HP · the intake step', '<div class="hint" style="margin-top:0;color:var(--d-ink-2)">Royal Canin HP — Mochi\'s most recent food · <b style="color:var(--d-teal-ink)">Change ›</b></div><div class="hint" style="margin-top:6px">How much did Mochi eat?</div><div class="chips" style="margin-top:6px"><span class="chip">Refused</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All of it</span></div><div class="note">Nothing pre-selected — the owner names the arm. A quarter eaten is not a refusal. The meal row is the only intake fact; the look records nothing about food.</div><div class="save dim">Save meal</div>');
-      setBeat('·', 'the intake doorway', ['"Didn\'t eat ›" is a door to the meal path, never a look word.', 'It opens at the intake step with Mochi\'s most recent food filled in — the "recent" shelf the picker and the FAB already read, this pet\'s last meal of each food, newest first — one tap to change; the owner names how much, because that is what the intake detectors read.']);
+      sheet('A new meal · now · the intake step', '<div class="hint" style="margin-top:0;color:var(--d-ink)"><b>Meal · 7:12, now</b> — a new meal, never an edit of an earlier one.</div><div class="hint" style="margin-top:4px;color:var(--d-ink-2)">Royal Canin HP · his most recent food (during a diet trial: the trial diet; with no meals ever, the food step opens instead)</div><div class="chips" style="margin-top:6px"><span class="chip door">Change food<b>›</b></span></div><div class="hint" style="margin-top:10px">How much did Mochi eat?</div><div class="chips" style="margin-top:6px"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All of it</span></div><div class="annot ok" style="margin:8px 0 0">NOTHING PRE-SELECTED: the owner names how much (a quarter eaten is not a refusal). The meal row is the only intake fact; the look records nothing about food.</div><div class="save dim">Save meal</div>');
+      setBeat('·', 'the intake doorway', ['"Didn\'t eat ›" is a door to the meal path, never a look word.', 'It opens a NEW meal at now, at the intake step, with Mochi\'s most recent food filled in (during a diet trial, the trial diet) — one tap to change; the owner names how much, because that is what the intake detectors read; nothing is saved until she does, and the sheet says so.']);
       return;
     }
     if (k === 'door') {
@@ -1271,7 +1298,7 @@
         setBeat(3, 'folded back', ['The unchosen words left first; the box eased shut around what stays.', moved.length ? 'The word you chose deep in the grid travelled up and landed beside the head words, before the door — the head words held their places.' : 'Pick a word from a family before folding and watch it travel up to sit beside the head words.']);
       } else {
         state.expanded = true; commit(render);
-        setBeat(2, 'unfolded', ['The card grew with one felt settle; the families landed a beat after the box.', 'Each head word kept its word and gained its gloss; the door stayed where it was tapped and reads "‹ Show fewer words"; the Done bar is pinned to the bottom while the grid is open. Choose a word from any family.']);
+        setBeat(2, 'unfolded', ['The card grew with one felt settle; the families landed a beat after the box.', 'Each head word kept its word and gained its gloss; the way back pins to the top of the screen and the Done bar to the bottom while the grid is open; the FAB stepped aside. Choose a word from any family.']);
       }
       return;
     }
@@ -1305,7 +1332,8 @@
   }
   card.addEventListener('click', function (e) { var t = e.target.closest('[data-k],[data-act]'); if (t) onTap(t); });
   card.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { var t = e.target.closest('[data-k],[data-act]'); if (t) { e.preventDefault(); onTap(t); } } });
-  phone.addEventListener('click', function (e) { var t = e.target.closest('[data-act="close"]'); if (t) closeSheet(); });
+  // the sheet lives on the phone, outside the card: route its close and its undo-confirm through the same handler
+  phone.addEventListener('click', function (e) { var t = e.target.closest('[data-act="close"],[data-act="undo-confirm"]'); if (t) onTap(t); });
   document.getElementById('proto-reset').addEventListener('click', function () {
     closeSheet(); fresh(); commit(render); updateLane();
     setBeat(0, 'at rest', ['The question, the first row, seven head words, one door.', 'Nothing selected, nothing counted, nothing about yesterday. Tap a word to begin.']);
