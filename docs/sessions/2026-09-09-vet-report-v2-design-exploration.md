@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-09
 
-Shipped via **#(draft, this branch)**. Mode: **DISCOVERY** (interviews + research + mock round 1 + decision briefs; no app code). Branch `claude/vet-report-design-5rfosx`. Issue **CUL-847** (filed this session; the exploration started from a chat prompt).
+Shipped via **#815** (draft). Mode: **DISCOVERY** (interviews + research + mock round 1 + decision briefs; no app code). Branch `claude/vet-report-design-5rfosx`. Issue **CUL-847** (filed this session; the exploration started from a chat prompt).
 
 ## What this was
 
