@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, Info, LayoutGrid, Shapes, SquarePen } from 'lucide-react-native';
+import { Eye, FlaskConical, Info, LayoutGrid, Shapes, SquarePen } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -71,6 +71,12 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // a "+" mark, which reads as a tappable add-affordance on a non-interactive
       // tile (the pm-feature-review finding on the hint glyph).
       return { Icon: Shapes };
+    case 'daily_look':
+      // No on-state hint: Noticed appears as a once-a-day card on Home the moment
+      // it's on — nothing to place or do (unlike the widget), and at N-0 no
+      // consumer renders behind it yet. An "eye" glyph reads as noticing/looking,
+      // distinct from the widget grid, the picker pen and the taxonomy shapes.
+      return { Icon: Eye };
     default:
       return { Icon: FlaskConical };
   }

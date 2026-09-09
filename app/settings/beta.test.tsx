@@ -112,4 +112,19 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(queryByText('Home screen widget')).toBeNull();
     expect(queryByText('Log screen redesign')).toBeNull();
   });
+
+  it('renders the Noticed card for an allowlisted account, self-gated otherwise (CUL-866)', () => {
+    // N-0 AC: app/settings/beta.tsx renders the Noticed row ONLY for an
+    // allowlisted account. Allowlisted for daily_look → the card renders (title +
+    // blurb); the betas this account isn't allowlisted for stay gated away. The
+    // zero-eligible case (dark seed reaches nobody → no Noticed card, empty state)
+    // is the B-729 test above.
+    setAllowlist({ daily_look: gatedToPm });
+    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+
+    expect(getByText('Noticed')).toBeTruthy();
+    expect(getByText(/once-a-day note of how they seemed/)).toBeTruthy();
+    expect(queryByText('Home screen widget')).toBeNull();
+    expect(queryByText('More event types')).toBeNull();
+  });
 });

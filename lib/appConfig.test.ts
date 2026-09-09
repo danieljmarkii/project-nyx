@@ -438,3 +438,69 @@ describe('event_types_v2 — event-taxonomy expansion eligibility (B-756 W1-PR-0
     expect(coerceAllowlistFlags({ ask_enabled: true }).event_types_v2).toBeUndefined();
   });
 });
+
+// ── daily_look — the Noticed (daily look) rollout flag (Home v2, N-0 / CUL-866) ──
+// N-0 is schema-only for consumption (migration 063 seeds it dark: {"enabled":
+// false, "allowlist": []}); nothing renders behind it until the Noticed card PR
+// (N-4a) gates on `eligible && optedIn`. The flag rides the SAME primitive as the
+// Ask + widget + log-picker + event-types keys. The contract pinned here is the
+// same two properties every later Noticed PR depends on: daily_look is EXTRACTED
+// off an app_config SELECT and resolves FAIL-CLOSED (off) for both ship-dark
+// cases — the seed unreached (undefined ⇒ fallback) and a signed-out caller
+// against the dark seed. These back the spec's byte-identical-off (flag off ⇒ no
+// Noticed surface renders) and seed-first (N-0 before any consumer). The extra
+// GA case pins R1 — Noticed's GA is EVERY account, not an allowlist forever.
+describe('daily_look — Noticed (daily look) eligibility (Home v2, N-0)', () => {
+  it('is part of the unset baseline (undefined until the row is fetched)', () => {
+    expect(ALLOWLIST_FLAGS_UNSET.daily_look).toBeUndefined();
+  });
+
+  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
+    const rows = [
+      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
+      { key: 'event_types_v2', value: { enabled: false, allowlist: ['et-uid'] } },
+      { key: 'daily_look', value: { enabled: false, allowlist: ['pm-uid'] } },
+    ];
+    const flags = extractAllowlistFlags(rows);
+    expect(flags.daily_look).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    // The new key does not disturb the other allowlist keys in the same SELECT.
+    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
+    expect(flags.event_types_v2).toEqual({ enabled: false, allowlist: ['et-uid'] });
+  });
+
+  it('resolves fail-closed (off) when unset — seed unreached / row absent', () => {
+    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).daily_look;
+    expect(unset).toBeUndefined();
+    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
+  });
+
+  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
+    const darkSeed = { enabled: false, allowlist: [] };
+    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
+    // …and off signed-out, never leaking to the fallback.
+    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
+  });
+
+  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
+    const gated = { enabled: false, allowlist: ['pm-uid'] };
+    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
+    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
+    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
+  });
+
+  it('GA (enabled:true) is on for every account — a rollout gate only (R1)', () => {
+    // Noticed's GA end state (spec §10 R1): flipping enabled:true turns it on for
+    // everyone, allowlist ignored — never an allowlist-gated feature forever.
+    expect(resolveAllowlistFlag({ enabled: true, allowlist: [] }, 'anyone', false)).toBe(true);
+    expect(resolveAllowlistFlag({ enabled: true }, null, false)).toBe(true);
+  });
+
+  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
+    const stored = { daily_look: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).daily_look).toEqual({
+      enabled: false,
+      allowlist: ['pm-uid'],
+    });
+    expect(coerceAllowlistFlags({ ask_enabled: true }).daily_look).toBeUndefined();
+  });
+});

@@ -1,0 +1,91 @@
+-- ============================================================
+-- daily_look — seed the Noticed (daily look) rollout flag
+-- (Home v2 — the redesign / Noticed, N-0 / CUL-866)
+-- See: docs/nyx-daily-look-requirements.md v1.1 §10 (the N-0 row) and the
+--      signal_design_v2 template (055) it follows — a dark allowlist flag,
+--      flag-off byte-identical, seed-first, a beta shelf before GA, retire on a
+--      PM GA call only.
+-- ============================================================
+-- Noticed (the daily look — a once-a-day "how did they seem?" on Home, and the
+-- receipts/pairing it earns on Patterns and the report) ships DARK behind one
+-- allowlist flag so every Noticed client PR (N-4a the card, N-5 the Patterns
+-- card, …) lands invisible and the surface can bake on a hand-picked cohort
+-- before it reaches anyone else. This migration seeds that single eligibility
+-- flag. It is the N-0 gate the track queues behind — seed-first: the seed + the
+-- client registration + the shelf row land BEFORE any consumer.
+--
+--   daily_look   Eligibility for the Noticed surfaces. Resolved client-side by
+--                resolveAllowlistFlag (lib/appConfig.ts) against the caller's
+--                uid, then AND-ed with the beta-shelf opt-in (the B-712 two-gate
+--                shape). Flag-off => Home / Patterns / the report are
+--                byte-identical to today; flag-on + opted-in => the Noticed card
+--                and its Patterns/report surfaces render (N-4a, N-5, …).
+--
+-- A ROLLOUT GATE ONLY (spec §10 N-0 / R1): GA is EVERY account — Noticed is not
+-- a trial-or-watch feature, and no eligibility predicate ever references one.
+-- This flag exists to bake the surface on a cohort and then retire on a PM GA
+-- call (flipping enabled:true, then a removal PR), never a permanent gate.
+--
+-- CLIENT-RENDER-ONLY (spec §10, `serverCost: false`): like signal_design_v2
+-- (055) / log_picker_v2 (056) / event_types_v2 (061), this flag gates only what
+-- the CLIENT draws. Noticed's own writes (the `check_in` value + the `looks`
+-- child, seeded by N-1) are account-agnostic and land for everyone, and a look
+-- never enters the engine, a count, or any coverage line (spec §5). So there is
+-- deliberately NO server-side registration of this key
+-- (supabase/functions/_shared/flags.ts is a generic resolver and needs no
+-- per-key entry), and the B-712 "server-cost betas must gate server-side" rule
+-- is checked and does not bite here.
+--
+-- THE ALLOWLIST SHAPE (spec §10, B-712): reuses the experimental-flag primitive
+-- seeded for Ask (037), the widget (054), the Signal uplift (055), the log
+-- picker (056) and the taxonomy (061) verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- Resolution (already implemented, client-side): enabled=true => on for everyone
+-- (the GA end state); else on iff the caller's uid is in allowlist;
+-- malformed/absent => fail CLOSED (off). No new mechanism, no new table, no new
+-- column, no new policy — app_config already exists (030) with its
+-- read-only-to-authenticated RLS, which this row inherits unchanged.
+--
+-- SHIP-DARK (seed-first, default nobody): {"enabled": false, "allowlist": []}
+-- means Noticed is eligible for no one. Creating this row changes nothing an
+-- owner can see. Cohort enablement (the PM's uid) is a later, recorded config
+-- UPDATE (an app_config write, not a deploy side effect), deliberately NOT baked
+-- into this seed — the 037/054/055/056/061 lesson: a re-applied seed must never
+-- reset a live allowlist. The App Review demo account (CUL-188) is deliberately
+-- NOT allowlisted (the widget precedent / DB-1): allowlist values are readable by
+-- every authenticated client (B-744), so allowlisting the demo would leak its
+-- UUID and show the reviewer a surface GA users can't reach. Retirement is a
+-- removal PR on an explicit PM GA call, never silent.
+--
+-- Scope: this PR seeds one app_config row (the schema half), isolated per the
+-- CLAUDE.md migration-isolation rule. Riding the SAME PR (the 055/056/061
+-- composition): the client registration in lib/appConfig.ts (ALLOWLIST_FLAG_KEYS
+-- + ALLOWLIST_FLAGS_UNSET) and the BETA_REGISTRY row + shelf card
+-- (lib/betaFeatures.ts, app/settings/beta.tsx). Safe for the same reasons: none
+-- of it is schema, the seed is inert without the registration (the flag can't
+-- even be read — extractAllowlistFlags picks only known keys, and
+-- useAllowlistFlag is typed to the registered union), and the shelf card
+-- self-gates on an eligibility that is false for every account under the dark
+-- seed. Nothing CONSUMES the flag yet (N-0).
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'daily_look';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'daily_look';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054/055/056/061 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('daily_look', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
