@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-09 (after #814 merged the v1.0 spec)
 
-Mode: **DISCOVERY** (a readiness review; no app code, no schema, no Linear decomposition). The PM-facing page: https://claude.ai/code/artifact/e30f78af-1de3-4f5c-a44c-5162a2e188b4 (the readiness board; this record is the archive). Branch `claude/daily-look-requirements-review-u5ra4x`. Project **Home v2 — the redesign**. Issue **CUL-862** (filed and claimed this session; continues CUL-846, linked there as a comment). Filed: **CUL-863** (the intake door's scope), **CUL-864** (DL-4's two pre-start rulings), **CUL-865** (the two Tier-2 edits) — all `Waiting on PM`. Commented: CUL-845 (GA sequencing), CUL-846 (the pointer). Groomed: CUL-838's stale `Waiting on PM` label removed (its remaining step, L-1…L-7, was ruled in round 2).
+Shipped via **#816** (draft). Mode: **DISCOVERY** (a readiness review; no app code, no schema, no Linear decomposition). The PM-facing page: https://claude.ai/code/artifact/e30f78af-1de3-4f5c-a44c-5162a2e188b4 (the readiness board; this record is the archive). Branch `claude/daily-look-requirements-review-u5ra4x`. Project **Home v2 — the redesign**. Issue **CUL-862** (filed and claimed this session; continues CUL-846, linked there as a comment). Filed: **CUL-863** (the intake door's scope), **CUL-864** (DL-4's two pre-start rulings), **CUL-865** (the two Tier-2 edits) — all `Waiting on PM`. Commented: CUL-845 (GA sequencing), CUL-846 (the pointer). Groomed: CUL-838's stale `Waiting on PM` label removed (its remaining step, L-1…L-7, was ruled in round 2).
 
 ## What this was
 
