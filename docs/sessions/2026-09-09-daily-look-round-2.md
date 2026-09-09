@@ -335,3 +335,7 @@ Second collision: L-11's stated reason is that it *"pairs with Saw it / Found it
 **INSUFFICIENT on one thing:** I could not fairly test **§3.1a's motion and the unfolded card at device height** — the spec says so itself (§3.1a build note) and it is not a statistical question. That needs the isolated `pm-feature-review` on a device render, not this pass.
 
 *(Disposition: G1 folded as the narrowing of the pip set plus the engine-side rule for the pip's return, §3.6 i / §6.13 / T-13; G2 and G4 as the compound write's mechanics in §3.6 i, §5.2 and §5.5; G3 carried as Q-15 for Trust & Safety with both readings in §9; G5 as T-11's in-flight rule and the pet-naming row; G6 as T-13 and the reworded T-8 / L-8; G7 as the record-local arm in §2 item 12; G8 as the receipt's floors in §3.3; G9 as the "answered / marked" copy in §7 and §8; G10 as a §5.5 row; G11 as the guard split in T-10; G12 as the withdrawal of "Noticed" in L-11. The regen-per-pip note stands as a cost note on the compound insert — one regen per save.)*
+
+---
+
+**Continued the same session:** the PM reacted to round 2 in seventeen lines; round 3 (the any-time day model, the Done arrival redesigned, the symptom link struck, the coverage line ruled in and attacked, *Noticed*, the report graph, spec v0.3, CUL-844) is recorded in `docs/sessions/2026-09-09-daily-look-round-3.md`, on the same PR.
