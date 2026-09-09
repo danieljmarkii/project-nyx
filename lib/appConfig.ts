@@ -65,6 +65,16 @@ export type AppConfigKey = keyof AppConfigValues;
 // membership work ships separately and is account-agnostic, so there is no
 // server-side registration of this key either. Nothing consumes it yet (PR 0).
 //
+// `daily_look` is the Noticed (daily look) rollout flag (Home v2 — the redesign
+// / Noticed, migration 063 — N-0) — same shape, same fail-closed resolution. It
+// gates the Noticed CLIENT surfaces (the Home card N-4a, the Patterns pairing
+// N-5, the report line) AND-ed with the beta-shelf opt-in. It is a ROLLOUT gate
+// only — GA is every account (spec §10 R1); no eligibility predicate references
+// a trial or a watch. Client-render-only: Noticed's writes (the `check_in`
+// value + the `looks` child, N-1) are account-agnostic and land for everyone,
+// and a look never enters the engine or any coverage line, so there is no
+// server-side registration of this key. Nothing consumes it yet (N-0).
+//
 // Two keys that once lived here have GRADUATED to GA and been retired client-side
 // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
 // uplift, migration 055) and `signals_v2` (the Signals-v2 lanes, migration 057). The
@@ -78,6 +88,7 @@ export const ALLOWLIST_FLAG_KEYS = [
   'widget_enabled',
   'log_picker_v2',
   'event_types_v2',
+  'daily_look',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -95,6 +106,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   widget_enabled: undefined,
   log_picker_v2: undefined,
   event_types_v2: undefined,
+  daily_look: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

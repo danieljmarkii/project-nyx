@@ -128,6 +128,8 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
         log_picker_v2: { enabled: false, allowlist: ['bbbbbbbb-cccc-dddd-eeee-ffffffffffff'] },
         // event_types_v2 (B-756 W1-PR-0) — same allowlist shape, account UUIDs wiped too.
         event_types_v2: { enabled: false, allowlist: ['12121212-3434-5656-7878-909090909090'] },
+        // daily_look (Noticed, N-0 / CUL-866) — same allowlist shape, account UUIDs wiped too.
+        daily_look: { enabled: false, allowlist: ['13131313-4545-6767-8989-010101010101'] },
       },
     });
     expect(await loadCachedAppConfig()).not.toBeNull();

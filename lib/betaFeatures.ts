@@ -121,6 +121,32 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // checked and doesn't bite.
     serverCost: false,
   },
+  {
+    // Noticed — the daily look (Home v2 — the redesign / CUL-866). Joins the
+    // shelf seed-first (spec §10 N-0): N-0 registers the flag + the shelf card
+    // dark; the later Noticed PRs (N-4a the Home card, N-5 the Patterns card)
+    // render behind `live = eligible && optedIn`, so being in the cohort turns
+    // nothing on by itself. A rollout gate only — GA is every account (R1).
+    key: 'daily_look',
+    title: 'Noticed',
+    // nyx-voice: concrete about what the owner gets — the ordinary days in the
+    // record too — warm, no exclamation, and it doesn't oversell that it's
+    // "new". It deliberately promises no insight: in v1 a look writes nothing
+    // but itself (never enters the engine or a coverage line, spec §5), so the
+    // blurb names the record it builds, not a pattern it finds.
+    blurb:
+      'A once-a-day note of how they seemed, right from Home — so the quiet days are in the record too, not only the ones something happened.',
+    owner: 'Noticed / Home v2 (CUL-866) / Eng',
+    addedDate: '2026-09-09',
+    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a
+    // timer that disables Noticed under the cohort.
+    reviewBy: '2026-12-09',
+    // Client-render-only (spec §10): Noticed's writes (the check_in/looks schema)
+    // are account-agnostic and land for everyone; a look never enters the engine
+    // or a coverage line, so no server resource is spent per opt-in and no server
+    // gate is owed.
+    serverCost: false,
+  },
   // Two Signal betas graduated to GA and were retired from the shelf (CUL-546 Phase 1 /
   // CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design uplift, B-721) and
   // `signals_v2` (the "deeper signals" lanes, B-755). Removing the row removes the shelf
