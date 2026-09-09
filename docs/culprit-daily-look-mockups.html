@@ -130,9 +130,11 @@
   /* Geometry never changes on selection (the round-3 product read): the check is drawn INSIDE the pill's own
      padding (padding-left 14 → 4 + a 7px glyph + 3px), the weight stays 500, and the settle ring is transient —
      it draws out to 3px and settles to nothing, so no halo ever sits in the 6px gap between two chosen chips (C-5). */
-  .chip.on { color: var(--d-teal-ink); background: var(--d-teal-wash); border-color: var(--d-teal); padding-left: 4px; animation: chipIn 260ms cubic-bezier(.2,.8,.2,1.15); }
-  .chip.on::before { content: "✓"; font-size: 8.5px; width: 7px; margin-right: 3px; font-weight: 700; line-height: 1; animation: checkIn 180ms cubic-bezier(.2,.8,.2,1.2) both; }
-  @keyframes chipIn { 0% { transform: scale(.985); box-shadow: 0 0 0 0 rgba(0,194,168,0.0); } 45% { transform: scale(1.015); box-shadow: 0 0 0 3px rgba(0,194,168,0.18); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0,194,168,0); } }
+  /* Round 4 — "ramp it up by about 20 percent": a deeper wash, a heavier hairline (drawn as an inset ring so the
+     box never grows), a larger check, a 4 pt settle ring with a touch more overshoot. Geometry still never changes. */
+  .chip.on { color: var(--d-teal-ink); background: #CDF5EC; border-color: var(--d-teal); box-shadow: inset 0 0 0 0.6px var(--d-teal); padding-left: 4px; animation: chipIn 300ms cubic-bezier(.2,.8,.2,1.18); }
+  .chip.on::before { content: "✓"; font-size: 10px; width: 8px; margin-right: 2px; font-weight: 800; line-height: 1; animation: checkIn 200ms cubic-bezier(.2,.8,.2,1.25) both; }
+  @keyframes chipIn { 0% { transform: scale(.98); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 0 rgba(0,194,168,0.0); } 45% { transform: scale(1.03); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 4px rgba(0,194,168,0.22); } 100% { transform: scale(1); box-shadow: inset 0 0 0 0.6px var(--d-teal), 0 0 0 0 rgba(0,194,168,0); } }
   @keyframes checkIn { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
   .chip.door, .chip.ghost { color: var(--d-ink); border-color: var(--d-border); background: var(--d-surface); font-weight: 500; }
   .chip.door b, .chip.ghost b { color: var(--d-teal-ink); font-weight: 600; margin-left: 3px; }
@@ -146,6 +148,17 @@
   .fam .fl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--d-ink-3); margin: 0 0 5px; }
   .donebar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--d-border); font-size: 11px; color: var(--d-ink-3); }
   .donebar span:first-child { min-width: 0; }
+  /* Round 4: while the grid is open the Done bar pins to the bottom of the screen (here, of the phone's scrollport),
+     so the way out never needs a scroll; the way back (‹ Show fewer words) sits where the door was tapped, at the top. */
+  .proto .appbody { max-height: 640px; overflow-y: auto; scrollbar-width: none; }
+  .proto .donebar.pinned { position: sticky; bottom: -1px; background: var(--d-surface); padding-bottom: 8px; margin-bottom: -2px; z-index: 2; }
+  /* the note after a look (round 4): the link on the newest entry, the one-line field in place, the note in quotes */
+  .notelink { font-size: 11.5px; color: var(--d-ink-3); padding: 0 0 4px 26px; cursor: pointer; }
+  .notelink b { color: var(--d-teal-ink); font-weight: 600; }
+  .noteinput { display: flex; gap: 8px; align-items: center; margin: 2px 0 6px 26px; }
+  .noteinput input { flex: 1; min-width: 0; font: inherit; font-size: 12.5px; color: var(--d-ink); background: var(--d-surface); border: 1px solid var(--d-teal); border-radius: 10px; padding: 7px 10px; outline: none; }
+  .noteinput b { color: var(--d-teal-ink); font-weight: 600; font-size: 12px; cursor: pointer; }
+  .enote { font-size: 12px; color: var(--d-ink-2); font-style: italic; padding: 0 0 4px 26px; line-height: 1.4; }
   .donebtn { background: var(--d-ink); color: var(--d-surface); border-radius: 999px; padding: 7px 16px; font-size: 12.5px; font-weight: 600; flex-shrink: 0; }
   .donebtn.dim { background: var(--d-empty); color: var(--d-ink-3); }
   .hint { font-size: 10.5px; color: var(--d-ink-3); margin-top: 8px; }
@@ -287,9 +300,9 @@
 <div class="wrap">
   <header class="mast">
     <p class="eyebrow">
-      <span class="roundtag">Round 3 · the current proposal</span>
+      <span class="roundtag">Round 4 · build-ready</span>
       <span>Home v2 · the redesign · 2026-09-09</span>
-      <span>CUL-844 · applies the PM's reactions to CUL-840 round 2</span>
+      <span>CUL-846 · applies the PM's reactions to CUL-844 round 3</span>
     </p>
     <h1>Noticed — how a pet seems, captured in a breath and read back honestly</h1>
     <p class="standfirst">
@@ -299,7 +312,7 @@
       Where a design decision is still open the alternative sits <strong>inside a dashed box</strong>. Everything outside a dashed box is what the team proposes to build.
     </p>
     <div class="revnew">
-      <b>Round 3 supersedes round 2 on this URL.</b> Retired this round and not repeated here (in git at <code>117eb59</code>): the pip and the compound write, the leaf proposal in every form, the one-look-per-time-slot model and every "this morning", the ink-fill selected state, the split name. The spec is <code>docs/nyx-daily-look-requirements.md</code> v0.3.
+      <b>Round 4 supersedes round 3 on this URL, and it is the build-ready page.</b> Your round-3 reactions ruled the last briefs (L-12, L-13, L-14 as recommended; L-15 and L-16 deferred to the team, so the recommendations stand) and added three things, drawn here: the selected state about a fifth more obvious (§02), a way to fold the word list without scrolling to its foot (§02), and a note after a look (§02, beat 4b). The intake door's "which meal" is answered in §01. The spec is v1.0. Retired this round and not repeated here (in git at <code>117eb59</code>): the pip and the compound write, the leaf proposal in every form, the one-look-per-time-slot model and every "this morning", the ink-fill selected state, the split name. The spec is <code>docs/nyx-daily-look-requirements.md</code> v1.0, build-ready.
       Read: <a href="#changed">§00</a> what your reactions changed ·
       <a href="#card">§01</a> the card at rest ·
       <a href="#interaction">§02</a> the interaction — tap the prototype ·
@@ -320,7 +333,24 @@
   <!-- ================================================== 00 -->
   <section id="changed">
     <div class="sec-head"><span class="sec-num">00</span><h2>What your reactions changed — the ledger</h2></div>
-    <div class="col"><p>Seventeen reactions, read one by one. Each row says what it ruled, what moved on this page, and where the alternative went.</p></div>
+    <div class="col"><p><b>Round 3's reactions (applied in round 4):</b> nine lines, read one by one; then round 2's seventeen, kept as the record beneath.</p></div>
+    <div class="tablewrap">
+      <table class="cmp">
+        <thead><tr><th>Your reaction</th><th>How the team read it</th><th>What changed on this page</th></tr></thead>
+        <tbody>
+          <tr><td>"Didn't eat · entry to meal path. Not 100 percent sure how we'll know which meal"</td><td><span class="w">Answered, not changed.</span> The door opens the meal path at the intake step with the pet's <em>most recent food</em> filled in — the same "recent" shelf the picker and the FAB already read (this pet's last meal of each food, newest first) — and the food is one tap to change. The owner names how much, never the app.</td><td>§01 (the intro and the prototype's sheet), spec §4.5.</td></tr>
+          <tr><td>"The design delight of selecting a behavior … ramp it up by like 20 percent"</td><td><span class="w">Ruled: L-12 as recommended, louder.</span> A deeper wash, a heavier hairline, a larger check, a 4 pt ring that settles, a touch more overshoot. Geometry still never changes.</td><td>§02, every selected chip on this page.</td></tr>
+          <tr><td>"Difficult to expand a long list … scroll to the bottom to collapse all the chips. Maybe a collapse button towards the top"</td><td><span class="w">You were using it right; the control was at the foot by design, and that design was wrong.</span> The door that opens the grid now stays where it was tapped and reads <em>‹ Show fewer words</em> at the top; the Done bar pins to the bottom of the screen while the grid is open, so neither control ever needs a scroll.</td><td>§02 beat 2, the prototype, the storyboard.</td></tr>
+          <tr><td>"The 'notes' style experience … I'd love to support something like that here"</td><td><span class="w">Drawn.</span> After Done the new entry carries <em>Add a note ›</em>; it opens a one-line field in place; the note lands under the words in quotes and follows the look to History and the report's appendix. Optional, after the save, never a field on the way in (Principle 1). The record already had the column; the surface did not.</td><td>§02 beat 4b, the prototype, spec §3.1a / §5.2 / §9.</td></tr>
+          <tr><td>"I think I like 'noticed' the best"</td><td><span class="w">Ruled: L-14. Noticed.</span> CUL-839 closed.</td><td>§08.</td></tr>
+          <tr><td>"L12 — let's go w/ the recommendation"</td><td><span class="w">Ruled.</span> The wash and the check; the outline that lifts is retired.</td><td>§02; the option box removed.</td></tr>
+          <tr><td>"L13 — let's go w/ the recommendation"</td><td><span class="w">Ruled.</span> Bars for the symptom-class words, the absence as a sentence, the dated strip.</td><td>§06; the option box removed.</td></tr>
+          <tr><td>"L15 / L16 — I'll defer to the product team"</td><td><span class="w">The recommendations stand as ruled.</span> The coverage line's three forms; the quiet entry.</td><td>§03, §04; the briefs closed.</td></tr>
+          <tr><td>"We're at the point where we can start to write up the final requirements … if not, let me know"</td><td><span class="w">The team agrees, with one gate it owed itself:</span> the fourth adversarial pass on the rules round 3 added (T-16 – T-20, the graph, and now the note and the pinned Done). It ran on this page and the v1.0 draft; the result is in §10 and the spec's §12.</td><td>The spec at v1.0; no Linear decomposition, as asked.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col" style="margin-top:22px"><p><b>Round 2's reactions (applied in round 3), the record:</b> seventeen, read one by one.</p></div>
     <div class="tablewrap">
       <table class="cmp">
         <thead><tr><th>Your reaction</th><th>How the team read it</th><th>What changed on this page</th></tr></thead>
@@ -351,7 +381,7 @@
   <section id="card">
     <div class="sec-head"><span class="sec-num">01</span><h2>The card at rest <span class="tag cur">current</span></h2></div>
     <div class="col">
-      <p>One question on Home, answered with the owner's own words, at any hour. The first row is the absence chip, the intake doorway and <em>Not himself</em> at equal cost — a safety rule. Then seven head words per species, chosen on clinical yield and signed by Dr. Chen, and one door to the rest. Nothing is pre-selected. The card reads the same on a quiet day and under a safety card.</p>
+      <p>One question on Home, answered with the owner's own words, at any hour. The first row is the absence chip, the intake doorway and <em>Not himself</em> at equal cost — a safety rule. Then seven head words per species, chosen on clinical yield and signed by Dr. Chen, and one door to the rest. Nothing is pre-selected. The card reads the same on a quiet day and under a safety card. <b>Which meal the intake door means:</b> it opens the meal path at the intake step with the pet's most recent food filled in — the "recent" shelf the picker and the FAB already read, this pet's last meal of each food, newest first — and the food is one tap to change; the owner names how much (<em>refused · some · most · all of it</em>), because that is what the intake detectors read, and the app never pre-selects it.</p>
     </div>
     <div class="frames">
       <div class="frame-slot">
@@ -441,7 +471,7 @@
     <div class="sec-head"><span class="sec-num">02</span><h2>The interaction — select, unfold, and the way back; then Done, and the next look <span class="tag cur">current</span></h2></div>
     <div class="col">
       <p>The unfold and the travel-up are as round 2 drew them and you passed. Two things are new. <strong>The selected state</strong> is the app's own filter-chip treatment, elevated: the chip takes the teal wash and hairline and the accent ink, a check draws in at its leading edge, and a soft ring settles around it — a chip that has been chosen looks chosen from across the room, and it is never a black block. <strong>The Done beat</strong> no longer closes the question: the saved look arrives as an entry in a <em>today</em> list inside the card — the ring draws itself, the words land in the serif, the time stamps in, Undo holds — and the question folds to one line beneath it, so the next look, at any hour, is one tap away.</p>
-      <p><strong>Tap the phone.</strong> Select words, open <em>Something else</em>, pick one from a family, fold back, tap Done, tap Undo while it holds, then open the question again and log a second look. Reduced-motion users get a crossfade with the same end states.</p>
+      <p><strong>Tap the phone.</strong> Select words, open <em>Something else</em>, pick one from a family, fold back from the top, tap Done, add a note, tap Undo while it holds, then open the question again and log a second look. Reduced-motion users get a crossfade with the same end states.</p>
     </div>
 
     <div class="proto-wrap">
@@ -460,10 +490,11 @@
         <table class="motion">
           <thead><tr><th>Beat</th><th>What moves</th><th>Time</th></tr></thead>
           <tbody>
-            <tr><td>Select</td><td>The chip takes the wash and the teal hairline in place; the check draws in at the leading edge; a 3 pt ring settles with one felt overshoot. Nothing else on the card moves. One selection tick.</td><td class="ms">180 / 240 ms</td></tr>
-            <tr><td>Unfold</td><td>The card grows with one felt settle; the families land a beat after the box; each head word keeps its word and gains its gloss; the door travels to the foot and reads "Show fewer words".</td><td class="ms">370 + 40 / 300 ms</td></tr>
+            <tr><td>Select</td><td>The chip takes the deeper wash and the heavier hairline in place; the check draws in at the leading edge; a 4 pt ring settles with one felt overshoot. Nothing else on the card moves. One selection tick.</td><td class="ms">200 / 300 ms</td></tr>
+            <tr><td>Unfold</td><td>The card grows with one felt settle; the families land a beat after the box; each head word keeps its word and gains its gloss; the door stays where it was tapped and reads "‹ Show fewer words"; the Done bar pins to the bottom of the screen until the grid folds.</td><td class="ms">370 + 40 / 300 ms</td></tr>
             <tr><td>Fold back</td><td>The unchosen words leave first; the box eases shut; a word chosen in the grid travels up and lands after the head words, before the door.</td><td class="ms">180 → 300 ms</td></tr>
-            <tr><td>Done</td><td>The chips leave; the entry arrives at the top of <em>today</em>: the ring draws itself, the words land in the serif, the time stamps in; the question folds to one line beneath; the look lands on the Today lane. <em>Undo</em> holds on the entry for five seconds, then settles to its chevron.</td><td class="ms">320 + 300 ms · 5 s</td></tr>
+            <tr><td>Done</td><td>The chips leave; the entry arrives at the top of <em>today</em>: the ring draws itself, the words land in the serif, the time stamps in; <em>Add a note ›</em> sits under the words; the question folds to one line beneath; the look lands on the Today lane. <em>Undo</em> holds on the entry for five seconds, fades, then settles to its chevron.</td><td class="ms">320 + 300 ms · 5 s</td></tr>
+            <tr><td>A note</td><td>The link opens a one-line field in place; return saves; the note lands under the words in quotes, in the secondary ink. Optional, after the save; the field never appears on the way in.</td><td class="ms">200 ms</td></tr>
             <tr><td>Again</td><td>The folded question opens the chips in place, cleared; a second look becomes a second entry above the first, newest first, each with its own hour.</td><td class="ms">370 ms</td></tr>
             <tr><td>Haptics</td><td><b>One rule:</b> every chip tap plays the selection tick; the save is silent. A look writes nothing else, so nothing else can buzz.</td><td class="ms">—</td></tr>
           </tbody>
@@ -494,18 +525,18 @@
           <div class="acard">
             <div class="seclabel"><span>Noticed</span><span class="door">Patterns ›</span></div>
             <p class="q sm">How does Mochi seem right now, compared with his usual?</p>
-            <div class="chips"><span class="chip">Nothing unusual</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>▾</b></span></div>
+            <div class="chips"><span class="chip">Nothing unusual</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>▾</b></span><span class="chip door"><b class="lead">‹</b>Show fewer words</span></div>
             <div class="row emerg"><span>Signs that mean call today</span><span class="door">›</span></div>
             <div class="fam"><div class="fl">Energy</div><div class="chips"><span class="chip on">Off<small class="gloss">, not getting up for the usual things</small></span><span class="chip">Sleeping more</span><span class="chip">Restless<small class="gloss">, pacing</small></span><span class="chip">Can't settle at night</span><span class="chip on">Didn't want the walk</span><span class="chip">Lively<small class="gloss">, bouncy</small></span></div></div>
             <div class="fam"><div class="fl">With you</div><div class="chips"><span class="chip">Not greeting<small class="gloss"> at the door</small></span><span class="chip">Not coming when called</span><span class="chip">Clingy<small class="gloss">, following you</small></span><span class="chip">Keeping away<small class="gloss">, hiding</small></span><span class="chip">Tail down</span></div></div>
             <div class="fam"><div class="fl">Mouth</div><div class="chips"><span class="chip">Lip-licking<small class="gloss">, swallowing a lot</small></span><span class="chip">Drooling</span><span class="chip on">Eating grass</span></div></div>
             <div class="fam"><div class="fl">…</div><div class="hint" style="margin-top:0">Sounds · Skin &amp; coat · Moving · Toilet &amp; drinking · What he did, below the fold of this frame</div></div>
-            <div class="chips" style="margin-top:10px"><span class="chip door"><b class="lead">‹</b>Show fewer words</span></div>
             <div class="donebar"><span>Mochi · off, didn't want the walk, eating grass</span><span class="donebtn">Done</span></div>
+            <div class="annot ok" style="margin:6px 0 0">THE WAY BACK IS AT THE TOP, WHERE THE DOOR WAS TAPPED; THE DONE BAR PINS TO THE BOTTOM OF THE SCREEN WHILE THE GRID IS OPEN (drawn pinned in the prototype). Neither needs a scroll.</div>
           </div>
           <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <p class="frame-cap"><b>Beat 2 — unfolded, a third word from a family.</b> As you passed it in round 2: families in the vet's order, each head word keeping its word and gaining its gloss, the emergency door under the first row, the way back at the foot. Still INSUFFICIENT on one thing this page cannot measure: the Done bar's reach on a device-height screen (§10).</p>
+        <p class="frame-cap"><b>Beat 2 — unfolded, a third word from a family.</b> As you passed it in round 2: families in the vet's order, each head word keeping its word and gaining its gloss, the emergency door under the first row. <strong>Round 4:</strong> the way back sits where the door was tapped, at the top of the grid, and the Done bar pins to the bottom of the screen while the grid is open — you were using the prototype correctly; the foot control was round 2's design and it was wrong for a list this long. Still INSUFFICIENT on one thing this page cannot measure: the unfolded grid's height against a device screen (§10).</p>
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
@@ -544,6 +575,28 @@
       </div>
       <div class="frame-slot">
         <div class="phone"><div class="notch"></div><div class="appbody">
+          <div class="acard">
+            <div class="seclabel"><span>Noticed · today</span><span class="door">Patterns ›</span></div>
+            <div class="today"><div class="entry"><svg class="ring" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6"/></svg><div class="w">Off, didn't want the walk, eating grass</div><div class="tm">7:12 <b>Undo</b></div></div></div>
+            <div class="notelink">Add a note <b>›</b></div>
+            <div class="nug">First day Mochi has seemed <b>off</b> — in the <b>118</b> days you'd answered before it, since May 3.</div>
+            <div class="askrow"><span>How does Mochi seem now?</span><b>▾</b></div>
+            <div class="cov"><span>Answered <span class="n">24</span> of the last <span class="n">28</span> days</span></div>
+          </div>
+          <div class="acard" style="margin-top:2px">
+            <div class="seclabel"><span>Noticed · today</span><span class="door">Patterns ›</span></div>
+            <div class="today"><div class="entry"><svg class="ring" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6"/></svg><div class="w">Off, didn't want the walk, eating grass</div><div class="tm">7:12<span class="chev">›</span></div></div></div>
+            <div class="enote">“wouldn't come up on the bed, just watched me from the floor”</div>
+            <div class="nug">First day Mochi has seemed <b>off</b> — in the <b>118</b> days you'd answered before it, since May 3.</div>
+            <div class="askrow"><span>How does Mochi seem now?</span><b>▾</b></div>
+            <div class="cov"><span>Answered <span class="n">24</span> of the last <span class="n">28</span> days</span></div>
+          </div>
+          <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <p class="frame-cap"><b>Beat 4b — a note, after the save.</b> How We Feel's shape, "structured first, say more after": the words are the record, the note is the context. <em>Add a note ›</em> sits under the newest entry's words until a note exists or the next look arrives (older entries take a note from the record screen); it opens a one-line field in place, return saves, and the note lands in quotes in the secondary ink. It is optional and it comes after Done, never before it — nothing on the way in asks for typing (Principle 1). The note follows the look to History and to the report's appendix, quoted and never counted; it never reaches the engine, Ask, or a log line (the record already had the column, §5.2; the surface did not).<span class="lens"><b>Trust &amp; Safety:</b> free text about a household stays inside the account — quoted on the owner's own surfaces and the vet's appendix, never summarised, never sent to a model.</span></p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone"><div class="notch"></div><div class="appbody">
           <div class="hdr"><div class="who"><span class="av"></span>Mochi ▾</div><span class="pill">● Ask</span></div>
           <div class="acard"><div class="seclabel"><span>Signals</span><span class="door">›</span></div><div class="quiet">No established patterns yet. That isn't an all-clear.</div></div>
           <div class="acard">
@@ -564,24 +617,7 @@
       </div>
     </div>
 
-    <div class="optbox">
-      <div class="col"><p><strong>L-12, the other selected state: an outline that lifts.</strong> White surface, a heavier ink hairline, a soft shadow, a teal dot at the leading edge. Quieter than the wash and unmistakably "raised". The team recommends the wash: it is the treatment the app's filter chips already ship, so a chosen chip means the same thing on every screen, and the check is a mark a reader can name. Drawn so you can choose from frames.</p></div>
-      <div class="frames">
-        <div class="frame-slot">
-          <div class="phone"><div class="notch"></div><div class="appbody">
-            <div class="acard">
-              <div class="seclabel"><span>Noticed</span><span class="door">Patterns ›</span></div>
-              <p class="q sm">How does Mochi seem right now, compared with his usual?</p>
-              <div class="chips"><span class="chip">Nothing unusual</span><span class="chip ghost">Didn't eat<b>›</b></span><span class="chip ghost">Not himself<b>▾</b></span></div>
-              <div class="chips"><span class="chip alt-on">Off</span><span class="chip">Sleeping more</span><span class="chip alt-on">Didn't want the walk</span><span class="chip">Restless</span><span class="chip">Not greeting</span><span class="chip">Lip-licking</span><span class="chip">Lively</span><span class="chip door">Something else<b>›</b></span></div>
-              <div class="donebar"><span>Mochi · off, didn't want the walk</span><span class="donebtn">Done</span></div>
-            </div>
-            <div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Pet</span></div>
-          </div></div>
-          <p class="frame-cap"><b>The outline that lifts.</b> Same two words chosen. Reads well in greyscale (the weight and the shadow carry it); the dot is the only colour. Its cost: it is a third chip treatment in an app that already has two.</p>
-        </div>
-      </div>
-    </div>
+    <div class="col"><p><span class="tag cur">ruled</span> L-12 ruled as recommended in round 4; the outline that lifted is retired (in git at <code>5d420dc</code>).</p></div>
   </section>
 
   <!-- ================================================== 03 -->
@@ -853,9 +889,7 @@
         <p class="frame-cap"><b>The report's graph <span class="tag cur">current</span>.</b> Bars for the symptom-class words only: the count of days a word was recorded, the denominator as the track, the number at the end in tabular figures, and the word's first date under its label so "6 of 42" can never be read as evenly spread; the absence is a sentence beneath, never a bar (floor 3: coverage, never a good day; the first draft drew it as the longest bar on the page). The strip: one cell per local day for its own four weeks, dated in its title because it is a different span from the bars'; three marks and a fourth for a day not answered, so a vomit's triangle never floats over a void that reads as "nothing seen"; a mixed day draws ●. One hue, thin marks, direct labels, a legend because the glyphs share a row. Below fourteen answered days: the line and the strip, no bars. Verified by the cold read once it renders; rides the held generate-report redeploy (CUL-19). Dr. Chen: the strip is the sentence I currently extract with four questions, drawn: "off on the day of and the day after the Sep 3 vomit, and again before the Sep 8 one".</p>
       </div>
     </div>
-    <div class="optbox">
-      <div class="col"><p><strong>L-13, the graph's other form: the bars alone.</strong> Half the ink, no strip. The team recommends both: the bars answer "how often", the strip answers "when, and beside what", and the second is the one a vet cannot get from the line. Drawn as the option in words: the frame above minus its second figure.</p></div>
-    </div>
+    <div class="col"><p><span class="tag cur">ruled</span> L-13 ruled as recommended in round 4: bars for the symptom-class words, the absence as the sentence beneath, the dated strip. The bars-alone form is retired.</p></div>
   </section>
 
   <!-- ================================================== 07 -->
@@ -865,7 +899,7 @@
       <div><b>In scope for v1 (this page).</b> The card on Home, any time, any number of looks a day; the seven head words per species and the unfold; the selected state; the Done arrival and the today list (capped at two entries); two receipts on Home and the pairing on Patterns; the coverage footer in its three forms; the withheld state on a positive intake fact; two cats through the header; History and the day spine; Patterns v1; the report line and its graph.</div>
       <div><b>Retired this round (not on this page).</b> The pip and the compound write; the leaf proposal in every form ("off → low energy"); the provenance value and the compound Undo; the one-look-per-time-slot model and every "this morning"; the ink-fill selected state; the split name. In git at <code>117eb59</code> if ever wanted back.</div>
       <div><b>Deferred, with a home.</b> The FAB tile (CUL-841). The evening notification (CUL-842). The AI-phrased read on Patterns (CUL-843, gated on the consent boundary). Whether a look word should ever feed the symptom record again is its own issue, CUL-845, not this track (§09).</div>
-      <div><b>Still open on this page.</b> L-12 the selected state · L-13 the graph's form · L-14 the name's alternates · Q-12 the two-cat mark · Q-13 the receipt's coverage floor.</div>
+      <div><b>Still open on this page.</b> Nothing that gates a build. Q-12 (the two-cat mark: the team's provisional call is a mark of the act and its hour on the switcher) and Q-13 (the receipt's coverage floor, provisional at fourteen answered days) are carried as team calls in the spec, said as provisional, and the device pass may move them.</div>
     </div>
   </section>
 
@@ -898,8 +932,9 @@
 
   <!-- ================================================== 09 -->
   <section id="briefs">
-    <div class="sec-head"><span class="sec-num">09</span><h2>The briefs — three design decisions, two questions, one residual</h2></div>
-    <div class="col"><p>Ruled by your reactions and applied on this page, no brief needed: L-5 the record shape · L-6 the observed absence · L-7 the report line plus a graph · L-8 head words first · L-9 no link to the symptom record · L-10 the coverage line, by day · L-11 Noticed · a look at any time, any number a day.</p></div>
+    <div class="sec-head"><span class="sec-num">09</span><h2>The briefs — all ruled in round 4; two provisional team calls</h2></div>
+    <div class="col"><p><b>Round 4:</b> L-12, L-13 and L-14 ruled as recommended; L-15 and L-16 deferred to the team, so the recommendations stand as ruled (the coverage line's three forms; the quiet entry). The briefs below are kept as the record of what was decided and why. Two provisional team calls, said as such in the spec: <b>Q-12</b> the two-cat mark on the header's switcher is a mark of the act and its hour (<em>answered 7:04</em>), never a tick; <b>Q-13</b> the receipt's coverage floor stays at fourteen answered days until the device pass says otherwise.</p>
+      <p>Ruled by your round-2 reactions and applied in round 3, no brief needed: L-5 the record shape · L-6 the observed absence · L-7 the report line plus a graph · L-8 head words first · L-9 no link to the symptom record · L-10 the coverage line, by day · L-11 Noticed · a look at any time, any number a day.</p></div>
 
     <div class="brief"><p class="bid">L-12 — The selected state (§02)</p>
       <p><strong>Deciding:</strong> what a chosen chip looks like.</p>
@@ -931,7 +966,7 @@
     <div class="sec-head"><span class="sec-num">10</span><h2>Who ruled what this round, and what it did not draw</h2></div>
     <div class="who-table">
       <div><b>The PM</b> Seventeen reactions, each read in §00; eight rulings applied (any time, no symptom link, the coverage line by day, Noticed, head words first, the record shape, the absence row, the report graph); three design asks drawn.</div>
-      <div><b>The Designer</b> The selected state, the arrival, the today list, the three-line rule (entry / receipt / footer never share a line), the receipts' family, the graph in the report's register.</div>
+      <div><b>The Designer</b> The selected state (a fifth louder in round 4, geometry unchanged), the arrival, the today list, the three-line rule (entry / receipt / footer never share a line), the note after the save, the way back at the top with the Done bar pinned, the receipts' family, the graph in the report's register.</div>
       <div><b>Dr. Chen</b> Signs the head-word lists; overruled on the coverage line and recorded; the strip is his sentence, drawn.</div>
       <div><b>Data</b> Every count moved from mornings to days; one day-count module and a local day key stored on the row, because the client and the report bucket days on two clocks; the receipts derived at render; the pairing moved to Patterns with both sides answered days; the footer's saturation named.</div>
       <div><b>Jordan · Sam</b> Any time of day; one tap to a second look; the withheld state now withholds the footer too.</div>
@@ -1034,7 +1069,7 @@
       '</div>';
   }
   function donebar(anything) {
-    return '<div class="donebar"><span>' + esc(summary()) + '</span><span class="donebtn' + (anything ? '' : ' dim') + '" data-act="done" role="button" tabindex="0"' + (anything ? '' : ' aria-disabled="true"') + '>Done</span></div>';
+    return '<div class="donebar' + (arguments[1] ? ' pinned' : '') + '"><span>' + esc(summary()) + '</span><span class="donebtn' + (anything ? '' : ' dim') + '" data-act="done" role="button" tabindex="0"' + (anything ? '' : ' aria-disabled="true"') + '>Done</span></div>';
   }
   function entryWords(e) {
     if (e.absence) return 'Nothing unusual';
@@ -1060,7 +1095,11 @@
       // each entry keeps its own receipt beneath it; the list shows TODAY_CAP entries and folds the rest
       html += '<div class="today">' + state.today.slice(0, TODAY_CAP).map(function (e) {
         var tail = state.undoId === e.id ? '<b data-act="undo" data-id="' + e.id + '" role="button" tabindex="0">Undo</b>' : '<span class="chev">›</span>';
-        return '<div class="entry' + (e.fresh ? ' arrive' : '') + (e.absence ? ' quiet' : '') + '" data-k="e-' + e.id + '"><svg class="ring" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6"/></svg><div class="w">' + esc(entryWords(e)) + '</div><div class="tm">' + e.t + ' ' + tail + '</div></div>' + nugget(e);
+        var noteHtml = '';
+        if (e.note) noteHtml = '<div class="enote">“' + esc(e.note) + '”</div>';
+        else if (state.noteFor === e.id) noteHtml = '<div class="noteinput"><input id="proto-note" type="text" maxlength="140" placeholder="Say more — what did you see?" aria-label="A note on this look"><b data-act="notesave" data-id="' + e.id + '" role="button" tabindex="0">Save</b></div>';
+        else if (e === state.today[0] && !e.absence) noteHtml = '<div class="notelink" data-act="note" data-id="' + e.id + '" role="button" tabindex="0">Add a note <b>›</b></div>';
+        return '<div class="entry' + (e.fresh ? ' arrive' : '') + (e.absence ? ' quiet' : '') + '" data-k="e-' + e.id + '"><svg class="ring" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6"/></svg><div class="w">' + esc(entryWords(e)) + '</div><div class="tm">' + e.t + ' ' + tail + '</div></div>' + noteHtml + nugget(e);
       }).join('') + '</div>';
       if (state.today.length > TODAY_CAP) html += '<div class="more" data-k="more">' + (state.today.length - TODAY_CAP) + ' more today ›</div>';
     }
@@ -1073,12 +1112,13 @@
         html += anything ? donebar(true) : '<div class="hint">Tap what you saw · more than one can be true</div>';
       } else {
         if (state.nh) html += '<div class="hint whatsaw" style="margin:2px 0 6px">What did you see? Done on its own keeps "not himself".</div>';
+        // round 4: the way back sits where the door was tapped — at the top of the grid, never at its foot
+        html += '<div class="chips" style="margin:2px 0 8px">' + chip('door', 'Show fewer words', false, { cls: 'door', lead: '‹' }) + '</div>';
         html += '<div class="row emerg" data-act="emerg"><span>Signs that mean call today</span><span class="door">›</span></div>';
         FAMILIES.forEach(function (f) {
           html += '<div class="fam"><div class="fl">' + esc(f[0]) + '</div><div class="chips">' + f[1].map(function (k) { return wordChip(k, true); }).join('') + '</div></div>';
         });
-        html += '<div class="chips" style="margin-top:10px">' + chip('door', 'Show fewer words', false, { cls: 'door', lead: '‹' }) + '</div>';
-        html += donebar(anything);
+        html += donebar(anything, true);
       }
     } else {
       html += '<div class="askrow" data-act="open" data-k="ask" role="button" tabindex="0"><span>How does Mochi seem now?</span><b>▾</b></div>';
@@ -1132,6 +1172,13 @@
     leaving.forEach(function (el) { try { el.animate([{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(-8px)' }], { duration: 180, fill: 'forwards', easing: 'ease-in' }); } catch (e) {} });
     setTimeout(function () { state.expanded = false; commit(render); }, 180);
   }
+  function saveNote(id, text) {
+    var t = (text || '').trim();
+    state.noteFor = null;
+    state.today.forEach(function (e) { if (e.id === id && t) e.note = t; });
+    commit(render);
+    setBeat('4b', t ? 'the note landed' : 'no note', [t ? 'The note sits under the words in quotes, in the secondary ink; the receipt and the footer are untouched.' : 'Nothing was written; the link comes back.', t ? 'On History the row quotes it beneath its words; on the report it is Appendix G\'s verbatim column. The engine and Ask never see it.' : '']);
+  }
   function setBeat(n, title, text) {
     beatEl.textContent = 'Beat ' + n + ' · ' + title;
     capEl.innerHTML = '<b>' + text[0] + '</b> ' + text[1];
@@ -1159,6 +1206,19 @@
   function onTap(target) {
     var act = target.getAttribute('data-act');
     if (act === 'close') { closeSheet(); return; }
+    if (act === 'note') {
+      state.noteFor = Number(target.getAttribute('data-id'));
+      commit(render);
+      var inp = document.getElementById('proto-note');
+      if (inp) { inp.focus(); inp.addEventListener('keydown', function (ev) { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); saveNote(state.noteFor, inp.value); } if (ev.key === 'Escape') { state.noteFor = null; commit(render); } }); }
+      setBeat('4b', 'a note', ['One line, in place, after the save — never a field on the way in.', 'Return saves; the note lands under the words in quotes and follows the look to History and the report\'s appendix. Quoted, never counted, never read by a model.']);
+      return;
+    }
+    if (act === 'notesave') {
+      var inp2 = document.getElementById('proto-note');
+      saveNote(Number(target.getAttribute('data-id')), inp2 ? inp2.value : '');
+      return;
+    }
     if (act === 'emerg') {
       sheet('When to call the vet', '<div class="hint" style="margin-top:0"><b>Call your vet now:</b> breathing hard or struggling for breath, or panting while lying still and cool · retching without bringing anything up, a swollen or tight belly · can\'t stand or walk, collapsed · a fit or seizure · pale, white or blue gums · straining and crying to pee with nothing coming.</div><div class="hint"><b>Call today:</b> off and no food for 24 hours · off and vomiting · vomiting again within 24 hours · won\'t drink.</div><div class="note">Reads the record, writes nothing: a "call today if…" whose condition the record already meets collapses to "Call your vet today."</div>');
       setBeat('·', 'the emergency door', ['Static copy the vet signs, one door down from the first row.', 'Never a chip, never a write, never an escalation.']);
@@ -1200,8 +1260,8 @@
     var k = target.getAttribute('data-k');
     if (!k) return;
     if (k === 'router') {
-      sheet('Meal · Royal Canin HP · the intake step', '<div class="hint" style="margin-top:0">How much did Mochi eat?</div><div class="chips" style="margin-top:6px"><span class="chip">Refused</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All of it</span></div><div class="note">Nothing pre-selected — the owner names the arm. A quarter eaten is not a refusal. The meal row is the only intake fact; the look records nothing about food.</div><div class="save dim">Save meal</div>');
-      setBeat('·', 'the intake doorway', ['"Didn\'t eat ›" is a door to the meal path, never a look word.', 'It opens at the intake step with the last food filled in; the owner names how much, because that is what the intake detectors read.']);
+      sheet('Meal · Royal Canin HP · the intake step', '<div class="hint" style="margin-top:0;color:var(--d-ink-2)">Royal Canin HP — Mochi\'s most recent food · <b style="color:var(--d-teal-ink)">Change ›</b></div><div class="hint" style="margin-top:6px">How much did Mochi eat?</div><div class="chips" style="margin-top:6px"><span class="chip">Refused</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All of it</span></div><div class="note">Nothing pre-selected — the owner names the arm. A quarter eaten is not a refusal. The meal row is the only intake fact; the look records nothing about food.</div><div class="save dim">Save meal</div>');
+      setBeat('·', 'the intake doorway', ['"Didn\'t eat ›" is a door to the meal path, never a look word.', 'It opens at the intake step with Mochi\'s most recent food filled in — the "recent" shelf the picker and the FAB already read, this pet\'s last meal of each food, newest first — one tap to change; the owner names how much, because that is what the intake detectors read.']);
       return;
     }
     if (k === 'door') {
@@ -1211,7 +1271,7 @@
         setBeat(3, 'folded back', ['The unchosen words left first; the box eased shut around what stays.', moved.length ? 'The word you chose deep in the grid travelled up and landed beside the head words, before the door — the head words held their places.' : 'Pick a word from a family before folding and watch it travel up to sit beside the head words.']);
       } else {
         state.expanded = true; commit(render);
-        setBeat(2, 'unfolded', ['The card grew with one felt settle; the families landed a beat after the box.', 'Each head word kept its word and gained its gloss; the door chip travelled to the foot and reads "Show fewer words". Choose a word from any family.']);
+        setBeat(2, 'unfolded', ['The card grew with one felt settle; the families landed a beat after the box.', 'Each head word kept its word and gained its gloss; the door stayed where it was tapped and reads "‹ Show fewer words"; the Done bar is pinned to the bottom while the grid is open. Choose a word from any family.']);
       }
       return;
     }
