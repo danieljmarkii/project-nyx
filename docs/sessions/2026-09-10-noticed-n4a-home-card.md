@@ -1,6 +1,6 @@
 # Noticed N-4a — the Home card, the write, and the Home-write bound (CUL-871)
 
-**Date:** 2026-09-10 · **Branch:** `claude/determined-carson-v0848o` · **Outcome:** shipped via #823 (draft)
+**Date:** 2026-09-10 · **Branch:** `claude/determined-carson-v0848o` · **Outcome:** shipped via #823
 **Mode:** BUILD · **Milestone:** Noticed C · The card (*Home v2 — the redesign*)
 **Also ruled this session:** CUL-863, CUL-864, CUL-865 (the three `Waiting on PM` briefs)
 
