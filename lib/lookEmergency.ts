@@ -16,7 +16,7 @@
 // in a sentence somebody has to remember.
 //
 // ── FAIL CLOSED MEANS SHOW THE IMPERATIVE, NOT THE THRESHOLD ─────────────────
-// `facts: null` is "this device has not answered yet", and the two error directions
+// `facts: null` is "this read did not answer", and the two error directions
 // are not symmetric. Printing a threshold to an owner whose record already meets it
 // is the delay §4.6 exists to prevent; printing "Call your vet today." to an owner
 // whose cat is fine costs a phone call. n=1 never reassures: an absence of KNOWN
@@ -24,6 +24,15 @@
 // half of this pair ("you can wait until tonight"). So an unanswered read renders the
 // imperative alone — and no thresholds beside it, because we cannot say which of them
 // are unmet either.
+//
+// A READ THAT IS STILL IN FLIGHT IS NOT THAT STATE, and conflating the two was this
+// module's first shipped defect (found by the product read). The sheet used to open with
+// `facts: null` and load afterwards, so EVERY owner saw **"Call your vet today."** for a
+// frame before it was replaced by four conditionals. Fail-closed is right for a read
+// that failed; applied to a read that is merely waiting it makes a safety imperative
+// flicker, and an imperative the app takes back is one an owner learns to disbelieve.
+// So the caller distinguishes the two (`EmergencyRead` below): waiting renders neither
+// half, and only a failure falls through to the imperative.
 //
 // ── WHAT THE DOOR MAY READ, AND WHAT IT MAY NOT ─────────────────────────────
 // It reads LEAF ROWS: a `lethargy` event, a `vomit` event, a meal the owner rated
@@ -153,6 +162,13 @@ const CALL_TODAY: Record<LookSpecies, readonly TodayRow[]> = {
     },
   ],
 };
+
+/** The three states a caller can be in about the record, kept apart on purpose (see the
+ *  fail-closed note): still asking, answered, or asked and failed. */
+export type EmergencyRead =
+  | { status: 'loading' }
+  | { status: 'ready'; facts: EmergencyFacts }
+  | { status: 'failed' };
 
 export interface EmergencyDoorModel {
   /** The always-printed block. */

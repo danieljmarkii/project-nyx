@@ -63,7 +63,14 @@ export function TodayZone() {
   );
 
   const shown = eventsToday.slice(0, MAX_SHOWN);
-  const remaining = eventsToday.length - MAX_SHOWN;
+  // The overflow caption says "event", so it counts events (CUL-871). A look is its own
+  // category by construction — `eventTintCategory('check_in') === 'look'`, which is why
+  // `buildCountChips` refuses to count one — and the caption beside that count line was
+  // the one place still calling it an event: three meals and a look rendered "1 more
+  // event today", where the 1 was the owner's own answer to a question. The rows in the
+  // strip are unchanged; a look off the end is reachable through "Full day ›" like any
+  // other row.
+  const remaining = eventsToday.filter((e) => !isLookRow(e)).length - MAX_SHOWN;
   const isEmpty = eventsToday.length === 0;
 
   // T-9 / E-8 — THE NUDGE AND THE LOOK. A `check_in` is not a thing that happened to

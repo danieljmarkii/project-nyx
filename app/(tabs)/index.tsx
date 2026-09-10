@@ -118,6 +118,14 @@ export default function HomeScreen() {
   // the card can never disagree about the same refusal — not even during the switch window. The rest of
   // the strip is untouched, and a fresh input passes through unchanged, so the steady state is
   // byte-identical (`resolveTrialStrip` already withholds this line on a not-eating record).
+  // CUL-871 — the SAME register, read for a different question, and the fail-closed
+  // default inverts because the question does. `suppressTrialResponse` above answers
+  // "may this card reassure?", where ignorance must suppress. The Noticed door asks "does
+  // the record hold a not-eating fact?", where ignorance is not a fact at all (T-20: the
+  // withheld state is triggered by a positive intake fact, never by ignorance) — a door
+  // that escalated on unloaded facts would read *Call your vet today.* forever for a
+  // healthy pet whose trial card failed to load once, which is the cry-wolf direction.
+  const trialNotEating = trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : false;
   const rawTrialStrip = trialInput ? resolveTrialStrip(trialInput) : null;
   const trialStripModel =
     rawTrialStrip && !trialFactsFresh ? { ...rawTrialStrip, trialResponseLine: null } : rawTrialStrip;
@@ -230,7 +238,7 @@ export default function HomeScreen() {
               above for the Signal card; the emergency door ORs it into what it can read
               from the leaf rows, so a refusal either register can see is a refusal. */}
           <LookCard
-            trialNotEating={suppressTrialResponse}
+            trialNotEating={trialNotEating}
             onLayout={(e) =>
               setLookRect({ top: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
             }

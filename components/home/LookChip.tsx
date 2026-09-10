@@ -48,6 +48,12 @@ export const CHECK_GAP = 3;
 export const SETTLE_RING_PT = 4;
 export const SETTLE_MS = 300;
 
+/** How far above and below its box this chip takes a tap. Exported because the row that
+ *  lays these out has to derive its gap from it — two stacked chips face each other with
+ *  the full reach between them (C-5), and a row gap typed as "12" is that arithmetic
+ *  done once, by hand, with nothing to catch it when this number moves. */
+export const CHIP_VERTICAL_REACH = 6;
+
 interface Props {
   label: string;
   /** The gloss, when the visible label does not already carry it. Becomes the
@@ -101,7 +107,7 @@ export function LookChip({ label, hint, selected, onPress, reducedMotion = false
       // Vertical-only, so two chips in a row never share a tap zone (C-5). The 6 pt
       // row gap plus this 6 pt reach on each side is the geometry the grid is laid
       // out against.
-      hitSlop={{ top: 6, bottom: 6 }}
+      hitSlop={{ top: CHIP_VERTICAL_REACH, bottom: CHIP_VERTICAL_REACH }}
     >
       {selected && (
         <>

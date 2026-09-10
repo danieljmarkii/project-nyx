@@ -20,12 +20,13 @@ jest.mock('../../lib/undoLog', () => ({
   reverseLoggedEvent: (...args: unknown[]) => mockReverse(...args),
 }));
 
+const mockLoadFacts = jest.fn(async () => ({
+  refusedRecently: false,
+  vomitCount24h: 0,
+  lethargyRecently: false,
+}));
 jest.mock('../../lib/lookEmergencyFacts', () => ({
-  loadEmergencyFacts: jest.fn(async () => ({
-    refusedRecently: false,
-    vomitCount24h: 0,
-    lethargyRecently: false,
-  })),
+  loadEmergencyFacts: (...args: unknown[]) => mockLoadFacts(...(args as [])),
   withTrialRefusal: (facts: unknown) => facts,
 }));
 
@@ -64,7 +65,9 @@ jest.mock('../../store/petStore', () => ({
 }));
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { LookCard } from './LookCard';
+import { CHIP_VERTICAL_REACH } from './LookChip';
 import { useEventStore } from '../../store/eventStore';
 import { useMomentStore } from '../../store/momentStore';
 import { useUiStore } from '../../store/uiStore';
@@ -83,6 +86,11 @@ beforeEach(() => {
   mockOptedIn = true;
   mockPetState = { activePet: MOCHI, pets: [MOCHI, JUNIPER] };
   mockInsertLook.mockResolvedValue(WRITTEN);
+  mockLoadFacts.mockResolvedValue({
+    refusedRecently: false,
+    vomitCount24h: 0,
+    lethargyRecently: false,
+  });
   mockLoadLookDays.mockResolvedValue([]);
   mockReverse.mockResolvedValue(undefined);
   useEventStore.setState({ todayEvents: [] });
@@ -159,9 +167,11 @@ describe('two taps and Done', () => {
     expect(payload?.eventId).toBe('e1');
     await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
     expect(t.getByText('off, didn’t want the walk')).toBeTruthy();
-    // The chips fold away and the question becomes the one-line ask (R9).
+    // The chips leave while the beat holds. The PERSISTENT today list — every entry, the
+    // folded ask row, the receipts, the footer, the cap — is N-4b's, and it ships with
+    // the withheld predicate that keeps "nothing unusual" off Home under a live intake
+    // concern (§10; T-20). This PR renders the one look the owner just made.
     expect(t.queryByTestId('look-head-words')).toBeNull();
-    expect(t.getByTestId('look-folded-ask')).toBeTruthy();
   });
 
   it('writes the observed-absence row with NO words', async () => {
@@ -264,6 +274,21 @@ describe('two pets (T-11)', () => {
     expect(mockInsertLook).not.toHaveBeenCalled();
   });
 
+  it('and the notice goes when the owner switches BACK — it never names the wrong pet', async () => {
+    const t = render(<LookCard />);
+    fireEvent.press(t.getByTestId('look-chip-subdued'));
+    mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
+    t.rerender(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-switch-notice')).toBeTruthy());
+
+    mockPetState = { activePet: MOCHI, pets: [MOCHI, JUNIPER] };
+    t.rerender(<LookCard />);
+    // It used to clear only on the next chip tap, so a flip-and-back left "this is
+    // Juniper's question now" over a card asking about Mochi.
+    await waitFor(() => expect(t.queryByTestId('look-switch-notice')).toBeNull());
+    expect(t.getByText('How does Mochi seem right now, compared with his usual?')).toBeTruthy();
+  });
+
   it('a switch DURING the completion dwell reverses the row but keeps its words off the new pet', async () => {
     const t = render(<LookCard />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
@@ -295,8 +320,11 @@ describe('the grid, the exits and the door', () => {
     // The families, with their owner-phrase labels and full head + gloss labels.
     expect(t.getByTestId('look-grid')).toBeTruthy();
     expect(t.getByText('With you')).toBeTruthy();
-    expect(t.getByTestId('look-grid-chip-lip_licking')).toBeTruthy();
-    expect(t.getByText('Lip-licking, swallowing a lot, nothing in his mouth')).toBeTruthy();
+    expect(t.getByTestId('look-grid-chip-hunched')).toBeTruthy();
+    expect(t.getByText('Hunched, back arched, belly tucked')).toBeTruthy();
+    // The seven head words are NOT redrawn inside the grid — they are still in their own
+    // row above it, where they were before the tap (see the next test).
+    expect(t.queryByTestId('look-grid-chip-lip_licking')).toBeNull();
     // The row order: the emergency door under the first row, the way back above the
     // families (§3.1a).
     expect(t.getByTestId('look-emergency-door')).toBeTruthy();
@@ -307,6 +335,50 @@ describe('the grid, the exits and the door', () => {
     fireEvent.press(t.getByTestId('look-fewer-words'));
     expect(t.queryByTestId('look-grid')).toBeNull();
     expect(useUiStore.getState().captureOverlay).toBeNull();
+  });
+
+  it('the chip row\u2019s gap is DERIVED from the chip\u2019s own reach (C-5)', () => {
+    const t = render(<LookCard />);
+    const row = StyleSheet.flatten(t.getByTestId('look-head-words').props.style) as Record<
+      string,
+      number
+    >;
+    // Two chips stacked in a wrapping row face each other with their full vertical reach
+    // between them. Read off the RENDERED style and compared with the chip's constant —
+    // not with a 12 typed here, which is the same hand-derivation the source used to do.
+    expect(row.rowGap).toBe(CHIP_VERTICAL_REACH * 2);
+    // And the column gap is the visual one: the reach is vertical-only, so two chips
+    // side by side never share a tap zone whatever this is.
+    expect(row.columnGap).toBeGreaterThan(0);
+  });
+
+  it('the head words NEVER MOVE — same row, same position, glosses added', () => {
+    const t = render(<LookCard />);
+    const before = t.getByTestId('look-chip-subdued');
+    expect(t.getByText('Off')).toBeTruthy();
+
+    fireEvent.press(t.getByTestId('look-more-words'));
+
+    // The same node, in the same row — not a second chip faded in two rows lower. Round
+    // 2's blocking finding was a chip that moved under the owner's thumb; the first cut
+    // of this card re-created it by re-rendering the seven inside the grid's body.
+    expect(t.getByTestId('look-chip-subdued')).toBe(before);
+    expect(t.getByTestId('look-head-words')).toBeTruthy();
+    // What changes is the LABEL: the head word gains its gloss (§3.1a).
+    expect(t.getByText('Off, not getting up for the things he usually does')).toBeTruthy();
+  });
+
+  it('a word chosen in the grid TRAVELS UP on fold (T-12)', () => {
+    const t = render(<LookCard />);
+    fireEvent.press(t.getByTestId('look-more-words'));
+    fireEvent.press(t.getByTestId('look-grid-chip-hunched'));
+    fireEvent.press(t.getByTestId('look-fewer-words'));
+
+    // What she picked is never behind the door she closed: the chip is on the compact
+    // card, still selected, after the head words.
+    const travelled = t.getByTestId('look-travelled-hunched');
+    expect(travelled.props.accessibilityState.checked).toBe(true);
+    expect(t.getByText('Mochi · hunched')).toBeTruthy();
   });
 
   it('gives the corner back on unmount — the FAB is never stranded', () => {
@@ -325,6 +397,57 @@ describe('the grid, the exits and the door', () => {
     expect(t.getByText('Mochi · not himself')).toBeTruthy();
   });
 
+  it('the door does NOT flash "Call your vet today." while its facts are loading', async () => {
+    // The first cut opened the sheet with `facts: null` and loaded afterwards, and the
+    // resolver reads null as fail-closed — so every owner, on every open, saw the
+    // imperative for a frame before four conditionals replaced it. An imperative the app
+    // takes back is one an owner learns to disbelieve.
+    let release: (facts: unknown) => void = () => {};
+    mockLoadFacts.mockReturnValue(new Promise((resolve) => { release = resolve; }) as never);
+
+    const t = render(<LookCard />);
+    fireEvent.press(t.getByTestId('look-more-words'));
+    fireEvent.press(t.getByTestId('look-emergency-door'));
+
+    // Waiting: neither half. The block header stands so nothing reflows when the answer
+    // lands, and the page says what it is doing.
+    expect(t.getByTestId('look-emergency-waiting')).toBeTruthy();
+    expect(t.queryByTestId('look-emergency-imperative')).toBeNull();
+    expect(t.queryByText('Subdued and vomiting')).toBeNull();
+    // The record-independent block is never withheld — it depends on nothing loaded.
+    expect(t.getByText('A fit or seizure')).toBeTruthy();
+
+    await act(async () => {
+      release({ refusedRecently: false, vomitCount24h: 0, lethargyRecently: false });
+    });
+    expect(t.queryByTestId('look-emergency-waiting')).toBeNull();
+    expect(t.queryByTestId('look-emergency-imperative')).toBeNull();
+    expect(t.getByText('Subdued and vomiting')).toBeTruthy();
+  });
+
+  it('a FAILED read does fall through to the imperative (fail closed)', async () => {
+    // The one case fail-closed is for: asked, and no answer. n=1 never reassures, and a
+    // conditional is the reassuring-shaped half of the pair.
+    mockLoadFacts.mockResolvedValue(null as never);
+    const t = render(<LookCard />);
+    fireEvent.press(t.getByTestId('look-more-words'));
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-emergency-door'));
+    });
+    expect(t.getByTestId('look-emergency-imperative')).toBeTruthy();
+    expect(t.queryByText('Subdued and vomiting')).toBeNull();
+  });
+
+  it('the door names whose record it read', async () => {
+    const t = render(<LookCard />);
+    fireEvent.press(t.getByTestId('look-more-words'));
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-emergency-door'));
+    });
+    // A safety read with no subject is a claim a two-cat owner cannot attribute (C-9).
+    expect(t.getByText('For Mochi')).toBeTruthy();
+  });
+
   it('opens the emergency door, which writes nothing', async () => {
     const t = render(<LookCard />);
     fireEvent.press(t.getByTestId('look-more-words'));
@@ -333,6 +456,21 @@ describe('the grid, the exits and the door', () => {
     });
     expect(t.getByText('When to call the vet')).toBeTruthy();
     expect(mockInsertLook).not.toHaveBeenCalled();
+  });
+
+  it('and the notice goes when the owner switches BACK — it never names the wrong pet', async () => {
+    const t = render(<LookCard />);
+    fireEvent.press(t.getByTestId('look-chip-subdued'));
+    mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
+    t.rerender(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-switch-notice')).toBeTruthy());
+
+    mockPetState = { activePet: MOCHI, pets: [MOCHI, JUNIPER] };
+    t.rerender(<LookCard />);
+    // It used to clear only on the next chip tap, so a flip-and-back left "this is
+    // Juniper's question now" over a card asking about Mochi.
+    await waitFor(() => expect(t.queryByTestId('look-switch-notice')).toBeNull());
+    expect(t.getByText('How does Mochi seem right now, compared with his usual?')).toBeTruthy();
   });
 
   it('a switch DURING the completion dwell reverses the row but keeps its words off the new pet', async () => {

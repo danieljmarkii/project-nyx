@@ -7,7 +7,7 @@
 
 import { render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
-import { LookChip, CHECK_GAP, CHECK_W, PAD_LEFT, PAD_LEFT_MARKED } from './LookChip';
+import { LookChip, CHECK_GAP, CHECK_W, CHIP_VERTICAL_REACH, PAD_LEFT, PAD_LEFT_MARKED } from './LookChip';
 import { theme } from '../../constants/theme';
 import { fontFamilyForWeight } from '../ui/ThemedText';
 import { contrastRatio } from '../../constants/theme.contrast.test';
@@ -49,6 +49,19 @@ describe('geometry — the box does not move when the word is chosen', () => {
     // family is what actually renders — and the two states must land on the same one.
     expect(markedLabel.fontFamily).toBe(restLabel.fontFamily);
     expect(markedLabel.fontFamily).toBe(fontFamilyForWeight(theme.weightMedium));
+  });
+});
+
+describe('the hit area, and the gap that has to answer to it (C-5)', () => {
+  it('takes its full vertical reach on both edges', () => {
+    const t = render(<LookChip label="Off" selected={false} onPress={() => {}} testID="c" />);
+    expect(t.getByTestId('c').props.hitSlop).toEqual({
+      top: CHIP_VERTICAL_REACH,
+      bottom: CHIP_VERTICAL_REACH,
+    });
+    // The row that lays these out derives its gap from this constant; the assertion off
+    // the RENDERED row lives in `LookCard.test.tsx`, where the card's own mocks are
+    // (C-5: assert the rendered gap, never tokens restated in the test).
   });
 });
 

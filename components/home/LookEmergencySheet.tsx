@@ -27,27 +27,33 @@ import {
   CALL_TODAY_HEADER,
   EMERGENCY_SHEET_TITLE,
   resolveEmergencyDoor,
-  type EmergencyFacts,
+  type EmergencyRead,
 } from '../../lib/lookEmergency';
 
 interface Props {
   visible: boolean;
   species: LookSpecies;
-  /** What the record can settle right now — `null` while it has not answered, which
-   *  the resolver reads as "fail closed" and NOT as a quiet record (C-12, and the
-   *  n=1 asymmetry: absence of facts never reassures). */
-  facts: EmergencyFacts | null;
+  /** Whose record this is. The imperative is derived from ONE pet's rows, so the page
+   *  says whose — a safety read with no subject is a claim a two-cat owner cannot
+   *  attribute (C-9's rule, applied to a sheet rather than a record screen). */
+  petName: string;
+  /** The record's answer, or the fact that it has not arrived. The three states are kept
+   *  apart because only ONE of them may fall through to the imperative: a read that
+   *  FAILED. A read still in flight renders neither half — see `lib/lookEmergency.ts`. */
+  read: EmergencyRead;
   onClose: () => void;
 }
 
-export function LookEmergencySheet({ visible, species, facts, onClose }: Props) {
-  const door = resolveEmergencyDoor(species, facts);
+export function LookEmergencySheet({ visible, species, petName, read, onClose }: Props) {
+  const waiting = read.status === 'loading';
+  const door = resolveEmergencyDoor(species, read.status === 'ready' ? read.facts : null);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
       <View style={styles.sheet} accessibilityViewIsModal>
         <View style={styles.grabber} />
         <ThemedText style={styles.title}>{EMERGENCY_SHEET_TITLE}</ThemedText>
+        <ThemedText style={styles.subject}>For {petName}</ThemedText>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollBody}>
           {/* Block 1 — the signs that are never an impression. Record-independent: none
               of these is a thing the app holds a row for, which is exactly why they are
@@ -68,17 +74,26 @@ export function LookEmergencySheet({ visible, species, facts, onClose }: Props) 
               pass's gap 3: v0.1 cited the rule inside the clause that broke it). The
               met condition is deliberately not named: naming it would turn this page
               into a finding about the pet, and this door escalates nothing. */}
-          {door.imperative !== null && (
+          {/* Waiting renders NEITHER half. The block header stands so the page does not
+              reflow when the answer lands, and the line says what is happening rather
+              than showing an imperative the app may take back a frame later. */}
+          {waiting && (
+            <ThemedText style={styles.waiting} testID="look-emergency-waiting">
+              Checking {petName}’s record.
+            </ThemedText>
+          )}
+          {!waiting && door.imperative !== null && (
             <ThemedText style={styles.imperative} testID="look-emergency-imperative">
               {door.imperative}
             </ThemedText>
           )}
-          {door.thresholds.map((line) => (
-            <View key={line} style={styles.row}>
-              <ThemedText style={styles.bullet}>·</ThemedText>
-              <ThemedText style={styles.rowText}>{line}</ThemedText>
-            </View>
-          ))}
+          {!waiting &&
+            door.thresholds.map((line) => (
+              <View key={line} style={styles.row}>
+                <ThemedText style={styles.bullet}>·</ThemedText>
+                <ThemedText style={styles.rowText}>{line}</ThemedText>
+              </View>
+            ))}
         </ScrollView>
         <Pressable
           onPress={onClose}
@@ -126,6 +141,16 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
+  },
+  subject: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  waiting: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextSecondary,
+    marginTop: theme.space0_5,
   },
   scroll: { flexGrow: 0 },
   scrollBody: { gap: theme.space0_5, paddingBottom: theme.space1 },

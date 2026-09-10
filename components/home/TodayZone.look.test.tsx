@@ -71,6 +71,25 @@ describe('the nudge and the look', () => {
     expect(t.queryByText(/Nothing logged yet/)).toBeNull();
   });
 
+  it('never calls a look an "event" in the overflow caption', () => {
+    // `buildCountChips` refuses to count a look; the caption beside it used to count one
+    // anyway, so three meals and a look read "1 more event today" where the 1 was the
+    // owner's own answer to a question.
+    mockUseEvents.mockReturnValue({
+      todayEvents: [ev('m1', 'meal'), ev('m2', 'meal'), ev('m3', 'meal'), look('l1')],
+    });
+    const t = render(<TodayZone />);
+    expect(t.queryByText(/more event/)).toBeNull();
+  });
+
+  it('still counts real events past the cap', () => {
+    mockUseEvents.mockReturnValue({
+      todayEvents: [ev('m1', 'meal'), ev('m2', 'meal'), ev('m3', 'meal'), ev('m4', 'meal'), look('l1')],
+    });
+    const t = render(<TodayZone />);
+    expect(t.getByText(/1 more event today/)).toBeTruthy();
+  });
+
   it('OFF THE FLAG the shipped nudge is unchanged on an empty day', () => {
     mockFlagOn = false;
     mockUseEvents.mockReturnValue({ todayEvents: [] });

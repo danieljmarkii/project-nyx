@@ -58,10 +58,18 @@ const ROOT = path.resolve(__dirname, '..');
 const ENTRY_FILE = 'app/(tabs)/index.tsx';
 const ENTRY_DIR = 'components/home';
 
-/** Directories a closure file must live in to be scanned. `app/` is deliberately absent
- *  past the entry: a SCREEN composes writers (the log screen is one), and the rule here
- *  is about Home's own card tree. */
-const SCANNED_DIRS = ['components/', 'hooks/', 'store/', 'lib/'];
+/**
+ * Directories a closure file must live in to be scanned.
+ *
+ * `app/` and `constants/` are in the list, and neither was in the first cut — which two
+ * independent reviews walked through: a helper in `app/homeWrites/confirm.ts` calling
+ * `insertMeal`, and the observation that `homeClosure` already REACHES
+ * `constants/lookWords.ts` while `scannedFiles` filtered it back out. "By effect, not by
+ * name" had failed on the one axis the mutants did not test: LOCATION. Only files Home's
+ * closure actually reaches are scanned either way, so this widens what the guard sees
+ * without widening what it walks.
+ */
+const SCANNED_DIRS = ['components/', 'hooks/', 'store/', 'lib/', 'app/', 'constants/'];
 
 /**
  * Every write the app can perform, by effect.
@@ -99,9 +107,6 @@ const WRITE_CALLS = [
  */
 const RAW_MUTATION = /\b(INSERT\s+INTO|UPDATE\s+[A-Za-z_][\w.]*\s+SET|DELETE\s+FROM)\b/i;
 
-/** Where raw SQL counts. */
-const RAW_SQL_DIRS = ['components/', 'hooks/', 'store/'];
-
 /**
  * The two write classes Home carries, keyed by the file that owns each.
  *
@@ -116,16 +121,65 @@ const ALLOW: Record<string, readonly string[]> = {
   'components/home/LookCard.tsx': ['insertLook'],
 };
 
-/** The modules that DEFINE a write helper. Their own file naturally contains the call
- *  shape; scanning them would flag every definition, and they are the write path rather
- *  than a consumer of it. */
-const DEFINITIONS = [
-  'lib/db.ts',
-  'lib/looks.ts',
-  'lib/meals.ts',
-  'lib/medicationDose.ts',
-  'lib/undoLog.ts',
-];
+/**
+ * THE WRITE PATH ITSELF — the modules that make a row durable, and what each may reach.
+ *
+ * Two kinds sit here for one reason: neither is a control on Home, both are the layer a
+ * control goes THROUGH, and both are where the app's raw SQL legitimately lives.
+ *
+ *   • the DEFINITION of a write helper (`lib/looks.ts` declares `insertLook`), and
+ *   • the SYNC FABRIC (`lib/sync.ts` writing the mirror of rows it just pulled).
+ *
+ * The value is the set of helpers that module may reach — NOT a blanket skip, which is
+ * what the first cut had. The adversarial pass found the difference: it put
+ * `insertSimpleEvent({type:'itch'})` INSIDE `insertLook` in `lib/looks.ts` (CUL-845's
+ * exact shape), and the guard reported it against `lib/simpleEvent.ts` — that helper's
+ * own declaration — so the obvious repair was to skip THAT file, which turned the suite
+ * green over the live violation. A failure message that teaches the fix that hides the
+ * bug is worse than no message. Per-helper, each module is silent about the writes it
+ * owns and loud about every other one in it.
+ *
+ * Raw SQL is exempt here and NOWHERE ELSE. That replaces the first cut's directory rule
+ * (`components/`, `hooks/`, `store/`), which the adversarial pass walked straight
+ * through with a `lib/homeIntakeConfirm.ts` holding a raw `INSERT INTO events`, called
+ * from a Home chip: the suite stayed green while *Nothing unusual* wrote a meal row on
+ * every tap. The measurement behind the directory rule was real — 26 sites, all of them
+ * in this list — but the conclusion was one step too coarse. Named modules with reasons
+ * are a decision; a directory is a blind spot.
+ *
+ * Adding to this list is the same act as adding to the allow-set: say why.
+ */
+const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = {
+  'lib/db.ts': {
+    helpers: ['updateEvent', 'softDeleteEvent'],
+    why: 'declares both, and holds the events table\u2019s own statements',
+  },
+  'lib/looks.ts': { helpers: ['insertLook'], why: 'declares insertLook' },
+  'lib/meals.ts': { helpers: ['insertMeal'], why: 'declares insertMeal' },
+  'lib/medicationDose.ts': {
+    helpers: ['insertMedicationDose'],
+    why: 'declares insertMedicationDose',
+  },
+  'lib/simpleEvent.ts': { helpers: ['insertSimpleEvent'], why: 'declares insertSimpleEvent' },
+  'lib/undoLog.ts': {
+    helpers: ['reverseLoggedEvent', 'softDeleteEvent'],
+    why: 'declares the ONE shared reversal, whose implementation is softDeleteEvent (C-20)',
+  },
+  'lib/sync.ts': {
+    helpers: [],
+    why: 'the queue drains and the hydration mirror \u2014 this IS the durable-write layer',
+  },
+  'lib/weight.ts': {
+    helpers: [],
+    why: 'the weight snapshot reconcile, called from the shared reversal',
+  },
+  'lib/dietTrialSetup.ts': { helpers: [], why: 'trial setup writes; Home only reads it' },
+  'lib/dietTrialMirror.ts': { helpers: [], why: 'the trial mirror, written by the sync layer' },
+  'lib/feedingArrangements.ts': {
+    helpers: [],
+    why: 'the arrangements mirror, written by the sync layer',
+  },
+};
 
 /** `// home-write-ok: <reason>` within ten lines above the site. One marker per SITE,
  *  never per file — the accentOnLight discipline: a file-wide exemption silently covers
@@ -134,6 +188,74 @@ const EXEMPTION = /\/\/\s*home-write-ok:\s*\S+/;
 const EXEMPTION_WINDOW = 10;
 
 // ── the closure ───────────────────────────────────────────────────────────────
+
+/**
+ * Every tracked write helper this file IMPORTS, by the name at the source rather than the
+ * name it is bound to locally.
+ *
+ * This is what makes the scan an effect scan rather than a text scan, and it closes the
+ * bypass the code review proved: `import { insertMeal as _x }` followed by `_x({...})`
+ * leaves the string `insertMeal(` nowhere in the file. No attacker is needed — an
+ * ordinary rename does it. A file that imports a write helper has reached it, whatever it
+ * calls it here.
+ */
+function importedWriteHelpers(absFile: string, src: string): { helper: string; line: number }[] {
+  const kind = absFile.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(absFile, src, ts.ScriptTarget.Latest, true, kind);
+  const out: { helper: string; line: number }[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isImportDeclaration(node) &&
+      node.importClause?.namedBindings &&
+      ts.isNamedImports(node.importClause.namedBindings)
+    ) {
+      for (const element of node.importClause.namedBindings.elements) {
+        // `propertyName` is the name AT THE SOURCE when the import is aliased
+        // (`insertMeal as _x`), and undefined otherwise.
+        const imported = (element.propertyName ?? element.name).text;
+        if (WRITE_CALLS.includes(imported)) {
+          out.push({
+            helper: imported,
+            line: sf.getLineAndCharacterOfPosition(element.getStart(sf)).line + 1,
+          });
+        }
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/**
+ * Every module specifier this file imports that the closure walker CANNOT resolve to a
+ * path — a dynamic `import(someVariable)` or `require(someVariable)`.
+ *
+ * Reported as a finding in its own right, because an opaque specifier inside Home's
+ * closure is precisely the shape a bypass takes: the module it reaches is invisible to
+ * the walk, so a write inside it is invisible to everything here. The rule is not "no
+ * dynamic imports" — it is "not one whose target this guard cannot see".
+ */
+function opaqueSpecifiers(absFile: string, src: string): number[] {
+  const kind = absFile.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(absFile, src, ts.ScriptTarget.Latest, true, kind);
+  const out: number[] = [];
+  const visit = (node: ts.Node) => {
+    const dynamic =
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === 'require'));
+    if (dynamic) {
+      const arg = (node as ts.CallExpression).arguments[0];
+      if (!arg || !ts.isStringLiteral(arg)) {
+        out.push(sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1);
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(sf);
+  return out;
+}
 
 /** Every relative specifier a file imports or re-exports, via the TS parser rather than
  *  a regex (robust to multiline imports and to a specifier inside a comment). */
@@ -212,7 +334,6 @@ export function scannedFiles(root: string): string[] {
   return homeClosure(root).filter(
     (r) =>
       !r.includes('.test.') &&
-      !DEFINITIONS.includes(r) &&
       (r === ENTRY_FILE || SCANNED_DIRS.some((d) => r.startsWith(d))),
   );
 }
@@ -235,25 +356,49 @@ function exempted(rawLines: string[], line: number): boolean {
 
 /** Every write this file can reach that its allow-entry does not permit. */
 export function findWrites(relPath: string, rawSource: string): WriteFinding[] {
-  const allowed = ALLOW[relPath] ?? [];
-  const rawSqlCounts = relPath === ENTRY_FILE || RAW_SQL_DIRS.some((d) => relPath.startsWith(d));
+  const writePath = WRITE_PATH[relPath];
+  const allowed = [...(ALLOW[relPath] ?? []), ...(writePath?.helpers ?? [])];
+  const rawSqlCounts = writePath === undefined;
   const blanked = blankComments(rawSource);
   const rawLines = rawSource.split('\n');
   const blankedLines = blanked.split('\n');
   const findings: WriteFinding[] = [];
+  // Helpers whose real call site in THIS file carries a marker — so the import that
+  // brought them in is covered by the same decision rather than needing a second one.
+  // An ALIASED call is not recognised here, which is the point: it cannot borrow an
+  // exemption it never matched.
+  const exemptedHelpers = new Set<string>();
 
   blankedLines.forEach((text, index) => {
     const line = index + 1;
     for (const helper of WRITE_CALLS) {
       if (!new RegExp(`\\b${helper}\\s*\\(`).test(text)) continue;
       if (allowed.includes(helper)) continue;
-      if (exempted(rawLines, line)) continue;
+      if (exempted(rawLines, line)) {
+        exemptedHelpers.add(helper);
+        continue;
+      }
       findings.push({ file: relPath, line, what: `${helper}(` });
     }
     if (rawSqlCounts && RAW_MUTATION.test(text) && !exempted(rawLines, line)) {
       findings.push({ file: relPath, line, what: 'raw SQL mutation' });
     }
   });
+
+  // The import-level reach, so an alias cannot hide a call (see `importedWriteHelpers`).
+  const abs = relPath.endsWith('.tsx') ? relPath : relPath;
+  for (const hit of importedWriteHelpers(abs, rawSource)) {
+    if (allowed.includes(hit.helper) || exemptedHelpers.has(hit.helper)) continue;
+    if (exempted(rawLines, hit.line)) continue;
+    // Already reported at its call site in this file — one finding per site, not two.
+    if (findings.some((f) => f.what === `${hit.helper}(`)) continue;
+    findings.push({ file: relPath, line: hit.line, what: `import of ${hit.helper}` });
+  }
+
+  for (const line of opaqueSpecifiers(abs, rawSource)) {
+    if (exempted(rawLines, line)) continue;
+    findings.push({ file: relPath, line, what: 'an import whose target this guard cannot resolve' });
+  }
   return findings;
 }
 
@@ -307,7 +452,7 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // An allow-entry for a file that has been renamed or no longer writes is dead weight
     // that silently widens the hole it was granted for (the EXEMPT staleness rule from
     // completionCard.test.ts, applied to the allow-set).
-    const stale = Object.entries(ALLOW).filter(([file, helpers]) => {
+    const stale = Object.entries(ALLOW).filter(([file, helpers]: [string, readonly string[]]) => {
       const abs = path.join(ROOT, file);
       if (!fs.existsSync(abs)) return true;
       const src = blankComments(fs.readFileSync(abs, 'utf8'));
@@ -385,6 +530,46 @@ describe('the detector itself', () => {
       '\n',
     );
     expect(find(src).map((f) => f.what)).toEqual(['insertMeal(']);
+  });
+
+  it('FLAGS an ALIASED import — the alias is not a hiding place', () => {
+    // The code review's bypass: `import { insertMeal as _x }` then `_x({...})` leaves the
+    // string `insertMeal(` nowhere in the file. No attacker needed — a rename does it.
+    const findings = find(
+      "import { insertMeal as _x } from '../../lib/meals';\nawait _x({ petId });\n",
+    );
+    expect(findings.map((f) => f.what)).toEqual(['import of insertMeal']);
+  });
+
+  it('FLAGS an import whose target it cannot resolve', () => {
+    // An opaque specifier inside Home's closure is the shape a bypass takes: the module
+    // it reaches is invisible to the walk, so a write inside it is invisible to
+    // everything here. The rule is not "no dynamic imports" — it is "not one whose
+    // target this guard cannot see".
+    const findings = find('const m = await import(pathFromSomewhere);\nawait m.write();\n');
+    expect(findings.map((f) => f.what)).toEqual([
+      'an import whose target this guard cannot resolve',
+    ]);
+  });
+
+  it('accepts a RESOLVABLE dynamic import — the walker follows it', () => {
+    expect(find("const m = await import('./someModule');\n")).toEqual([]);
+  });
+
+  it('does not report an import twice when its call site is already flagged', () => {
+    const findings = find(
+      "import { insertMeal } from '../../lib/meals';\nawait insertMeal({ petId });\n",
+    );
+    expect(findings.map((f) => f.what)).toEqual(['insertMeal(']);
+  });
+
+  it('lets a MARKED call site cover the import that brought it in', () => {
+    const findings = find(
+      "import { reverseLoggedEvent } from '../../lib/undoLog';\n" +
+        '// home-write-ok: the shared reversal, C-20\n' +
+        'await reverseLoggedEvent(id);\n',
+    );
+    expect(findings).toEqual([]);
   });
 
   it('lets an allowed file make ONLY its own write', () => {

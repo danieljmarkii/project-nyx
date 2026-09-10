@@ -15,9 +15,18 @@
 //   1. ASKING, compact — the question, the first row, the seven head words, one door.
 //   2. ASKING, unfolded — the same card grown in place, with the families and the
 //      emergency door. Never a sheet, never a navigation (§3.1a).
-//   3. ANSWERED — the day's looks as entries, newest first, and the question folded to
-//      one line that re-opens the chips cleared. A day holds as many looks as the owner
-//      makes (R9).
+//   3. THE ARRIVAL — the look just written, as an entry with its hour and *Undo*, for
+//      the completion register's dwell. Then the question comes back, cleared.
+//
+// WHAT THE ARRIVAL IS NOT, AND WHY THE LINE IS HERE. §10 gives the persistent TODAY
+// LIST to N-4b (CUL-873) — the entries that stay, the folded ask row, the receipts, the
+// coverage footer, the list cap — and it gives that PR the withheld predicate
+// (`lib/lookWithheld.ts`, T-20) in the same breath. That pairing is not an accident of
+// sequencing: a list that persists can draw *nothing unusual* on Home under a pet whose
+// record carries a live intake concern, and the withheld entry is what stops it (floor
+// item 12, Dr. Chen's ledger row 15). So this PR renders ONE entry, for the dwell, for
+// the look the owner has this second finished making — which is the completion beat
+// N-4a owns and the only home Undo has — and the list arrives with its protection.
 //
 // ── THE RULES THAT ARE NOT OBVIOUS FROM THE TREE ─────────────────────────────
 // • NOTHING IS PRE-SELECTED and NOTHING RE-SORTS ON A TAP (§3.1a, the round-2 product
@@ -47,7 +56,7 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
-import { LookChip } from './LookChip';
+import { CHIP_VERTICAL_REACH, LookChip } from './LookChip';
 import { LookEmergencySheet } from './LookEmergencySheet';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
@@ -56,7 +65,7 @@ import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { usePetStore } from '../../store/petStore';
 import { useEventStore, type NyxEvent } from '../../store/eventStore';
-import { useMomentStore } from '../../store/momentStore';
+import { LOOK_DWELL_MS, useMomentStore } from '../../store/momentStore';
 import { useUiStore } from '../../store/uiStore';
 import { selectChip } from '../../lib/haptics';
 import { insertLook, loadLookDays, answeredDays } from '../../lib/looks';
@@ -89,13 +98,21 @@ import {
   LOOK_UNDO,
   lookDoneSummary,
   lookFirstLookLine,
-  lookFoldedAsk,
   lookOpeningChipUnfoldLine,
   lookQuestion,
 } from '../../lib/lookCard';
-import { EMERGENCY_DOOR_LABEL, type EmergencyFacts } from '../../lib/lookEmergency';
+import { EMERGENCY_DOOR_LABEL, type EmergencyRead } from '../../lib/lookEmergency';
 import { loadEmergencyFacts, withTrialRefusal } from '../../lib/lookEmergencyFacts';
 import { useGridDisclosure, useLookArrival } from '../motion/lookMotion';
+
+/** The last half-second of the dwell, in which *Undo* fades before the chevron takes its
+ *  slot (T-15). A tap during the fade still undoes. */
+const UNDO_FADE_MS = 500;
+
+/** Two chips stacked in a wrapping row face each other with their full vertical reach
+ *  between them, so the row gap is the SUM of the two hitSlops — derived from the chip's
+ *  own constant, never a number that happens to be twice it (C-5). */
+const CHIP_ROW_GAP = CHIP_VERTICAL_REACH * 2;
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
 import { formatTime } from '../../lib/utils';
 
@@ -132,13 +149,14 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
 
   const [draft, setDraft] = useState<LookDraft>(emptyDraft);
   const [gridOpen, setGridOpen] = useState(false);
-  const [reopened, setReopened] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [capturedPetId, setCapturedPetId] = useState<string | null>(null);
   const [switchNotice, setSwitchNotice] = useState<string | null>(null);
   const [justWritten, setJustWritten] = useState<string | null>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
-  const [emergencyFacts, setEmergencyFacts] = useState<EmergencyFacts | null>(null);
+  // Three states, not two (`EmergencyRead`): a read still in flight must not render the
+  // same page as a read that failed, or the door's imperative flashes on every open.
+  const [emergencyRead, setEmergencyRead] = useState<EmergencyRead>({ status: 'loading' });
   // `null` until the read answers — a read that hasn't answered is never an empty
   // record (C-12), and "this is the first look" is exactly the claim a premature
   // empty would make wrongly.
@@ -149,22 +167,45 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   const sex = activePet?.sex ?? 'unknown';
   const petName = activePet?.name ?? '';
 
+  // The live subject, read at the instant a late answer arrives rather than closed over
+  // when the read started (the `foldMotion` ref idiom). Written during render, so it is
+  // always the pet on screen — and it is a REF rather than a store read so this
+  // component depends on the store's shape in exactly one place, the selector above.
+  const activePetIdRef = useRef<string | null>(null);
+  activePetIdRef.current = activePet?.id ?? null;
+  // Read at the instant the switch effect fires rather than closed over — the effect and
+  // the write are in different ticks, and only the ref knows which way round they landed.
+  const submittingRef = useRef(false);
+  submittingRef.current = submitting;
+
   const disclosure = useGridDisclosure({ open: gridOpen, reducedMotion, appActive });
 
-  // Today's looks, from the rows Home already loaded — one read, shared with
-  // TodayZone, rather than a second query that could disagree with it about the same
-  // day. `todayEvents` is ordered `occurred_at DESC`, which is newest-first (R9).
+  // The arrival: the ONE look this card just wrote, read back from the row it
+  // optimistically prepended so the entry renders through the same resolver every other
+  // look surface uses.
   //
-  // FILTERED BY THE ROW'S OWN PET, not just by what the loader was asked for (C-9).
+  // SCOPED BY THE ROW'S OWN PET, not by what the loader was asked for (C-9).
   // `loadTodayEvents` re-queries on a pet switch, but the store holds the PREVIOUS pet's
-  // rows until that read answers — so for the width of one query this card would
-  // otherwise render another animal's look under this animal's question, with an Undo
-  // beside it. The filter closes that window rather than trusting the loader's timing.
-  const entries = useMemo(
-    () => todayEvents.filter((e) => isLookRow(e) && e.pet_id === activePet?.id),
-    [todayEvents, activePet?.id],
+  // rows until that read answers — so without this the card could render another
+  // animal's look, with an Undo beside it, under this animal's question.
+  const beatRow = useMemo(
+    () =>
+      justWritten
+        ? todayEvents.find(
+            (e) => e.id === justWritten && isLookRow(e) && e.pet_id === activePet?.id,
+          ) ?? null
+        : null,
+    [todayEvents, justWritten, activePet?.id],
   );
-  const asking = entries.length === 0 || reopened;
+  // The register decides how long the beat holds, not this card — one clock (C-20's
+  // reasoning applied to the dwell). When it lets go, the question comes back cleared.
+  const beatLive =
+    beatRow !== null &&
+    momentVisible &&
+    !momentRemoved &&
+    momentPayload?.kind === 'look' &&
+    momentPayload.eventId === beatRow.id;
+  const asking = !beatLive;
 
   const arrival = useLookArrival({
     entryKey: justWritten,
@@ -203,16 +244,34 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
 
   // T-11 — THE PET SWITCH. A draft belongs to the pet it was started for; if the header
   // moves, the words do not follow. Cleared and SAID, never silently re-pointed.
+  //
+  // The notice is cleared by ANY pet change, including a switch back. It used to clear
+  // only on the next chip tap, so an owner who flipped to Juniper and straight back read
+  // "Those words were about Mochi … this is Juniper's question now" over a card that had
+  // gone back to asking about Mochi — the notice naming the wrong pet on the one screen
+  // whose whole job is naming the right one.
+  const noticeFor = useRef<string | null>(null);
   useEffect(() => {
+    if (activePet && noticeFor.current !== null && noticeFor.current !== activePet.id) {
+      noticeFor.current = null;
+      setSwitchNotice(null);
+    }
     if (!capturedPetId || !activePet || activePet.id === capturedPetId) return;
     const from = pets.find((p) => p.id === capturedPetId)?.name ?? null;
     setDraft(emptyDraft());
     setCapturedPetId(null);
     setGridOpen(false);
+    noticeFor.current = activePet.id;
+    // "Nothing was saved" is only true if nothing was. A switch landing while
+    // `insertLook` is in flight — a local SQLite write, so a handful of milliseconds, but
+    // reachable — means the words DID save, for the pet just left, and telling her
+    // otherwise is the one unrecoverable lie a completion surface can tell. Two
+    // sentences, one for each fact.
+    const saved = submittingRef.current;
     setSwitchNotice(
       from
-        ? `Those words were about ${from}. Nothing was saved — this is ${activePet.name}’s question now.`
-        : `Nothing was saved — this is ${activePet.name}’s question now.`,
+        ? `Those words were about ${from}. ${saved ? `They saved to ${from}’s record` : 'Nothing was saved'} — this is ${activePet.name}’s question now.`
+        : `${saved ? 'That look was saved' : 'Nothing was saved'} — this is ${activePet.name}’s question now.`,
     );
   }, [activePet?.id, capturedPetId, pets, activePet]);
 
@@ -224,6 +283,7 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   }, [disclosure]);
 
   const captureSubject = useCallback(() => {
+    noticeFor.current = null;
     setSwitchNotice(null);
     setCapturedPetId((current) => current ?? activePet?.id ?? null);
   }, [activePet?.id]);
@@ -309,7 +369,6 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
       setJustWritten(result.eventId);
       setDraft(emptyDraft());
       setCapturedPetId(null);
-      setReopened(false);
       if (gridOpen) closeGrid();
     } catch (e) {
       // A failed write is always said (C-12). Calm, no error code, points at the one
@@ -336,7 +395,6 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
         if (rowPetId === activePet?.id) {
           setDraft(restore);
           setCapturedPetId(activePet?.id ?? null);
-          setReopened(true);
         }
         setJustWritten(null);
         return;
@@ -351,11 +409,26 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   );
 
   const openEmergency = useCallback(() => {
+    // Re-read on every open, and start from `loading` rather than from the previous
+    // answer: the facts are 24 hours of a record that can change between opens, and on a
+    // pet switch the held answer would belong to the other animal.
+    setEmergencyRead({ status: 'loading' });
     setEmergencyOpen(true);
-    if (!activePet) return;
-    loadEmergencyFacts(activePet.id)
-      .then((facts) => setEmergencyFacts(withTrialRefusal(facts, trialNotEating)))
-      .catch(() => setEmergencyFacts(null));
+    if (!activePet) {
+      setEmergencyRead({ status: 'failed' });
+      return;
+    }
+    const petId = activePet.id;
+    loadEmergencyFacts(petId)
+      .then((facts) => {
+        const merged = withTrialRefusal(facts, trialNotEating);
+        // The loader returns null on a failed read — the one case that falls through to
+        // the imperative (fail closed). A late answer for a pet the owner has since
+        // switched away from is dropped rather than rendered under the new pet's name.
+        if (activePetIdRef.current !== petId) return;
+        setEmergencyRead(merged ? { status: 'ready', facts: merged } : { status: 'failed' });
+      })
+      .catch(() => setEmergencyRead({ status: 'failed' }));
   }, [activePet?.id, trialNotEating, activePet]);
 
   // Publish the pinned exits while the grid is open, and clear them on every path out
@@ -381,7 +454,16 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
 
   const headWords = LOOK_HEAD_WORDS[species];
   const sections = gridSectionsFor(species, headWords, sex);
+  // The head block is `sections[0]` (label null) and is rendered in its own row above,
+  // so the unfolded grid draws the families alone.
+  const families = sections.filter((section) => section.label !== null);
   const openingLabel = notHerselfLabel(sex);
+  // T-12's travel-up: what she chose from the grid, minus the seven that are already in
+  // the row and the opening chip, which has its own place in the first row.
+  const travelledUp =
+    draft.kind === 'words'
+      ? draft.words.filter((k) => !headWords.includes(k) && k !== LOOK_OPENING_CHIP_KEY)
+      : [];
 
   return (
     <>
@@ -398,49 +480,24 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
           </Pressable>
         </View>
 
-        {/* THE ANSWERED DAY — the looks as entries, newest first (R9, R14). */}
-        {entries.length > 0 && (
+        {/* THE ARRIVAL — the look just made, for the register's dwell (§3.1a, R14). The
+            list that KEEPS them is N-4b's, with the withheld predicate that protects it
+            (see the header). */}
+        {beatLive && beatRow && (
           <View style={styles.entries} testID="look-entries">
-            {entries.map((row) => (
-              <LookEntry
-                key={row.id}
-                row={row}
-                pet={{ species: activePet.species, sex }}
-                isNewest={row.id === justWritten}
-                arrival={arrival}
-                undoable={
-                  momentVisible &&
-                  !momentRemoved &&
-                  momentPayload?.kind === 'look' &&
-                  momentPayload.eventId === row.id
-                }
-                onUndo={handleUndo}
-              />
-            ))}
+            <LookEntry
+              row={beatRow}
+              pet={{ species: activePet.species, sex }}
+              arrival={arrival}
+              onUndo={handleUndo}
+            />
           </View>
         )}
 
-        {/* The question — folded to one line once the day holds a look, and it re-opens
-            the chips in place, cleared. That row IS the second look (R9). */}
-        {!asking ? (
-          <Pressable
-            onPress={() => {
-              setReopened(true);
-              setDraft(emptyDraft());
-            }}
-            style={styles.foldedAsk}
-            accessibilityRole="button"
-            accessibilityLabel={`${lookFoldedAsk(petName)} Answer again.`}
-            testID="look-folded-ask"
-          >
-            <ThemedText style={styles.foldedAskText}>{lookFoldedAsk(petName)}</ThemedText>
-            {/* geist-ok: Icon glyph, not copy — the caret says "opens in place". */}
-            <Text style={styles.caret}>▾</Text>
-          </Pressable>
-        ) : (
+        {asking && (
           <>
             <ThemedText style={styles.question}>{lookQuestion(petName, sex)}</ThemedText>
-            {everLooked === false && entries.length === 0 && (
+            {everLooked === false && !beatLive && (
               <ThemedText style={styles.firstLook}>{lookFirstLookLine(sex)}</ThemedText>
             )}
             {switchNotice && (
@@ -469,6 +526,11 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                 accessibilityState={{ checked: draftHasWord(draft, LOOK_OPENING_CHIP_KEY) }}
                 accessibilityLabel={openingLabel}
                 accessibilityHint="Opens the full list of words"
+                // The same vertical reach every other chip in this row has
+                // (`LookChip`'s own). This wrapper IS the responder — the chip inside it
+                // is inert — so the reach has to be declared here, and dropping it left
+                // one sub-44pt target in a row of compliant ones (C-5).
+                hitSlop={{ top: 6, bottom: 6 }}
                 testID="look-opening-chip"
               >
                 <LookChipFacade
@@ -478,11 +540,37 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
               </Pressable>
             </View>
 
-            {/* THE COMPACT HEAD WORDS — the seven, exempt from the unfold (T-13). They
-                hold their positions while the card is open; nothing re-sorts on a tap. */}
-            {!gridOpen && (
-              <View style={styles.row} testID="look-head-words">
-                {headWords.map((key) => {
+            {/* THE HEAD WORDS — the seven, exempt from the unfold (T-13).
+                THEY NEVER MOVE (§3.1a). The first cut gated this row on `!gridOpen` and
+                re-rendered the same seven inside the grid's animated body, which is a
+                move in every sense that matters: the chip under the owner's thumb left,
+                faded back in two rows lower and at a new width. Round 2's blocking
+                finding, in a third mechanism. So the row is rendered in ONE place, in
+                one position, in both states — what changes when the grid opens is the
+                LABEL (each head word gains its gloss, §3.1a) and nothing else.
+
+                Behind them, the words she chose from the grid TRAVEL UP here on fold
+                (T-12), in the order chosen, so what she picked is never behind the door
+                she closed. They are only drawn while the grid is shut — open, each one
+                is still lit in its own family. */}
+            <View style={styles.row} testID="look-head-words">
+              {headWords.map((key) => {
+                const word = lookWord(species, key);
+                if (!word) return null;
+                return (
+                  <LookChip
+                    key={key}
+                    label={gridOpen ? gridChipLabel(word) : word.head}
+                    hint={gridOpen ? null : word.gloss}
+                    selected={draftHasWord(draft, key)}
+                    onPress={() => onWord(key)}
+                    reducedMotion={reducedMotion}
+                    testID={`look-chip-${key}`}
+                  />
+                );
+              })}
+              {!gridOpen &&
+                travelledUp.map((key) => {
                   const word = lookWord(species, key);
                   if (!word) return null;
                   return (
@@ -490,15 +578,14 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                       key={key}
                       label={word.head}
                       hint={word.gloss}
-                      selected={draftHasWord(draft, key)}
+                      selected
                       onPress={() => onWord(key)}
                       reducedMotion={reducedMotion}
-                      testID={`look-chip-${key}`}
+                      testID={`look-travelled-${key}`}
                     />
                   );
                 })}
-              </View>
-            )}
+            </View>
 
             {!gridOpen ? (
               <Pressable
@@ -549,7 +636,10 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                 )}
 
                 <Animated.View style={disclosure.landStyle} testID="look-grid">
-                  {sections.map((section) => (
+                  {/* The FAMILIES only. `gridSectionsFor` returns the head block first
+                      (unlabelled); it is rendered above, where it already was, and is
+                      dropped here so the seven are never drawn twice. */}
+                  {families.map((section) => (
                     <View key={section.label ?? '__head'} style={styles.section}>
                       {section.label && (
                         <ThemedText style={styles.sectionLabel}>{section.label}</ThemedText>
@@ -575,9 +665,15 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
               </>
             )}
 
+            {/* The hint stays. It used to share this slot with the Done bar, which put
+                the sentence explaining that more than one word can be true on screen
+                only until the moment the owner tapped one — i.e. it vanished exactly
+                when it became true. */}
+            <ThemedText style={styles.hint}>{LOOK_HINT}</ThemedText>
+
             {/* The Done bar, in the flow. While the grid is open Home also pins a copy
                 at the bottom of the screen; this row keeps its space either way. */}
-            {summary ? (
+            {summary && (
               <View style={styles.doneRow} testID="look-done-row">
                 <ThemedText style={styles.summary}>{summary}</ThemedText>
                 <Pressable
@@ -591,8 +687,6 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                   <ThemedText style={styles.doneText}>{LOOK_DONE}</ThemedText>
                 </Pressable>
               </View>
-            ) : (
-              <ThemedText style={styles.hint}>{LOOK_HINT}</ThemedText>
             )}
           </>
         )}
@@ -601,7 +695,8 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
       <LookEmergencySheet
         visible={emergencyOpen}
         species={species}
-        facts={emergencyFacts}
+        petName={petName}
+        read={emergencyRead}
         onClose={() => setEmergencyOpen(false)}
       />
     </>
@@ -622,23 +717,44 @@ function LookChipFacade({ label, selected }: { label: string; selected: boolean 
   );
 }
 
-/** One look in the day's list — the hollow ring, the words, the hour, and Undo where
- *  the chevron will be (§3.1a, T-15). */
+/** The look that just arrived — the hollow ring, the words, the hour, and *Undo* in the
+ *  slot the chevron takes afterwards (§3.1a, T-15).
+ *
+ *  UNDO FADES BEFORE IT LEAVES. The two controls share a slot, so a silent swap would
+ *  put "open the record" under a thumb already travelling toward "take that back". The
+ *  fade is presentation only — a tap during it still undoes, because the AUTHORITY for
+ *  whether the reversal is still offered stays with the register (this component is only
+ *  rendered while the register says the beat is live). Two clocks, one of them cosmetic,
+ *  started from the same event. */
 function LookEntry({
   row,
   pet,
-  isNewest,
   arrival,
-  undoable,
   onUndo,
 }: {
   row: NyxEvent;
   pet: { species?: string | null; sex: 'male' | 'female' | 'unknown' };
-  isNewest: boolean;
   arrival: ReturnType<typeof useLookArrival>;
-  undoable: boolean;
   onUndo: (eventId: string, restore: LookDraft, rowPetId: string) => void;
 }) {
+  const undoOpacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    // The last half-second of the register's own dwell (T-15). Named off the store's
+    // constant rather than a number typed here, so the two cannot drift apart.
+    const at = Math.max(0, LOOK_DWELL_MS - UNDO_FADE_MS);
+    const timer = setTimeout(() => {
+      Animated.timing(undoOpacity, {
+        toValue: 0.35,
+        duration: UNDO_FADE_MS,
+        useNativeDriver: true,
+      }).start();
+    }, at);
+    return () => {
+      clearTimeout(timer);
+      undoOpacity.setValue(1);
+    };
+  }, [row.id, undoOpacity]);
+
   const described = describeLook(row, pet);
   // The ONE resolver, so this entry, History's row and the record screen name the same
   // look identically (`lib/lookDisplay.ts`). Null is a look this build cannot describe
@@ -655,17 +771,19 @@ function LookEntry({
   return (
     <View style={styles.entry}>
       <Animated.View
-        style={[
-          styles.ring,
-          { backgroundColor: fill, borderColor: ring },
-          isNewest ? arrival.ringStyle : null,
-        ]}
+        style={[styles.ring, { backgroundColor: fill, borderColor: ring }, arrival.ringStyle]}
       />
-      <Animated.View style={[styles.entryBody, isNewest ? arrival.wordsStyle : null]}>
-        <ThemedText style={styles.entryWords}>{words ?? 'Noticed'}</ThemedText>
+      <Animated.View style={[styles.entryBody, arrival.wordsStyle]}>
+        {/* L-16 / R16 — A QUIET ENTRY IS QUIET. The observed-absence row takes the
+            secondary ink a size down; a row carrying words keeps the primary ink. The
+            reassuring half is never the headline (the retired round-2 row's finding,
+            carried here). */}
+        <ThemedText style={[styles.entryWords, described.kind === 'absence' && styles.entryQuiet]}>
+          {words ?? 'Noticed'}
+        </ThemedText>
       </Animated.View>
       <ThemedText style={styles.entryTime}>{formatTime(new Date(row.occurred_at))}</ThemedText>
-      {undoable ? (
+      <Animated.View style={{ opacity: undoOpacity }}>
         <Pressable
           onPress={() => onUndo(row.id, restore, row.pet_id)}
           hitSlop={8}
@@ -675,18 +793,7 @@ function LookEntry({
         >
           <ThemedText style={styles.undo}>{LOOK_UNDO}</ThemedText>
         </Pressable>
-      ) : (
-        <Pressable
-          onPress={() => router.push(`/event/${row.id}`)}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={`Open this look. ${words ?? ''}`}
-          testID={`look-open-${row.id}`}
-        >
-          {/* geist-ok: Icon glyph, not copy. */}
-          <Text style={styles.caret}>›</Text>
-        </Pressable>
-      )}
+      </Animated.View>
     </View>
   );
 }
@@ -723,11 +830,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    // C-5 — two chips facing each other need the sum of their facing reach. LookChip's
-    // hitSlop is vertical-only, so the ROW gap is the visual one and the COLUMN gap
-    // carries the 6pt vertical reach on each side.
+    // C-5 — two chips facing each other need the sum of their facing reach. `LookChip`'s
+    // hitSlop is vertical-only, so the COLUMN gap is the visual one and the ROW gap
+    // carries the reach: `CHIP_ROW_GAP` is derived from it rather than typed as 12, and
+    // `LookChip.test.tsx` asserts the identity off the rendered style. A wrapping row
+    // splits `gap` into its two axes for exactly this reason.
     columnGap: theme.space1,
-    rowGap: 12,
+    rowGap: CHIP_ROW_GAP,
     marginTop: theme.space2,
   },
   openingWrap: {
@@ -806,6 +915,11 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
     color: theme.colorTextPrimary,
   },
+  entryQuiet: {
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorTextSecondary,
+  },
   entryTime: {
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
@@ -814,17 +928,6 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
     color: theme.colorAccentInk,
-  },
-  foldedAsk: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: theme.space1,
-    minHeight: 44,
-  },
-  foldedAskText: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
   },
   caret: {
     fontSize: theme.textMD,

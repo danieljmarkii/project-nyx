@@ -393,7 +393,7 @@ const MEDICATION_DURATION_MS = 5000;
 // into the card. It is the window in which *Undo* holds the slot the row's chevron
 // takes afterwards, so it is the whole reversal window an owner gets on this surface:
 // the same five seconds every other completion offers, no shorter for being quieter.
-const LOOK_DURATION_MS = 5000;
+export const LOOK_DWELL_MS = 5000;
 // Medication-card dwell once the B-157 double-dose note is riding along: the card now
 // carries a line of safety prose the owner has not seen before and cannot get back by
 // tapping (the note is passive by design; its durable home is the dose detail screen).
@@ -620,7 +620,7 @@ export const useMomentStore = create<MomentState>((set) => ({
     ),
   showMedication: (payload, opts) =>
     present(set, { kind: 'medication', ...payload }, opts, MEDICATION_DURATION_MS),
-  showLook: (payload, opts) => present(set, { kind: 'look', ...payload }, opts, LOOK_DURATION_MS),
+  showLook: (payload, opts) => present(set, { kind: 'look', ...payload }, opts, LOOK_DWELL_MS),
   hide: () => {
     clearTimers();
     set({ visible: false });
