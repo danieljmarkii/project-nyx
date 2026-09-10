@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-10
 
-Shipped via a draft PR on branch `claude/culprit-video-capture-x4a05v` (the record only; PR number patched in below once assigned). Mode: **DISCOVERY** (a team discussion, directions compared, two conflicts surfaced, five decision briefs; no app code, no schema, no change to the manual). Issue **CUL-507** (B-757), restored from Canceled. Published brief: https://claude.ai/code/artifact/bd2a1b23-d387-4b24-a260-66260e48f584 (round 1; the canonical text is this file).
+Shipped via **#819** (draft) on branch `claude/culprit-video-capture-x4a05v` (the record only). Mode: **DISCOVERY** (a team discussion, directions compared, two conflicts surfaced, five decision briefs; no app code, no schema, no change to the manual). Issue **CUL-507** (B-757), restored from Canceled. Published brief: https://claude.ai/code/artifact/bd2a1b23-d387-4b24-a260-66260e48f584 (round 1; the canonical text is this file).
 
 ## What the PM said
 
