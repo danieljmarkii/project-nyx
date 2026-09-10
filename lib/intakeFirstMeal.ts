@@ -35,13 +35,36 @@ import {
   type TrialAllowedSet,
 } from './trialAllowedSet';
 
-/** Why this food is the one offered. The sheet SAYS which (§4.5: the food is one tap to
- *  change, so the owner has to be able to see what she is changing away from). */
-export type IntakePrefillSource = 'trial_diet' | 'recent_meal';
+/**
+ * Why this food is the one showing. The sheet SAYS which (§4.5: the food is one tap to
+ * change, so the owner has to be able to see what she is changing away from).
+ *
+ * `'picked'` carries NO reason, and that is its whole job. The first cut hardcoded
+ * `'recent_meal'` on every food the owner picked, which asserted a recency fact nothing
+ * had checked — `getRecentFoods` is never consulted for a picked food, so the sheet
+ * could print "her most recent food" under a bag the pet has never eaten. A picked food
+ * needs no explanation; she just picked it.
+ */
+export type IntakePrefillSource = 'trial_diet' | 'recent_meal' | 'picked';
 
 export interface IntakePrefill {
   food: PickerFood;
   source: IntakePrefillSource;
+}
+
+/**
+ * What the door needs to open: the pre-fill, and the trial set behind it.
+ *
+ * The trial set is carried OUT rather than consumed and dropped because §4.5's trial
+ * naming has to survive the owner changing the food. The naming exists so that "a rating
+ * against a topper is a deliberate act rather than an unnoticed default" — which means
+ * the one moment it does any work is the moment she taps *Change food ›*, and a sheet
+ * that forgot the trial at that point would go quiet exactly there.
+ */
+export interface IntakeDoorState {
+  /** Null = open at the food step (§4.5). */
+  prefill: IntakePrefill | null;
+  trial: TrialAllowedSet;
 }
 
 /**
@@ -145,9 +168,57 @@ export async function loadIntakePrefill(
     const food = await getPickerFoodById(decision.foodItemId);
     // Null when the trial's diet row points at a food this device has not mirrored yet,
     // or at one the owner has since archived. Both are the food step, not a nameless chip.
-    return food ? { food, source: 'trial_diet' } : null;
+    //
+    // AND `isMealType` AGAIN, which the first cut dropped here — the docstring above
+    // claimed both filters held and only the recents branch enforced one of them.
+    // `AllowedFood` carries no `food_type`, so a `primary_diet` row pointing at a food
+    // cached `food_type: null` (nullable with no default since migration 010 — "legacy
+    // rows, or the user skipped it") arrived pre-filled and NAMED as the trial diet.
+    // The adversarial pass executed it: the refusal she then recorded is invisible to
+    // `intake_decline`, to the report and to analytics, all of which filter on
+    // `foodType === 'meal'` — and the completion card renders no intake row for an
+    // unclassified food, so she gets no correction affordance and no cue anything is
+    // wrong. A silent drop, in the direction that loses a refusal.
+    return food && isMealType(food) ? { food, source: 'trial_diet' } : null;
   } catch (e) {
     console.error('[intakeFirstMeal] trial-diet food read failed:', e);
     return null;
   }
+}
+
+/**
+ * How to NAME a food the owner picked herself.
+ *
+ * Through `trialListMembership` — the one shipped predicate — so the trial naming that
+ * §4.5 installs survives *Change food ›* rather than evaporating at the moment it
+ * matters. Anything else is `'picked'`, which says nothing, because the honest answer to
+ * "why is this food showing" is "you chose it".
+ */
+export function pickedFoodSource(
+  trial: TrialAllowedSet,
+  food: PickerFood,
+  nowMs: number = Date.now(),
+): IntakePrefillSource {
+  const hit = trialListMembership(
+    trial,
+    { id: food.id, brand: food.brand, productName: food.product_name },
+    nowMs,
+  );
+  return hit?.role === 'primary_diet' ? 'trial_diet' : 'picked';
+}
+
+/** The whole open: the pre-fill and the trial set behind it, in ONE read pass. */
+export async function loadIntakeDoor(
+  petId: string,
+  nowMs: number = Date.now(),
+): Promise<IntakeDoorState> {
+  let trial: TrialAllowedSet = { status: 'unknown' };
+  try {
+    trial = await loadTrialAllowedSet(petId, nowMs);
+  } catch (e) {
+    // `loadTrialAllowedSet` swallows its own read failures into `unknown`; this is the
+    // belt for anything it does not. `unknown` is the fail-closed value either way.
+    console.error('[intakeFirstMeal] trial read failed:', e);
+  }
+  return { prefill: await loadIntakePrefill(petId, nowMs), trial };
 }

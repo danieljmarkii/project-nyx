@@ -24,7 +24,9 @@ import type { TrialAllowedSet } from './trialAllowedSet';
 import {
   PREFILL_SCAN_LIMIT,
   decideIntakePrefill,
+  loadIntakeDoor,
   loadIntakePrefill,
+  pickedFoodSource,
 } from './intakeFirstMeal';
 
 // Anchored to the RUNNING clock rather than a fixed calendar date, so the fixture
@@ -203,6 +205,69 @@ describe('the loader', () => {
     mockLoadTrialAllowedSet.mockResolvedValue(readySet([allowed({ foodItemId: 'diet' })]));
     mockGetPickerFoodById.mockResolvedValue(null);
     await expect(loadIntakePrefill('p1', NOW)).resolves.toBeNull();
+  });
+
+  it.each(['treat', null, 'other'] as const)(
+    'applies the food-type filter to the TRIAL FALLBACK too — %s',
+    async (foodType) => {
+      // The adversarial pass's break, and the reason this case lives at the LOADER: the
+      // decision layer never sees a `food_type` for the fallback (`AllowedFood` carries
+      // none), so the sibling case up in `under a running trial` asserted a rule this
+      // function was quietly dropping. `food_items.food_type` is nullable with no default
+      // (migration 010 — "legacy rows, or user skipped"), and nothing scopes a
+      // `primary_diet` pick, so an unclassified prescription diet is an ordinary state.
+      //
+      // What it costs if it slips through: the refusal she records is invisible to
+      // `intake_decline`, to the report and to analytics (all filter `foodType ===
+      // 'meal'`), AND the completion card renders no intake row for an unclassified food
+      // — so there is no correction affordance and no cue anything went wrong.
+      mockLoadTrialAllowedSet.mockResolvedValue(readySet([allowed({ foodItemId: 'diet' })]));
+      mockGetPickerFoodById.mockResolvedValue(food({ id: 'diet', food_type: foodType }));
+      await expect(loadIntakePrefill('p1', NOW)).resolves.toBeNull();
+    },
+  );
+
+  it('still offers a `meal`-typed trial diet through the fallback', async () => {
+    // The other direction, so the filter above cannot be satisfied by refusing everything.
+    mockLoadTrialAllowedSet.mockResolvedValue(readySet([allowed({ foodItemId: 'diet' })]));
+    const row = food({ id: 'diet', food_type: 'meal' });
+    mockGetPickerFoodById.mockResolvedValue(row);
+    await expect(loadIntakePrefill('p1', NOW)).resolves.toEqual({
+      food: row,
+      source: 'trial_diet',
+    });
+  });
+
+  it('carries the trial set out, so a food picked LATER can still be named', async () => {
+    const set = readySet([allowed({ foodItemId: 'diet' })]);
+    mockLoadTrialAllowedSet.mockResolvedValue(set);
+    await expect(loadIntakeDoor('p1', NOW)).resolves.toEqual({ prefill: null, trial: set });
+  });
+});
+
+describe('naming a food the owner picked herself', () => {
+  it('keeps the TRIAL naming when she picks the trial diet back', () => {
+    // §4.5 installs the naming so a rating against a topper is a deliberate act. The one
+    // moment it does any work is *Change food ›* — so it has to survive it.
+    const set = readySet([allowed({ foodItemId: 'diet' })]);
+    expect(pickedFoodSource(set, food({ id: 'diet' }), NOW)).toBe('trial_diet');
+  });
+
+  it('claims NOTHING about a food she picked that is not the trial diet', () => {
+    // The first cut hardcoded `'recent_meal'`, which printed "her most recent food" under
+    // a bag `getRecentFoods` was never asked about and the pet may never have eaten.
+    const set = readySet([allowed({ foodItemId: 'diet' })]);
+    expect(pickedFoodSource(set, food({ id: 'topper' }), NOW)).toBe('picked');
+    expect(pickedFoodSource(NO_TRIAL, food({ id: 'anything' }), NOW)).toBe('picked');
+  });
+
+  it('makes no trial claim while the trial set is unknown', () => {
+    expect(pickedFoodSource(UNKNOWN, food({ id: 'diet' }), NOW)).toBe('picked');
+  });
+
+  it('does not call a permitted TREAT on the list the trial diet', () => {
+    const set = readySet([allowed({ foodItemId: 'chew', role: 'permitted_treat' })]);
+    expect(pickedFoodSource(set, food({ id: 'chew' }), NOW)).toBe('picked');
   });
 
   it('never throws — a failed read is the food step, which is a working screen', async () => {

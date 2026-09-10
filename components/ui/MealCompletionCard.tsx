@@ -160,6 +160,35 @@ export function MealCompletionCard() {
   const isMeal = payload?.kind === 'meal';
   const shown = visible && isMeal;
 
+  // THE RATING THIS CARD WAS PRESENTED WITH, per event (CUL-870).
+  //
+  // Null on every path that existed before the intake door: the picker, the FAB and
+  // photo capture all reveal with nothing lit, so a chip tap here is the owner's FIRST
+  // statement about that bowl and un-tapping it is her taking it back — which is exactly
+  // what a toggle should do.
+  //
+  // The intake door inverts that. It writes the rating she chose in its own sheet and
+  // reveals this card with the chip ALREADY LIT, so a tap on it is the natural "yes,
+  // that's right" gesture on a question showing a highlighted answer — and `IntakeChipRow`
+  // reads a tap on an active chip as CLEAR. The adversarial pass executed it:
+  // `updateMealIntake(eventId, null)`, no confirm, no way back, and the card gone
+  // `INTAKE_CONFIRM_HOLD_MS` later. One tap turned her refusal into the unrated meal row
+  // the intake door exists to prevent, silently.
+  //
+  // So a CLEAR is only honoured when this card set the value. Changing to a different arm
+  // is untouched — that is the real correction need — and every pre-door path keeps its
+  // toggle exactly, because on those the presented rating is null. C-21: a destructive
+  // action carries a confirm before or a way back after, and this had neither.
+  const presentedIntake = useRef<{ eventId: string | null; rating: IntakeRating | null }>({
+    eventId: null,
+    rating: null,
+  });
+  if (isMeal && payload && presentedIntake.current.eventId !== payload.eventId) {
+    // Derived from props during render (the payload swaps IN PLACE for a second log, so
+    // an effect would run a frame late — after a tap could already have landed).
+    presentedIntake.current = { eventId: payload.eventId, rating: payload.intakeRating };
+  }
+
   useEffect(() => {
     Animated.parallel([
       Animated.spring(translateY, {
@@ -262,6 +291,13 @@ export function MealCompletionCard() {
     if (!isMeal) return;
     const eventId = payload.eventId;
     const prevRating = payload.intakeRating;
+    // See `presentedIntake`. A tap that would erase an answer the owner gave on another
+    // surface holds the card open instead — she gets the beat, the record keeps her
+    // statement, and changing to a different arm still works.
+    if (next === null && presentedIntake.current.rating !== null) {
+      rescheduleHide(INTAKE_CONFIRM_HOLD_MS);
+      return;
+    }
     // Optimistic update first so the chip lights immediately. Persistence and
     // sync follow; if either fails we surface and revert.
     patchIntakeRating(next);

@@ -71,7 +71,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
 import type { LogTimeTrialFlag } from '../../lib/trialContaminant';
 import { reverseLoggedEvent } from '../../lib/undoLog';
-import { updateEvent, getEventSource } from '../../lib/db';
+import { updateEvent, updateMealIntake, getEventSource } from '../../lib/db';
 
 const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
   kind: 'off_trial_list',
@@ -359,6 +359,52 @@ describe('MealCompletionCard — the dwell pause is actually wired (CUL-614)', (
 // survive the swap (the question asked, the three fields written, cancel writing
 // nothing) plus the one thing the shared sheet adds: a real button role on its
 // two actions, which the inline copy never had.
+describe('MealCompletionCard — a rating stated ELSEWHERE is not erasable here (CUL-870)', () => {
+  it('a tap on the chip the card ARRIVED lit with does not clear the rating', async () => {
+    // The adversarial pass's blocking find, executed against the pre-fix tree as
+    // `updateMealIntake('e1', null)`. The intake door writes the arm the owner chose in
+    // its own sheet and reveals this card with that chip already lit — so a tap on it is
+    // the natural "yes, that's right" gesture on a highlighted answer, and IntakeChipRow
+    // reads a tap on an active chip as CLEAR. One tap turned her refusal into the unrated
+    // meal row the intake door exists to prevent: no confirm, no way back, card gone
+    // 1500 ms later (C-21).
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    const { getByText } = render(<MealCompletionCard />);
+    await act(async () => {
+      fireEvent.press(getByText('Refused'));
+    });
+    expect(updateMealIntake).not.toHaveBeenCalled();
+    expect(useMomentStore.getState().payload).toMatchObject({ intakeRating: 'refused' });
+  });
+
+  it('but she can still CHANGE her mind to a different arm', async () => {
+    // The correction the card is actually for. Blocking the clear must not block this.
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    const { getByText } = render(<MealCompletionCard />);
+    await act(async () => {
+      fireEvent.press(getByText('Some'));
+    });
+    expect(updateMealIntake).toHaveBeenCalledWith('e1', 'some');
+  });
+
+  it('and every PRE-DOOR path keeps its toggle exactly', async () => {
+    // The picker, the FAB and photo capture all reveal with nothing lit, so a tap there
+    // is the owner's first statement about that bowl and un-tapping it is her taking it
+    // back — which is what a toggle should do. The guard keys on the PRESENTED rating,
+    // so it is inert on all three.
+    seedMeal({ foodType: 'meal', intakeRating: null });
+    const { getByText } = render(<MealCompletionCard />);
+    await act(async () => {
+      fireEvent.press(getByText('Most'));
+    });
+    expect(updateMealIntake).toHaveBeenLastCalledWith('e1', 'most');
+    await act(async () => {
+      fireEvent.press(getByText('Most'));
+    });
+    expect(updateMealIntake).toHaveBeenLastCalledWith('e1', null);
+  });
+});
+
 describe('MealCompletionCard — Change time', () => {
   function openPicker(view: ReturnType<typeof render>) {
     fireEvent.press(view.getByLabelText('Change time of this log'));

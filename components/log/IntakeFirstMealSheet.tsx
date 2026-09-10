@@ -50,7 +50,12 @@ import { Skeleton } from '../ui/Skeleton';
 import { FoodPicker } from './FoodPicker';
 import { IntakeChipRow, type IntakeRating } from './IntakeChipRow';
 import { insertMeal } from '../../lib/meals';
-import { loadIntakePrefill, type IntakePrefill } from '../../lib/intakeFirstMeal';
+import {
+  loadIntakeDoor,
+  pickedFoodSource,
+  type IntakePrefill,
+} from '../../lib/intakeFirstMeal';
+import type { TrialAllowedSet } from '../../lib/trialAllowedSet';
 import { refreshedNowPoint } from '../../lib/eventTimeEdit';
 import {
   INTAKE_SHEET_CARD_KEPT,
@@ -120,6 +125,11 @@ export function IntakeFirstMealPanel({
 }: PanelProps) {
   const [step, setStep] = useState<Step>({ kind: 'loading' });
   const [saving, setSaving] = useState(false);
+  // The pet's trial set, held so a food the owner picks LATER can still be named as the
+  // trial diet (§4.5's naming has to survive *Change food ›* — that is the one moment it
+  // does any work). `unknown` until the read answers, which `pickedFoodSource` reads as
+  // "no membership", i.e. no claim.
+  const [trial, setTrial] = useState<TrialAllowedSet>({ status: 'unknown' });
   const { prependEvent } = useEventStore();
   const showMealMoment = useMomentStore((st) => st.showMeal);
   const appActive = useAppActive();
@@ -139,11 +149,12 @@ export function IntakeFirstMealPanel({
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const prefill = await loadIntakePrefill(petId);
+      const { prefill, trial: set } = await loadIntakeDoor(petId);
       // The step is the only thing this read decides, and an unmounted sheet has no
       // step. Guarded rather than left to React's warning because the picker flashing
       // up behind a dismissed Modal is a visible artefact, not just noise.
       if (!alive) return;
+      setTrial(set);
       setStep(
         prefill ? { kind: 'intake', food: prefill.food, source: prefill.source } : { kind: 'food' },
       );
@@ -153,12 +164,20 @@ export function IntakeFirstMealPanel({
     };
   }, [petId]);
 
-  const onPickFood = useCallback((food: PickerFood) => {
-    // DELIBERATELY NOT A WRITE. This is the single line that separates this sheet from
-    // `handlePickFood`, and the whole reason the issue exists: picking the food moves
-    // the step, it does not commit a meal.
-    setStep({ kind: 'intake', food, source: 'recent_meal' });
-  }, []);
+  const onPickFood = useCallback(
+    (food: PickerFood) => {
+      // DELIBERATELY NOT A WRITE. This is the single line that separates this sheet from
+      // `handlePickFood`, and the whole reason the issue exists: picking the food moves
+      // the step, it does not commit a meal.
+      //
+      // The SOURCE is derived, never assumed. The first cut hardcoded `'recent_meal'`
+      // here, which did two wrong things at once: it printed a recency claim nothing had
+      // checked, and it dropped the trial naming at the exact moment §4.5 wants it — the
+      // moment she changes away from the trial diet.
+      setStep({ kind: 'intake', food, source: pickedFoodSource(trial, food) });
+    },
+    [trial],
+  );
 
   const onArm = useCallback(
     async (rating: IntakeRating | null) => {

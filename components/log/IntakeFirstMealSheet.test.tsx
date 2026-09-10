@@ -16,9 +16,11 @@ jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn() }));
 const mockInsertMeal = jest.fn();
 jest.mock('../../lib/meals', () => ({ insertMeal: (...a: unknown[]) => mockInsertMeal(...a) }));
 
-const mockLoadPrefill = jest.fn();
+const mockLoadDoor = jest.fn();
+const mockPickedSource = jest.fn();
 jest.mock('../../lib/intakeFirstMeal', () => ({
-  loadIntakePrefill: (...a: unknown[]) => mockLoadPrefill(...a),
+  loadIntakeDoor: (...a: unknown[]) => mockLoadDoor(...a),
+  pickedFoodSource: (...a: unknown[]) => mockPickedSource(...a),
 }));
 
 // The picker is a screen's worth of surface with its own reads; the sheet's contract
@@ -70,6 +72,9 @@ const DIET = {
   photo_path: null,
 };
 
+/** The sheet only ever hands this back to `pickedFoodSource`, which is mocked here. */
+const TRIAL = { status: 'no_trial' } as const;
+
 const BASE = {
   petId: 'p1',
   petName: 'Mochi',
@@ -85,7 +90,8 @@ function setup(over: Partial<React.ComponentProps<typeof IntakeFirstMealPanel>> 
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockLoadPrefill.mockResolvedValue({ food: DIET, source: 'recent_meal' });
+  mockLoadDoor.mockResolvedValue({ prefill: { food: DIET, source: 'recent_meal' }, trial: TRIAL });
+  mockPickedSource.mockReturnValue('picked');
   mockInsertMeal.mockResolvedValue({
     eventId: 'e1',
     mealId: 'm1',
@@ -117,7 +123,7 @@ describe('opening', () => {
   });
 
   it('shows the pre-filled food and why it is showing', async () => {
-    mockLoadPrefill.mockResolvedValue({ food: DIET, source: 'trial_diet' });
+    mockLoadDoor.mockResolvedValue({ prefill: { food: DIET, source: 'trial_diet' }, trial: TRIAL });
     const { findByTestId } = setup();
     expect((await findByTestId('intake-sheet-food')).props.children).toBe(
       'Royal Canin HP · the trial diet',
@@ -126,7 +132,7 @@ describe('opening', () => {
 
   it('opens at the FOOD step when there is no pre-fill', async () => {
     // §4.5's "a pet with no meals ever", and every uncertain trial state with it.
-    mockLoadPrefill.mockResolvedValue(null);
+    mockLoadDoor.mockResolvedValue({ prefill: null, trial: TRIAL });
     const { findByTestId, queryByTestId } = setup();
     await findByTestId('food-picker');
     expect(queryByTestId('intake-sheet-title')).toBeNull();
@@ -136,12 +142,12 @@ describe('opening', () => {
     // C-12 with the states inverted: showing the food step and yanking it away a frame
     // later is the same defect as rendering an empty record before the read answered.
     let resolve: (v: unknown) => void = () => {};
-    mockLoadPrefill.mockReturnValue(new Promise((r) => (resolve = r)));
+    mockLoadDoor.mockReturnValue(new Promise((r) => (resolve = r)));
     const { queryByTestId, findByTestId } = setup();
     expect(queryByTestId('food-picker')).toBeNull();
     expect(queryByTestId('intake-sheet-title')).toBeNull();
     await act(async () => {
-      resolve({ food: DIET, source: 'recent_meal' });
+      resolve({ prefill: { food: DIET, source: 'recent_meal' }, trial: TRIAL });
     });
     await findByTestId('intake-sheet-title');
   });
@@ -149,11 +155,33 @@ describe('opening', () => {
 
 describe('picking a food', () => {
   it('writes NOTHING — the single line that separates this sheet from handlePickFood', async () => {
-    mockLoadPrefill.mockResolvedValue(null);
+    mockLoadDoor.mockResolvedValue({ prefill: null, trial: TRIAL });
     const { findByTestId } = setup();
     fireEvent.press(await findByTestId('picker-pick'));
     await findByTestId('intake-sheet-title');
     expect(mockInsertMeal).not.toHaveBeenCalled();
+  });
+
+  it('NAMES a picked food through the trial predicate, never as "most recent"', async () => {
+    // The first cut hardcoded `source: 'recent_meal'` on every pick, which asserted a
+    // recency fact nothing had checked AND dropped §4.5's trial naming at the one moment
+    // it does any work — the moment she changes away from the trial diet.
+    mockLoadDoor.mockResolvedValue({ prefill: null, trial: TRIAL });
+    mockPickedSource.mockReturnValue('trial_diet');
+    const { findByTestId } = setup();
+    fireEvent.press(await findByTestId('picker-pick'));
+    expect((await findByTestId('intake-sheet-food')).props.children).toBe(
+      'Hill’s z/d · the trial diet',
+    );
+    expect(mockPickedSource).toHaveBeenCalledWith(TRIAL, expect.objectContaining({ id: 'picked' }));
+  });
+
+  it('and claims NOTHING when the picked food is not the trial diet', async () => {
+    mockLoadDoor.mockResolvedValue({ prefill: null, trial: TRIAL });
+    mockPickedSource.mockReturnValue('picked');
+    const { findByTestId } = setup();
+    fireEvent.press(await findByTestId('picker-pick'));
+    expect((await findByTestId('intake-sheet-food')).props.children).toBe('Hill’s z/d');
   });
 
   it('*Change food ›* returns to the picker without writing', async () => {
@@ -278,7 +306,7 @@ describe('closing', () => {
     // Gating them to the intake step left the two states that most need them with
     // neither: a first-run pet with no meals, and the trial owner who tapped
     // *Change food ›* to override the pre-fill.
-    mockLoadPrefill.mockResolvedValue(null);
+    mockLoadDoor.mockResolvedValue({ prefill: null, trial: TRIAL });
     const { findByTestId, findByText } = setup({ cardHasSelections: true });
     await findByTestId('food-picker');
     await findByText(INTAKE_SHEET_NOTHING_SAVED);
@@ -301,7 +329,7 @@ describe('closing', () => {
   it('*Add new* dismisses BEFORE it navigates, and says it saved nothing', async () => {
     // C-14 / CUL-662: an RN Modal renders above the whole app window, so a screen pushed
     // from under one lands invisibly behind it.
-    mockLoadPrefill.mockResolvedValue(null);
+    mockLoadDoor.mockResolvedValue({ prefill: null, trial: TRIAL });
     const onNavigateAway = jest.fn();
     const onClose = jest.fn();
     const { findByTestId } = render(

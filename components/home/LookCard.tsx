@@ -114,6 +114,10 @@ const UNDO_FADE_MS = 500;
  *  between them, so the row gap is the SUM of the two hitSlops — derived from the chip's
  *  own constant, never a number that happens to be twice it (C-5). */
 const CHIP_ROW_GAP = CHIP_VERTICAL_REACH * 2;
+
+/** The reach a wrapper must declare when it is the responder for an inert chip — the
+ *  chip's own, never a number that happens to equal it today. */
+const CHIP_REACH_SLOP = { top: CHIP_VERTICAL_REACH, bottom: CHIP_VERTICAL_REACH } as const;
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
 import { formatTime } from '../../lib/utils';
 
@@ -572,8 +576,12 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                 // its place only by adding to the announcement).
                 accessibilityHint={`Opens a new meal to say how much ${petName} ate`}
                 // The row's own vertical reach, declared here because this wrapper IS
-                // the responder and the chip inside it is inert (C-5).
-                hitSlop={{ top: 6, bottom: 6 }}
+                // the responder and the chip inside it is inert — and DERIVED from the
+                // chip's own constant rather than restated as a number, which is the
+                // same rule `CHIP_ROW_GAP` below obeys (C-5). A hardcoded 6 here drifts
+                // silently the day `CHIP_VERTICAL_REACH` is retuned, while the row gap
+                // that depends on it moves.
+                hitSlop={CHIP_REACH_SLOP}
                 testID="look-intake-door"
               >
                 {/* Never a selected state: the router is not a look word (T-3), so there
@@ -590,8 +598,9 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                 // The same vertical reach every other chip in this row has
                 // (`LookChip`'s own). This wrapper IS the responder — the chip inside it
                 // is inert — so the reach has to be declared here, and dropping it left
-                // one sub-44pt target in a row of compliant ones (C-5).
-                hitSlop={{ top: 6, bottom: 6 }}
+                // one sub-44pt target in a row of compliant ones (C-5). Derived, for the
+                // reason the router chip above states.
+                hitSlop={CHIP_REACH_SLOP}
                 testID="look-opening-chip"
               >
                 <LookChipFacade

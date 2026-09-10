@@ -94,9 +94,17 @@ const ALLOWED: Record<string, string> = {
     'she is watching) or later (*left her food* \u2014 she found it). Both are still ' +
     'witnessed CLAIMS about a meal at the stated instant, because spec \u00a74.5 rules the row ' +
     'to be a NEW meal at now rather than an edit of an earlier one, and the owner named the ' +
-    'time by acting at it; what the second case can be is an hour late, and its correction is ' +
-    'the shipped "Change time" on the completion card this path raises a beat later, which ' +
-    'routes through sourceAfterPointEdit and restates the confidence honestly (C-10). What it ' +
+    'time by acting at it; what the second case can be is an HOUR LATE, and its correction ' +
+    'is the shipped "Change time" on the completion card this path raises a beat later. ' +
+    'PRECISELY WHAT THAT CORRECTS, because the first draft of this entry overstated it and ' +
+    'the adversarial pass priced the overstatement: the picker moves the INSTANT and the ' +
+    'SOURCE (through sourceAfterPointEdit, C-10) \u2014 the CONFIDENCE is re-asserted as ' +
+    'witnessed unconditionally at MealCompletionCard.tsx:244, exactly as app/edit-event.tsx ' +
+    'does ("meals are always witnessed"), so a found-later refusal can be re-dated but never ' +
+    're-graded. That is the shipped meal contract rather than a hole this path opens, and it ' +
+    'costs the record nothing today: no surface reads a MEAL\u2019s occurred_at_confidence ' +
+    '\u2014 generate-report\u2019s occurredCell is symptom-only, and patternsTiming is ' +
+    'explicitly null-tolerant for feedings. What it ' +
     'must never become is an INFERRED confidence: nothing here reads a clock the owner did ' +
     'not see, and no metadata is consulted.',
   'components/home/LookCard.tsx':

@@ -49,9 +49,13 @@ export function intakeSheetFoodLine(
   source: IntakePrefillSource,
   sex: 'male' | 'female' | 'unknown',
 ): string {
-  return source === 'trial_diet'
-    ? `${label} · the trial diet`
-    : `${label} · ${petPronouns(sex).possessive} most recent food`;
+  if (source === 'trial_diet') return `${label} · the trial diet`;
+  // A food the owner picked herself gets NO reason. The first cut printed "her most
+  // recent food" for every picked food — a recency claim nothing had checked, under a
+  // bag the pet may never have eaten. Silence is the honest answer to "why is this
+  // showing": she chose it.
+  if (source === 'picked') return label;
+  return `${label} · ${petPronouns(sex).possessive} most recent food`;
 }
 
 /** The food control. A chevron, because it goes somewhere (the picker) — the same

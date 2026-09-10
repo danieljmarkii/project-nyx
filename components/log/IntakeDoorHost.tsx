@@ -6,9 +6,16 @@
 // the root layout stays a list of mounted surfaces rather than a place store wiring
 // accumulates.
 //
-// KEYED ON THE PET, so a second open mounts a FRESH sheet rather than reviving the last
-// one's step, its resolved food and its `nowPoint`. The sheet resolves its pre-fill once
-// on mount, which is only correct if "mount" and "open" are the same event.
+// A SECOND OPEN IS A SECOND SHEET, which is what the panel's one-shot pre-fill read
+// rests on: it resolves once on mount, so "mount" and "open" have to be the same event
+// or a reopen would show the previous open's food and its `nowPoint` — a stale promise on
+// a sheet whose title is a timestamp (C-10). What actually delivers that today is the
+// `if (!request) return null` below: every close unmounts the sheet, and the one call
+// site that opens it is unreachable while the Modal is up, so a reopen always passes
+// through null. `key` is defensive against a future with two doors, not the mechanism —
+// stated accurately here because the first draft credited the key, and a comment that
+// names the wrong load-bearing line is what makes the real one look safe to remove.
+// `IntakeDoorHost.test.tsx` asserts the lifecycle rather than either explanation.
 
 import { useCallback } from 'react';
 import { useUiStore } from '../../store/uiStore';
