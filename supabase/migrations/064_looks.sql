@@ -61,6 +61,41 @@
 --      or not the apply path wraps it in one transaction, which 062's
 --      value-only shape never had to find out.
 --
+-- ------------------------------------------------------------
+-- WHAT THE ACCESS-CONTROL REVIEW CHANGED (rls-privacy-reviewer, on the file
+-- as first written, against a live PG16 stub of this surface)
+-- ------------------------------------------------------------
+--   F1 (blocking, fixed). The first draft's local_day RAISE printed
+--      parent_day — a value READ FROM THE PARENT ROW. A BEFORE trigger runs
+--      before RLS, and under SECURITY DEFINER the lookup sees every row, so a
+--      caller holding a victim's (pet_id, event_id) — any JWT, even one owning
+--      nothing, even with an invalid outcome — sent an absurd local_day and got
+--      the victim event's UTC date back in the error, one request, no
+--      ownership. The mitigation 047 leaned on ("two unguessable v4 UUIDs")
+--      is weaker than it reads: attachment storage paths are
+--      `${petId}/${eventId}/…` (lib/simpleEvent.ts), so a pasted signed URL
+--      carries both ids forever even after its token expires. The rule this
+--      leaves behind for every DEFINER trigger: A VALUE READ FROM THE PARENT
+--      MUST NEVER REACH THE MESSAGE. The trigger now raises ONCE, naming only
+--      NEW.event_id / NEW.pet_id / NEW.local_day, with one message for "no such
+--      parent" and "day out of bound" alike. Verified: the leak is gone, the
+--      honest UTC+14 / UTC−12 devices still pass, the probe still passes whole.
+--   N1 (hardening, taken). The parent lookup also requires
+--      e.event_type::text = 'check_in' — Shape A's invariant said in SQL: a
+--      look's parent is a look. Without it a hostile client could hang a look
+--      on an `other` event, whose notes Ask's recall fetch reads. Same row,
+--      same lookup, zero cost; text comparison, never the enum literal.
+--   N2 / N3 / N4 (routed, not taken here): notes and words are unbounded and
+--      the "words non-empty iff observed" rule is client-only — the spec's
+--      explicit 032-precedent choice, so they go to the write path (N-2,
+--      CUL-868: insertLook writes NULL never '' for an absent note, and holds
+--      the iff) and the readers (N-6, CUL-875: map every key through the
+--      vocabulary, never echo a raw one). Out of scope, named on their issues:
+--      an events-side UPDATE re-validates neither pet_id nor local_day (class-
+--      wide with 023 / 041 — its own issue); soft delete leaves the note at rest
+--      with no schema-side signal, so §9 rule 2 is entirely reader discipline
+--      (N-2 / N-6 fixtures); B-041 export widens (CUL-232).
+--
 -- Migration Safety Pre-flight:
 --   Destructive:  n  (purely additive — one enum VALUE, one new table with its
 --                     index / RLS / two triggers, one function, one CHECK on
@@ -232,15 +267,23 @@ CREATE TRIGGER trg_looks_updated_at
 -- LOAD-BEARING for that case, which is why Part 4 writes it explicitly. Any PR
 -- that splits looks_owner per verb or loosens its WITH CHECK re-checks this
 -- case (the 047 standing hazard). The membership oracle 047 discloses exists
--- here too — 42501 vs 23514 distinguishes "that event belongs to that pet" from
--- "it does not" — gated behind two unguessable v4 UUIDs that are themselves the
--- protected identifiers; recorded, not dismissed.
+-- here too — on a VALID local_day, 42501 vs 23514 distinguishes "that event
+-- belongs to that pet" from "it does not". Recorded, not dismissed, and bounded
+-- honestly: it needs both ids, and a pair learned from an attachment URL already
+-- asserts the membership by its path, so the oracle adds nothing there. What
+-- the review found and this file closes is the WORSE thing E-2's extension
+-- would have added on top of it — a field read (the parent's date) through the
+-- error message. See the header.
 --
 -- THE local_day BOUND (E-2): because the guard already reads the parent row, it
 -- also bounds NEW.local_day to ±1 day of the parent's UTC date. The widest real
 -- offsets are −12 / +14, so an honest device's local day is always within one
 -- day of the UTC date of the same instant; two days off is a wrong clock or a
--- forged row, and either is refused. "Change time" across midnight (C-10)
+-- forged row, and either is refused AT CHILD-WRITE TIME. At rest the invariant
+-- is only as good as the parent staying put: an events UPDATE that moves
+-- occurred_at or pet_id re-validates nothing (the same gap 023 and 041 carry;
+-- filed as its own class-wide issue), so a later looks UPDATE then fails 23514
+-- until the day is re-derived. "Change time" across midnight (C-10)
 -- re-derives local_day on the client and pushes the parent first (the child's
 -- push is parent-gated, N-2), so the guard sees the moved occurred_at; a child
 -- that arrives before its moved parent is refused and retried by the queue,
@@ -263,19 +306,16 @@ BEGIN
     INTO parent_day
     FROM public.events e
    WHERE e.id = NEW.event_id
-     AND e.pet_id = NEW.pet_id;
+     AND e.pet_id = NEW.pet_id
+     AND e.event_type::text = 'check_in';
 
-  IF parent_day IS NULL THEN
+  -- ONE raise, and it names only what the caller sent. Never parent_day: see
+  -- "WHAT THE ACCESS-CONTROL REVIEW CHANGED" above.
+  IF parent_day IS NULL
+     OR NEW.local_day NOT BETWEEN parent_day - 1 AND parent_day + 1 THEN
     RAISE EXCEPTION
-      'looks.event_id % must reference an event for the same pet (%)',
-      NEW.event_id, NEW.pet_id
-      USING ERRCODE = 'check_violation';
-  END IF;
-
-  IF NEW.local_day NOT BETWEEN parent_day - 1 AND parent_day + 1 THEN
-    RAISE EXCEPTION
-      'looks.local_day % is more than a day from the parent event (UTC date %)',
-      NEW.local_day, parent_day
+      'looks.event_id % must reference a check_in event for the same pet (%) with local_day % within a day of it',
+      NEW.event_id, NEW.pet_id, NEW.local_day
       USING ERRCODE = 'check_violation';
   END IF;
 
