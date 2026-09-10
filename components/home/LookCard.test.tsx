@@ -223,6 +223,27 @@ describe('Undo', () => {
 });
 
 describe('two pets (T-11)', () => {
+  it('never renders ANOTHER pet’s look under this pet’s question', async () => {
+    // `loadTodayEvents` re-queries on a switch, but the store holds the previous pet's
+    // rows until that read answers. For the width of one query the card would otherwise
+    // show Mochi's look — with an Undo — under Juniper's name.
+    useEventStore.setState({
+      todayEvents: [
+        {
+          id: 'e9',
+          pet_id: 'p2',
+          event_type: 'check_in',
+          occurred_at: new Date().toISOString(),
+          look_outcome: 'observed',
+          look_words: '["hiding"]',
+        } as never,
+      ],
+    });
+    const t = render(<LookCard />);
+    expect(t.queryByTestId('look-entries')).toBeNull();
+    expect(t.queryByTestId('look-undo-e9')).toBeNull();
+  });
+
   it('a header switch mid-draft clears the words and SAYS so — never a wrong-pet look', async () => {
     const t = render(<LookCard />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
@@ -241,6 +262,28 @@ describe('two pets (T-11)', () => {
     expect(t.getByTestId('look-chip-hiding')).toBeTruthy();
     expect(t.queryByTestId('look-chip-walk_refused')).toBeNull();
     expect(mockInsertLook).not.toHaveBeenCalled();
+  });
+
+  it('a switch DURING the completion dwell reverses the row but keeps its words off the new pet', async () => {
+    const t = render(<LookCard />);
+    fireEvent.press(t.getByTestId('look-chip-subdued'));
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-done'));
+    });
+    await waitFor(() => expect(t.getByTestId('look-undo-e1')).toBeTruthy());
+
+    // The owner switches, then reaches for Undo before the today read has answered.
+    mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
+    t.rerender(<LookCard />);
+    // The entry is already gone from view (it is Mochi's row), so the only way to reach
+    // Undo is the store — which is exactly the state this asserts about.
+    await act(async () => {
+      await useMomentStore.getState().undo('e1');
+    });
+
+    // The reversal is unconditional; the WORDS are not handed to Juniper's card.
+    expect(mockReverse).toHaveBeenCalledWith('e1', undefined);
+    expect(t.queryByTestId('look-done')).toBeNull();
   });
 });
 
@@ -290,5 +333,27 @@ describe('the grid, the exits and the door', () => {
     });
     expect(t.getByText('When to call the vet')).toBeTruthy();
     expect(mockInsertLook).not.toHaveBeenCalled();
+  });
+
+  it('a switch DURING the completion dwell reverses the row but keeps its words off the new pet', async () => {
+    const t = render(<LookCard />);
+    fireEvent.press(t.getByTestId('look-chip-subdued'));
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-done'));
+    });
+    await waitFor(() => expect(t.getByTestId('look-undo-e1')).toBeTruthy());
+
+    // The owner switches, then reaches for Undo before the today read has answered.
+    mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
+    t.rerender(<LookCard />);
+    // The entry is already gone from view (it is Mochi's row), so the only way to reach
+    // Undo is the store — which is exactly the state this asserts about.
+    await act(async () => {
+      await useMomentStore.getState().undo('e1');
+    });
+
+    // The reversal is unconditional; the WORDS are not handed to Juniper's card.
+    expect(mockReverse).toHaveBeenCalledWith('e1', undefined);
+    expect(t.queryByTestId('look-done')).toBeNull();
   });
 });

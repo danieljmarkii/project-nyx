@@ -154,7 +154,16 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   // Today's looks, from the rows Home already loaded — one read, shared with
   // TodayZone, rather than a second query that could disagree with it about the same
   // day. `todayEvents` is ordered `occurred_at DESC`, which is newest-first (R9).
-  const entries = useMemo(() => todayEvents.filter((e) => isLookRow(e)), [todayEvents]);
+  //
+  // FILTERED BY THE ROW'S OWN PET, not just by what the loader was asked for (C-9).
+  // `loadTodayEvents` re-queries on a pet switch, but the store holds the PREVIOUS pet's
+  // rows until that read answers — so for the width of one query this card would
+  // otherwise render another animal's look under this animal's question, with an Undo
+  // beside it. The filter closes that window rather than trusting the loader's timing.
+  const entries = useMemo(
+    () => todayEvents.filter((e) => isLookRow(e) && e.pet_id === activePet?.id),
+    [todayEvents, activePet?.id],
+  );
   const asking = entries.length === 0 || reopened;
 
   const arrival = useLookArrival({
@@ -169,10 +178,19 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
 
   // Has this pet ever been looked at? Only ever used to decide whether the day-1 line
   // renders, so it is read once per pet and never counted aloud.
+  //
+  // The unknown state is reset ONLY when the pet changes, never on a re-read: resetting
+  // it on every refresh would blink the day-1 line off and back on each time an
+  // unrelated row lands, and a line that says "this is the first look" should not
+  // flicker while the owner is reading it.
+  const everLookedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!live || !activePet) return;
     let cancelled = false;
-    setEverLooked(null);
+    if (everLookedFor.current !== activePet.id) {
+      everLookedFor.current = activePet.id;
+      setEverLooked(null);
+    }
     loadLookDays(activePet.id)
       .then((rows) => {
         if (!cancelled) setEverLooked(answeredDays(rows) > 0);
@@ -181,7 +199,7 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [live, activePet?.id, todayEvents.length]);
+  }, [live, activePet?.id, todayEvents.length, activePet]);
 
   // T-11 — THE PET SWITCH. A draft belongs to the pet it was started for; if the header
   // moves, the words do not follow. Cleared and SAID, never silently re-pointed.
@@ -307,12 +325,19 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   // invent a second delete path. The words come back still selected, chips open: a slip
   // costs nothing, and the look is the only thing that was written.
   const handleUndo = useCallback(
-    async (eventId: string, restore: LookDraft) => {
+    async (eventId: string, restore: LookDraft, rowPetId: string) => {
       const result = await undo(eventId);
       if (result === 'removed') {
-        setDraft(restore);
-        setCapturedPetId(activePet?.id ?? null);
-        setReopened(true);
+        // The reversal is unconditional — the row is gone and should be. Putting the
+        // WORDS back is not: they describe `rowPetId`, and handing them to a card that
+        // has since become another animal's question would let a switch-then-undo save
+        // one pet's observation against the other's name (T-11, the same rule the draft
+        // effect above enforces on the way in).
+        if (rowPetId === activePet?.id) {
+          setDraft(restore);
+          setCapturedPetId(activePet?.id ?? null);
+          setReopened(true);
+        }
         setJustWritten(null);
         return;
       }
@@ -612,7 +637,7 @@ function LookEntry({
   isNewest: boolean;
   arrival: ReturnType<typeof useLookArrival>;
   undoable: boolean;
-  onUndo: (eventId: string, restore: LookDraft) => void;
+  onUndo: (eventId: string, restore: LookDraft, rowPetId: string) => void;
 }) {
   const described = describeLook(row, pet);
   // The ONE resolver, so this entry, History's row and the record screen name the same
@@ -642,7 +667,7 @@ function LookEntry({
       <ThemedText style={styles.entryTime}>{formatTime(new Date(row.occurred_at))}</ThemedText>
       {undoable ? (
         <Pressable
-          onPress={() => onUndo(row.id, restore)}
+          onPress={() => onUndo(row.id, restore, row.pet_id)}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={`Undo. ${words ?? 'the look'}`}
