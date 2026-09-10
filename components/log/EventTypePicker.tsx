@@ -89,6 +89,14 @@ export const CATEGORY_TINT: Record<EventTypeKey, { bg: string; fg: string }> = {
   medication: { bg: theme.colorEventMedicationLight, fg: theme.colorEventMedication },
   weight_check: { bg: theme.colorSurfaceSubtle, fg: theme.colorTextSecondary },
   other: { bg: theme.colorSurfaceSubtle, fg: theme.colorTextSecondary },
+  // `check_in` (Noticed) has NO TILE in either grid (E-6, and the two filters
+  // below/`expandedPickerGroups`), so this entry is never rendered. It is here
+  // because the Record is exhaustive over EventTypeKey — which is the point: a
+  // leaf added to EVENT_TYPES cannot reach a grid without someone deciding its
+  // tint, and a look's decision is "neutral, and no tile at all". Never rose: a
+  // look is not a symptom (T-5), and the §6 pairing rule's set-equality test
+  // reads exactly this map.
+  check_in: { bg: theme.colorSurfaceSubtle, fg: theme.colorTextSecondary },
 };
 
 // The tinted circle + glyph shared by every grouped tile (regular and split).
@@ -255,8 +263,11 @@ export function EventTypePicker({ grouped, expanded = false, species, onSelectTy
   return (
     <ScrollView contentContainerStyle={styles.typeGrid} showsVerticalScrollIndicator={false}>
       {(Object.entries(EVENT_TYPES) as [EventTypeKey, (typeof EVENT_TYPES)[EventTypeKey]][])
-        // diarrhea is accessible via the stool-type sub-step; hide it from the top-level grid
-        .filter(([key, cfg]) => key !== 'diarrhea' && !cfg.v2Only)
+        // diarrhea is accessible via the stool-type sub-step; hide it from the top-level grid.
+        // check_in (Noticed) is not a loggable type here at all (E-6): a look is made on
+        // the Home card, and `v2Only` cannot express "no tile" — it would hide the key
+        // here and SHOW it on the expanded grouped grid, the wrong way round.
+        .filter(([key, cfg]) => key !== 'diarrhea' && key !== 'check_in' && !cfg.v2Only)
         .map(([key]) => (
           <TouchableOpacity
             key={key}

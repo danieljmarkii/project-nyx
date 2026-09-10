@@ -675,6 +675,96 @@ describe('buildCountChips (C2) — per-category, symptom-toned, never totalled',
   });
 });
 
+describe('a look on the day (CUL-868) — never counted, never a fall-through', () => {
+  // §5.1 row 1a: the manufactured-event case. Before the category existed a look fell
+  // into `otherCounts` through an `else`, and Home's count line read "1 look" — the
+  // record counting the owner's perception of her animal as an event that happened to
+  // it. The chips must be byte-identical with and without the look.
+  it('a look adds no chip, and changes none of the others', () => {
+    const withoutLook = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit' }),
+      dsr({ id: 'd1', category: 'medication', eventType: 'medication' }),
+    ];
+    const withLook = [
+      ...withoutLook,
+      dsr({ id: 'l1', category: 'look', eventType: 'check_in' }),
+      dsr({ id: 'l2', category: 'look', eventType: 'check_in' }),
+    ];
+    expect(buildCountChips(withLook)).toEqual(buildCountChips(withoutLook));
+    expect(buildCountChips(withLook).some((c) => /look|noticed|check/i.test(c.label))).toBe(false);
+  });
+
+  it('a day of nothing but looks produces no chips at all', () => {
+    const rows = [
+      dsr({ id: 'l1', category: 'look', eventType: 'check_in' }),
+      dsr({ id: 'l2', category: 'look', eventType: 'check_in' }),
+    ];
+    expect(buildCountChips(rows)).toEqual([]);
+  });
+
+  // §5.1 row 1b, the half N-2 ships. Before it, a look-only day fell through every
+  // tier and returned null — so the screen rendered its ZERO-LOG empty state over a
+  // day the owner had written in. The lead names the ACT, and its second clause is a
+  // claim about the RECORD ("logged yet"), never about the pet.
+  it('a look-only day leads with the act, not with nothing', () => {
+    const rows = [dsr({ id: 'l1', category: 'look', eventType: 'check_in' })];
+    expect(buildLeadLine(rows, 'Pixel', null)).toBe('Noticed today · nothing else logged yet.');
+  });
+
+  it('two looks the same day still read as one act, and never as a count', () => {
+    const rows = [
+      dsr({ id: 'l1', category: 'look', eventType: 'check_in' }),
+      dsr({ id: 'l2', category: 'look', eventType: 'check_in' }),
+    ];
+    const lead = buildLeadLine(rows, 'Pixel', null);
+    expect(lead).toBe('Noticed today · nothing else logged yet.');
+    expect(lead).not.toMatch(/\b(two|2)\b/i);
+  });
+
+  // The look must not reach the counts tier either — this is the `=== 'other'` filter
+  // that §5.1 row 1b named as the defect that would ship with green CI.
+  it('a look beside real rows is absent from the counts lead', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'm2', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'd1', category: 'medication', eventType: 'medication' }),
+      dsr({ id: 'l1', category: 'look', eventType: 'check_in' }),
+    ];
+    // Identical to the same day without the look — the look adds nothing and
+    // subtracts nothing. (Naming what she noticed is CUL-883; it needs the words,
+    // which this row shape does not carry.)
+    expect(buildLeadLine(rows, 'Pixel', null)).toBe(
+      buildLeadLine(rows.filter((r) => r.category !== 'look'), 'Pixel', null),
+    );
+    expect(buildLeadLine(rows, 'Pixel', null)).toBe('Two meals and one dose in Pixel’s record today.');
+  });
+
+  it('a symptom still outranks a look, and the look is not named beside it', () => {
+    const rows = [
+      dsr({ id: 'v1', category: 'symptom', eventType: 'vomit', time: '9:15 AM' }),
+      dsr({ id: 'l1', category: 'look', eventType: 'check_in' }),
+    ];
+    expect(buildLeadLine(rows, 'Biscuit', null)).toBe(
+      'One vomit in Biscuit’s record today — 9:15 AM.',
+    );
+  });
+
+  it('a look does not change a running trial’s lead', () => {
+    const rows = [
+      dsr({ id: 'm1', category: 'meal', eventType: 'meal' }),
+      dsr({ id: 'l1', category: 'look', eventType: 'check_in' }),
+    ];
+    const trialLead = buildLeadLine(rows, 'Mochi', tf());
+    expect(trialLead).toBe(buildLeadLine(rows.filter((r) => r.category !== 'look'), 'Mochi', tf()));
+    expect(trialLead).not.toMatch(/notic|look/i);
+  });
+
+  it('an empty day is still null — the look tier does not fire on nothing', () => {
+    expect(buildLeadLine([], 'Pixel', null)).toBeNull();
+  });
+});
+
 describe('buildTrialStrip (C3) — day-position + floor meal count, no ratio', () => {
   it('renders Day N of M · K trial-diet meals', () => {
     expect(buildTrialStrip(tf(), 2)).toEqual({

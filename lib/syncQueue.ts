@@ -319,6 +319,11 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   { table: 'events', pendingSince: 'updated_at' },
   { table: 'meals', pendingSince: 'updated_at' },
   { table: 'weight_checks', pendingSince: 'updated_at' },
+  // CUL-868 looks — Noticed's child. LWW on updated_at like every other row queue;
+  // its push is PARENT-GATED (drainLooksQueue joins events and requires the parent
+  // check_in to have landed), because the server's trg_looks_same_pet refuses a child
+  // whose parent it cannot see.
+  { table: 'looks', pendingSince: 'updated_at' },
   // Insert-only: no updated_at column exists (an attachment row is never edited
   // in place), so created_at is the honest and only age.
   { table: 'event_attachments', pendingSince: 'created_at' },

@@ -30,6 +30,11 @@ export const NODE_TINT_DAY: Record<EventTintCategory, string> = {
   meal: theme.colorEventMeal,
   medication: theme.colorEventMedication,
   other: theme.colorTextSecondary,
+  // A look is the muted neutral, and it is drawn HOLLOW (see `nodeDotColors`) —
+  // never rose, never a hue of its own (CUL-868, spec §5.1 row 2). The hue says
+  // "not a symptom"; the hollowness says "not an event that happened to her" — the
+  // owner answered the question, and the mark on the lane records the ACT.
+  look: theme.colorTextSecondary,
 };
 
 /** Night-ground node tint — DR-1's day spine. The two category hues that would
@@ -40,6 +45,11 @@ export const NODE_TINT_NIGHT: Record<EventTintCategory, string> = {
   meal: theme.colorEventMeal,
   medication: theme.colorEventMedicationOnNight,
   other: theme.colorTextOnNightMuted,
+  // The night sibling of the lane's neutral. The spine's own look mark — the
+  // hollow bead on the day spine — is N-3's (CUL-869); this entry is here because
+  // the Record is exhaustive and the hue is decided once, in this file, for both
+  // grounds.
+  look: theme.colorTextOnNightMuted,
 };
 
 // The node's GEOMETRY, shared for the same reason as the tints: the vertical day spine
@@ -49,3 +59,38 @@ export const NODE_TINT_NIGHT: Record<EventTintCategory, string> = {
 // RN, so the ring is drawn INSIDE the size (a dot reads as `NODE_DOT_SIZE` across).
 export const NODE_DOT_SIZE = 11;
 export const NODE_DOT_RING = 2;
+
+
+/**
+ * A node's FILL and RING for one ground — the hollow-mark rule, decided here so the
+ * lane and the spine cannot draw a look two different ways (the same argument the
+ * tints themselves are in this file for).
+ *
+ * Every category is a filled bead with a ground-coloured ring (it reads as cutting
+ * the track). A LOOK inverts that: the ground is the fill and the tint is the ring,
+ * so it reads as an outline — present on the day, plainly not one of the events
+ * beside it. The GEOMETRY is identical either way (`borderWidth` is inside the box
+ * in RN, so a `NODE_DOT_SIZE` dot stays `NODE_DOT_SIZE` across) — which is the
+ * point: nothing moves, the mark just stops being filled.
+ */
+export function nodeDotColors(
+  category: EventTintCategory,
+  tints: Record<EventTintCategory, string>,
+  ground: string,
+): { fill: string; ring: string } {
+  const tint = tints[category];
+  return NODE_DOT_STYLE[category] === 'hollow'
+    ? { fill: ground, ring: tint }
+    : { fill: tint, ring: ground };
+}
+
+/** Filled or hollow, per category. A Record rather than an equality test so a sixth
+ *  category cannot arrive without someone deciding which one it is — the same reason
+ *  the tints above are a Record and not a chain of `===`. */
+const NODE_DOT_STYLE: Record<EventTintCategory, 'filled' | 'hollow'> = {
+  symptom: 'filled',
+  meal: 'filled',
+  medication: 'filled',
+  other: 'filled',
+  look: 'hollow',
+};

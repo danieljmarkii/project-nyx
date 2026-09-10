@@ -21,6 +21,12 @@ const CATEGORY_TINT: Record<EventTintCategory, string> = {
   meal: theme.colorEventMeal,
   medication: theme.colorEventMedication,
   other: theme.colorTextSecondary,
+  // A look reads NEUTRAL, never rose and never a category hue of its own (E-12,
+  // CUL-868): the drill-in's tint is category IDENTITY, and a look's identity is
+  // "the owner answered the question", not "something happened to the pet". The
+  // Record is exhaustive over EventTintCategory, so this entry is a decision the
+  // type system asked for rather than one anybody had to remember.
+  look: theme.colorTextSecondary,
 };
 
 // The Calendar v3 day drill-in (B-284 N5b / B-226 #1). Tapping a day cell opens this

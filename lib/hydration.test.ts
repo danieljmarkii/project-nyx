@@ -396,6 +396,12 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
     // reordering into a half-failed wipe — and a half-failed wipe of a vet-records
     // library is a data leak, not a warning.
     expect(order('vet_documents')).toBeLessThan(order('vet_visits'));
+    // CUL-868 — looks FK→events ON DELETE CASCADE locally, the weight_checks rule
+    // again. This assertion is the half the generic "wipes EVERY real table" test
+    // cannot make: that one catches a MISSING entry, this one catches a REORDERED
+    // one, and the entry's own comment claims the ordering is proven. (Added after
+    // code-reviewer pointed out the claim covered deletion only.)
+    expect(order('looks')).toBeLessThan(order('events'));
   });
 
   // B-424 — this used to compare the constant against a HARDCODED list, which

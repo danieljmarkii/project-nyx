@@ -39,15 +39,28 @@ const ADHERENCE_PHRASE: Record<string, string> = {
 
 /** The row's event-category, driving its glyph tint in the drill-in (B-311).
  *  Theme-free on purpose — this module stays pure; DayEventsSheet maps the
- *  category → theme colour. 'other' (weight, etc.) reads neutral. */
-export type EventTintCategory = 'symptom' | 'meal' | 'medication' | 'other';
+ *  category → theme colour. 'other' (weight, etc.) reads neutral.
+ *
+ *  'look' is the fifth value (CUL-868 / N-2, spec §5.1). It exists to make the
+ *  daily look's exclusion STRUCTURAL rather than remembered: Shape A puts a look on
+ *  `events` as a `check_in` row, so without a category of its own a look falls into
+ *  'other' and every consumer that treats 'other' as "some event, count it" would
+ *  silently render the owner's perception as a logged event — "1 look" on Home's
+ *  count line, a grey node on the spine, a lead line about a day that has nothing
+ *  in it but a question answered. Every consumer of this union is an EXHAUSTIVE
+ *  switch (`assertNeverCategory`) or an exhaustive Record for exactly that reason:
+ *  a sixth category added without a decision is a compile error, never a silent
+ *  chip. The pressure reaches only the consumers that switch on the CATEGORY; the
+ *  ones that read `events` by TYPE go through explicit lists, and the membership
+ *  walk is the guard there (§4.7). */
+export type EventTintCategory = 'symptom' | 'meal' | 'medication' | 'other' | 'look';
 
 /** An event_type → its tint category. The ONE source shared by `describeDayEvent`
  *  (the spine / drill-in rows) and DR-2's Home lane (`lib/todayLane.ts`), so a
  *  meal/dose/symptom is categorised — and therefore tinted (`NODE_TINT_*`) and counted
  *  — identically wherever it is drawn. The symptom set is the closed `SYMPTOM_TYPES`;
- *  meal and medication are their own types; everything else (weight, note, …) is
- *  'other'. */
+ *  meal, medication and check_in are their own types; everything else (weight,
+ *  note, …) is 'other'. */
 export function eventTintCategory(eventType: string): EventTintCategory {
   return SYMPTOM_TYPES.has(eventType as EventTypeKey)
     ? 'symptom'
@@ -55,7 +68,24 @@ export function eventTintCategory(eventType: string): EventTintCategory {
       ? 'meal'
       : eventType === 'medication'
         ? 'medication'
-        : 'other';
+        // A look is never a symptom and never an 'other' event (T-5): its own
+        // category is what lets the switches below refuse to count it.
+        : eventType === 'check_in'
+          ? 'look'
+          : 'other';
+}
+
+/** The compile-time half of the category's exhaustiveness guarantee, shared by every
+ *  consumer that switches on `EventTintCategory` (§5.1's "no `default:` and no
+ *  `category ===` survives"). A `default:` arm would have absorbed 'look' into
+ *  whatever 'other' does; this makes the omission a build failure instead.
+ *
+ *  `noImplicitReturns` is NOT set in tsconfig.json and `strict` does not imply it,
+ *  so a switch that simply falls through returns `undefined` silently — the `never`
+ *  binding is what actually closes the union (the lib/dietTrialCard.ts lesson,
+ *  lifted here rather than re-derived). */
+export function assertNeverCategory(value: never): never {
+  throw new Error(`Unhandled event tint category: ${String(value)}`);
 }
 
 export interface DayEventDisplay {
@@ -84,10 +114,57 @@ function foodLabelOf(row: TimelineRow): string | null {
   return row.food_product_name ?? row.food_brand ?? null;
 }
 
+/** The row's three display strings, decided by CATEGORY rather than by a chain of
+ *  type equalities (§5.1). Every arm RETURNS and the union is closed by
+ *  `assertNeverCategory`, so there is no `default:` here for a sixth category to
+ *  fall into: adding one is a compile error at this function. The event TYPE is
+ *  still read inside an arm that needs it (a meal's food, a dose's drug) — that is
+ *  detail rendering, not categorisation. */
+function describeByCategory(
+  row: TimelineRow,
+  category: EventTintCategory,
+): { title: string; detail: string | null; formatTag: string | null } {
+  const config = EVENT_TYPES[row.event_type as EventTypeKey];
+  const labelOnly = { title: config?.label ?? 'Event', detail: null, formatTag: null };
+
+  switch (category) {
+    case 'meal': {
+      const food = foodLabelOf(row);
+      // The meal's word when there's no food name — the one shared rule (CUL-625),
+      // so this drill-in, EventRow and TodayZone cannot drift apart.
+      const mealLabel = mealRowLabel(row.food_type);
+      return {
+        title: food ?? mealLabel,
+        // B-568 — the wet/dry variant, so the drill-in can tell apart two rows of one
+        // prescription line stocked in both. Suppressed against the same label EventRow
+        // suppresses against, so the three timeline surfaces agree on when it is shown.
+        formatTag: foodFormatTag(row.food_format, mealLabel),
+        detail: row.intake_rating ? INTAKE_PHRASE[row.intake_rating] ?? null : null,
+      };
+    }
+    case 'medication':
+      return {
+        title: formatDrugLabel(row.drug_generic_name, row.drug_brand_name) ?? 'Medication',
+        detail: row.adherence ? ADHERENCE_PHRASE[row.adherence] ?? null : null,
+        formatTag: null,
+      };
+    case 'look':
+      // The type's label ("Noticed") and NOTHING else in N-2. A look's words and its
+      // note live on the `looks` child, which a TimelineRow does not carry: the row
+      // that names them is N-3's (CUL-869), and a detail invented here would be this
+      // surface claiming to know what a look said. Kept as its own arm rather than
+      // folded in with the two below, so the day that row lands, this is where it goes.
+      return labelOnly;
+    case 'symptom':
+    case 'other':
+      return labelOnly;
+  }
+  return assertNeverCategory(category);
+}
+
 /** Pure: one TimelineRow → its drill-in display shape. */
 export function describeDayEvent(row: TimelineRow): DayEventDisplay {
   const type = row.event_type;
-  const config = EVENT_TYPES[type as EventTypeKey];
   const category: EventTintCategory = eventTintCategory(type);
   const timeMs = Date.parse(row.occurred_at);
   const time = describeOccurredAt({
@@ -97,27 +174,7 @@ export function describeDayEvent(row: TimelineRow): DayEventDisplay {
     latest: row.occurred_at_latest,
   }).compact;
 
-  let title: string;
-  let detail: string | null = null;
-  let formatTag: string | null = null;
-
-  if (type === 'meal') {
-    const food = foodLabelOf(row);
-    // The meal's word when there's no food name — the one shared rule (CUL-625),
-    // so this drill-in, EventRow and TodayZone cannot drift apart.
-    const mealLabel = mealRowLabel(row.food_type);
-    title = food ?? mealLabel;
-    // B-568 — the wet/dry variant, so the drill-in can tell apart two rows of one
-    // prescription line stocked in both. Suppressed against the same label EventRow
-    // suppresses against, so the three timeline surfaces agree on when it is shown.
-    formatTag = foodFormatTag(row.food_format, mealLabel);
-    detail = row.intake_rating ? INTAKE_PHRASE[row.intake_rating] ?? null : null;
-  } else if (type === 'medication') {
-    title = formatDrugLabel(row.drug_generic_name, row.drug_brand_name) ?? 'Medication';
-    detail = row.adherence ? ADHERENCE_PHRASE[row.adherence] ?? null : null;
-  } else {
-    title = config?.label ?? 'Event';
-  }
+  const { title, detail, formatTag } = describeByCategory(row, category);
 
   return {
     eventType: type,
@@ -132,6 +189,7 @@ export function describeDayEvent(row: TimelineRow): DayEventDisplay {
 
 /** Pure: chronological (earliest-first) drill-in rows for a day. getTimeline returns
  *  newest-first; the drill-in reads top-to-bottom through the day. */
+
 export function describeDayEvents(rows: TimelineRow[]): DayEventDisplay[] {
   return rows.map(describeDayEvent).sort((a, b) => a.timeMs - b.timeMs);
 }

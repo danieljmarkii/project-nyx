@@ -17,6 +17,13 @@ import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 const TYPE_FILTER_KEYS: EventTypeKey[] = [
   'meal', 'vomit', 'diarrhea', 'stool_normal', 'cough', 'sneeze', 'lethargy', 'itch',
   'medication', 'weight_check', 'other',
+  // Noticed (CUL-868). A LENS, not a tile: `check_in` has no picker tile in either
+  // grid (a look is made on the Home card, never from the + menu), but it is a real
+  // row in the record, so History must be able to show only the looks —
+  // `/history?type=check_in` is the doorway Patterns' *What you noticed* card points
+  // at (N-5). The label is EVENT_TYPES.check_in's ("Noticed"), so this filter and
+  // every row surface name the same thing the same way.
+  'check_in',
 ];
 
 const TYPE_OPTIONS: ScopeMenuOption[] = [
