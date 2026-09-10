@@ -33,6 +33,8 @@ import { reverseLoggedEvent } from '../../lib/undoLog';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
+import { describeLook, isLookRow } from '../../lib/lookDisplay';
+import { LookRecordSection } from '../../components/event/LookRecordSection';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceChipRow';
@@ -479,12 +481,27 @@ export default function EventDetailScreen() {
         console.warn('[event-detail] attachment re-check before delete failed:', e);
       }
     }
+    // CUL-869 — the same fact, one record type over. A look's note is the owner's
+    // own words about her animal and nothing recreates it: no surface in the app
+    // shows a removed one, and unlike the event itself she cannot simply write it
+    // again from memory of what she saw. So Remove names it, exactly as it names a
+    // photo, and for the identical comprehension reason (T-22, C-21).
+    //
+    // NO re-check here, and that is not an inconsistency with the photo above. The
+    // photo's `attachment` is a SEPARATE async read that lands after `event`, so
+    // `null` is ambiguous between "no photo" and "not answered yet" — the C-12 gap
+    // this footer is live inside. `look_note` arrives ON the event row, joined in the
+    // same SELECT (lib/db.ts), so by the time there is an `event` to remove there is
+    // a definite answer about its note.
+    const hasNote = isLookRow(event) && !!event.look_note?.trim();
     const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
     Alert.alert(
       'Remove this log?',
       hasPhoto
         ? `This will remove the ${label} from history. The photo you attached will be removed with it.`
-        : `This will remove the ${label} from history.`,
+        : hasNote
+          ? `This will remove the ${label} from history. The note you wrote will be removed with it.`
+          : `This will remove the ${label} from history.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -736,6 +753,17 @@ export default function EventDetailScreen() {
   const weightLbs = event.event_type === 'weight_check' && event.weight_kg != null
     ? `${kgToLbs(event.weight_kg)} lbs`
     : null;
+  // CUL-869 — the look, resolved against the RECORD's pet. Same rung as
+  // `eventPetName` above and for the same reason (C-9): this screen is reached BY ID
+  // from the day spine, History and every deep link, so the active pet is not an
+  // answer to "whose look is this?" — and here the pet decides which species' words
+  // the keys read as, and which of *Not herself* / *Not himself* / *Not themself* the
+  // opening chip prints. There is no active-pet rung: a pet missing from the store
+  // resolves to an empty context, which still names every word (`describeLook` falls
+  // back across both lists) and takes the neutral form of the one label that needs a
+  // sex. Correct-but-anonymous over confidently wrong, on both fields.
+  const lookPet = pets.find((p) => p.id === event.pet_id);
+  const look = isLookRow(event) ? describeLook(event, lookPet ?? {}) : null;
   // §5.4 — the lightbox caption. This is the frame an owner turns around to show a vet
   // (D3: the photo stays the hero precisely so they can), so it has to name WHOSE and
   // WHEN as well as WHAT. The time comes off `timeDisplay`, the same `describeOccurredAt`
@@ -870,6 +898,23 @@ export default function EventDetailScreen() {
               migration 024's guardrail, which the cards and the history list keep too. */}
           {weightLbs ? (
             <ThemedText style={styles.weightValue}>{weightLbs}</ThemedText>
+          ) : null}
+
+          {/* CUL-869 — the look's words and its note. No section label above the
+              words for the same reason the weight has none: the type heading already
+              reads "NOTICED", and the words ARE the record. */}
+          {look ? (
+            <LookRecordSection
+              eventId={event.id}
+              look={look}
+              // Keep the row this screen holds in step with the write that just
+              // landed, rather than re-reading: the note is the only field the
+              // section can change, and `event` is what the Remove confirm below
+              // reads to decide whether to name it.
+              onNoteChange={(note) =>
+                setEvent((prev) => (prev ? { ...prev, look_note: note } : prev))
+              }
+            />
           ) : null}
 
           {event.event_type === 'vomit' ? (

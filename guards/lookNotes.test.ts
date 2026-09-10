@@ -285,3 +285,80 @@ describe('the detector itself', () => {
     expect(findLookNotesSelects(`/* looks.notes is the column */`)).toEqual([]);
   });
 });
+
+// ── The client half of T-22: the editor renders no PARENT Notes field for a look ──
+//
+// The spec's §5.5 build checklist names this beside the server scan above, and the
+// two are different claims about the same rule. The scan proves a look's note is
+// never read back out of an Edge Function; this proves it never gets WRITTEN to the
+// wrong column in the first place.
+//
+// It is a SOURCE assertion, deliberately, next to a behavioural one in
+// `app/editEvent.look.test.tsx`. The behavioural test proves the branch does the
+// right thing today; this proves the branch is still there — which is what fails
+// first if someone "simplifies" the render by hoisting the Notes block back out of
+// its conditional. Comments are blanked with the same single-pass helper the scan
+// above uses, so a sentence ABOUT the gate is never mistaken for the gate.
+/** The argument text of the file's `updateEvent(` call, brace-balanced from the
+ *  opening paren. Returns '' when there is no such call — which the probe below
+ *  makes observable rather than silently passing. */
+function updateEventArgs(src: string): string {
+  const at = src.indexOf('updateEvent(');
+  if (at === -1) return '';
+  let depth = 0;
+  for (let i = at + 'updateEvent'.length; i < src.length; i += 1) {
+    if (src[i] === '(') depth += 1;
+    else if (src[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return src.slice(at, i + 1);
+    }
+  }
+  return '';
+}
+
+describe('T-22 — the editor never offers the parent Notes field for a look', () => {
+  const EDITOR = 'app/edit-event.tsx';
+  const src = blankComments(fs.readFileSync(path.join(ROOT, EDITOR), 'utf8'));
+
+  it('has an isLook flag derived from the event type', () => {
+    expect(src).toMatch(/const\s+isLook\s*=\s*eventType\s*===\s*'check_in'/);
+  });
+
+  it('gates the "Notes" SectionLabel behind it', () => {
+    // The parent's field is the one labelled `Notes` (plural); the look's own field
+    // is labelled `Note`. The gate must sit above the plural one.
+    const notesLabel = src.indexOf('label="Notes"');
+    expect(notesLabel).toBeGreaterThan(-1);
+    const before = src.slice(0, notesLabel);
+    // The nearest preceding conditional is the look gate.
+    expect(before).toMatch(/\{isLook\s*\?\s*null\s*:\s*\($/m);
+  });
+
+  it('writes NULL to the parent’s notes for a look, rather than the form value', () => {
+    // Belt to migration 064's events_check_in_notes_null CHECK. A row that reached
+    // the server with a non-null note here would be refused forever, and its push
+    // would wedge the queue.
+    expect(src).toMatch(/const\s+parentNotes\s*=\s*isLook\s*\?\s*null\s*:/);
+    expect(src).toMatch(/notes:\s*parentNotes/);
+  });
+
+  it('routes the look’s own note to the child helper, never into updateEvent', () => {
+    expect(src).toMatch(/updateLookForEdit\(/);
+    expect(src).toMatch(/notes:\s*lookNote\.trim\(\)/);
+
+    // The one that matters: the look's note must not be reachable from the PARENT
+    // write. Sliced to the `updateEvent(` call rather than matched file-wide (C-4 —
+    // anchor the match to the object under test), because `lookNote` legitimately
+    // appears elsewhere in this file and a file-wide search would be satisfied by
+    // its correct uses.
+    const call = updateEventArgs(src);
+    expect(call).toContain('notes: parentNotes');
+    expect(call).not.toContain('lookNote');
+  });
+
+  it('the slice really is the updateEvent call — the detector, proven', () => {
+    // A slicer that silently returned '' would make the assertion above vacuous.
+    const probe = `await updateEvent(id, { occurred_at: x, notes: lookNote });\nelse();`;
+    expect(updateEventArgs(probe)).toContain('lookNote');
+  });
+});

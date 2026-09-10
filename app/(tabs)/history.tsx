@@ -91,6 +91,12 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     paired_dose_count: row.paired_dose_count,
     paired_dose_event_id: row.paired_dose_event_id,
     paired_dose_drug_name: row.paired_dose_drug_name,
+    // CUL-869 — the look's child. Same trap as food_format above: these are
+    // OPTIONAL on NyxEvent, so omitting them compiles clean and silently renders
+    // every look as a bare "Noticed" with no words and no note marker.
+    look_outcome: row.look_outcome,
+    look_words: row.look_words,
+    look_note: row.look_note,
   };
 }
 

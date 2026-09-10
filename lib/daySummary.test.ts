@@ -67,6 +67,10 @@ function mkRow(over: Partial<TimelineRow> & { id: string; occurred_at: string })
     paired_dose_count: 0,
     paired_dose_event_id: null,
     paired_dose_drug_name: null,
+    // CUL-869 — the look child; null on every non-check_in row, which is every row here.
+    look_outcome: null,
+    look_words: null,
+    look_note: null,
     ...over,
   };
 }

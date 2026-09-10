@@ -16,6 +16,7 @@ import { formatDrugLabel } from './medications';
 import { foodFormatTag, mealRowLabel } from './food';
 import { describeOccurredAt } from './utils';
 import { pluralize } from './dashboardCards';
+import { describeLook, lookSummary } from './lookDisplay';
 
 // Intake ratings → a short factual phrase. Mirrors the IntakeChipRow vocabulary (Refused /
 // Picked / Some / Most / All) so the drill-in never invents a warmer or cooler word than
@@ -149,12 +150,25 @@ function describeByCategory(
         formatTag: null,
       };
     case 'look':
-      // The type's label ("Noticed") and NOTHING else in N-2. A look's words and its
-      // note live on the `looks` child, which a TimelineRow does not carry: the row
-      // that names them is N-3's (CUL-869), and a detail invented here would be this
-      // surface claiming to know what a look said. Kept as its own arm rather than
-      // folded in with the two below, so the day that row lands, this is where it goes.
-      return labelOnly;
+      // CUL-869 — the words, now that the TimelineRow carries the child. The DETAIL
+      // slot, not the title: the title is what was logged ("Noticed") and the detail
+      // is what it said, exactly as a meal's title is the food and its detail is the
+      // intake. That also means a look this build cannot describe degrades the same
+      // way an unrated meal does — `lookSummary` returns null, `detail` is null, and
+      // the row reads as the bare act rather than as an absence (§5.6: the one phrase
+      // no surface may infer).
+      //
+      // The pet context is EMPTY here on purpose. This mapper is pure and takes one
+      // row; the drill-in renders a single pet's day, so a species-specific label
+      // would have to be threaded from the sheet to be honest. Empty context still
+      // resolves every key — `describeLook` falls back across both species lists —
+      // and the only thing it costs is the sex-specific form of the opening chip,
+      // which reads *Not themself* rather than *Not herself*. Under-claiming, in the
+      // one place the record cannot tell this function whose day it is.
+      return {
+        ...labelOnly,
+        detail: lookSummary(describeLook(row)),
+      };
     case 'symptom':
     case 'other':
       return labelOnly;

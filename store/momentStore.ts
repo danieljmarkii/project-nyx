@@ -99,6 +99,20 @@ export interface NamedPayload {
   // `event_attachments`), so absent and `false` mean the same thing here — unlike
   // `previousSnapshotKg`, where the key's PRESENCE is itself the fact.
   hasAttachment?: boolean;
+  // CUL-869 — whether this record carries a NOTE, so the card can gate Undo behind
+  // a confirm that names it (T-22, C-21). The exact sibling of `hasAttachment`, one
+  // field over, and here rather than on `LoggedRecord` for the identical reason:
+  // that type is the SENTENCE source and carries only what the row says. "Mochi ·
+  // off, didn't want the walk · 7:12" is the same sentence with or without a note,
+  // and `summarizeLoggedRecord` has no business knowing about one.
+  //
+  // The look is the only record that can produce it, and it is why the field exists:
+  // a look's note is the owner's own words about her animal, written in a moment she
+  // will not reconstruct, and nothing in the app surfaces a removed one. The event
+  // itself is re-loggable from what she saw; the sentence she wrote about it is not.
+  // Optional, and absent means the same as `false` — every path that cannot carry a
+  // note simply omits it.
+  hasNote?: boolean;
 }
 
 export interface MealPayload {

@@ -413,6 +413,21 @@ export interface TimelineRow {
   paired_dose_count: number;
   paired_dose_event_id: string | null;
   paired_dose_drug_name: string | null;
+  // The daily look's child (CUL-869 / N-3), NULL on every other row — joined here
+  // for exactly the reason `weight_kg` is one line above it: `looks` is a 1:1 child
+  // with no `deleted_at` of its own, so the honest read of it is one that already
+  // filters the PARENT's. Both queries below carry `e.deleted_at IS NULL`, which
+  // makes spec §9 rule 2 structural here rather than restated — a look whose parent
+  // was reversed cannot come back through this join at all.
+  //
+  // `look_words` is the JSON-array TEXT the local column holds; decode it ONLY
+  // through `wordsFromLocalText` (lib/lookWordsCodec.ts), never by parsing it at a
+  // call site. `look_note` is `looks.notes` — the note lives on the CHILD and the
+  // parent's `notes` is NULL by CHECK, so a look's note can only ever arrive here
+  // (T-22).
+  look_outcome: string | null;
+  look_words: string | null;
+  look_note: string | null;
 }
 
 export async function getTimeline(
@@ -462,11 +477,13 @@ export async function getTimeline(
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
             COALESCE(pd.dose_count, 0) AS paired_dose_count,
             pd.rep_event_id AS paired_dose_event_id,
-            pdmi.generic_name AS paired_dose_drug_name
+            pdmi.generic_name AS paired_dose_drug_name,
+            lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      LEFT JOIN weight_checks wc ON wc.event_id = e.id
+     LEFT JOIN looks lk ON lk.event_id = e.id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
@@ -499,11 +516,13 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
             COALESCE(pd.dose_count, 0) AS paired_dose_count,
             pd.rep_event_id AS paired_dose_event_id,
-            pdmi.generic_name AS paired_dose_drug_name
+            pdmi.generic_name AS paired_dose_drug_name,
+            lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      LEFT JOIN weight_checks wc ON wc.event_id = e.id
+     LEFT JOIN looks lk ON lk.event_id = e.id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL

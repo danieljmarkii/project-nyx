@@ -15,7 +15,7 @@ import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
 import { detachOtherEventAttachments } from '../lib/attachments';
-import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations } from '../lib/sync';
+import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations, syncPendingLooks } from '../lib/sync';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { foodFormatTag } from '../lib/food';
@@ -28,6 +28,12 @@ import { AdherenceChipRow, DoseAdherence } from '../components/log/AdherenceChip
 import { VehicleChipRow } from '../components/log/VehicleChipRow';
 import { asDoseVehicle, type DoseVehicle } from '../lib/medications';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
+import { MultiChipGroup } from '../components/ui/MultiChipGroup';
+import { getLookForEvent, updateLookForEdit, localDayForLook } from '../lib/looks';
+import { gridWordsFor, gridChipLabel } from '../lib/lookDisplay';
+import { toggleLookWord } from '../lib/lookSelection';
+import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel } from '../constants/lookWords';
+import { LOOK_NOTE_MAX, LOOK_NOTE_PLACEHOLDER, LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
 import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { PhotoViewer } from '../components/ui';
 
@@ -59,6 +65,9 @@ export default function EditEventModal() {
   // degrade the timing the §6.4 double-dose check + the Signal confounder pass rely
   // on. So medication joins meals/weight on the plain witnessed point picker.
   const isMedication = eventType === 'medication';
+  // CUL-869 — the daily look. It edits its WORDS and its NOTE on the child, and
+  // neither is a field this screen already had, so both branches below are new.
+  const isLook = eventType === 'check_in';
 
   const [occurredAt, setOccurredAt] = useState(() =>
     occurredAtParam ? new Date(occurredAtParam) : new Date(),
@@ -74,7 +83,25 @@ export default function EditEventModal() {
   // witnessed — and so is a weight check (you read the scale), so it uses the
   // plain point picker too and never the Saw-it/Found-it control (B-197).
   // Reconstructed from stored fields on mount (reconstructTimeControl).
-  const showConfidenceControl = !config.hasFood && !isWeight && !isMedication;
+  // CUL-869 adds `!isLook`, and it is a second gate rather than a rewrite of this
+  // expression. A look's stored time-confidence is WITNESSED BY CONSTRUCTION (§5.4,
+  // taxonomy D10) — it is a perception at a moment the owner was there for, so there
+  // is nothing to have found and the Saw-it / Found-it control has no honest answer
+  // to offer. `insertLook` is where that value is written, and this screen still
+  // writes none: the branch below hands the save a witnessed form value that
+  // `confidenceUpdateForEdit` then discards, exactly as it does for a meal.
+  //
+  // The tempting refactor is to read `config.confidenceModel` instead of naming
+  // three types. It is wrong here: `cough` and `sneeze` carry the same model and DO
+  // get this control today, so that version would silently change two shipped types
+  // under an unrelated PR.
+  //
+  // (The wording above avoids the column-name-colon-literal shape on purpose —
+  // `lib/occurredAtConfidence.guard.test.ts` scans raw source and would read this
+  // comment as a hardcoded write. Filed as CUL-885; a fourth instance of C-18's
+  // comment-blanking rule, and the one whose remedy — allowlisting the file — the
+  // guard's own text warns against.)
+  const showConfidenceControl = !config.hasFood && !isWeight && !isMedication && !isLook;
   // Seeds NULL, not 'saw' (B-527): an unclassified row must render with neither
   // segment selected, so the honest default before the reconstruct resolves is
   // "we don't know yet", never a borrowed witnessed claim. The reconstruct sets
@@ -164,6 +191,20 @@ export default function EditEventModal() {
   // unlike every other field here it must be present and real on save.
   const [weightLbsStr, setWeightLbsStr] = useState('');
 
+  // CUL-869 — the look's editable halves. `lookWords` is the selection, in the order
+  // chosen (§3.1a); `lookNote` is the child's note, which is NOT `notes` above —
+  // that state drives the PARENT's field, and a look's parent holds NULL by CHECK.
+  // `lookLoadedRef` holds the row as it was, so Save can leave an untouched look
+  // entirely alone rather than re-queueing it (see handleSave).
+  const [lookWords, setLookWords] = useState<string[]>([]);
+  const [lookNote, setLookNote] = useState('');
+  const [lookOutcome, setLookOutcome] = useState<'observed' | 'nothing_unusual' | null>(null);
+  // The RECORD's pet, off the child's own column — this screen is pushed by event id
+  // from History and from the record screen, either of which may be showing a pet who
+  // is not the active one, and the species decides which words the grid offers (C-9).
+  const [lookPetId, setLookPetId] = useState<string | null>(null);
+  const lookLoadedRef = useRef<{ words: string[]; note: string | null } | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
 
@@ -212,6 +253,20 @@ export default function EditEventModal() {
     if (isWeight) {
       getWeightKgForEvent(id).then((kg) => {
         if (kg != null) setWeightLbsStr(kgToLbs(kg));
+      }).catch(console.error);
+    }
+
+    if (isLook) {
+      getLookForEvent(id).then((look) => {
+        // Null is a real state — the parent reached this device ahead of its child.
+        // The form then offers no word grid and no note field, because there is no
+        // row to write either to; Save still edits the time on the parent.
+        if (!look) return;
+        setLookOutcome(look.outcome);
+        setLookPetId(look.petId);
+        setLookWords(look.words);
+        setLookNote(look.notes ?? '');
+        lookLoadedRef.current = { words: look.words, note: look.notes };
       }).catch(console.error);
     }
 
@@ -423,13 +478,47 @@ export default function EditEventModal() {
         ? { value: confidence.value, earliest: confidence.earliest, latest: confidence.latest }
         : { value: stored.confidence, earliest: stored.earliest, latest: stored.latest };
 
+      // A look's PARENT holds NULL notes, always. The server's
+      // events_check_in_notes_null CHECK is the authority and this is the belt to it:
+      // the field is not rendered for a check_in (below), so `notes` here can only
+      // ever be the route param's '' — but writing that expression rather than
+      // trusting it means a future param, or a route reached with a stale value,
+      // cannot push a row the server will reject forever (T-22).
+      const parentNotes = isLook ? null : notes.trim() || null;
+
       await updateEvent(id, {
         occurred_at: occurredAtIso,
         severity: null,
-        notes: notes.trim() || null,
+        notes: parentNotes,
         occurred_at_source: tf.source,
         ...(confidence ? { confidence } : {}),
       });
+
+      // CUL-869 — the look's child. Three fields, three different reasons to write:
+      //
+      //   · WORDS and NOTE are passed only once the child has actually loaded
+      //     (`lookLoadedRef`). Without that gate a Save that beat the async load
+      //     would hand the helper the empty form state and erase the words — the
+      //     B-448 shape, one screen over. The gate is "the form is showing the real
+      //     row", NOT "the owner touched it": `updateLookForEdit` compares against
+      //     the STORED row, which is the stronger test.
+      //
+      //   · LOCAL_DAY is passed only when `occurred_at` actually MOVED, compared
+      //     against the value this screen was opened with. C-10: a peek-and-save is
+      //     a real gesture that changed nothing, and re-deriving the day key on every
+      //     save would move an owner's answered day the first time she opened a
+      //     record in another timezone — silently, and on the one column every count
+      //     in this feature is keyed to (T-19). It needs no loaded gate: the helper
+      //     re-reads the row and writes nothing when the derived day already matches.
+      if (isLook) {
+        const pointMoved = occurredAtIso !== occurredAtParam;
+        await updateLookForEdit(id, {
+          ...(lookLoadedRef.current
+            ? { words: lookWords, notes: lookNote.trim() || null }
+            : {}),
+          ...(pointMoved ? { localDay: localDayForLook(tf.occurredAt) } : {}),
+        });
+      }
 
       if (config.hasFood && currentFoodId) {
         await updateMealFood(id, currentFoodId);
@@ -524,7 +613,12 @@ export default function EditEventModal() {
         occurred_at_earliest: savedConfidence.earliest,
         occurred_at_latest: savedConfidence.latest,
         severity: null,
-        notes: notes.trim() || null,
+        notes: parentNotes,
+        // CUL-869 — the look's note travels on its own field, so Today's row names
+        // it the way History does. `look_outcome` is unchanged by an edit (the two
+        // outcomes are not editable — an absence is a different observation, not a
+        // correction), so it is not restated here.
+        ...(isLook ? { look_note: lookNote.trim() || null } : {}),
         food_item_id: currentFoodId,
         food_brand: currentFoodBrand,
         food_product_name: currentFoodProduct,
@@ -544,6 +638,10 @@ export default function EditEventModal() {
           syncPendingMeals(),
           syncPendingWeightChecks(),
           syncPendingMedicationAdministrations(),
+          // The look joins the CHILDREN half for the same reason the others are
+          // there: its drain gates on `events.synced = 1`, so it must follow the
+          // parent's push or simply wait a cycle.
+          syncPendingLooks(),
         ]))
         .catch(console.error);
       router.back();
@@ -556,6 +654,37 @@ export default function EditEventModal() {
   }
 
   const displayAttachmentUri = newAttachmentUri ?? existingAttachmentUri;
+
+  // CUL-869 — the look's chip options, or null when there are none to draw: an
+  // absence row (no words by definition), a child that has not loaded, or a pet with
+  // no vocabulary at all.
+  //
+  // The species comes from the RECORD's pet, resolved by the event's own pet id
+  // (C-9) — never `activePet`. This screen is pushed from History and from the record
+  // screen, both of which can be showing a pet who is not the active one, and the
+  // species decides which 26 or 28 words the grid offers. `lookSpeciesOf` returns
+  // null for an `other` pet rather than guessing a list, and the grid is then not
+  // drawn: the words already stored still render on the record screen, which resolves
+  // across both lists, so nothing is hidden — only the editing of them is declined,
+  // which is the honest outcome when the app does not know which vocabulary applies.
+  const lookPetForGrid = usePetStore((st) => st.pets.find((p) => p.id === lookPetId));
+  const lookSpecies = lookSpeciesOf(lookPetForGrid?.species);
+  const lookGrid =
+    isLook && lookSpecies && lookOutcome === 'observed'
+      ? [
+          // The opening chip is not one of the grid's 26 / 28 — it is its own key with
+          // its own sex-following label — but it IS storable, so an owner who saved
+          // *Not herself* alone must be able to see and clear it here.
+          {
+            value: LOOK_OPENING_CHIP_KEY,
+            label: notHerselfLabel(lookPetForGrid?.sex ?? 'unknown'),
+          },
+          ...gridWordsFor(lookSpecies, LOOK_HEAD_WORDS[lookSpecies]).map((w) => ({
+            value: w.key,
+            label: gridChipLabel(w),
+          })),
+        ]
+      : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -804,17 +933,71 @@ export default function EditEventModal() {
             </>
           ) : null}
 
-          {/* Notes */}
-          <SectionLabel label="Notes" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-          <TextInput
-            style={styles.notesInput}
-            placeholder="Add a note (optional)"
-            placeholderTextColor={theme.colorTextSecondary}
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            maxLength={300}
-          />
+          {/* CUL-869 — what she noticed. Editable as the words themselves rather than
+              as a free-text field: the vocabulary is closed by design (§4.1 rule 10),
+              and an "other" box here would be the one place in the feature an owner
+              could mint a key nothing downstream can read.
+
+              Head words first, then the rest in the vet's family order (§3.1a). The
+              full label — *head word, gloss* — is what the grid shows and never the
+              head alone: "Lip-licking" without "swallowing a lot, nothing in his
+              mouth" lost the findable half (§4.1 rule 12, Sam).
+
+              An observed-absence row has no words to edit, so its grid is not drawn.
+              Changing *nothing unusual* into an observation is not a correction of
+              this row — it is a different thing the owner saw, and it belongs in a
+              second look with its own hour (T-14). */}
+          {isLook && lookGrid ? (
+            <>
+              <SectionLabel label="What you noticed" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <MultiChipGroup
+                options={lookGrid}
+                values={lookWords}
+                onToggle={(key) => setLookWords((prev) => toggleLookWord(prev, key))}
+                accessibilityLabel="What you noticed"
+              />
+            </>
+          ) : null}
+
+          {/* The look's note — on the CHILD (`looks.notes`), never on the parent. */}
+          {isLook && lookLoadedRef.current ? (
+            <>
+              <SectionLabel label="Note" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <TextInput
+                style={styles.notesInput}
+                placeholder={LOOK_NOTE_PLACEHOLDER}
+                placeholderTextColor={theme.colorTextSecondary}
+                value={lookNote}
+                onChangeText={setLookNote}
+                multiline
+                maxLength={LOOK_NOTE_MAX}
+                accessibilityLabel="Note"
+              />
+              <ThemedText style={styles.lookNoteCue}>{LOOK_NOTE_CUE}</ThemedText>
+            </>
+          ) : null}
+
+          {/* Notes — the PARENT's field, and never rendered for a look (E-7, T-22).
+              This screen's Notes box is type-blind and always was; a look's note has
+              to land on `looks.notes` because Ask's recall fetch selects
+              `events.notes` with no type filter, so a note left here would reach a
+              model before D10 is ruled. The gate is the UI half of that rule and the
+              server's events_check_in_notes_null CHECK is the other; `guards/
+              lookNotes.test.ts` asserts this branch so it cannot quietly come back. */}
+          {isLook ? null : (
+            <>
+              <SectionLabel label="Notes" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <TextInput
+                style={styles.notesInput}
+                placeholder="Add a note (optional)"
+                placeholderTextColor={theme.colorTextSecondary}
+                value={notes}
+                onChangeText={setNotes}
+                multiline
+                maxLength={300}
+              />
+            </>
+          )}
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -990,6 +1173,13 @@ const styles = StyleSheet.create({
   foodItemCheck: {
     fontSize: 15,
     color: theme.colorTextOnDark,
+  },
+  // The note's destination cue, under the field it describes.
+  lookNoteCue: {
+    marginTop: theme.space1,
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.textXS * 1.4,
   },
   notesInput: {
     // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
