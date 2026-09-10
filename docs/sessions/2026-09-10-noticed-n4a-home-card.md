@@ -151,6 +151,71 @@ trial pets would be worse; Home's own fail-closed trial answer is folded in as a
 `ALWAYS_SCANNED` entry is added now rather than deferred to N-4b, since the door is the
 half that escalates and its silence is the D7 row.
 
+## The three reviews, and what they broke
+
+All three ran against the branch and are the reason this PR looks the way it does.
+**Fourteen findings; twelve fixed here, two filed.** The three that changed the shape of
+the build:
+
+**1. `adversarial-reviewer` broke the emergency door's intake fact four ways in one probe
+run.** The first cut derived it here, from `meals.intake_rating === 'refused'` over 24
+hours, under a header claiming it was "one predicate for intake — the same column they
+read". Reading the same COLUMN is not the same PREDICATE:
+
+- a cat who **picked** at every bowl for 24 hours, with a lethargy row, read the
+  *conditional* — `picked` and `some` were invisible, and T-20's own fact is "refused **or**
+  picked". The delay direction, on the page written to prevent it;
+- **one** refused breakfast followed by a full dinner printed *Call your vet today.* under
+  a threshold that reads *Not eating for a day*;
+- a refused pill-pocket **treat** printed it too — no `food_type` filter, no free-fed
+  filter, where the shipped detectors use `qualifyingIntakeMeals`. Sam's daily pill pocket
+  would have cried wolf daily;
+- a refusal **30 hours** old made the threshold *unmet* — the longer the record's last
+  positive fact said she had not eaten, the more the door reassured.
+
+A safety page that cries wolf daily is one an owner stops believing, which is the same
+failure as the delay. The fix was to stop deriving it: the fact comes from the trial
+register alone (`isAnimalNotEating`, which is what CUL-871 said to read), as a POSITIVE
+fact or nothing — never ignorance (T-20) — and the record-local arm lands in N-4b on the
+exported qualifying-set helper with the feeder-frequency fixtures E-5 requires *before*
+that threshold is trusted. A pet with no trial simply does not collapse the intake rows,
+which is the honest permanent-threshold state `subdued_hiding` and `wont_drink` already
+carry.
+
+**2. `pm-feature-review` found the door flashing its imperative on every open** — and the
+scope seam under it. `facts: null` was doing two jobs: *this read failed* and *this read
+has not answered*. Fail-closed is right for the first; applied to the second it made a
+safety imperative flicker on every owner's every open, and an imperative the app takes
+back is one she learns to disbelieve. Three states now. The same review noticed the
+larger thing: **the persistent today list is N-4b's, and §10 gives that PR
+`lib/lookWithheld.ts` in the same breath** — a pairing that is not sequencing, because a
+list that persists can draw *nothing unusual* on Home under a pet whose record carries a
+live intake concern. This PR now renders ONE entry, for the register's dwell, for the look
+the owner has this second finished making.
+
+**3. `code-reviewer` and `adversarial-reviewer` between them proved FIVE bypasses of the
+new guard**, every one green at the time: raw SQL anywhere in `lib/`; a helper reached
+through `app/`; the same through `constants/` (which the closure already walked and the
+filter threw back); an **aliased** import (`insertMeal as _x` leaves the call shape
+nowhere in the file — an ordinary rename does this); and an `import()` whose target the
+walker cannot resolve. A sixth was subtler and worse: a foreign write inside a definition
+module reported against the WRONG file, so the obvious repair — adding that file to the
+skip list — turned the suite **green over the live violation**. All six closed; the two
+new classes proven red against the real tree and reverted. The directory rule for raw SQL
+is gone: the 26 sync-fabric sites are exempt **by name, with reasons**, because a
+directory is a blind spot where five names are a decision.
+
+Also fixed from the reviews: the stale pet-switch notice (it named the wrong pet after a
+switch *back*, and said "Nothing was saved" while a write was in flight); T-12's travel-up
+(a word chosen in the grid vanished when the grid closed); the head words leaving and
+re-entering on unfold — round 2's blocking finding in a third mechanism; T-15's Undo fade;
+L-16's quiet entry; the hint that vanished at the moment it became true; the opening
+chip's missing hitSlop; the row gap hand-typed as 12; TodayZone's caption calling a look
+an "event"; and `lib/lookEmergencyFacts`'s missing tests.
+
+**One finding was wrong:** `LookEmergencySheet.tsx` *is* in `guards/haptics.test.ts`'s
+`ALWAYS_SCANNED`, added this session and proven by mutation.
+
 ## Persona flags raised
 
 None escalated. The one place the lenses pulled apart was the emergency door's
@@ -168,6 +233,17 @@ because we cannot say which of them are unmet either.
   a softer answer than her own record would give her. Filed with three shapes rather than
   bridged quietly; distinct from CUL-845, which is the write-side question and carries the
   opposite failure direction.
+- **CUL-891** (`Waiting on PM`, **Urgent**) — **a look raises the vet report's coverage,
+  density and symptom-free-gap denominators.** `generate-report` fetches every event type
+  and counts "distinct local days with ANY logged event", so twenty taps of *Nothing
+  unusual* make a report read as better-evidenced than it is. Floor 5, reassurance
+  direction, on the artifact Dr. Chen reads. Verified at file:line. The exclusion is
+  already N-6's (CUL-875) and rides the held CUL-19 redeploy, so writing it a PR earlier
+  closes the window by zero days — **what closes it is the flag**, which is why this is a
+  PM action rather than build work.
+- **CUL-892** — the card's *Patterns ›* door points at a screen that knows nothing about
+  looks until N-5. Ruled onto the card in every state (§3.3), and the destination catches
+  up on CUL-874.
 - **CUL-890** — the pinned exits are decided from the card's rect rather than each
   control's, so a very tall grid can pin the Done bar a beat early (two Done buttons on
   screen, both correct). The device pass says whether it matters.
@@ -185,8 +261,13 @@ because we cannot say which of them are unmet either.
 
 ## PM action items
 
-**None.** No deploy, no migration, no secret. **CUL-889** is filed `Waiting on PM` but
-gates nothing — the door ships as-is.
+**CUL-891 — the rollout decision, and it is the only one that matters before merge.** Do
+not enable `daily_look` beyond the device-pass cohort until N-6's exclusion deploys: until
+then, a look counts as a logged day in the vet report's coverage denominators. The
+device-pass cohort is you, and your own report's coverage will count your taps.
+
+No deploy, no migration, no secret. **CUL-889** and **CUL-892** are filed for a ruling but
+gate nothing.
 
 ## Recommended next steps
 
