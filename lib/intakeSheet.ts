@@ -72,9 +72,18 @@ export const INTAKE_SHEET_NOTHING_SAVED = 'Nothing is saved until you pick how m
  *  about an empty card would be a claim about nothing. */
 export const INTAKE_SHEET_CARD_KEPT = 'What you tapped on Home stays where it is.';
 
-/** The way out. Plain, because the line above it already says what closing costs
- *  (nothing) — a label like "Cancel" would imply there is something to cancel. */
-export const INTAKE_SHEET_CLOSE = 'Close';
+/**
+ * The way out, NAMING ITS DESTINATION — the mock's own label for this sheet
+ * specifically (`docs/culprit-daily-look-mockups.html`: `isRouter ? '‹ Back to Noticed'
+ * : 'Close'`).
+ *
+ * The first cut shipped a bare *Close*, reasoned against "Cancel" — which was the right
+ * argument (nothing is pending, so there is nothing to cancel) applied to the wrong
+ * alternative. The design authority's label was never *Cancel*: it says where the tap
+ * goes, which is the entire content of the question this sheet raises. She came from the
+ * Noticed card mid-answer; the way back should say she is going back to it.
+ */
+export const INTAKE_SHEET_BACK = '‹ Back to Noticed';
 
 /** The food step — a pet with no meals ever, or an owner who tapped *Change food ›*
  *  (§4.5). Forward-looking rather than an apology for not knowing (Pattern 3). */

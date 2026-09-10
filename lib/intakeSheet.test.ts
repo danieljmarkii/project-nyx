@@ -8,7 +8,7 @@
 import {
   INTAKE_SHEET_CARD_KEPT,
   INTAKE_SHEET_CHANGE_FOOD,
-  INTAKE_SHEET_CLOSE,
+  INTAKE_SHEET_BACK,
   INTAKE_SHEET_FOOD_STEP_TITLE,
   INTAKE_SHEET_NEW_MEAL,
   INTAKE_SHEET_NOTHING_SAVED,
@@ -22,7 +22,7 @@ import { formatTime } from './utils';
 const ALL: string[] = [
   INTAKE_SHEET_CARD_KEPT,
   INTAKE_SHEET_CHANGE_FOOD,
-  INTAKE_SHEET_CLOSE,
+  INTAKE_SHEET_BACK,
   INTAKE_SHEET_FOOD_STEP_TITLE,
   INTAKE_SHEET_NEW_MEAL,
   INTAKE_SHEET_NOTHING_SAVED,
@@ -108,9 +108,13 @@ describe('what closing costs', () => {
     expect(INTAKE_SHEET_NOTHING_SAVED).toBe('Nothing is saved until you pick how much.');
   });
 
-  it('the close control does not imply there is something to cancel', () => {
-    expect(INTAKE_SHEET_CLOSE.toLowerCase()).not.toContain('cancel');
-    expect(INTAKE_SHEET_CLOSE.toLowerCase()).not.toContain('discard');
+  it('the way back NAMES ITS DESTINATION, and implies nothing is pending', () => {
+    // The mock's own label for this sheet (`isRouter ? '‹ Back to Noticed' : 'Close'`).
+    // She came from the Noticed card mid-answer; where the tap goes is the whole
+    // content of the question. "Cancel" would imply there is something to cancel.
+    expect(INTAKE_SHEET_BACK).toBe('‹ Back to Noticed');
+    expect(INTAKE_SHEET_BACK.toLowerCase()).not.toContain('cancel');
+    expect(INTAKE_SHEET_BACK.toLowerCase()).not.toContain('discard');
   });
 
   it('promises the Noticed card’s words are kept, without claiming the meal was', () => {

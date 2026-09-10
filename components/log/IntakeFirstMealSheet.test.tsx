@@ -52,6 +52,7 @@ jest.mock('./FoodPicker', () => {
 });
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
 import { router } from 'expo-router';
 import { IntakeFirstMealPanel } from './IntakeFirstMealSheet';
 import { useEventStore } from '../../store/eventStore';
@@ -224,16 +225,26 @@ describe('the arm — the only thing that writes', () => {
     );
   });
 
-  it('a failed write leaves the sheet up with the arms live, and closes nothing', async () => {
-    // CUL-575: a failed write is always said — and the retry is the surface staying put,
-    // not an error string on a health screen (C-25).
+  it('SAYS a failed write, and leaves the sheet up with the arms live', async () => {
+    // CUL-575 — and the first cut only CLAIMED this in a comment: it logged, released
+    // the guard, and left an unchanged sheet, which reads exactly like "still thinking"
+    // on the one surface where the owner has just reported a refusal. Both halves are
+    // asserted, because the silent half is what shipped.
     mockInsertMeal.mockRejectedValue(new Error('disk full'));
     jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     const { findByText, onClose, queryByTestId } = setup();
     fireEvent.press(await findByText('Refused'));
-    await waitFor(() => expect(mockInsertMeal).toHaveBeenCalled());
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    // Never the error itself (the copy guard): calm, no code, one thing to do.
+    const [title, body] = alert.mock.calls[0] as [string, string];
+    expect(title).toBe('Couldn’t save that');
+    expect(body).not.toContain('disk full');
     expect(onClose).not.toHaveBeenCalled();
     expect(queryByTestId('intake-sheet-title')).not.toBeNull();
+    // The retry is one tap: the arms are still live under the alert.
+    fireEvent.press(await findByText('Refused'));
+    await waitFor(() => expect(mockInsertMeal).toHaveBeenCalledTimes(2));
   });
 
   it('a double tap cannot write two meals for one bowl', async () => {
@@ -261,6 +272,17 @@ describe('closing', () => {
   it('says so before she picks, so the sheet’s inertness is not a discovery', async () => {
     const { findByText } = setup();
     await findByText(INTAKE_SHEET_NOTHING_SAVED);
+  });
+
+  it('carries BOTH promises on the FOOD step too, not just the intake step', async () => {
+    // Gating them to the intake step left the two states that most need them with
+    // neither: a first-run pet with no meals, and the trial owner who tapped
+    // *Change food ›* to override the pre-fill.
+    mockLoadPrefill.mockResolvedValue(null);
+    const { findByTestId, findByText } = setup({ cardHasSelections: true });
+    await findByTestId('food-picker');
+    await findByText(INTAKE_SHEET_NOTHING_SAVED);
+    await findByTestId('intake-sheet-card-kept');
   });
 
   it('promises the card’s words survive — but only when there are words', async () => {

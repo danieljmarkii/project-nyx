@@ -42,11 +42,11 @@
 // (C-14's `onNavigateAway`) and reports that it saved nothing.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
+import { Skeleton } from '../ui/Skeleton';
 import { FoodPicker } from './FoodPicker';
 import { IntakeChipRow, type IntakeRating } from './IntakeChipRow';
 import { insertMeal } from '../../lib/meals';
@@ -55,7 +55,7 @@ import { refreshedNowPoint } from '../../lib/eventTimeEdit';
 import {
   INTAKE_SHEET_CARD_KEPT,
   INTAKE_SHEET_CHANGE_FOOD,
-  INTAKE_SHEET_CLOSE,
+  INTAKE_SHEET_BACK,
   INTAKE_SHEET_FOOD_STEP_TITLE,
   INTAKE_SHEET_NEW_MEAL,
   INTAKE_SHEET_NOTHING_SAVED,
@@ -222,10 +222,17 @@ export function IntakeFirstMealPanel({
           { delayMs: CARD_DELAY_MS },
         );
       } catch (e) {
-        // C-25 / CUL-575: a failed write is always said, and never by showing the error.
-        // The sheet stays up with the arms live, which is the retry.
+        // A FAILED WRITE IS ALWAYS SAID (C-25 / CUL-575) — and the first cut of this
+        // file only claimed it was: it logged, released the guard and left the sheet
+        // sitting there unchanged, which is indistinguishable from "still thinking" on
+        // the one surface where the owner has just reported a refusal. The `pm-review`
+        // caught it against this feature's own sibling, `LookCard.handleDone`, whose
+        // alert this now matches word for word. Never the error itself (the copy guard):
+        // calm, no code, pointing at the one thing she can do — the arms are still live
+        // underneath, so the retry is one tap.
         console.error('[IntakeFirstMealSheet] meal write failed:', e);
         setSaving(false);
+        Alert.alert('Couldn\u2019t save that', 'Please try again in a moment.');
       }
     },
     [nowPoint, onClose, petId, prependEvent, saving, showMealMoment, step],
@@ -246,7 +253,7 @@ export function IntakeFirstMealPanel({
         style={styles.backdrop}
         onPress={() => onClose('dismissed')}
         accessibilityRole="button"
-        accessibilityLabel={INTAKE_SHEET_CLOSE}
+        accessibilityLabel={INTAKE_SHEET_BACK}
       />
       <View
         style={[styles.sheet, step.kind === 'food' && styles.sheetTall]}
@@ -255,8 +262,14 @@ export function IntakeFirstMealPanel({
         <View style={styles.grabber} />
 
         {step.kind === 'loading' && (
-          <View style={styles.loading}>
-            <WhorlSpinner size="md" ground="day" />
+          // A skeleton, not a spinner: the wait is two local SQLite reads, and the
+          // loading convention puts a content-shaped wait under ~1s here — an `md` whorl
+          // for that is a flash of chrome where the content is about to be. Hidden from
+          // assistive tech (the `SkeletonRows` rule) — there is nothing to announce yet.
+          <View style={styles.loading} importantForAccessibility="no-hide-descendants">
+            <Skeleton width="55%" height={16} />
+            <Skeleton width="40%" height={12} />
+            <Skeleton width="70%" height={12} />
           </View>
         )}
 
@@ -285,16 +298,23 @@ export function IntakeFirstMealPanel({
             <ThemedText style={styles.foodLine} testID="intake-sheet-food">
               {intakeSheetFoodLine(foodLabel(step.food), step.source, sex)}
             </ThemedText>
-            <TouchableOpacity
-              style={styles.changeFood}
-              onPress={() => setStep({ kind: 'food' })}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={INTAKE_SHEET_CHANGE_FOOD}
-              testID="intake-sheet-change-food"
-            >
-              <ThemedText style={styles.changeFoodText}>{INTAKE_SHEET_CHANGE_FOOD}</ThemedText>
-            </TouchableOpacity>
+            {/* CHIP-SIZED, not a text link. §4.5 says "the food one chip-sized tap to
+                change" and the mock draws it as a chip; the first cut shipped a bare
+                text row, which is quieter than the control that protects trial fidelity
+                ought to be. The 44pt floor is the row's `minHeight`, so the pill itself
+                can keep chip proportions (C-5). */}
+            <View style={styles.changeFoodRow}>
+              <TouchableOpacity
+                style={styles.changeFood}
+                onPress={() => setStep({ kind: 'food' })}
+                hitSlop={{ top: 6, bottom: 6 }}
+                accessibilityRole="button"
+                accessibilityLabel={INTAKE_SHEET_CHANGE_FOOD}
+                testID="intake-sheet-change-food"
+              >
+                <ThemedText style={styles.changeFoodText}>{INTAKE_SHEET_CHANGE_FOOD}</ThemedText>
+              </TouchableOpacity>
+            </View>
 
             <ThemedText style={styles.question}>{intakeSheetQuestion(petName)}</ThemedText>
             {/* The shipped WSAVA row, nothing pre-selected, its own label suppressed
@@ -302,9 +322,21 @@ export function IntakeFirstMealPanel({
             <View style={styles.chips} pointerEvents={saving ? 'none' : 'auto'}>
               <IntakeChipRow value={null} onChange={onArm} label={null} />
             </View>
-            <ThemedText style={styles.nothingSaved}>{INTAKE_SHEET_NOTHING_SAVED}</ThemedText>
+          </>
+        )}
+
+        {/* THE TWO PROMISES, on BOTH steps. They were gated to the intake step in the
+            first cut, which left the two states that most need them — a first-run pet
+            with no meals, and the trial owner who tapped *Change food ›* — with neither
+            (the `pm-review`). At the foot, where the mock draws them, but in the mock's
+            teal ink at a readable size rather than the quietest tertiary at textXS: the
+            copy module's own header calls these the sentences that are not decoration,
+            and the first cut set them in the type it uses for metadata. */}
+        {step.kind !== 'loading' && (
+          <>
+            <ThemedText style={styles.promise}>{INTAKE_SHEET_NOTHING_SAVED}</ThemedText>
             {cardHasSelections && (
-              <ThemedText style={styles.nothingSaved} testID="intake-sheet-card-kept">
+              <ThemedText style={styles.promise} testID="intake-sheet-card-kept">
                 {INTAKE_SHEET_CARD_KEPT}
               </ThemedText>
             )}
@@ -316,10 +348,10 @@ export function IntakeFirstMealPanel({
           onPress={() => onClose('dismissed')}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={INTAKE_SHEET_CLOSE}
+          accessibilityLabel={INTAKE_SHEET_BACK}
           testID="intake-sheet-close"
         >
-          <ThemedText style={styles.closeText}>{INTAKE_SHEET_CLOSE}</ThemedText>
+          <ThemedText style={styles.backText}>{INTAKE_SHEET_BACK}</ThemedText>
         </TouchableOpacity>
       </View>
     </>
@@ -377,9 +409,8 @@ const styles = StyleSheet.create({
     marginBottom: theme.space1,
   },
   loading: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: theme.space4,
+    gap: theme.space1,
+    paddingVertical: theme.space2,
   },
   title: {
     fontSize: theme.textMD,
@@ -402,15 +433,25 @@ const styles = StyleSheet.create({
   },
   // Its own row rather than a trailing tap target on the line above: two controls that
   // share a row have to be separated by the sum of their reaches (C-5), and this one's
-  // neighbour would be a whole sentence.
-  changeFood: {
-    alignSelf: 'flex-start',
+  // neighbour would be a whole sentence. The ROW owns the 44pt floor so the chip keeps
+  // chip proportions inside it.
+  changeFoodRow: {
     minHeight: 44,
     justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  changeFood: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: theme.radiusFull,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    backgroundColor: theme.colorSurface,
   },
   changeFoodText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
+    // The ink, never the bright accent: this sits on a light surface (C-1).
     color: theme.colorAccentInk,
   },
   question: {
@@ -422,9 +463,12 @@ const styles = StyleSheet.create({
   chips: {
     marginBottom: theme.space1,
   },
-  nothingSaved: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
+  promise: {
+    fontSize: theme.textSM,
+    // The mock's teal ink. On a light surface that is the INK sibling, never the bright
+    // accent (C-1) — and it is what makes these read as the sheet speaking rather than
+    // as metadata.
+    color: theme.colorAccentInk,
   },
   // Quiet and centered — never louder than the arms, which are the answer this sheet
   // is asking for. A 44pt target (the 3am floor).
@@ -435,7 +479,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space2,
     marginTop: theme.space1,
   },
-  closeText: {
+  backText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
     color: theme.colorTextTertiary,
