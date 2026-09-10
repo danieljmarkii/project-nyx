@@ -24,7 +24,8 @@ jest.mock('../../lib/analysis', () => ({
   claimAnalysisChain: jest.fn(() => ({ settle: jest.fn() })),
   awaitAnalysisChain: jest.fn(() => Promise.resolve(false)),
 }));
-jest.mock('../../lib/haptics', () => ({ destructiveConfirm: jest.fn() }));
+const mockDestructiveConfirm = jest.fn();
+jest.mock('../../lib/haptics', () => ({ destructiveConfirm: () => mockDestructiveConfirm() }));
 jest.mock('../../components/event/VomitAnalysisSection', () => ({ VomitAnalysisSection: () => null }));
 jest.mock('../../components/event/StoolAnalysisSection', () => ({ StoolAnalysisSection: () => null }));
 jest.mock('react-native-safe-area-context', () => {
@@ -201,8 +202,34 @@ describe('the note (T-22)', () => {
     expect(alertBody()).toContain('What you noticed stays.');
 
     expect(mockUpdateLookNote).not.toHaveBeenCalled(); // nothing written until confirmed
+    expect(mockDestructiveConfirm).not.toHaveBeenCalled(); // and no haptic yet either
     await act(async () => { pressAlertButton(1); });
     expect(mockUpdateLookNote).toHaveBeenCalledWith('evt-1', null);
+    // CUL-604 §5.6 — the rigid tap lands on the CONFIRM, not on the control that
+    // opened the dialog: a haptic beside a live Cancel would say something was
+    // destroyed while the owner could still back out.
+    expect(mockDestructiveConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('an in-flight save says WHY its controls are unavailable (C-7)', async () => {
+    // `disabled` is an accessibility CLAIM: RN copies it into accessibilityState and
+    // VoiceOver announces "dimmed". A dimmed control with no reason tells a
+    // screen-reader user the app is broken rather than busy.
+    let release: (v: boolean) => void = () => {};
+    mockUpdateLookNote.mockReturnValueOnce(new Promise<boolean>((r) => { release = r; }));
+
+    mockGetEventById.mockResolvedValue(observed);
+    const { getByText, getByLabelText } = render(<EventDetailScreen />);
+    await waitFor(() => expect(getByText('Add a note')).toBeTruthy());
+    fireEvent.press(getByText('Add a note'));
+    fireEvent.changeText(getByLabelText('Note'), 'he hung back');
+
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    const busy = getByLabelText('Saving your note');
+    expect(busy.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(getByLabelText('Cancel — saving your note')).toBeTruthy();
+
+    await act(async () => { release(true); });
   });
 
   it('cancelling the note removal writes nothing', async () => {
@@ -212,6 +239,7 @@ describe('the note (T-22)', () => {
     fireEvent.press(getAllByText('Remove')[0]);
     await act(async () => { pressAlertButton(0); });
     expect(mockUpdateLookNote).not.toHaveBeenCalled();
+    expect(mockDestructiveConfirm).not.toHaveBeenCalled();
   });
 });
 

@@ -37,6 +37,7 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { updateLookNote } from '../../lib/looks';
+import { destructiveConfirm } from '../../lib/haptics';
 import { syncPendingLooks } from '../../lib/sync';
 import { unnamedWordsLine, type DescribedLook } from '../../lib/lookDisplay';
 
@@ -101,7 +102,21 @@ export function LookRecordSection({ eventId, look, onNoteChange }: Props) {
       'The note you wrote will be gone. What you noticed stays.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Remove', style: 'destructive', onPress: () => { void persist(null); } },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          // CUL-604 §5.6 — rigid, on the CONFIRM, never on the control that opens
+          // this alert: a haptic beside a live Cancel would say something was
+          // destroyed while the owner can still back out. The same placement
+          // History's Remove, the record screen's Remove and the card's Undo use.
+          //
+          // T-10's "no haptic" is about the look's ARRIVAL — the completion beat —
+          // and does not reach here; this is the app's destructive-confirm
+          // vocabulary, on a removal that happens to be of a look. `guards/
+          // haptics.test.ts` agrees: this file carries none of the safety markers,
+          // so its silence is not the load-bearing kind.
+          onPress: () => { destructiveConfirm(); void persist(null); },
+        },
       ],
     );
   }
@@ -152,11 +167,19 @@ export function LookRecordSection({ eventId, look, onNoteChange }: Props) {
                 accessibilityLabel="Note"
               />
               <View style={styles.noteActions}>
+                {/* C-7 — `disabled` here is a true claim (the control exists and is
+                    momentarily unavailable while the write is in flight), which is the
+                    one shape that rule permits. It also requires the pair: a label
+                    saying WHY, since RN copies `disabled` into `accessibilityState`
+                    and VoiceOver otherwise announces only "dimmed". The label names
+                    the state, which is something the visible word does not — never a
+                    substitute for it. */}
                 <TouchableOpacity
                   onPress={() => { setDraft(look.note ?? ''); setEditing(false); }}
                   hitSlop={HITSLOP_LEFT}
                   disabled={saving}
                   accessibilityRole="button"
+                  accessibilityLabel={saving ? 'Cancel — saving your note' : 'Cancel'}
                 >
                   <ThemedText style={styles.noteActionText}>Cancel</ThemedText>
                 </TouchableOpacity>
@@ -165,6 +188,7 @@ export function LookRecordSection({ eventId, look, onNoteChange }: Props) {
                   hitSlop={HITSLOP_RIGHT}
                   disabled={saving}
                   accessibilityRole="button"
+                  accessibilityLabel={saving ? 'Saving your note' : 'Save'}
                 >
                   <ThemedText style={styles.noteActionText}>Save</ThemedText>
                 </TouchableOpacity>
