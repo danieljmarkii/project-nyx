@@ -85,9 +85,17 @@ function syncState(eventId: string) {
   );
 }
 
-/** Mark the child pushed, so a later re-queue is observable as a real transition. */
+/** Mark the child pushed and BACKDATE it, so a later re-queue is observable as a
+ *  real transition on both columns.
+ *
+ *  The backdate is not decoration. `updateLookForEdit` stamps `new Date()` and the
+ *  insert did too, so on a fast machine the two ISO strings can be equal to the
+ *  millisecond and a strict `>` comparison flakes — which is exactly what happened
+ *  the first time this suite ran on a warm cache. Pinning the "before" to a known
+ *  past instant makes "did `updated_at` move?" a deterministic question. */
 function markPushed(eventId: string) {
-  mockDb.prepare('UPDATE looks SET synced = 1 WHERE event_id = ?').run(eventId);
+  mockDb.prepare('UPDATE looks SET synced = 1, updated_at = ? WHERE event_id = ?')
+    .run('2026-01-01T00:00:00.000Z', eventId);
 }
 
 describe('getLookForEvent', () => {
