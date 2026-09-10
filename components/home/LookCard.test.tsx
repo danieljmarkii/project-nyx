@@ -9,11 +9,35 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 const mockInsertLook = jest.fn();
 const mockLoadLookDays = jest.fn();
+const mockUpdateLookNote = jest.fn();
 jest.mock('../../lib/looks', () => ({
   insertLook: (...args: unknown[]) => mockInsertLook(...args),
   loadLookDays: (...args: unknown[]) => mockLoadLookDays(...args),
-  answeredDays: (rows: unknown[]) => rows.length,
+  updateLookNote: (...args: unknown[]) => mockUpdateLookNote(...args),
+  answeredDays: (rows: unknown[]) => new Set((rows as { localDay: string }[]).map((r) => r.localDay)).size,
 }));
+
+// The note's push. Mocked at the module boundary rather than left live because
+// `lib/sync` reaches `lib/supabase`, which throws at import when the env is unset — the
+// same shape `components/event/LookRecordSection` uses one component over.
+const mockSyncLooks = jest.fn(async () => {});
+jest.mock('../../lib/sync', () => ({ syncPendingLooks: () => mockSyncLooks() }));
+
+// CUL-873 — the withheld facts and the footer's mark. Real predicates, mocked READS: the
+// rule under test on this card is which SURFACE renders for each state, and the predicate
+// itself has its own suite (`lib/lookWithheld.test.ts`).
+const mockLoadWithheldFacts = jest.fn();
+const mockReadLastWithheldDay = jest.fn();
+const mockMarkWithheldToday = jest.fn(async () => {});
+jest.mock('../../lib/lookWithheld', () => {
+  const actual = jest.requireActual('../../lib/lookWithheld');
+  return {
+    ...actual,
+    loadLookWithheldFacts: (...a: unknown[]) => mockLoadWithheldFacts(...a),
+    readLastWithheldDay: (...a: unknown[]) => mockReadLastWithheldDay(...a),
+    markWithheldToday: (...a: unknown[]) => mockMarkWithheldToday(...(a as [])),
+  };
+});
 
 const mockReverse = jest.fn();
 jest.mock('../../lib/undoLog', () => ({
@@ -68,9 +92,10 @@ jest.mock('../../store/petStore', () => ({
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
+import { theme } from '../../constants/theme';
 import { LookCard } from './LookCard';
 import { CHIP_VERTICAL_REACH } from './LookChip';
-import { commonAncestor } from '../../testUtils/tree';
+import { commonAncestor, owningTouchable } from '../../testUtils/tree';
 import { useEventStore } from '../../store/eventStore';
 import { useMomentStore } from '../../store/momentStore';
 import { useUiStore } from '../../store/uiStore';
@@ -95,6 +120,16 @@ beforeEach(() => {
     lethargyRecently: false,
   });
   mockLoadLookDays.mockResolvedValue([]);
+  mockUpdateLookNote.mockResolvedValue(true);
+  mockSyncLooks.mockResolvedValue(undefined);
+  // The quiet default: every arm answered, none of them firing.
+  mockLoadWithheldFacts.mockResolvedValue({
+    petId: MOCHI.id,
+    serverIntakeDecline: false,
+    trialNotEating: false,
+    recentQualifyingMeals: [],
+  });
+  mockReadLastWithheldDay.mockResolvedValue(null);
   mockReverse.mockResolvedValue(undefined);
   useEventStore.setState({ todayEvents: [] });
   useMomentStore.setState({ visible: false, payload: null, removed: false });
@@ -583,5 +618,357 @@ describe('the intake router (CUL-870 / N-3b)', () => {
     fireEvent.press(await findByTestId('look-intake-door'));
     expect(mockHaptics.openMenu).toHaveBeenCalledTimes(1);
     expect(mockHaptics.selectChip).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUL-873 / N-4b — the today list, the receipts, the footer, the withheld state
+// and the note. What this block pins is which SURFACE renders for each state; the
+// arithmetic behind each line has its own suite (`lib/lookReceipts.test.ts`,
+// `lib/lookCoverage.test.ts`, `lib/lookWithheld.test.ts`).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MS_PER_DAY = 86_400_000;
+
+/** A look row as the today store holds it. */
+function lookRow(id: string, hoursAgo: number, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    pet_id: MOCHI.id,
+    event_type: 'check_in',
+    occurred_at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+    severity: null,
+    notes: null,
+    source: 'manual',
+    deleted_at: null,
+    created_at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+    updated_at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+    occurred_at_confidence: 'witnessed',
+    look_outcome: 'observed',
+    look_words: JSON.stringify(['subdued']),
+    look_note: null,
+    ...over,
+  } as never;
+}
+
+/** The record as `loadLookDays` returns it. `todayKey` is derived the way the writer
+ *  derives it, never typed as a literal (C-29). */
+function recordRow(id: string, daysAgo: number, words: string[] = []) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { localDayIndex, dayKeyFromIndex } = require('../../lib/utils');
+  return {
+    eventId: id,
+    localDay: dayKeyFromIndex(localDayIndex(Date.now()) - daysAgo),
+    createdAt: new Date(Date.now() - daysAgo * MS_PER_DAY).toISOString(),
+    outcome: words.length > 0 ? 'observed' : 'nothing_unusual',
+    words,
+  };
+}
+
+describe('the today list — the entries that stay (T-15)', () => {
+  it('keeps the day’s entries after the register lets go of the beat', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([recordRow('e1', 0, ['subdued'])]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
+    // No register card is showing, so this entry is a RESTING one — and it is still here.
+    expect(t.getByText('off')).toBeTruthy();
+    // Its control is the chevron, not Undo: the way back belongs to the beat.
+    expect(t.queryByTestId('look-undo-e1')).toBeNull();
+    expect(t.getByTestId('look-open-e1')).toBeTruthy();
+  });
+
+  it('folds the question to one line and re-opens the chips CLEARED', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([recordRow('e1', 0, ['subdued'])]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-folded-ask')).toBeTruthy());
+    expect(t.getByText('How does Mochi seem now?')).toBeTruthy();
+    // The chips are away while the question is folded.
+    expect(t.queryByTestId('look-chip-subdued')).toBeNull();
+    fireEvent.press(t.getByTestId('look-folded-ask'));
+    // …and back, with nothing carried over from the entry above.
+    expect(t.getByTestId('look-chip-subdued').props.accessibilityState.checked).toBe(false);
+    expect(t.queryByTestId('look-done')).toBeNull();
+  });
+
+  it('caps the list at two and folds the rest behind a door — never a feed', async () => {
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1), lookRow('e2', 3), lookRow('e3', 6), lookRow('e4', 9)],
+    });
+    mockLoadLookDays.mockResolvedValue([recordRow('e1', 0, ['subdued'])]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
+    expect(t.getByTestId('look-open-e1')).toBeTruthy();
+    expect(t.getByTestId('look-open-e2')).toBeTruthy();
+    expect(t.queryByTestId('look-open-e3')).toBeNull();
+    expect(t.getByText('2 more today ›')).toBeTruthy();
+  });
+
+  it('the cap’s door goes to History on the look lens, scoped to today', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { router } = require('expo-router');
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1), lookRow('e2', 3), lookRow('e3', 6)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-more-today')).toBeTruthy());
+    fireEvent.press(t.getByTestId('look-more-today'));
+    expect(router.push).toHaveBeenCalledWith(expect.stringContaining('type=check_in'));
+    expect(router.push).toHaveBeenCalledWith(expect.stringContaining('window=today'));
+  });
+
+  it('an entry’s chevron opens its own record, not the active pet’s newest', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { router } = require('expo-router');
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1), lookRow('e2', 3)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-open-e2')).toBeTruthy());
+    fireEvent.press(t.getByTestId('look-open-e2'));
+    expect(router.push).toHaveBeenCalledWith('/event/e2');
+  });
+
+  it('another pet’s look never renders on this pet’s card (C-9)', async () => {
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1), lookRow('e-other', 2, { pet_id: JUNIPER.id })],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-open-e1')).toBeTruthy());
+    expect(t.queryByTestId('look-open-e-other')).toBeNull();
+  });
+});
+
+describe('the receipt and the footer', () => {
+  it('hangs the receipt under the entry that earned it', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0, ['subdued']),
+      ...Array.from({ length: 20 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-receipt-e1')).toBeTruthy());
+    expect(t.getByTestId('look-receipt-e1').props.children).toContain(
+      'First day you’ve marked off for Mochi',
+    );
+  });
+
+  it('renders the coverage footer at 20 answered days, as the ratio', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0, ['subdued']),
+      ...Array.from({ length: 19 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-coverage')).toBeTruthy());
+    expect(t.getByText('Answered 20 of the last 28 days')).toBeTruthy();
+  });
+
+  it('renders no footer below the floor — the day-four owner reads no coverage message', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0, ['subdued']),
+      ...Array.from({ length: 3 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
+    expect(t.queryByTestId('look-coverage')).toBeNull();
+    expect(t.queryByTestId('look-receipt-e1')).toBeNull();
+  });
+
+  it('the footer’s numbers are TABULAR, so the line cannot re-flow into the entry', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0, ['subdued']),
+      ...Array.from({ length: 19 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-coverage')).toBeTruthy());
+    const flat = StyleSheet.flatten(t.getByTestId('look-coverage').props.style);
+    expect(flat.fontVariant).toEqual(['tabular-nums']);
+  });
+
+  it('the footer is a LINE, not a door — nothing tappable faces the ask row’s caret', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0, ['subdued']),
+      ...Array.from({ length: 19 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-coverage')).toBeTruthy());
+    // Walk UP to the nearest responder host: a line with no owning touchable is a line
+    // (C-6 — `fireEvent.press` cannot prove the opposite, so identity is what is asked).
+    expect(owningTouchable(t.getByTestId('look-coverage'))).toBeNull();
+  });
+});
+
+describe('the withheld state (floor item 12, T-20)', () => {
+  const withheldFacts = {
+    petId: MOCHI.id,
+    serverIntakeDecline: false,
+    trialNotEating: true,
+    recentQualifyingMeals: [],
+  };
+
+  it('a QUIET entry withholds its words and SAYS WHY', async () => {
+    mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+    expect(t.queryByText('nothing unusual')).toBeNull();
+    expect(
+      t.getByText(/While Mochi’s eating needs attention, Home keeps quiet days off the card/),
+    ).toBeTruthy();
+    // A destination is not a reason, so it carries both.
+    expect(t.getByText(/Your answer is in his record ›/)).toBeTruthy();
+  });
+
+  it('a SYMPTOM entry still speaks — words can only raise', async () => {
+    mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByText('off')).toBeTruthy());
+    expect(t.queryByTestId('look-withheld-e1')).toBeNull();
+  });
+
+  it('the footer goes with the words', async () => {
+    mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
+    });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0),
+      ...Array.from({ length: 25 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+    expect(t.queryByTestId('look-coverage')).toBeNull();
+  });
+
+  it('records the withheld DAY, so the footer stays away after the state clears', async () => {
+    mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    render(<LookCard />);
+    await waitFor(() => expect(mockMarkWithheldToday).toHaveBeenCalledWith(MOCHI.id));
+  });
+
+  it('renders a SKELETON, never a claim, while the facts are in flight', async () => {
+    let settle: (v: unknown) => void = () => {};
+    mockLoadWithheldFacts.mockReturnValue(new Promise((r) => { settle = r; }));
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
+    });
+    const t = render(<LookCard />);
+    // Hidden from assistive tech, so the query has to opt in (the Skeleton convention).
+    await waitFor(() =>
+      expect(t.getByTestId('look-entries-skeleton', { includeHiddenElements: true })).toBeTruthy(),
+    );
+    // Neither claim is on screen: not her words, and not the assertion about her eating.
+    expect(t.queryByText('nothing unusual')).toBeNull();
+    expect(t.queryByTestId('look-withheld-e1')).toBeNull();
+    await act(async () => {
+      settle({ petId: MOCHI.id, serverIntakeDecline: false, trialNotEating: false, recentQualifyingMeals: [] });
+    });
+    await waitFor(() => expect(t.getByText('nothing unusual')).toBeTruthy());
+  });
+
+  it('the withheld entry never marks the day when the state is merely UNKNOWN', async () => {
+    mockLoadWithheldFacts.mockReturnValue(new Promise(() => {}));
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    render(<LookCard />);
+    await act(async () => {});
+    expect(mockMarkWithheldToday).not.toHaveBeenCalled();
+  });
+});
+
+describe('the note, after the save (T-22)', () => {
+  beforeEach(() => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+  });
+
+  it('offers *Say more ›* under the newest entry and saves to looks.notes on return', async () => {
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-note-link-e1')).toBeTruthy());
+    fireEvent.press(t.getByTestId('look-note-link-e1'));
+    const field = t.getByTestId('look-note-field-e1');
+    expect(field.props.placeholder).toBe('Say more — what did you see?');
+    expect(field.props.maxLength).toBe(300);
+    // The T&S cue names the DOCUMENT, not a vague promise about privacy.
+    expect(
+      t.getByText('Printed on the vet report you make · never on a shared link unless you choose it'),
+    ).toBeTruthy();
+    fireEvent.changeText(field, '  wouldn’t come up on the bed  ');
+    await act(async () => {
+      fireEvent(field, 'submitEditing');
+    });
+    // `looks.notes`, through the one writer — and NEVER `events.notes`, which Ask reads.
+    expect(mockUpdateLookNote).toHaveBeenCalledWith('e1', 'wouldn’t come up on the bed');
+    expect(mockSyncLooks).toHaveBeenCalled();
+  });
+
+  it('renders a saved note in quotes under the newest entry, in the PRIMARY ink', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1, { look_note: 'he hung back' })] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-note-e1')).toBeTruthy());
+    expect(t.getByText('“he hung back”')).toBeTruthy();
+    // Hers, above the app's line: primary ink, and no rule.
+    const flat = StyleSheet.flatten(t.getByTestId('look-note-e1').props.style);
+    expect(flat.color).toBe(theme.colorTextPrimary);
+    expect(flat.borderTopWidth).toBeUndefined();
+    // The link is gone once a note exists.
+    expect(t.queryByTestId('look-note-link-e1')).toBeNull();
+  });
+
+  it('an OLDER entry carries ❞ beside its hour, never a second quoted line', async () => {
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1), lookRow('e2', 4, { look_note: 'he hung back' })],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-open-e2')).toBeTruthy());
+    expect(t.getByText('❞')).toBeTruthy();
+    expect(t.queryByTestId('look-note-e2')).toBeNull();
+    // And the link lives only on the newest.
+    expect(t.queryByTestId('look-note-link-e2')).toBeNull();
+    expect(t.getByTestId('look-note-link-e1')).toBeTruthy();
+  });
+
+  it('offers no link under an ABSENCE — its qualifier should have been a word', async () => {
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByText('nothing unusual')).toBeTruthy());
+    expect(t.queryByTestId('look-note-link-e1')).toBeNull();
+  });
+
+  it('offers no link under a WITHHELD entry — the note would reprint the withheld claim', async () => {
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: MOCHI.id,
+      serverIntakeDecline: true,
+      trialNotEating: false,
+      recentQualifyingMeals: [],
+    });
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+    expect(t.queryByTestId('look-note-link-e1')).toBeNull();
+  });
+
+  it('a failed note write is SAID, and the field keeps her words', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Alert } = require('react-native');
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockUpdateLookNote.mockRejectedValue(new Error('disk'));
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-note-link-e1')).toBeTruthy());
+    fireEvent.press(t.getByTestId('look-note-link-e1'));
+    fireEvent.changeText(t.getByTestId('look-note-field-e1'), 'he hung back');
+    await act(async () => {
+      fireEvent(t.getByTestId('look-note-field-e1'), 'submitEditing');
+    });
+    expect(spy).toHaveBeenCalledWith('Couldn’t save that note', expect.any(String));
+    expect(t.getByTestId('look-note-field-e1')).toBeTruthy();
+    spy.mockRestore();
   });
 });

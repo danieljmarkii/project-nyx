@@ -101,6 +101,17 @@ const ALWAYS_SCANNED = [
   // on every chip tap (`selectChip`, T-10) and is not a safety surface. The door is the
   // half that escalates, and the split is the point.
   'components/home/LookEmergencySheet.tsx',
+  // CUL-873 (N-4b) — the daily look's WITHHELD entry, named here for the same reason and
+  // by the same rule (T-10's own sentence: "the withheld entry, which renders beside a
+  // safety card, is its own component named in ALWAYS_SCANNED"). It carries none of the
+  // markers either — it is copy over `lookWithheld`'s deterministic predicate — and it is
+  // the surface that renders while a live intake concern holds, which is precisely where a
+  // buzz would read as the phone acknowledging that the pet has stopped eating.
+  //
+  // The split from `LookCard.tsx` is what makes this enforceable rather than remembered:
+  // the card ticks on every chip tap and must stay unscanned, so the withheld half had to
+  // leave it. Proven by mutation — a `selectChip` import here reds the build.
+  'components/home/LookWithheldEntry.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

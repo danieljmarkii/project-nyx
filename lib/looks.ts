@@ -186,9 +186,24 @@ export async function insertLook(params: InsertLookParams): Promise<InsertLookRe
 // ── The day counts ───────────────────────────────────────────────────────────
 
 /** One look row, reduced to what a COUNT needs. `localDay` is the stored key,
- *  never a re-derivation from `occurred_at` (T-19). */
+ *  never a re-derivation from `occurred_at` (T-19).
+ *
+ *  `eventId` and `createdAt` joined the shape at CUL-873 / N-4b, and they are here
+ *  rather than in a second reader for the reason the header states: this is the only
+ *  place a look row is grouped by day, so it is the only place a denominator can be got
+ *  wrong — and the RECEIPTS need to say WHICH entry earned a line, not just how many
+ *  days hold a word. T-18 attaches a receipt to the earliest look of the day carrying
+ *  the word, ties broken by `created_at` then row id; without those two fields that rule
+ *  could only be approximated at the render layer, which is where it would drift. */
 export interface LookDayRow {
+  /** The PARENT event's id — what a card's entry is keyed on and what its `›` opens.
+   *  The child's own id is never needed outside the write path. */
+  eventId: string;
   localDay: string;
+  /** ISO, stamped at insert. The tie-break for "the earliest look of the day" — never a
+   *  substitute for `occurred_at`, which is when the owner LOOKED; this is when the row
+   *  was written, and only two rows on the same day are ever compared by it. */
+  createdAt: string;
   outcome: LookOutcome;
   words: string[];
 }
@@ -205,18 +220,31 @@ export async function loadLookDays(petId: string, sinceDay?: string): Promise<Lo
   const db = getDb();
   // The join is the point: after an Undo the `looks` row survives with its words
   // and its note, and only `events.deleted_at` says it is gone (spec §9 rule 2).
-  const rows = await db.getAllAsync<{ local_day: string; outcome: string; words: string | null }>(
-    `SELECT l.local_day, l.outcome, l.words
+  const rows = await db.getAllAsync<{
+    event_id: string;
+    local_day: string;
+    created_at: string;
+    outcome: string;
+    words: string | null;
+  }>(
+    // ORDERED WITHIN THE DAY, not just across days (CUL-873). The receipts' attachment
+    // rule is "the earliest look of the day carrying the word, ties by `created_at` then
+    // id" (T-18), so the order that rule needs is produced HERE, once, by the reader that
+    // already owns the day grouping — rather than re-sorted by each consumer, which is
+    // how two surfaces come to disagree about which entry earned a line.
+    `SELECT l.event_id, l.local_day, l.created_at, l.outcome, l.words
        FROM looks l
        JOIN events e ON e.id = l.event_id
       WHERE l.pet_id = ?
         AND e.deleted_at IS NULL
         ${sinceDay ? 'AND l.local_day >= ?' : ''}
-      ORDER BY l.local_day DESC`,
+      ORDER BY l.local_day DESC, l.created_at ASC, l.id ASC`,
     sinceDay ? [petId, sinceDay] : [petId],
   );
   return rows.map((r) => ({
+    eventId: r.event_id,
     localDay: r.local_day,
+    createdAt: r.created_at,
     // A value outside the CHECK cannot reach here from the server; if a future
     // outcome ever does, it reads as an observation rather than as an absence —
     // the safe direction, since an absence day is the only one a surface may

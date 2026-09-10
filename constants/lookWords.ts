@@ -243,3 +243,36 @@ export function lookSpeciesOf(species: string | null | undefined): LookSpecies |
 export function lookWord(species: LookSpecies, key: string): LookWord | null {
   return LOOK_WORDS[species].find((w) => w.key === key) ?? null;
 }
+
+/**
+ * A stored key's DIRECTION, across both species — `null` for a key neither list names
+ * (CUL-873).
+ *
+ * WHY IT IS A FUNCTION AND NOT A LIST. The receipts are "earned only by a symptom-class
+ * word — never by *nothing unusual*, never by an activity word" (§3.3, T-18: *first day
+ * Mochi has seemed lively* is a wellness receipt). That is a membership question, and the
+ * honest way to answer it is to read the `kind` each word already carries rather than to
+ * copy the concern keys into a second list that can drift — the C-11 problem avoided
+ * rather than registered. The set-equality this produces is asserted in the membership
+ * walk (`constants/eventTypes.membership.test.ts`), where a decision belongs.
+ *
+ * THE OPENING CHIP IS A CONCERN, and this is the one classification not already in the
+ * table. *Not herself* is the owner's chief complaint — "ADR", the reason a worried owner
+ * opens the app — so it is neither an activity word nor the absence, and a receipt about
+ * the first day it was marked is exactly the sentence §3.3 wants. It lives outside
+ * `LOOK_WORDS` because its label follows `pets.sex` (E-15), not because it is a lesser
+ * word.
+ *
+ * The pet's own species is tried first and the sibling is the fallback, mirroring
+ * `lib/lookDisplay`'s resolver: a shared key means the same thing in both lists, so a
+ * record whose pet is not in the store still classifies honestly.
+ */
+export function lookWordKind(key: string, species?: LookSpecies | null): LookWordKind | null {
+  if (key === LOOK_OPENING_CHIP_KEY) return 'concern';
+  const order: LookSpecies[] = species ? [species, species === 'cat' ? 'dog' : 'cat'] : ['cat', 'dog'];
+  for (const s of order) {
+    const word = lookWord(s, key);
+    if (word) return word.kind;
+  }
+  return null;
+}

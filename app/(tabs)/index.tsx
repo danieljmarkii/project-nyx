@@ -118,14 +118,21 @@ export default function HomeScreen() {
   // the card can never disagree about the same refusal — not even during the switch window. The rest of
   // the strip is untouched, and a fresh input passes through unchanged, so the steady state is
   // byte-identical (`resolveTrialStrip` already withholds this line on a not-eating record).
-  // CUL-871 — the SAME register, read for a different question, and the fail-closed
-  // default inverts because the question does. `suppressTrialResponse` above answers
-  // "may this card reassure?", where ignorance must suppress. The Noticed door asks "does
-  // the record hold a not-eating fact?", where ignorance is not a fact at all (T-20: the
-  // withheld state is triggered by a positive intake fact, never by ignorance) — a door
-  // that escalated on unloaded facts would read *Call your vet today.* forever for a
-  // healthy pet whose trial card failed to load once, which is the cry-wolf direction.
-  const trialNotEating = trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : false;
+  // CUL-871 / CUL-873 — the SAME register, read for a different question, handed down as
+  // THREE states because the Noticed card has two readers of it that must take ignorance
+  // opposite ways (C-12: ask what its `null` costs THIS caller).
+  //
+  //   • the EMERGENCY DOOR reads `=== true` — a positive fact or nothing, never ignorance
+  //     (T-20). A door that escalated on unloaded facts would read *Call your vet today.*
+  //     forever for a healthy pet whose trial card failed to load once: cry wolf.
+  //   • the WITHHELD PREDICATE reads `null` as unanswered and fails CLOSED. Drawing a
+  //     quiet run before the facts land is the direction that cannot be taken back.
+  //
+  // `suppressTrialResponse` above is a third reading of the same register — "may this card
+  // reassure?" — and it collapses ignorance to suppression for its own reason. Three
+  // questions, one fact, each answer named where it is read.
+  const trialNotEating: boolean | null =
+    trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
   const rawTrialStrip = trialInput ? resolveTrialStrip(trialInput) : null;
   const trialStripModel =
     rawTrialStrip && !trialFactsFresh ? { ...rawTrialStrip, trialResponseLine: null } : rawTrialStrip;
@@ -234,9 +241,10 @@ export default function HomeScreen() {
               It renders nothing unless the account is allowlisted AND opted in AND the
               pet has a vocabulary, so Home is byte-identical off the flag.
 
-              `trialNotEating` is the trial's own refusal register, already fail-closed
-              above for the Signal card; the emergency door ORs it into what it can read
-              from the leaf rows, so a refusal either register can see is a refusal. */}
+              `trialNotEating` is the trial's own refusal register, THREE-STATE (CUL-873):
+              the emergency door takes it as a positive fact or nothing, and the withheld
+              predicate takes `null` as unanswered and fails closed. See its declaration
+              above for why one fact carries two readings. */}
           <LookCard
             trialNotEating={trialNotEating}
             onLayout={(e) =>

@@ -99,7 +99,7 @@ export function isLookRow(row: { event_type: string }): boolean {
  * cat's *Accident indoors* is the dog's; `outside_box` is one key with two labels).
  * The sibling is the fallback, never the default.
  */
-function resolveWord(key: string, pet: LookPetContext): ResolvedLookWord | null {
+export function resolveWord(key: string, pet: LookPetContext): ResolvedLookWord | null {
   if (key === LOOK_OPENING_CHIP_KEY) {
     // The opening chip is a word key like any other in `looks.words`, but it is not
     // in LOOK_WORDS — its label follows `pets.sex`, and a pet whose sex nobody
@@ -156,7 +156,7 @@ export function describeLook(row: LookRowFields, pet: LookPetContext = {}): Desc
  * initialisms (§4.2 / §4.3), so nothing here loses a capital it needed, and
  * `toLowerCase()` over the whole string would flatten one that did.
  */
-function inSentence(head: string): string {
+export function inSentence(head: string): string {
   return head.charAt(0).toLowerCase() + head.slice(1);
 }
 

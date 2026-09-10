@@ -18,10 +18,15 @@ import { answeredDays, absenceDays, wordDays, answeredVomitDays, type LookDayRow
 /** The seed's days as the day-count module would see them, so the assertions below
  *  run through the SHIPPED counters rather than re-implementing them here. */
 function asRecord(species: 'cat' | 'dog'): LookDayRow[] {
-  return buildLookSeed(species).map((d) => ({
+  return buildLookSeed(species).map((d, i) => ({
     // The counters key on the day string only; a stable synthetic key is enough and
-    // keeps this test off the clock (C-29: no calendar literal is being judged).
+    // keeps this test off the clock (C-29: no calendar literal is being judged). The
+    // row identity fields are likewise synthetic: nothing in the DAY COUNTS reads them
+    // (they are the receipts' attachment tie-break, CUL-873), and inventing a plausible
+    // uuid here would suggest otherwise.
+    eventId: `e-${i}`,
     localDay: `d-${String(d.daysAgo).padStart(2, '0')}`,
+    createdAt: `2026-01-01T00:00:${String(i).padStart(2, '0')}.000Z`,
     outcome: d.outcome,
     words: d.words,
   }));

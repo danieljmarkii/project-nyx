@@ -438,6 +438,24 @@ describe('the day counts — the day is the unit, local_day is the key', () => {
     ).run(`l-${id}`, `e-${id}`, opts.petId ?? PET, outcome, day, JSON.stringify(words), now, now);
   }
 
+  /** `look`, with the two fields the ordering test needs to control. */
+  function lookAt(
+    day: string,
+    outcome: 'observed' | 'nothing_unusual',
+    words: string[],
+    createdAt: string,
+    key: string,
+  ) {
+    mockDb.prepare(
+      `INSERT INTO events (id, pet_id, event_type, occurred_at, source, deleted_at, created_at, updated_at, synced)
+       VALUES (?, ?, 'check_in', ?, 'manual', NULL, ?, ?, 1)`,
+    ).run(`e-${key}`, PET, `${day}T12:00:00.000Z`, createdAt, createdAt);
+    mockDb.prepare(
+      `INSERT INTO looks (id, event_id, pet_id, outcome, local_day, words, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+    ).run(`l-${key}`, `e-${key}`, PET, outcome, day, JSON.stringify(words), createdAt, createdAt);
+  }
+
   it('ten looks in a day are ONE answered day (T-14)', async () => {
     for (let i = 0; i < 10; i += 1) look('2026-09-01', 'observed', ['subdued']);
     look('2026-09-02', 'nothing_unusual', []);
@@ -509,10 +527,27 @@ describe('the day counts — the day is the unit, local_day is the key', () => {
     expect(answeredVomitDays(record, ['2026-09-01', '2026-09-01'])).toBe(1);
   });
 
+  // CUL-873 — the receipts' attachment rule (T-18) needs the row's identity and its
+  // within-day order, and both come from THIS reader rather than from a second query or
+  // a render-layer re-sort. A `created_at` typed by the test is a real discriminator
+  // here: the rows are inserted out of order on purpose.
+  it('carries the row identity and orders WITHIN a day, earliest first', async () => {
+    lookAt('2026-09-01', 'observed', ['subdued'], '2026-09-01T18:30:00.000Z', 'evening');
+    lookAt('2026-09-01', 'observed', ['lively'], '2026-09-01T07:05:00.000Z', 'morning');
+    lookAt('2026-09-02', 'nothing_unusual', [], '2026-09-02T09:00:00.000Z', 'nextday');
+    const record = await loadLookDays(PET);
+    expect(record.map((r) => r.eventId)).toEqual(['e-nextday', 'e-morning', 'e-evening']);
+    expect(record.map((r) => r.createdAt)).toEqual([
+      '2026-09-02T09:00:00.000Z',
+      '2026-09-01T07:05:00.000Z',
+      '2026-09-01T18:30:00.000Z',
+    ]);
+  });
+
   it('the counts are pure over the rows they are given', () => {
     const record: LookDayRow[] = [
-      { localDay: '2026-09-01', outcome: 'observed', words: ['subdued'] },
-      { localDay: '2026-09-01', outcome: 'nothing_unusual', words: [] },
+      { eventId: 'e1', localDay: '2026-09-01', createdAt: '2026-09-01T07:00:00.000Z', outcome: 'observed', words: ['subdued'] },
+      { eventId: 'e2', localDay: '2026-09-01', createdAt: '2026-09-01T18:00:00.000Z', outcome: 'nothing_unusual', words: [] },
     ];
     const before = JSON.stringify(record);
     answeredDays(record);

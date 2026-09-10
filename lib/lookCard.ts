@@ -129,6 +129,81 @@ export function lookDoneSummary(
   return summary ? `${petName} · ${summary}` : null;
 }
 
+// ── THE TODAY LIST, ITS CAP, AND THE NOTE (CUL-873 / N-4b) ──────────────────
+
+/**
+ * The list cap's door (E-10, T-15) — *2 more today ›*.
+ *
+ * **The list never becomes a feed.** Principle 3 names a log feed among the things Home
+ * is not, so the card shows the two newest entries and folds the rest behind this line.
+ * It is a trivial cap and it is deliberately NOT the med strip's §7 collapse, which is a
+ * per-med rule about cadence coverage (`isMedCadenceCoveredToday`) and has nothing to say
+ * about a list.
+ *
+ * The chevron is load-bearing: it GOES somewhere (§3.1a's caret/chevron rule) — History,
+ * on the look lens — because Home holds a day and History holds the log.
+ */
+export const LOOK_TODAY_CAP = 2;
+
+export function lookMoreToday(hidden: number): string {
+  return `${hidden} more today ›`;
+}
+
+/** Where that door lands: History, filtered to looks, scoped to today. `ts` is the
+ *  re-application key the screen reads so a second tap re-seeds the filter (B-378). */
+export function lookMoreTodayHref(nowMs: number = Date.now()): string {
+  return `/history?type=check_in&window=today&ts=${nowMs}`;
+}
+
+/**
+ * The note's invitation (T-22) — *Say more ›*, under the newest entry's words.
+ *
+ * The word *note* is the object's name where it is STORED and PRINTED; the invitation is
+ * the placeholder's own register. Nothing on the way IN asks for typing (Principle 1): a
+ * look with no note is complete, and this appears only after Done.
+ */
+export const LOOK_NOTE_LINK = 'Say more ›';
+export const LOOK_NOTE_PLACEHOLDER = 'Say more — what did you see?';
+
+/** The shipped notes cap (`app/log.tsx` / `components/log/SimpleEventConfirm.tsx`). The
+ *  140 first cited in the spec was a photo-fields editor's limit, not a note's. */
+export const LOOK_NOTE_MAX_LENGTH = 300;
+
+/**
+ * The cue under the open field, and it is a Trust & Safety requirement rather than a
+ * nicety (T-22, §9).
+ *
+ * Free text about a household LEAVES the account whenever the report does — Appendix G is
+ * a document made to be handed to a clinic — so the field names the document rather than
+ * saying something vague about privacy. The share link, when it ships, never inherits the
+ * owner's *Include your notes* choice (§9 rule 4), which is why the second clause is a
+ * promise about a surface that does not exist yet.
+ */
+export const LOOK_NOTE_CUE =
+  'Printed on the vet report you make · never on a shared link unless you choose it';
+
+/**
+ * Undo over a look that carries a note — the confirm, and the note NAMED (T-22, C-21).
+ *
+ * C-21's rule is that every destructive action carries exactly one safety net, a confirm
+ * BEFORE or a way back AFTER, and that a one-tap destructive action is earned by
+ * RECREATABILITY. Re-logging a look is easy; re-writing the sentence she typed at 2am
+ * about what she saw is not, and no surface in the app exposes a removed one. So a look
+ * with a note earns the confirm the photo-bearing record gets, and the body names the
+ * thing the owner would not otherwise know is going.
+ *
+ * The quote is truncated because an alert body is not a reader: the opening words are what
+ * make her recognise the note, and the whole 300 characters would push the buttons off a
+ * small screen.
+ */
+export const LOOK_UNDO_NOTE_TITLE = 'Take back this look?';
+
+export function lookUndoNoteBody(note: string): string {
+  const trimmed = note.trim();
+  const quoted = trimmed.length > 100 ? `${trimmed.slice(0, 100).trimEnd()}…` : trimmed;
+  return `Its note goes with it: “${quoted}”`;
+}
+
 // ── IS THE CARD LIVE, AND WHAT DOES THE TODAY NUDGE SAY (T-9, the review's E-8) ──
 //
 // TWO SURFACES, ONE PREDICATE. Home's Noticed card and TodayZone's nudge sit one card

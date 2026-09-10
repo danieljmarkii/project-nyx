@@ -9,7 +9,7 @@ import {
   EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, EVENT_FAMILIES, expandedPickerGroups,
 } from './eventTypes';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
-import { LOOK_WORDS, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY } from './lookWords';
+import { LOOK_WORDS, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, lookWordKind } from './lookWords';
 import { TREND_SYMPTOM_TYPES } from '../lib/trendSummary';
 import { SYMPTOM_EVENT_TYPES } from '../lib/analytics';
 import { eventTintCategory, describeDayEvent } from '../lib/dayEvents';
@@ -610,6 +610,47 @@ describe('the look vocabulary shares no key with the symptom record (CUL-868)', 
   it('check_in is its own tint category, and it is not the symptom one', () => {
     expect(eventTintCategory('check_in')).toBe('look');
     expect(SYMPTOM_TYPES.has('check_in' as never)).toBe(false);
+  });
+
+  // CUL-873 — WHICH WORDS EARN A RECEIPT. §3.3 / T-18: symptom-class only, never the
+  // absence and never an activity word (*first day Mochi has seemed lively* is a wellness
+  // receipt). `lookWordKind` is the shipped predicate; this is the membership decision it
+  // implements, asserted as SET EQUALITY over the vocabulary rather than as a second list
+  // of concern keys that could drift from it (C-11, avoided rather than registered — the
+  // same reasoning as the LOOK_WORDS walk row above).
+  it('every word classifies, and the concern set is exactly the words marked concern', () => {
+    for (const species of ['cat', 'dog'] as const) {
+      const declared = LOOK_WORDS[species].filter((w) => w.kind === 'concern').map((w) => w.key).sort();
+      const viaPredicate = LOOK_WORDS[species]
+        .map((w) => w.key)
+        .filter((k) => lookWordKind(k, species) === 'concern')
+        .sort();
+      expect(viaPredicate).toEqual(declared);
+      // Nothing falls through unclassified: an unnamed key would silently earn nothing,
+      // which is the safe direction but not a decision anyone made.
+      expect(LOOK_WORDS[species].filter((w) => lookWordKind(w.key, species) === null)).toEqual([]);
+    }
+  });
+
+  it('the OPENING CHIP is a concern — the chief complaint earns a receipt', () => {
+    // The one classification not already in the vocabulary table, and it is a decision:
+    // *Not herself* is ADR, the reason a worried owner opens the app. It is neither the
+    // absence nor an activity word, so a line about the first day it was marked is
+    // exactly the sentence §3.3 wants. It lives outside LOOK_WORDS because its label
+    // follows `pets.sex` (E-15), not because it is a lesser word.
+    expect(lookWordKind(LOOK_OPENING_CHIP_KEY)).toBe('concern');
+    expect(lookWordKind(LOOK_OPENING_CHIP_KEY, 'cat')).toBe('concern');
+    expect(lookWordKind(LOOK_OPENING_CHIP_KEY, 'dog')).toBe('concern');
+  });
+
+  it('an activity word is NEVER a concern, in either species', () => {
+    // The receipt rule stated as disjointness, so a `kind` flipped in the vocabulary reds
+    // here with the reason attached rather than silently minting wellness receipts.
+    for (const species of ['cat', 'dog'] as const) {
+      const positives = LOOK_WORDS[species].filter((w) => w.kind === 'positive').map((w) => w.key);
+      expect(positives.length).toBeGreaterThan(0);
+      expect(positives.filter((k) => lookWordKind(k, species) === 'concern')).toEqual([]);
+    }
   });
 });
 
