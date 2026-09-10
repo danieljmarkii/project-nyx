@@ -168,6 +168,24 @@ describe('updateLookForEdit — the no-op gate (C-23)', () => {
     expect((await getLookForEvent(eventId))?.words).toEqual(['subdued', 'lip_licking']);
   });
 
+  it('refuses to empty an observed look — the invariant insertLook already holds', async () => {
+    // Not a cosmetic guard. The outcome stays 'observed', so `answeredDays` keeps
+    // counting the day (§6.1) while the record has nothing to show for it: a day the
+    // owner answered, rendered as though she had answered nothing, feeding a
+    // denominator on Home, Patterns and the report.
+    const { eventId } = await seedLook();
+    await expect(updateLookForEdit(eventId, { words: [] })).rejects.toThrow(/at least one word/);
+    // …and nothing was written on the way to the throw.
+    expect((await getLookForEvent(eventId))?.words).toEqual(['subdued', 'walk_refused']);
+  });
+
+  it('an ABSENCE row is untouched by that rule — it has no words by definition', async () => {
+    const { eventId } = await seedLook();
+    mockDb.prepare(`UPDATE looks SET outcome = 'nothing_unusual', words = '[]' WHERE event_id = ?`)
+      .run(eventId);
+    await expect(updateLookForEdit(eventId, { words: [], notes: 'x' })).resolves.toBe(true);
+  });
+
   it('is a no-op on an event with no child, and says so', async () => {
     expect(await updateLookForEdit('no-such-event', { notes: 'x' })).toBe(false);
   });

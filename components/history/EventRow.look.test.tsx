@@ -129,7 +129,7 @@ describe('the note marker', () => {
 
   it('expanded, the row shows the CHILD’s note — the parent’s is NULL by CHECK', () => {
     const { getByText } = draw(row({ look_note: 'he hung back at the corner' }), true);
-    expect(getByText('he hung back at the corner')).toBeTruthy();
+    expect(getByText(/he hung back at the corner/)).toBeTruthy();
   });
 });
 
@@ -145,6 +145,13 @@ describe('a look this build cannot describe', () => {
     const { getByText, queryByText } = draw(row({ look_words: wordsToLocalText(['from_vocab_v2']) }));
     expect(getByText('Noticed')).toBeTruthy();
     expect(queryByText('nothing unusual')).toBeNull();
+  });
+});
+
+describe('the expanded note is quoted (T-22)', () => {
+  it('a look’s note renders in quotes — they mark the words as HERS', () => {
+    const { getByText } = draw(row({ look_note: 'he hung back at the corner' }), true);
+    expect(getByText('“he hung back at the corner”')).toBeTruthy();
   });
 });
 

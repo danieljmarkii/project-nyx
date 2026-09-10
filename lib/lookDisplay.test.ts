@@ -2,7 +2,8 @@ import {
   describeLook,
   lookSummary,
   unnamedWordsLine,
-  gridWordsFor,
+  gridSectionsFor,
+  lookGroupLabel,
   gridChipLabel,
   isLookRow,
   ABSENCE_PHRASE,
@@ -121,17 +122,17 @@ describe('describeLook — a key the pet’s own list does not hold', () => {
     );
     expect(d.words.map((w) => w.key)).toEqual(['subdued']);
     expect(d.unnamed).toBe(1);
-    expect(unnamedWordsLine(d.unnamed)).toBe('1 more word, from a newer version of the app.');
+    expect(unnamedWordsLine(d.unnamed)).toBe('1 more word this version of the app can’t show yet.');
   });
 
   it('a look whose EVERY word is unnameable summarises as nothing, never as the absence', () => {
     const d = describeLook(row({ look_words: wordsToLocalText(['from_vocab_v2']) }), DOG);
     expect(lookSummary(d)).toBeNull();
-    expect(unnamedWordsLine(d.unnamed)).toBe('1 more word, from a newer version of the app.');
+    expect(unnamedWordsLine(d.unnamed)).toBe('1 more word this version of the app can’t show yet.');
   });
 
   it('pluralises', () => {
-    expect(unnamedWordsLine(2)).toBe('2 more words, from a newer version of the app.');
+    expect(unnamedWordsLine(2)).toBe('2 more words this version of the app can’t show yet.');
     expect(unnamedWordsLine(0)).toBeNull();
   });
 });
@@ -169,16 +170,51 @@ describe('isLookRow', () => {
   });
 });
 
-describe('gridWordsFor — the editor’s option order (§3.1a)', () => {
-  it.each(['cat', 'dog'] as const)('%s: head words first, then the rest, each exactly once', (species) => {
-    const grid = gridWordsFor(species, LOOK_HEAD_WORDS[species]);
-    const keys = grid.map((w) => w.key);
+describe('gridSectionsFor — the editor’s labelled blocks (§3.1a)', () => {
+  it.each(['cat', 'dog'] as const)('%s: the head block leads, unlabelled', (species) => {
+    const [head] = gridSectionsFor(species, LOOK_HEAD_WORDS[species]);
+    expect(head.label).toBeNull();  // not a family — the seven the card shows (T-13)
+    expect(head.words.map((w) => w.key)).toEqual([...LOOK_HEAD_WORDS[species]]);
+  });
 
-    expect(keys.slice(0, LOOK_HEAD_WORDS[species].length)).toEqual([...LOOK_HEAD_WORDS[species]]);
-    // No duplication: a head word appears in the head block and NOT again below it.
+  it.each(['cat', 'dog'] as const)('%s: every word appears exactly once, and none is lost', (species) => {
+    const keys = gridSectionsFor(species, LOOK_HEAD_WORDS[species]).flatMap((s) => s.words.map((w) => w.key));
+    // No duplication: a head word appears in the head block and NOT again in its family.
     expect(new Set(keys).size).toBe(keys.length);
-    // And nothing is lost — the grid is the whole vocabulary, re-ordered.
+    // And nothing is dropped — the sections ARE the whole vocabulary, re-grouped.
     expect(new Set(keys)).toEqual(new Set(LOOK_WORDS[species].map((w) => w.key)));
+  });
+
+  it.each(['cat', 'dog'] as const)('%s: every family block after the first carries a label', (species) => {
+    // The labels are the point: ~29 long chips with nothing naming the groups reads
+    // as an unsorted wall, whatever order it is in (T-21).
+    const [, ...families] = gridSectionsFor(species, LOOK_HEAD_WORDS[species]);
+    expect(families.length).toBeGreaterThan(3);
+    for (const f of families) {
+      expect(f.label).toBeTruthy();
+      expect(f.words.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('families come out in the vocabulary’s own order — the vet’s, inherited not restated', () => {
+    const declared = LOOK_WORDS.dog
+      .filter((w) => !LOOK_HEAD_WORDS.dog.includes(w.key))
+      .map((w) => w.group);
+    const firstSeen = [...new Set(declared)];
+    const [, ...families] = gridSectionsFor('dog', LOOK_HEAD_WORDS.dog, 'male');
+    expect(families.map((f) => f.label)).toEqual(firstSeen.map((g) => lookGroupLabel(g, 'male')));
+  });
+
+  it('re-words the two group keys §3.1a names, and passes the rest through', () => {
+    expect(lookGroupLabel('Company', 'unknown')).toBe('With you');
+    expect(lookGroupLabel('Energy', 'unknown')).toBe('Energy');
+    expect(lookGroupLabel('Mouth', 'unknown')).toBe('Mouth');
+  });
+
+  it('the activity family follows the pet, and takes the neutral form when unknown', () => {
+    expect(lookGroupLabel('Activity', 'male')).toBe('What he did');
+    expect(lookGroupLabel('Activity', 'female')).toBe('What she did');
+    expect(lookGroupLabel('Activity', 'unknown')).toBe('What they did');
   });
 
   it('the chip label carries both halves — the gloss is never dropped (§4.1 rule 12)', () => {

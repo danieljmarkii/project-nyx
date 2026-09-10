@@ -78,7 +78,9 @@ import { Alert } from 'react-native';
 import { render, waitFor, fireEvent, act } from '@testing-library/react-native';
 import EventDetailScreen from './[id]';
 import { wordsToLocalText } from '../../lib/lookWordsCodec';
-import { LOOK_NOTE_CUE, LOOK_ABSENCE_LINE } from '../../components/event/LookRecordSection';
+import { StyleSheet } from 'react-native';
+import { theme } from '../../constants/theme';
+import { LOOK_NOTE_CUE, LOOK_ABSENCE_LINE, LOOK_UNRESOLVED_LINE } from '../../components/event/LookRecordSection';
 
 const baseRow = {
   id: 'evt-1', pet_id: 'pet-A', occurred_at: new Date(2026, 5, 12, 7, 12).toISOString(),
@@ -140,14 +142,39 @@ describe('the words', () => {
     expect(queryByText(/good day|all good|doing well|healthy|fine/i)).toBeNull();
   });
 
-  it('a check_in with no child renders NO outcome line at all', async () => {
-    // The safety case: a missing child must not fall through to the absence phrase.
+  it('a check_in with no child says so, and never falls through to the absence', async () => {
+    // Two claims. The safety one: a missing child must not produce "nothing unusual".
+    // The Principle-5 one: a blank screen is indistinguishable from a failed save, so
+    // the honest line is the designed state.
     mockGetEventById.mockResolvedValue({ ...baseRow, event_type: 'check_in' });
-    const { queryByText, findAllByText } = render(<EventDetailScreen />);
-    expect((await findAllByText(/Jun/)).length).toBeGreaterThan(0);
+    const { getByText, queryByText } = render(<EventDetailScreen />);
+    await waitFor(() => expect(getByText(LOOK_UNRESOLVED_LINE)).toBeTruthy());
     expect(queryByText(LOOK_ABSENCE_LINE)).toBeNull();
-    // …and no note editor either — there is no row to write one to.
+    // …and no note editor — there is no row to write one to, and a control that
+    // writes nowhere is worse than none (C-7).
     expect(queryByText('Add a note')).toBeNull();
+  });
+
+  it('the absence is typeset QUIET — sans, secondary ink, a size down (T-15 / L-16)', async () => {
+    // The safety-critical styling call. This screen is the artifact an owner turns
+    // around to show a vet, and on an absence look this line is the only thing on it —
+    // so the display face would give the feature's most reassuring string the app's
+    // own headline register. History already renders it quiet; the record must agree.
+    mockGetEventById.mockResolvedValue({ ...baseRow, event_type: 'check_in', look_outcome: 'nothing_unusual' });
+    const { getByText } = render(<EventDetailScreen />);
+    await waitFor(() => expect(getByText(LOOK_ABSENCE_LINE)).toBeTruthy());
+
+    const flat = StyleSheet.flatten(getByText(LOOK_ABSENCE_LINE).props.style);
+    expect(flat.fontFamily).not.toBe('Newsreader');
+    expect(flat.color).toBe(theme.colorTextSecondary);
+    expect(flat.fontSize).toBeLessThan(theme.textLG);
+  });
+
+  it('…while an observed word KEEPS the serif — the contrast is the point', async () => {
+    mockGetEventById.mockResolvedValue(observed);
+    const { getByText } = render(<EventDetailScreen />);
+    await waitFor(() => expect(getByText('Off')).toBeTruthy());
+    expect(StyleSheet.flatten(getByText('Off').props.style).fontFamily).toBe('Newsreader');
   });
 
   it('renders nothing of this on a non-look row', async () => {
@@ -180,10 +207,12 @@ describe('the note (T-22)', () => {
     expect(mockUpdateLookNote).toHaveBeenCalledWith('evt-1', 'he hung back at the corner');
   });
 
-  it('shows an existing note with Edit and Remove', async () => {
+  it('shows an existing note IN QUOTES, with Edit and Remove (T-22)', async () => {
     mockGetEventById.mockResolvedValue({ ...observed, look_note: 'he hung back at the corner' });
     const { getByText, getAllByText } = render(<EventDetailScreen />);
-    await waitFor(() => expect(getByText('he hung back at the corner')).toBeTruthy());
+    // Quoted: the marks are what say the words are HERS rather than the app's — the
+    // same job the ❞ does on the collapsed row and the report's Appendix G.
+    await waitFor(() => expect(getByText('“he hung back at the corner”')).toBeTruthy());
     // Two of each on screen: the note's pair, and the screen footer's. The note's
     // are the EXTRA ones — a note-less look shows one of each — which is the claim.
     expect(getAllByText('Edit')).toHaveLength(2);
@@ -193,7 +222,7 @@ describe('the note (T-22)', () => {
   it('removing the note CONFIRMS, and says what survives (C-21)', async () => {
     mockGetEventById.mockResolvedValue({ ...observed, look_note: 'he hung back at the corner' });
     const { getByText, getAllByText } = render(<EventDetailScreen />);
-    await waitFor(() => expect(getByText('he hung back at the corner')).toBeTruthy());
+    await waitFor(() => expect(getByText('“he hung back at the corner”')).toBeTruthy());
 
     // The note's own Remove is the first of the two on screen (the screen's footer
     // Remove is the other); both open a confirm, so identify by the body.
@@ -235,7 +264,7 @@ describe('the note (T-22)', () => {
   it('cancelling the note removal writes nothing', async () => {
     mockGetEventById.mockResolvedValue({ ...observed, look_note: 'he hung back at the corner' });
     const { getByText, getAllByText } = render(<EventDetailScreen />);
-    await waitFor(() => expect(getByText('he hung back at the corner')).toBeTruthy());
+    await waitFor(() => expect(getByText('“he hung back at the corner”')).toBeTruthy());
     fireEvent.press(getAllByText('Remove')[0]);
     await act(async () => { pressAlertButton(0); });
     expect(mockUpdateLookNote).not.toHaveBeenCalled();
@@ -247,7 +276,7 @@ describe('Remove — the whole look', () => {
   it('names the note when the look carries one', async () => {
     mockGetEventById.mockResolvedValue({ ...observed, look_note: 'he hung back at the corner' });
     const { getByText, getAllByText } = render(<EventDetailScreen />);
-    await waitFor(() => expect(getByText('he hung back at the corner')).toBeTruthy());
+    await waitFor(() => expect(getByText('“he hung back at the corner”')).toBeTruthy());
 
     // The footer's Remove is the LAST one on screen.
     const removes = getAllByText('Remove');
@@ -261,6 +290,17 @@ describe('Remove — the whole look', () => {
     await waitFor(() => expect(getByText('Off')).toBeTruthy());
 
     await act(async () => { fireEvent.press(getByText('Remove')); });
-    expect(alertBody()).toBe('This will remove the Noticed from history.');
+    // "the Noticed" — the template was written for noun labels and `check_in` is the
+    // first type without one. Fixed by naming the SUBJECT per type, not by rewording
+    // the sentence, so every other type's confirm is byte-identical.
+    expect(alertBody()).toBe('This will remove what you noticed from history.');
+  });
+
+  it('every other type keeps the sentence it has always had', async () => {
+    mockGetEventById.mockResolvedValue({ ...baseRow, event_type: 'vomit' });
+    const { findAllByText, getByText } = render(<EventDetailScreen />);
+    expect((await findAllByText(/Jun/)).length).toBeGreaterThan(0);
+    await act(async () => { fireEvent.press(getByText('Remove')); });
+    expect(alertBody()).toBe('This will remove the Vomit from history.');
   });
 });

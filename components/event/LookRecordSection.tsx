@@ -56,6 +56,13 @@ export const LOOK_NOTE_CUE =
 
 export const LOOK_ABSENCE_LINE = 'You marked nothing unusual.';
 
+/** Principle 5 — a look whose child row has not reached this device. The screen
+ *  knows an act happened and cannot say what it was, and saying so is the whole
+ *  job: a blank here is indistinguishable from a save that failed. Names the
+ *  device rather than blaming the owner or the network, and promises nothing about
+ *  when. */
+export const LOOK_UNRESOLVED_LINE = 'What you noticed hasn’t reached this device yet.';
+
 interface Props {
   eventId: string;
   look: DescribedLook;
@@ -147,6 +154,10 @@ export function LookRecordSection({ eventId, look, onNoteChange }: Props) {
         <ThemedText style={styles.absence}>{LOOK_ABSENCE_LINE}</ThemedText>
       ) : null}
 
+      {look.kind === 'unknown' ? (
+        <ThemedText style={styles.unresolved}>{LOOK_UNRESOLVED_LINE}</ThemedText>
+      ) : null}
+
       {unnamed ? <ThemedText style={styles.unnamed}>{unnamed}</ThemedText> : null}
 
       {hasChild ? (
@@ -196,7 +207,11 @@ export function LookRecordSection({ eventId, look, onNoteChange }: Props) {
             </>
           ) : look.note ? (
             <>
-              <ThemedText style={styles.noteBody}>{look.note}</ThemedText>
+              {/* Quoted (T-22). The quotes are not decoration: they mark the words
+                  as HERS rather than the app's, which is the same job the ❞ does on
+                  the collapsed History row and the reason Appendix G quotes it on the
+                  report a vet reads. */}
+              <ThemedText style={styles.noteBody}>{`“${look.note}”`}</ThemedText>
               <View style={styles.noteActions}>
                 <TouchableOpacity
                   onPress={() => { setDraft(look.note ?? ''); setEditing(true); }}
@@ -258,12 +273,28 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
   },
+  // T-15 / L-16 — "a quiet entry is quiet: the absence renders in the sans, the
+  // secondary ink, a size down; a symptom-class word keeps the serif."
+  //
+  // Ruled for the Home entry; extended here because the reason is STRONGER on this
+  // screen, not weaker. The record is the surface an owner turns around to show a
+  // vet, and on an absence look this line is the only thing on it — so the display
+  // face would give the feature's single most reassuring string the app's own
+  // headline register, on the artifact where that reads as a finding. The words say
+  // the right thing ("You marked" is her act); the type was saying something else.
+  // History already renders it quiet, so this also stops one fact reading two ways
+  // inside one PR. Provisional pending PM confirmation that L-16 reaches the record.
   absence: {
-    fontFamily: theme.fontDisplay,
-    fontSize: theme.textLG,
-    lineHeight: theme.textLG * 1.3,
-    letterSpacing: -0.2,
-    color: theme.colorTextPrimary,
+    fontSize: theme.textMD,
+    lineHeight: theme.lineHeightBody,
+    color: theme.colorTextSecondary,
+  },
+  // The same quiet register: this is an absence of information, and it must not
+  // out-shout the record it is standing in for.
+  unresolved: {
+    fontSize: theme.textMD,
+    lineHeight: theme.lineHeightBody,
+    color: theme.colorTextSecondary,
   },
   unnamed: {
     marginTop: theme.space2,

@@ -493,15 +493,33 @@ export default function EventDetailScreen() {
     // this footer is live inside. `look_note` arrives ON the event row, joined in the
     // same SELECT (lib/db.ts), so by the time there is an `event` to remove there is
     // a definite answer about its note.
-    const hasNote = isLookRow(event) && !!event.look_note?.trim();
+    const isLook = isLookRow(event);
+    const hasNote = isLook && !!event.look_note?.trim();
     const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
+    // "the Noticed" — the sentence template was written for NOUN labels, and every
+    // type had one until `check_in` arrived with a past participle. Fixed by naming
+    // the SUBJECT per type rather than by rewording the template, so every other
+    // type's confirm is byte-identical to what it has always said.
+    const subject = isLook ? 'what you noticed' : `the ${label}`;
+    // Composed rather than branched, matching the completion card's Undo one surface
+    // over (NamedCompletionCard). A chain would let the photo clause silently
+    // suppress the note-loss warning on a record carrying both — latent today, since
+    // `check_in` is `hasPhoto: false` and the editor no longer offers the row, but
+    // two sibling confirms about the same destructive act must not disagree about
+    // how many facts they are willing to say.
+    // Phrases lower-case, the sentence capitalises its own first letter, so joining
+    // two never produces "…and The note…" mid-sentence.
+    const takesWithIt = [
+      hasPhoto ? 'the photo you attached' : null,
+      hasNote ? 'the note you wrote' : null,
+    ].filter((x): x is string => x !== null);
+    const clause = takesWithIt.join(' and ');
+    const lead = `This will remove ${subject} from history.`;
     Alert.alert(
       'Remove this log?',
-      hasPhoto
-        ? `This will remove the ${label} from history. The photo you attached will be removed with it.`
-        : hasNote
-          ? `This will remove the ${label} from history. The note you wrote will be removed with it.`
-          : `This will remove the ${label} from history.`,
+      clause
+        ? `${lead} ${clause.charAt(0).toUpperCase()}${clause.slice(1)} will be removed with it.`
+        : lead,
       [
         { text: 'Cancel', style: 'cancel' },
         {

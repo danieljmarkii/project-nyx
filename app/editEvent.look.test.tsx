@@ -99,6 +99,7 @@ jest.mock('../store/petStore', () => {
   };
 });
 
+import { Alert } from 'react-native';
 import { render, waitFor, fireEvent, act } from '@testing-library/react-native';
 import EditEventModal from './edit-event';
 import { LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
@@ -117,8 +118,12 @@ function look(over: Partial<{ words: string[]; notes: string | null; outcome: st
   };
 }
 
+let alertSpy: jest.SpyInstance;
+afterEach(() => alertSpy?.mockRestore());
+
 beforeEach(() => {
   jest.clearAllMocks();
+  alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   mockMovedTo.current = null;
   mockRouteParams = { id: 'evt-1', type: 'check_in', occurredAt: AT, notes: '' };
   mockGetLookForEvent.mockResolvedValue(look());
@@ -201,10 +206,40 @@ describe('the words', () => {
     );
   });
 
-  it('draws no grid for an absence row — a different observation is a second look', async () => {
+  it('an absence row draws no grid, and SAYS why (P5)', async () => {
+    // T-14: something seen later is a second observation with its own hour, not a
+    // correction of this row. Without the sentence the screen is Time / Note and
+    // nothing else, which an owner reads as the app having lost her answer.
     mockGetLookForEvent.mockResolvedValue(look({ outcome: 'nothing_unusual', words: [] }));
-    const { queryByText } = await open();
-    expect(queryByText('What you noticed')).toBeNull();
+    const { getByText, queryByText } = await open();
+    expect(queryByText(/Lively, bouncy/)).toBeNull();
+    expect(getByText(/Something you see later is its own entry/)).toBeTruthy();
+  });
+
+  it('groups the words under family labels in the owner’s words (§3.1a)', () => {
+    // ~29 chips shaped "head word, gloss" with nothing naming the groups reads as an
+    // unsorted wall whatever order it is in — the failure T-21 was written for.
+    return open().then(({ getByText }) => {
+      // The STRING, not the rendered case: `textTransform` is a style and the label
+      // an assistive reader announces is the one written here.
+      expect(getByText('Energy')).toBeTruthy();
+      expect(getByText('With you')).toBeTruthy();     // never the 'Company' key
+      expect(getByText('What he did')).toBeTruthy();  // follows the RECORD's pet
+    });
+  });
+
+  it('refuses to save a look with no words left, and names the way out', async () => {
+    // The create path already forbids this (`insertLook` throws). The edit path was
+    // letting the words go to zero on a row whose outcome stays 'observed' — a day
+    // still counted as ANSWERED, with nothing in it to show.
+    const { getByText } = await open();
+    fireEvent.press(getByText('Off, not getting up for the things he usually does'));
+    await act(async () => { fireEvent.press(getByText('Save')); });
+
+    expect(mockUpdateLookForEdit).not.toHaveBeenCalled();
+    expect(mockUpdateEvent).not.toHaveBeenCalled();   // and the TIME did not half-save
+    expect(alertSpy).toHaveBeenCalled();
+    expect(String(alertSpy.mock.calls.at(-1)?.[1])).toContain('use Remove');
   });
 });
 
@@ -243,6 +278,31 @@ describe('"Change time" and the day key (C-10, T-19)', () => {
     );
   });
 
+  it('a SYNCED row’s param spelling is not a change — instants, never strings', async () => {
+    // The regression this test exists for. `occurredAtParam` is `events.occurred_at`
+    // verbatim out of local SQLite, and a row that has been through one sync
+    // round-trip holds whatever PostgREST serialised — `…+00:00`, not `…000Z`
+    // (lib/sync.ts writes the server value with no normalisation). Same instant,
+    // different string.
+    //
+    // Compared with `!==`, this reports "the point moved" on EVERY save of any
+    // previously-synced look, re-deriving `local_day` against whatever zone the
+    // device is in now — the exact silent day-move the gate exists to prevent, on
+    // the one column every count in this feature is keyed to (T-19).
+    mockRouteParams = {
+      id: 'evt-1',
+      type: 'check_in',
+      occurredAt: '2026-03-15T09:58:00+00:00',   // the shape a pulled row carries
+      notes: '',
+    };
+    // The form seeds its point from the param, so a save with no picker interaction
+    // writes the same INSTANT back in canonical spelling.
+    const { getByText } = await open();
+    await act(async () => { fireEvent.press(getByText('Save')); });
+
+    expect('localDay' in (mockUpdateLookForEdit.mock.calls[0][1] as object)).toBe(false);
+  });
+
   it('a picker OPENED and dismissed without a change re-derives nothing', async () => {
     // C-10's peek-and-save, exactly: the owner taps Change, looks, and saves. The
     // day key must not move, and the row must not re-queue.
@@ -253,6 +313,22 @@ describe('"Change time" and the day key (C-10, T-19)', () => {
     await act(async () => { fireEvent.press(getByText('Save')); });
 
     expect('localDay' in (mockUpdateLookForEdit.mock.calls[0][1] as object)).toBe(false);
+  });
+});
+
+describe('the photo row', () => {
+  it('is not offered on a look — `check_in` is hasPhoto: false (§5.2)', async () => {
+    // A photo attached here would render as the record's hero regardless of the flag,
+    // so the door has to be closed rather than the render gated.
+    const { queryByText } = await open();
+    expect(queryByText('Photo')).toBeNull();
+    expect(queryByText('Attach a photo')).toBeNull();
+  });
+
+  it('is still offered on a symptom — the gate is a branch, not a removal', async () => {
+    mockRouteParams = { id: 'evt-1', type: 'vomit', occurredAt: AT, notes: '' };
+    const { findByText } = render(<EditEventModal />);
+    expect(await findByText('Attach a photo')).toBeTruthy();
   });
 });
 

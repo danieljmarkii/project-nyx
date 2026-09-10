@@ -30,7 +30,7 @@ import { asDoseVehicle, type DoseVehicle } from '../lib/medications';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { MultiChipGroup } from '../components/ui/MultiChipGroup';
 import { getLookForEvent, updateLookForEdit, localDayForLook } from '../lib/looks';
-import { gridWordsFor, gridChipLabel } from '../lib/lookDisplay';
+import { gridSectionsFor, gridChipLabel } from '../lib/lookDisplay';
 import { toggleLookWord } from '../lib/lookSelection';
 import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel } from '../constants/lookWords';
 import { LOOK_NOTE_MAX, LOOK_NOTE_PLACEHOLDER, LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
@@ -448,6 +448,21 @@ export default function EditEventModal() {
       }
     }
 
+    // A look must keep at least one word (§5.2: non-empty iff outcome = 'observed').
+    // Validated BEFORE any write, exactly as the weight is, so a refused save leaves
+    // the time and the note untouched rather than half-landing.
+    //
+    // The alert names the way OUT as well as the rule: an owner who has cleared every
+    // chip is usually trying to take the look back, and Remove is what does that.
+    // Without that sentence the screen is a dead end she has to guess her way out of.
+    if (isLook && lookLoadedRef.current && lookOutcome === 'observed' && lookWords.length === 0) {
+      Alert.alert(
+        'Pick at least one word',
+        'A look says what you saw, so it needs at least one word. To take this one back instead, use Remove.',
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       // Meals/weight/doses don't show the confidence control — the event type
@@ -511,7 +526,24 @@ export default function EditEventModal() {
       //     in this feature is keyed to (T-19). It needs no loaded gate: the helper
       //     re-reads the row and writes nothing when the derived day already matches.
       if (isLook) {
-        const pointMoved = occurredAtIso !== occurredAtParam;
+        // INSTANTS, never strings. `occurredAtIso` is always JS-canonical
+        // (`…ssssZ`), but `occurredAtParam` is `events.occurred_at` verbatim out of
+        // local SQLite — and a row that has been through one sync round-trip holds
+        // whatever PostgREST serialised, which is `…+00:00` (`lib/sync.ts:1121`
+        // writes the server's value with no normalisation; `parseTs`'s own comment
+        // in lib/hydration.ts says these forms arrive). The two spellings are the
+        // same instant and are NOT string-equal.
+        //
+        // Left as `!==` this gate reports "the point moved" on every save of any
+        // previously-synced look, which is precisely the failure the comment below
+        // says it exists to prevent: `local_day` re-derived against whatever zone
+        // the device is in NOW, silently moving an owner's answered day the first
+        // time she opens an old record in another timezone. `updateLookForEdit`'s
+        // own no-op check cannot catch it — in that case the recomputed day really
+        // does differ from the stored one. Mirrors `parseTs`, which this codebase
+        // already uses for exactly this class of comparison.
+        const pointMoved =
+          new Date(occurredAtIso).getTime() !== new Date(occurredAtParam).getTime();
         await updateLookForEdit(id, {
           ...(lookLoadedRef.current
             ? { words: lookWords, notes: lookNote.trim() || null }
@@ -671,19 +703,26 @@ export default function EditEventModal() {
   const lookSpecies = lookSpeciesOf(lookPetForGrid?.species);
   const lookGrid =
     isLook && lookSpecies && lookOutcome === 'observed'
-      ? [
-          // The opening chip is not one of the grid's 26 / 28 — it is its own key with
-          // its own sex-following label — but it IS storable, so an owner who saved
-          // *Not herself* alone must be able to see and clear it here.
-          {
-            value: LOOK_OPENING_CHIP_KEY,
-            label: notHerselfLabel(lookPetForGrid?.sex ?? 'unknown'),
-          },
-          ...gridWordsFor(lookSpecies, LOOK_HEAD_WORDS[lookSpecies]).map((w) => ({
-            value: w.key,
-            label: gridChipLabel(w),
-          })),
-        ]
+      ? gridSectionsFor(
+          lookSpecies,
+          LOOK_HEAD_WORDS[lookSpecies],
+          lookPetForGrid?.sex ?? 'unknown',
+        ).map((section, i) => ({
+          label: section.label,
+          options: [
+            // The opening chip leads the head-word block. It is not one of the grid's
+            // 26 / 28 — its own key, its own sex-following label — but it IS storable,
+            // so an owner who saved *Not herself* alone must be able to see and clear
+            // it here, and the head block is where the compact card puts it.
+            ...(i === 0
+              ? [{
+                  value: LOOK_OPENING_CHIP_KEY,
+                  label: notHerselfLabel(lookPetForGrid?.sex ?? 'unknown'),
+                }]
+              : []),
+            ...section.words.map((w) => ({ value: w.key, label: gridChipLabel(w) })),
+          ],
+        }))
       : null;
 
   return (
@@ -769,7 +808,19 @@ export default function EditEventModal() {
             </>
           )}
 
-          {/* Photo */}
+          {/* Photo — never on a look (§5.2: a look is a perception, and there is
+              nothing to photograph; `check_in` is `hasPhoto: false`). Every capture
+              surface already gates on that flag — app/log.tsx, SimpleEventConfirm,
+              the record screen's hero — and this editor is the one door that did not,
+              so a look could be given a photo here and would then render it as the
+              record's hero, since `resolveEventPhotoDisplay` shows an EXISTING photo
+              regardless of the flag.
+              Gated on `isLook` rather than on `hasPhoto`, deliberately: cough and
+              sneeze are also `hasPhoto: false` and DO offer this row today, so the
+              tidier predicate would change two shipped types under this PR. That
+              wider gap is its own issue (CUL-887). */}
+          {isLook ? null : (
+            <>
           <SectionLabel label="Photo" style={{ marginTop: theme.space3, marginBottom: 4 }} />
           {displayAttachmentUri ? (
             <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
@@ -784,6 +835,8 @@ export default function EditEventModal() {
               <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
               <ThemedText style={styles.photoRowText}>Attach a photo</ThemedText>
             </TouchableOpacity>
+          )}
+            </>
           )}
 
           {/* Food (meal events only) */}
@@ -947,15 +1000,40 @@ export default function EditEventModal() {
               Changing *nothing unusual* into an observation is not a correction of
               this row — it is a different thing the owner saw, and it belongs in a
               second look with its own hour (T-14). */}
+          {/* An absence look has no words to edit, and the screen has to SAY so.
+              T-14: seeing something later is a second observation with its own hour,
+              not a correction of this row — so there is deliberately no outcome
+              control here. Without this line the editor shows Time, Note and nothing
+              else, which an owner reads as the app having lost her answer. */}
+          {isLook && lookOutcome === 'nothing_unusual' ? (
+            <>
+              <SectionLabel label="What you noticed" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <ThemedText style={styles.lookAbsenceNote}>
+                You marked nothing unusual. Something you see later is its own entry,
+                with its own time, so this one stays as it is.
+              </ThemedText>
+            </>
+          ) : null}
+
           {isLook && lookGrid ? (
             <>
               <SectionLabel label="What you noticed" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <MultiChipGroup
-                options={lookGrid}
-                values={lookWords}
-                onToggle={(key) => setLookWords((prev) => toggleLookWord(prev, key))}
-                accessibilityLabel="What you noticed"
-              />
+              {lookGrid.map((section) => (
+                <View key={section.label ?? '__head'} style={styles.lookGridSection}>
+                  {/* The family's own name, in the owner's words (§3.1a). The first
+                      block is the seven head words and carries no label — it is not a
+                      family, it is what the compact card shows (T-13). */}
+                  {section.label ? (
+                    <ThemedText style={styles.lookGroupLabel}>{section.label}</ThemedText>
+                  ) : null}
+                  <MultiChipGroup
+                    options={section.options}
+                    values={lookWords}
+                    onToggle={(key) => setLookWords((prev) => toggleLookWord(prev, key))}
+                    accessibilityLabel={section.label ?? 'What you noticed'}
+                  />
+                </View>
+              ))}
             </>
           ) : null}
 
@@ -1173,6 +1251,26 @@ const styles = StyleSheet.create({
   foodItemCheck: {
     fontSize: 15,
     color: theme.colorTextOnDark,
+  },
+  lookGridSection: {
+    marginBottom: theme.space2,
+  },
+  lookAbsenceNote: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
+  },
+  // The family's label. The same quiet tracked-caps register `SectionLabel` uses one
+  // level up, a step smaller, so the hierarchy reads as "What you noticed → Energy"
+  // rather than as two competing headings.
+  lookGroupLabel: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    letterSpacing: theme.trackingWide,
+    fontWeight: theme.fontWeightMedium,
+    textTransform: 'uppercase',
+    marginTop: theme.space2,
+    marginBottom: 4,
   },
   // The note's destination cue, under the field it describes.
   lookNoteCue: {

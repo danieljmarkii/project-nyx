@@ -286,7 +286,9 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
                 is NULL by CHECK for a check_in (T-22). Reading `event.notes` here would
                 render every look as noteless while its note sat one column away. */}
             {expandedNote ? (
-              <ThemedText style={styles.notes}>{expandedNote}</ThemedText>
+              <ThemedText style={styles.notes}>
+                {isLook ? `“${expandedNote}”` : expandedNote}
+              </ThemedText>
             ) : null}
             <View style={styles.actions}>
               <TouchableOpacity onPress={onOpen} hitSlop={8} style={styles.editBtn}>

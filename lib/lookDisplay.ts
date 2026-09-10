@@ -194,28 +194,75 @@ export const ABSENCE_PHRASE = 'nothing unusual';
 export function unnamedWordsLine(unnamed: number): string | null {
   if (unnamed <= 0) return null;
   return unnamed === 1
-    ? '1 more word, from a newer version of the app.'
-    : `${unnamed} more words, from a newer version of the app.`;
+    ? '1 more word this version of the app can’t show yet.'
+    : `${unnamed} more words this version of the app can’t show yet.`;
 }
 
-/** Every word a species can be asked about, head words FIRST and then the rest in
- *  the vet's family order — the editor's grid order (§3.1a: "the head words then
- *  the families"). Derived from the vocabulary rather than restated, so a word
- *  added to `LOOK_WORDS` appears in the editor without a second edit here. */
-export function gridWordsFor(
+export interface GridWord { key: string; head: string; gloss: string }
+
+/** One labelled block of the editor's grid. `label` is null for the head-word block,
+ *  which is not a family — it is the seven the compact card shows (T-13). */
+export interface GridSection { label: string | null; words: GridWord[] }
+
+/**
+ * The family label an owner reads (§3.1a: "the family labels are owner phrases …
+ * never the schema's group keys").
+ *
+ * Most `LookGroup` values already ARE owner phrases and pass through unchanged. Two
+ * do not, and both are named in §3.1a's list: `Company` reads *With you*, and
+ * `Activity` reads *What {he/she/they} did* — the one label on the grid that follows
+ * the pet, for the same reason the opening chip does (E-15), and taking the neutral
+ * form when nobody recorded a sex.
+ */
+export function lookGroupLabel(group: string, sex: 'male' | 'female' | 'unknown'): string {
+  if (group === 'Company') return 'With you';
+  if (group === 'Activity') {
+    return sex === 'male' ? 'What he did' : sex === 'female' ? 'What she did' : 'What they did';
+  }
+  return group;
+}
+
+/**
+ * The editor's grid, as LABELLED BLOCKS: the seven head words first, then the rest
+ * grouped by family in the vocabulary's own order (§3.1a, "the head words then the
+ * families").
+ *
+ * The labels are not decoration and this shape is not a nicety. A cat's list is 26
+ * words and a dog's 28, each rendered as *head word, gloss* — long enough that an
+ * unlabelled wrap reads as an unsorted wall, which is the exact failure T-21 was
+ * written for after the PM found a long word list unusable in the prototype. The
+ * ordering alone is invisible: without the labels there is nothing on screen saying
+ * the wall IS ordered.
+ *
+ * Families come out in the order the vocabulary declares them, so the vet's ordering
+ * is inherited rather than restated here — a word added to `LOOK_WORDS` lands in its
+ * family with no second edit, and a NEW family appears without one either.
+ */
+export function gridSectionsFor(
   species: LookSpecies,
   headKeys: readonly string[],
-): readonly { key: string; head: string; gloss: string }[] {
+  sex: 'male' | 'female' | 'unknown' = 'unknown',
+): readonly GridSection[] {
   const all = LOOK_WORDS[species];
+  const shape = (w: (typeof all)[number]): GridWord => ({ key: w.key, head: w.head, gloss: w.gloss });
+
   const heads = headKeys
     .map((k) => all.find((w) => w.key === k))
     .filter((w): w is (typeof all)[number] => !!w);
   const headSet = new Set(heads.map((w) => w.key));
-  return [...heads, ...all.filter((w) => !headSet.has(w.key))].map((w) => ({
-    key: w.key,
-    head: w.head,
-    gloss: w.gloss,
-  }));
+
+  const sections: GridSection[] = [{ label: null, words: heads.map(shape) }];
+  const byGroup = new Map<string, GridWord[]>();
+  for (const w of all) {
+    if (headSet.has(w.key)) continue;   // already in the head block; never twice
+    const bucket = byGroup.get(w.group);
+    if (bucket) bucket.push(shape(w));
+    else byGroup.set(w.group, [shape(w)]);
+  }
+  for (const [group, words] of byGroup) {
+    sections.push({ label: lookGroupLabel(group, sex), words });
+  }
+  return sections;
 }
 
 /** The grid chip's label — *head word, gloss*, the ruled full label (§4.1 rule 12).

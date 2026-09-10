@@ -416,6 +416,21 @@ export async function updateLookForEdit(eventId: string, edit: LookEdit): Promis
     // store the same key twice and have `wordDays` still count the day once while
     // the record screen prints it twice.
     const next = [...new Set(edit.words)];
+
+    // The invariant `insertLook` already holds, held here too — the edit path is
+    // the second door to the same row and it was letting the words go to zero.
+    //
+    // An observed look with no words is not a quiet row, it is a COUNTED one: the
+    // outcome stays 'observed', so `answeredDays` still counts the day (§6.1) while
+    // the record has nothing to show for it. That is a day the owner answered,
+    // rendered as though she had answered nothing, feeding a denominator on Home,
+    // Patterns and the report. A throw rather than a silent drop: by the time this
+    // is reached the surface has already had its chance to say so (the editor
+    // refuses before any write), so arriving here at all is a programming error.
+    if (current.outcome === 'observed' && next.length === 0) {
+      throw new Error('updateLookForEdit: an observed look must keep at least one word');
+    }
+
     if (!sameWords(current.words, next)) {
       sets.push('words = ?');
       params.push(wordsToLocalText(next));
