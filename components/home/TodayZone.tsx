@@ -14,6 +14,10 @@ import { NyxEvent } from '../../store/eventStore';
 import { buildTodayLane, type DayCountChip } from '../../lib/todayLane';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../lib/betaFeatures';
+import { isLookRow } from '../../lib/lookDisplay';
+import { lookCardLive, todayGeneralNudge, todayMealNudge, todayNudgeKind } from '../../lib/lookCard';
 
 const FALLBACK = { label: 'Event' };
 const MAX_SHOWN = 3;
@@ -62,6 +66,25 @@ export function TodayZone() {
   const remaining = eventsToday.length - MAX_SHOWN;
   const isEmpty = eventsToday.length === 0;
 
+  // T-9 / E-8 — THE NUDGE AND THE LOOK. A `check_in` is not a thing that happened to
+  // the pet, so it does not fill the day: the empty predicate below ignores look rows,
+  // and the nudge that results either yields to the Noticed card (which is asking the
+  // same question one row above) or comes back pointed at the bowl. `todayNudgeKind`
+  // owns that decision; the same `lookCardLive` gate the card renders behind decides
+  // whether there is a card to yield to at all, so the two can never disagree.
+  const lookEligible = useAllowlistFlag('daily_look');
+  const lookOptedIn = useBetaOptIn('daily_look');
+  const lookLive = lookCardLive({
+    eligible: lookEligible,
+    optedIn: lookOptedIn,
+    species: activePet?.species,
+  });
+  const nudge = todayNudgeKind({
+    hasNonLookEvents: eventsToday.some((e) => !isLookRow(e)),
+    lookLive,
+    hasLookToday: eventsToday.some((e) => isLookRow(e)),
+  });
+
   return (
     <Card>
       {/* The recap band replaces TodayZone's old header (R-5 / §3): the label, the compact
@@ -85,21 +108,26 @@ export function TodayZone() {
 
       {lane.counts.length > 0 && <CountLine counts={lane.counts} />}
 
-      {isEmpty ? (
+      {/* The nudge is now its own decision rather than the else-branch of "is the day
+          empty": a day holding one look and nothing else needs BOTH the strip (which
+          shows the look) and a nudge about the bowl. Off the flag `nudge` is 'general'
+          exactly when `isEmpty` was true, so this renders what it always did. */}
+      {nudge !== 'none' && (
         <TouchableOpacity
           onPress={() => router.push('/log')}
           activeOpacity={0.7}
           style={styles.nudgeRow}
         >
           <ThemedText style={styles.nudge}>
-            Nothing logged yet — how's {petName} doing?
+            {nudge === 'meal' ? todayMealNudge(petName) : todayGeneralNudge(petName)}
           </ThemedText>
           {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
               (the B-745 GlyphSvg migration owns them), so they keep the system face rather
               than taking the body family a sweep would give them. CUL-364 §7. */}
           <Text style={styles.nudgeArrow}>→</Text>
         </TouchableOpacity>
-      ) : (
+      )}
+      {isEmpty ? null : (
         // The capped rows continue beneath, leading to the same full-day recap as the band.
         // The band's "Full day ›" is the ONE door (CUL-529); the strip stays a silent door
         // (the pre-DR-2 behaviour, its affordance tracked separately as B-787/CUL-514).

@@ -23,7 +23,7 @@
 // noon beside *off* at nine is two looks, two rows, both true. Only ONE ENTRY is
 // constrained, and only here.
 
-import { LOOK_WORDS, type LookSpecies } from '../constants/lookWords';
+import { LOOK_OPENING_CHIP_KEY, LOOK_WORDS, type LookSpecies } from '../constants/lookWords';
 
 /** The high-energy pole. One key, and it is on both species' lists. */
 const ENERGY_UP: readonly string[] = ['lively'];
@@ -70,4 +70,85 @@ export function polesAreRealWords(): boolean {
   return ENERGY_POLE_KEYS.every((key) =>
     species.every((s) => LOOK_WORDS[s].some((w) => w.key === key)),
   );
+}
+
+// ── THE OTHER AXIS: THE ABSENCE AND THE WORDS (CUL-871 / N-4a) ────────────────
+//
+// T-14's pole rule is between two WORDS. This is the rule between the two SHAPES an
+// answer can take, and it is the record's rule rather than a design choice: a
+// `nothing_unusual` row carries no words and an `observed` row carries at least one
+// (`insertLook` throws in both directions, and migration 064's CHECK holds the outcome
+// itself). So a card that let both be chosen at once would be building a write the
+// write path must refuse.
+//
+// It lives HERE, beside the pole rule, for the reason this module exists at all: the
+// Home card is the first surface where the absence chip and the words sit together,
+// and N-3's editor deliberately shows an absence row no grid at all — so when a second
+// surface does gain both (the editor's own outcome switch, N-3b's return path), the
+// rule it obeys must be this one and not a re-derivation of it.
+//
+// WHAT IT IS NOT. Neither shape is a verdict on the other, and choosing one is never a
+// warning: an owner who has tapped three words and then decides the day was ordinary
+// taps *Nothing unusual* and the words go, in one gesture, with no dialog. The
+// observed-absence row is a real answer (L-6), not the empty state of the words.
+
+/** The card's whole selection. `empty` is the resting state — nothing pre-selected,
+ *  ever (§3.1a) — and it is a state, never an outcome: a look is written from
+ *  `absence` or `words`, and `empty` has nothing to write. */
+export type LookDraft =
+  | { kind: 'empty' }
+  | { kind: 'absence' }
+  | { kind: 'words'; words: string[] };
+
+/** The resting draft. A function rather than a shared constant so no caller can hold a
+ *  reference to a draft another caller is about to compare against. */
+export function emptyDraft(): LookDraft {
+  return { kind: 'empty' };
+}
+
+/** Tap *Nothing unusual*: it takes the answer, or gives it back. Words chosen before
+ *  it are cleared — see the header; they cannot coexist. */
+export function toggleAbsence(draft: LookDraft): LookDraft {
+  return draft.kind === 'absence' ? { kind: 'empty' } : { kind: 'absence' };
+}
+
+/** Tap a word: the absence yields to it, and the pole rule applies among the words
+ *  (T-14, `toggleLookWord` — never re-implemented here). Deselecting the last word
+ *  returns to `empty`, not to a `words` draft with an empty list, so "nothing is
+ *  chosen" has exactly one representation. */
+export function toggleWordInDraft(draft: LookDraft, key: string): LookDraft {
+  const before = draft.kind === 'words' ? draft.words : [];
+  const words = toggleLookWord(before, key);
+  return words.length === 0 ? { kind: 'empty' } : { kind: 'words', words };
+}
+
+/** Is this key chosen? One place, so a chip's rendered state and the write can never
+ *  disagree about the same draft. */
+export function draftHasWord(draft: LookDraft, key: string): boolean {
+  return draft.kind === 'words' && draft.words.includes(key);
+}
+
+/**
+ * The write `insertLook` takes, or null when there is nothing to write. The one
+ * translation from what the owner tapped to what the record holds.
+ *
+ * IT DROPS THE OPENING CHIP WHEN A WORD FOLLOWS (§3.1a: `not_herself` is "stored alone
+ * only when no word follows"). *Not herself* is the chief complaint — what an owner
+ * says when she has nothing more specific — so once she does have something specific,
+ * it is not a SECOND observation, it is the same one named. Storing both would put
+ * "not herself" beside "off, hiding" on the report and in the Patterns pairing as
+ * though it were another thing she saw, and it would count as a word in a surface that
+ * counts words.
+ *
+ * The chip stays SELECTED on the card while the grid is open — the owner tapped it and
+ * nothing should move under her thumb — so this is a rule about the WRITE, not about
+ * the selection, which is why it lives here rather than in the toggles.
+ */
+export function draftToWrite(
+  draft: LookDraft,
+): { outcome: 'observed' | 'nothing_unusual'; words: readonly string[] } | null {
+  if (draft.kind === 'absence') return { outcome: 'nothing_unusual', words: [] };
+  if (draft.kind !== 'words') return null;
+  const specific = draft.words.filter((k) => k !== LOOK_OPENING_CHIP_KEY);
+  return { outcome: 'observed', words: specific.length > 0 ? specific : draft.words };
 }

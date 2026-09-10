@@ -15,6 +15,7 @@ import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { EventTypeSheet } from './EventTypeSheet';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
+import { useUiStore } from '../../store/uiStore';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
@@ -66,6 +67,16 @@ export function FAB() {
   const pickerEligible = useAllowlistFlag('log_picker_v2');
   const pickerOptedIn = useBetaOptIn('log_picker_v2');
   const pickerV2 = pickerEligible && pickerOptedIn;
+
+  // CUL-871 (T-21) — THE FAB STEPS ASIDE for a Home capture overlay. The Noticed grid's
+  // pinned Done bar stands exactly where this button does (its box is 72–128 pt off the
+  // screen bottom, the bar sits at the foot of Home's body), and T-21 requires the way
+  // back and the way out to be visible together while the word list is open.
+  //
+  // Read as a boolean, so this component never sees the overlay's handles: the FAB has
+  // one question to answer, and widening it is how a "some card is up" flag would start
+  // hiding the app's primary control for every future sheet.
+  const captureOverlayOpen = useUiStore((s) => s.captureOverlay !== null);
 
   const openMenu = useCallback(() => {
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
@@ -222,6 +233,13 @@ export function FAB() {
   const iconRotate = fabAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
   const menuOpacity = fabAnim;
   const menuTranslateY = fabAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] });
+
+  // Standing down is a full un-render rather than an opacity change: an invisible
+  // button that still takes touches is worse than a visible one, and the Done bar sits
+  // on top of exactly that area. The menu cannot be open here — opening the grid is a
+  // tap on Home, which the menu's own full-screen backdrop would have eaten first — so
+  // there is no half-open state to unwind.
+  if (captureOverlayOpen) return null;
 
   return (
     <>

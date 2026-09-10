@@ -45,6 +45,7 @@ import { act, render, fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { FAB } from './FAB';
 import { usePetStore } from '../../store/petStore';
+import { useUiStore } from '../../store/uiStore';
 
 function seedPets(count: number) {
   const pets =
@@ -66,6 +67,7 @@ beforeEach(() => {
   mockSwitcherProps.length = 0;
   (router.push as jest.Mock).mockClear();
   seedPets(2);
+  useUiStore.setState({ captureOverlay: null });
 });
 
 describe('FAB — the "Logging for" switcher', () => {
@@ -272,5 +274,44 @@ describe('FAB — a pet flip never leaves the previous pet’s foods on screen',
     expect(view.queryByText('No foods logged yet')).toBeNull();
     // The section header stays — it is the stable label for what is arriving.
     expect(view.getByText('Recent foods')).toBeTruthy();
+  });
+});
+
+
+// CUL-871 / N-4a — the FAB steps aside for a Home capture overlay (T-21).
+describe('FAB — the Home capture overlay', () => {
+  it('stands down entirely while one owns the corner', () => {
+    const before = render(<FAB />);
+    expect(before.queryByLabelText('Log event')).toBeTruthy();
+    before.unmount();
+
+    useUiStore.setState({
+      captureOverlay: {
+        summary: 'Mochi · off',
+        inViewport: true,
+        busy: false,
+        onBack: jest.fn(),
+        onDone: jest.fn(),
+      },
+    });
+    const during = render(<FAB />);
+    // An UN-RENDER, not an opacity change: the Noticed grid's pinned Done bar sits on
+    // exactly this area (LookExits.test.tsx pins the overlap), and an invisible button
+    // that still takes touches is worse than a visible one.
+    expect(during.queryByLabelText('Log event')).toBeNull();
+  });
+
+  it('comes back the moment the corner is released', () => {
+    useUiStore.setState({
+      captureOverlay: { summary: null, inViewport: true, busy: false, onBack: jest.fn(), onDone: null },
+    });
+    const view = render(<FAB />);
+    expect(view.queryByLabelText('Log event')).toBeNull();
+    act(() => {
+      useUiStore.setState({ captureOverlay: null });
+    });
+    // The store fails OPEN by design: losing the app's primary control is a worse
+    // failure than a Done bar sharing a corner for a frame.
+    expect(view.queryByLabelText('Log event')).toBeTruthy();
   });
 });

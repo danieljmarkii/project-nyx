@@ -19,18 +19,27 @@ export function useEvents() {
     // prior session both render the bare "Medication" label on Today (B-161). The
     // combo paired_* fields stay deliberately absent here (Today is not an edit
     // surface — that's the B-176 scope boundary).
+    //
+    // The LOOKS join is the same lesson, one feature later (CUL-871): the Noticed
+    // card renders today's looks from these rows, and without the child a look logged
+    // in a prior session would come back on a cold open with no words — the entry
+    // would read as the bare act while its words sat one table away. `describeLook`
+    // is total over a missing child, so the failure is silent, which is exactly why
+    // the join belongs here rather than in a second query beside it.
     try {
       const events = await db.getAllAsync<any>(
         `SELECT e.*, m.food_item_id, m.quantity,
                 f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
                 f.format AS food_format,
                 ma.medication_item_id, ma.adherence, ma.how_given,
-                mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
+                mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
+                lk.outcome AS look_outcome, lk.words AS look_words, lk.notes AS look_note
          FROM events e
          LEFT JOIN meals m ON m.event_id = e.id
          LEFT JOIN food_items_cache f ON f.id = m.food_item_id
          LEFT JOIN medication_administrations ma ON ma.event_id = e.id
          LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+         LEFT JOIN looks lk ON lk.event_id = e.id
          WHERE e.pet_id = ? AND e.occurred_at >= ? AND e.deleted_at IS NULL
          ORDER BY e.occurred_at DESC`,
         [activePet.id, todayStart.toISOString()]

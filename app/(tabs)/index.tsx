@@ -14,6 +14,8 @@ import { CrossPetSafetyBanner } from '../../components/home/CrossPetSafetyBanner
 import { SignalZone } from '../../components/home/SignalZone';
 import { TrialStrip } from '../../components/home/TrialStrip';
 import { MedStrip } from '../../components/home/MedStrip';
+import { LookCard } from '../../components/home/LookCard';
+import { LookExits, exitVisibility } from '../../components/home/LookExits';
 import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
 import { pullThreshold } from '../../lib/haptics';
@@ -49,6 +51,17 @@ export default function HomeScreen() {
   // Signal" is just scrolling to top — no measured y-offset/onLayout tracking needed.
   const scrollRef = useRef<ScrollView>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // The Noticed grid's pinned exits (CUL-871, T-21) need three numbers Home is the only
+  // one that has: where the card sits in the scroll content, how far the feed is
+  // scrolled, and how tall the viewport is. They are held here rather than in the card
+  // because the card cannot see two of them — and drawn by `LookExits`, which decides
+  // from them (`exitVisibility`) rather than being told.
+  //
+  // Kept as ONE object so a paint can never mix a fresh height with a stale top; and
+  // written only from `onLayout`, which fires when the grid opens and closes.
+  const [lookRect, setLookRect] = useState<{ top: number; height: number } | null>(null);
+  const [scrollY, setScrollY] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
 
   // Re-tapping the Home tab scrolls the feed back to the Signal (spec §2 SHOULD).
   // NyxTabBar already emits `tabPress` on every press, addressed to the tapped
@@ -159,12 +172,20 @@ export default function HomeScreen() {
       <HomeHeader />
       {/* Relative wrapper so the pull-to-refresh night band overlays the top of the
           feed (below the pinned header, so it's already clear of the safe-area inset). */}
-      <View style={styles.body}>
+      <View
+        style={styles.body}
+        onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
+      >
         <PullToRefreshSky active={refreshing} />
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
+          onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)}
+          // 16ms would repaint the exits every frame for a decision that only changes
+          // at two thresholds; 100ms is under the eye's tolerance for a control
+          // appearing and costs a fraction of the bridge traffic.
+          scrollEventThrottle={100}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -196,9 +217,38 @@ export default function HomeScreen() {
           {(medInput ? resolveMedStrips(medInput) : []).map((m) => (
             <MedStrip key={m.key} model={m} />
           ))}
+          {/* Noticed — the daily look (CUL-871 / N-4a), in the slot the PM ruled on
+              CUL-864: after the medication strip, before Today. Safety cards and the
+              standing strips lead (Principle 3); the look is the owner's own
+              observation, not an insight, so it sits with the context rather than
+              above it — and T-9's nudge interplay is directly beneath it.
+
+              It renders nothing unless the account is allowlisted AND opted in AND the
+              pet has a vocabulary, so Home is byte-identical off the flag.
+
+              `trialNotEating` is the trial's own refusal register, already fail-closed
+              above for the Signal card; the emergency door ORs it into what it can read
+              from the leaf rows, so a refusal either register can see is a refusal. */}
+          <LookCard
+            trialNotEating={suppressTrialResponse}
+            onLayout={(e) =>
+              setLookRect({ top: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+            }
+          />
           <TodayZone />
           <TrendZone />
         </ScrollView>
+        {/* The second absolute layer (the first is the night band above). It draws
+            nothing at all unless the Noticed grid is open — `LookExits` reads the card's
+            published handles and returns null otherwise. */}
+        <LookExits
+          {...exitVisibility({
+            cardTop: lookRect?.top ?? null,
+            cardHeight: lookRect?.height ?? null,
+            scrollY,
+            viewportHeight,
+          })}
+        />
       </View>
     </SafeAreaView>
   );

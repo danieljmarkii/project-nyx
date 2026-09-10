@@ -1,4 +1,14 @@
-import { toggleLookWord, energyPoleOpposites, ENERGY_POLE_KEYS, polesAreRealWords } from './lookSelection';
+import {
+  toggleLookWord,
+  energyPoleOpposites,
+  ENERGY_POLE_KEYS,
+  polesAreRealWords,
+  draftHasWord,
+  draftToWrite,
+  emptyDraft,
+  toggleAbsence,
+  toggleWordInDraft,
+} from './lookSelection';
 import { LOOK_WORDS } from '../constants/lookWords';
 
 // CUL-869 / N-3. T-14's one opposition, and the far larger set of pairs it does NOT
@@ -95,5 +105,83 @@ describe('the pole keys are real words', () => {
     for (const key of ['restless', 'restless_night', 'walk_refused']) {
       expect(ENERGY_POLE_KEYS).not.toContain(key);
     }
+  });
+});
+
+// CUL-871 / N-4a. The OTHER axis — the absence and the words — and the write the draft
+// resolves to. The Home card is the first surface where both shapes sit together.
+
+describe('the draft — the absence and the words cannot coexist', () => {
+  it('starts empty: nothing is ever pre-selected (§3.1a)', () => {
+    expect(emptyDraft()).toEqual({ kind: 'empty' });
+    expect(draftToWrite(emptyDraft())).toBeNull();
+  });
+
+  it('the absence takes the answer, and gives it back on a second tap', () => {
+    const absence = toggleAbsence(emptyDraft());
+    expect(absence).toEqual({ kind: 'absence' });
+    expect(toggleAbsence(absence)).toEqual({ kind: 'empty' });
+  });
+
+  it('choosing the absence CLEARS the words, in one gesture and with no dialog', () => {
+    let draft = toggleWordInDraft(emptyDraft(), 'subdued');
+    draft = toggleWordInDraft(draft, 'hiding');
+    expect(toggleAbsence(draft)).toEqual({ kind: 'absence' });
+  });
+
+  it('choosing a word replaces the absence — the same rule, the other way round', () => {
+    const draft = toggleWordInDraft(toggleAbsence(emptyDraft()), 'subdued');
+    expect(draft).toEqual({ kind: 'words', words: ['subdued'] });
+  });
+
+  it('deselecting the last word returns to empty, not to an empty word list', () => {
+    // One representation for "nothing is chosen": a `words` draft with no words would
+    // make the Done bar's own null check the second place that decides.
+    const draft = toggleWordInDraft(emptyDraft(), 'subdued');
+    expect(toggleWordInDraft(draft, 'subdued')).toEqual({ kind: 'empty' });
+  });
+
+  it('the pole rule still applies INSIDE a draft (T-14 is not re-implemented)', () => {
+    let draft = toggleWordInDraft(emptyDraft(), 'subdued');
+    draft = toggleWordInDraft(draft, 'sleeping_more');
+    draft = toggleWordInDraft(draft, 'lively');
+    expect(draft).toEqual({ kind: 'words', words: ['lively'] });
+  });
+
+  it('draftHasWord is the one read the chips and the write share', () => {
+    const draft = toggleWordInDraft(emptyDraft(), 'hiding');
+    expect(draftHasWord(draft, 'hiding')).toBe(true);
+    expect(draftHasWord(draft, 'subdued')).toBe(false);
+    expect(draftHasWord(toggleAbsence(emptyDraft()), 'hiding')).toBe(false);
+  });
+});
+
+describe('draftToWrite — what the record actually holds', () => {
+  it('the absence writes the outcome and NO words (insertLook throws otherwise)', () => {
+    expect(draftToWrite(toggleAbsence(emptyDraft()))).toEqual({
+      outcome: 'nothing_unusual',
+      words: [],
+    });
+  });
+
+  it('words write in the order chosen', () => {
+    let draft = toggleWordInDraft(emptyDraft(), 'subdued');
+    draft = toggleWordInDraft(draft, 'hiding');
+    expect(draftToWrite(draft)).toEqual({ outcome: 'observed', words: ['subdued', 'hiding'] });
+  });
+
+  it('the opening chip is stored ALONE — only when no word follows (§3.1a)', () => {
+    let draft = toggleWordInDraft(emptyDraft(), 'not_herself');
+    expect(draftToWrite(draft)).toEqual({ outcome: 'observed', words: ['not_herself'] });
+    draft = toggleWordInDraft(draft, 'hiding');
+    // Not a second observation: the same one, named. It must not reach the record as a
+    // word beside the specific one, where a surface that counts words would count it.
+    expect(draftToWrite(draft)).toEqual({ outcome: 'observed', words: ['hiding'] });
+  });
+
+  it('but the chip stays SELECTED on the card — the rule is about the write', () => {
+    let draft = toggleWordInDraft(emptyDraft(), 'not_herself');
+    draft = toggleWordInDraft(draft, 'hiding');
+    expect(draftHasWord(draft, 'not_herself')).toBe(true);
   });
 });
