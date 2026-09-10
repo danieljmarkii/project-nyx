@@ -32,6 +32,7 @@ import { useAppActive } from '../hooks/useAppActive';
 import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { hydrateBetaOptIns } from '../lib/betaFeatures';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
+import { IntakeDoorHost } from '../components/log/IntakeDoorHost';
 import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
 import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
@@ -91,6 +92,19 @@ export default function RootLayout() {
     purgeRetiredStorage();
 
     initDb().catch(console.error);
+
+    // CUL-868 — Noticed's dev seed, on the console rather than on a screen. Every
+    // floor this feature has is measured in ANSWERED DAYS (fourteen for the coverage
+    // footer), so the device pass would otherwise only ever see the day-one states.
+    // `__DEV__` is false in a release binary and Metro strips the branch, so this
+    // reaches no owner; putting it here instead of on the beta shelf keeps a designed,
+    // shipped screen free of a control that would have to be hidden on every one of
+    // them. Call it once from the debugger console: await __seedNoticed('<petId>', 'dog')
+    if (__DEV__) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { seedNoticedLooks } = require('../lib/lookDevSeed');
+      (globalThis as Record<string, unknown>).__seedNoticed = seedNoticedLooks;
+    }
 
     // Cold start FROM a recovery link (B-280 §6.4): the deep-link handler owns the
     // ENTIRE auth transition — provenance (FR-14), the gate (FR-6), and the
@@ -308,6 +322,13 @@ export default function RootLayout() {
         <Stack.Screen name="settings/feedback" />
         <Stack.Screen name="settings/password" />
       </Stack>
+      {/* The Noticed card's intake door (CUL-870 / N-3b). It is mounted HERE, beside the
+          completion cards, rather than inside the card that opens it: the sheet writes a
+          meal, and a meal write reachable from Home's import closure is a third Home
+          write class (`guards/homeWrites.test.ts`, §3.2). The card publishes a request
+          through `store/uiStore.ts` and this host owns the surface — the same separation
+          the FAB and every other meal path already have. */}
+      <IntakeDoorHost />
       <MealCompletionCard />
       <MedicationCompletionCard />
       <NamedCompletionCard />

@@ -91,6 +91,16 @@ const ALWAYS_SCANNED = [
   // behaviour has now moved twice.
   'components/motion/arrivalMotion.ts',
   'components/motion/foldMotion.ts',
+  // CUL-871 (N-4a) — the daily look's emergency door. It carries none of the MARKERS
+  // (no `priorityClass`, no analysis row: it is copy over deterministic predicates), and
+  // it is nonetheless the surface that can print "Call your vet today." A buzz there is
+  // the phone rewarding the owner for bad news — the exact D7 row — so its silence is
+  // pinned by name rather than left to a heuristic that cannot see it.
+  //
+  // Its sibling `components/home/LookCard.tsx` is deliberately NOT here: the card ticks
+  // on every chip tap (`selectChip`, T-10) and is not a safety surface. The door is the
+  // half that escalates, and the split is the point.
+  'components/home/LookEmergencySheet.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

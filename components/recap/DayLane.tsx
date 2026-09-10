@@ -15,7 +15,7 @@ import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import type { LaneDot } from '../../lib/todayLane';
-import { NODE_TINT_DAY, NODE_DOT_SIZE, NODE_DOT_RING } from './nodeTints';
+import { NODE_TINT_DAY, NODE_DOT_SIZE, NODE_DOT_RING, nodeDotColors } from './nodeTints';
 import { ThemedText } from '../ui/ThemedText';
 
 // Keep the extreme-position dots (6am / midnight) fully on-card: the plot is inset by
@@ -37,16 +37,22 @@ function DayLaneImpl({ dots }: { dots: LaneDot[] }) {
     >
       <View style={styles.plot}>
         <View style={styles.track} />
-        {dots.map((dot) => (
-          <View
-            key={dot.key}
-            testID="lane-dot"
-            style={[
-              styles.dot,
-              { left: `${dot.position * 100}%`, backgroundColor: NODE_TINT_DAY[dot.category] },
-            ]}
-          />
-        ))}
+        {dots.map((dot) => {
+          // Fill and ring come from the shared rule, not from this component: a look
+          // is the hollow bead (ground fill, tinted ring) and everything else is the
+          // filled one, decided once in nodeTints so the spine cannot disagree.
+          const { fill, ring } = nodeDotColors(dot.category, NODE_TINT_DAY, theme.colorSurface);
+          return (
+            <View
+              key={dot.key}
+              testID="lane-dot"
+              style={[
+                styles.dot,
+                { left: `${dot.position * 100}%`, backgroundColor: fill, borderColor: ring },
+              ]}
+            />
+          );
+        })}
       </View>
       <View style={styles.times}>
         {TIME_LABELS.map((t) => (

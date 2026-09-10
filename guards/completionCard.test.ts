@@ -61,7 +61,33 @@ const RULES = [
     handle: 'showMedication',
     why: 'a dose without its card can only ever say the affirmative "given" (B-156 G1)',
   },
+  {
+    // CUL-868 (Noticed N-2) registered this rule the PR the HELPER shipped, with a
+    // `firstCallerLands` field asserting there were EXACTLY ZERO call sites — because
+    // "every call site fires the handle" proves nothing over an empty set, and a guard
+    // added after the first caller is a guard added after the bug.
+    //
+    // CUL-871 (N-4a) is that first caller, and the tripwire fired exactly as designed:
+    // wiring `components/home/LookCard.tsx` reddened the zero-call-sites assertion,
+    // which is what forced `showLook` to be built in the same PR rather than noticed in
+    // review. The field is deleted with the caller that invalidated it; the ordinary
+    // rule below has taken over, and it now has a real call site to check.
+    helper: 'insertLook',
+    handle: 'showLook',
+    why: 'a look without its card loses the completion beat AND its Undo — and a look carrying a note is not recreatable, so Undo is the only way back (T-22, C-21)',
+  },
 ] as const;
+
+/** The rules whose helper has no caller yet, by decision. Derived rather than
+ *  hand-listed so the two tests below cannot disagree about which rules are which.
+ *
+ *  Empty since CUL-871 landed `insertLook`'s first caller, and kept rather than deleted:
+ *  the NEXT helper that ships ahead of its caller needs this shape to exist, and the
+ *  `it.each` below is written to survive the empty set (jest treats an empty table as a
+ *  failure, so it is guarded with `describe.skip`-shaped branching rather than left to
+ *  throw the day the list empties). */
+const PENDING_RULES = RULES.filter((r) => 'firstCallerLands' in r);
+const LIVE_RULES = RULES.filter((r) => !('firstCallerLands' in r));
 
 /**
  * Files that write a record and deliberately do NOT play a named card. Each is a
@@ -78,7 +104,7 @@ const EXEMPT: Record<string, string> = {
 };
 
 /** The helper's own module never counts as a call site. */
-const DEFINITIONS = ['lib/meals.ts', 'lib/medicationDose.ts'];
+const DEFINITIONS = ['lib/meals.ts', 'lib/medicationDose.ts', 'lib/looks.ts'];
 
 const EXEMPTION = /\/\/\s*completion-card-ok:\s*\S+/;
 
@@ -154,11 +180,24 @@ function callSites(helper: string, root: string): string[] {
 }
 
 describe('§5 — every commit path routes through its completion card', () => {
-  it.each(RULES)('finds real $helper call sites to check', ({ helper }) => {
+  it.each(LIVE_RULES)('finds real $helper call sites to check', ({ helper }) => {
     // If a rename ever makes the scan match nothing, the guard would pass by checking
     // an empty set. Fail instead — the same reason haptics.test.ts pins its floor.
     expect(callSites(helper, ROOT).length).toBeGreaterThan(0);
   });
+
+  // The other side of that floor, for a helper that ships before its caller. The
+  // assertion is inverted ON PURPOSE: the rule is already registered, so the only thing
+  // left to protect is the claim that nobody calls it yet.
+  if (PENDING_RULES.length > 0) {
+    it.each(PENDING_RULES)('$helper has no call site yet — $firstCallerLands', ({ helper }) => {
+      expect(callSites(helper, ROOT)).toEqual([]);
+    });
+  } else {
+    it('has no helper waiting for its first caller', () => {
+      expect(PENDING_RULES).toEqual([]);
+    });
+  }
 
   it.each(RULES)('every $helper call site fires $handle', ({ helper, handle, why }) => {
     // The remedy rides in the finding string rather than an assertion message: jest's

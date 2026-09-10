@@ -71,6 +71,43 @@ export const BASE_SCHEMA_SQL = `
       sync_error    TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS looks (
+      -- Noticed's local mirror (CUL-868 / N-2; migration 064 is the server side).
+      -- The 1:1 child of a check_in event, exactly as weight_checks is the child of
+      -- a weight_check — so it inherits the parent's soft delete and there is NO
+      -- deleted_at here: every read joins events and drops deleted_at IS NOT NULL
+      -- (spec §9 rule 2). Same reason it is in LOCAL_WIPE_TABLES *before* events.
+      id            TEXT PRIMARY KEY,
+      event_id      TEXT NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
+      pet_id        TEXT NOT NULL,
+      -- 'observed' (carries words) | 'nothing_unusual' (the observed-absence day, L-6).
+      -- No CHECK locally, as elsewhere in this mirror: the server's CHECK is the
+      -- authority and a local CHECK would only turn a server-legal row into a
+      -- hydration failure on an older build.
+      outcome       TEXT NOT NULL,
+      -- The owner's LOCAL day at write, 'YYYY-MM-DD' (the server column is DATE).
+      -- EVERY surface counts THIS key, never a re-derivation from occurred_at — the
+      -- client and the report bucket days on two clocks otherwise (T-19).
+      local_day     TEXT NOT NULL,
+      -- The word keys as a JSON-array string: SQLite has no array type, and this is
+      -- the food_items_cache.proteins precedent (B-351). Encode/decode ONLY via
+      -- wordsToLocalText / wordsFromLocalText (lib/lookWordsCodec.ts), so the one
+      -- place that knows the encoding is the one place that reads it. A leaf module
+      -- rather than lib/looks.ts, because the write path AND lib/sync.ts both need
+      -- the codec and looks.ts imports sync.ts.
+      words         TEXT NOT NULL DEFAULT '[]',
+      vocab_version INTEGER NOT NULL DEFAULT 1,
+      -- The note after the save (T-22). Lives HERE and never on events.notes, which
+      -- Ask's recall fetch reads with no type filter and which the server CHECK
+      -- events_check_in_notes_null holds NULL for a check_in.
+      notes         TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced        INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error    TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS food_items_cache (
       id              TEXT PRIMARY KEY,
       brand           TEXT NOT NULL,

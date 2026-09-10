@@ -80,6 +80,13 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: [],
     why: 'B-478 VF-1 made it DEFINER (its EXISTS→RAISE shape DID open a cross-account collision); B-520 revoked it.',
   },
+  // Born in the B-520 posture rather than flipped into it (064, CUL-867): the
+  // same-pet guard on `looks` that also bounds `local_day`. The issue's E-3
+  // named 023's INVOKER file body; the tree's live shape is this one.
+  enforce_look_paired_event_same_pet: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-867 (Noticed N-1) — DEFINER so the parent lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
+  },
 
   // ── B-403: the auth/utility functions ─────────────────────────────────────
   handle_new_user: {

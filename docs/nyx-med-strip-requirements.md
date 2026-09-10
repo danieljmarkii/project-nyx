@@ -1,6 +1,6 @@
 # Medication strip on Home — Requirements
 
-**Version:** 1.0 (build-ready) · **Last Updated:** 2026-07-31 · **Backlog:** B-614
+**Version:** 1.1 · **Last Updated:** 2026-09-10 · **Backlog:** B-614
 **Design authority:** `docs/culprit-med-strip-mockups.html` (round 2, design-locked)
 **Composes with:** B-284 N7 (`docs/culprit-in-app-brand-requirements.md` §8.2 "Care due") · B-117 (`docs/nyx-medication-logging-requirements.md`) · B-417 §4.2 (the trial card's logging rule)
 
@@ -44,6 +44,31 @@ the FAB's multi-decision log flow.
 **Any future surface proposing a write action on Home applies this test, not a
 precedent.** The question is never "did the trial card allow it?" — it is *"can the app
 describe the row before the owner taps?"*
+
+**⚠ Amended 2026-09-10 (PM-approved on CUL-865, edit 1; the text is verbatim from
+`docs/nyx-daily-look-requirements.md` §3.2).** One surface passes neither half of the
+test above and is nonetheless allowed, so the rule gains its second — and last — clause:
+
+> A control on Home may write a row when the row is a confirmation of something the app
+> can already describe (D1 = C), or when it is **the daily look** — a closed-set
+> observation the owner makes fresh, in one tap, with no form, no field and no default.
+> Home carries **exactly two write classes**: the med confirm and the look. A third is a
+> Tier-2 amendment to this rule, never a precedent.
+
+Why the look needed a carve-out rather than an argument that it fits: the app **cannot**
+describe an owner's observation in advance — that is the whole point of asking — so the
+"can the app describe the row before the owner taps?" test returns *no*, and a chip grid
+is not a form, so §4.2's second-door test returns *no* as well. Neither clause reaches
+it; a new one was the honest answer.
+
+**The bound is enforced, not stated.** `guards/homeWrites.test.ts` computes Home's
+import closure (the entry screen, every card, and every module they reach under
+`components/`, `hooks/`, `store/` and `lib/`) and matches **by effect** — every write
+helper the app has, plus raw SQL that mutates — against an allow-set pinned to exactly
+`{ MedStrip → insertMedicationDose, LookCard → insertLook }`. The spec's own forecast is
+the case it exists for: a one-tap intake confirm on Home (daily-look spec §4.5) is a
+reasonable, useful, third write class, and it would arrive as a small diff on a card that
+already writes. With that guard in place it cannot arrive with CI green.
 
 ### §0.2 The two things that fall out of the register rule
 

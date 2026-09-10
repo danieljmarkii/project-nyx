@@ -28,6 +28,28 @@ export interface InsertMealParams {
   occurredAt: Date;
   // Provenance of occurredAt for the audit/attribution trail.
   occurredAtSource: 'manual' | 'exif' | 'now';
+  // WSAVA 5-point intake, when the owner named it BEFORE the meal was written.
+  //
+  // OPTIONAL, AND `null` IS THE DEFAULT ON PURPOSE. Every path that existed before the
+  // intake door (the picker, the FAB, photo capture) writes the row first and asks
+  // afterwards on the completion card, which patches it through `updateMealIntake`.
+  // That order is right for those paths — the log stays one tap (Principle 1) and the
+  // rating is optional there.
+  //
+  // The intake door inverts it: the owner arrives having already said *she didn't eat*,
+  // names the arm, and the arm IS the save (§4.5). Passing the rating here rather than
+  // UPDATEing it a moment later is not a tidiness preference — an INSERT-then-UPDATE
+  // leaves a window in which the record holds an ordinary, unrated meal for a bowl the
+  // owner came through a door to report she refused, and a throw (or a kill) inside that
+  // window makes the window permanent. That row is the mis-record §4.5 was written
+  // against. One transaction, one row, rated or not by the caller's own knowledge.
+  //
+  // The union is spelled out rather than imported, exactly as `updateMealIntake`
+  // (`lib/db.ts`) spells it out one file over: `IntakeRating` is declared beside the
+  // chip row that edits it, and `lib/` reaching into `components/` to borrow a type
+  // would drag React Native into every consumer of this module (C-26 — a shared
+  // module's boundary is what imports it).
+  intakeRating?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null;
 }
 
 export interface InsertMealResult {
@@ -46,7 +68,7 @@ export interface InsertMealResult {
 // sync push + regen are fire-and-forget and never block or throw into the
 // caller.
 export async function insertMeal(params: InsertMealParams): Promise<InsertMealResult> {
-  const { petId, foodId, occurredAt, occurredAtSource } = params;
+  const { petId, foodId, occurredAt, occurredAtSource, intakeRating = null } = params;
   const db = getDb();
   const now = new Date().toISOString();
   const occurredAtIso = occurredAt.toISOString();
@@ -78,9 +100,10 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
     // Meal row. updated_at is stamped ISO (not SQLite's local-time datetime())
     // so cross-device last-write-wins compares correctly (B-055).
     await db.runAsync(
-      `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, 'unknown', ?, ?, 0)`,
-      [mealId, eventId, petId, foodId, now, now],
+      `INSERT INTO meals
+         (id, event_id, pet_id, food_item_id, quantity, intake_rating, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, 'unknown', ?, ?, ?, 0)`,
+      [mealId, eventId, petId, foodId, intakeRating, now, now],
     );
   });
 

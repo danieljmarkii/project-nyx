@@ -46,6 +46,19 @@ const ALLOWED: Record<string, string> = {
   'lib/weight.ts':
     'insertWeightCheck — you read the scale. occurred_at is now, or a time the owner set ' +
     'themselves via the back-dating escape hatch.',
+  'lib/looks.ts':
+    'insertLook — a look is a PERCEPTION at a moment the owner was present for, so there is ' +
+    'nothing to find and the B-010 found/window path can never apply (taxonomy D10, daily-look ' +
+    'spec §5.4). occurred_at is the clock at the tap or a point the owner set on the record; ' +
+    'the SOURCE distinguishes those two (`now` vs `manual`, C-10), never the confidence. ' +
+    'A look is also the one row here whose confidence a vet never reads as a claim about an ' +
+    'incident: the report prints the day it was answered, not a witnessed sighting.',
+  'lib/lookDevSeed.ts':
+    'The dev-only Noticed seed (__DEV__ only, refused otherwise). It writes its looks THROUGH ' +
+    'insertLook, so this literal is only on the vomit rows it seeds beside them — back-dated ' +
+    'instants a developer chose, which is the same claim the back-dating escape hatch makes on ' +
+    'lib/weight.ts. Every seeded row also carries SEED_MARKER in its notes, so a seeded record ' +
+    'can never be mistaken for an owner\u2019s on a device.',
   'lib/captureInbox.ts':
     'Widget/App-Intent ingest. occurred_at is the TAP time carried in the capture record, ' +
     'not the drain time — the owner pressed the button at the moment they fed the pet.',
@@ -70,6 +83,46 @@ const ALLOWED: Record<string, string> = {
   'components/ui/MedicationCompletionCard.tsx':
     'Time-picker correction on the dose just logged — the same no-op restatement as the ' +
     'meal card, on a row insertMedicationDose already wrote as witnessed.',
+  'components/log/IntakeFirstMealSheet.tsx':
+    'The Noticed card\u2019s intake door (CUL-870). prependEvent mirroring the row insertMeal ' +
+    'just wrote, at an instant the sheet DISPLAYS in its own first line (*Meal \u00b7 7:12, now*) ' +
+    'and re-derives on foreground, so the owner sees the time she is recording \u2014 the "an ' +
+    'affordance they can see" half of the bar, met explicitly rather than by inheritance. ' +
+    'THE ONE WAY THIS PATH DIFFERS from the FAB and the picker, said out loud because it is ' +
+    'the reason this entry needed writing rather than copying: the other meal paths fire as ' +
+    'the bowl goes DOWN, and this one can fire either then (*didn\u2019t come to eat* \u2014 ' +
+    'she is watching) or later (*left her food* \u2014 she found it). Both are still ' +
+    'witnessed CLAIMS about a meal at the stated instant, because spec \u00a74.5 rules the row ' +
+    'to be a NEW meal at now rather than an edit of an earlier one, and the owner named the ' +
+    'time by acting at it; what the second case can be is an HOUR LATE, and its correction ' +
+    'is the shipped "Change time" on the completion card this path raises a beat later. ' +
+    'WHAT THAT ACTUALLY CORRECTS \u2014 stated exactly, because two earlier drafts of this ' +
+    'entry each overstated it in the same direction and the adversarial pass priced both: ' +
+    'the picker moves the INSTANT and the SOURCE (through sourceAfterPointEdit, C-10); the ' +
+    'CONFIDENCE is re-asserted as witnessed unconditionally at MealCompletionCard.tsx:273, ' +
+    'exactly as app/edit-event.tsx does ("meals are always witnessed"), so a found-later ' +
+    'refusal can be re-dated but never re-graded. That is the shipped meal contract, not a ' +
+    'hole this path opens. WHY IT COSTS THE RECORD NOTHING, which the second draft got ' +
+    'wrong by claiming no surface reads a meal\u2019s occurred_at_confidence \u2014 several ' +
+    'do: EventRow, lib/dayEvents, app/event/[id].tsx, lib/patternsTiming\u2019s feeding read, ' +
+    'and THE CORRELATION ENGINE ITSELF, which carries it as FeedingInput.confidence from ' +
+    'both generate-signal (index.ts:534) and generate-report. The true statement is about ' +
+    'their BEHAVIOUR, not their existence: every one of them treats witnessed and NULL ' +
+    'IDENTICALLY for a feeding \u2014 the engine says so in its own comment ("timed-eligible ' +
+    'when witnessed OR NULL; meals are inherently witnessed, legacy NULL carries the same ' +
+    'semantics") and describeOccurredAt returns the same point branch for both. The one ' +
+    'reader that distinguishes them is confidenceWord (app/event/[id].tsx), which prints ' +
+    'the word for witnessed and nothing for NULL, and no meal reaches it today. So the ' +
+    're-assertion moves no number anywhere. What this path must never become is an ' +
+    'INFERRED confidence: nothing here reads a clock the owner did not see, and no ' +
+    'metadata is consulted.',
+  'components/home/LookCard.tsx':
+    'Noticed (CUL-871). prependEvent mirroring the row insertLook just wrote, at the clock ' +
+    'instant of the tap. The claim is lib/looks.ts\u2019s and is restated here rather than ' +
+    'derived: a look is a PERCEPTION at a moment the owner was present for, so the B-010 ' +
+    'found/window path can never apply to one. The mirror matters because the card renders ' +
+    'the arrival from this in-memory row before Home re-reads the record, so a mirror that ' +
+    'disagreed with the insert would show a confidence the database does not hold.',
 };
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

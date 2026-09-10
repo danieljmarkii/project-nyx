@@ -16,6 +16,8 @@ import {
 import { foodFormatTag, mealRowLabel } from '../../lib/food';
 import { describeOccurredAt } from '../../lib/utils';
 import { kgToLbs } from '../../lib/weight';
+import { describeLook, lookSummary, isLookRow } from '../../lib/lookDisplay';
+import { usePetStore } from '../../store/petStore';
 
 // B-156 PR B4 — the quiet, tappable combo cross-link, shown on each side of a combo
 // (the dose ↔ its vehicle meal/treat) so the "one act" is legible across the two
@@ -120,6 +122,28 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
     ? `${kgToLbs(event.weight_kg)} lbs`
     : null;
 
+  // CUL-869 — the look's own line. A look names WHAT WAS NOTICED, so the row reads
+  // "Noticed · off, didn't want the walk · 7:12": the type label, then the words as
+  // a sentence fragment, then the hour every other row already prints.
+  //
+  // The words are resolved against the RECORD's pet, never the active one (C-9):
+  // History renders one pet's rows at a time today, but the resolution depends on
+  // species and sex, and reading those off `activePet` would print a cat's copy over
+  // a dog's record the moment any surface reuses this row. `resolveRecordPetName`'s
+  // own rule, applied to the two fields beside the name — and there is deliberately
+  // no active-pet rung here either.
+  //
+  // `lookSummary` returns null for a look this build cannot describe (no child row,
+  // or words from a newer vocabulary). The row then reads "Noticed" and its time,
+  // which is the whole point: it NEVER falls through to the absence phrase, because
+  // "nothing unusual" is a claim about the pet and the only one no surface may infer.
+  const isLook = isLookRow(event);
+  const lookPet = usePetStore((s) => s.pets.find((p) => p.id === event.pet_id));
+  const look = isLook ? describeLook(event, lookPet ?? {}) : null;
+  const lookLine = look ? lookSummary(look) : null;
+  const lookHasNote = !!look?.note;
+  const expandedNote = isLook ? look?.note ?? null : event.notes;
+
   // B-010 — read-only confidence marker so the timeline stops implying false
   // precision on found/estimated events. Witnessed and legacy (null) rows keep
   // the plain time and show no tag.
@@ -129,6 +153,14 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
     earliest: event.occurred_at_earliest,
     latest: event.occurred_at_latest,
   });
+
+  // Held rather than inlined so the two branches below cannot drift into printing
+  // two different times, and so the note-less branch is the ORIGINAL element.
+  const timeText = (
+    <ThemedText style={styles.time}>
+      {formatDatePart(event.occurred_at)}, {timeDisplay.compact}
+    </ThemedText>
+  );
 
   return (
     <TouchableOpacity
@@ -149,9 +181,29 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
         <View style={styles.topLine}>
           <ThemedText style={styles.label}>{rowLabel}</ThemedText>
           <View style={styles.timeCol}>
-            <ThemedText style={styles.time}>
-              {formatDatePart(event.occurred_at)}, {timeDisplay.compact}
-            </ThemedText>
+            {/* The note marker (§3.1a — "an older entry carries ❞ beside its hour").
+                Two things decide the shape here:
+
+                · Its OWN element, not a nested span inside the time. A nested <Text>'s
+                  accessibilityLabel is not honoured — the parent composes one attributed
+                  string — so the glyph would be announced as "right double quotation
+                  mark", which tells a screen-reader user nothing about the record. As a
+                  sibling it carries its own label, which is C-8's legitimate case: the
+                  label TRANSLATES something that is not a word, rather than restating
+                  visible text.
+
+                · The wrapping row is CONDITIONAL, so a row with no note renders exactly
+                  the tree it rendered before this change. The look ships dark behind
+                  `daily_look`, and an extra View around every event's timestamp is a
+                  change to a shipped surface even when it draws the same pixels. */}
+            {lookHasNote ? (
+              <View style={styles.timeLine}>
+                <ThemedText style={styles.noteMark} accessibilityLabel="Has a note">❞</ThemedText>
+                {timeText}
+              </View>
+            ) : (
+              timeText
+            )}
             {timeDisplay.tag ? (
               <ThemedText style={styles.timeTag}>{timeDisplay.tag}</ThemedText>
             ) : null}
@@ -176,6 +228,15 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
 
         {weightLabel ? (
           <ThemedText style={styles.weightValue} numberOfLines={1}>{weightLabel}</ThemedText>
+        ) : null}
+
+        {/* CUL-869 — what she noticed. Two lines rather than one appended to the label,
+            for the reason foodName is its own line: the words are the variable-length
+            half and must be free to wrap without pushing the type label or the hour
+            around. No numberOfLines cap — a look with six words is a record the owner
+            made deliberately, and clipping it would hide the half she chose (C-8). */}
+        {lookLine ? (
+          <ThemedText style={styles.lookWords}>{lookLine}</ThemedText>
         ) : null}
 
         {/* B-156 PR B4 — vehicle → dose cross-link. On a meal/treat that carried a
@@ -221,8 +282,13 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
 
         {isExpanded ? (
           <View style={styles.expandedContent}>
-            {event.notes ? (
-              <ThemedText style={styles.notes}>{event.notes}</ThemedText>
+            {/* A look's note lives on `looks.notes`, never on the parent — whose `notes`
+                is NULL by CHECK for a check_in (T-22). Reading `event.notes` here would
+                render every look as noteless while its note sat one column away. */}
+            {expandedNote ? (
+              <ThemedText style={styles.notes}>
+                {isLook ? `“${expandedNote}”` : expandedNote}
+              </ThemedText>
             ) : null}
             <View style={styles.actions}>
               <TouchableOpacity onPress={onOpen} hitSlop={8} style={styles.editBtn}>
@@ -284,6 +350,27 @@ const styles = StyleSheet.create({
   },
   timeCol: {
     alignItems: 'flex-end',
+  },
+  // The hour and its note marker as one row, so the marker sits BESIDE the time
+  // rather than above it and the confidence tag below still aligns to the same
+  // right edge. flexShrink:0 on neither: both are short and fixed-width enough that
+  // the label opposite absorbs any squeeze.
+  timeLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spaceMicro,
+  },
+  noteMark: {
+    fontSize: 13,
+    color: theme.colorTextTertiary,
+  },
+  // What she noticed — the same secondary register as a meal's food name and a
+  // weight's reading, because it is the same kind of thing: the row's content, under
+  // the row's type.
+  lookWords: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
   },
   time: {
     fontSize: 13,

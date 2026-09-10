@@ -24,7 +24,7 @@ import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import type { DaySummaryRow } from '../../lib/daySummary';
-import { NODE_TINT_NIGHT, NODE_DOT_SIZE, NODE_DOT_RING } from './nodeTints';
+import { NODE_TINT_NIGHT, NODE_DOT_SIZE, NODE_DOT_RING, nodeDotColors } from './nodeTints';
 import { ThemedText } from '../ui/ThemedText';
 
 // Geometry — the rail column that carries the dot + thread, and where the dot's
@@ -89,6 +89,13 @@ function SpineRow({
     `${row.subline ? `, ${row.subline}` : ''}` +
     `, ${row.time}. Opens details`;
 
+  // CUL-869 — fill and ring come from the shared rule rather than from this
+  // component, so a look is the hollow bead on the spine that the lane already
+  // draws (nodeTints.ts). `styles.dot` still supplies the geometry and every other
+  // category's ground-coloured ring; this inverts exactly the two colours for a
+  // look and touches no geometry, so nothing moves.
+  const { fill, ring } = nodeDotColors(row.category, NODE_TINT_NIGHT, theme.colorBrandNight);
+
   return (
     <Pressable
       onPress={open}
@@ -107,7 +114,7 @@ function SpineRow({
       <View style={styles.rail}>
         {!isFirst && <View style={[styles.line, styles.lineTop]} />}
         {!isLast && <View style={[styles.line, styles.lineBottom]} />}
-        <View style={[styles.dot, { backgroundColor: NODE_TINT_NIGHT[row.category] }]} />
+        <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
       </View>
 
       <View style={styles.body}>

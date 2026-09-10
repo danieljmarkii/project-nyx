@@ -91,6 +91,12 @@ export function buildTodayLane(events: readonly LaneEvent[]): TodayLaneModel {
     (a, b) => (Date.parse(a.occurred_at) || 0) - (Date.parse(b.occurred_at) || 0),
   );
 
+  // A look (`check_in`) categorises as 'look' and travels BOTH ways deliberately
+  // (spec §5.1 #2): it earns a mark on the lane — a hollow one, `nodeDotColors` —
+  // because the owner did answer today, and it is handed to `buildCountChips`
+  // exactly like every other row, where the 'look' arm declines to count it. One
+  // categorisation, two consumers, one decision each: the alternative (filtering
+  // looks out here) would put the same rule in two places and let them drift.
   const dots: LaneDot[] = sorted.map((e) => ({
     key: e.id,
     category: eventTintCategory(e.event_type),

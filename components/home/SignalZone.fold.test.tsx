@@ -129,7 +129,13 @@ const stoodDownMarker: StoodDownMarker = {
   recencyDays: 14,
   tier: 'firm',
   lastEpisodeIso: '2026-08-19T11:00:00.000Z',
-  stoodDownAt: '2026-09-03T12:00:00.000Z',
+  // CUL-886 — anchored to the RUN, not the calendar. `stoodDownExpired`
+  // (lib/signalCopy.ts) measures this against the real clock with a seven-day TTL,
+  // so an absolute date silently becomes a time bomb: this fixture was written on
+  // Sep 3 and reddened `main` by itself on Sep 10, with no commit behind it (C-29's
+  // time axis, the CUL-831 shape in a second file). Two days back rather than zero,
+  // so the expiry arithmetic is still exercised by a real elapsed interval.
+  stoodDownAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
   formerRank: 0,
 };
 const stoodDown: CachedFinding = { rank: 0, text: 'No vomiting logged for Nyx in 14 days — this card has stood down.', finding: stoodDownMarker };

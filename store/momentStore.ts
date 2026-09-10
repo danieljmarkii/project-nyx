@@ -99,6 +99,20 @@ export interface NamedPayload {
   // `event_attachments`), so absent and `false` mean the same thing here — unlike
   // `previousSnapshotKg`, where the key's PRESENCE is itself the fact.
   hasAttachment?: boolean;
+  // CUL-869 — whether this record carries a NOTE, so the card can gate Undo behind
+  // a confirm that names it (T-22, C-21). The exact sibling of `hasAttachment`, one
+  // field over, and here rather than on `LoggedRecord` for the identical reason:
+  // that type is the SENTENCE source and carries only what the row says. "Mochi ·
+  // off, didn't want the walk · 7:12" is the same sentence with or without a note,
+  // and `summarizeLoggedRecord` has no business knowing about one.
+  //
+  // The look is the only record that can produce it, and it is why the field exists:
+  // a look's note is the owner's own words about her animal, written in a moment she
+  // will not reconstruct, and nothing in the app surfaces a removed one. The event
+  // itself is re-loggable from what she saw; the sentence she wrote about it is not.
+  // Optional, and absent means the same as `false` — every path that cannot carry a
+  // note simply omits it.
+  hasNote?: boolean;
 }
 
 export interface MealPayload {
@@ -199,7 +213,28 @@ export interface MedicationPayload {
   doubleDose?: DoubleDoseResult | null;
 }
 
-export type MomentPayload = NamedPayload | MealPayload | MedicationPayload;
+export interface LookPayload {
+  kind: 'look';
+  eventId: string;
+  // The pet the look was written FOR, captured at the first chip tap (T-11) and
+  // carried here so nothing downstream re-reads `activePet`. The card's own two-pet
+  // test pins the capture; this field is what makes the beat and the Undo describe
+  // the same animal the write did.
+  petId: string;
+  // ISO UTC of the look's occurred_at.
+  occurredAt: string;
+  // What was written, in the same shape `looks` holds it: the outcome decides the
+  // phrase (an observed-absence row is the one thing that may read "nothing
+  // unusual", §5.6) and the words are the record's own, in the order chosen.
+  outcome: 'observed' | 'nothing_unusual';
+  words: readonly string[];
+  // CUL-869's sibling field on NamedPayload, here for the same reason: a look
+  // carrying a note is not recreatable, so N-4b's Undo confirms and names it. Absent
+  // means the same as false — N-4a writes no notes, so no path here sets it yet.
+  hasNote?: boolean;
+}
+
+export type MomentPayload = NamedPayload | MealPayload | MedicationPayload | LookPayload;
 
 interface ShowOpts {
   delayMs?: number;
@@ -230,6 +265,20 @@ interface MomentState {
   showMeal: (payload: Omit<MealPayload, 'kind'>, opts?: ShowOpts) => void;
   // Warmed bottom card carrying the adherence chip row (dose logs, B-117 PR 3).
   showMedication: (payload: Omit<MedicationPayload, 'kind'>, opts?: ShowOpts) => void;
+  // The daily look's beat (CUL-871 / N-4a) — and the one presentation in this store
+  // that renders NO bottom card. Deliberate, and the reason is the spec's, not a
+  // shortcut: R14 puts the look's arrival INSIDE the Noticed card, as the day's
+  // newest entry in its own today list, with Undo holding where the row's chevron
+  // will be. A bottom card over Home would be a second surface describing a row the
+  // owner is already looking at — the same argument that makes the med strip's
+  // confirm an in-place beat (§5 R2).
+  //
+  // What it is here FOR is everything the register owns and a card in `components/`
+  // must not re-implement: the five-second dwell, the staleness guard on Undo, the
+  // `removed` swap, and `undo()`'s single route through `reverseLoggedEvent` (C-20).
+  // `LookCard` renders off `payload` + `removed`; the three root cards each gate on
+  // their own kind, so nothing else paints.
+  showLook: (payload: Omit<LookPayload, 'kind'>, opts?: ShowOpts) => void;
   hide: () => void;
   // CUL-612 — reverse the log this card is announcing: soft-delete the event, drop
   // it from Today, and swap the card to its removal line for a short read.
@@ -339,6 +388,12 @@ export const MEAL_FLAGGED_DURATION_MS = 7000;
 // Medication-card dwell: same rationale as the meal card — interactive (the
 // adherence chip row needs reading + a deliberate tap before auto-dismiss).
 const MEDICATION_DURATION_MS = 5000;
+// The look's dwell — "the completion system's dwell (five seconds)" (§3.1a, T-15),
+// named against the same constant the other three carry rather than a number typed
+// into the card. It is the window in which *Undo* holds the slot the row's chevron
+// takes afterwards, so it is the whole reversal window an owner gets on this surface:
+// the same five seconds every other completion offers, no shorter for being quieter.
+export const LOOK_DWELL_MS = 5000;
 // Medication-card dwell once the B-157 double-dose note is riding along: the card now
 // carries a line of safety prose the owner has not seen before and cannot get back by
 // tapping (the note is passive by design; its durable home is the dose detail screen).
@@ -504,6 +559,14 @@ function armHide(set: (partial: Partial<MomentState>) => void, durationMs: numbe
 // Meal and dose cards are routine commits by construction — there is no symptom path
 // through them — so they take the success pattern.
 function playCommitHaptic(payload: MomentPayload) {
+  // T-10 — DONE IS SILENT. Not an oversight and not a tuning choice: a look writes no
+  // symptom row, so `commitSymptom` would be a lie about what landed, and
+  // `commitRoutine`'s success double-tap would congratulate an owner for telling the
+  // app her cat is hiding. Dr. Chen's row 13 (acknowledge, never congratulate) and the
+  // PM's expectations-mismatch note (no chip may feel different from another) both
+  // land on silence. The chips themselves tick — `selectChip` on every tap, at the
+  // call site — so the gesture is heard; the commit is not.
+  if (payload.kind === 'look') return;
   if (payload.kind === 'named' && payload.tone === 'calm') commitSymptom();
   else commitRoutine();
 }
@@ -557,6 +620,7 @@ export const useMomentStore = create<MomentState>((set) => ({
     ),
   showMedication: (payload, opts) =>
     present(set, { kind: 'medication', ...payload }, opts, MEDICATION_DURATION_MS),
+  showLook: (payload, opts) => present(set, { kind: 'look', ...payload }, opts, LOOK_DWELL_MS),
   hide: () => {
     clearTimers();
     set({ visible: false });
@@ -587,6 +651,10 @@ export const useMomentStore = create<MomentState>((set) => ({
       // — what that write displaced. `!== undefined`, not `??`: a payload that
       // carried `null` is saying the pet genuinely had no weight on file, and that
       // is a value to restore, not a missing one.
+      // home-write-ok: the SHARED REVERSAL, not a write class (CUL-871 §3.2). Home
+      // reaches this only through a completion card whose own write is already in the
+      // allow-set, it can only ever REMOVE a row the owner just made, and routing it
+      // anywhere else would fork the one reversal C-20 exists to keep single.
       await reverseLoggedEvent(
         payload.eventId,
         payload.kind === 'named' && payload.previousSnapshotKg !== undefined
