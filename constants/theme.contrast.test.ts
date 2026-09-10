@@ -63,6 +63,9 @@ describe('text inks clear AA on the grounds they are for', () => {
     ['symptom ink on white', theme.colorEventSymptomInk, theme.colorSurface],
     ['medication ink on its own tint', theme.colorEventMedicationInk, theme.colorEventMedicationLight],
     ['attention ink on its wash', theme.colorAttentionInk, theme.colorAttentionLight],
+    // CUL-871 — the chosen look chip. Its ground is the DEEPER wash, which is the
+    // whole reason this ink exists (see the failing half below).
+    ['selected accent ink on the deep wash (a chosen look chip)', theme.colorAccentInkSelected, theme.colorAccentWashDeep],
   ];
 
   it.each(pairs)('%s', (_label, ink, ground) => {
@@ -77,6 +80,10 @@ describe('the bright category colours do NOT clear AA as text on light', () => {
     ['brand teal on its own tint', theme.colorAccent, theme.colorAccentLight],
     ['brand teal on the white Card', theme.colorAccent, theme.colorSurface],
     ['symptom rose on its own tint', theme.colorEventSymptom, theme.colorEventSymptomLight],
+    // CUL-871 — and the pair one step further in. The ORDINARY accent ink, which is
+    // correct on colorAccentLight, is the failing half on the deeper wash a chosen
+    // look chip stands on. This row is what makes the selected ink un-simplifiable.
+    ['accent ink on the DEEP wash', theme.colorAccentInk, theme.colorAccentWashDeep],
   ];
 
   it.each(failing)('%s — so it is never the colour of a text label there', (_label, colour, ground) => {
@@ -90,6 +97,10 @@ describe('the bright category colours do NOT clear AA as text on light', () => {
     expect(contrastRatio(theme.colorAccentInk, theme.colorSurface)).toBeCloseTo(5.17, 2);
     expect(contrastRatio(theme.colorAccentInk, theme.colorAccentLight)).toBeCloseTo(4.75, 2);
     expect(contrastRatio(theme.colorEventSymptomInk, theme.colorEventSymptomLight)).toBeCloseTo(6.68, 2);
+    // CUL-871 / R16, the round-4 product read's two measurements, recorded so the
+    // 20%-louder chip cannot drift back under the floor unnoticed.
+    expect(contrastRatio(theme.colorAccentInk, theme.colorAccentWashDeep)).toBeCloseTo(4.40, 2);
+    expect(contrastRatio(theme.colorAccentInkSelected, theme.colorAccentWashDeep)).toBeCloseTo(5.69, 2);
   });
 });
 

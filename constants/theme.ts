@@ -62,6 +62,21 @@ export const theme = {
                                   // widget (W5), which cannot import this file —
                                   // the value lives here so it is reviewed and
                                   // reusable rather than invented at the call site.
+  // The CHOSEN-CHIP pair (CUL-871 / N-4a; daily-look spec §3.1a R15/R16). The filter
+  // chip's accent treatment "carried two steps further and, since round 4, a fifth
+  // louder" — a deeper wash than colorAccentLight, and its own ink.
+  //
+  // The ink is NOT a fifth accent for the palette's sake: it exists because the
+  // deeper wash breaks the pair above it. `colorAccentInk` measures 4.40:1 on this
+  // wash — under AA for the 13px chip label — where it clears 4.75:1 on
+  // colorAccentLight. Both halves are pinned in theme.contrast.test.ts, the failing
+  // one included, so "simplify the selected chip back to colorAccentInk" is a red
+  // build rather than a tidy-looking diff. Same accent, one notch darker; the
+  // one-accent rule holds exactly as it does for colorAccentInk.
+  colorAccentWashDeep: '#CDF5EC',      // the chosen chip's ground
+  colorAccentInkSelected: '#08685B',   // its label AND its check, at full opacity —
+                                       // never a tint of itself (a 75% mark on this
+                                       // wash lands back under the floor)
 
   // Neutrals
   colorNeutralDark: '#0A0A0A',

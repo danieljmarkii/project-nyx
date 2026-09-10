@@ -83,6 +83,13 @@ const ALLOWED: Record<string, string> = {
   'components/ui/MedicationCompletionCard.tsx':
     'Time-picker correction on the dose just logged — the same no-op restatement as the ' +
     'meal card, on a row insertMedicationDose already wrote as witnessed.',
+  'components/home/LookCard.tsx':
+    'Noticed (CUL-871). prependEvent mirroring the row insertLook just wrote, at the clock ' +
+    'instant of the tap. The claim is lib/looks.ts\u2019s and is restated here rather than ' +
+    'derived: a look is a PERCEPTION at a moment the owner was present for, so the B-010 ' +
+    'found/window path can never apply to one. The mirror matters because the card renders ' +
+    'the arrival from this in-memory row before Home re-reads the record, so a mirror that ' +
+    'disagreed with the insert would show a confidence the database does not hold.',
 };
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
