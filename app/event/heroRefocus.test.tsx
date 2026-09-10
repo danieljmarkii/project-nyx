@@ -94,6 +94,10 @@ const baseRow = {
   paired_vehicle_intake: null, paired_food_name: null,
   drug_generic_name: null, drug_brand_name: null,
   paired_dose_count: 0, paired_dose_event_id: null, paired_dose_drug_name: null,
+    // CUL-869 — the look child; null on every non-check_in row, which is every row here.
+    look_outcome: null,
+    look_words: null,
+    look_note: null,
 };
 
 // local_uri is set but `File.exists` is false above, so the screen blanks it as a stale

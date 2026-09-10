@@ -264,7 +264,23 @@ export function NamedCompletionCard() {
     // left is a COMPREHENSION failure — an owner reversing a mis-logged event with
     // no idea the photo goes too. So the body's job is to say the one thing they
     // do not know. The extra tap is the price of delivering it, not the point.
-    if (payload.hasAttachment) {
+    // CUL-869 widens the gate from the photo to "anything this removal takes with it
+    // that the owner cannot make again". A look's NOTE is the second such thing, and
+    // it fails the same way: re-logging the look is easy, re-writing the sentence she
+    // typed at 2am about what she saw is not, and no surface in the app exposes a
+    // removed one. Composed rather than branched so a record carrying both would name
+    // both — a look has no photo affordance today, but a body that silently drops one
+    // of two facts is the defect this gate exists to prevent.
+    // Phrases are lower-case and the sentence capitalises its own first letter, so
+    // joining two never produces "…and The note…" mid-sentence.
+    const takesWithIt = [
+      payload.hasAttachment ? 'the photo you attached' : null,
+      payload.hasNote ? 'the note you wrote' : null,
+    ].filter((x): x is string => x !== null);
+
+    if (takesWithIt.length > 0) {
+      const clause = takesWithIt.join(' and ');
+      const body = `${clause.charAt(0).toUpperCase()}${clause.slice(1)} will be removed with it.`;
       // Hold the card open across the dialog. Without this the gate is worse than
       // no gate: this card never wired the dwell pause (only the chip-bearing meal
       // and dose cards did), so the 5s runs from the REVEAL and is not reset by the
@@ -276,7 +292,7 @@ export function NamedCompletionCard() {
       pauseDwell();
       Alert.alert(
         'Remove this log?',
-        'The photo you attached will be removed with it.',
+        body,
         [
           { text: 'Keep it', style: 'cancel', onPress: resumeDwell },
           {

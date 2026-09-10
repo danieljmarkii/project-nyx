@@ -770,3 +770,73 @@ describe('NamedCompletionCard — Undo asks first when a photo rides along', () 
     alert.mockRestore();
   });
 });
+
+// ── The NOTE gate (CUL-869 / N-3) ────────────────────────────────────────────
+//
+// The photo's sibling, and it exists for the identical reason: Undo is one tap
+// because the tap IS the confirm, and that holds for everything this card can remove
+// EXCEPT something the owner cannot make again. A look's note is the second such
+// thing — her own sentence about what she saw, written in a moment she will not
+// reconstruct, and no surface in the app shows a removed one.
+//
+// Nothing SETS `hasNote` yet: the Home card that writes a look is CUL-871's, and
+// `guards/completionCard.test.ts` pins `insertLook` at exactly zero call sites until
+// it lands. The gate is built and proven here anyway, because the alternative is a
+// field arriving with its first caller and its behaviour never being checked at all.
+describe('Undo — the note gate (CUL-869)', () => {
+  function buttonsFrom(alert: jest.SpyInstance) {
+    return (alert.mock.calls[0][2] ?? []) as { text: string; onPress?: () => void }[];
+  }
+  async function tapUndo(view: ReturnType<typeof render>) {
+    await act(async () => { fireEvent.press(view.getByText('Undo')); });
+  }
+  async function press(alert: jest.SpyInstance, label: string) {
+    const btn = buttonsFrom(alert).find((b) => b.text === label);
+    if (!btn) throw new Error(`no "${label}" button in the dialog`);
+    return act(async () => { btn.onPress?.(); });
+  }
+
+  it('a note-less record is still ONE TAP — the gate never widens to everything', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed();
+    await tapUndo(view);
+    expect(alert).not.toHaveBeenCalled();
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    alert.mockRestore();
+  });
+
+  it('a note-bearing record confirms, and the body NAMES the note', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasNote: true });
+    await tapUndo(view);
+    expect(reverseLoggedEvent).not.toHaveBeenCalled();
+    expect(alert.mock.calls[0][0]).toBe('Remove this log?');
+    expect(alert.mock.calls[0][1]).toBe('The note you wrote will be removed with it.');
+    alert.mockRestore();
+  });
+
+  it('removes it once the owner confirms', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasNote: true });
+    await tapUndo(view);
+    await press(alert, 'Remove');
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    alert.mockRestore();
+  });
+
+  it('a record carrying BOTH names both, in one sentence', async () => {
+    // No shipped path produces this today (a look has no photo affordance), which is
+    // exactly why it is pinned: a body that silently dropped one of two facts is the
+    // defect this gate exists to prevent, and it would ship unnoticed.
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true, hasNote: true });
+    await tapUndo(view);
+    expect(alert.mock.calls[0][1])
+      .toBe('The photo you attached and the note you wrote will be removed with it.');
+    alert.mockRestore();
+  });
+});

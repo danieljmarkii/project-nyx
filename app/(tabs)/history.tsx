@@ -25,6 +25,7 @@ import { syncNow } from '../../lib/sync';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
 import { formatUtcDayShort } from '../../lib/utils';
+import { isLookRow } from '../../lib/lookDisplay';
 import {
   getActiveArrangementsForPet, getBoundaryMarkers,
   ActiveArrangementView, BoundaryMarker,
@@ -91,6 +92,12 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     paired_dose_count: row.paired_dose_count,
     paired_dose_event_id: row.paired_dose_event_id,
     paired_dose_drug_name: row.paired_dose_drug_name,
+    // CUL-869 — the look's child. Same trap as food_format above: these are
+    // OPTIONAL on NyxEvent, so omitting them compiles clean and silently renders
+    // every look as a bare "Noticed" with no words and no note marker.
+    look_outcome: row.look_outcome,
+    look_words: row.look_words,
+    look_note: row.look_note,
   };
 }
 
@@ -413,9 +420,26 @@ export default function HistoryScreen() {
   }
 
   function handleDelete(event: NyxEvent) {
+    // CUL-869 — two things, both the record screen's confirm one surface over.
+    //
+    // The SUBJECT is named per type: the sentence template was written for noun
+    // labels and `check_in`'s is "Noticed", so it read "the Noticed". Every other
+    // type's string is unchanged.
+    //
+    // The NOTE is named when there is one (C-21). A look's note is the owner's own
+    // words and nothing recreates it — and this is the likeliest door to a week-old
+    // look, so it is the one that could least afford to stay silent. The fact rides
+    // on the row itself (`look_note`, joined in the same SELECT), so unlike the
+    // record screen's photo there is no read that might not have answered yet.
+    const isLook = isLookRow(event);
+    const label = EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event';
+    const subject = isLook ? 'what you noticed' : `the ${label}`;
+    const hasNote = isLook && !!event.look_note?.trim();
     Alert.alert(
       'Remove this log?',
-      `This will remove the ${EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event'} from history.`,
+      hasNote
+        ? `This will remove ${subject} from history. The note you wrote will be removed with it.`
+        : `This will remove ${subject} from history.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

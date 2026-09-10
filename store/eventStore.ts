@@ -61,6 +61,19 @@ export interface NyxEvent {
   paired_dose_count?: number;
   paired_dose_event_id?: string | null;
   paired_dose_drug_name?: string | null;
+  // The daily look's child (CUL-869 / N-3) — populated only for `check_in` rows,
+  // absent otherwise. Carried on the row so History, the day drill-in and the
+  // record screen all name a look from ONE read, exactly as `weight_kg` is.
+  //
+  // `look_words` is the local column's JSON-array TEXT, not a parsed array: the
+  // codec (`wordsFromLocalText`) is the one place that knows the encoding, and a
+  // store field typed `string[]` would invite a second parse at every consumer.
+  // Decoding happens in `lib/lookDisplay.ts`, which every surface goes through.
+  look_outcome?: string | null;
+  look_words?: string | null;
+  // `looks.notes`. The PARENT's `notes` is NULL by CHECK for a check_in (T-22),
+  // so this is the only field a look's note can ever be read from.
+  look_note?: string | null;
 }
 
 interface EventState {
