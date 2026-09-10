@@ -222,10 +222,16 @@ export function receiptsFor(
     // would only repeat the entry's hour beside *Call your vet today*.
     if (ctx.withheld) {
       if (firstMarked === todayKey) continue;
-      const head = wordInSentence(word, ctx.pet);
+      // The WORD LEADS, as it does in the count form, rather than sitting mid-sentence
+      // after a verb. `nyx-voice`: *First marked off Sep 2* reads as "marked off [items]
+      // on Sep 2" — the head becomes the object of a phrasal verb and the sentence says
+      // something the record does not. Leading with it makes the word a label, which is
+      // what it is, and the shape then matches the count form the owner sees on every
+      // other day (Pattern 5: the plain reading is the one that survives).
+      const lead = wordLeading(word, ctx.pet);
       const date = datedWithYear(firstMarked);
-      if (!head || !date) continue;
-      firstDay.push({ form: 'withheld_first', word, text: `First marked ${head} ${date}.` });
+      if (!lead || !date) continue;
+      firstDay.push({ form: 'withheld_first', word, text: `${lead} — first marked ${date}.` });
       continue;
     }
 

@@ -256,7 +256,7 @@ describe('under withholding (floor item 12)', () => {
     const receipts = receiptsFor(entryOf(today), record, withheld);
     expect(receipts).toHaveLength(1);
     expect(receipts[0].form).toBe('withheld_first');
-    expect(receipts[0].text).toMatch(/^First marked off /);
+    expect(receipts[0].text).toMatch(/^Off — first marked /);
     // No numerator, no denominator — nothing the withheld absence count could be read
     // back out of by subtraction.
     expect(receipts[0].text).not.toMatch(/\d+ of the \d+/);
