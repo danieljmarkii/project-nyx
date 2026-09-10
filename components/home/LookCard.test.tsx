@@ -204,7 +204,7 @@ describe('two taps and Done', () => {
     expect(payload?.kind).toBe('look');
     expect(payload?.eventId).toBe('e1');
     await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
-    expect(t.getByText('off, didn’t want the walk')).toBeTruthy();
+    expect(t.getByText('Off, didn’t want the walk')).toBeTruthy();
     // The chips leave while the beat holds. The PERSISTENT today list — every entry, the
     // folded ask row, the receipts, the footer, the cap — is N-4b's, and it ships with
     // the withheld predicate that keeps "nothing unusual" off Home under a live intake
@@ -672,7 +672,7 @@ describe('the today list — the entries that stay (T-15)', () => {
     const t = render(<LookCard />);
     await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
     // No register card is showing, so this entry is a RESTING one — and it is still here.
-    expect(t.getByText('off')).toBeTruthy();
+    expect(t.getByText('Off')).toBeTruthy();
     // Its control is the chevron, not Undo: the way back belongs to the beat.
     expect(t.queryByTestId('look-undo-e1')).toBeNull();
     expect(t.getByTestId('look-open-e1')).toBeTruthy();
@@ -814,7 +814,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
     });
     const t = render(<LookCard />);
     await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
-    expect(t.queryByText('nothing unusual')).toBeNull();
+    expect(t.queryByText('Nothing unusual')).toBeNull();
     expect(
       t.getByText(/While Mochi’s eating needs attention, Home keeps quiet days off the card/),
     ).toBeTruthy();
@@ -826,7 +826,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
     mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
     const t = render(<LookCard />);
-    await waitFor(() => expect(t.getByText('off')).toBeTruthy());
+    await waitFor(() => expect(t.getByText('Off')).toBeTruthy());
     expect(t.queryByTestId('look-withheld-e1')).toBeNull();
   });
 
@@ -863,12 +863,12 @@ describe('the withheld state (floor item 12, T-20)', () => {
       expect(t.getByTestId('look-entries-skeleton', { includeHiddenElements: true })).toBeTruthy(),
     );
     // Neither claim is on screen: not her words, and not the assertion about her eating.
-    expect(t.queryByText('nothing unusual')).toBeNull();
+    expect(t.queryByText('Nothing unusual')).toBeNull();
     expect(t.queryByTestId('look-withheld-e1')).toBeNull();
     await act(async () => {
       settle({ petId: MOCHI.id, serverIntakeDecline: false, trialNotEating: false, recentQualifyingMeals: [] });
     });
-    await waitFor(() => expect(t.getByText('nothing unusual')).toBeTruthy());
+    await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
   });
 
   it('the withheld entry never marks the day when the state is merely UNKNOWN', async () => {
@@ -892,9 +892,11 @@ describe('the note, after the save (T-22)', () => {
     const field = t.getByTestId('look-note-field-e1');
     expect(field.props.placeholder).toBe('Say more — what did you see?');
     expect(field.props.maxLength).toBe(300);
-    // The T&S cue names the DOCUMENT, not a vague promise about privacy.
+    // The T&S cue says where the note goes — and only what is true today. It cannot name
+    // the vet report while `generate-report` prints no look notes; `guards/lookNotes.test.ts`
+    // is what keeps the cue and the report telling the same story in both directions.
     expect(
-      t.getByText('Printed on the vet report you make · never on a shared link unless you choose it'),
+      t.getByText('Kept in Mochi’s record — never on a shared link unless you choose it'),
     ).toBeTruthy();
     fireEvent.changeText(field, '  wouldn’t come up on the bed  ');
     await act(async () => {
@@ -936,7 +938,7 @@ describe('the note, after the save (T-22)', () => {
       todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
     });
     const t = render(<LookCard />);
-    await waitFor(() => expect(t.getByText('nothing unusual')).toBeTruthy());
+    await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
     expect(t.queryByTestId('look-note-link-e1')).toBeNull();
   });
 
@@ -970,5 +972,192 @@ describe('the note, after the save (T-22)', () => {
     expect(spy).toHaveBeenCalledWith('Couldn’t save that note', expect.any(String));
     expect(t.getByTestId('look-note-field-e1')).toBeTruthy();
     spy.mockRestore();
+  });
+});
+
+describe('the touchable stack’s geometry (C-5)', () => {
+  // Four controls now sit in a column on this card, and each pair's separation is asserted
+  // off the RENDERED style rather than off tokens restated here — the C-5 discipline, and
+  // the reason it exists: a test that re-derives the number from the same constants the
+  // component used can only ever agree with itself.
+  const facing = (node: { props: { hitSlop?: unknown } }, edge: 'top' | 'bottom') => {
+    const slop = node.props.hitSlop as number | Record<string, number> | undefined;
+    if (slop == null) return 0;
+    return typeof slop === 'number' ? slop : (slop[edge] ?? 0);
+  };
+  const marginTop = (node: { props: { style?: unknown } }) =>
+    (StyleSheet.flatten(node.props.style) as { marginTop?: number }).marginTop ?? 0;
+
+  it('the note link clears the entry’s chevron by the sum of their reaches', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-note-link-e1')).toBeTruthy());
+    const link = t.getByTestId('look-note-link-e1');
+    const chevron = t.getByTestId('look-open-e1');
+    expect(marginTop(link)).toBeGreaterThanOrEqual(facing(chevron, 'bottom') + facing(link, 'top'));
+  });
+
+  it('the note link reaches 44pt — its box is 32 by design, the slop makes the rest', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-note-link-e1')).toBeTruthy());
+    const link = t.getByTestId('look-note-link-e1');
+    const box = (StyleSheet.flatten(link.props.style) as { minHeight?: number }).minHeight ?? 0;
+    expect(box + facing(link, 'top') + facing(link, 'bottom')).toBeGreaterThanOrEqual(44);
+  });
+
+  it('the cap’s door is at the floor by its BOX, and clears the chevron above it', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1), lookRow('e2', 3), lookRow('e3', 6)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-more-today')).toBeTruthy());
+    const door = t.getByTestId('look-more-today');
+    const flat = StyleSheet.flatten(door.props.style) as { minHeight?: number };
+    // At the floor by geometry, so it drops the slop rather than widening the row.
+    expect(flat.minHeight).toBeGreaterThanOrEqual(44);
+    expect(facing(door, 'top')).toBe(0);
+    expect(marginTop(door)).toBeGreaterThanOrEqual(facing(t.getByTestId('look-open-e2'), 'bottom'));
+  });
+
+  it('the folded ask row clears whatever touchable rendered above it', async () => {
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-folded-ask')).toBeTruthy());
+    const ask = t.getByTestId('look-folded-ask');
+    const flat = StyleSheet.flatten(ask.props.style) as { minHeight?: number };
+    expect(flat.minHeight).toBeGreaterThanOrEqual(44);
+    expect(facing(ask, 'top')).toBe(0);
+    // The three things that can sit directly above it, each cleared by its own reach.
+    for (const above of ['look-note-link-e1', 'look-open-e1']) {
+      expect(marginTop(ask)).toBeGreaterThanOrEqual(facing(t.getByTestId(above), 'bottom'));
+    }
+  });
+
+  it('the two controls that share the entry’s slot are never both present', async () => {
+    // Undo and the chevron take the SAME slot, so a frame holding both would be two
+    // targets at one point (T-15's swap is a replacement, never an addition).
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-open-e1')).toBeTruthy());
+    expect(t.queryByTestId('look-undo-e1')).toBeNull();
+  });
+});
+
+describe('what the product review changed', () => {
+  it('the WITHHELD arrival keeps its Undo — this state hides words, never the way back', async () => {
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: MOCHI.id,
+      serverIntakeDecline: false,
+      trialNotEating: true,
+      recentQualifyingMeals: [],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-absence-chip')).toBeTruthy());
+    fireEvent.press(t.getByTestId('look-absence-chip'));
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-done'));
+    });
+    // The words are withheld…
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+    expect(t.queryByText('Nothing unusual')).toBeNull();
+    // …and the reversal is NOT. Sam mis-taps here more than anywhere else on the card, and
+    // shipping without this left the one completion beat in the app with neither a confirm
+    // nor a way back (C-21).
+    fireEvent.press(t.getByTestId('look-withheld-e1-undo'));
+    await waitFor(() => expect(mockReverse).toHaveBeenCalledWith('e1', undefined));
+  });
+
+  it('a resting withheld entry offers the record instead, not Undo', async () => {
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: MOCHI.id,
+      serverIntakeDecline: true,
+      trialNotEating: false,
+      recentQualifyingMeals: [],
+    });
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 3, { look_outcome: 'nothing_unusual', look_words: null })],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+    expect(t.queryByTestId('look-withheld-e1-undo')).toBeNull();
+  });
+
+  it('the withheld reason prints ONCE per card, not once per entry', async () => {
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: MOCHI.id,
+      serverIntakeDecline: true,
+      trialNotEating: false,
+      recentQualifyingMeals: [],
+    });
+    useEventStore.setState({
+      todayEvents: [
+        lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null }),
+        lookRow('e2', 5, { look_outcome: 'nothing_unusual', look_words: null }),
+      ],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+    expect(t.getByTestId('look-withheld-e2')).toBeTruthy();
+    // Two entries, ONE paragraph. A repeated system message reads as a bug.
+    expect(t.getAllByTestId('look-withheld-reason')).toHaveLength(1);
+  });
+
+  it('a card whose only look carried a symptom word owes no reason line', async () => {
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: MOCHI.id,
+      serverIntakeDecline: true,
+      trialNotEating: false,
+      recentQualifyingMeals: [],
+    });
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByText('Off')).toBeTruthy());
+    expect(t.queryByTestId('look-withheld-reason')).toBeNull();
+  });
+
+  it('a receipt-bearing entry survives the two-entry cap (§3.3 rule 5)', async () => {
+    // The day an owner answers three times is the symptomatic day, so a newest-first cap of
+    // two was deleting the morning's concern line from Home exactly when it mattered — "a
+    // good afternoon never removes a concern the card already said", via the cap instead of
+    // via re-derivation.
+    useEventStore.setState({
+      todayEvents: [lookRow('e3', 1), lookRow('e2', 4), lookRow('e1', 8)],
+    });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0, ['subdued']),
+      ...Array.from({ length: 20 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+    const t = render(<LookCard />);
+    // The morning entry is third-newest and would have been folded away — its receipt keeps
+    // it on the card.
+    await waitFor(() => expect(t.getByTestId('look-receipt-e1')).toBeTruthy());
+    expect(t.getByTestId('look-open-e1')).toBeTruthy();
+    // And nothing is double-counted behind the door.
+    expect(t.queryByTestId('look-more-today')).toBeNull();
+  });
+
+  it('the cap still holds on a day that earned nothing', async () => {
+    useEventStore.setState({
+      todayEvents: [lookRow('e3', 1), lookRow('e2', 4), lookRow('e1', 8)],
+    });
+    mockLoadLookDays.mockResolvedValue([recordRow('e1', 0, ['subdued'])]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-more-today')).toBeTruthy());
+    expect(t.getByText('1 more today ›')).toBeTruthy();
+    expect(t.queryByTestId('look-open-e1')).toBeNull();
+  });
+
+  it('the entry reads as a sentence, not a fragment — and never two casings at once', async () => {
+    useEventStore.setState({
+      todayEvents: [
+        lookRow('e1', 1),
+        // A row this build cannot describe: it used to render a capitalised "Noticed" in
+        // the identical slot beside a lowercase "off".
+        lookRow('e2', 4, { look_outcome: null, look_words: null }),
+      ],
+    });
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByText('Off')).toBeTruthy());
+    expect(t.getByText('Noticed')).toBeTruthy();
+    expect(t.queryByText('off')).toBeNull();
   });
 });

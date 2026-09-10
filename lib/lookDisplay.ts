@@ -176,6 +176,29 @@ export function lookSummary(described: DescribedLook): string | null {
   return described.words.map((w) => inSentence(w.head)).join(', ');
 }
 
+/**
+ * The summary as a HEADLINE — the form for a surface where the words stand alone.
+ *
+ * `lookSummary` lower-cases its first word on purpose: it was built for the surfaces that
+ * put a prefix in front of it (History's *Noticed · off, eating grass*, the Recap's *You
+ * noticed: off, …*), and inside those sentences a capital would be wrong.
+ *
+ * The Noticed card has no prefix. Its label sits several lines up as a section header, so
+ * the entry renders as the first thing on its own line — and the product review's cold
+ * read of `○ off   7:12 ›` was "off what?": a fragment with no frame, sitting beside an
+ * unresolvable row that falls back to a capitalised *Noticed* in the identical slot. One
+ * card, two casings, neither one a sentence.
+ *
+ * So the case is a property of the SURFACE and it is resolved here, off the same resolver,
+ * rather than by either caller re-deriving a string. Returns null for the same rows
+ * `lookSummary` does — there is nothing honest to headline.
+ */
+export function lookHeadline(described: DescribedLook): string | null {
+  const summary = lookSummary(described);
+  if (!summary) return null;
+  return summary.charAt(0).toUpperCase() + summary.slice(1);
+}
+
 /** The observed-absence row's phrase, in one place because it is the one string in
  *  this feature that describes the PET. It says what the owner marked and stops
  *  there: never *all good*, never *a good day* (§5.6 — a run of quiet days is the

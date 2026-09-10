@@ -173,14 +173,29 @@ export const LOOK_NOTE_MAX_LENGTH = 300;
  * The cue under the open field, and it is a Trust & Safety requirement rather than a
  * nicety (T-22, §9).
  *
- * Free text about a household LEAVES the account whenever the report does — Appendix G is
- * a document made to be handed to a clinic — so the field names the document rather than
- * saying something vague about privacy. The share link, when it ships, never inherits the
- * owner's *Include your notes* choice (§9 rule 4), which is why the second clause is a
- * promise about a surface that does not exist yet.
+ * ── IT SAYS WHAT IS TRUE TODAY, AND ONLY THAT ────────────────────────────────
+ * T-22 writes this cue as *Printed on the vet report you make · never on a shared link
+ * unless you choose it*, on the assumption that Appendix G — the report's own list of the
+ * owner's notes — exists. It does not: `generate-report` selects nothing from `looks`
+ * (§10 gives Appendix G to N-6 / CUL-875, and that PR rides the held CUL-19 redeploy),
+ * while GA is gated on N-4b and N-5 only. So the first clause was a promise the shipped
+ * app does not keep, printed under the field at the exact moment it is asking an owner to
+ * type something private — the highest-trust-cost line in the feature (the product
+ * review).
+ *
+ * What is true today is that the note stays in her record and reaches nothing else, and
+ * that is what it says. The share-link clause STAYS because it is a promise about a
+ * surface that does not exist yet in the other direction: §9 rule 4 requires any
+ * unauthenticated render to exclude the note by construction, so it is a commitment rather
+ * than a claim.
+ *
+ * `guards/lookNotes.test.ts` holds the two halves together: the moment `generate-report`
+ * selects `looks.notes`, the guard requires this string to name the report — so N-6 cannot
+ * land Appendix G without restoring the clause, and this PR cannot claim it early.
  */
-export const LOOK_NOTE_CUE =
-  'Printed on the vet report you make · never on a shared link unless you choose it';
+export function lookNoteCue(petName: string): string {
+  return `Kept in ${petName}’s record — never on a shared link unless you choose it`;
+}
 
 /**
  * Undo over a look that carries a note — the confirm, and the note NAMED (T-22, C-21).

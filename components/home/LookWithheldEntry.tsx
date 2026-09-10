@@ -22,9 +22,10 @@
 //     a later edit makes the withheld branch inherit a word.
 //
 // ── WHAT IT SAYS, AND WHY EACH HALF IS THERE ─────────────────────────────────
-//     Saved · 7:12 ›
+//     Saved · 7:12   Undo        ← the entry, one per look
 //     While Pixel's eating needs attention, Home keeps quiet days off the card — an
 //     ordinary day isn't a sign she's well. Your answer is in her record ›
+//                                 ← the reason, ONCE per card
 //
 // The ACT and the HOUR stay, because a wordless entry with neither reads as a failed save
 // (Sam). The REASON stays, because a destination is not a reason (the round-3 product
@@ -33,11 +34,28 @@
 // entitled to check. What Home refuses to do is draw *nothing unusual* — or count the days
 // it was said — one card below a live concern.
 //
+// ── TWO THINGS THE PRODUCT REVIEW CHANGED ────────────────────────────────────
+//
+//  1. THE ENTRY KEEPS ITS UNDO. The first cut rendered a chevron only, so an owner in the
+//     withheld state tapped *Nothing unusual* → Done → read a WORDLESS *Saved* → and had
+//     no way back. That is the state most likely to be answered by mistake and the one
+//     where a mis-tap looks most like a bug, and it was the only completion beat in the
+//     app with neither a confirm nor a reversal (C-21: exactly one safety net, always).
+//     What this state withholds is the WORDS. It was never the way back.
+//
+//  2. THE REASON RENDERS ONCE PER CARD, not once per entry. Two quiet looks under a live
+//     concern stacked the same 26-word paragraph verbatim, and a repeated system message
+//     is the most reliable way to make a designed state read as a defect. So the entry is
+//     the act and the reason is `LookWithheldReasonLine`, drawn beneath the group — still
+//     its own line, never shared with an entry (T-15), and still in this file so the
+//     haptics scan covers both halves.
+//
 // The copy is verbatim from §3.3 and is not this component's to reword. `nyx-voice`: it
 // names the pet, states the app's own act in plain words, makes no claim about how she is,
 // and carries no exclamation.
 
-import { StyleSheet, Pressable, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Pressable, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
@@ -61,49 +79,141 @@ export function lookWithheldReason(petName: string, sex: 'male' | 'female' | 'un
   );
 }
 
+/** The last half-second of the register's dwell, in which *Undo* fades before the chevron
+ *  takes its slot (T-15). Imported rather than restated so the two components that render
+ *  an entry cannot drift on the one number the owner feels. */
+export const WITHHELD_UNDO_FADE_MS = 500;
+
 export function LookWithheldEntry({
   occurredAt,
   petName,
   sex,
+  undoLive,
+  dwellMs,
+  onUndo,
   onOpenRecord,
   testID,
 }: {
   occurredAt: string;
   petName: string;
   sex: 'male' | 'female' | 'unknown';
+  /** Is the register still offering the reversal for this row? Its AUTHORITY is the
+   *  register's; this decides only which of the two controls sits in the slot. */
+  undoLive: boolean;
+  /** The register's own dwell, passed rather than imported so the fade is timed off the
+   *  one clock that owns it. */
+  dwellMs: number;
+  onUndo: () => void;
   onOpenRecord: () => void;
   testID?: string;
 }) {
   const { fill, ring } = nodeDotColors('look', NODE_TINT_DAY, theme.colorSurface);
   const time = formatTime(new Date(occurredAt));
-  const reason = lookWithheldReason(petName, sex);
+  const undoOpacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!undoLive) return;
+    const at = Math.max(0, dwellMs - WITHHELD_UNDO_FADE_MS);
+    const timer = setTimeout(() => {
+      Animated.timing(undoOpacity, {
+        toValue: 0.35,
+        duration: WITHHELD_UNDO_FADE_MS,
+        useNativeDriver: true,
+      }).start();
+    }, at);
+    return () => {
+      clearTimeout(timer);
+      undoOpacity.setValue(1);
+    };
+  }, [undoLive, dwellMs, undoOpacity]);
+
+  // SPLIT BY HOST (C-7), and the split is what the two controls need: while Undo is live
+  // the row holds a second, different destination, so a single responder over the whole
+  // row would put "take that back" and "open the record" at one point. The chevron branch
+  // takes the touchable; the Undo branch makes the row inert and gives Undo its own.
+  const head = (
+    <View style={styles.head}>
+      <View style={[styles.ring, { backgroundColor: fill, borderColor: ring }]} />
+      {/* The act, in the quiet register the observed-absence row takes (L-16) — this entry
+          is never the headline on its own card. */}
+      <ThemedText style={styles.act}>{LOOK_WITHHELD_ACT}</ThemedText>
+      <ThemedText style={styles.time}>{time}</ThemedText>
+    </View>
+  );
+
+  if (undoLive) {
+    return (
+      // `accessible` on an inert View so the act and the hour still announce as one
+      // sentence beside their control, rather than as two fragments (C-7's inert arm).
+      <View style={styles.entry} testID={testID ?? 'look-withheld-entry'}>
+        <View style={styles.row}>
+          <View style={styles.headWrap} accessible accessibilityLabel={`${LOOK_WITHHELD_ACT} ${time}`}>
+            {head}
+          </View>
+          <Animated.View style={{ opacity: undoOpacity }}>
+            <Pressable
+              onPress={onUndo}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Undo. The look you just saved"
+              testID={`${testID ?? 'look-withheld-entry'}-undo`}
+            >
+              <ThemedText style={styles.undo}>Undo</ThemedText>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    // ONE responder over the whole entry, and `accessible` so the act, the hour and the
-    // reason announce as one sentence rather than three fragments — the reason is the half
-    // that makes the other two make sense, and a screen reader must not be able to reach
-    // the wordless act without it (C-7's split-by-host rule, in its interactive arm: this
-    // branch DOES have a destination, so it keeps the touchable).
     <Pressable
       onPress={onOpenRecord}
       accessible
       accessibilityRole="button"
-      accessibilityLabel={`${LOOK_WITHHELD_ACT} ${time}. ${reason}`}
+      accessibilityLabel={`${LOOK_WITHHELD_ACT} ${time}`}
       accessibilityHint="Opens this look in the record"
       hitSlop={8}
       style={styles.entry}
       testID={testID ?? 'look-withheld-entry'}
     >
-      <View style={styles.head}>
-        <View style={[styles.ring, { backgroundColor: fill, borderColor: ring }]} />
-        {/* The act, in the quiet register the observed-absence row takes (L-16) — this
-            entry is never the headline on its own card. */}
-        <ThemedText style={styles.act}>{LOOK_WITHHELD_ACT}</ThemedText>
-        <ThemedText style={styles.time}>{time}</ThemedText>
+      <View style={styles.row}>
+        <View style={styles.headWrap}>{head}</View>
         <ThemedText style={styles.chevron}>›</ThemedText>
       </View>
-      {/* Its own line, under the head — an entry and its reason are two kinds of thing and
-          never share a line (T-15), and the chevron above must not be pushed off the row
-          by a sentence this long. */}
+    </Pressable>
+  );
+}
+
+/**
+ * The reason — ONCE per card, beneath the withheld entries.
+ *
+ * Its own line (T-15) and its own component, because "once per card" is a fact about the
+ * CARD and an entry cannot know it. It is a tappable line rather than prose: it ends by
+ * pointing at the record, and a destination named in a sentence that cannot be tapped is
+ * the round-3 product read's complaint in reverse.
+ */
+export function LookWithheldReasonLine({
+  petName,
+  sex,
+  onOpenRecord,
+  testID,
+}: {
+  petName: string;
+  sex: 'male' | 'female' | 'unknown';
+  onOpenRecord: () => void;
+  testID?: string;
+}) {
+  const reason = lookWithheldReason(petName, sex);
+  return (
+    <Pressable
+      onPress={onOpenRecord}
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={reason}
+      accessibilityHint="Opens the record"
+      style={styles.reasonRow}
+      testID={testID ?? 'look-withheld-reason'}
+    >
       <ThemedText style={styles.reason}>{reason}</ThemedText>
     </Pressable>
   );
@@ -111,6 +221,12 @@ export function LookWithheldEntry({
 
 const styles = StyleSheet.create({
   entry: { paddingVertical: theme.space1 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  headWrap: { flex: 1 },
   head: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -136,13 +252,23 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
   },
+  reasonRow: {
+    // Aligned under the words rather than under the ring, so the reason reads as the
+    // group's own line and not as a new item in the list. 44pt by its box, so it needs no
+    // slop of its own and the entry's control above it clears with its own 8 (C-5).
+    marginLeft: NODE_DOT_SIZE + theme.space1,
+    marginTop: theme.space1,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
   reason: {
     fontSize: theme.textXS,
     lineHeight: theme.lineHeightXS,
     color: theme.colorTextSecondary,
-    // Aligned under the words rather than under the ring, so the reason reads as the
-    // entry's own second line and not as a new item in the list.
-    marginLeft: NODE_DOT_SIZE + theme.space1,
-    marginTop: theme.space0_5,
+  },
+  undo: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccentInk,
   },
 });

@@ -8,6 +8,7 @@
 jest.mock('./db', () => ({ getDb: () => ({ getAllAsync: jest.fn(), getFirstAsync: jest.fn() }) }));
 
 import { receiptsFor, leadReceipt, LOOK_RECEIPT_COUNT_FLOOR_DAYS } from './lookReceipts';
+import { lookCoverage } from './lookCoverage';
 import { localDayIndex, dayKeyFromIndex } from './utils';
 import type { LookDayRow } from './looks';
 
@@ -108,9 +109,9 @@ describe('the first-day form', () => {
 });
 
 describe('the count form', () => {
-  it('renders at ≥ 7 answered days in the window, with its date clause', () => {
+  it('renders at the floor, with its date clause', () => {
     const today = look(0, ['subdued']);
-    const record = [today, look(3, ['subdued']), look(6, ['subdued']), ...quiet(10, 8)];
+    const record = [today, look(3, ['subdued']), look(6, ['subdued']), ...quiet(16, 8)];
     const receipts = receiptsFor(entryOf(today), record, PET);
     expect(receipts).toHaveLength(1);
     expect(receipts[0].form).toBe('count');
@@ -121,6 +122,24 @@ describe('the count form', () => {
     const today = look(0, ['subdued']);
     const record = [today, ...quiet(LOOK_RECEIPT_COUNT_FLOOR_DAYS - 2)];
     expect(receiptsFor(entryOf(today), record, PET)).toEqual([]);
+  });
+
+  it('the count form and the FOOTER share one floor — the card never prints a denominator it also refuses', () => {
+    // The product review's finding: at nine answered days the first draft rendered *Off on
+    // 1 of the 9 days you've answered* with no coverage line two rows below it. The two
+    // numbers are now one number, and this is what keeps them one.
+    const today = look(0, ['subdued']);
+    const nine = [today, ...quiet(8)];
+    expect(receiptsFor(entryOf(today), nine, PET)).toEqual([]);
+    expect(
+      lookCoverage(nine, { nowMs: NOW, withheldNow: false, lastWithheldDay: null }).form,
+    ).toBe('absent');
+    // …and they arrive together.
+    const fourteen = [today, ...quiet(13)];
+    expect(receiptsFor(entryOf(today), fourteen, PET)).toHaveLength(1);
+    expect(
+      lookCoverage(fourteen, { nowMs: NOW, withheldNow: false, lastWithheldDay: null }).form,
+    ).toBe('ratio');
   });
 
   it('the denominator is the WINDOW’s answered days, never the record’s age', () => {
@@ -134,7 +153,7 @@ describe('the count form', () => {
   it('the numerator counts DAYS, not looks — a word marked twice in a day counts once', () => {
     const morning = look(0, ['subdued'], 0);
     const evening = look(0, ['subdued'], 1);
-    const record = [morning, evening, look(4, ['subdued']), ...quiet(10, 6)];
+    const record = [morning, evening, look(4, ['subdued']), ...quiet(16, 6)];
     expect(receiptsFor(entryOf(morning), record, PET)[0].text).toMatch(/^Off on 2 of the/);
   });
 
@@ -147,10 +166,17 @@ describe('the count form', () => {
   });
 
   it('the date clause is dropped when the first day is TODAY — it would repeat the hour', () => {
+    // Reachable in exactly ONE configuration now that the two floors meet: thirteen
+    // answered days before today floors out the first-day form (13 < 14) while today makes
+    // the window's fourteenth, so the count form speaks and its date clause has nowhere to
+    // point but the hour on the entry above it.
     const today = look(0, ['subdued']);
-    const record = [today, ...quiet(10)];
-    const text = receiptsFor(entryOf(today), record, PET)[0].text;
-    expect(text).toMatch(/^Off on 1 of the 11 days you’ve answered in the last four weeks\.$/);
+    const record = [today, ...quiet(13)];
+    const receipts = receiptsFor(entryOf(today), record, PET);
+    expect(receipts.map((r) => r.form)).toEqual(['count']);
+    expect(receipts[0].text).toMatch(
+      /^Off on 1 of the 14 days you’ve answered in the last four weeks\.$/,
+    );
   });
 });
 

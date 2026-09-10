@@ -94,10 +94,17 @@ import {
   readLastWithheldDay,
   type LookWithheldFacts,
 } from '../../lib/lookWithheld';
-import { LookWithheldEntry } from './LookWithheldEntry';
+import { LookWithheldEntry, LookWithheldReasonLine } from './LookWithheldEntry';
 import { Skeleton } from '../ui/Skeleton';
 import { wordsToLocalText } from '../../lib/lookWordsCodec';
-import { describeLook, gridChipLabel, gridSectionsFor, isLookRow, lookSummary } from '../../lib/lookDisplay';
+import {
+  describeLook,
+  gridChipLabel,
+  gridSectionsFor,
+  isLookRow,
+  lookHeadline,
+  lookSummary,
+} from '../../lib/lookDisplay';
 import {
   LOOK_HEAD_WORDS,
   LOOK_OPENING_CHIP_KEY,
@@ -121,7 +128,7 @@ import {
   LOOK_FEWER_WORDS,
   LOOK_HINT,
   LOOK_MORE_WORDS,
-  LOOK_NOTE_CUE,
+  lookNoteCue,
   LOOK_NOTE_LINK,
   LOOK_NOTE_MAX_LENGTH,
   LOOK_NOTE_PLACEHOLDER,
@@ -155,6 +162,26 @@ const CHIP_ROW_GAP = CHIP_VERTICAL_REACH * 2;
 /** The reach a wrapper must declare when it is the responder for an inert chip — the
  *  chip's own, never a number that happens to equal it today. */
 const CHIP_REACH_SLOP = { top: CHIP_VERTICAL_REACH, bottom: CHIP_VERTICAL_REACH } as const;
+
+/** The reach every small control on this card declares — the entry's chevron, its Undo,
+ *  the card's own doors. One number, so the gaps below can be derived from it. */
+const ROW_CONTROL_REACH = 8;
+
+/**
+ * The note link's own reach. Its row is 32pt by design (T-22), which is under the 44pt
+ * floor, so 6 on each side is what makes the target 44 — derived from the shortfall, not
+ * chosen.
+ */
+const NOTE_LINK_REACH = 6;
+const NOTE_LINK_SLOP = { top: NOTE_LINK_REACH, bottom: NOTE_LINK_REACH } as const;
+
+/** What must separate the note link from the entry's chevron above it: the sum of the two
+ *  facing reaches (C-5), never a number that happens to equal it today. */
+const NOTE_LINK_ROW_GAP = ROW_CONTROL_REACH + NOTE_LINK_REACH;
+
+/** What must separate two controls where the lower one is at the 44pt floor and carries no
+ *  slop of its own: the upper one's reach alone. */
+const NOTE_LINK_REACH_GAP = ROW_CONTROL_REACH;
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
 import { formatTime } from '../../lib/utils';
 
@@ -426,10 +453,22 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     );
   }, [activePet?.id, capturedPetId, pets, activePet]);
 
-  // THE LIST CAP (E-10, T-15) — two entries, the rest behind a door. A trivial cap, and
-  // deliberately not the med strip's §7 collapse, which is a per-med cadence rule.
-  const visibleLooks = todayLooks.slice(0, LOOK_TODAY_CAP);
-  const hiddenLooks = todayLooks.length - visibleLooks.length;
+  /**
+   * Does this row's ENTRY withhold its words — the asymmetry inside the withheld state.
+   *
+   * Lifted to the card because two things read it and they must not disagree: the row
+   * itself, and the reason line drawn once beneath the group. `entryWithholdsWords` owns
+   * the rule; this only adds "…and the pet is being withheld at all".
+   */
+  const withholdsWords = useCallback(
+    (row: NyxEvent): boolean => {
+      if (!withheld || !activePet) return false;
+      const described = describeLook(row, { species: activePet.species, sex });
+      const words = described.kind === 'observed' ? described.words.map((w) => w.key) : [];
+      return entryWithholdsWords(words, lookSpeciesOf(activePet.species));
+    },
+    [withheld, activePet, sex],
+  );
 
   /**
    * The ONE receipt line under an entry, or null (PM-ruled 2026-09-10).
@@ -463,6 +502,27 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     },
     [record, recordAnswered, activePet, petName, sex, withheld],
   );
+
+  /**
+   * THE LIST CAP (E-10, T-15) — two entries, the rest behind a door. A trivial cap, and
+   * deliberately not the med strip's §7 collapse, which is a per-med cadence rule.
+   *
+   * ── PLUS WHATEVER EARNED A RECEIPT ─────────────────────────────────────────
+   * §3.3 floor (5): a receipt attaches to the EARLIEST look of the day carrying the word
+   * and stays there when a later look arrives, because "a good afternoon never removes a
+   * concern the card already said". A newest-first cap of two does exactly that removal on
+   * the third look of the day — and the product review named the correlation that makes it
+   * worst: the day an owner answers three times is the symptomatic day.
+   *
+   * So the cap governs the entries that earned NOTHING. In practice this adds at most one
+   * row (a receipt belongs to one entry per word, and the card renders one line), and it
+   * adds it only on a day the record had something to say — which is the day T-15's "never
+   * a feed" was never arguing about.
+   */
+  const visibleLooks = todayLooks.filter(
+    (row, i) => i < LOOK_TODAY_CAP || receiptTextFor(row) !== null,
+  );
+  const hiddenLooks = todayLooks.length - visibleLooks.length;
 
   // ── THE NOTE, AFTER THE SAVE (T-22) ────────────────────────────────────────
   // Never a field on the way IN (Principle 1). It opens on the newest entry only, and it
@@ -861,10 +921,28 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                 />
               ))
             )}
+            {/* THE REASON, ONCE (the product review). It belongs to the card, not to an
+                entry, so it is drawn here rather than inside each one — and it is drawn
+                only when at least one entry actually withheld, because a card whose only
+                look carried a symptom word withheld nothing and owes no explanation. */}
+            {withheld && visibleLooks.some(withholdsWords) && (
+              <LookWithheldReasonLine
+                petName={petName}
+                sex={sex}
+                onOpenRecord={() =>
+                  router.push(`/event/${visibleLooks.find(withholdsWords)?.id}` as never)
+                }
+              />
+            )}
             {withheldState !== 'unknown' && hiddenLooks > 0 && (
               <Pressable
                 onPress={() => router.push(lookMoreTodayHref() as never)}
-                hitSlop={8}
+                // The box and the margin belong on the RESPONDER, not on the text inside
+                // it: a `marginTop` on the child sits INSIDE the Pressable, so the
+                // separation it was meant to buy is inside the touch area instead of
+                // beside it. Caught by the geometry test reading the flattened style off
+                // this node and finding none (C-5: assert the RENDERED box).
+                style={styles.moreTodayRow}
                 accessibilityRole="button"
                 accessibilityLabel={`Show ${hiddenLooks} more of today's looks in history`}
                 testID="look-more-today"
@@ -886,7 +964,6 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
               setNoteFor(null);
               setAskOpen(true);
             }}
-            hitSlop={8}
             style={styles.askRow}
             accessibilityRole="button"
             accessibilityLabel={`${lookFoldedAsk(petName)} Opens the words again.`}
@@ -1218,7 +1295,12 @@ function LookEntry({
   // The ONE resolver, so this entry, History's row and the record screen name the same
   // look identically (`lib/lookDisplay.ts`). Null is a look this build cannot describe
   // — the row then reads as the bare act and NEVER falls through to the absence phrase.
-  const words = lookSummary(described);
+  //
+  // The HEADLINE form, because this entry has no prefix in front of it: `lookSummary`
+  // lower-cases for the surfaces that do (*You noticed: off, …*), and here that left the
+  // most-read string in the feature reading as a fragment — beside an unresolvable row
+  // rendering a capitalised *Noticed* in the same slot.
+  const words = lookHeadline(described);
   const { fill, ring } = nodeDotColors('look', NODE_TINT_DAY, theme.colorSurface);
   // What Undo puts back: the words as they were chosen. The absence row restores as the
   // absence, which is a real answer and not an empty draft (L-6).
@@ -1337,12 +1419,21 @@ function LookTodayRow({
     // The whole row: no note link (the note would reprint the withheld claim in her own
     // words on the card that just refused to print it) and no receipt beyond what
     // `receiptsFor` already reduced to a bare first date — which for a wordless entry is
-    // nothing at all.
+    // nothing at all. The REASON is not here either: it is one line per card, drawn once
+    // beneath the group, because two quiet looks stacked the same paragraph twice and a
+    // repeated system message reads as a defect (the product review).
+    //
+    // The way back IS here. This state withholds the WORDS; it was never the reversal, and
+    // shipping it without one left the beat most likely to be mis-tapped with neither a
+    // confirm nor an Undo (C-21).
     return (
       <LookWithheldEntry
         occurredAt={row.occurred_at}
         petName={petName}
         sex={pet.sex}
+        undoLive={undoLive}
+        dwellMs={LOOK_DWELL_MS}
+        onUndo={() => onUndo(row.id, { kind: 'absence' }, row.pet_id, note)}
         onOpenRecord={() => router.push(`/event/${row.id}` as never)}
         testID={`look-withheld-${row.id}`}
       />
@@ -1372,6 +1463,7 @@ function LookTodayRow({
           // (C-5): the two controls are eight points apart and do completely different
           // things.
           style={styles.noteLinkRow}
+          hitSlop={NOTE_LINK_SLOP}
           accessibilityRole="button"
           accessibilityLabel="Say more about this look"
           testID={`look-note-link-${row.id}`}
@@ -1399,7 +1491,7 @@ function LookTodayRow({
           />
           {/* The T&S cue, and it names the DOCUMENT rather than saying something vague
               about privacy: a note leaves the account whenever the report does (§9). */}
-          <ThemedText style={styles.noteCue}>{LOOK_NOTE_CUE}</ThemedText>
+          <ThemedText style={styles.noteCue}>{lookNoteCue(petName)}</ThemedText>
         </View>
       )}
 
@@ -1576,23 +1668,40 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
   },
+  // ── THE STACK'S GEOMETRY (C-5) ────────────────────────────────────────────
+  // Four touchables now sit in a column on this card — an entry's chevron, the note
+  // link, the cap's door and the folded ask row — and each pair's separation is DERIVED
+  // from the facing reach rather than eyeballed:
+  //
+  //     needed(a, b) = facing hitSlop(a) + facing hitSlop(b)
+  //
+  // Two of them are at or above the 44pt floor already, so they take the box and DROP the
+  // slop (C-5's own "controls already at the 44pt floor: grow the box or drop the slop") —
+  // which is what makes an 8pt margin sufficient beneath a chevron that reaches 8. The note
+  // link is the one control the spec pins UNDER the floor (T-22: "its own 32 pt row"), so
+  // it keeps 6pt of reach to make 44 and pays for it with a 16pt margin above.
+  // `LookCard.test.tsx` asserts every one of these off the FLATTENED style, never off the
+  // tokens restated in the test.
+  moreTodayRow: {
+    // Already at the floor by its box, so no slop — and 8 clears the chevron's 8 above it.
+    // On the RESPONDER, so the margin separates rather than being swallowed.
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: NOTE_LINK_REACH_GAP,
+  },
   moreToday: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
     color: theme.colorAccentInk,
-    // Its own row, clear of the entry's chevron above it (C-5): the two are separate
-    // destinations and must not share reach.
-    paddingVertical: theme.space1,
-    minHeight: 44,
   },
   askRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    // 44pt, because it is the one control that re-opens the question and it sits between
-    // two other tappable things (the list above, the footer's line below).
+    // 44pt by its box, so no slop either: it is the one control that re-opens the question
+    // and it sits directly beneath whichever of the three above it rendered.
     minHeight: 44,
-    marginTop: theme.space1,
+    marginTop: NOTE_LINK_REACH_GAP,
   },
   askRowText: {
     fontSize: theme.textSM,
@@ -1626,10 +1735,14 @@ const styles = StyleSheet.create({
     marginBottom: theme.space1,
   },
   noteLinkRow: {
-    // ITS OWN 32pt ROW (T-22, C-5) — never sharing hit area with the entry's chevron,
-    // which sits directly above it and does something entirely different.
+    // ITS OWN 32pt ROW (T-22) — never sharing hit area with the entry's chevron, which
+    // sits directly above it and does something entirely different. 32 is under the 44pt
+    // floor by design, so the reach makes up the difference and the margin pays for the
+    // reach: `NOTE_LINK_ROW_GAP` is `chevron 8 + this row's 6`, derived from both, never
+    // typed as 14.
     minHeight: 32,
     justifyContent: 'center',
+    marginTop: NOTE_LINK_ROW_GAP,
     marginLeft: NODE_DOT_SIZE + theme.space1,
   },
   noteLink: {

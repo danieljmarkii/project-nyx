@@ -58,10 +58,37 @@ import { lookSpeciesOf, lookWordKind } from '../constants/lookWords';
 import { dayKeyToLocalDate, formatCalendarDate, localDayIndex, localDayIndexOf, dayKeyFromIndex } from './utils';
 import type { LookDayRow } from './looks';
 
-/** The count form's own floor: answered days inside the window, below which the count
- *  does not render. Distinct from Q-13's coverage floor — it is a floor on a different
- *  denominator, and the fourth adversarial pass found the spec had blurred the two. */
-export const LOOK_RECEIPT_COUNT_FLOOR_DAYS = 7;
+/**
+ * The count form's floor: answered days inside the window, below which the count does not
+ * render.
+ *
+ * ── THE SPEC SAYS SEVEN IN ONE PLACE AND FOURTEEN IN ANOTHER ─────────────────
+ * T-18 sets it at "≥ 7 answered days, a floor on its own denominator distinct from
+ * Q-13's", so a month's first day never reads *1 of the 1*. Q-13 — the later reconciliation,
+ * written after the fourth adversarial pass "having found two" scopes for one floor —
+ * enumerates fourteen answered days "in the footer's 28-day window for the footer, THE
+ * COUNT FORM and the report's bars".
+ *
+ * Built at FOURTEEN, and the product review named the reason the lower number cannot ship:
+ * at nine answered days the card renders *Off on 1 of the 9 days you've answered in the
+ * last four weeks* and then, two lines below, declines to state a denominator at all. A
+ * card that prints a denominator it simultaneously refuses to print is not a floor
+ * protecting a worried owner, it is the shape floor (2) exists to prevent, restated as a
+ * rate instead of a novelty claim.
+ *
+ * Nothing is hidden by taking the higher number: a rising symptom-class count is never
+ * withheld (§6.6), and Patterns prints it with its own denominator from the first look.
+ * What waits is the receipt, on the card whose own coverage line is silent anyway.
+ *
+ * PROVISIONAL, with Q-13, and named for the PM: the device pass may move both, and they
+ * move together.
+ */
+export const LOOK_RECEIPT_COUNT_FLOOR_DAYS = LOOK_COVERAGE_FLOOR_DAYS;
+
+/** T-18's own number, kept as the inner floor it names. Subsumed by the one above today —
+ *  stated so a future change that lowers Q-13's floor does not silently take the count form
+ *  below the number that stops *1 of the 1*. */
+export const LOOK_RECEIPT_COUNT_INNER_FLOOR_DAYS = 7;
 
 /** Q-13's floor, on the first-day form's own denominator. Re-exported from the coverage
  *  module rather than restated: one number, one definition, two readers. */
@@ -235,7 +262,9 @@ export function receiptsFor(
 
     // ── The count form ───────────────────────────────────────────────────────
     const denominator = answeredInWindow.size;
-    if (denominator < LOOK_RECEIPT_COUNT_FLOOR_DAYS) continue;
+    if (denominator < Math.max(LOOK_RECEIPT_COUNT_FLOOR_DAYS, LOOK_RECEIPT_COUNT_INNER_FLOOR_DAYS)) {
+      continue;
+    }
     const numerator = marked.filter((day) => {
       const i = localDayIndexOf(day);
       return i !== null && i >= windowFirstIndex && i <= todayIndex;
