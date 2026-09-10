@@ -160,7 +160,12 @@ export async function loadIntakePrefill(
     console.error('[intakeFirstMeal] pre-fill read failed; opening at the food step:', e);
     return null;
   }
+  return resolvePrefill(decision);
+}
 
+/** The decision's second read — the trial fallback's `food_items_cache` row. Shared by
+ *  both entry points so the rules below have exactly one home. */
+async function resolvePrefill(decision: IntakePrefillDecision): Promise<IntakePrefill | null> {
   if (decision.kind === 'none') return null;
   if (decision.kind === 'food') return { food: decision.food, source: decision.source };
 
@@ -199,6 +204,13 @@ export function pickedFoodSource(
   food: PickerFood,
   nowMs: number = Date.now(),
 ): IntakePrefillSource {
+  // THE SAME `isMealType` GATE THE PRE-FILL APPLIES, because it is the same claim.
+  // The re-run caught the asymmetry the first fix left: the loader had learned to refuse
+  // an unclassified `primary_diet` food, and this function — twenty lines away, on the
+  // path the owner reaches one tap later by picking that exact bag from the picker —
+  // still named it "the trial diet". One predicate cannot have two answers depending on
+  // which door the food came through.
+  if (!isMealType(food)) return 'picked';
   const hit = trialListMembership(
     trial,
     { id: food.id, brand: food.brand, productName: food.product_name },
@@ -212,13 +224,23 @@ export async function loadIntakeDoor(
   petId: string,
   nowMs: number = Date.now(),
 ): Promise<IntakeDoorState> {
+  // ONE read of each, and the decision derived from those rows — which is what the
+  // docstring said before it was true: the first cut called `loadIntakePrefill`, which
+  // reads the trial set again inside its own `Promise.all`, so every open resolved the
+  // trial TWICE. Harmless in its failure direction (two reads across a hydration
+  // boundary disagree toward under-claiming) and still wrong, because the sheet would
+  // then hold one answer while the pre-fill was decided from another.
+  let recents: PickerFood[] = [];
   let trial: TrialAllowedSet = { status: 'unknown' };
   try {
-    trial = await loadTrialAllowedSet(petId, nowMs);
+    [recents, trial] = await Promise.all([
+      getRecentFoods(petId, null, PREFILL_SCAN_LIMIT),
+      loadTrialAllowedSet(petId, nowMs),
+    ]);
   } catch (e) {
-    // `loadTrialAllowedSet` swallows its own read failures into `unknown`; this is the
-    // belt for anything it does not. `unknown` is the fail-closed value either way.
-    console.error('[intakeFirstMeal] trial read failed:', e);
+    // Every failure is the food step, which is a working screen (see below).
+    console.error('[intakeFirstMeal] door read failed; opening at the food step:', e);
+    return { prefill: null, trial };
   }
-  return { prefill: await loadIntakePrefill(petId, nowMs), trial };
+  return { prefill: await resolvePrefill(decideIntakePrefill(recents, trial, nowMs)), trial };
 }

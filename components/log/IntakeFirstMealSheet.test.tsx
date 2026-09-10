@@ -275,7 +275,7 @@ describe('the arm — the only thing that writes', () => {
     await waitFor(() => expect(mockInsertMeal).toHaveBeenCalledTimes(2));
   });
 
-  it('a double tap cannot write two meals for one bowl', async () => {
+  it('a double tap cannot write two meals for one bowl — SEQUENTIALLY', async () => {
     let release: (v: unknown) => void = () => {};
     mockInsertMeal.mockReturnValue(new Promise((r) => (release = r)));
     const { findByText } = setup();
@@ -286,6 +286,53 @@ describe('the arm — the only thing that writes', () => {
       release({ eventId: 'e1', mealId: 'm1', occurredAtIso: 'x', now: 'x' });
     });
     expect(mockInsertMeal).toHaveBeenCalledTimes(1);
+  });
+
+  it('…and IN ONE BATCH, which is the case a state flag does not survive', async () => {
+    // The re-run's blocking find, and the reason both directions are here now: the test
+    // above passes on a STATE flag, because RTL's `fireEvent.press` flushes `act` per
+    // call, so it only ever exercises the sequential case. `IntakeChipRow` renders five
+    // independent touchables, so two fingers landing together arrive in ONE React batch
+    // with no commit between — both handlers read the flag as false and both write, and
+    // the executed result was two meal rows for one bowl with CONTRADICTORY ratings, of
+    // which only the second raises a card. A test that names the batched hazard and
+    // asserts the serial one reads as coverage it does not have.
+    let release: (v: unknown) => void = () => {};
+    mockInsertMeal.mockReturnValue(new Promise((r) => (release = r)));
+    const { findByText } = setup();
+    const refused = await findByText('Refused');
+    const all = await findByText('All');
+    // Both presses inside ONE act, so React batches them with no render between.
+    await act(async () => {
+      fireEvent.press(refused);
+      fireEvent.press(all);
+    });
+    await act(async () => {
+      release({ eventId: 'e1', mealId: 'm1', occurredAtIso: 'x', now: 'x' });
+    });
+    expect(mockInsertMeal).toHaveBeenCalledTimes(1);
+    // And it is HER first arm that landed, not whichever finger the batch happened to
+    // deliver last.
+    expect(mockInsertMeal).toHaveBeenCalledWith(expect.objectContaining({ intakeRating: 'refused' }));
+  });
+
+  it('a REFUSED write releases the latch, so the retry is one tap', async () => {
+    // B-336's explicit contract: the guard stays latched only on a commit. A failed
+    // write must leave the arms live — the alert tells her to try again, so they have to
+    // work when she does.
+    mockInsertMeal.mockRejectedValueOnce(new Error('disk full')).mockResolvedValueOnce({
+      eventId: 'e2',
+      mealId: 'm2',
+      occurredAtIso: '2026-09-10T18:12:00.000Z',
+      now: '2026-09-10T18:12:00.000Z',
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { findByText } = setup();
+    fireEvent.press(await findByText('Refused'));
+    await waitFor(() => expect(mockInsertMeal).toHaveBeenCalledTimes(1));
+    fireEvent.press(await findByText('Refused'));
+    await waitFor(() => expect(mockInsertMeal).toHaveBeenCalledTimes(2));
   });
 });
 

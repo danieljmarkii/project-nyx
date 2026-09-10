@@ -55,7 +55,11 @@ export function intakeSheetFoodLine(
   // bag the pet may never have eaten. Silence is the honest answer to "why is this
   // showing": she chose it.
   if (source === 'picked') return label;
-  return `${label} · ${petPronouns(sex).possessive} most recent food`;
+  // "most recent MEAL", not "most recent food". The resolver skips treats, so a cat with
+  // a Dreamies this morning and kibble last Tuesday would have been told the kibble was
+  // her most recent food — a claim the predicate does not make. The copy now says exactly
+  // what was checked.
+  return `${label} · ${petPronouns(sex).possessive} most recent meal`;
 }
 
 /** The food control. A chevron, because it goes somewhere (the picker) — the same

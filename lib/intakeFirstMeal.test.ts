@@ -243,6 +243,25 @@ describe('the loader', () => {
     mockLoadTrialAllowedSet.mockResolvedValue(set);
     await expect(loadIntakeDoor('p1', NOW)).resolves.toEqual({ prefill: null, trial: set });
   });
+
+  it('reads each source ONCE per open, as its docstring says', async () => {
+    // The first cut called `loadIntakePrefill`, which reads the trial set again inside
+    // its own `Promise.all` — so a docstring saying "in ONE read pass" described a
+    // function that resolved the trial twice, and the sheet could hold one answer while
+    // the pre-fill was decided from another.
+    mockLoadTrialAllowedSet.mockResolvedValue(NO_TRIAL);
+    await loadIntakeDoor('p1', NOW);
+    expect(mockLoadTrialAllowedSet).toHaveBeenCalledTimes(1);
+    expect(mockGetRecentFoods).toHaveBeenCalledTimes(1);
+  });
+
+  it('still fails closed to the food step when the door read throws', async () => {
+    mockGetRecentFoods.mockRejectedValue(new Error('db not open'));
+    await expect(loadIntakeDoor('p1', NOW)).resolves.toEqual({
+      prefill: null,
+      trial: { status: 'unknown' },
+    });
+  });
 });
 
 describe('naming a food the owner picked herself', () => {
@@ -269,6 +288,19 @@ describe('naming a food the owner picked herself', () => {
     const set = readySet([allowed({ foodItemId: 'chew', role: 'permitted_treat' })]);
     expect(pickedFoodSource(set, food({ id: 'chew' }), NOW)).toBe('picked');
   });
+
+  it.each(['treat', null, 'other'] as const)(
+    'applies the SAME food-type gate the pre-fill does — %s',
+    (foodType) => {
+      // The re-run's residual on the first fix: the loader had learned to refuse an
+      // unclassified `primary_diet` food, and this function — on the path the owner
+      // reaches one tap later by picking that exact bag out of the picker — still named
+      // it "the trial diet". One predicate cannot have two answers depending on which
+      // door the food came through.
+      const set = readySet([allowed({ foodItemId: 'diet' })]);
+      expect(pickedFoodSource(set, food({ id: 'diet', food_type: foodType }), NOW)).toBe('picked');
+    },
+  );
 
   it('never throws — a failed read is the food step, which is a working screen', async () => {
     mockGetRecentFoods.mockRejectedValue(new Error('db not open'));

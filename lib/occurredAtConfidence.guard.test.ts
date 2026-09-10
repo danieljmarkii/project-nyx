@@ -96,17 +96,26 @@ const ALLOWED: Record<string, string> = {
     'to be a NEW meal at now rather than an edit of an earlier one, and the owner named the ' +
     'time by acting at it; what the second case can be is an HOUR LATE, and its correction ' +
     'is the shipped "Change time" on the completion card this path raises a beat later. ' +
-    'PRECISELY WHAT THAT CORRECTS, because the first draft of this entry overstated it and ' +
-    'the adversarial pass priced the overstatement: the picker moves the INSTANT and the ' +
-    'SOURCE (through sourceAfterPointEdit, C-10) \u2014 the CONFIDENCE is re-asserted as ' +
-    'witnessed unconditionally at MealCompletionCard.tsx:244, exactly as app/edit-event.tsx ' +
-    'does ("meals are always witnessed"), so a found-later refusal can be re-dated but never ' +
-    're-graded. That is the shipped meal contract rather than a hole this path opens, and it ' +
-    'costs the record nothing today: no surface reads a MEAL\u2019s occurred_at_confidence ' +
-    '\u2014 generate-report\u2019s occurredCell is symptom-only, and patternsTiming is ' +
-    'explicitly null-tolerant for feedings. What it ' +
-    'must never become is an INFERRED confidence: nothing here reads a clock the owner did ' +
-    'not see, and no metadata is consulted.',
+    'WHAT THAT ACTUALLY CORRECTS \u2014 stated exactly, because two earlier drafts of this ' +
+    'entry each overstated it in the same direction and the adversarial pass priced both: ' +
+    'the picker moves the INSTANT and the SOURCE (through sourceAfterPointEdit, C-10); the ' +
+    'CONFIDENCE is re-asserted as witnessed unconditionally at MealCompletionCard.tsx:273, ' +
+    'exactly as app/edit-event.tsx does ("meals are always witnessed"), so a found-later ' +
+    'refusal can be re-dated but never re-graded. That is the shipped meal contract, not a ' +
+    'hole this path opens. WHY IT COSTS THE RECORD NOTHING, which the second draft got ' +
+    'wrong by claiming no surface reads a meal\u2019s occurred_at_confidence \u2014 several ' +
+    'do: EventRow, lib/dayEvents, app/event/[id].tsx, lib/patternsTiming\u2019s feeding read, ' +
+    'and THE CORRELATION ENGINE ITSELF, which carries it as FeedingInput.confidence from ' +
+    'both generate-signal (index.ts:534) and generate-report. The true statement is about ' +
+    'their BEHAVIOUR, not their existence: every one of them treats witnessed and NULL ' +
+    'IDENTICALLY for a feeding \u2014 the engine says so in its own comment ("timed-eligible ' +
+    'when witnessed OR NULL; meals are inherently witnessed, legacy NULL carries the same ' +
+    'semantics") and describeOccurredAt returns the same point branch for both. The one ' +
+    'reader that distinguishes them is confidenceWord (app/event/[id].tsx), which prints ' +
+    'the word for witnessed and nothing for NULL, and no meal reaches it today. So the ' +
+    're-assertion moves no number anywhere. What this path must never become is an ' +
+    'INFERRED confidence: nothing here reads a clock the owner did not see, and no ' +
+    'metadata is consulted.',
   'components/home/LookCard.tsx':
     'Noticed (CUL-871). prependEvent mirroring the row insertLook just wrote, at the clock ' +
     'instant of the tap. The claim is lib/looks.ts\u2019s and is restated here rather than ' +

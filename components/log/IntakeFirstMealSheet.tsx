@@ -70,6 +70,7 @@ import {
   intakeSheetTitle,
 } from '../../lib/intakeSheet';
 import { useAppActive } from '../../hooks/useAppActive';
+import { useSubmitGuard } from '../../hooks/useSubmitGuard';
 import { useEventStore } from '../../store/eventStore';
 import { useMomentStore } from '../../store/momentStore';
 import type { PickerFood } from '../../lib/db';
@@ -124,7 +125,31 @@ export function IntakeFirstMealPanel({
   onNavigateAway,
 }: PanelProps) {
   const [step, setStep] = useState<Step>({ kind: 'loading' });
+  // PRESENTATION ONLY — the chips stand down while a write is in flight. It is NOT the
+  // re-entrancy guard, and the first cut treating it as one is the defect below.
   const [saving, setSaving] = useState(false);
+  /**
+   * THE RE-ENTRANCY LATCH, and it has to be a REF (B-336).
+   *
+   * The first cut latched on the `saving` STATE flag, which does not hold: `IntakeChipRow`
+   * renders five independent touchables, so two fingers landing together are delivered in
+   * ONE React batch with no commit between them — both handlers read `saving === false`
+   * and both write. The adversarial re-run executed it and got two meal rows for one bowl
+   * with CONTRADICTORY ratings (`['refused','all']`), of which only the second raises a
+   * card, leaving the first invisible and unreversible from the completion surface. Two
+   * rated samples where the owner made one statement is pseudoreplication in the literal
+   * sense: `classifyRatedMeals` counts both.
+   *
+   * The repo already ruled this exact shape — "the tile IS the write" (`app/log.tsx`,
+   * `SimpleEventConfirm`) — and this sheet's own header says "the arm tap IS the save".
+   * Same rule, same latch.
+   *
+   * The shipped test did not catch it because RTL's `fireEvent.press` flushes `act` per
+   * call, so it only ever exercised the SEQUENTIAL case: a test that names the batched
+   * hazard and asserts the serial one reads as coverage it does not have. The test below
+   * now drives both.
+   */
+  const guardedSave = useSubmitGuard();
   // The pet's trial set, held so a food the owner picks LATER can still be named as the
   // trial diet (§4.5's naming has to survive *Change food ›* — that is the one moment it
   // does any work). `unknown` until the read answers, which `pickedFoodSource` reads as
@@ -184,77 +209,84 @@ export function IntakeFirstMealPanel({
       // `IntakeChipRow` toggles an active chip back to null. Nothing is selected here
       // ever, so a null can only mean a double-fire — and "the owner cleared her answer"
       // is not a state this sheet has: the arm IS the commit.
-      if (rating == null || saving || step.kind !== 'intake') return;
-      setSaving(true);
+      if (rating == null || step.kind !== 'intake') return;
       const food = step.food;
       const occurredAt = nowPoint;
-      try {
-        const { eventId, occurredAtIso, now } = await insertMeal({
-          petId,
-          foodId: food.id,
-          occurredAt,
-          // Clock-seeded, so the provenance is `'now'` and never `'manual'` — the app's
-          // claim about when this happened, not the owner's (C-10).
-          occurredAtSource: 'now',
-          // The arm, in the SAME transaction as the row. See `InsertMealParams`.
-          intakeRating: rating,
-        });
-
-        const foodType =
-          food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
-            ? food.food_type
-            : null;
-        prependEvent({
-          id: eventId,
-          pet_id: petId,
-          event_type: 'meal',
-          occurred_at: occurredAtIso,
-          occurred_at_confidence: 'witnessed',
-          severity: null,
-          notes: null,
-          source: 'manual',
-          deleted_at: null,
-          created_at: now,
-          updated_at: now,
-          food_item_id: food.id,
-          food_brand: food.brand,
-          food_product_name: food.product_name,
-          food_format: food.format,
-          food_type: foodType,
-        });
-
-        // Close FIRST, then raise the card — see CARD_DELAY_MS.
-        onClose('saved');
-        showMealMoment(
-          {
-            eventId,
+      // The latch returns `true` on a COMMIT (the sheet is closing, so no later tap may
+      // write again) and `false` when nothing landed (she is still here, looking at the
+      // alert, so the arms must work for the retry) — B-336's explicit contract.
+      await guardedSave(async () => {
+        setSaving(true);
+        try {
+          const { eventId, occurredAtIso, now } = await insertMeal({
             petId,
-            occurredAt: occurredAtIso,
-            foodType,
-            foodBrand: food.brand,
-            foodProductName: food.product_name,
-            foodFormat: food.format,
-            // Already the owner's own answer, so the card opens with it lit and stays
-            // the place to correct it — never a second, emptier ask about the same bowl.
+            foodId: food.id,
+            occurredAt,
+            // Clock-seeded, so the provenance is `'now'` and never `'manual'` — the app's
+            // claim about when this happened, not the owner's (C-10).
+            occurredAtSource: 'now',
+            // The arm, in the SAME transaction as the row. See `InsertMealParams`.
             intakeRating: rating,
-          },
-          { delayMs: CARD_DELAY_MS },
-        );
-      } catch (e) {
-        // A FAILED WRITE IS ALWAYS SAID (C-25 / CUL-575) — and the first cut of this
-        // file only claimed it was: it logged, released the guard and left the sheet
-        // sitting there unchanged, which is indistinguishable from "still thinking" on
-        // the one surface where the owner has just reported a refusal. The `pm-review`
-        // caught it against this feature's own sibling, `LookCard.handleDone`, whose
-        // alert this now matches word for word. Never the error itself (the copy guard):
-        // calm, no code, pointing at the one thing she can do — the arms are still live
-        // underneath, so the retry is one tap.
-        console.error('[IntakeFirstMealSheet] meal write failed:', e);
-        setSaving(false);
-        Alert.alert('Couldn\u2019t save that', 'Please try again in a moment.');
-      }
+          });
+
+          const foodType =
+            food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
+              ? food.food_type
+              : null;
+          prependEvent({
+            id: eventId,
+            pet_id: petId,
+            event_type: 'meal',
+            occurred_at: occurredAtIso,
+            occurred_at_confidence: 'witnessed',
+            severity: null,
+            notes: null,
+            source: 'manual',
+            deleted_at: null,
+            created_at: now,
+            updated_at: now,
+            food_item_id: food.id,
+            food_brand: food.brand,
+            food_product_name: food.product_name,
+            food_format: food.format,
+            food_type: foodType,
+          });
+
+          // Close FIRST, then raise the card — see CARD_DELAY_MS.
+          onClose('saved');
+          showMealMoment(
+            {
+              eventId,
+              petId,
+              occurredAt: occurredAtIso,
+              foodType,
+              foodBrand: food.brand,
+              foodProductName: food.product_name,
+              foodFormat: food.format,
+              // Already the owner's own answer, so the card opens with it lit and stays
+              // the place to correct it — never a second, emptier ask about the same bowl.
+              intakeRating: rating,
+            },
+            { delayMs: CARD_DELAY_MS },
+          );
+          return true;
+        } catch (e) {
+          // A FAILED WRITE IS ALWAYS SAID (C-25 / CUL-575) — and the first cut of this
+          // file only claimed it was: it logged, released the guard and left the sheet
+          // sitting there unchanged, which is indistinguishable from "still thinking" on
+          // the one surface where the owner has just reported a refusal. The `pm-review`
+          // caught it against this feature's own sibling, `LookCard.handleDone`, whose
+          // alert this now matches word for word. Never the error itself (the copy guard):
+          // calm, no code, pointing at the one thing she can do — the arms are still live
+          // underneath, so the retry is one tap.
+          console.error('[IntakeFirstMealSheet] meal write failed:', e);
+          setSaving(false);
+          Alert.alert('Couldn\u2019t save that', 'Please try again in a moment.');
+          return false;
+        }
+      });
     },
-    [nowPoint, onClose, petId, prependEvent, saving, showMealMoment, step],
+    [guardedSave, nowPoint, onClose, petId, prependEvent, showMealMoment, step],
   );
 
   const onAddNew = useCallback(() => {

@@ -174,8 +174,21 @@ longer credits `key` for what `if (!request) return null` actually delivers.
   lower. The `pm-feature-review` found the first against the feature's own sibling; the
   adversarial pass found the second by running the loader the test stopped short of.
 - **A test that names a rule in its comment and asserts a layer above it is worse than no
-  test**, because it reads as coverage. `intakeFirstMeal.test.ts:143` said "Both filters have
-  to hold at once" and asserted the decision, where only one of the two filters lived.
+  test**, because it reads as coverage. Twice, in one session, in the same file family:
+  `intakeFirstMeal.test.ts` said "Both filters have to hold at once" and asserted the
+  decision, where only one of the two filters lived; and the double-tap test named the
+  batched hazard and asserted the sequential one, which passes on the broken guard. **The
+  second one was written after the first was diagnosed**, which is the part worth keeping:
+  knowing the failure mode did not stop me reproducing it an hour later. The check that
+  would have caught both is mechanical — run the test against the thing it claims to
+  forbid, not just against the fixed code.
+- **A correction can be wrong in the same direction as the thing it corrects.** The
+  confidence registration was rewritten once and was still one notch stronger than the
+  evidence; it took a sweep of the actual readers to get a sentence that holds. This is
+  CLAUDE.md's frozen-brief lesson — "six attributions stated one notch stronger than their
+  source" — arriving in live code rather than in a research doc.
+- **A fix can invalidate another fix's citation.** Fix 3 inserted 28 lines above the literal
+  fix 4 cited, in the same commit, and neither noticed.
 - **The first caller of a state is where a shared surface's assumptions get audited.**
   `momentStore.ts:559` justifies the meal card's success register with *"Meal and dose cards
   are routine commits by construction — there is no symptom path through them"*. N-3b is that
@@ -183,6 +196,64 @@ longer credits `key` for what `if (!request) return null` actually delivers.
   what surfaced it was being the first caller to produce the new input.
 - **Check a review's finding at file:line before acting on it.** One of eleven did not hold,
   and the fix would have been real work on a path that is already correct.
+
+### `adversarial-reviewer`, second pass — FAIL again, and the best finding of the session
+
+C-19 says the falsification pass re-runs after every correction on a safety surface. It did,
+on the corrected tree, and it was worth it twice over.
+
+**It found a defect the FIRST pass had passed, and that I shipped.** `onArm`'s re-entrancy
+latch was the `saving` React **state** flag. `IntakeChipRow` renders five independent
+touchables, so two fingers landing together arrive in ONE React batch with no commit between
+— both handlers read `saving === false` and both write. Executed: **two meal rows for one
+bowl with contradictory ratings** (`['refused','all']`), of which only the second raises a
+card, leaving the first invisible and unreversible from the completion surface. Downstream
+that is pseudoreplication in the literal sense — `classifyRatedMeals` counts both.
+
+The repo had already ruled this exact shape: `hooks/useSubmitGuard.ts` (B-336, "two dose
+events for one pill"), a **ref** latch, used by `app/log.tsx` and `SimpleEventConfirm` for
+"the tile IS the write". This sheet's own header says *the arm tap IS the save*. Same rule,
+same latch — now used.
+
+**And the reason it slipped past both my test and the first pass is the lesson this session
+had already written down, applied to itself.** The shipped test was called *"a double tap
+cannot write two meals for one bowl"* and passed on the broken guard, because RTL's
+`fireEvent.press` flushes `act` per call — it only ever exercised the SEQUENTIAL case. A test
+that names the batched hazard and asserts the serial one reads as coverage it does not have.
+Both directions are now proven by mutation against the state-flag version:
+
+| | state flag | ref latch |
+|---|---|---|
+| sequential double-tap | **passes** | passes |
+| both presses in one batch | **fails, 2 calls** | passes |
+
+The other findings, all fixed:
+
+- **The first fix's residual.** `loadIntakePrefill` had learned to refuse an unclassified
+  `primary_diet` food; `pickedFoodSource`, twenty lines away, still named that same bag "the
+  trial diet" when the owner picked it out of the picker one tap later. One predicate cannot
+  have two answers depending on which door the food came through.
+- **The confidence registration was wrong a second time, in the same direction.** The rewrite
+  claimed *no surface reads a meal's `occurred_at_confidence`*. False: `EventRow`,
+  `lib/dayEvents`, `app/event/[id].tsx`, `patternsTiming`'s feeding read, and — the one the
+  enumeration omitted — **the correlation engine itself**, which carries it as
+  `FeedingInput.confidence` from both `generate-signal` (`index.ts:534`) and
+  `generate-report`. The defensible statement is about their BEHAVIOUR: every reader treats
+  `witnessed` and `null` identically for a feeding (the engine says so in its own comment),
+  except `confidenceWord`, which no meal reaches today. Rewritten against a verified sweep
+  rather than an assumption.
+- **A fix moved the line another fix cited.** `MealCompletionCard.tsx:244` → `:273`, in the
+  same commit, because fix 3 inserted 28 lines above it.
+- **`loadIntakeDoor` read the trial set twice** under a docstring saying "in ONE read pass".
+- Minor: *"her most recent food"* for a food a more recent treat outranked (now "most recent
+  meal", which is what the predicate checks); and the clear guard was one condition too
+  strict — it blocked every clear for the card's life, so a chip she had changed *here* was
+  silently inert.
+
+**Two things it correctly did NOT ask me to change:** the shared-bowl unrated state stays
+CUL-895 (a PM decision, and it says so), and the missing trial heads-up stays CUL-893.
+
+---
 
 ## Residuals — filed, not fixed
 

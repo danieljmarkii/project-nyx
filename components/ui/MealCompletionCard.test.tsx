@@ -387,6 +387,23 @@ describe('MealCompletionCard — a rating stated ELSEWHERE is not erasable here 
     expect(updateMealIntake).toHaveBeenCalledWith('e1', 'some');
   });
 
+  it('once she has CHANGED it here, the clear works again', async () => {
+    // The re-run's over-strictness find: the first cut blocked every clear for the life
+    // of the card, so an owner who arrived at `refused`, changed to `some` HERE, then
+    // wanted to clear entirely met a chip that did nothing and said nothing. The rule is
+    // "a clear is honoured when this card set the value" — and by then it had.
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    const { getByText } = render(<MealCompletionCard />);
+    await act(async () => {
+      fireEvent.press(getByText('Some'));
+    });
+    expect(updateMealIntake).toHaveBeenLastCalledWith('e1', 'some');
+    await act(async () => {
+      fireEvent.press(getByText('Some'));
+    });
+    expect(updateMealIntake).toHaveBeenLastCalledWith('e1', null);
+  });
+
   it('and every PRE-DOOR path keeps its toggle exactly', async () => {
     // The picker, the FAB and photo capture all reveal with nothing lit, so a tap there
     // is the owner's first statement about that bowl and un-tapping it is her taking it

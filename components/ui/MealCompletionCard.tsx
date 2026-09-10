@@ -294,7 +294,13 @@ export function MealCompletionCard() {
     // See `presentedIntake`. A tap that would erase an answer the owner gave on another
     // surface holds the card open instead — she gets the beat, the record keeps her
     // statement, and changing to a different arm still works.
-    if (next === null && presentedIntake.current.rating !== null) {
+    //
+    // Gated on the value STILL BEING the presented one, which the first cut got wrong by
+    // one condition: it blocked every clear for the life of the card, so an owner who
+    // arrived at `refused`, changed to `some` HERE, then wanted to clear entirely met a
+    // chip that did nothing and said nothing. The rule the comment states is "a clear is
+    // honoured when this card set the value" — and by then it had.
+    if (next === null && prevRating !== null && prevRating === presentedIntake.current.rating) {
       rescheduleHide(INTAKE_CONFIRM_HOLD_MS);
       return;
     }

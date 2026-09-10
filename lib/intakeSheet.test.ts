@@ -62,16 +62,20 @@ describe('the food line', () => {
   });
 
   it('otherwise says why this food is showing, in the pet’s own possessive', () => {
+    // "most recent MEAL", not "food": the resolver skips treats, so a cat with a
+    // Dreamies this morning and kibble last Tuesday would otherwise be told the kibble
+    // was her most recent food — a claim the predicate does not make.
     expect(intakeSheetFoodLine('Lily’s Kitchen', 'recent_meal', 'female')).toBe(
-      'Lily’s Kitchen · her most recent food',
+      'Lily’s Kitchen · her most recent meal',
     );
     expect(intakeSheetFoodLine('Lily’s Kitchen', 'recent_meal', 'unknown')).toBe(
-      'Lily’s Kitchen · their most recent food',
+      'Lily’s Kitchen · their most recent meal',
     );
   });
 
   it('never calls a trial food "most recent" — the two readings are different claims', () => {
     expect(intakeSheetFoodLine('X', 'trial_diet', 'male')).not.toContain('most recent');
+    expect(intakeSheetFoodLine('X', 'picked', 'male')).toBe('X');
   });
 });
 
