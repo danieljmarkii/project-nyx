@@ -280,8 +280,12 @@ export const LOCAL_WIPE_TABLES = [
   // this list: `notes` is whatever the owner typed about her animal — and, through
   // `words`, a dated series of observations about a household's pet. Surviving a
   // sign-out would leave the prior account's own words on a device now in someone
-  // else's hands. Proven by mutation at CUL-868 (drop this line, watch
-  // hydration.test.ts red), because this list still fails OPEN at runtime.
+  // else's hands. Proven by mutation in BOTH directions, which are two different
+  // guarantees: DELETE the entry and the derived-set test reds (the table would
+  // never be wiped); MOVE it after 'events' and the explicit ordering assertion in
+  // hydration.test.ts reds (the wipe half-fails on the FK, which is a leak rather
+  // than a warning). This list still fails OPEN at runtime, which is why both
+  // halves exist.
   'looks',
   'events',
   // B-478 vet_documents — the Vet Files library. No local FK is declared on

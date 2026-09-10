@@ -591,6 +591,17 @@ export function buildLeadLine(
   // an `=== 'other'` filter: that equality was the §5.1 row 1b defect — an equality
   // the type system cannot see, which would have taken a look into the day's counts
   // and printed "one look in Pixel's record today" with green CI.
+  //
+  // A LOOK IS ABSENT FROM THIS TIER, deliberately and not yet completely. §5.1 row 1b
+  // decided two things about a mixed day. The half that mattered — never an absence
+  // claim beside the owner's contrary observation — turned out to be MOOT: the string
+  // it forbids ("Nothing logged as a symptom") does not exist anywhere in this app, so
+  // there is nothing here to suppress and this lead makes no claim about symptoms at
+  // all. The other half — also NAMING what she noticed ("2 meals, 1 dose. You noticed:
+  // off, …") — needs the look's words, which live on the `looks` child and are not on
+  // `DaySummaryRow`. That is CUL-883, and it is a product question about the recap's
+  // density rather than a safety one, precisely because there is no absence claim left
+  // for the words to be standing beside.
   const mealRows = byCategory.meal;
   const doses = byCategory.medication.length;
   const others = byCategory.other;

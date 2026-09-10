@@ -92,7 +92,15 @@ export function blankComments(src: string): string {
 
 /** How far apart `looks` and `notes` may sit and still be one request. Wide enough
  *  for a multi-line select list, narrow enough that two unrelated statements do not
- *  pair up. A false positive here costs a comment; a false negative costs the rule. */
+ *  pair up. A false positive here costs a comment; a false negative costs the rule.
+ *
+ *  MEASURED IN BOTH DIRECTIONS, and that is not a detail. The first version of this
+ *  scan only looked FORWARD from each `looks`, on the assumption that supabase-js
+ *  names the table before the column (`.from('looks').select('… notes …')`). Raw SQL
+ *  is the other way round — `SELECT l.notes FROM looks l` — so the whole raw-SQL and
+ *  RPC shape was invisible to a guard whose header claimed it proved no server source
+ *  asks for the column. Caught by `code-reviewer`, which ran the detector on that
+ *  string and got `[]`. The claim now matches the code. */
 const PAIR_WINDOW = 240;
 
 export interface LookNotesHit {
@@ -100,29 +108,45 @@ export interface LookNotesHit {
   excerpt: string;
 }
 
+/** Every offset at which a word-bounded token occurs, comments already blanked. */
+function offsetsOf(src: string, word: string): number[] {
+  const out: number[] = [];
+  const re = new RegExp(`\\b${word}\\b`, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) out.push(m.index);
+  return out;
+}
+
 /**
  * Every place this source asks for a look's note.
  *
- * Two shapes, because supabase-js writes the request two ways: a qualified column
- * (`looks.notes`, or `looks!inner(notes)`), and a select list where the table is
- * named nearby (`.from('looks').select('… notes …')`).
+ * The rule is a PAIRING — the table and the column named within one request —
+ * and it is checked symmetrically, because the request is written both ways round:
+ *
+ *   • supabase-js names the table first: `.from('looks').select('id, notes')`,
+ *     `.select('*, looks!inner(notes)')`, `looks.notes`.
+ *   • raw SQL and RPC name the column first: `SELECT l.notes FROM looks l`.
+ *
+ * One hit per `looks` occurrence that has a `notes` within the window on either
+ * side, reported at the earlier of the two so the excerpt shows the request rather
+ * than its tail.
  */
 export function findLookNotesSelects(rawSource: string): LookNotesHit[] {
   const src = blankComments(rawSource);
-  const hits: LookNotesHit[] = [];
   const lineOf = (index: number) => src.slice(0, index).split('\n').length;
 
-  const looksAt: number[] = [];
-  const looksRe = /\blooks\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = looksRe.exec(src)) !== null) looksAt.push(m.index);
+  const looksAt = offsetsOf(src, 'looks');
+  const notesAt = offsetsOf(src, 'notes');
+  if (looksAt.length === 0 || notesAt.length === 0) return [];
 
+  const hits: LookNotesHit[] = [];
   for (const at of looksAt) {
-    const window = src.slice(at, at + PAIR_WINDOW);
-    if (!/\bnotes\b/.test(window)) continue;
+    const near = notesAt.filter((n) => Math.abs(n - at) <= PAIR_WINDOW);
+    if (near.length === 0) continue;
+    const start = Math.min(at, ...near);
     hits.push({
-      line: lineOf(at),
-      excerpt: window.slice(0, 120).replace(/\s+/g, ' ').trim(),
+      line: lineOf(start),
+      excerpt: src.slice(start, start + 120).replace(/\s+/g, ' ').trim(),
     });
   }
   return hits;
@@ -207,6 +231,23 @@ describe('the detector itself', () => {
 
   it('does NOT flag a select over looks that leaves the note out', () => {
     expect(findLookNotesSelects(`sb.from('looks').select('id, local_day, words, outcome')`)).toEqual([]);
+  });
+
+  // The regression the first version of this detector had: `notes` BEFORE `looks`.
+  // Found by code-reviewer running the algorithm on exactly this string and getting
+  // an empty array, on a guard whose header claimed the opposite.
+  it('catches raw SQL that names the column BEFORE the table', () => {
+    const probe = `const sql = 'SELECT l.notes FROM looks l JOIN events e ON e.id = l.event_id';`;
+    expect(findLookNotesSelects(probe)).toHaveLength(1);
+  });
+
+  it('catches an RPC body that reads the column first', () => {
+    const probe = [
+      'const { data } = await supabase.rpc(\'appendix_g\', {',
+      "  q: 'select notes, local_day from public.looks where pet_id = $1',",
+      '});',
+    ].join('\n');
+    expect(findLookNotesSelects(probe)).toHaveLength(1);
   });
 
   it('does NOT flag a note from another table', () => {

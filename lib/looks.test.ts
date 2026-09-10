@@ -313,6 +313,108 @@ describe('drainLooksQueue — the parent gate', () => {
   });
 });
 
+// ── The pull path, against the REAL statement ────────────────────────────────
+//
+// `hydrateLooks` itself needs a Supabase client to reach; what is worth pinning without
+// one is the half that can be wrong silently — the UPSERT's LWW backstop and the words
+// codec's PULL direction. Both are read out of lib/sync.ts and run against the real
+// schema, for the same reason the drain's SELECT is: a test that replays its own
+// approximation of a statement proves nothing about the one that ships.
+
+describe('hydrateLooks — the upsert’s LWW backstop', () => {
+  function hydrateUpsert(): string {
+    const src = readFileSync(join(__dirname, 'sync.ts'), 'utf8');
+    const start = src.indexOf('`INSERT INTO looks');
+    const end = src.indexOf('WHERE looks.synced = 1`', start);
+    if (start === -1 || end === -1) throw new Error('hydrateLooks upsert not found — did it move?');
+    return src.slice(start + 1, end + 'WHERE looks.synced = 1'.length);
+  }
+
+  /** The parameter list hydrateLooks builds, in its order. */
+  function params(over: Partial<{ id: string; words: string[]; outcome: string; localDay: string; notes: string | null; updatedAt: string }> = {}) {
+    const now = new Date().toISOString();
+    const o = { id: 'l-1', words: ['subdued'], outcome: 'observed', localDay: '2026-09-01', notes: null, updatedAt: now, ...over };
+    return [
+      o.id, 'e-1', PET, o.outcome, o.localDay,
+      JSON.stringify(o.words), 1, o.notes,
+      now, o.updatedAt,
+    ];
+  }
+
+  function seedParent() {
+    const now = new Date().toISOString();
+    mockDb.prepare(
+      `INSERT INTO events (id, pet_id, event_type, occurred_at, source, created_at, updated_at, synced)
+       VALUES ('e-1', ?, 'check_in', ?, 'manual', ?, ?, 1)`,
+    ).run(PET, now, now, now);
+  }
+
+  it('inserts a remote row, decoding words into the local JSON column', () => {
+    seedParent();
+    mockDb.prepare(hydrateUpsert()).run(...params({ words: ['subdued', 'lip_licking'] }));
+    const [row] = rows<{ words: string; synced: number; outcome: string }>('SELECT * FROM looks');
+    expect(JSON.parse(row.words)).toEqual(['subdued', 'lip_licking']);
+    expect(row.synced).toBe(1);
+    expect(row.outcome).toBe('observed');
+  });
+
+  // The backstop, and the reason it is a WHERE rather than a comment: a pull that
+  // overwrote a row the owner has edited but not yet pushed would destroy the edit
+  // silently, and push-before-pull is an ordering, not a guarantee.
+  it('does NOT clobber a local row with an unpushed edit (synced = 0)', () => {
+    seedParent();
+    const mine = new Date().toISOString();
+    mockDb.prepare(
+      `INSERT INTO looks (id, event_id, pet_id, outcome, local_day, words, created_at, updated_at, synced)
+       VALUES ('l-1', 'e-1', ?, 'observed', '2026-09-01', '["lively"]', ?, ?, 0)`,
+    ).run(PET, mine, mine);
+
+    mockDb.prepare(hydrateUpsert()).run(...params({ words: ['subdued'], notes: 'the server’s copy' }));
+
+    const [row] = rows<{ words: string; notes: string | null; synced: number }>('SELECT * FROM looks');
+    expect(JSON.parse(row.words)).toEqual(['lively']);
+    expect(row.notes).toBeNull();
+    expect(row.synced).toBe(0);
+  });
+
+  it('DOES refresh a row that is already synced — the ordinary LWW case', () => {
+    seedParent();
+    mockDb.prepare(hydrateUpsert()).run(...params({ words: ['lively'] }));
+    mockDb.prepare(hydrateUpsert()).run(...params({ words: ['subdued'], outcome: 'observed', localDay: '2026-09-02', notes: 'moved' }));
+    const [row] = rows<{ words: string; local_day: string; notes: string | null }>('SELECT * FROM looks');
+    expect(JSON.parse(row.words)).toEqual(['subdued']);
+    // local_day is mutable on the pull: a "Change time" on another device moves the
+    // point AND the day key, and this row must follow both.
+    expect(row.local_day).toBe('2026-09-02');
+    expect(row.notes).toBe('moved');
+  });
+
+  it('leaves created_at alone on the update branch — identity, not payload', () => {
+    seedParent();
+    mockDb.prepare(hydrateUpsert()).run(...params());
+    const [before] = rows<{ created_at: string }>('SELECT created_at FROM looks');
+    mockDb.prepare(hydrateUpsert()).run(...params({ words: ['lively'] }));
+    const [after] = rows<{ created_at: string }>('SELECT created_at FROM looks');
+    expect(after.created_at).toBe(before.created_at);
+  });
+
+  it('an absence row round-trips with no words', () => {
+    seedParent();
+    mockDb.prepare(hydrateUpsert()).run(...params({ outcome: 'nothing_unusual', words: [] }));
+    const [row] = rows<{ outcome: string; words: string }>('SELECT * FROM looks');
+    expect(row.outcome).toBe('nothing_unusual');
+    expect(JSON.parse(row.words)).toEqual([]);
+  });
+
+  it('the statement spells its columns — never a select-star round-trip', () => {
+    const sql = hydrateUpsert();
+    for (const col of ['outcome', 'local_day', 'words', 'vocab_version', 'notes']) {
+      expect(sql).toContain(col);
+    }
+    expect(sql).not.toMatch(/SELECT\s+\*/i);
+  });
+});
+
 // ── The day counts ───────────────────────────────────────────────────────────
 
 describe('the day counts — the day is the unit, local_day is the key', () => {

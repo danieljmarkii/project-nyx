@@ -4,7 +4,13 @@
 jest.mock('./db', () => ({ getDb: () => ({}) }));
 jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-import { describeDayEvent, describeDayEvents, daySheetSubtitle } from './dayEvents';
+import {
+  describeDayEvent,
+  describeDayEvents,
+  daySheetSubtitle,
+  eventTintCategory,
+  assertNeverCategory,
+} from './dayEvents';
 import type { TimelineRow } from './db';
 
 // A TimelineRow filled only with the fields describeDayEvent reads; the rest are nulled.
@@ -121,6 +127,45 @@ describe('describeDayEvent (B-284 N5b drill-in labels)', () => {
   it('an estimated time renders honestly (~), not a false-precise point', () => {
     const d = describeDayEvent(row({ event_type: 'vomit', occurred_at_confidence: 'estimated' }));
     expect(d.time.startsWith('~')).toBe(true);
+  });
+});
+
+describe('a look on the spine (CUL-868) — the fifth category', () => {
+  it('a check_in row categorises as look, and never as symptom or other', () => {
+    expect(eventTintCategory('check_in')).toBe('look');
+    // The two it must not fall into: 'symptom' would tint it rose on every row
+    // surface and fire the symptom commit haptic; 'other' is the bucket the count
+    // line and the lead used to sweep into an event count (§5.1 rows 1a/1b).
+    expect(eventTintCategory('lethargy')).toBe('symptom');
+    expect(eventTintCategory('weight_check')).toBe('other');
+  });
+
+  it('renders as Noticed, with nothing invented about what it said', () => {
+    const look = describeDayEvent(row({ event_type: 'check_in' }));
+    expect(look.category).toBe('look');
+    expect(look.title).toBe('Noticed');
+    // The words and the note live on the `looks` child, which a TimelineRow does not
+    // carry. A detail here would be this surface claiming to know what a look said;
+    // the row that names them is N-3's (CUL-869).
+    expect(look.detail).toBeNull();
+    expect(look.formatTag).toBeNull();
+  });
+
+  it('keeps its own time, and sorts with everything else', () => {
+    const rows = [
+      row({ event_type: 'meal', occurred_at: '2026-06-24T18:00:00.000Z' }),
+      row({ event_type: 'check_in', occurred_at: '2026-06-24T07:04:00.000Z' }),
+    ];
+    const out = describeDayEvents(rows);
+    expect(out.map((r) => r.category)).toEqual(['look', 'meal']);
+    expect(out[0].time).toBeTruthy();
+  });
+
+  // The exhaustiveness mechanism, exercised rather than asserted: `assertNeverCategory`
+  // is the runtime half of the guarantee tsc gives at compile time, and a category
+  // that reached it would mean a branch nobody wrote.
+  it('assertNeverCategory throws rather than returning undefined', () => {
+    expect(() => assertNeverCategory('unheard_of' as never)).toThrow(/Unhandled event tint category/);
   });
 });
 

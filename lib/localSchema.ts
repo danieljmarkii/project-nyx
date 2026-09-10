@@ -90,9 +90,11 @@ export const BASE_SCHEMA_SQL = `
       -- client and the report bucket days on two clocks otherwise (T-19).
       local_day     TEXT NOT NULL,
       -- The word keys as a JSON-array string: SQLite has no array type, and this is
-      -- the food_items_cache.proteins precedent (B-351). Encode/decode ONLY through
-      -- lib/looks.ts's wordsToLocalText / wordsFromLocalText, so the one place that
-      -- knows the encoding is the one place that reads it.
+      -- the food_items_cache.proteins precedent (B-351). Encode/decode ONLY via
+      -- wordsToLocalText / wordsFromLocalText (lib/lookWordsCodec.ts), so the one
+      -- place that knows the encoding is the one place that reads it. A leaf module
+      -- rather than lib/looks.ts, because the write path AND lib/sync.ts both need
+      -- the codec and looks.ts imports sync.ts.
       words         TEXT NOT NULL DEFAULT '[]',
       vocab_version INTEGER NOT NULL DEFAULT 1,
       -- The note after the save (T-22). Lives HERE and never on events.notes, which
