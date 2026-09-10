@@ -6,6 +6,7 @@
 
 import {
   LOOK_ABSENCE_CHIP,
+  intakeDoorLabel,
   LOOK_FEWER_WORDS,
   LOOK_HINT,
   LOOK_MORE_WORDS,
@@ -129,6 +130,39 @@ describe('the Today nudge (T-9 / E-8)', () => {
     // The E-8 rule, stated as an assertion: never "Nothing logged yet" beside a
     // logged look.
     expect(line).not.toContain('Nothing logged');
+  });
+});
+
+describe('the intake router’s label (E-16, CUL-870)', () => {
+  it('is *Didn’t eat* on a single-pet account, whatever the pet is', () => {
+    // ONE fork, and it is pet count. Neither of these varies by species, and neither
+    // varies by whether the household shares a bowl — which is not knowable (CUL-222).
+    expect(intakeDoorLabel(false, 'male')).toBe('Didn’t eat ›');
+    expect(intakeDoorLabel(false, 'female')).toBe('Didn’t eat ›');
+    expect(intakeDoorLabel(false, 'unknown')).toBe('Didn’t eat ›');
+  });
+
+  it('is *Left … food* on a multi-pet account — per animal, never a bowl-level claim', () => {
+    expect(intakeDoorLabel(true, 'female')).toBe('Left her food ›');
+  });
+
+  it('inflects the possessive, so it cannot disagree with the chip beside it', () => {
+    // The row already carries *Not himself* / *Not herself* (E-15, `pets.sex` is NOT
+    // NULL with an `unknown` member). A fixed "her" here would put two chips in one row
+    // disagreeing about the same animal.
+    expect(intakeDoorLabel(true, 'male')).toBe('Left his food ›');
+    expect(intakeDoorLabel(true, 'unknown')).toBe('Left their food ›');
+  });
+
+  it('takes a chevron, never a caret — it goes somewhere', () => {
+    // §3.1a's rule, and the reason this chip cannot borrow *Not himself ▾*'s glyph: the
+    // caret promises the card opens in place, and this one opens a sheet.
+    for (const sex of ['male', 'female', 'unknown'] as const) {
+      for (const multi of [true, false]) {
+        expect(intakeDoorLabel(multi, sex)).toContain('›');
+        expect(intakeDoorLabel(multi, sex)).not.toContain('▾');
+      }
+    }
   });
 });
 

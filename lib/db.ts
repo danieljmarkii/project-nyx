@@ -866,6 +866,24 @@ export async function getRecentFoods(
   );
 }
 
+// ONE food, in the picker's own shape, by id.
+//
+// The archived filter is `getRecentFoods`' filter, for `getRecentFoods`' reason: both
+// are PICKER reads (they offer a food to log next), and an archived food has been taken
+// out of the offer set (B-005). The one caller today is the intake door's trial-diet
+// fallback (`lib/intakeFirstMeal.ts`) — a trial whose diet the pet has not eaten yet, so
+// there is no meal row to reach it through — and a pre-fill is exactly an offer.
+export async function getPickerFoodById(id: string): Promise<PickerFood | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<PickerFood>(
+    `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path
+       FROM food_items_cache f
+      WHERE f.id = ? AND f.archived_at IS NULL`,
+    [id],
+  );
+  return row ?? null;
+}
+
 // Full catalog, deduplicated by brand+product_name, alpha by brand. The query
 // (incl. the B-108 MAX(photo_path) photo-dedup) lives in ./foodQueries so it can
 // be exercised against an in-memory SQLite in jest without the expo-sqlite stack.

@@ -83,6 +83,22 @@ const ALLOWED: Record<string, string> = {
   'components/ui/MedicationCompletionCard.tsx':
     'Time-picker correction on the dose just logged — the same no-op restatement as the ' +
     'meal card, on a row insertMedicationDose already wrote as witnessed.',
+  'components/log/IntakeFirstMealSheet.tsx':
+    'The Noticed card\u2019s intake door (CUL-870). prependEvent mirroring the row insertMeal ' +
+    'just wrote, at an instant the sheet DISPLAYS in its own first line (*Meal \u00b7 7:12, now*) ' +
+    'and re-derives on foreground, so the owner sees the time she is recording \u2014 the "an ' +
+    'affordance they can see" half of the bar, met explicitly rather than by inheritance. ' +
+    'THE ONE WAY THIS PATH DIFFERS from the FAB and the picker, said out loud because it is ' +
+    'the reason this entry needed writing rather than copying: the other meal paths fire as ' +
+    'the bowl goes DOWN, and this one can fire either then (*didn\u2019t come to eat* \u2014 ' +
+    'she is watching) or later (*left her food* \u2014 she found it). Both are still ' +
+    'witnessed CLAIMS about a meal at the stated instant, because spec \u00a74.5 rules the row ' +
+    'to be a NEW meal at now rather than an edit of an earlier one, and the owner named the ' +
+    'time by acting at it; what the second case can be is an hour late, and its correction is ' +
+    'the shipped "Change time" on the completion card this path raises a beat later, which ' +
+    'routes through sourceAfterPointEdit and restates the confidence honestly (C-10). What it ' +
+    'must never become is an INFERRED confidence: nothing here reads a clock the owner did ' +
+    'not see, and no metadata is consulted.',
   'components/home/LookCard.tsx':
     'Noticed (CUL-871). prependEvent mirroring the row insertLook just wrote, at the clock ' +
     'instant of the tap. The claim is lib/looks.ts\u2019s and is restated here rather than ' +
