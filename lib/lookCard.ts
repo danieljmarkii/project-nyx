@@ -30,6 +30,31 @@ export const LOOK_PATTERNS_DOOR = 'Patterns ›';
  *  than the reassuring one). */
 export const LOOK_ABSENCE_CHIP = 'Nothing unusual';
 
+/**
+ * The first row's INTAKE ROUTER — the door to the meal path (§4.5, CUL-870 / N-3b).
+ *
+ * It is not a look word. It writes nothing to the look, and a tap on it changes nothing
+ * on this card (T-3) — it opens a sheet. Hence the chevron: it goes somewhere, where
+ * *Not himself ▾* opens in place (§3.1a's caret/chevron rule).
+ *
+ * ── ONE LABEL, DECIDED BY PET COUNT ──────────────────────────────────────────
+ * E-16, which exists because v1.0 said this three different ways across §3.1a, §3.5 and
+ * §4.2. The fork is PET COUNT and nothing else — never species, and never the feeding
+ * arrangement: a shared bowl is not knowable (`lib/feedingArrangements.ts` is inert in
+ * R1, CUL-222 owns the bowl), so on a multi-pet account the label says what the owner
+ * SAW — this animal left her food — instead of asserting that a bowl went uneaten.
+ *
+ * The possessive inflects, as `notHerselfLabel` two rows along already does: `pets.sex`
+ * is NOT NULL with an `unknown` member (E-15), and "Left her food" over a male dog would
+ * be a second chip in the same row disagreeing with the first about who he is.
+ */
+export function intakeDoorLabel(
+  multiPet: boolean,
+  sex: 'male' | 'female' | 'unknown',
+): string {
+  return multiPet ? `Left ${petPronouns(sex).possessive} food ›` : 'Didn’t eat ›';
+}
+
 /** The disclosure controls. The caret says "opens in place", the chevron "goes
  *  somewhere" — so *Not himself* takes ▾ and *Something else* takes › (§3.1a). */
 export const LOOK_MORE_WORDS = 'Something else ›';

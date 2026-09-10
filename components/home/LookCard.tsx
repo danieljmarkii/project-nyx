@@ -67,7 +67,7 @@ import { usePetStore } from '../../store/petStore';
 import { useEventStore, type NyxEvent } from '../../store/eventStore';
 import { LOOK_DWELL_MS, useMomentStore } from '../../store/momentStore';
 import { useUiStore } from '../../store/uiStore';
-import { selectChip } from '../../lib/haptics';
+import { openMenu, selectChip } from '../../lib/haptics';
 import { insertLook, loadLookDays, answeredDays } from '../../lib/looks';
 import { wordsToLocalText } from '../../lib/lookWordsCodec';
 import { describeLook, gridChipLabel, gridSectionsFor, isLookRow, lookSummary } from '../../lib/lookDisplay';
@@ -96,6 +96,7 @@ import {
   LOOK_MORE_WORDS,
   LOOK_PATTERNS_DOOR,
   LOOK_UNDO,
+  intakeDoorLabel,
   lookDoneSummary,
   lookFirstLookLine,
   lookOpeningChipUnfoldLine,
@@ -113,6 +114,10 @@ const UNDO_FADE_MS = 500;
  *  between them, so the row gap is the SUM of the two hitSlops — derived from the chip's
  *  own constant, never a number that happens to be twice it (C-5). */
 const CHIP_ROW_GAP = CHIP_VERTICAL_REACH * 2;
+
+/** The reach a wrapper must declare when it is the responder for an inert chip — the
+ *  chip's own, never a number that happens to equal it today. */
+const CHIP_REACH_SLOP = { top: CHIP_VERTICAL_REACH, bottom: CHIP_VERTICAL_REACH } as const;
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
 import { formatTime } from '../../lib/utils';
 
@@ -144,6 +149,7 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   const momentVisible = useMomentStore((s) => s.visible);
   const momentRemoved = useMomentStore((s) => s.removed);
   const setCaptureOverlay = useUiStore((s) => s.setCaptureOverlay);
+  const openIntakeDoor = useUiStore((s) => s.openIntakeDoor);
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
 
@@ -303,6 +309,35 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     setDraft((d) => toggleAbsence(d));
   }, [captureSubject]);
 
+  /**
+   * THE INTAKE ROUTER (§4.5, T-3) — the one control in this row that is not a look word.
+   *
+   * It writes NOTHING to the look and touches NOTHING on this card: no `captureSubject`
+   * (the pet it captures is a pet the look is being made about, and no look is being
+   * made), no draft change, no selection. The words the owner already tapped stay
+   * exactly where they are while the sheet is up, and a dismiss returns her to them
+   * untouched — which is the promise §3.1a extracts from the round-3 and round-4 product
+   * reads: she came through a door labelled *Didn't eat* and has every reason to believe
+   * she told the app so.
+   *
+   * `openMenu` rather than `selectChip`: the chip haptics are a SELECTION vocabulary
+   * (T-10, every chip in this row ticks because a tap changes what the look will say).
+   * Nothing is selected here — a surface opens.
+   *
+   * The pet rides on the request rather than being re-read when the meal is written
+   * (C-9 / T-11): the door was tapped on ONE animal's card.
+   */
+  const onIntakeDoor = useCallback(() => {
+    if (!activePet) return;
+    openMenu();
+    openIntakeDoor({
+      petId: activePet.id,
+      petName: activePet.name,
+      sex: activePet.sex ?? 'unknown',
+      cardHasSelections: draft.kind !== 'empty',
+    });
+  }, [activePet, draft.kind, openIntakeDoor]);
+
   const onOpeningChip = useCallback(() => {
     selectChip();
     captureSubject();
@@ -458,6 +493,10 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   // so the unfolded grid draws the families alone.
   const families = sections.filter((section) => section.label !== null);
   const openingLabel = notHerselfLabel(sex);
+  // E-16 — one label, and PET COUNT is the whole fork (never species, never the feeding
+  // arrangement). `pets` is the active household; an archived pet is not a second animal
+  // whose bowl the owner is choosing between.
+  const intakeLabel = intakeDoorLabel(pets.length > 1, sex);
   // T-12's travel-up: what she chose from the grid, minus the seven that are already in
   // the row and the opening chip, which has its own place in the first row.
   const travelledUp =
@@ -506,11 +545,16 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
               </ThemedText>
             )}
 
-            {/* THE FIRST ROW, at equal cost. Two chips in v1: the intake router lands
-                with its own sheet in N-3b (CUL-870), under the PM's CUL-863 ruling —
-                a chip routed to today's picker "for now" IS the mis-record §4.5 was
-                written against. The row is a list so the third chip inserts between
-                these two without re-laying it out. */}
+            {/* THE FIRST ROW, at equal cost — the absence chip, the intake router, and
+                the opening chip. All three are one tap, which is the safety rule §3.2
+                falsified Door D over: the observation that matters must never cost more
+                taps than the reassuring one.
+
+                The router landed here in N-3b (CUL-870) WITH the sheet it opens, under
+                the PM's CUL-863 ruling: a chip routed at today's picker "for now" IS the
+                mis-record §4.5 was written against, and a chip that opens nothing is
+                worse. N-4a built this row as a list precisely so this was an insertion
+                and no chip beside it moved. */}
             <View style={styles.row}>
               <LookChip
                 label={LOOK_ABSENCE_CHIP}
@@ -519,6 +563,31 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                 reducedMotion={reducedMotion}
                 testID="look-absence-chip"
               />
+              <Pressable
+                onPress={onIntakeDoor}
+                style={styles.openingWrap}
+                // A BUTTON, not a checkbox. The two chips either side of it toggle what
+                // the look will say; this one opens a surface and leaves the look alone,
+                // and a `checked` state on it would be a claim that a tap recorded
+                // something (C-7: `disabled`/state is an accessibility CLAIM).
+                accessibilityRole="button"
+                accessibilityLabel={intakeLabel}
+                // Says what the visible label cannot: where it goes (C-8 — a hint earns
+                // its place only by adding to the announcement).
+                accessibilityHint={`Opens a new meal to say how much ${petName} ate`}
+                // The row's own vertical reach, declared here because this wrapper IS
+                // the responder and the chip inside it is inert — and DERIVED from the
+                // chip's own constant rather than restated as a number, which is the
+                // same rule `CHIP_ROW_GAP` below obeys (C-5). A hardcoded 6 here drifts
+                // silently the day `CHIP_VERTICAL_REACH` is retuned, while the row gap
+                // that depends on it moves.
+                hitSlop={CHIP_REACH_SLOP}
+                testID="look-intake-door"
+              >
+                {/* Never a selected state: the router is not a look word (T-3), so there
+                    is no draft for it to be lit from. */}
+                <LookChipFacade label={intakeLabel} selected={false} />
+              </Pressable>
               <Pressable
                 onPress={onOpeningChip}
                 style={styles.openingWrap}
@@ -529,8 +598,9 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                 // The same vertical reach every other chip in this row has
                 // (`LookChip`'s own). This wrapper IS the responder — the chip inside it
                 // is inert — so the reach has to be declared here, and dropping it left
-                // one sub-44pt target in a row of compliant ones (C-5).
-                hitSlop={{ top: 6, bottom: 6 }}
+                // one sub-44pt target in a row of compliant ones (C-5). Derived, for the
+                // reason the router chip above states.
+                hitSlop={CHIP_REACH_SLOP}
                 testID="look-opening-chip"
               >
                 <LookChipFacade

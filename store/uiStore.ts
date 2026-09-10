@@ -46,13 +46,57 @@ export interface CaptureOverlay {
   onDone: (() => void) | null;
 }
 
+/**
+ * THE INTAKE DOOR'S REQUEST (CUL-870 / N-3b; §3.1a, §4.5).
+ *
+ * The second piece of Noticed-card state that has to be visible outside Home's card
+ * tree, and it is here for a sharper reason than the overlay's.
+ *
+ * `guards/homeWrites.test.ts` scans Home's COMPUTED IMPORT CLOSURE — Home plus every
+ * card, plus every module they transitively reach — and reds on any write helper outside
+ * the two-class allow-set. `IntakeFirstMealSheet` calls `insertMeal`. If the Noticed card
+ * imported it, the sheet would join that closure and the meal write would BE a third Home
+ * write class, which is a Tier-2 amendment to `docs/nyx-med-strip-requirements.md` §0.1
+ * and emphatically not a marker.
+ *
+ * That is not a technicality to route around; it is the guard describing the shape the
+ * app already has. The sheet is a DOORWAY's destination (§4.5: "the chip is a doorway in
+ * the sense the shipped TodayZone nudge already is"), and every other surface that writes
+ * a meal — the FAB, the picker, photo capture, the completion card — mounts outside Home
+ * for exactly the same reason. So the card publishes a REQUEST, the root layout
+ * (`app/_layout.tsx`, beside `<MealCompletionCard/>`) owns the sheet, and Home's closure
+ * never contains a meal write.
+ *
+ * WHY THE PET RIDES ON THE REQUEST rather than being re-read at save: C-9 / T-11. The
+ * door was tapped on ONE animal's card. A header switch while the sheet is up must not
+ * re-point the meal at the other cat — the same rule `insertLook` obeys, applied to the
+ * row this sheet writes.
+ */
+export interface IntakeDoorRequest {
+  petId: string;
+  petName: string;
+  /** For the food line's possessive. `pets.sex` is NOT NULL with an `unknown` member. */
+  sex: 'male' | 'female' | 'unknown';
+  /** Did the Noticed card have words selected when the door was tapped? Only then does
+   *  the sheet promise they are kept — a reassurance about an empty card is a claim
+   *  about nothing. */
+  cardHasSelections: boolean;
+}
+
 interface UiState {
   /** The live capture overlay, or null when no Home card owns the corner. */
   captureOverlay: CaptureOverlay | null;
   setCaptureOverlay: (overlay: CaptureOverlay | null) => void;
+  /** The intake door's open request, or null when the sheet is down. */
+  intakeDoor: IntakeDoorRequest | null;
+  openIntakeDoor: (request: IntakeDoorRequest) => void;
+  closeIntakeDoor: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
   captureOverlay: null,
   setCaptureOverlay: (captureOverlay) => set({ captureOverlay }),
+  intakeDoor: null,
+  openIntakeDoor: (intakeDoor) => set({ intakeDoor }),
+  closeIntakeDoor: () => set({ intakeDoor: null }),
 }));

@@ -32,6 +32,7 @@ import { useAppActive } from '../hooks/useAppActive';
 import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { hydrateBetaOptIns } from '../lib/betaFeatures';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
+import { IntakeDoorHost } from '../components/log/IntakeDoorHost';
 import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
 import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
@@ -321,6 +322,13 @@ export default function RootLayout() {
         <Stack.Screen name="settings/feedback" />
         <Stack.Screen name="settings/password" />
       </Stack>
+      {/* The Noticed card's intake door (CUL-870 / N-3b). It is mounted HERE, beside the
+          completion cards, rather than inside the card that opens it: the sheet writes a
+          meal, and a meal write reachable from Home's import closure is a third Home
+          write class (`guards/homeWrites.test.ts`, §3.2). The card publishes a request
+          through `store/uiStore.ts` and this host owns the surface — the same separation
+          the FAB and every other meal path already have. */}
+      <IntakeDoorHost />
       <MealCompletionCard />
       <MedicationCompletionCard />
       <NamedCompletionCard />

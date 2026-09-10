@@ -167,4 +167,47 @@ describe('insertMeal', () => {
     const args = mealCall[1] as unknown[];
     expect((sql.match(/\?/g) ?? []).length).toBe(args.length);
   });
+
+  // ── intake_rating on the INSERT (CUL-870) ─────────────────────────────────
+  //
+  // The count guard above cannot see this: two adjacent params swapped keeps the count
+  // identical, and every consumer of `intake_rating` is clinical (`intake_decline`,
+  // `feline_reduced_intake`, the report, the trial's refusal register). So the VALUE is
+  // asserted at its own column position, in both directions.
+  const mealInsert = () => {
+    const call = mockRunAsync.mock.calls.find((c) => /INSERT INTO meals/.test(c[0] as string))!;
+    const sql = call[0] as string;
+    const columns = (sql.match(/\(([^)]*)\)\s*VALUES/i)![1] as string)
+      .split(',')
+      .map((c) => c.trim());
+    const args = call[1] as unknown[];
+    // `quantity` is the one literal in the VALUES list, so a column's arg index is its
+    // position minus the literals before it — derived rather than hardcoded, so this
+    // survives a column being added.
+    const values = (sql.match(/VALUES\s*\(([^)]*)\)/i)![1] as string).split(',').map((v) => v.trim());
+    const at = (column: string) => {
+      const col = columns.indexOf(column);
+      const placeholdersBefore = values.slice(0, col).filter((v) => v === '?').length;
+      expect(values[col]).toBe('?');
+      return args[placeholdersBefore];
+    };
+    return { at };
+  };
+
+  it('writes the intake rating the caller passed, at the intake_rating column', async () => {
+    await insertMeal({ ...PARAMS, intakeRating: 'refused' });
+    const { at } = mealInsert();
+    expect(at('intake_rating')).toBe('refused');
+    // The neighbours, so a swap cannot pass by putting 'refused' somewhere plausible.
+    expect(at('pet_id')).toBe(PARAMS.petId);
+    expect(at('food_item_id')).toBe(PARAMS.foodId);
+  });
+
+  it('defaults to NULL, so the three pre-door callers are unchanged', async () => {
+    // The picker, the FAB and photo capture all omit it and ask afterwards on the
+    // completion card. An accidental default of anything else would pre-stamp an intake
+    // claim on every meal in the app — the exact thing B-014 forbids.
+    await insertMeal(PARAMS);
+    expect(mealInsert().at('intake_rating')).toBeNull();
+  });
 });

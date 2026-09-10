@@ -32,12 +32,14 @@ jest.mock('../../lib/lookEmergencyFacts', () => ({
 
 const mockHaptics = {
   selectChip: jest.fn(),
+  openMenu: jest.fn(),
   commitRoutine: jest.fn(),
   commitSymptom: jest.fn(),
   destructiveConfirm: jest.fn(),
 };
 jest.mock('../../lib/haptics', () => ({
   selectChip: (...a: unknown[]) => mockHaptics.selectChip(...a),
+  openMenu: (...a: unknown[]) => mockHaptics.openMenu(...a),
   commitRoutine: (...a: unknown[]) => mockHaptics.commitRoutine(...a),
   commitSymptom: (...a: unknown[]) => mockHaptics.commitSymptom(...a),
   destructiveConfirm: (...a: unknown[]) => mockHaptics.destructiveConfirm(...a),
@@ -68,6 +70,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { LookCard } from './LookCard';
 import { CHIP_VERTICAL_REACH } from './LookChip';
+import { commonAncestor } from '../../testUtils/tree';
 import { useEventStore } from '../../store/eventStore';
 import { useMomentStore } from '../../store/momentStore';
 import { useUiStore } from '../../store/uiStore';
@@ -95,7 +98,7 @@ beforeEach(() => {
   mockReverse.mockResolvedValue(undefined);
   useEventStore.setState({ todayEvents: [] });
   useMomentStore.setState({ visible: false, payload: null, removed: false });
-  useUiStore.setState({ captureOverlay: null });
+  useUiStore.setState({ captureOverlay: null, intakeDoor: null });
 });
 
 afterEach(() => {
@@ -493,5 +496,92 @@ describe('the grid, the exits and the door', () => {
     // The reversal is unconditional; the WORDS are not handed to Juniper's card.
     expect(mockReverse).toHaveBeenCalledWith('e1', undefined);
     expect(t.queryByTestId('look-done')).toBeNull();
+  });
+});
+
+describe('the intake router (CUL-870 / N-3b)', () => {
+  it('sits in the FIRST ROW, between the absence chip and the opening chip', async () => {
+    // Order is the safety claim §3.2 falsified Door D over: three answers at equal cost,
+    // and the reassuring one never cheaper than the concerned one. N-4a built this row as
+    // a list precisely so the insertion moved nothing, and this is what would notice if a
+    // later edit appended the router after the opening chip instead.
+    const { findByTestId, getByTestId, getAllByText } = render(<LookCard />);
+    await findByTestId('look-card');
+
+    // The row itself: all three share one parent, and it is not the card.
+    const absence = getByTestId('look-absence-chip');
+    const door = getByTestId('look-intake-door');
+    const opening = getByTestId('look-opening-chip');
+    const row = commonAncestor(absence, door);
+    expect(row).not.toBeNull();
+    expect(commonAncestor(door, opening)).toBe(row);
+
+    // And their order, read off the rendered text in tree order.
+    const rendered = getAllByText(/.*/).map((n) => String(n.props.children));
+    const at = (needle: string) => rendered.findIndex((t) => t.includes(needle));
+    expect(at('Nothing unusual')).toBeGreaterThanOrEqual(0);
+    expect(at('Left his food')).toBeGreaterThan(at('Nothing unusual'));
+    expect(at('Not himself')).toBeGreaterThan(at('Left his food'));
+  });
+
+  it('reads *Left his food ›* on a multi-pet account, inflected for THIS pet', async () => {
+    const { findByTestId } = render(<LookCard />);
+    const chip = await findByTestId('look-intake-door');
+    expect(chip.props.accessibilityLabel).toBe('Left his food ›');
+
+    mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
+    const second = render(<LookCard />);
+    expect((await second.findByTestId('look-intake-door')).props.accessibilityLabel).toBe(
+      'Left her food ›',
+    );
+  });
+
+  it('reads *Didn’t eat ›* on a single-pet account', async () => {
+    mockPetState = { activePet: MOCHI, pets: [MOCHI] };
+    const { findByTestId } = render(<LookCard />);
+    expect((await findByTestId('look-intake-door')).props.accessibilityLabel).toBe('Didn’t eat ›');
+  });
+
+  it('is a BUTTON, never a checkbox — a tap records nothing', async () => {
+    // The chips either side of it toggle what the look will say. A `checked` state here
+    // would announce that this one did too (C-7: state is an accessibility CLAIM).
+    const { findByTestId } = render(<LookCard />);
+    const chip = await findByTestId('look-intake-door');
+    expect(chip.props.accessibilityRole).toBe('button');
+    expect(chip.props.accessibilityState?.checked).toBeUndefined();
+  });
+
+  it('opens the sheet for the CARD’S pet and writes nothing', async () => {
+    const { findByTestId } = render(<LookCard />);
+    fireEvent.press(await findByTestId('look-intake-door'));
+    expect(useUiStore.getState().intakeDoor).toEqual({
+      petId: 'p1',
+      petName: 'Mochi',
+      sex: 'male',
+      cardHasSelections: false,
+    });
+    expect(mockInsertLook).not.toHaveBeenCalled();
+    expect(useEventStore.getState().todayEvents).toEqual([]);
+  });
+
+  it('leaves the words already chosen exactly where they are, and says they are kept', async () => {
+    // T-3 and §3.1a together: the router is not a look word, so it neither selects nor
+    // clears — and the sheet is told there is something to promise.
+    const { findByTestId, getByTestId } = render(<LookCard />);
+    fireEvent.press(await findByTestId('look-absence-chip'));
+    fireEvent.press(getByTestId('look-intake-door'));
+    expect(useUiStore.getState().intakeDoor?.cardHasSelections).toBe(true);
+    // Still the owner's answer, untouched by the door.
+    expect(getByTestId('look-absence-chip').props.accessibilityState?.checked).toBe(true);
+    expect(mockInsertLook).not.toHaveBeenCalled();
+  });
+
+  it('ticks like a door, not like a chip', async () => {
+    // T-10: every chip in this row ticks because a tap changes what the look will say.
+    // Nothing is selected here — a surface opens — so it takes the menu verb.
+    const { findByTestId } = render(<LookCard />);
+    fireEvent.press(await findByTestId('look-intake-door'));
+    expect(mockHaptics.openMenu).toHaveBeenCalledTimes(1);
+    expect(mockHaptics.selectChip).not.toHaveBeenCalled();
   });
 });
