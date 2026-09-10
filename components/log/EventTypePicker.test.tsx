@@ -108,7 +108,7 @@ describe('EventTypePicker — flag-on (grouped grid)', () => {
     // completeness guard lives in the expanded describe below.
     const { getByText } = render(<EventTypePicker grouped onSelectType={jest.fn()} />);
     (Object.keys(EVENT_TYPES) as EventTypeKey[])
-      .filter((key) => key !== 'diarrhea' && !EVENT_TYPES[key].v2Only)
+      .filter((key) => key !== 'diarrhea' && key !== 'check_in' && !EVENT_TYPES[key].v2Only)
       .forEach((key) => {
         const label = key === 'stool_normal' ? 'Stool' : EVENT_TYPES[key].label;
         expect(getByText(label)).toBeTruthy();
@@ -183,7 +183,11 @@ describe('EventTypePicker — flag-on + expanded (the W1 taxonomy grid)', () => 
   it('surfaces EVERY type exactly once — v2Only tiles included (the expanded completeness guard)', () => {
     const { getByText } = render(<EventTypePicker grouped expanded onSelectType={jest.fn()} />);
     (Object.keys(EVENT_TYPES) as EventTypeKey[])
-      .filter((key) => key !== 'diarrhea')
+      // check_in (Noticed) is the second key with no tile anywhere, beside diarrhea —
+      // and unlike diarrhea it has no segment either. Its exclusion is asserted
+      // POSITIVELY in its own describe below, so this completeness guard subtracts it
+      // rather than pretending it does not exist.
+      .filter((key) => key !== 'diarrhea' && key !== 'check_in')
       .forEach((key) => {
         const label = key === 'stool_normal' ? 'Stool' : EVENT_TYPES[key].label;
         expect(getByText(label)).toBeTruthy();
@@ -214,5 +218,57 @@ describe('EventTypePicker — flag-on + expanded (the W1 taxonomy grid)', () => 
       expect(view.getByText('Sneeze')).toBeTruthy();
       expect(view.getByText('Meal')).toBeTruthy();
     }
+  });
+});
+
+// ── Noticed's picker exclusion (CUL-868, E-6) ────────────────────────────────
+//
+// `check_in` is a real EVENT_TYPES entry — it must be, because reads are never
+// flag-gated and History, the day spine and the drill-in all have to name a look on
+// any build (§12 FL-1). But the + menu is not a door to a look: the Home card is
+// (N-4a), and a second door would ask the owner to choose between two ways to say
+// the same thing, on the surface Principle 1 protects hardest.
+//
+// There is no `hidden` field to express that, and `v2Only` gates the tile THE WRONG
+// WAY — it hides a key from the flat grid and SHOWS it on the expanded one. So both
+// grids exclude it explicitly, and this is the test that says so. It renders every
+// grid state rather than trusting either filter, because the two exclusions live in
+// different files (the flat filter in EventTypePicker, the expanded one in
+// `expandedPickerGroups`) and a fix to one is not a fix to the other.
+describe('EventTypePicker — no Noticed tile, in any grid', () => {
+  const LOOK_LABEL = EVENT_TYPES.check_in.label;
+
+  it('the label is "Noticed" — the same word every look surface uses', () => {
+    expect(LOOK_LABEL).toBe('Noticed');
+  });
+
+  it.each([
+    ['flat (flag-off)', { grouped: false, expanded: false }],
+    ['grouped, unexpanded', { grouped: true, expanded: false }],
+    ['grouped, expanded', { grouped: true, expanded: true }],
+  ])('renders no Noticed tile: %s', (_name, props) => {
+    const { queryByText } = render(
+      <EventTypePicker {...props} onSelectType={jest.fn()} />,
+    );
+    expect(queryByText(LOOK_LABEL)).toBeNull();
+  });
+
+  it('renders no Noticed tile for either species on the expanded grid', () => {
+    for (const species of ['cat', 'dog', 'other', null]) {
+      const { queryByText } = render(
+        <EventTypePicker grouped expanded species={species} onSelectType={jest.fn()} />,
+      );
+      expect(queryByText(LOOK_LABEL)).toBeNull();
+    }
+  });
+
+  // The Energy & behavior group is where a look WOULD have landed (its family), so
+  // assert the group still renders its real tile — the exclusion removes one key, not
+  // a whole family header.
+  it('the family it belongs to still renders, carrying its real tiles', () => {
+    const { getByTestId } = render(<EventTypePicker grouped expanded onSelectType={jest.fn()} />);
+    const energy = within(getByTestId('event-group-Energy & behavior'));
+    expect(energy.getByText('Lethargy')).toBeTruthy();
+    expect(energy.queryByText(LOOK_LABEL)).toBeNull();
   });
 });

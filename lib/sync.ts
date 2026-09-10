@@ -44,6 +44,7 @@ import {
   type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
+import { wordsToLocalText, wordsFromLocalText } from './lookWordsCodec';
 import {
   VET_DOCUMENTS_BUCKET,
   prepareVetDocumentUpload,
@@ -112,6 +113,7 @@ async function loadLocalRowMeta(
 type QueueTable =
   | 'meals'
   | 'weight_checks'
+  | 'looks'
   | 'events'
   | 'event_attachments'
   | 'vet_visits'
@@ -977,6 +979,75 @@ async function drainWeightChecksQueue(): Promise<void> {
   for (const petId of landedPetIds) {
     await reconcilePetWeightSnapshot(petId);
   }
+}
+
+/**
+ * Flush unsynced look children to Supabase (CUL-868). Mirrors syncPendingWeightChecks
+ * exactly, and the parent gate is stronger here than a bare FK: `trg_looks_same_pet`
+ * (migration 064) reads the parent row and requires it to exist, to belong to the same
+ * pet, and to BE a `check_in` — so a child that flushes ahead of its event is not just
+ * an FK violation, it is refused as a check_violation (23514) that the row can never
+ * recover from on its own. Gating on `e.synced = 1` makes the order safe by
+ * construction: a look simply waits for the next cycle, after its event lands.
+ *
+ * 23514 is already in TERMINAL_SYNC_ERROR_CODES, which is the right policy for this
+ * table and is why nothing is added here: with the parent gate in place, a
+ * check_violation from `looks` means a genuinely malformed row (a forged pet_id, a
+ * local_day two days from its parent) — a permanent, client-side fault, not something
+ * to retry into. Verified against lib/syncQueue.ts rather than assumed.
+ */
+export function syncPendingLooks(): Promise<void> {
+  return serializeQueuePush('looks', drainLooksQueue);
+}
+
+async function drainLooksQueue(): Promise<void> {
+  // Ensure the JWT is fresh before writing (Pattern 4).
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+
+  const unsynced = await db.getAllAsync<{
+    id: string;
+    event_id: string;
+    pet_id: string;
+    outcome: string;
+    local_day: string;
+    words: string | null;
+    vocab_version: number;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+  }>(
+    `SELECT l.* FROM looks l
+       JOIN events e ON e.id = l.event_id
+      WHERE l.synced = 0 AND l.${NOT_QUARANTINED_SQL} AND e.synced = 1
+      LIMIT 100`,
+  );
+
+  if (unsynced.length === 0) return;
+
+  await pushRows(db, 'looks', unsynced, (l) => ({
+    id: l.id,
+    event_id: l.event_id,
+    pet_id: l.pet_id,
+    outcome: l.outcome,
+    local_day: l.local_day,
+    // TEXT[] server-side, a JSON-array string locally — decoded through the one
+    // codec that knows the encoding (lib/lookWordsCodec.ts), never JSON.parse here.
+    words: wordsFromLocalText(l.words),
+    vocab_version: l.vocab_version,
+    // The owner's own words. It leaves the device for her account's row and nowhere
+    // else: no log line, no telemetry, no model (§9 rule 1 — and
+    // guards/lookNotes.test.ts pins the server side of that).
+    notes: l.notes,
+    created_at: l.created_at,
+    // B-055 — send the client updated_at. The set_updated_at trigger rewrites it to
+    // server-NOW on the conflict-update branch, so this value is authoritative only
+    // for a brand-new INSERT; either way the row lands with a usable updated_at for
+    // the next device to compare.
+    updated_at: l.updated_at,
+  }));
 }
 
 // Re-point the server-side pets.weight_kg snapshot at a pet's LATEST reading (by
@@ -1996,6 +2067,11 @@ interface RemoteWeightCheck {
   id: string; event_id: string; pet_id: string; weight_kg: number;
   notes: string | null; created_at: string; updated_at: string;
 }
+interface RemoteLook {
+  id: string; event_id: string; pet_id: string; outcome: string; local_day: string;
+  words: string[] | null; vocab_version: number | null; notes: string | null;
+  created_at: string; updated_at: string;
+}
 interface RemoteEventAttachment {
   id: string; event_id: string; pet_id: string; storage_path: string;
   mime_type: string | null; taken_at: string | null; sort_order: number | null; created_at: string;
@@ -2221,6 +2297,62 @@ async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> 
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('weight_checks', wm);
+}
+
+async function hydrateLooks(db: Db, stale: () => boolean): Promise<void> {
+  // CUL-868 — Noticed's child, reconciled like weight_checks: incremental server-time
+  // LWW on updated_at with the commit-skew overlap, replace only when the remote row
+  // is strictly newer (a pending local edit isn't clobbered; push-before-pull ships it
+  // up first regardless). Runs AFTER hydrateEvents so the FK-bearing parent event
+  // exists locally before the child lands. Identity columns (event_id, pet_id) are
+  // immutable and left untouched by DO UPDATE.
+  //
+  // No absence pass: a look is only ever SOFT-deleted through its parent event's
+  // deleted_at (which propagates through hydrateEvents), so there is no hard-delete a
+  // pull cannot observe — and the readers join `events` and drop deleted parents, so a
+  // surviving child row renders nothing (spec §9 rule 2).
+  //
+  // EXPLICIT COLUMN LIST, never `*`: `looks` carries the owner's free text and a
+  // `select('*')` here is how a column added later (an `observer` the household track
+  // fills in) reaches a device that has no column for it.
+  const since = await getWatermark('looks');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteLook>(
+    'looks',
+    'id, event_id, pet_id, outcome, local_day, words, vocab_version, notes, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(db, 'looks', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const l of toWrite) {
+    // DO UPDATE refreshes the mutable fields only (outcome, local_day, words,
+    // vocab_version, notes — all four are editable on the record, N-3); identity
+    // columns and created_at are immutable and deliberately omitted from the SET.
+    // The `WHERE ...synced = 1` backstop guarantees a hydrate write never clobbers a
+    // row with an unpushed local edit.
+    await db.runAsync(
+      `INSERT INTO looks
+        (id, event_id, pet_id, outcome, local_day, words, vocab_version, notes,
+         created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         outcome=excluded.outcome, local_day=excluded.local_day, words=excluded.words,
+         vocab_version=excluded.vocab_version, notes=excluded.notes,
+         updated_at=excluded.updated_at, synced=1
+       WHERE looks.synced = 1`,
+      [
+        l.id, l.event_id, l.pet_id, l.outcome, l.local_day,
+        wordsToLocalText(l.words ?? []), l.vocab_version ?? 1, l.notes ?? null,
+        l.created_at, l.updated_at,
+      ],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('looks', wm);
 }
 
 async function hydrateEventAttachments(db: Db, stale: () => boolean): Promise<void> {
@@ -2806,6 +2938,12 @@ export async function hydrateFromCloud(): Promise<void> {
   // hydrateEvents (run first, above). LWW child like meals; no absence pass.
   await runHydrationStep('weight_checks', () => hydrateWeightChecks(db, stale));
   if (stale()) return;
+  // CUL-868: looks.event_id → events (CASCADE) locally and server-side, so it must
+  // follow hydrateEvents for the same reason weight_checks does. LWW child; no
+  // absence pass — a look is only ever soft-deleted through its parent's
+  // deleted_at, which hydrateEvents propagates.
+  await runHydrationStep('looks', () => hydrateLooks(db, stale));
+  if (stale()) return;
   await runHydrationStep('event_attachments', () => hydrateEventAttachments(db, stale));
   if (stale()) return;
   await runHydrationStep('vet_visits', () => hydrateVetVisits(db, stale));
@@ -2860,6 +2998,10 @@ async function pushAllQueues(): Promise<void> {
   await syncPendingMeals();
   // B-186: weight_checks FK→events; pushed after events (parents land first).
   await syncPendingWeightChecks();
+  // CUL-868: looks FK→events AND trg_looks_same_pet requires the parent check_in to
+  // be visible, so the parent must land first. The drain gates on e.synced = 1
+  // regardless — this ordering only saves a cycle.
+  await syncPendingLooks();
   await syncPendingAttachments();
   await syncPendingVetVisits();
   // B-478: no server-side FK to vet_visits is required for a document to land

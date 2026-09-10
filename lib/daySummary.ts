@@ -39,7 +39,12 @@
 // day, and it is asserted by a test over the copy constants below.
 
 import type { TimelineRow } from './db';
-import { describeDayEvent, type DayEventDisplay } from './dayEvents';
+import {
+  assertNeverCategory,
+  describeDayEvent,
+  type DayEventDisplay,
+  type EventTintCategory,
+} from './dayEvents';
 import { localDayIndex, localDayIndexOf } from './utils';
 import { pluralize } from './dashboardCards';
 import { EVENT_TYPES, type EventTypeKey } from '../constants/eventTypes';
@@ -439,10 +444,33 @@ export function buildCountChips(rows: readonly CountableEvent[]): DayCountChip[]
   let meals = 0;
   let doses = 0;
   for (const r of rows) {
-    if (r.category === 'symptom') symptomCounts.set(r.eventType, (symptomCounts.get(r.eventType) ?? 0) + 1);
-    else if (r.category === 'meal') meals += 1;
-    else if (r.category === 'medication') doses += 1;
-    else otherCounts.set(r.eventType, (otherCounts.get(r.eventType) ?? 0) + 1);
+    // Switched, not an else-chain (§5.1 #1a): under the old `else` fall-through a
+    // look landed in `otherCounts` and Home's count line read "1 look" — the record
+    // counting the owner's perception as an event. Every arm `continue`s and there
+    // is NO `default:`, which is what lets the statement after the switch see
+    // `r.category` narrowed to `never`: a sixth category is a compile error here,
+    // not a silent chip. (Proven by mutation — drop the 'look' arm and tsc reds on
+    // the assertNeverCategory line.)
+    switch (r.category) {
+      case 'symptom':
+        symptomCounts.set(r.eventType, (symptomCounts.get(r.eventType) ?? 0) + 1);
+        continue;
+      case 'meal':
+        meals += 1;
+        continue;
+      case 'medication':
+        doses += 1;
+        continue;
+      case 'look':
+        // NOT COUNTED, anywhere on this line (T-5, T-14). A look is an answer, not an
+        // event, and the only honest count over looks is a count of DAYS, which lives
+        // in lib/looks.ts and is never mixed with a day's event counts.
+        continue;
+      case 'other':
+        otherCounts.set(r.eventType, (otherCounts.get(r.eventType) ?? 0) + 1);
+        continue;
+    }
+    assertNeverCategory(r.category);
   }
 
   const chips: DayCountChip[] = [];
@@ -465,6 +493,41 @@ export function buildCountChips(rows: readonly CountableEvent[]): DayCountChip[]
   return chips;
 }
 
+/**
+ * The lead line on a day whose only rows are looks (spec §5.1 row 1b, ruled by the
+ * team under the n=1 invariant and vetoable).
+ *
+ * The look is named as the ACT — "Noticed today" — never as the day's content and
+ * never as a state of the pet. The second clause is a claim about the RECORD ("logged
+ * yet"), which is the only kind of absence claim this app makes: "nothing else
+ * happened" would be a verdict the record cannot support, and a day with a look in it
+ * is exactly the day an owner may have been worried enough to answer.
+ */
+const LOOK_ONLY_LEAD = 'Noticed today · nothing else logged yet.';
+
+/** Every row of the day, split by category ONCE — the shape that replaced four
+ *  `category === '…'` filters (§5.1). The switch has no `default:`, so the statement
+ *  after it narrows to `never` and a sixth category is a compile error rather than a
+ *  bucket nobody reads. A look gets a bucket like everything else; what makes it
+ *  uncounted is that no COUNT reads that bucket, which is a decision at each call
+ *  site instead of an accident of an `else`. */
+function partitionByCategory(rows: readonly DaySummaryRow[]): Record<EventTintCategory, DaySummaryRow[]> {
+  const out: Record<EventTintCategory, DaySummaryRow[]> = {
+    symptom: [], meal: [], medication: [], other: [], look: [],
+  };
+  for (const r of rows) {
+    switch (r.category) {
+      case 'symptom': out.symptom.push(r); continue;
+      case 'meal': out.meal.push(r); continue;
+      case 'medication': out.medication.push(r); continue;
+      case 'other': out.other.push(r); continue;
+      case 'look': out.look.push(r); continue;
+    }
+    assertNeverCategory(r.category);
+  }
+  return out;
+}
+
 /** C0 — the lead line, by FIXED precedence: a symptom present → name it; else a
  *  running trial → its day + meal count; else the day's counts. Count-anchored,
  *  never a verdict/arrow/percentage. Null only on an empty day (the screen renders
@@ -482,9 +545,19 @@ export function buildLeadLine(
 ): string | null {
   if (rows.length === 0) return null;
 
+  const byCategory = partitionByCategory(rows);
+
+  // 0 — A LOOK-ONLY DAY (spec §5.1 row 1b). Before this existed the day fell through
+  // every tier and returned null, so the screen rendered its ZERO-LOG empty state
+  // over a day the owner had answered — the record telling her nothing happened on a
+  // day she wrote in it. The lead names the ACT and says plainly that nothing else is
+  // there yet; it never names the words (they are on the `looks` child, which this
+  // row shape does not carry) and it never reads as a verdict about the day.
+  if (byCategory.look.length === rows.length) return LOOK_ONLY_LEAD;
+
   // 1 — Symptoms lead, factually. Intake-is-not-preference routes a symptom to the
   // top; the read/severity lives in the event's own detail, never here.
-  const symptomRows = rows.filter((r) => r.category === 'symptom');
+  const symptomRows = byCategory.symptom;
   if (symptomRows.length > 0) {
     if (symptomRows.length === 1) {
       const r = symptomRows[0];
@@ -507,17 +580,20 @@ export function buildLeadLine(
 
   // 2 — A running trial anchors the day on its day-position + meal count.
   if (trial) {
-    const mealRows = rows.filter((r) => r.category === 'meal');
+    const mealRows = byCategory.meal;
     const base = `Day ${trial.dayCounter} of the ${trial.name}`;
     return mealRows.length > 0
       ? `${base} — ${numberWord(mealRows.length)} ${pluralize(mealRows.length, 'meal')} in ${petName}’s record${mealRefusalClause(mealRows)}.`
       : `${base}.`;
   }
 
-  // 3 — Otherwise the day's own counts.
-  const mealRows = rows.filter((r) => r.category === 'meal');
-  const doses = rows.filter((r) => r.category === 'medication').length;
-  const others = rows.filter((r) => r.category === 'other');
+  // 3 — Otherwise the day's own counts. `others` is the partition's own bucket, not
+  // an `=== 'other'` filter: that equality was the §5.1 row 1b defect — an equality
+  // the type system cannot see, which would have taken a look into the day's counts
+  // and printed "one look in Pixel's record today" with green CI.
+  const mealRows = byCategory.meal;
+  const doses = byCategory.medication.length;
+  const others = byCategory.other;
   const phrases: string[] = [];
   if (mealRows.length) phrases.push(`${numberWord(mealRows.length)} ${pluralize(mealRows.length, 'meal')}`);
   if (doses) phrases.push(`${numberWord(doses)} ${pluralize(doses, 'dose')}`);

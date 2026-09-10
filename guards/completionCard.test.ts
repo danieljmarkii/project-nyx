@@ -61,7 +61,28 @@ const RULES = [
     handle: 'showMedication',
     why: 'a dose without its card can only ever say the affirmative "given" (B-156 G1)',
   },
+  {
+    // CUL-868 (Noticed N-2). The rule is registered THE PR THE HELPER SHIPS, not the PR
+    // its first caller does — because the first caller is exactly the moment the rule is
+    // easiest to forget, and a guard added afterwards is a guard added after the bug.
+    //
+    // `firstCallerLands` is what makes that honest rather than vacuous. With no call
+    // sites, "every call site fires the handle" passes over an empty set and proves
+    // nothing; so while this field is set, the guard asserts there are EXACTLY ZERO
+    // call sites. The day CUL-871 wires the Home card, that assertion fails — which is
+    // the intended tripwire: it forces the author to build `showLook` and delete this
+    // field in the same PR, at which point the ordinary rule takes over.
+    helper: 'insertLook',
+    handle: 'showLook',
+    why: 'a look without its card loses the completion beat AND its Undo — and a look carrying a note is not recreatable, so Undo is the only way back (T-22, C-21)',
+    firstCallerLands: 'CUL-871 (N-4a) — the Home card is the first and only caller',
+  },
 ] as const;
+
+/** The rules whose helper has no caller yet, by decision. Derived rather than
+ *  hand-listed so the two tests below cannot disagree about which rules are which. */
+const PENDING_RULES = RULES.filter((r) => 'firstCallerLands' in r);
+const LIVE_RULES = RULES.filter((r) => !('firstCallerLands' in r));
 
 /**
  * Files that write a record and deliberately do NOT play a named card. Each is a
@@ -78,7 +99,7 @@ const EXEMPT: Record<string, string> = {
 };
 
 /** The helper's own module never counts as a call site. */
-const DEFINITIONS = ['lib/meals.ts', 'lib/medicationDose.ts'];
+const DEFINITIONS = ['lib/meals.ts', 'lib/medicationDose.ts', 'lib/looks.ts'];
 
 const EXEMPTION = /\/\/\s*completion-card-ok:\s*\S+/;
 
@@ -154,10 +175,17 @@ function callSites(helper: string, root: string): string[] {
 }
 
 describe('§5 — every commit path routes through its completion card', () => {
-  it.each(RULES)('finds real $helper call sites to check', ({ helper }) => {
+  it.each(LIVE_RULES)('finds real $helper call sites to check', ({ helper }) => {
     // If a rename ever makes the scan match nothing, the guard would pass by checking
     // an empty set. Fail instead — the same reason haptics.test.ts pins its floor.
     expect(callSites(helper, ROOT).length).toBeGreaterThan(0);
+  });
+
+  // The other side of that floor, for a helper that ships before its caller. The
+  // assertion is inverted ON PURPOSE: the rule is already registered, so the only thing
+  // left to protect is the claim that nobody calls it yet.
+  it.each(PENDING_RULES)('$helper has no call site yet — $firstCallerLands', ({ helper }) => {
+    expect(callSites(helper, ROOT)).toEqual([]);
   });
 
   it.each(RULES)('every $helper call site fires $handle', ({ helper, handle, why }) => {

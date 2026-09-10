@@ -46,6 +46,19 @@ const ALLOWED: Record<string, string> = {
   'lib/weight.ts':
     'insertWeightCheck — you read the scale. occurred_at is now, or a time the owner set ' +
     'themselves via the back-dating escape hatch.',
+  'lib/looks.ts':
+    'insertLook — a look is a PERCEPTION at a moment the owner was present for, so there is ' +
+    'nothing to find and the B-010 found/window path can never apply (taxonomy D10, daily-look ' +
+    'spec §5.4). occurred_at is the clock at the tap or a point the owner set on the record; ' +
+    'the SOURCE distinguishes those two (`now` vs `manual`, C-10), never the confidence. ' +
+    'A look is also the one row here whose confidence a vet never reads as a claim about an ' +
+    'incident: the report prints the day it was answered, not a witnessed sighting.',
+  'lib/lookDevSeed.ts':
+    'The dev-only Noticed seed (__DEV__ only, refused otherwise). It writes its looks THROUGH ' +
+    'insertLook, so this literal is only on the vomit rows it seeds beside them — back-dated ' +
+    'instants a developer chose, which is the same claim the back-dating escape hatch makes on ' +
+    'lib/weight.ts. Every seeded row also carries SEED_MARKER in its notes, so a seeded record ' +
+    'can never be mistaken for an owner\u2019s on a device.',
   'lib/captureInbox.ts':
     'Widget/App-Intent ingest. occurred_at is the TAP time carried in the capture record, ' +
     'not the drain time — the owner pressed the button at the moment they fed the pet.',

@@ -92,6 +92,19 @@ export default function RootLayout() {
 
     initDb().catch(console.error);
 
+    // CUL-868 — Noticed's dev seed, on the console rather than on a screen. Every
+    // floor this feature has is measured in ANSWERED DAYS (fourteen for the coverage
+    // footer), so the device pass would otherwise only ever see the day-one states.
+    // `__DEV__` is false in a release binary and Metro strips the branch, so this
+    // reaches no owner; putting it here instead of on the beta shelf keeps a designed,
+    // shipped screen free of a control that would have to be hidden on every one of
+    // them. Call it once from the debugger console: await __seedNoticed('<petId>', 'dog')
+    if (__DEV__) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { seedNoticedLooks } = require('../lib/lookDevSeed');
+      (globalThis as Record<string, unknown>).__seedNoticed = seedNoticedLooks;
+    }
+
     // Cold start FROM a recovery link (B-280 §6.4): the deep-link handler owns the
     // ENTIRE auth transition — provenance (FR-14), the gate (FR-6), and the
     // wipe-before-exchange (FR-7). Run it instead of the normal cold-start routing

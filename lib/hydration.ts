@@ -272,6 +272,17 @@ export const LOCAL_WIPE_TABLES = [
   // table that nobody added here breaks the build instead of going unnoticed.)
   'diet_trial_foods',
   'diet_trials',
+  // CUL-868 looks — Noticed's mirror. A local FK child of events (ON DELETE CASCADE),
+  // so it MUST precede 'events', the same rule medication_administrations and
+  // weight_checks follow above.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping, and it is the free-text row in
+  // this list: `notes` is whatever the owner typed about her animal — and, through
+  // `words`, a dated series of observations about a household's pet. Surviving a
+  // sign-out would leave the prior account's own words on a device now in someone
+  // else's hands. Proven by mutation at CUL-868 (drop this line, watch
+  // hydration.test.ts red), because this list still fails OPEN at runtime.
+  'looks',
   'events',
   // B-478 vet_documents — the Vet Files library. No local FK is declared on
   // vet_visit_id (see localSchema.ts for why), so nothing would throw on a

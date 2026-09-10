@@ -7,6 +7,7 @@ import {
   Ellipsis,
   AudioLines,
   Wind,
+  Eye,
 } from 'lucide-react-native';
 import {
   VomitGlyph,
@@ -121,6 +122,23 @@ export const EVENT_TYPES = {
   // value (migration 001); this exposes it in the quick-log UI for the first time.
   weight_check: { label: 'Weight',        icon: Scale,           hasSeverity: false, hasFood: false, family: 'measurements',   species: 'all', hasPhoto: true,  confidenceModel: 'witnessed', v2Only: false },
   other:        { label: 'Other',        icon: Ellipsis,         hasSeverity: false, hasFood: false, family: 'more',           species: 'all', hasPhoto: true,  confidenceModel: 'artifact',  v2Only: false },
+  // Noticed — the daily look (CUL-868 / N-2; docs/nyx-daily-look-requirements.md).
+  // A `check_in` event is the PARENT of a `looks` row, exactly as `weight_check` is
+  // the parent of a `weight_checks` row: the words, the outcome and the local day
+  // live on the child. It is here because reads are never flag-gated (§12 FL-1) —
+  // History, the day spine and the drill-in must be able to name a look on any
+  // build — and it is NOT a symptom (out of SYMPTOM_TYPES, its own 'look' tint
+  // category), so no count, denominator or engine lane can reach it (T-5).
+  //
+  // NO PICKER TILE, IN EITHER GRID (R6; E-6). There is no `hidden` field, and
+  // `v2Only` gates the tile the WRONG WAY (it hides from the flat grid and SHOWS on
+  // the expanded one), so both grids exclude this key explicitly and a test renders
+  // both and asserts no tile: the log flow's + menu is not the door to a look — the
+  // Home card is (N-4a), and a second door would ask the owner to choose one.
+  // hasPhoto false: a look is a perception, and there is nothing to photograph
+  // (§5.2). confidenceModel 'witnessed' by construction — there is nothing to find
+  // (taxonomy D10, spec §5.4).
+  check_in:     { label: 'Noticed',      icon: Eye,              hasSeverity: false, hasFood: false, family: 'energyBehavior', species: 'all', hasPhoto: false, confidenceModel: 'witnessed', v2Only: false },
 } as const satisfies Record<string, EventTypeConfig>;
 
 // Severity (1–5 scale) removed from MVP — photos carry the clinical weight.
@@ -234,6 +252,11 @@ export function expandedPickerGroups<K extends string>(
   return EVENT_FAMILIES.flatMap((family) => {
     const familyKeys = keys.filter((key) => {
       if (key === 'diarrhea') return false;
+      // `check_in` is a look's parent, never a tile (E-6): the Home card is the only
+      // door to a look, and `v2Only` cannot express "no tile" — it would SHOW the key
+      // on exactly this grid. Excluded here rather than by a config field so the
+      // exclusion is one line in the derivation both grids' tests read.
+      if (key === 'check_in') return false;
       const entry = entries[key];
       if (entry.family !== family.key) return false;
       return entry.species === 'all' || entry.species === petSpecies;

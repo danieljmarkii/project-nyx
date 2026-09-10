@@ -3,12 +3,13 @@
 // of that chain stubs it (the daySummary.test shape).
 jest.mock('../lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import {
   EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, EVENT_FAMILIES, expandedPickerGroups,
 } from './eventTypes';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
+import { LOOK_WORDS, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY } from './lookWords';
 import { TREND_SYMPTOM_TYPES } from '../lib/trendSummary';
 import { SYMPTOM_EVENT_TYPES } from '../lib/analytics';
 import { eventTintCategory, describeDayEvent } from '../lib/dayEvents';
@@ -43,12 +44,23 @@ type WalkState = {
   decision: string;
 };
 
+/** The leaves this table walks. `cough` / `sneeze` are W1's; `check_in` is Noticed's
+ *  parent type (CUL-868) — not a wave, and not a symptom, which is exactly why it is
+ *  here: a look is `events` row like any other under Shape A, and every one of these
+ *  lists is a place it could silently become a symptom, a denominator or an engine
+ *  input. Its decision is NO in all nineteen, and the point of the column is that the
+ *  NO is written down per list rather than inherited from "nobody added it". */
+type WalkLeaf = 'cough' | 'sneeze' | 'check_in';
+
+type WalkReading = Record<WalkLeaf, boolean>;
+
 interface WalkRow {
   list: string;
   governs: string;
-  read: () => { cough: boolean; sneeze: boolean };
+  read: () => WalkReading;
   cough: WalkState;
   sneeze: WalkState;
+  check_in: WalkState;
 }
 
 const ROOT = join(__dirname, '..');
@@ -75,17 +87,17 @@ function stripComments(src: string): string {
     .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
 }
 
-function scan(relPath: string, marker: string, terminator: string) {
+function scan(relPath: string, marker: string, terminator: string): WalkReading {
   const block = stripComments(declBlock(relPath, marker, terminator));
   // A leaf lives in a list as a quoted member ('cough') OR as a Record key (cough:) —
   // the label maps use the key form, and missing it read three joined rows as absent.
   const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(block);
-  return { cough: has('cough'), sneeze: has('sneeze') };
+  return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
 }
 
-const inSet = (set: ReadonlySet<string> | readonly string[]) => () => {
+const inSet = (set: ReadonlySet<string> | readonly string[]) => (): WalkReading => {
   const has = (k: string) => (Array.isArray(set) ? set.includes(k) : (set as ReadonlySet<string>).has(k));
-  return { cough: has('cough'), sneeze: has('sneeze') };
+  return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
 };
 
 // The walk. Row order mirrors the spec's §13a table (#1–#10 + the signal mirrors).
@@ -96,6 +108,14 @@ const WALK: WalkRow[] = [
     read: inSet(SYMPTOM_TYPES),
     cough: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
     sneeze: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
+    check_in: {
+      now: false,
+      decision: 'NO — the root NO, and every other row on this table follows from it. A look is the '
+        + 'owner\'s PERCEPTION of her animal, not a sign logged about it (T-5); membership here '
+        + 'would tint a look rose on every row surface and fire the symptom commit haptic. '
+        + '`check_in` has its own tint category (\'look\', lib/dayEvents.ts) precisely so it never '
+        + 'needs to borrow this one.',
+    },
   },
   {
     list: 'CORRELATION_SYMPTOM_TYPES (generate-signal/detection.ts)',
@@ -111,6 +131,15 @@ const WALK: WalkRow[] = [
         + 'and the report flag); ⑤/⑥ structurally N/A (vomit-only constants); ③/④ and L4 no at W1.',
     },
     sneeze: { now: false, decision: 'NO at W1 — data-only (§9); joins by explicit config when density warrants' },
+    check_in: {
+      now: false,
+      decision: 'NO — the engine boundary, and the load-bearing one. This list is the engine\'s FETCH '
+        + 'union and its coverage denominators, so membership would put looks into '
+        + '`input.symptomEvents` and from there into `loggingDaysInWindow` and '
+        + '`countsTowardComparisonGate` (which read the gate cell of the same rows) — the CUL-787 '
+        + 'defect shape exactly: taps flipping `densityComparable` and publishing a fall the guard '
+        + 'was withholding. A look never enters the engine, at all, in v1.',
+    },
   },
   {
     list: 'REPORT_SYMPTOM_TYPES (generate-report/report.ts)',
@@ -130,6 +159,13 @@ const WALK: WalkRow[] = [
         + 'wants counted, exactly like lethargy). NOT via detection: sneeze is not in the engine fetch, '
         + 'so this list feeds counting only.',
     },
+    check_in: {
+      now: false,
+      decision: 'NO — a look is not a symptom the frequency table counts, and it never becomes one: N-6 '
+        + '(CUL-875) gives looks their OWN page-1 line, graph and Appendix G, and lands this '
+        + 'explicit exclusion beside the `detectSignals` one in the same PR (§10.5). The report '
+        + 'names the word beside the tile\'s count; it never adds the word TO the count.',
+    },
   },
   {
     list: 'TREND_SYMPTOM_TYPES (lib/trendSummary.ts)',
@@ -137,6 +173,12 @@ const WALK: WalkRow[] = [
     read: inSet(TREND_SYMPTOM_TYPES),
     cough: { now: true, decision: 'YES — landed in PR-3a (client mirrors ship first, HR-2)' },
     sneeze: { now: true, decision: 'YES — landed in PR-3a' },
+    check_in: {
+      now: false,
+      decision: 'NO — Trend is a count of logged signs over a window. A rise in *Lively* is not a rise in '
+        + 'anything Trend measures, and a rise in *Off* is the owner\'s read, not the record\'s '
+        + 'count.',
+    },
   },
   {
     list: 'SYMPTOM_EVENT_TYPES (lib/analytics.ts)',
@@ -152,6 +194,13 @@ const WALK: WalkRow[] = [
         + 'discipline unchanged.',
     },
     sneeze: { now: true, decision: 'YES — landed in PR-3a (same consumers, same pins)' },
+    check_in: {
+      now: false,
+      decision: 'NO — the widest single list (Patterns grid, frequency calendar, trial outcome deltas, '
+        + 'the widget\'s symptom tile). The look card on Patterns reads its OWN rows through '
+        + 'lib/looks.ts (N-5), and the widget never carries a look at all (V2-1: no field in '
+        + 'widgetSnapshotV2 may hold an owner\'s perception).',
+    },
   },
   {
     list: 'ASK_SYMPTOM_TYPES (supabase/functions/ask/tools.ts)',
@@ -166,6 +215,12 @@ const WALK: WalkRow[] = [
         + 'chain, never its own.',
     },
     sneeze: { now: true, decision: 'YES — same landing as cough (same mirror, same order)' },
+    check_in: {
+      now: false,
+      decision: 'NO — Ask stays blind to looks in v1 (§9; whether it may ever recall them under D2\'s '
+        + 'transform-only read is Q-4, a T&S ruling for the Ask track). G5 Timeline-parity is not '
+        + 'violated by the absence: Ask does not count looks and does not claim to.',
+    },
   },
   {
     list: 'CORRELATION_SYMPTOM_TYPES client mirror (lib/patternsTiming.ts)',
@@ -182,6 +237,13 @@ const WALK: WalkRow[] = [
         + 'reduction the guard was withholding. guards/loggedDayParity.test.ts pins it in both directions.',
     },
     sneeze: { now: false, decision: 'NO — not fetched at W1, and not in the gate cell either' },
+    check_in: {
+      now: false,
+      decision: 'NO — the mirror of the engine\'s comparison-gate set, so the NO here is the same NO as '
+        + 'the engine\'s and for the same reason. This is the row E-18 corrected: the mirror lives '
+        + 'in this list, and guards/loggedDayParity.test.ts is what pins the two sides together — '
+        + 'there is no `loggedDays` helper in that file to point at instead.',
+    },
   },
   {
     list: 'SYMPTOM_NOUN + SYMPTOM_CHIP_ORDER (lib/daySummary.ts)',
@@ -191,10 +253,21 @@ const WALK: WalkRow[] = [
       // half alone would be exactly the silent partial membership this table exists for.
       const order = scan('lib/daySummary.ts', 'const SYMPTOM_CHIP_ORDER', '];');
       const noun = scan('lib/daySummary.ts', 'const SYMPTOM_NOUN', '};');
-      return { cough: order.cough && noun.cough, sneeze: order.sneeze && noun.sneeze };
+      return {
+        cough: order.cough && noun.cough,
+        sneeze: order.sneeze && noun.sneeze,
+        check_in: order.check_in && noun.check_in,
+      };
     },
     cough: { now: true, decision: 'YES — landed in PR-3a (real noun + chip slot after the GI pair, family order)' },
     sneeze: { now: true, decision: 'YES — landed in PR-3a' },
+    check_in: {
+      now: false,
+      decision: 'NO to both halves — a look has no symptom noun and no chip slot, because it is not '
+        + 'counted on the count line at all. That refusal is structural rather than a missing '
+        + 'entry: buildCountChips switches on the tint category and the \'look\' arm declines (§5.1 '
+        + '#1a).',
+    },
   },
   {
     list: 'WIDGET_SYMPTOM_LABELS (lib/widgetSnapshot.ts)',
@@ -202,6 +275,12 @@ const WALK: WalkRow[] = [
     read: () => scan('lib/widgetSnapshot.ts', 'const WIDGET_SYMPTOM_LABELS', '};'),
     cough: { now: true, decision: 'YES — landed in PR-3a (with SYMPTOM_EVENT_TYPES, which scopes the widget query)' },
     sneeze: { now: true, decision: 'YES — landed in PR-3a' },
+    check_in: {
+      now: false,
+      decision: 'NO — and the widget is blind by construction as well: `todayEvents` is built from '
+        + 'explicit per-class queries (meal / med / symptom), so a look is never fetched. This row '
+        + 'is what pins that (spec §5.1 #4) — the query shape could change; the decision may not.',
+    },
   },
   {
     list: 'TYPE_FILTER_KEYS (components/history/TypeScopeControl.tsx)',
@@ -209,6 +288,14 @@ const WALK: WalkRow[] = [
     read: () => scan('components/history/TypeScopeControl.tsx', 'const TYPE_FILTER_KEYS', '];'),
     cough: { now: true, decision: 'YES — landed in PR-3a (un-gated on purpose — §12: reads are never flag-gated)' },
     sneeze: { now: true, decision: 'YES — landed in PR-3a' },
+    check_in: {
+      now: true,
+      decision: 'YES — the ONE yes on this table, and it is a lens, not a membership. History must be '
+        + 'able to show only the looks (`/history?type=check_in`), which is the doorway Patterns\' '
+        + '*What you noticed* card points at (N-5). Filtering a type is not calling it a symptom: '
+        + 'this list is keyed on EVENT_TYPES, not on SYMPTOM_TYPES, and the row surface still tints '
+        + 'a look neutral. Un-gated on purpose (§12: reads are never flag-gated).',
+    },
   },
   {
     list: 'SignalSymptomType + SYMPTOM_LABEL (lib/signal.ts / lib/signalCopy.ts)',
@@ -216,7 +303,11 @@ const WALK: WalkRow[] = [
     read: () => {
       const union = scan('lib/signal.ts', 'export type SignalSymptomType', ';');
       const label = scan('lib/signalCopy.ts', 'const SYMPTOM_LABEL', '};');
-      return { cough: union.cough && label.cough, sneeze: union.sneeze && label.sneeze };
+      return {
+        cough: union.cough && label.cough,
+        sneeze: union.sneeze && label.sneeze,
+        check_in: union.check_in && label.check_in,
+      };
     },
     cough: {
       now: true,
@@ -225,6 +316,13 @@ const WALK: WalkRow[] = [
         + '— pinned in lib/signalCopy.symptomWord.test.ts.',
     },
     sneeze: { now: true, decision: 'YES — landed in PR-3a (the mirrors carry every W1 leaf so a later config flip needs no client cut)' },
+    check_in: {
+      now: false,
+      decision: 'NO to both halves — the Signal\'s payload union and its owner copy. The engine never '
+        + 'emits a look, so a client type for one would be a shape nothing can produce; and a '
+        + 'Signal sentence naming a look would be the engine speaking about a perception it did not '
+        + 'read.',
+    },
   },
   // ── Rows 12–15: lists the 2026-08-27 product-team review discovered OUTSIDE the §13a
   // ten (+ signal mirrors) — the reason the discovery guard (guards/symptomLists.test.ts)
@@ -235,10 +333,19 @@ const WALK: WalkRow[] = [
     read: () => {
       const metrics = scan('lib/ask.ts', 'const SYMPTOM_METRICS', ');');
       const history = scan('lib/ask.ts', 'const HISTORY_SYMPTOM_TYPES', ');');
-      return { cough: metrics.cough && history.cough, sneeze: metrics.sneeze && history.sneeze };
+      return {
+        cough: metrics.cough && history.cough,
+        sneeze: metrics.sneeze && history.sneeze,
+        check_in: metrics.check_in && history.check_in,
+      };
     },
     cough: { now: true, decision: 'YES — landed in PR-3a (review finding; Patterns detail + History filter both exist as of this PR)' },
     sneeze: { now: true, decision: 'YES — landed in PR-3a' },
+    check_in: {
+      now: false,
+      decision: 'NO to both halves — Ask\'s tap-through provenance. It follows ASK_SYMPTOM_TYPES: with no '
+        + 'look count to audit, there is no audit link to give.',
+    },
   },
   {
     list: 'SYMPTOM_OCCURRENCE_LABELS (lib/metricDetail.ts)',
@@ -246,6 +353,12 @@ const WALK: WalkRow[] = [
     read: () => scan('lib/metricDetail.ts', 'const SYMPTOM_OCCURRENCE_LABELS', '};'),
     cough: { now: true, decision: 'YES — landed in PR-3a (found by the discovery-guard sweep; fallback was safe but terse)' },
     sneeze: { now: true, decision: 'YES — landed in PR-3a' },
+    check_in: {
+      now: false,
+      decision: 'NO — the frequency calendar\'s sentence form. The calendar is symptom-scoped; a look\'s '
+        + 'own day marks are the record\'s (N-3) and its counts are Patterns\' (N-5), each with the '
+        + 'answered-day denominator this surface has no notion of.',
+    },
   },
   {
     list: 'TRIAL_RESPONSE_LOGGED_DAY_TYPES (lib/dietTrialFacts.ts)',
@@ -269,6 +382,14 @@ const WALK: WalkRow[] = [
         + 'it here would make the client read a looser denominator than detectTrialResponse. Corrected '
         + 'in 3b session 2. It flips only when sneeze joins the fetch.',
     },
+    check_in: {
+      now: false,
+      decision: 'NO — a look is NEVER a logged day for a trial (spec §5.6, floor 5). This is the row '
+        + 'where the reassuring failure lives: a trial owner who taps the card daily and logs '
+        + 'nothing else would push `trialLoggingFraction` over its gate on coverage she never '
+        + 'actually recorded, and publish a comparison the guard was withholding — the cough drift '
+        + 'of 2026-08-28, re-created by the app\'s own prompt.',
+    },
   },
   // ── Rows 16–18: the engine-side lists 3b session 1 created or flipped (#731).
   // Registered here because the discovery guard is FILE-keyed — a second list added
@@ -282,6 +403,12 @@ const WALK: WalkRow[] = [
       'export const SYMPTOM_TYPE_UNIVERSE', '] as const'),
     cough: { now: true, decision: 'YES — landed in 3b session 1 (#731): typed and nameable so fixtures and labels exist before any lane may speak' },
     sneeze: { now: true, decision: 'YES — same landing' },
+    check_in: {
+      now: false,
+      decision: 'NO — not even nameable by the engine. The universe exists so a lane\'s label and fixtures '
+        + 'can precede its fetch; a look has no lane in v1 and CUL-845 is where that question '
+        + 'lives, so naming it here would build the vocabulary for a read that is not ruled.',
+    },
   },
   {
     list: 'LANE_SYMPTOM_TYPES per-lane cells (generate-signal/detection.ts)',
@@ -296,6 +423,13 @@ const WALK: WalkRow[] = [
         + 'NEVER-cells with paired positive-control fixtures. Floors: perType, minEpisodes 4 / firmSpanDays 28.',
     },
     sneeze: { now: false, decision: 'NO cell at W1 — data-only (§9), and not fetched either' },
+    check_in: {
+      now: false,
+      decision: 'NO cell, in any lane — the structural half of T-5. Every consumer of a cell (① '
+        + 'attribution, ③/④, ⑦ chronicity, L4, the diagnostics floor) is a claim the engine '
+        + 'publishes, and the engine reads no looks. `countsTowardComparisonGate` derives its set '
+        + 'from the symptomDelta cell, so this NO is also the NO for the density gate.',
+    },
   },
   {
     list: 'server SYMPTOM_LABEL (generate-signal/phrasing.ts)',
@@ -317,6 +451,12 @@ const WALK: WalkRow[] = [
         + 'is not fetched at W1. The label exists so a fixture can name it and so the day it IS fetched, the copy '
         + 'already exists.',
     },
+    check_in: {
+      now: false,
+      decision: 'NO — the engine\'s owner-facing words, and the naming gate summary.ts keys on `in '
+        + 'SYMPTOM_LABEL`. A look has no engine copy because the engine says nothing about it; the '
+        + 'report\'s own words for a look are N-6\'s, on the report\'s own surface.',
+    },
   },
   {
     list: 'symptomLabel switch (generate-report/render.ts)',
@@ -329,6 +469,61 @@ const WALK: WalkRow[] = [
         + 'the clinical noun a vet scans for, so cough renders as "Coughing".',
     },
     sneeze: { now: true, decision: 'YES — same landing, same reason ("Sneezing"); it reaches the report via REPORT_SYMPTOM_TYPES' },
+    check_in: {
+      now: false,
+      decision: 'NO — this switch names SYMPTOMS on the report. The look\'s label (\'Noticed\') and its '
+        + 'words come from the vocabulary (constants/lookWords.ts) through N-6\'s own render path, '
+        + 'mapped key by key — a raw key is never echoed (migration 064\'s routed N4 finding).',
+    },
+  },
+  // ── Rows 20–21: Noticed's two structural rows (CUL-868). Neither is a "list" in
+  // the §13a sense — one is a WHOLE DIRECTORY and one is a different vocabulary
+  // entirely — and that is why they are here: the discovery guard is file-keyed and
+  // scans for SYMPTOM keys, so neither of these facts is visible to it.
+  {
+    list: 'the engine\u2019s whole source (supabase/functions/generate-signal/**)',
+    governs: 'T-5 at its strongest: not "no lane" but "the string does not occur". Covers loggingDaysInWindow, countsTowardComparisonGate and every future consumer of a fetched row in one assertion',
+    read: () => {
+      const dir = join(ROOT, 'supabase/functions/generate-signal');
+      const src = readdirSync(dir)
+        .filter((f) => /\.ts$/.test(f) && !/\.test\.ts$/.test(f))
+        .map((f) => stripComments(readFileSync(join(dir, f), 'utf8')))
+        .join('\n');
+      const has = (key: string) => new RegExp(`'${key}'|\\b${key}\\s*:`).test(src);
+      return { cough: has('cough'), sneeze: has('sneeze'), check_in: has('check_in') };
+    },
+    cough: { now: true, decision: 'YES — present since 3b (the universe, the fetch, the chronicity cell, the label). Read as "the engine knows this word", never as a lane membership: the per-lane row above is the ruling.' },
+    sneeze: { now: true, decision: 'YES — typed and nameable at W1 though not fetched (§9). Same reading as cough.' },
+    check_in: {
+      now: false,
+      decision: 'NO — ZERO OCCURRENCES, which is a stronger claim than any single list can make and '
+        + 'the one the third adversarial pass actually verified ("check_in is 0x in '
+        + 'supabase/functions/"). It is the whole of T-5 in one assertion: the engine cannot read, '
+        + 'count, gate or name a look because the value is not in its source. The day N-6 teaches '
+        + 'generate-REPORT about looks this row is untouched — the scope is the engine directory '
+        + 'alone, deliberately, so the report can gain Appendix G without loosening the engine.',
+    },
+  },
+  {
+    list: 'LOOK_WORDS + LOOK_HEAD_WORDS (constants/lookWords.ts)',
+    governs: 'the look vocabulary — the one list on this table that must contain NO symptom leaf, ever',
+    read: () => scan('constants/lookWords.ts', 'const CAT_WORDS', 'export const LOOK_VOCAB_VERSION'),
+    cough: { now: false, decision: 'NO — a look word is an owner observation, never a leaf key. Cough is a TILE (the + menu); *Off* is a WORD. Neither writes the other in v1 (R10).' },
+    sneeze: { now: false, decision: 'NO — same ground.' },
+    check_in: {
+      now: false,
+      decision: 'NO — and the row exists to say what §4.7 wanted said. The look vocabulary shares NO '
+        + 'KEY with the symptom leaf set (pinned as full set-disjointness below, over every leaf, '
+        + 'not just this table\u2019s three). §4.7 asked for the file to be REGISTERED in '
+        + 'guards/symptomLists.test.ts instead; it is deliberately NOT, on two counts measured at '
+        + 'file:line: registration is a SKIP in that guard\u2019s first test (`if (rel in REGISTERED) '
+        + 'continue`), so it would exempt this file from the very scan that must catch a symptom '
+        + 'leaf appearing in the vocabulary — the CUL-845 link is exactly that edit — and the '
+        + 'guard\u2019s second test requires every registered file to DECLARE a symptom-key list, '
+        + 'which this one must never do. The scan stays live over the file; the decision lives here. '
+        + 'LOOK_HEAD_WORDS is named in this row because it is a SUBSET of LOOK_WORDS and a '
+        + 'transitive consumer is invisible to any scan (C-11).',
+    },
   },
   {
     list: 'signalWatching gap row (lib/signalWatching.ts)',
@@ -342,29 +537,79 @@ const WALK: WalkRow[] = [
         + 'first-weeks floor. Not decidable in a build session.',
     },
     sneeze: { now: false, decision: 'NO — same rider; sneeze is data-only at W1 regardless' },
+    check_in: {
+      now: false,
+      decision: 'NO — the sub-floor watching register is vomit-anchored and is a claim about what the '
+        + 'ENGINE is watching. A look is not watched by anything; the card\'s own footer says what '
+        + 'coverage it has, with its own denominator (T-16).',
+    },
   },
 ];
 
-describe('W1 membership walk (HR-6) — every list decided, current state == decided state at PR-2', () => {
+describe('membership walk (HR-6) — every list decided, current state == decided state', () => {
   it.each(WALK.map((row) => [row.list, row] as const))('%s', (_name, row) => {
     const actual = row.read();
-    expect({ cough: actual.cough, sneeze: actual.sneeze }).toEqual({
+    expect({ cough: actual.cough, sneeze: actual.sneeze, check_in: actual.check_in }).toEqual({
       cough: row.cough.now,
       sneeze: row.sneeze.now,
+      check_in: row.check_in.now,
     });
     // The decision strings above are the table's yes/no column — they exist so a
     // later PR flipping `now` has the intent in the diff, not in a lost comment.
     expect(row.cough.decision.length).toBeGreaterThan(0);
     expect(row.sneeze.decision.length).toBeGreaterThan(0);
+    expect(row.check_in.decision.length).toBeGreaterThan(0);
   });
 
-  it('the walk covers the ten §13a lists + the signal mirrors + the review-discovered lists + the 3b-s1 engine lists — a list added later must join the table', () => {
+  it('the walk covers the ten §13a lists + the signal mirrors + the review-discovered lists + the 3b-s1 engine lists + Noticed’s two structural rows — a list added later must join the table', () => {
     // 11 original rows + SYMPTOM_METRICS/HISTORY (ask) + SYMPTOM_OCCURRENCE_LABELS +
     // TRIAL_RESPONSE_LOGGED_DAY_TYPES + the signalWatching gap row (2026-08-27 review)
     // + SYMPTOM_TYPE_UNIVERSE + LANE_SYMPTOM_TYPES + server SYMPTOM_LABEL (3b-s1, #731 —
     // the adversarial pass caught the label map flipping with no row; the discovery
     // guard is file-keyed and cannot see a second list in a registered file).
-    expect(WALK).toHaveLength(19);
+    // +2 (CUL-868): the engine's whole source, and the look vocabulary's disjointness.
+    expect(WALK).toHaveLength(21);
+  });
+});
+
+describe('the look vocabulary shares no key with the symptom record (CUL-868)', () => {
+  // The guarantee §4.7 asked for, made over EVERY leaf rather than the three this
+  // table walks — and made where a decision belongs rather than by registering the
+  // file in guards/symptomLists.test.ts, which would have exempted it from the scan
+  // that must catch exactly this (see the LOOK_WORDS walk row for the measurement).
+  //
+  // Why it matters concretely: CUL-845 holds the open question of whether a look word
+  // should ever write a symptom row. If it is ever ruled yes, the tempting first
+  // implementation is to make the word key BE the leaf key — at which point every
+  // consumer that reads `events` by type starts seeing look-shaped rows, and the
+  // engine's allowlist stops being an allowlist. This test is what makes that
+  // implementation a build failure with the ruling's name attached.
+  const SYMPTOM_LEAF_KEYS = [
+    'vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'lethargy', 'cough', 'sneeze',
+  ];
+
+  it('no look word is a symptom leaf key, in either species', () => {
+    const words = new Set([
+      ...LOOK_WORDS.cat.map((w) => w.key),
+      ...LOOK_WORDS.dog.map((w) => w.key),
+      LOOK_OPENING_CHIP_KEY,
+    ]);
+    expect(SYMPTOM_LEAF_KEYS.filter((k) => words.has(k))).toEqual([]);
+    // And the other direction, over the shipped predicate rather than the literal
+    // list above, so a leaf added to SYMPTOM_TYPES is covered on the day it lands.
+    expect([...SYMPTOM_TYPES].filter((k) => words.has(k))).toEqual([]);
+  });
+
+  it('every head word is a real word of its species — the subset a scan cannot see', () => {
+    for (const species of ['cat', 'dog'] as const) {
+      const keys = new Set(LOOK_WORDS[species].map((w) => w.key));
+      expect(LOOK_HEAD_WORDS[species].filter((k) => !keys.has(k))).toEqual([]);
+    }
+  });
+
+  it('check_in is its own tint category, and it is not the symptom one', () => {
+    expect(eventTintCategory('check_in')).toBe('look');
+    expect(SYMPTOM_TYPES.has('check_in' as never)).toBe(false);
   });
 });
 
