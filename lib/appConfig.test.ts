@@ -504,3 +504,71 @@ describe('daily_look — Noticed (daily look) eligibility (Home v2, N-0)', () =>
     expect(coerceAllowlistFlags({ ask_enabled: true }).daily_look).toBeUndefined();
   });
 });
+
+// ── vet_visits — the vet-visit companion rollout flag (VV-0 / CUL-898) ───────────
+// VV-0 is schema-only for consumption (migration 065 seeds it dark: {"enabled":
+// false, "allowlist": []}); nothing renders behind it until the Pet-tab home PR
+// (VV-2) gates on `eligible && optedIn`. The flag rides the SAME primitive as the
+// Ask + widget + log-picker + event-types + Noticed keys. The contract pinned here
+// is the same two properties every later companion PR depends on: vet_visits is
+// EXTRACTED off an app_config SELECT and resolves FAIL-CLOSED (off) for both
+// ship-dark cases — the seed unreached (undefined ⇒ fallback) and a signed-out
+// caller against the dark seed. These back the spec's byte-identical-off (flag off
+// ⇒ no companion surface renders, guards/vetVisitsFlagOff.test.tsx) and seed-first
+// (VV-0 before any consumer). The extra GA case pins G0 — the companion's GA is
+// EVERY account, not an allowlist forever and never a Premium gate.
+describe('vet_visits — vet-visit companion eligibility (VV-0)', () => {
+  it('is part of the unset baseline (undefined until the row is fetched)', () => {
+    expect(ALLOWLIST_FLAGS_UNSET.vet_visits).toBeUndefined();
+  });
+
+  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
+    const rows = [
+      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
+      { key: 'daily_look', value: { enabled: false, allowlist: ['dl-uid'] } },
+      { key: 'vet_visits', value: { enabled: false, allowlist: ['pm-uid'] } },
+    ];
+    const flags = extractAllowlistFlags(rows);
+    expect(flags.vet_visits).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+    // The new key does not disturb the other allowlist keys in the same SELECT.
+    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
+    expect(flags.daily_look).toEqual({ enabled: false, allowlist: ['dl-uid'] });
+  });
+
+  it('resolves fail-closed (off) when unset — seed unreached / row absent', () => {
+    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).vet_visits;
+    expect(unset).toBeUndefined();
+    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
+  });
+
+  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
+    const darkSeed = { enabled: false, allowlist: [] };
+    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
+    // …and off signed-out, never leaking to the fallback.
+    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
+  });
+
+  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
+    const gated = { enabled: false, allowlist: ['pm-uid'] };
+    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
+    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
+    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
+  });
+
+  it('GA (enabled:true) is on for every account — a rollout gate only (G0)', () => {
+    // The companion's GA end state (spec §5.5 / G0): flipping enabled:true turns it
+    // on for everyone, allowlist ignored. The companion is care, not convenience,
+    // so it is never an allowlist-gated feature forever and never a Premium gate.
+    expect(resolveAllowlistFlag({ enabled: true, allowlist: [] }, 'anyone', false)).toBe(true);
+    expect(resolveAllowlistFlag({ enabled: true }, null, false)).toBe(true);
+  });
+
+  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
+    const stored = { vet_visits: { enabled: false, allowlist: ['pm-uid'] } };
+    expect(coerceAllowlistFlags(stored).vet_visits).toEqual({
+      enabled: false,
+      allowlist: ['pm-uid'],
+    });
+    expect(coerceAllowlistFlags({ ask_enabled: true }).vet_visits).toBeUndefined();
+  });
+});

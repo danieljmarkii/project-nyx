@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, FlaskConical, Info, LayoutGrid, Shapes, SquarePen } from 'lucide-react-native';
+import { Eye, FlaskConical, Info, LayoutGrid, Shapes, SquarePen, Stethoscope } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -77,6 +77,19 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // consumer renders behind it yet. An "eye" glyph reads as noticing/looking,
       // distinct from the widget grid, the picker pen and the taxonomy shapes.
       return { Icon: Eye };
+    case 'vet_visits':
+      // An on-state hint, like the widget's and unlike the rest: the companion is
+      // the one beta whose surfaces stay invisible until the owner has an
+      // appointment on file, so an owner who flips it on and looks at Home would
+      // otherwise see nothing and reasonably think it broke. The hint says where
+      // to start (the Pet tab's card) rather than "it's on" alone. A stethoscope
+      // reads as the vet, distinct from the widget grid, the picker pen, the
+      // taxonomy shapes and Noticed's eye.
+      return {
+        Icon: Stethoscope,
+        onHint:
+          'It’s on. Open your pet’s profile and find Vet visits to add an appointment — the rest appears as the day gets closer.',
+      };
     default:
       return { Icon: FlaskConical };
   }

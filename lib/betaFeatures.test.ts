@@ -51,7 +51,7 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget + log-picker + event-types + Noticed betas, all client-only (no server cost)', () => {
+  it('ships the widget + log-picker + event-types + Noticed + vet-visits betas, all client-only (no server cost)', () => {
     // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
     // retired from the shelf (CUL-547 + CUL-548).
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
@@ -79,10 +79,17 @@ describe('BETA_REGISTRY', () => {
     expect(noticed).toBeDefined();
     expect((noticed as BetaFeature).serverCost).toBe(false);
 
+    // The vet-visit companion (CUL-898 / VV-0) joined the shelf seed-first (spec
+    // §5.5). Client-render only — VV-1's schema is account-agnostic and no Edge
+    // Function reads the key — so no server gate is owed here either.
+    const vetVisits = BETA_REGISTRY.find((b) => b.key === 'vet_visits');
+    expect(vetVisits).toBeDefined();
+    expect((vetVisits as BetaFeature).serverCost).toBe(false);
+
     // The graduated keys (signal_design_v2 / signals_v2) are no longer in the
     // AllowlistFlagKey union, so a `.key === '…'` check for them won't type-check — the
     // length assertion + the missing shelf cards are what pin their removal.
-    expect(BETA_REGISTRY).toHaveLength(4);
+    expect(BETA_REGISTRY).toHaveLength(5);
   });
 });
 
@@ -159,6 +166,7 @@ describe('deriveBetaShelf (B-747)', () => {
       log_picker_v2: gatedTo('uid-1'),
       event_types_v2: gatedTo('uid-1'),
       daily_look: gatedTo('uid-1'),
+      vet_visits: gatedTo('uid-1'),
     });
     expect(deriveBetaShelf(everything, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(
       BETA_REGISTRY.map((b) => b.key),
