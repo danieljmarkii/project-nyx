@@ -529,6 +529,32 @@ export function mapWeightRows(rows: WeightRow[], lookbackMs?: number): ReportWei
  * assembly so the clause degrades to a floor rather than printing a query bound as if it
  * were the record's first day.
  */
+export /**
+ * A note, bounded where it ENTERS the process rather than where it is printed.
+ *
+ * `looks.notes` has no length bound at rest — the N-1 privacy review stored a 2 MB note,
+ * and the client's 300-character field is a UI constraint, not a column one. The render
+ * already caps what it prints; what it could not cap was what the function HOLDS, and the
+ * `rls-privacy-reviewer` measured the difference: 900 rows at ~200 KB each is ~360 MB of
+ * UTF-16 in the isolate against Edge's 256 MB limit, for a bounded ~1.3 MB of output.
+ * Self-inflicted only (RLS scopes the pull to the caller's own pet), so this is
+ * robustness rather than a boundary — but a report that OOMs is a report the owner cannot
+ * make.
+ *
+ * ONE CHARACTER OVER THE RENDER'S CAP, deliberately: the render decides whether to
+ * disclose a shortening by comparing against `NOTICED_NOTE_CAP`, so the bound here has to
+ * leave that comparison true. The disclosure is the render's, and it stays the render's.
+ *
+ * The slice respects code points, so a note whose cut lands inside an emoji cannot emit a
+ * lone surrogate into the document (measured: `U+D83D` alone, rendering as U+FFFD).
+ */
+const LOOK_NOTE_PULL_BOUND = 1001
+function boundNote(note: unknown): string | null {
+  if (typeof note !== 'string') return null
+  if (note.length <= LOOK_NOTE_PULL_BOUND) return note
+  return [...note].slice(0, LOOK_NOTE_PULL_BOUND).join('')
+}
+
 export function mapLookRows(rows: LookRow[]): ReportLookInput[] {
   const out: ReportLookInput[] = []
   for (const r of rows) {
@@ -547,7 +573,7 @@ export function mapLookRows(rows: LookRow[]): ReportLookInput[] {
       outcome: r.outcome === 'nothing_unusual' ? 'nothing_unusual' : 'observed',
       words: Array.isArray(r.words) ? r.words.filter((w): w is string => typeof w === 'string') : [],
       vocabVersion: typeof r.vocab_version === 'number' ? r.vocab_version : 1,
-      notes: typeof r.notes === 'string' ? r.notes : null,
+      notes: boundNote(r.notes),
     })
   }
   return out
@@ -857,6 +883,26 @@ export async function generateReportForPet(
   petId: string,
   nowMs: number,
   requestedWindow: { startDate: string; endDate: string } | null,
+  /**
+   * CUL-875 / §9 rule 4 — who this render is for. REQUIRED, with no default, and
+   * positioned AHEAD of the optional arguments so it cannot become one.
+   *
+   * IT HAD A DEFAULT AND THE DEFAULT WAS THE BREAK. The reasoning written here was that
+   * the `shared_link` arm carries no notes field, so a mint "cannot reach the owner
+   * default by omission — it has to be constructed, and constructing it excludes the
+   * notes". That is true of `ReportInput.audience`, which is required in the pure layer;
+   * it was transplanted one level up onto a signature where it stopped holding. The
+   * `rls-privacy-reviewer` proved it end to end: a seven-argument call
+   * (`generateReportForPet(c, pet, now, null, null, null, 'UTC')`) type-checked under
+   * `--strict`, took the owner arm by omission, and printed the owner's private sentence
+   * into the artifact. The union forbids WRITING `shared_link + notes`; the default handed
+   * you `owner + notes` for writing nothing at all.
+   *
+   * So the safety is back where it can be checked: `tsc` now makes PR 6's mint decide,
+   * because it cannot call this function without saying who is reading. A default on a
+   * privacy decision is not a convenience — it is the decision, taken silently.
+   */
+  audience: ReportAudience,
   callerJwt: string | null = null,
   // PR 7 — service-role client used ONLY to download incident-photo bytes (private bucket) for the
   // paths RLS already scoped to the verified owner's pet. Null ⇒ photos are not embedded (their
@@ -867,16 +913,6 @@ export async function generateReportForPet(
   // report's trial "Day N" buckets by the same clock the owner's card does. Default null ⇒
   // stored zone (the pre-B-443 behaviour), so every existing call site is unaffected.
   requestTimezone: string | null = null,
-  // CUL-875 / §9 rule 4 — who this render is for. THIS function is the authenticated
-  // owner-facing path and nothing else, so the default is her own render; the default is
-  // `includeLookNotes: true` because *Include your notes* is default-on for the PDF she
-  // is handing to a vet.
-  //
-  // A DEFAULT IS SAFE HERE AND ONLY HERE. PR 6's unauthenticated `view-report` route is
-  // a DIFFERENT entry point, and the `shared_link` arm carries no notes field at all, so
-  // it cannot reach this default by omission — it has to be constructed, and
-  // constructing it excludes the notes. That is the whole point of the union.
-  audience: ReportAudience = { kind: 'owner', includeLookNotes: true },
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const nowIso = new Date(nowMs).toISOString()
 
@@ -1059,7 +1095,16 @@ export async function generateReportForPet(
     // degrades (to a floor with no start date, `pullComplete: false` below).
     supabase
       .from('looks')
-      .select('event_id, local_day, outcome, words, notes, vocab_version, created_at, events(occurred_at, deleted_at)')
+      .select('event_id, local_day, outcome, words, notes, vocab_version, created_at, events(occurred_at, deleted_at)', {
+        // EXACT, and it is what makes `lookRowsComplete` sound. Inferring completeness
+        // from `rows.length < LOOK_PULL_CAP` only works while the cap is below the
+        // project's PostgREST `max-rows`, which this function cannot observe and which an
+        // admin can change — and if it were ever lower, a truncated pull would report
+        // itself complete and the report would print a start date that is a query
+        // artifact. The count answers the question directly instead of reasoning about a
+        // setting (the `rls-privacy-reviewer` named this as unverifiable from the repo).
+        count: 'exact',
+      })
       .eq('pet_id', petId)
       .order('local_day', { ascending: false })
       .order('created_at', { ascending: false })
@@ -1101,6 +1146,12 @@ export async function generateReportForPet(
 
   const rawLookRows = rowsOrThrow<LookRow>(looksRes, 'looks')
   const lookRows = mapLookRows(rawLookRows)
+  // Exact when PostgREST returned a count; otherwise the cap heuristic, which is the
+  // conservative direction (it can only under-claim completeness, never over-claim it,
+  // as long as the cap is not above the server's own ceiling).
+  const looksTotal = (looksRes as { count?: number | null }).count
+  const lookRowsComplete =
+    typeof looksTotal === 'number' ? looksTotal <= rawLookRows.length : rawLookRows.length < LOOK_PULL_CAP
 
   const input: ReportInput = {
     now: nowIso,
@@ -1124,16 +1175,11 @@ export async function generateReportForPet(
     // logged in the cropped trial days" apart from "the cropped days were never pulled".
     eventsSinceIso: lookbackIso,
     lookRows,
-    // EARNED, never assumed. A short page is a page the cap did not bind on, so these
-    // rows are the pet's whole live look record and the pre-first-day clause may name
-    // the date it starts from. A full page means rows may be missing off the old end,
-    // and the clause degrades to "at least N" with no date rather than presenting a
-    // query's edge as the record's beginning (C-19).
-    //
-    // Counted on the RAW rows, before `mapLookRows` drops soft-deleted parents: it is
-    // the QUERY that was capped, and a page filled with undone looks truncated the pull
-    // exactly as much as a page of live ones.
-    lookRowsComplete: rawLookRows.length < LOOK_PULL_CAP,
+    // EARNED, never assumed — see `lookRowsComplete` above. Counted on the RAW rows,
+    // before `mapLookRows` drops soft-deleted parents: it is the QUERY that was capped,
+    // and a page filled with undone looks truncated the pull exactly as much as a page of
+    // live ones.
+    lookRowsComplete,
     audience,
   }
 
@@ -1206,13 +1252,16 @@ const handler = async (req: Request): Promise<Response> => {
     const end = body.endDate ?? body.end_date
     if (start && end) requestedWindow = { startDate: start, endDate: end }
     requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
-    // ONLY an explicit `false` turns it off. Anything else — absent, null, a string, a
-    // number — is the default, because this is an authenticated OWNER render and the
-    // decision it governs has a spec'd default (on). The one thing a malformed value
-    // must never do is flip it: `Boolean(body.includeNotes)` would read `undefined` as
-    // off and silently drop the column for every older client.
+    // A BOOLEAN OR THE DEFAULT — never "anything that is not false".
+    //
+    // The compatibility this needs is narrow: an older client sends nothing, and nothing
+    // must mean the spec's default (on). `rawNotes !== false` delivered that and also
+    // made `null`, `"false"`, `0` and `[]` mean ON — failing open on every malformed
+    // value when only `undefined` needed to. Unreachable from the shipped client (the
+    // control is an RN Switch), and the wrong direction for a privacy toggle regardless
+    // (the `rls-privacy-reviewer`).
     const rawNotes = body.includeNotes ?? body.include_notes
-    includeNotes = rawNotes !== false
+    includeNotes = typeof rawNotes === 'boolean' ? rawNotes : true
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -1243,13 +1292,13 @@ const handler = async (req: Request): Promise<Response> => {
       petId,
       Date.now(),
       requestedWindow,
+      // This route is authenticated and owner-facing; PR 6's public `view-report` route
+      // is a different entry point and must construct the `shared_link` arm, which has no
+      // notes field to carry (§9 rule 4).
+      { kind: 'owner', includeLookNotes: includeNotes },
       callerJwt,
       adminClient,
       requestTimezone,
-      // This route is authenticated and owner-facing; PR 6's public `view-report` route
-      // is a different entry point and constructs the `shared_link` arm, which has no
-      // notes field to carry (§9 rule 4).
-      { kind: 'owner', includeLookNotes: includeNotes },
     )
     return Response.json(body, {
       status,

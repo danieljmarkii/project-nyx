@@ -48,20 +48,24 @@ const id = (p: string) => `${p}-${String(++seq).padStart(4, '0')}`
 const VOMIT_DAYS = ['2026-08-06', '2026-08-14', '2026-08-23', '2026-09-01', '2026-09-08', '2026-09-13']
 
 const events: ReportEventInput[] = []
-for (const d of VOMIT_DAYS) {
+// Times VARY. Six vomits at an identical 07:20 local is a shape a reader would rightly
+// discount the whole timestamp column for — and the ">6 h after eating" line is computed
+// off those timestamps, so a fixture artefact was reading as a finding (the cold read).
+const VOMIT_HOURS = ['05:40', '11:20', '02:15', '16:05', '09:30', '22:45']
+VOMIT_DAYS.forEach((d, i) => {
   events.push({
     id: id('vomit'),
     type: 'vomit',
-    occurredAt: `${d}T11:20:00Z`,
+    occurredAt: `${d}T${VOMIT_HOURS[i % VOMIT_HOURS.length]}:00Z`,
     occurredAtConfidence: 'witnessed',
     occurredAtEarliest: null,
     occurredAtLatest: null,
     severity: null,
     notes: null,
-    loggedAt: `${d}T11:25:00Z`,
+    loggedAt: `${d}T${VOMIT_HOURS[i % VOMIT_HOURS.length]}:00Z`,
     meal: null,
   })
-}
+})
 // Meals most days: two a day, rated. Two days she left most of it — and both are days the
 // owner answered *nothing unusual*, which is the disagreement the report must state.
 const REFUSED_DAYS = new Set(['2026-09-04', '2026-09-05'])
@@ -138,6 +142,26 @@ for (const d of eachDay(WINDOW_START, WINDOW_END)) {
 }
 // A second look the same day — it must count ONCE and print as a second line under one day.
 look('2026-09-03', ['subdued'], '21:30', 'she hid behind the sofa after her dinner and would not come out')
+
+// PRODUCTION HANDS ASSEMBLY ONE `check_in` ROW PER LOOK. `index.ts` pulls `events` with
+// every type, so a fixture without them is a shape the real caller cannot produce — and
+// the denominators they used to inflate are the ones a vet reads as "how completely was
+// this tracked". They are here so the artifact the cold read sees is the artifact the
+// owner gets.
+for (const l of looks) {
+  events.push({
+    id: `parent-${l.eventId}`,
+    type: 'check_in',
+    occurredAt: l.occurredAt,
+    occurredAtConfidence: 'witnessed',
+    occurredAtEarliest: null,
+    occurredAtLatest: null,
+    severity: null,
+    notes: null,
+    loggedAt: l.createdAt,
+    meal: null,
+  })
+}
 
 const input: ReportInput = {
   now: NOW,

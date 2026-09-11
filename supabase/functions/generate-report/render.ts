@@ -72,6 +72,7 @@ import type {
   NoticedBlock,
   NoticedWordCount,
 } from './report.ts'
+import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
 // contamination finding is.
@@ -3588,7 +3589,11 @@ function atAGlance(snap: ReportSnapshot): string {
 
 /** A word's head, lowercased for mid-sentence use (*off on 6*, *lip-licking on 2*). */
 function noticedWordPhrase(label: string, dayCount: number): string {
-  return `${h(label.toLowerCase())} on ${num(dayCount)}`
+  // THE WORD KEEPS ITS OWN CASING, as the bars and the appendix show it. Lowercased,
+  // *off on 6* reads as a preposition for the first half-second on a line that already
+  // begins "Answered on…" (the cold read); capitalised, the owner's picked words scan as
+  // the quoted terms they are.
+  return `${h(label)} on ${num(dayCount)}`
 }
 
 /**
@@ -3600,13 +3605,70 @@ function noticedWordPhrase(label: string, dayCount: number): string {
  * query rather than about the record (C-19).
  */
 function noticedFirstClause(w: NoticedWordCount): string {
-  const first = `first ${h(fmtDay(w.firstDay))}`
-  const p = w.priorCoverage
-  if (!p) return ` (${first})`
-  if (p.sinceDay === null) {
-    return ` (${first}; answered on at least ${num(p.answeredDays)} days before it)`
+  // JUST THE DATE — the coverage that makes it legible is stated ONCE for the line
+  // (`noticedBaselineSentence`) rather than after every word: three parentheticals all
+  // anchored to the same start date turned the sentence into a wall and invited a reader
+  // to hunt for meaning in the difference between 120 and 121 (the cold read).
+  //
+  // BUT THE DATE IS THE RECORD'S AND THE COUNT BESIDE IT IS THE WINDOW'S, so the clause
+  // says which is which whenever they differ. A bare *first Sep 2* on a word the record
+  // first carries in July is an onset claim the record contradicts — and it was reaching
+  // outside the window only for the reassuring number.
+  const day = h(fmtDayYear(w.firstDay))
+  if (!w.firstDayIsRecordFirst) {
+    // The pull may be truncated at the old end, so "first" is a claim about this report's
+    // reach and is scoped to it rather than asserted about the record.
+    return ` (earliest here ${day})`
   }
-  return ` (${first}; answered on ${num(p.answeredDays)} days before it since ${h(fmtDay(p.sinceDay))})`
+  return w.firstDayInWindow ? ` (first ${h(fmtDay(w.firstDay))})` : ` (first marked ${day}, before this window)`
+}
+
+/**
+ * The one baseline sentence: had she been answering BEFORE any of this started?
+ *
+ * Anchored to the earliest first-date on the line, so it is true of every word above it.
+ * Degrades to a floor with no start date when the pull may be truncated — the earliest
+ * row is then a fact about the query rather than about the record (C-19).
+ */
+function noticedBaselineSentence(n: NoticedBlock): string {
+  const b = n.baseline
+  if (!b) return ''
+  const before = `before the first of these (${h(fmtDay(b.firstDay))})`
+  if (b.sinceDay === null) {
+    return ` She had answered on at least ${num(b.answeredDays)} days ${before}.`
+  }
+  return ` She had been answering since ${h(fmtDay(b.sinceDay))}, on ${num(
+    b.answeredDays,
+  )} of the days ${before}.`
+}
+
+/**
+ * The absence caveat — *the owner's claim, not a finding*.
+ *
+ * IT LIVES IN THE PROSE LINE, NOT IN THE BAR BLOCK, and that move is a blocker fix. It
+ * used to render inside `noticedBars`, which is suppressed below the fourteen-answered-day
+ * floor — so on the thinnest records, where over-reading an absence is most dangerous,
+ * page 1 asserted *marked nothing unusual on 6 of the 13* with the guardrail gone and the
+ * only surviving caveat in a legend on the last page. A floor that suppresses the
+ * protection and keeps the claim is worse than no floor (the cold read).
+ */
+function noticedAbsenceCaveat(n: NoticedBlock): string {
+  if (n.absenceDays === 0) return ''
+  return ` &ldquo;Nothing unusual&rdquo; is the owner&rsquo;s claim about a day, not an examination.`
+}
+
+/**
+ * How often she marked *nothing unusual* on a day the record holds a vomit.
+ *
+ * Both denominators are answered days. Printed only when it is NON-ZERO: a zero would read
+ * as "she caught every one", which is reassurance drawn from an absence on the one surface
+ * that exists to say what the record can and cannot support.
+ */
+function noticedCalibrationSentence(n: NoticedBlock): string {
+  if (n.absenceOnVomitDays === 0 || n.answeredVomitDays === 0) return ''
+  return ` On ${num(n.absenceOnVomitDays)} of the ${num(n.answeredVomitDays)} vomit ${
+    n.answeredVomitDays === 1 ? 'day' : 'days'
+  } she answered, she marked nothing unusual.`
 }
 
 /**
@@ -3627,17 +3689,21 @@ function noticedFirstClause(w: NoticedWordCount): string {
  * between HER CLAIM and the bowl, and a clause that floats can attach to the wrong half of
  * it.
  */
-function noticedDisagreementClause(snap: ReportSnapshot, n: NoticedBlock): string {
+function noticedDisagreementLine(snap: ReportSnapshot, n: NoticedBlock): string {
   if (n.intake.kind !== 'disagreement') return ''
   const days = n.intake.days
   // B-599 — point at the appendix only when it renders. A pointer to a section that is
   // not on the document is the dangling reference this report has paid for before.
-  const pointer = mealsAppendixVisible(snap) ? `; see appendix&nbsp;E` : ''
+  const pointer = mealsAppendixVisible(snap) ? ` (appendix&nbsp;E)` : ''
   const dates = days.slice(0, 4).map((d) => h(fmtDay(d))).join(', ')
   const more = days.length > 4 ? `, and ${num(days.length - 4)} more` : ''
-  return ` &mdash; including ${num(days.length)} ${
-    days.length === 1 ? 'day' : 'days'
-  } carrying a meal recorded as picked at or refused (${dates}${more}${pointer})`
+  const plural = days.length === 1 ? 'day' : 'days'
+  const carries = days.length === 1 ? 'carries' : 'carry'
+  return `<div class="noticed-conflict"><b>On ${dates}${more}</b> the owner marked nothing unusual, and ${
+    days.length === 1 ? 'that day' : 'those days'
+  } ${carries} a meal she recorded as refused or picked at${pointer}. ${
+    days.length === 1 ? 'The record and the day disagree' : 'The record and those days disagree'
+  }; both are shown as logged.</div>`
 }
 
 /**
@@ -3674,26 +3740,62 @@ function noticedLine(snap: ReportSnapshot): string {
     // LAST, and with its denominator. The owner's claim closes the line; it never leads
     // it, and it is never a bare count — and the record's disagreement with it, when
     // there is one, is part of the same clause rather than a sentence away.
-    parts.push(
-      `marked nothing unusual on ${num(n.absenceDays)} of the ${num(n.answeredDays)}` +
-        noticedDisagreementClause(snap, n),
-    )
+    parts.push(`marked nothing unusual on ${num(n.absenceDays)} of the ${num(n.answeredDays)}`)
   }
-  // The reconciliation clause, true in both directions (see NoticedBlock.activityOnlyDays).
-  const activityBit =
-    n.activityOnlyDays > 0
-      ? `, and ${num(n.activityOnlyDays)} answered ${
+  // The reconciliation clause, CONDITIONAL — and it names the direction it is in.
+  // Printed unconditionally it was false on a real record (6 + 2 + 2 + 32 is exactly 42:
+  // a double-counted multi-word day and an omitted activity-only day cancelled), and a
+  // disclaimer that is wrong half the time teaches a reader to skim the small print.
+  let reconcile = ''
+  if (n.countsSum !== n.answeredDays) {
+    const over = n.countsSum > n.answeredDays
+    // EACH POPULATION IN ITS OWN WORDS. A day the owner spent reporting her dog was
+    // bright and a day carrying a word this build cannot read are both absent from the
+    // counts above, and they are not the same fact: one is her observation, the other is
+    // the document admitting a gap in itself. Calling both "an activity" told a reader
+    // four concerning days were good ones.
+    const reasons: string[] = ['a day can carry more than one word']
+    if (n.activityOnlyDays > 0) {
+      reasons.push(
+        `${num(n.activityOnlyDays)} answered ${
           n.activityOnlyDays === 1 ? 'day carries' : 'days carry'
-        } only an activity word, which page 1 never lists`
+        } only an activity word, which page 1 never lists`,
+      )
+    }
+    if (n.unreadableDays > 0) {
+      reasons.push(
+        `on ${num(n.unreadableDays)} answered ${
+          n.unreadableDays === 1 ? 'day' : 'days'
+        } this report cannot read what was recorded`,
+      )
+    }
+    const tail = reasons.length > 1 ? `${reasons.slice(0, -1).join(', ')}, and ${reasons[reasons.length - 1]}` : reasons[0]
+    reconcile = `These counts ${over ? 'add to more' : 'add to less'} than the ${num(
+      n.answeredDays,
+    )} days answered: ${tail}.`
+  }
+  // The unreadable days are said even when the arithmetic happens to reconcile — a word
+  // the deployed function does not know is a gap in the document whatever the sum does.
+  const unreadableAlone =
+    n.countsSum === n.answeredDays && n.unreadableDays > 0
+      ? ` On ${num(n.unreadableDays)} answered ${
+          n.unreadableDays === 1 ? 'day' : 'days'
+        } this report cannot read what was recorded.`
       : ''
-  const reconcile =
-    `<div class="noticed-note">A day can carry more than one word${activityBit}, so these counts do not sum to the days answered. ` +
-    `Every entry is listed in appendix&nbsp;${noticedAppendixLetter(snap)}.${noticedBlindIntakeSentence(snap, n)}</div>`
+  // Every count here is a FLOOR when the pull could not reach the window's own start.
+  const truncated = n.windowTruncated
+    ? ` This report reached its row limit before the start of the window, so every count here is at least the number shown.`
+    : ''
+  const note =
+    `<div class="noticed-note">${reconcile}${unreadableAlone}${truncated}${noticedAbsenceCaveat(n)}` +
+    `${noticedBaselineSentence(n)}${noticedCalibrationSentence(n)}${noticedBlindIntakeSentence(snap, n)} ` +
+    `Every entry is listed in appendix&nbsp;${noticedAppendixLetter(snap)}.</div>`
   return `
     <div class="noticed-line">
       <div class="noticed-h">Owner&rsquo;s observations (Noticed)</div>
       <div class="noticed-counts">${parts.join(' &middot; ')}.</div>
-      ${reconcile}
+      ${noticedDisagreementLine(snap, n)}
+      ${note}
     </div>`
 }
 
@@ -3708,9 +3810,36 @@ function noticedLine(snap: ReportSnapshot): string {
 function noticedGraph(snap: ReportSnapshot): string {
   const n = snap.noticed
   if (!n) return ''
+  const bars = noticedBars(snap, n)
+  // A SILENT FLOOR IS INDISTINGUISHABLE FROM A CLIPPED PAGE. With the bars suppressed the
+  // grid used to leave half a row blank white beside a half-width strip, with nothing
+  // saying a breakdown had been withheld or why — on a document that elsewhere is careful
+  // to say "None recorded … which is not evidence none was fed" (the cold read). So the
+  // withholding is stated, and the strip takes the full width.
+  // ONE REASON PER SENTENCE. `noticedBars` returns '' for three different reasons and the
+  // caller used to attribute all of them to the floor — so a record with 41 of 46 days
+  // answered and no concern word read "Too few days answered (41 of 46)", substituting
+  // "the record is too thin" for "she reported nothing wrong" on the most common record
+  // there is (C-4: two reasons collapsed into one empty return, caller guessing).
+  let held = ''
+  if (n.barsWithheld === 'floor') {
+    held = `<div class="nb-held">Too few days answered (${num(n.answeredDays)} of ${num(
+      n.windowDays,
+    )}) to draw a per-word breakdown &mdash; a bar over a handful of self-selected days reads as a rate this record cannot support. The counts above are over the ${num(
+      n.answeredDays,
+    )} days answered.</div>`
+  } else if (n.barsWithheld === 'spread') {
+    held = `<div class="nb-held">The ${num(
+      n.answeredDays,
+    )} days answered are clustered rather than spread across this window, so no per-word breakdown is drawn &mdash; a bar drawn from days chosen while the owner was already worried reads as a rate over the whole span. The counts above are over the days answered, wherever they fall; their dates are in the strip below and in appendix&nbsp;${noticedAppendixLetter(
+      snap,
+    )}.</div>`
+  }
+  // `no_concern_words` prints NOTHING. Nothing was withheld: she answered and marked no
+  // concern, and the line above already says so with its denominator.
   return `
-    <div class="noticed-graph">
-      ${noticedBars(snap, n)}
+    <div class="noticed-graph${bars === '' ? ' noticed-graph-1' : ''}">
+      ${bars}${held}
       ${noticedStrip(snap, n)}
     </div>`
 }
@@ -3730,20 +3859,16 @@ function noticedBars(snap: ReportSnapshot, n: NoticedBlock): string {
         </div>`
     })
     .join('')
-  // The absence, as a SENTENCE under the bars. Never a bar (rule 3 above).
-  const absence =
-    n.absenceDays > 0
-      ? `<div class="nb-absence">Marked nothing unusual on ${num(n.absenceDays)} of the ${num(
-          n.answeredDays,
-        )} days answered &mdash; the owner&rsquo;s claim, not a finding.</div>`
-      : ''
+  // NO ABSENCE SENTENCE HERE. It used to live under the bars, which meant the floor
+  // suppressed the caveat and kept the claim; it is now in the prose line
+  // (`noticedAbsenceCaveat`), which renders at every coverage. The absence is still never
+  // a bar — that rule is unchanged and is the reason it was down here in the first place.
   return `
       <div class="nb">
         <div class="nb-title">Days each word was recorded <span class="aside">${h(
           fmtRange(n.barsStartDate, n.barsEndDate),
         )} &middot; of the ${h(n.answeredDays)} days answered</span></div>
         ${rows}
-        ${absence}
       </div>`
 }
 
@@ -3764,22 +3889,25 @@ function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
   const cells = s.days
     .map((d) => {
       const glyph =
-        d.mark === 'absence'
+        d.mark === 'clear'
           ? `<span class="ns-o">&#9675;</span>`
-          : d.mark === 'observation'
+          : d.mark === 'concern'
             ? `<span class="ns-f">&#9679;</span>`
             : `<span class="ns-n">&middot;</span>`
       const vom = d.vomit ? `<span class="ns-v">&#9650;</span>` : `<span class="ns-v ns-vn"></span>`
       return `<div class="ns-cell" title="${h(d.day)}">${vom}${glyph}</div>`
     })
     .join('')
+  // THE DENOMINATOR IS ANSWERED DAYS, like every other count on this page. It was the
+  // cell count, which is calendar days: *off on 5 of these 28* over a record with 13
+  // answered days understates the rate by a factor of two, in the reassuring direction.
   const spoken = s.wordDaysInSpan
-    .map((w) => `${h(w.label.toLowerCase())} on ${num(w.dayCount)} of these ${num(s.days.length)}`)
+    .map((w) => `${h(w.label)} on ${num(w.dayCount)} of the ${num(s.answeredDays)} answered here`)
     .join(' &middot; ')
   const absent =
     s.wordsAbsentInSpan.length > 0
       ? `${s.wordDaysInSpan.length > 0 ? ' &middot; ' : ''}${s.wordsAbsentInSpan
-          .map((w) => h(w.label.toLowerCase()))
+          .map((w) => h(w.label))
           .join(', ')} ${s.wordsAbsentInSpan.length === 1 ? 'falls' : 'fall'} entirely before this span`
       : ''
   const reconcile = spoken || absent ? `<div class="ns-words">${spoken}${absent}.</div>` : ''
@@ -3796,11 +3924,17 @@ function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
       : ''
   return `
       <div class="ns">
-        <div class="nb-title">The last four weeks <span class="aside">${h(
+        <div class="nb-title">${
+          // NOT "the last four weeks" unconditionally — the strip clips to the window, so
+          // a five-day window drew five cells under a title promising twenty-eight. The
+          // code's own comment claimed it "says so in its own title"; only the date range
+          // did.
+          s.days.length >= NOTICED_STRIP_DAYS ? 'The last four weeks' : `The last ${h(s.days.length)} days of this window`
+        } <span class="aside">${h(
           fmtRange(s.startDate, s.endDate),
         )} &middot; ${h(s.answeredDays)} of these ${h(s.days.length)} days answered</span></div>
         <div class="ns-row">${cells}</div>
-        <div class="ns-legend"><span class="ns-o">&#9675;</span> answered, nothing unusual &nbsp; <span class="ns-f">&#9679;</span> an observation recorded &nbsp; <span class="ns-n">&middot;</span> not answered &nbsp; <span class="ns-v">&#9650;</span> a vomit logged that day</div>
+        <div class="ns-legend"><span class="ns-f">&#9679;</span> a concern recorded &nbsp; <span class="ns-o">&#9675;</span> answered, no concern recorded &nbsp; <span class="ns-n">&middot;</span> not answered &nbsp; <span class="ns-v">&#9650;</span> a vomit logged that day</div>
         ${reconcile}
         ${vomCaption}
       </div>`
@@ -5590,6 +5724,10 @@ function incidentPhotoCard(p: IncidentPhoto, tz: string | null): string {
  *
  * NEVER A SILENT TRUNCATION (that review's rule 4): when it bites, the report says so
  * and says where the whole sentence still lives.
+ *
+ * `index.ts` bounds the note ONE CHARACTER above this on the way in, so the isolate never
+ * holds an unbounded column; the comparison below still fires, because the bound leaves
+ * exactly one character of headroom for it.
  */
 const NOTICED_NOTE_CAP = 1000
 
@@ -5624,6 +5762,11 @@ function noticedAppendix(snap: ReportSnapshot): string {
   if (!n || !hasNoticed(snap)) return ''
   const letter = noticedAppendixLetter(snap)
   const petName = snap.signalment.name
+  // The WINDOW's vomit days, from the block — not the strip's, which is a 28-day slice.
+  // This appendix spans the whole window, so reading the strip would have left every day
+  // older than four weeks unmarked while the newer ones were marked, which is worse than
+  // marking none: a reader would take the absence of a mark as the absence of a vomit.
+  const vomitDays = new Set(n.vomitDays)
   const rows = n.days
     .map((d) => {
       const lines = d.entries
@@ -5647,12 +5790,15 @@ function noticedAppendix(snap: ReportSnapshot): string {
           <tr>
             <td class="ng-hour num">${h(fmtLocalTime(e.occurredAt, snap.timezone))}</td>
             <td class="ng-words">${words}${dropped}${note}</td>
-            <td class="ng-obs"></td>
           </tr>`
         })
         .join('')
+      // The join anyone opening this appendix is making: what did she say on the days the
+      // record holds a vomit? Marking it here is the difference between a lookup table and
+      // a table you have to cross-reference by date against appendix A (the cold read).
+      const vomit = vomitDays.has(d.day) ? ` <span class="ng-vom">&#9650; vomit logged</span>` : ''
       return `
-        <tr class="ng-day"><td colspan="3">${h(fmtDayYear(d.day))}</td></tr>
+        <tr class="ng-day"><td colspan="2">${h(fmtDayYear(d.day))}${vomit}</td></tr>
         ${lines}`
     })
     .join('')
@@ -5661,7 +5807,7 @@ function noticedAppendix(snap: ReportSnapshot): string {
   // edits the owner's record on her behalf.
   const noteState = n.notesIncluded
     ? n.days.some((d) => d.entries.some((e) => e.note !== null))
-      ? ` The owner&rsquo;s own notes are printed beneath the words they belong to, at her request.`
+      ? ` The owner&rsquo;s own notes are printed beneath the words they belong to.`
       : ''
     : n.notesWithheld > 0
       ? ` ${num(n.notesWithheld)} of these entries carr${n.notesWithheld === 1 ? 'ies' : 'y'} a written note, not printed on this copy.`
@@ -5673,10 +5819,10 @@ function noticedAppendix(snap: ReportSnapshot): string {
     petName,
   )}, not examination findings, and they are counted nowhere else on this report: no symptom total, no frequency chart and no flag reads them. Days she did not answer are not listed; page&nbsp;1&rsquo;s four-week strip shows them as days.${noteState}</p>
   <table class="tbl ng">
-    <thead><tr><th>Time</th><th>What she recorded</th><th>Observer</th></tr></thead>
+    <thead><tr><th>Time</th><th>What she recorded</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="appx-foot">The &ldquo;Observer&rdquo; column is blank by design: the app records one account per pet today, so every entry here is the account holder&rsquo;s. ${h(
+  <p class="appx-foot">There is no observer column: the app records one account per pet today, so every entry here is the account holder&rsquo;s. ${h(
     petName,
   )}&rsquo;s record keeps the full list of words available to her; a word she was never offered cannot appear.</p>
 </section>`
@@ -6602,7 +6748,7 @@ function appendixF(snap: ReportSnapshot): string {
   // the owner's words from a fixed list, counted nowhere else, and that a run of
   // "nothing unusual" is a record of her ANSWERING, never a record of health.
   const noticedDt = hasNoticed(snap)
-    ? `<dt>Noticed (owner&rsquo;s observations)</dt><dd>A once-a-day check the owner answers by picking from a fixed list of plain-language words — never free text, never a score. The unit is a <b>day she answered</b>, not an episode: several entries on one day count once, and page&nbsp;1 says so where the counts do not sum. <b>&ldquo;Marked nothing unusual&rdquo; is her claim about a day, not an examination and not an all-clear</b>, which is why it is printed with its denominator and never drawn as a bar. These observations are counted <b>nowhere else on this report</b> — no symptom total, no frequency chart, no flag reads them — so a word here and a logged symptom are two separate records and are meant to be read side by side. Every entry is in appendix&nbsp;${noticedAppendixLetter(
+    ? `<dt>Noticed (owner&rsquo;s observations)</dt><dd>A once-a-day check the owner answers by picking from a fixed list of plain-language words — never free text, never a score. The unit is a <b>day she answered</b>, not an episode: several entries on one day count once, and page&nbsp;1 says so where the counts do not sum. <b>&ldquo;Marked nothing unusual&rdquo; is her claim about a day, not an examination and not an all-clear</b>, which is why it is printed with its denominator and never drawn as a bar. These observations are counted <b>nowhere else on this report</b> — no symptom total, no frequency chart, no flag reads them — so a word here and a logged symptom are two separate records and are meant to be read side by side. <b>The day each observation belongs to is the day the owner's phone recorded</b>, fixed when she answered; every other entry on this report is placed by this report's own timezone. The two agree unless she was in a different timezone at the time, in which case an observation and a same-day event can sit a day apart. Every entry is in appendix&nbsp;${noticedAppendixLetter(
         snap,
       )}.</dd>`
     : ''
@@ -6813,6 +6959,9 @@ const STYLE = `
   .noticed-counts{font-size:12.5px;line-height:1.55;margin-top:4px;}
   .noticed-note{font-size:11px;line-height:1.5;color:var(--muted);margin-top:4px;}
   .noticed-graph{margin-top:11px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+  /* Below the bars' floor there is one column, so the strip gets the full width instead
+     of 28 cells in half a page beside an empty white half. */
+  .noticed-graph-1{grid-template-columns:1fr;}
   .nb-title{font-size:10.5px;font-weight:700;color:var(--ink);margin-bottom:6px;}
   .nb-title .aside{font-weight:500;color:var(--faint);letter-spacing:0;text-transform:none;font-size:10px;}
   .nb-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
@@ -6821,7 +6970,13 @@ const STYLE = `
   .nb-track{flex:1 1 auto;height:9px;background:var(--fill);border:1px solid var(--hair);border-radius:2px;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .nb-fill{height:100%;background:var(--bar);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .nb-val{flex:0 0 auto;font-size:10.5px;color:var(--muted);white-space:nowrap;}
-  .nb-absence{font-size:10.5px;line-height:1.45;color:var(--muted);margin-top:7px;border-top:1px solid var(--hair2);padding-top:6px;}
+  /* The record contradicting the owner's claim. Body weight and primary ink, with a rule
+     on the left in the headline's register: it is the most actionable sentence the block
+     can produce and it rendered as 11px muted grey once. */
+  .noticed-conflict{margin-top:6px;border-left:3px solid var(--ink);padding:2px 0 2px 10px;font-size:12px;line-height:1.5;}
+  /* Why a per-word breakdown is not drawn. A withheld figure says so; a blank half-row
+     is indistinguishable from a clipped page. */
+  .nb-held{font-size:10.5px;line-height:1.5;color:var(--muted);}
   /* The strip. Each cell is a fixed column so 28 days sit on one row at page width; the
      vomit mark rides ABOVE the day's own glyph rather than replacing it, so a vomit mark
      never hides whether the day was answered.
@@ -6831,7 +6986,11 @@ const STYLE = `
      backticks either: this comment lives inside a template literal.) */
   .ns-row{display:flex;gap:2px;align-items:flex-end;}
   .ns-cell{flex:1 1 0;min-width:0;text-align:center;line-height:1;}
-  .ns-v{display:block;font-size:7px;height:9px;color:var(--ink);}
+  /* Sized to the day glyph, not smaller. It was 7px — the smallest mark on the page was
+     the only one standing for a hard clinical event, and it is the one a reader most wants
+     to cross-reference against the circles; it would not have survived the photocopy this
+     document is designed for (the cold read). */
+  .ns-v{display:block;font-size:9.5px;height:11px;color:var(--ink);}
   .ns-vn{visibility:hidden;}
   .ns-o{font-size:10px;color:var(--muted);}
   .ns-f{font-size:10px;color:var(--ink);}
@@ -6843,7 +7002,7 @@ const STYLE = `
      never be read as two rows a vet counts as two episodes. */
   .ng-day td{font-weight:700;background:var(--fill);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .ng-hour{white-space:nowrap;width:58px;color:var(--muted);}
-  .ng-obs{width:70px;}
+  .ng-vom{font-weight:500;font-size:10px;color:var(--muted);margin-left:8px;}
   .ng-abs{color:var(--muted);}
   .ng-note{margin-top:3px;font-size:11px;line-height:1.5;color:var(--ink);}
   .ng-trunc{color:var(--faint);font-size:10px;}

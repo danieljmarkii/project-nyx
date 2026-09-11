@@ -267,6 +267,16 @@ const TREND_HALF_MIN_WINDOW_DAYS = 8
  *     engine's fetch union (data-only at W1, §9), and nothing here changes that: this
  *     list feeds counting, not detection.
  */
+/**
+ * The daily look's own event type (migration 064).
+ *
+ * Named once so the one place that excludes it from this report's counts cannot drift
+ * from a string literal. It is deliberately NOT in `REPORT_SYMPTOM_TYPES` below (the
+ * membership walk carries that decision) and not in the engine's correlation set, so this
+ * constant is the third and last exclusion: the type-agnostic denominators.
+ */
+const LOOK_EVENT_TYPE = 'check_in'
+
 export const REPORT_SYMPTOM_TYPES = [
   'vomit',
   'diarrhea',
@@ -2896,10 +2906,30 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     if (a.status === 'completed') completedAnalysisEventIds.add(a.eventId)
   }
 
+  // ── The look's own parent event never enters this report's counts (§5.6, §10.5) ──
+  //
+  // `index.ts` pulls `events` with EVERY type, so production always hands assembly one
+  // `check_in` row per look — and the type-agnostic denominators counted them. Measured
+  // on one record, 28 answered days over a 46-day window: the letterhead went from "3
+  // days with a log" to "31", the trend's second half from "0 of 23 days logged" to "23
+  // of 23", and the caveat from "nothing was logged on 43 of 46 days, which could mask
+  // events" to "on 15 of 46". The strongest do-not-read-this-fall-as-improvement
+  // disclosure the report has, bought by tapping a chip once a day — CUL-787's cough
+  // defect re-created by the app's own prompt.
+  //
+  // §5.6 forbids it in one line: a look "joins no coverage line of any other surface".
+  // Filtered HERE, at the input boundary, rather than at each denominator: a look is not
+  // an event this report counts ANYWHERE, and a type-by-type exclusion is a list that the
+  // next type-agnostic count forgets to join. Its own block reads `input.lookRows`, which
+  // is a different pull entirely.
+  //
+  // This is the report half of CUL-891.
+  const countableEvents = input.events.filter((e) => e.type !== LOOK_EVENT_TYPE)
+
   // §5.11 — de-dup across the full pull (window-aware representative so a boundary-
   // straddling duplicate can't drop a genuine in-window bout), then scope to the window.
   const { events: dedupedAll, droppedEventIds } = dedupeEvents(
-    input.events,
+    countableEvents,
     completedAnalysisEventIds,
     (e) => inWindow(e.occurredAt),
   )
@@ -4355,10 +4385,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // no flag on this report (§10.5). The three record-side sets below are the record
   // speaking for itself beside her claim, never a look feeding the record.
   //
-  // Day keys are the OWNER's local days on both sides of every intersection. The look
-  // row carries its own stored `local_day` (T-19) and these are bucketed with the same
-  // `localDayKey` every other count on this report uses, so "the day she marked nothing
-  // unusual" and "the day he vomited" are the same calendar day for a reader.
+  // ── TWO CLOCKS, AND THE LIMIT IS DISCLOSED RATHER THAN DENIED ───────────────
+  //
+  // A look's day is FROZEN AT WRITE in the device's zone (`looks.local_day`, T-19, and
+  // this module must never re-derive it). These record-side day keys are bucketed HERE,
+  // at render, in whatever zone the request carries — the caller's device zone, else the
+  // stored profile zone, else UTC. The two coincide whenever the owner makes the report
+  // from the zone she logs from, which is the ordinary case and is why the column exists
+  // at all; they can differ by one day when she is travelling, or when the stored profile
+  // zone is stale and the device zone is unresolvable.
+  //
+  // This comment used to assert the opposite as a fact — that the two are "the same
+  // calendar day for a reader" — which the adversarial pass falsified by rendering the
+  // same record from three zones and watching the vomit mark move one cell (C-34: a
+  // comment asserting a wiring is a claim, and this one could not be checked because it
+  // was not true). Closing it needs the look row to carry the zone it was written in,
+  // which is a migration and its own issue; until then the legend says which entries are
+  // placed by which clock, and no sentence here claims they agree.
   const vomitLocalDays = new Set<string>()
   for (const e of windowEvents) {
     if (e.type !== 'vomit') continue

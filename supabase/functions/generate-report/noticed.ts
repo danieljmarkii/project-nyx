@@ -33,8 +33,11 @@
 // signal, and the service role sees them. `index.ts` joins `events` and drops
 // `deleted_at IS NOT NULL` (the `mapWeightRows` precedent) BEFORE anything reaches
 // this module, so every count and every appendix line here is over live rows only.
-// That join is the only guard; the fixture that pins it (Undo a note-bearing look →
-// the appendix renders nothing) is in `report.test.ts`.
+// That join is the only guard, and it is a STRING LITERAL in a select — so the fixture
+// that pins it (Undo a note-bearing look → the appendix renders nothing) is in
+// `noticed.test.ts`, and `guards/reportLookPull.test.ts` pins the select itself, because
+// deleting `deleted_at` from that embed un-guards every undone note with no test going
+// red (every fixture hand-builds a row that already has the field).
 
 import {
   absenceDaySet,
@@ -45,6 +48,12 @@ import {
   type LookDayRow,
   type LookOutcome,
 } from '../../../lib/lookDayCounts.ts'
+// The day-index arithmetic, imported rather than re-implemented for the third time.
+// `trial.ts` — the sibling pure module this one is modelled on — already reaches for these,
+// and the shared version is the more defensive one: it round-trips through `Date.UTC` and
+// rejects a shape-valid impossible date ('2026-02-30') that `Date.parse` silently rolls
+// over into a confident wrong day.
+import { dayKeyFromIndex, localDayIndexOf } from '../../../lib/utils.ts'
 import {
   LOOK_OPENING_CHIP_KEY,
   lookSpeciesOf,
@@ -54,7 +63,6 @@ import {
   type LookWordKind,
 } from '../../../constants/lookWords.ts'
 
-const MS_PER_DAY = 86_400_000
 
 /**
  * Q-13's floor, on the report: below FOURTEEN answered days in the window the report
@@ -134,8 +142,39 @@ export interface NoticedWordCount {
   /** Days IN THE WINDOW the word was marked on. A word in two looks one day counts
    *  once (T-14) — which is why this is `wordDays`, not a row count. */
   dayCount: number
-  /** The earliest local day in the window carrying the word. */
+  /**
+   * The earliest local day THE RECORD carries the word on — not the window's.
+   *
+   * IT WAS THE WINDOW'S, AND THAT WAS THE WORST DEFECT IN THE BLOCK. `firstDay` read the
+   * window while the coverage clause beside it read the whole pull, so on a dog marked
+   * *Off* in July, recovered, and marked *Off* again in September under an August-opening
+   * window, page 1 said *off on 3 (first Sep 2) … she had been answering since May 11, on
+   * 102 of the days before the first of these* — and the 102 days INCLUDED the two July
+   * days that falsify the onset. Two halves of one sentence on two spans, with the
+   * record-scoped half counting the exact days the window-scoped half denies. A vet reads
+   * onset as 13 days ago; the record says 67, waxing and relapsing. Different differential.
+   *
+   * That is C-35 exactly ("the same read bounded the onset date, so a two-month-old
+   * concern printed as three days old"), and the direction was one-way: the block reached
+   * outside the window only for the number that reassures.
+   *
+   * §6.9 defines onset as the first day a word was marked, full stop. So the DATE is the
+   * record's and says so when it falls outside the window; the COUNT beside it stays the
+   * window's, and the render never lets them be read as one span.
+   */
   firstDay: string
+  /** False when `firstDay` precedes the window — the render then says *before this
+   *  window*, so a record-scoped date can never be read as a window-scoped onset. */
+  firstDayInWindow: boolean
+  /**
+   * Can this date be called the record's first at all?
+   *
+   * False when the pull may have been truncated at the old end, where an earlier marking
+   * could exist that this query never saw. The render then scopes the claim to what it
+   * can see rather than asserting an onset — a date is free only when the read behind it
+   * is complete (C-19).
+   */
+  firstDayIsRecordFirst: boolean
   /**
    * The coverage BEFORE the first day — what stops *off on 6* reading as "new".
    *
@@ -156,13 +195,27 @@ export interface NoticedWordCount {
 export interface NoticedStripDay {
   day: string
   /**
-   * `absence` ○ — answered, every look that day *nothing unusual*.
-   * `observation` ● — answered, at least one word (a MIXED day draws ● — T-14, and the
-   *   accusing branch winning is the same precedence `absenceDaySet` applies).
+   * `concern` ● — answered, at least one SYMPTOM-CLASS word (a MIXED day draws ● — T-14,
+   *   and the accusing branch winning is the same precedence `absenceDaySet` applies).
+   * `clear` ○ — answered, no symptom-class word: she marked *nothing unusual*, OR her
+   *   only word was an activity.
    * `unanswered` — a faint dot, NEVER a blank: a blank is the visual default and reads
-   *   as "nothing seen", so a vomit's ▲ would float over a void (the third pass).
+   *   as "nothing seen", so a vomit's mark would float over a void (the third pass).
+   *
+   * ── WHY AN ACTIVITY-ONLY DAY IS `clear` AND NOT `concern` (the cold read) ──
+   * It used to be `observation`, on the reading that an activity IS an observation. It
+   * drew the same filled mark as an *off* day, so a week reading `lip-licking · off ·
+   * LIVELY · off` rendered as four consecutive identical marks — an unbroken run of
+   * concern, 25% of which was the owner saying the cat was bright. And it was
+   * inconsistent with the rest of the page by construction: page 1 never lists an
+   * activity word, never counts one and never bars one, so the one surface that DREW
+   * them was inflating exactly the cluster the other surfaces were careful about.
+   *
+   * `clear` is not "nothing unusual" — that is the owner's own claim and it keeps its own
+   * count and its own sentence. `clear` is the weaker, true statement the strip can make:
+   * she answered, and nothing she said is a concern. The legend says it in those words.
    */
-  mark: 'absence' | 'observation' | 'unanswered'
+  mark: 'concern' | 'clear' | 'unanswered'
   /** A vomit was logged this day — from the RECORD's own rows, never from a look. */
   vomit: boolean
 }
@@ -171,7 +224,14 @@ export interface NoticedStrip {
   startDate: string
   endDate: string
   days: NoticedStripDay[]
-  /** Answered days inside the strip — the denominator of `wordDaysInSpan`. */
+  /** Answered days inside the strip — THE denominator of `wordDaysInSpan`.
+   *
+   *  Not the cell count. The per-word sentence used to read *off on 6 of these 28*, where
+   *  28 is calendar days and only 25 were answered — a denominator no other count on this
+   *  page uses, two centimetres from a bar reading *6 of 42 days answered*. On a thin
+   *  record it is worse than inconsistent: 5 concerning days out of 13 answered printed as
+   *  "5 of these 28", understating the rate by a factor of two, in the reassuring
+   *  direction (the cold read). */
   answeredDays: number
   /** Vomit days inside the strip that were NOT answered. The caption's count: a
    *  ▲ over a faint dot is a day nobody reported on, and saying so is what stops the
@@ -253,15 +313,50 @@ export interface NoticedBlock {
    * days answered, and the missing days are exactly the good ones. Saying "some days
    * are missing from this list" while silently omitting the days the pet was well would
    * be the reassuring omission made invisible.
+   *
+   * A KNOWN ACTIVITY WORD, NOT A FALSY CATCH-ALL. It used to be "answered, not an absence
+   * day, no concern word", which swept up three different populations and told the reader
+   * all three were activities: a day whose only word this build does not recognise (which
+   * a held redeploy makes ordinary — the client ships OTA and the vocabulary can gain a
+   * word before this function is redeployed), and a row stored `observed` with an empty
+   * word array, which migration 064 permits by its own choice. Four days of a concern
+   * word the deployed function had not heard of printed as *4 answered days carry only an
+   * activity word*. Those days are `unreadableDays` now, and they are said in their own
+   * words.
    */
   activityOnlyDays: number
+  /**
+   * Answered days that are not absence days and carry NO word this build can read — an
+   * unrecognised key, or a row stored as an observation with no words at all.
+   *
+   * The report knows something was recorded and cannot say what. That is the honest
+   * statement, and it is the opposite of "only an activity": one is the owner reporting
+   * her pet was bright, the other is the document admitting a gap in itself.
+   */
+  unreadableDays: number
   /** Symptom-class words, most days first. Page 1 and the bars. */
   concernWords: NoticedWordCount[]
   /** Activity words. The appendix's ink only — NEVER page 1, because a rise in a
    *  positive never reassures and a page-1 tally of them invites exactly that read. */
   activityWords: NoticedWordCount[]
-  /** May the bars draw? False below `NOTICED_BARS_MIN_ANSWERED_DAYS`. */
+  /** May the bars draw? */
   barsRender: boolean
+  /**
+   * WHY they do not, when they do not — never a single empty return the caller has to
+   * guess at (C-4).
+   *
+   * `floor` — under `NOTICED_BARS_MIN_ANSWERED_DAYS`.
+   * `spread` — enough answered days, but clustered: §6.5's guard, which the first cut kept
+   *   the count of and dropped the placement of. Sixteen consecutive answered days during
+   *   one bad fortnight drew a bar at 81% of the track under a title spanning three
+   *   months. "Eight answered days can be eight days the owner was already worried" is
+   *   §6.5's own sentence, and it is truer on the surface where the encoding is a LENGTH.
+   * `no_concern_words` — she answered plenty and marked no concern. Nothing is withheld
+   *   here and the render must not say anything was: attributing this to a thin record
+   *   substitutes "too little evidence" for "she reported nothing wrong", on the most
+   *   common record there is.
+   */
+  barsWithheld: 'floor' | 'spread' | 'no_concern_words' | null
   /** The bars' own span — the report window. Named on the bars because it differs
    *  from the strip's. */
   barsStartDate: string
@@ -276,22 +371,71 @@ export interface NoticedBlock {
    *  column is never a silent one. */
   notesWithheld: number
   intake: NoticedIntake
-  /** True when at least one word key in the window was outside the closed vocabulary.
-   *  The render says so once rather than per row. */
+  /**
+   * How often the owner marked *nothing unusual* on a day the record holds a vomit — and
+   * how many vomit days she answered at all. BOTH sides are answered days (§6.11's rule,
+   * which exists because counting one side over all vomit days scores every unanswered
+   * bad day as "nothing seen").
+   *
+   * THE CALIBRATION FACT, and the cold read is what named it: it tells a reader how much
+   * weight *marked nothing unusual on 32 of the 42* can carry. An owner who marks nothing
+   * unusual on three of the four days her cat vomits is an owner whose quiet days mean
+   * something different, and until this printed, that was derivable from the strip only
+   * by eye, mark by mark.
+   *
+   * It ESCALATES ONLY. A zero here would read as "she caught every one", which is
+   * reassurance drawn from an absence, so the render prints this only when
+   * `absenceOnVomitDays > 0`.
+   */
+  absenceOnVomitDays: number
+  answeredVomitDays: number
+  /** The local days IN THE WINDOW the record holds a vomit, sorted. The appendix marks
+   *  its day headings from this; the strip draws its own 28-day slice of the same set, so
+   *  a day marked in the appendix and a triangle on page 1 cannot disagree — and the
+   *  appendix, which spans the whole window, does not inherit the strip's shorter span. */
+  vomitDays: string[]
+  /**
+   * Do the page-1 counts actually fail to reconcile? `absenceDays + Σ concern day counts`
+   * against the days answered.
+   *
+   * The reconciliation clause used to print unconditionally, and on a real record it was
+   * FALSE: 6 + 2 + 2 + 32 is exactly 42, because a double-counted multi-word day and an
+   * omitted activity-only day cancelled. A disclaimer that is wrong half the time teaches
+   * a reader to skim the small print — and the small print beside it is where the
+   * refused-meal contradiction lives (the cold read).
+   */
+  countsSum: number
+  /** True when at least one word key in the window was outside the closed vocabulary. */
   hasUnknownWords: boolean
+  /**
+   * True when the pull was capped AND its oldest row lands inside the window — so the
+   * window's own oldest look rows are missing and EVERY count here is a floor.
+   *
+   * The first cut's comment claimed this could not happen ("the window keeps every row it
+   * had"), which is true only while the window's own rows fit under the cap. A
+   * since-visit window has no upper bound and a custom window has no clamp, so a
+   * long-tenured household answering several times a day can exceed it inside the window:
+   * measured, 399 answered days printed as "300 of 399" with an onset 99 days late and no
+   * disclosure at all.
+   */
+  windowTruncated: boolean
+  /**
+   * The coverage before the EARLIEST concern-word first-date, stated once.
+   *
+   * Per-word it was three parentheticals on one line (*120 days before it since May 3* …
+   * *94* … *121*), all anchored to the same start date, which turned a scannable sentence
+   * into a wall and invited a reader to hunt for meaning in 120-vs-121 (the cold read).
+   * One clause answers the question all three were asked for — had she been watching
+   * before this started? — and it is true of every word on the line, because coverage
+   * before the earliest first-date is a subset of the coverage before any later one.
+   *
+   * Null when nothing was answered before, or when there is no concern word.
+   */
+  baseline: { answeredDays: number; sinceDay: string | null; firstDay: string } | null
 }
 
 // ── Day helpers (the report's own day-number arithmetic, local to this module) ──
 
-/** 'YYYY-MM-DD' → integer day index. Null when unparseable. */
-function dayNumber(dayKey: string): number | null {
-  const ms = Date.parse(`${dayKey}T00:00:00Z`)
-  return Number.isNaN(ms) ? null : Math.round(ms / MS_PER_DAY)
-}
-
-function dayKeyFromNumber(n: number): string {
-  return new Date(n * MS_PER_DAY).toISOString().slice(0, 10)
-}
 
 /**
  * A key's owner-facing head word, or null when the closed vocabulary does not know it.
@@ -394,7 +538,7 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
   // deterministic tiebreak (created_at, then the parent id) so two looks on one day
   // always print in the same order.
   const dated = rows
-    .filter((r) => dayNumber(r.localDay) !== null)
+    .filter((r) => localDayIndexOf(r.localDay) !== null)
     .slice()
     .sort(
       (a, b) =>
@@ -404,11 +548,17 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
     )
 
   const inWindow = (r: ReportLookInput): boolean => {
-    const dn = dayNumber(r.localDay)
+    const dn = localDayIndexOf(r.localDay)
     return dn !== null && dn >= startDayNum && dn <= endDayNum
   }
   const windowRows = dated.filter(inWindow)
   if (windowRows.length === 0) return null
+
+  // Did the cap bite INSIDE the window? `dated` is oldest-first, so its head is the oldest
+  // row the pull returned; if that row is not older than the window's opening day, rows
+  // the window needs may be missing off the old end and every count here is a floor.
+  const oldestPulledNum = localDayIndexOf(dated[0].localDay)
+  const windowTruncated = !pullComplete && (oldestPulledNum === null || oldestPulledNum > startDayNum)
 
   const answeredDays = answeredDaysOf(windowRows)
   const absenceCount = absenceDaySet(windowRows).size
@@ -418,13 +568,24 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
   // vocabulary. An unknown key never reaches a count OR a label — it is dropped here,
   // once, so no consumer downstream has to remember to.
   let hasUnknownWords = false
-  const firstDayByKey = new Map<string, string>()
+  // WHICH words appeared is a question about the WINDOW; WHEN each was first marked is a
+  // question about the RECORD. Keeping them apart is the whole of finding 1: the earliest
+  // day is read over every pulled row, so a word marked in July and again in September
+  // reports July as its onset rather than the window's opening.
+  const inWindowKeys = new Set<string>()
   for (const r of windowRows) {
     for (const key of r.words) {
       if (labelFor(key, species, params.sex) === null) {
         hasUnknownWords = true
         continue
       }
+      inWindowKeys.add(key)
+    }
+  }
+  const firstDayByKey = new Map<string, string>()
+  for (const r of dated) {
+    for (const key of r.words) {
+      if (!inWindowKeys.has(key)) continue
       const prev = firstDayByKey.get(key)
       if (prev === undefined || r.localDay < prev) firstDayByKey.set(key, r.localDay)
     }
@@ -436,12 +597,16 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
     const label = labelFor(key, species, params.sex)
     const kind = kindFor(key, species)
     if (label === null || kind === null) continue
+    const firstNum = localDayIndexOf(firstDay)
     const entry: NoticedWordCount = {
       key,
       label,
       kind,
+      // The COUNT is the window's. Only the date reaches back.
       dayCount: wordDays(windowRows, key),
       firstDay,
+      firstDayInWindow: firstNum !== null && firstNum >= startDayNum,
+      firstDayIsRecordFirst: pullComplete,
       priorCoverage: priorCoverageFor(dated, firstDay, pullComplete),
     }
     ;(kind === 'concern' ? concernWords : activityWords).push(entry)
@@ -459,20 +624,29 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
   // than four weeks the strip is shorter and says so in its own title.
   const stripStartDayNum = Math.max(startDayNum, endDayNum - (NOTICED_STRIP_DAYS - 1))
   const stripRows = dated.filter((r) => {
-    const dn = dayNumber(r.localDay)
+    const dn = localDayIndexOf(r.localDay)
     return dn !== null && dn >= stripStartDayNum && dn <= endDayNum
   })
   const stripAnswered = answeredDaySet(stripRows)
-  const stripAbsence = absenceDaySet(stripRows)
+  // The days inside the strip carrying a symptom-class word — the ONE thing `concern`
+  // means. Derived from the same `concernWords` set page 1 counts and bars, so the mark
+  // and the number can never disagree about what a concern is.
+  const stripConcernDays = new Set<string>()
+  for (const r of stripRows) {
+    if (r.words.some((k) => kindFor(k, species) === 'concern' && labelFor(k, species, params.sex) !== null)) {
+      stripConcernDays.add(r.localDay)
+    }
+  }
   const stripDays: NoticedStripDay[] = []
   const stripVomitDays = new Set<string>()
   for (let dn = stripStartDayNum; dn <= endDayNum; dn++) {
-    const day = dayKeyFromNumber(dn)
+    const day = dayKeyFromIndex(dn)
     const vomit = vomitLocalDays.has(day)
     if (vomit) stripVomitDays.add(day)
+    const hasConcern = stripConcernDays.has(day)
     stripDays.push({
       day,
-      mark: !stripAnswered.has(day) ? 'unanswered' : stripAbsence.has(day) ? 'absence' : 'observation',
+      mark: !stripAnswered.has(day) ? 'unanswered' : hasConcern ? 'concern' : 'clear',
       vomit,
     })
   }
@@ -486,8 +660,8 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
   }
 
   const strip: NoticedStrip = {
-    startDate: dayKeyFromNumber(stripStartDayNum),
-    endDate: dayKeyFromNumber(endDayNum),
+    startDate: dayKeyFromIndex(stripStartDayNum),
+    endDate: dayKeyFromIndex(endDayNum),
     days: stripDays,
     answeredDays: stripAnswered.size,
     // BOTH sides of this subtraction count the SAME way. `answeredVomitDays` intersects
@@ -538,29 +712,88 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
     intake = overlap.length > 0 ? { kind: 'disagreement', days: overlap } : { kind: 'none' }
   }
 
-  // Days answered, not absence days, and carrying no CONCERN word — i.e. the days whose
-  // only content is an activity. Derived from the same row set every other count reads.
+  // THREE populations, counted apart. A day that is answered and is not an absence day is
+  // one of: a concern day (listed on page 1), an ACTIVITY-only day (deliberately not
+  // listed), or a day carrying nothing this build can read. The first cut collapsed the
+  // last two and called both an activity.
   const concernKeys = new Set(concernWords.map((w) => w.key))
+  const activityKeys = new Set(activityWords.map((w) => w.key))
   const daysWithConcern = new Set<string>()
+  const daysWithActivity = new Set<string>()
   for (const r of windowRows) {
     if (r.words.some((k) => concernKeys.has(k))) daysWithConcern.add(r.localDay)
+    if (r.words.some((k) => activityKeys.has(k))) daysWithActivity.add(r.localDay)
   }
   const absenceSetForCounts = absenceDaySet(windowRows)
   let activityOnlyDays = 0
+  let unreadableDays = 0
   for (const day of answeredDaySet(windowRows)) {
-    if (!absenceSetForCounts.has(day) && !daysWithConcern.has(day)) activityOnlyDays += 1
+    if (absenceSetForCounts.has(day) || daysWithConcern.has(day)) continue
+    if (daysWithActivity.has(day)) activityOnlyDays += 1
+    else unreadableDays += 1
   }
+
+  // The calibration fact, window-scoped — because the claim it calibrates (*marked
+  // nothing unusual on N of the M*) is window-scoped (C-35: a gate's window is the window
+  // of the claim it gates, never the convenient neighbour's).
+  const windowAbsence = absenceDaySet(windowRows)
+  let absenceOnVomitDays = 0
+  for (const day of windowAbsence) if (vomitLocalDays.has(day)) absenceOnVomitDays += 1
+
+  const countsSum = absenceCount + concernWords.reduce((n, w) => n + w.dayCount, 0)
+
+  // §6.5's spread guard, carried onto the surface where the encoding is a LENGTH. The
+  // window is divided into four equal parts and the answered days must touch at least
+  // three of them — the report's proportional reading of "≥ 8 answered days spread over
+  // ≥ 3 of its 4 weeks", which works on a 28-day window and on a 400-day one alike.
+  const answeredQuarters = new Set<number>()
+  const span = Math.max(1, endDayNum - startDayNum + 1)
+  for (const day of answeredDaySet(windowRows)) {
+    const num = localDayIndexOf(day)
+    if (num === null) continue
+    answeredQuarters.add(Math.min(3, Math.floor(((num - startDayNum) * 4) / span)))
+  }
+  const barsWithheld: NoticedBlock['barsWithheld'] =
+    concernWords.length === 0
+      ? 'no_concern_words'
+      : answeredDays < NOTICED_BARS_MIN_ANSWERED_DAYS
+        ? 'floor'
+        : answeredQuarters.size < 3
+          ? 'spread'
+          : null
+
+  const earliest = concernWords.reduce<NoticedWordCount | null>(
+    (acc, w) => (acc === null || w.firstDay < acc.firstDay ? w : acc),
+    null,
+  )
+  const baseline =
+    earliest && earliest.priorCoverage
+      ? { ...earliest.priorCoverage, firstDay: earliest.firstDay }
+      : null
 
   return {
     windowDays,
     answeredDays,
     absenceDays: absenceCount,
     activityOnlyDays,
+    unreadableDays,
+    windowTruncated,
+    absenceOnVomitDays,
+    answeredVomitDays: answeredVomitDays(windowRows, vomitLocalDays),
+    vomitDays: [...vomitLocalDays]
+      .filter((d) => {
+        const num = localDayIndexOf(d)
+        return num !== null && num >= startDayNum && num <= endDayNum
+      })
+      .sort(),
+    countsSum,
+    baseline,
     concernWords,
     activityWords,
-    barsRender: answeredDays >= NOTICED_BARS_MIN_ANSWERED_DAYS,
-    barsStartDate: dayKeyFromNumber(startDayNum),
-    barsEndDate: dayKeyFromNumber(endDayNum),
+    barsRender: barsWithheld === null,
+    barsWithheld,
+    barsStartDate: dayKeyFromIndex(startDayNum),
+    barsEndDate: dayKeyFromIndex(endDayNum),
     strip,
     days,
     notesIncluded,

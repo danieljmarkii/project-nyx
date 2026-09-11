@@ -38,6 +38,13 @@ import {
   type ScopeResolutionInput,
 } from './report.ts'
 import { renderReport } from './render.ts'
+import type { ReportAudience } from './noticed.ts'
+
+/** CUL-875 — `generateReportForPet` takes the audience as a REQUIRED 5th argument, with
+ *  no default: a privacy decision a caller can omit is a privacy decision taken silently
+ *  (the rls-privacy-reviewer proved an omitted argument printed the owner's note). Every
+ *  test here exercises the authenticated owner path. */
+const OWNER_AUDIENCE: ReportAudience = { kind: 'owner', includeLookNotes: true }
 
 const NOW = '2026-07-02T12:00:00Z'
 const NOW_MS = Date.parse(NOW)
@@ -522,7 +529,7 @@ function fakeClient(tables: Record<string, unknown>) {
 
 Deno.test('generateReportForPet: unowned/absent pet → 404, never leaks a report', async () => {
   const client = fakeClient({ pets: { single: null } }) // RLS returns no pet
-  const res = await generateReportForPet(client, 'somebody-elses-pet', NOW_MS, null)
+  const res = await generateReportForPet(client, 'somebody-elses-pet', NOW_MS, null, OWNER_AUDIENCE)
   assert.equal(res.status, 404)
   assert.equal(res.body.html, undefined)
 })
@@ -530,7 +537,7 @@ Deno.test('generateReportForPet: unowned/absent pet → 404, never leaks a repor
 Deno.test('generateReportForPet: a query ERROR throws (never a silent false-clean report)', async () => {
   // A backend fault on the pet load must surface, and must NOT masquerade as a 404.
   const petErr = fakeClient({ pets: { error: { message: 'connection reset' } } })
-  await assert.rejects(() => generateReportForPet(petErr, 'p1', NOW_MS, null), /pets read failed/)
+  await assert.rejects(() => generateReportForPet(petErr, 'p1', NOW_MS, null, OWNER_AUDIENCE), /pets read failed/)
 
   // A fault on a downstream pull (events) must throw too — a swallowed error would
   // render the pet as having zero events (a false-clean clinical artifact).
@@ -541,7 +548,7 @@ Deno.test('generateReportForPet: a query ERROR throws (never a silent false-clea
     diet_trials: { list: [] },
     events: { error: { message: 'statement timeout' } },
   })
-  await assert.rejects(() => generateReportForPet(eventsErr, 'p1', NOW_MS, null), /events read failed/)
+  await assert.rejects(() => generateReportForPet(eventsErr, 'p1', NOW_MS, null, OWNER_AUDIENCE), /events read failed/)
 })
 
 Deno.test('generateReportForPet: owned pet → 200 with html + scope metadata', async () => {
@@ -558,7 +565,7 @@ Deno.test('generateReportForPet: owned pet → 200 with html + scope metadata', 
     feeding_arrangements: { list: [] },
     conditions: { list: [] },
   })
-  const res = await generateReportForPet(client, 'p1', NOW_MS, null)
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
   assert.equal(res.status, 200)
   assert.equal(res.body.pet_name, 'Nyx')
   assert.equal(res.body.scope_basis, 'fallback_90d')
@@ -593,6 +600,7 @@ Deno.test('generateReportForPet: no display name → owner falls back to the cal
     'p1',
     NOW_MS,
     null,
+    OWNER_AUDIENCE,
     'jwt-token',
   )
   assert.equal(res.status, 200)
@@ -612,6 +620,7 @@ Deno.test('generateReportForPet: no display name → owner falls back to the cal
     'p1',
     NOW_MS,
     null,
+    OWNER_AUDIENCE,
     'jwt-token',
   )
   assert.equal(res2.status, 200)
@@ -626,6 +635,7 @@ Deno.test('generateReportForPet: no display name → owner falls back to the cal
     'p1',
     NOW_MS,
     null,
+    OWNER_AUDIENCE,
     'jwt-token',
   )
   assert.equal(res3.status, 200)

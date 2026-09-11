@@ -18,7 +18,12 @@ import {
   type ReportAudience,
   type ReportLookInput,
 } from './noticed.ts'
-import { assembleReport, REPORT_SYMPTOM_TYPES, type ReportInput } from './report.ts'
+import {
+  assembleReport,
+  REPORT_SYMPTOM_TYPES,
+  type ReportEventInput,
+  type ReportInput,
+} from './report.ts'
 import { renderReport } from './render.ts'
 import { mapLookRows, type LookRow } from './index.ts'
 // The lane list the report's detection input filters on — read from the engine rather
@@ -76,8 +81,9 @@ function params(over: Partial<BuildNoticedParams> = {}): BuildNoticedParams {
   }
 }
 
-/** N days of *nothing unusual* ending the day before `before`. Used to clear the floors
- *  the way a real record clears them — by actually holding the days. */
+/** N days of *nothing unusual* ending on `endDay`, CONSECUTIVE. Used where the test is
+ *  about a burst; note it does NOT clear the bars' spread guard on a long window, which
+ *  is the point of the guard. */
 function quietRun(count: number, endDay: string): ReportLookInput[] {
   const end = dn(endDay)
   const out: ReportLookInput[] = []
@@ -85,6 +91,31 @@ function quietRun(count: number, endDay: string): ReportLookInput[] {
     out.push(look({ day: new Date((end - i) * 86_400_000).toISOString().slice(0, 10) }))
   }
   return out
+}
+
+/**
+ * N days of *nothing unusual* SPREAD evenly across a span — the shape an owner who
+ * answers most days actually produces, and the one that clears §6.5's spread guard.
+ *
+ * The default window here is 46 days and `quietRun` packs its days against one end, so a
+ * fixture built from it alone is clustered in one or two quarters. That is a fixture the
+ * caller could produce, but it is not the one most of these tests mean, and using it made
+ * two tests assert a floor while the code was withholding for spread (C-35: a fixture
+ * shaped unlike the case under test is green over the wrong thing).
+ */
+function spreadRun(count: number, from: string, to: string): ReportLookInput[] {
+  const start = dn(from)
+  const span = dn(to) - start
+  const out: ReportLookInput[] = []
+  for (let i = 0; i < count; i++) {
+    const offset = count === 1 ? 0 : Math.round((i * span) / (count - 1))
+    out.push(look({ day: dayKey(start + offset) }))
+  }
+  return out
+}
+
+function dayKey(n: number): string {
+  return new Date(n * 86_400_000).toISOString().slice(0, 10)
 }
 
 // ── The four day counts (T-14, T-19) ──────────────────────────────────────────
@@ -194,15 +225,33 @@ Deno.test('the line names the ACT and its denominator, and the absence is the ow
   assert.ok(!/nothing unusual\.<\/div>/.test(html))
 })
 
-Deno.test('the reconciliation clause is always there, because the counts CANNOT sum', () => {
+Deno.test('the reconciliation clause fires when the counts really do not sum', () => {
   // 1 off day + 1 lip-licking day + 20 absence days = 22 over a denominator of 21, which
   // is correct under multi-select and reads as an arithmetic error without the clause.
   const html = renderWithLooks([
     ...quietRun(20, '2026-09-10'),
     look({ day: '2026-09-12', words: ['subdued', 'lip_licking'] }),
   ])
-  assert.ok(/A day can carry more than one word/.test(html))
-  assert.ok(/do not sum to the days answered/.test(html))
+  assert.ok(/add to more than the <span class="num">21<\/span> days answered/.test(html))
+  assert.ok(/a day can carry more than one word/.test(html))
+})
+
+Deno.test('and is ABSENT when they do sum — a disclaimer that is wrong teaches a reader to skim', () => {
+  // The cold read found it printed unconditionally over 6 + 2 + 2 + 32 = exactly 42: a
+  // double-counted multi-word day and an omitted activity-only day had cancelled. The
+  // small print beside this clause is where the refused-meal contradiction lives, so
+  // training a reader to skip it is not a cosmetic cost.
+  const html = renderWithLooks([...quietRun(20, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })])
+  assert.ok(!/add to more than/.test(html) && !/add to less than/.test(html))
+})
+
+Deno.test('the under-count direction is named too — a day of only an activity word', () => {
+  const html = renderWithLooks([
+    ...quietRun(15, '2026-09-10'),
+    look({ day: '2026-09-12', words: ['lively'] }),
+  ])
+  assert.ok(/add to less than/.test(html))
+  assert.ok(/answered day carries only an activity word/.test(html))
 })
 
 Deno.test('the clause is true in the OTHER direction too — activity-only days are named', () => {
@@ -218,10 +267,21 @@ Deno.test('the clause is true in the OTHER direction too — activity-only days 
   assert.ok(!/lively/i.test(html.split('Appendix')[0]), 'and the activity word is still not ON page 1')
 })
 
-Deno.test('a word’s first date carries the coverage BEFORE it, so it cannot read as new', () => {
-  const html = renderWithLooks([...quietRun(30, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })])
-  assert.ok(/first Sep 12/.test(html))
-  assert.ok(/answered on <span class="num">30<\/span> days before it since Aug 12/.test(html))
+Deno.test('the coverage BEFORE the first date is stated ONCE, not after every word', () => {
+  // Per-word it was three parentheticals on one line, all anchored to the same start
+  // date, which turned a scannable sentence into a wall and invited a reader to hunt for
+  // meaning in 120-vs-121 (the cold read). One clause answers what all three were asked
+  // for, and it is true of every word above it because coverage before the EARLIEST
+  // first-date is a subset of the coverage before any later one.
+  const html = renderWithLooks([
+    ...quietRun(30, '2026-09-10'),
+    look({ day: '2026-09-12', words: ['subdued'] }),
+    look({ day: '2026-09-13', words: ['lip_licking'] }),
+  ])
+  assert.ok(/first Sep 12/.test(html) && /first Sep 13/.test(html), 'each word keeps its own date')
+  assert.equal((html.match(/She had been answering since/g) ?? []).length, 1, 'one baseline sentence')
+  assert.ok(/She had been answering since Aug 12, on <span class="num">30<\/span> of the days before the first of these \(Sep 12\)/.test(html))
+  assert.ok(!/days before it since/.test(html), 'and no per-word coverage parenthetical')
 })
 
 Deno.test('when the pull may be truncated the clause becomes a FLOOR and names no date', () => {
@@ -229,45 +289,169 @@ Deno.test('when the pull may be truncated the clause becomes a FLOOR and names n
   // the record's first day is the C-19 failure.
   const rows = [...quietRun(30, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })]
   const html = renderWithLooks(rows, { lookRowsComplete: false })
-  assert.ok(/answered on at least <span class="num">30<\/span> days before it/.test(html))
-  assert.ok(!/days before it since/.test(html), 'no start date is claimed')
+  assert.ok(/She had answered on at least <span class="num">30<\/span> days before the first of these/.test(html))
+  assert.ok(!/answering since/.test(html), 'no start date is claimed')
 })
 
 Deno.test('with nothing answered before the first day, the clause is ABSENT, never a zero', () => {
   const html = renderWithLooks([look({ day: '2026-08-01', words: ['subdued'] })])
   assert.ok(/first Aug 1/.test(html))
-  assert.ok(!/days before it/.test(html), '"on 0 days before it" is not a sentence')
+  assert.ok(!/days before the first of these/.test(html), '"on 0 days before it" is not a sentence')
+})
+
+Deno.test('a word first marked BEFORE the window reports the RECORD’s onset, and says so', () => {
+  // The worst defect in the first cut. `firstDay` read the window while the coverage
+  // clause beside it read the whole pull, so a dog marked Off in July, recovered, and
+  // marked Off again in September under an August window printed "first Sep 2 … answered
+  // on 102 days before the first of these" — and those 102 days INCLUDED the July days
+  // that falsify the onset. A vet reads 13 days; the record says 67, waxing and relapsing.
+  const html = renderWithLooks([
+    ...spreadRun(40, '2026-06-01', '2026-07-31'),
+    look({ day: '2026-07-10', words: ['subdued'] }),
+    look({ day: '2026-07-11', words: ['subdued'] }),
+    ...spreadRun(20, '2026-08-01', '2026-09-01'),
+    look({ day: '2026-09-02', words: ['subdued'] }),
+  ])
+  assert.ok(/first marked Jul 10, 2026, before this window/.test(html), 'the date is the record’s, and scoped')
+  assert.ok(!/\(first Sep 2\)/.test(html), 'never the window’s first day dressed as an onset')
+  // …and the count beside it is still the WINDOW's. Only the date reaches back.
+  assert.ok(/Off on <span class="num">1<\/span>/.test(html))
+})
+
+Deno.test('when the pull may be truncated, no date is called the record’s first', () => {
+  const html = renderWithLooks(
+    [...spreadRun(20, '2026-08-01', '2026-09-01'), look({ day: '2026-09-02', words: ['subdued'] })],
+    { lookRowsComplete: false },
+  )
+  assert.ok(/earliest here Sep 2, 2026/.test(html))
+  assert.ok(!/first marked/.test(html), 'no onset is asserted about a record this read cannot see all of')
+})
+
+Deno.test('a day whose only word this build cannot read is NOT called an activity', () => {
+  // A held redeploy makes this ordinary: the client ships OTA and the vocabulary can gain
+  // a word before this function is redeployed. Four days of a concern word the deployed
+  // function had not heard of printed as "4 answered days carry only an activity word".
+  const html = renderWithLooks([
+    ...spreadRun(20, '2026-08-01', '2026-09-05'),
+    look({ day: '2026-09-08', words: ['panting_at_rest_v2'] }),
+    look({ day: '2026-09-09', words: ['panting_at_rest_v2'] }),
+  ])
+  assert.ok(/this report cannot read what was recorded/.test(html))
+  assert.ok(!/carry only an activity word/.test(html), 'never an activity claim about an unknown word')
+  assert.ok(!/panting_at_rest_v2/.test(html), 'and never the raw key')
+})
+
+Deno.test('a row stored as an observation with no words at all is unreadable, not an activity', () => {
+  // Migration 064 permits it by its own choice (the client validates; there is no CHECK).
+  const n = buildNoticed(
+    params({
+      rows: [look({ day: '2026-09-02', words: [], outcome: 'observed' })],
+    }),
+  )!
+  assert.equal(n.unreadableDays, 1)
+  assert.equal(n.activityOnlyDays, 0)
+  assert.equal(n.absenceDays, 0, 'and it is not the owner’s "nothing unusual" claim either')
+})
+
+Deno.test('a pull capped INSIDE the window makes every count a floor, and says so', () => {
+  // The cap has no date filter and a since-visit window has no upper bound, so a
+  // long-tenured household answering several times a day can exceed it inside the window.
+  // Measured before this: 399 answered days printed as "300 of 399", onset 99 days late,
+  // no disclosure at all.
+  const html = renderWithLooks(
+    [...spreadRun(20, '2026-08-20', '2026-09-15'), look({ day: '2026-09-02', words: ['subdued'] })],
+    { lookRowsComplete: false },
+  )
+  assert.ok(/reached its row limit before the start of the window/.test(html))
+  assert.ok(/every count here is at least the number shown/.test(html))
+})
+
+Deno.test('…and a complete pull says no such thing', () => {
+  const html = renderWithLooks([...spreadRun(20, '2026-08-01', '2026-09-15')])
+  assert.ok(!/row limit/.test(html))
 })
 
 // ── The bars and their floor ──────────────────────────────────────────────────
 
 Deno.test(`no bars below ${NOTICED_BARS_MIN_ANSWERED_DAYS} answered days — the line and the strip only`, () => {
+  // Both fixtures are SPREAD across the window, so the only thing that varies between
+  // them is the count — otherwise the thick one would be withheld for spread and the test
+  // would pass for the wrong reason.
   const thin = renderWithLooks([
-    ...quietRun(NOTICED_BARS_MIN_ANSWERED_DAYS - 2, '2026-09-10'),
+    ...spreadRun(NOTICED_BARS_MIN_ANSWERED_DAYS - 2, '2026-08-01', '2026-09-11'),
     look({ day: '2026-09-12', words: ['subdued'] }),
   ])
   assert.ok(!/nb-track/.test(thin), 'no bar is drawn')
+  assert.ok(/Too few days answered/.test(thin), 'and the floor is named as the reason')
   assert.ok(/Answered on/.test(thin), 'the line still renders')
   assert.ok(/ns-row/.test(thin), 'the strip still renders')
 
   const thick = renderWithLooks([
-    ...quietRun(NOTICED_BARS_MIN_ANSWERED_DAYS, '2026-09-10'),
+    ...spreadRun(NOTICED_BARS_MIN_ANSWERED_DAYS, '2026-08-01', '2026-09-11'),
     look({ day: '2026-09-12', words: ['subdued'] }),
   ])
   assert.ok(/nb-track/.test(thick), 'at the floor the bars draw')
 })
 
-Deno.test('the ABSENCE is never a bar — it is the sentence beneath them', () => {
+Deno.test('§6.5 — a CLUSTERED record clears the count and is still withheld, and says so', () => {
+  // Sixteen consecutive answered days during one bad fortnight drew a bar at 81% of the
+  // track under a title spanning three months. "Eight answered days can be eight days the
+  // owner was already worried" is §6.5's own sentence, and it is truer on the surface
+  // where the encoding is a LENGTH.
+  const html = renderWithLooks([
+    ...quietRun(15, '2026-08-16'),
+    look({ day: '2026-08-17', words: ['subdued'] }),
+  ])
+  assert.ok(!/nb-track/.test(html), 'no bar is drawn')
+  assert.ok(/clustered rather than spread/.test(html), 'and the reason is the spread, not the count')
+  assert.ok(!/Too few days answered/.test(html), 'never the wrong reason')
+})
+
+Deno.test('a record with NO concern word withholds nothing, and claims nothing was withheld', () => {
+  // `noticedBars` returns '' for three reasons and the caller used to attribute all of
+  // them to the floor — so 41 of 46 days answered with no concern word read "Too few days
+  // answered (41 of 46)", substituting "the record is too thin" for "she reported nothing
+  // wrong" on the most common record there is.
+  const html = renderWithLooks(spreadRun(41, '2026-08-01', '2026-09-15'))
+  assert.ok(!/Too few days answered/.test(html))
+  assert.ok(!/clustered rather than spread/.test(html))
+  assert.ok(/marked nothing unusual on <span class="num">41<\/span> of the <span class="num">41<\/span>/.test(html))
+})
+
+Deno.test('the ABSENCE is never a bar — the reassuring count is never sized', () => {
   const html = renderWithLooks([...quietRun(30, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })])
   const bars = html.slice(html.indexOf('nb-title'), html.indexOf('ns-row'))
-  assert.ok(/nb-absence/.test(bars), 'the absence is stated')
-  // The reassuring count must never be sized: on the first draft the LONGEST bar was the
-  // absence, at 81% of the track.
+  // On the first draft the LONGEST bar was the absence, at 81% of the track.
   const barLabels = [...bars.matchAll(/<div class="nb-lab">([^<]*)/g)].map((m) => m[1])
   assert.ok(barLabels.length > 0)
   for (const label of barLabels) {
     assert.ok(!/nothing unusual/i.test(label), `"${label}" must not be a bar`)
   }
+})
+
+Deno.test('the absence CAVEAT survives the floor — it is in the prose, not in the bar block', () => {
+  // The blocker the cold read opened with: the caveat used to live under the bars, so the
+  // floor suppressed the protection and kept the claim. On the thinnest records — where
+  // over-reading an absence is most dangerous — page 1 asserted *marked nothing unusual on
+  // 6 of the 13* with the guardrail gone and the only surviving caveat in a legend on the
+  // last page.
+  const caveat = /is the owner&rsquo;s claim about a day, not an examination/
+  const thick = renderWithLooks([...quietRun(30, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })])
+  assert.ok(/nb-track/.test(thick), 'the bars render here')
+  assert.ok(caveat.test(thick))
+
+  const thin = renderWithLooks([...quietRun(6, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })])
+  assert.ok(!/nb-track/.test(thin), 'and not here')
+  assert.ok(caveat.test(thin), 'the caveat is there either way')
+})
+
+Deno.test('below the floor the report SAYS the breakdown was withheld, and why', () => {
+  // A silent floor is indistinguishable from a clipped page: the grid used to leave half
+  // a row blank white beside a half-width strip with nothing explaining it, on a document
+  // that elsewhere says "None recorded … which is not evidence none was fed".
+  const thin = renderWithLooks([...quietRun(6, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })])
+  assert.ok(/Too few days answered/.test(thin))
+  assert.ok(/noticed-graph-1/.test(thin), 'and the strip takes the full width')
 })
 
 Deno.test('the bars’ denominator is the days ANSWERED, not the window', () => {
@@ -278,7 +462,7 @@ Deno.test('the bars’ denominator is the days ANSWERED, not the window', () => 
 
 // ── The strip ─────────────────────────────────────────────────────────────────
 
-Deno.test('the strip classifies every day: absence ○ · observation ● · not answered a faint dot', () => {
+Deno.test('the strip classifies every day: clear ○ · concern ● · not answered a faint dot', () => {
   const n = buildNoticed(
     params({
       startDayNum: dn('2026-09-01'),
@@ -289,11 +473,34 @@ Deno.test('the strip classifies every day: absence ○ · observation ● · not
   )!
   assert.deepEqual(
     n.strip.days.map((d) => d.mark),
-    ['absence', 'unanswered', 'observation'],
+    ['clear', 'unanswered', 'concern'],
   )
 })
 
-Deno.test('a MIXED day draws ● — the observation, never the absence (T-14)', () => {
+Deno.test('an ACTIVITY-only day is CLEAR, not a concern — the strip stops inflating a cluster', () => {
+  // It used to draw the same filled mark as an *off* day, so `lip-licking · off · LIVELY ·
+  // off` rendered as four consecutive identical marks — an unbroken run of concern, a
+  // quarter of which was the owner saying the cat was bright (the cold read). And it was
+  // inconsistent by construction: page 1 never lists, counts or bars an activity word, so
+  // the one surface that DREW them was inflating exactly the cluster the others were
+  // careful about.
+  const n = buildNoticed(
+    params({
+      startDayNum: dn('2026-09-01'),
+      endDayNum: dn('2026-09-02'),
+      windowDays: 2,
+      rows: [look({ day: '2026-09-01', words: ['lively'] }), look({ day: '2026-09-02', words: ['subdued'] })],
+    }),
+  )!
+  assert.deepEqual(
+    n.strip.days.map((d) => d.mark),
+    ['clear', 'concern'],
+  )
+  // …and `clear` is NOT the owner's "nothing unusual" claim, which keeps its own count.
+  assert.equal(n.absenceDays, 0)
+})
+
+Deno.test('a MIXED day draws ● — the concern, never the clear mark (T-14)', () => {
   const n = buildNoticed(
     params({
       startDayNum: dn('2026-09-01'),
@@ -305,7 +512,7 @@ Deno.test('a MIXED day draws ● — the observation, never the absence (T-14)',
       ],
     }),
   )!
-  assert.equal(n.strip.days[0].mark, 'observation')
+  assert.equal(n.strip.days[0].mark, 'concern')
 })
 
 Deno.test('the strip clips to the window — a scoped document never draws days outside it', () => {
@@ -341,11 +548,28 @@ Deno.test('the strip reconciles each drawn word to ITS OWN span, and says which 
     look({ day: '2026-08-02', words: ['hiding'] }), // outside the 28-day strip
     look({ day: '2026-09-12', words: ['subdued'] }), // inside it
   ])
-  assert.ok(/off on <span class="num">1<\/span> of these <span class="num">28<\/span>/.test(html))
+  // THE DENOMINATOR IS ANSWERED DAYS, like every count on this page. It was the cell
+  // count — calendar days — so *off on 5 of these 28* over a record with 13 answered days
+  // understated the rate twofold, in the reassuring direction (the cold read).
+  assert.ok(/Off on <span class="num">1<\/span> of the <span class="num">\d+<\/span> answered here/.test(html))
+  assert.ok(!/of these <span class="num">28<\/span>/.test(html), 'never a calendar denominator')
   // `hiding`'s head word for a DOG is "Keeping away" (the cat's is "Hiding") — the label
   // is the species' own, resolved through the closed vocabulary, never the key.
-  assert.ok(/keeping away fall[s]? entirely before this span/.test(html), 'a zero is said in words, never as "0"')
-  assert.ok(!/keeping away on <span class="num">0<\/span>/.test(html), 'never a bare zero beside a word')
+  assert.ok(/Keeping away fall[s]? entirely before this span/.test(html), 'a zero is said in words, never as "0"')
+  assert.ok(!/Keeping away on <span class="num">0<\/span>/.test(html), 'never a bare zero beside a word')
+})
+
+Deno.test('the strip’s answered-day denominator is its OWN, not the window’s', () => {
+  const n = buildNoticed(
+    params({
+      startDayNum: dn('2026-08-01'),
+      endDayNum: dn('2026-09-15'),
+      windowDays: 46,
+      rows: [...quietRun(40, '2026-09-15')],
+    }),
+  )!
+  assert.equal(n.answeredDays, 40, 'the window holds forty')
+  assert.equal(n.strip.answeredDays, 28, 'the strip holds twenty-eight of them')
 })
 
 // ── The appendix ──────────────────────────────────────────────────────────────
@@ -356,13 +580,40 @@ Deno.test('the appendix groups by DAY — two looks on one day are two lines und
     look({ day: '2026-09-02', hour: '19:00', words: ['hiding'] }),
     look({ day: '2026-09-03', words: ['lip_licking'] }),
   ])
-  const dayHeads = [...html.matchAll(/<tr class="ng-day"><td colspan="3">([^<]*)/g)].map((m) => m[1])
+  const dayHeads = [...html.matchAll(/<tr class="ng-day"><td colspan="2">([^<]*)/g)].map((m) => m[1])
   assert.deepEqual(dayHeads, ['Sep 2, 2026', 'Sep 3, 2026'], 'one heading per day, not per look')
   const appendix = html.slice(html.indexOf('ng-day'))
   // The fixture's hours are UTC and the appendix prints the OWNER's local clock, so the
   // expected values are the converted ones (08:00Z and 19:00Z in America/New_York). The
   // day key is unaffected either way — it is stored, not derived (T-19).
   assert.ok(/04:00/.test(appendix) && /15:00/.test(appendix), 'both looks keep their own hour')
+})
+
+Deno.test('the appendix marks the days the RECORD holds a vomit, across the whole window', () => {
+  // The join anyone opening this appendix is making. Read off the strip it would have
+  // marked only the last four weeks and left older vomit days bare — worse than marking
+  // none, because a reader takes the absence of a mark as the absence of a vomit.
+  const html = renderWithLooks([look({ day: '2026-08-03' }), look({ day: '2026-09-12' })], {
+    events: [
+      {
+        id: 'v-old',
+        type: 'vomit',
+        occurredAt: '2026-08-03T15:00:00Z',
+        occurredAtConfidence: 'witnessed',
+        occurredAtEarliest: null,
+        occurredAtLatest: null,
+        severity: null,
+        notes: null,
+        loggedAt: '2026-08-03T15:00:00Z',
+        meal: null,
+      },
+    ],
+  })
+  const heads = [...html.matchAll(/<tr class="ng-day"><td colspan="2">([\s\S]*?)<\/td>/g)].map((m) => m[1])
+  const aug = heads.find((x) => x.includes('Aug 3'))!
+  const sep = heads.find((x) => x.includes('Sep 12'))!
+  assert.ok(/vomit logged/.test(aug), 'a vomit day five weeks back is still marked')
+  assert.ok(!/vomit logged/.test(sep), 'and a day with none is not')
 })
 
 Deno.test('the appendix letter is COMPUTED — E with no meals and no photos, never a hardcoded G', () => {
@@ -528,11 +779,39 @@ Deno.test('the disagreement hangs off the ABSENCE claim, not off the end of the 
       ],
     },
   )
-  const counts = /<div class="noticed-counts">([\s\S]*?)<\/div>/.exec(html)![1]
-  assert.ok(/marked nothing unusual on[\s\S]*including <span class="num">1<\/span> day carrying a meal/.test(counts),
-    'the clause is inside the counts line, immediately after the absence')
+  // It is now its OWN line at body weight, naming BOTH sides. The cold read's words: a cat
+  // that ate nothing for roughly 48 hours while her owner recorded that nothing was
+  // unusual is "the single most actionable item in the document", and it was rendering as
+  // a sentence fragment in 11px muted grey appended to a paragraph about arithmetic.
+  const conflict = /<div class="noticed-conflict">([\s\S]*?)<\/div>/.exec(html)
+  assert.ok(conflict !== null, 'the contradiction has its own line')
+  assert.ok(/the owner marked nothing unusual/.test(conflict![1]), 'it names her claim')
+  assert.ok(/a meal she recorded as refused or picked at/.test(conflict![1]), 'and it names the record')
+  assert.ok(/Sep 5/.test(conflict![1]), 'and the day')
   const note = /<div class="noticed-note">([\s\S]*?)<\/div>/.exec(html)![1]
-  assert.ok(!/including/.test(note), 'and not floating in the note paragraph')
+  assert.ok(!/refused or picked at/.test(note), 'and not buried in the note paragraph')
+})
+
+Deno.test('the calibration fact is printed when she marked nothing unusual on a vomit day', () => {
+  // The cold read named this the missing number: it is what tells a reader how much weight
+  // *marked nothing unusual on 32 of the 42* can carry. It was derivable from the strip
+  // only by eye, mark by mark.
+  const n = buildNoticed(
+    params({
+      rows: [look({ day: '2026-09-01' }), look({ day: '2026-09-03' }), look({ day: '2026-09-05', words: ['subdued'] })],
+      vomitLocalDays: new Set(['2026-09-01', '2026-09-03', '2026-09-05', '2026-09-07']),
+    }),
+  )!
+  assert.equal(n.answeredVomitDays, 3, 'both sides count ANSWERED days (§6.11)')
+  assert.equal(n.absenceOnVomitDays, 2)
+})
+
+Deno.test('…and is WITHHELD at zero, because "she caught every one" is reassurance', () => {
+  const html = renderWithLooks([
+    ...quietRun(20, '2026-09-10'),
+    look({ day: '2026-09-12', words: ['subdued'] }),
+  ])
+  assert.ok(!/vomit days? she answered, she marked nothing unusual/.test(html))
 })
 
 Deno.test('a day with an OBSERVATION and a refused meal is not a disagreement — only the absence is', () => {
@@ -558,14 +837,34 @@ Deno.test('§10.5 — check_in is in NEITHER the report’s symptom list NOR the
   assert.ok(!(CORRELATION_SYMPTOM_TYPES as readonly string[]).includes('check_in'))
 })
 
-Deno.test('a look enters no count on the rest of the report', () => {
+Deno.test('a look enters no count on the rest of the report — WITH its parent events', () => {
+  // THE FIXTURE IS THE POINT. This test used to pass `events: []`, which production cannot
+  // produce: `index.ts` pulls `events` with EVERY type, so a look always arrives as a
+  // `check_in` row in `input.events` as well as in `lookRows`. Green over a shape the
+  // caller never creates is green over nothing (C-35) — and underneath it the
+  // type-agnostic denominators were counting every tap. Measured before the fix, on this
+  // record: "days with a log" 0 → 30, and the trend's second half fully certified.
+  const parents = [...quietRun(30, '2026-09-14'), look({ day: '2026-09-15', words: ['subdued'] })].map(
+    (l): ReportEventInput => ({
+      id: l.eventId,
+      type: 'check_in',
+      occurredAt: l.occurredAt,
+      occurredAtConfidence: 'witnessed',
+      occurredAtEarliest: null,
+      occurredAtLatest: null,
+      severity: null,
+      notes: null,
+      loggedAt: l.createdAt,
+      meal: null,
+    }),
+  )
   const withLooks = assembleReport({
     now: '2026-09-15T18:00:00Z',
     timezone: TZ,
     pet: { id: 'p', name: 'Cooper', species: 'dog', breed: null, sex: 'male', dateOfBirth: null, weightKg: null },
     ownerName: null,
     requestedWindow: { startDate: '2026-08-01', endDate: '2026-09-15' },
-    events: [],
+    events: parents,
     aiAnalyses: [],
     weightChecks: [],
     doses: [],
@@ -579,7 +878,9 @@ Deno.test('a look enters no count on the rest of the report', () => {
     lookRowsComplete: true,
   })
   assert.equal(withLooks.atAGlance.totalSymptomIncidents, 0, 'no symptom total')
-  assert.equal(withLooks.atAGlance.loggedDays, 0, 'no logged-day denominator')
+  assert.equal(withLooks.atAGlance.loggedDays, 0, 'no logged-day denominator — §5.6')
+  assert.equal(withLooks.atAGlance.firstHalfLoggedDays, 0, 'and no trend-density certification')
+  assert.equal(withLooks.atAGlance.secondHalfLoggedDays, 0)
   assert.equal(withLooks.symptoms.length, 0, 'no frequency row')
   assert.equal(withLooks.safetyFlags.length, 0, 'no flag')
   assert.equal(withLooks.provenance.symptomLog.length, 0, 'and nothing in Appendix A')
