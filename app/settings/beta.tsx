@@ -84,20 +84,21 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // broke. A stethoscope reads as the vet, distinct from the widget grid, the
       // picker pen, the taxonomy shapes and Noticed's eye.
       //
-      // The copy is written for the state that actually ships TODAY, which is VV-0:
-      // the flag has no consumer at all, so turning it on changes nothing anywhere.
-      // The first draft said "open your pet's profile and find Vet visits" — true
-      // after VV-2 and a dead end before it. The risk is procedural rather than
-      // theoretical: the daily_look precedent allowlisted the PM in the same session
-      // as the seed, and a hint that sends someone hunting for a screen that does
-      // not exist is the exact failure an on-state hint exists to prevent.
-      // CUL-900 (VV-2) rewrites this to name the Pet-tab card once that card is
-      // there; the tripwire in guards/vetVisitsFlagOff.test.tsx reds on that PR and
-      // names this string as one of the three things it owes.
+      // Rewritten by CUL-900 (VV-2), which is the PR that made it true: the
+      // Pet-tab card now exists, so the hint names where to go. VV-0's version
+      // said "there is nothing to see yet", which was accurate the day it shipped
+      // and false the moment the card landed — the tripwire in
+      // guards/vetVisitsFlagOff.test.tsx named this string as one of the three
+      // things the first consumer owed, and this is that debt paid.
+      //
+      // It names the CARD, not the screens behind it: what an owner can act on
+      // today is one card on the pet's profile, and everything else in the track
+      // (the Home strip, Get ready, the after-visit capture) is still being built.
+      // A hint that promised those would be the same dead end in a new place.
       return {
         Icon: Stethoscope,
         onHint:
-          'It’s on, though there is nothing to see yet — the vet-visit screens are still being built, and they will show up here as they land.',
+          'It’s on. Open your pet’s profile and look for Vet visits, under the vet report — book the next appointment there, or log one that already happened.',
       };
     default:
       return { Icon: FlaskConical };

@@ -134,6 +134,17 @@ const ALLOWED: Record<string, string> = {
   'lib/vetDocuments.ts':
     'The vet_documents row types, which include the vet_visit_id link column.',
 
+  // ── The companion's own model (CUL-900 VV-2) ──
+  'lib/vetVisits.ts':
+    'The read/write model behind the Pet-tab card, the list, booking and the visit ' +
+    'detail — the surfaces whose SUBJECT is the visit. It reads both tables and the ' +
+    'three link columns, and that is the point: it is the ONE file the companion\'s ' +
+    'screens read through, so components/vetvisits/ and app/vet-visits/ name neither ' +
+    'table and never appear in this set. Its link reads are COUNTS OF CHILDREN (which ' +
+    'courses, trials and documents name this visit) for the derived plan tags — the ' +
+    'visit contributes no number of its own to any surface, and nothing here feeds a ' +
+    'coverage line, a day count, Patterns or an engine input.',
+
   // ── The report ──
   'supabase/functions/generate-report/index.ts':
     'The scope cascade\'s rung 1 (§6): the report window may START at the last ' +
