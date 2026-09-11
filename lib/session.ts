@@ -9,6 +9,7 @@ import { useMomentStore } from '../store/momentStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
+import { clearVisitPaperwork } from './visitPaperwork';
 import { clearDailyRecapOffer } from './dailyRecapOffer';
 import { clearSignalArrival } from './signalArrival';
 import { clearSignalFold } from './signalFold';
@@ -208,6 +209,13 @@ export async function wipeLocalSession(): Promise<void> {
   // shipped defaults until the first authenticated fetch, exactly as a fresh
   // install does.
   await clearCachedAppConfig();
+  // CUL-902 (VV-4) — the in-room paperwork pointers: appointment id → the Vet Files
+  // document groups photographed during that visit, AsyncStorage-resident. Not the
+  // record (the documents themselves are SQLite rows clearLocalData already wipes),
+  // but each entry is a POINTER INTO the prior owner's health record, and a shared
+  // device must not carry one into the next account. Same FR-9 parity rule as the
+  // clears above; internally best-effort.
+  await clearVisitPaperwork();
   // DR-3 (§4) — the Daily Recap offer markers (the 30-day "Not now" quiet + the two
   // once-ever value-moment flags), AsyncStorage-resident like the ledgers above.
   // Account-adjacent device state: the prior owner's "already offered / quieted for

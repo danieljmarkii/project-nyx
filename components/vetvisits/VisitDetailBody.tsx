@@ -4,6 +4,7 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
 import {
+  askedSummary,
   formatVisitDate,
   formatVisitWeekday,
   formatWhereLine,
@@ -19,9 +20,11 @@ interface Props {
 
 // One visit as written (mock D3, read-only).
 //
-// ⋯ is deliberately absent: *Edit* arrives in VV-4 and *Delete* in VV-6, the
-// latter gated on CUL-19 deploying the reader that honours `deleted_at`. An empty
-// ⋯ or a disabled one would claim controls exist that do not (C-7).
+// *Edit* arrives in VV-4 and is an INLINE action in the header rather than the
+// mock's ⋯, because the header's own rule (B-075, a PM call) is that a single
+// secondary action belongs inline and not behind a tap-to-reveal menu — and Delete,
+// the second one, is VV-6's and gated on CUL-19 deploying the reader that honours
+// `deleted_at`. VV-6 is where the pair becomes a ⋯.
 //
 // The plan rows are LINKS TO RECORDS, and in this PR most of them have nowhere to
 // go yet: there is no per-regimen route and no per-trial route in the app (the
@@ -34,6 +37,9 @@ export function VisitDetailBody({ detail, petName, onOpenDocument }: Props) {
   const where = formatWhereLine({ clinicName: visit.clinic_name, vetName: visit.vet_name });
   const hasPlan =
     detail.medications.length > 0 || detail.trials.length > 0 || !!visit.next_visit_at;
+  // 'Asked 3 of 4' — absent when the visit had no prepared questions, where a "0 of
+  // 0" would be a score for something the owner never set out to do.
+  const asked = askedSummary(detail.questions);
 
   return (
     <View>
@@ -102,6 +108,10 @@ export function VisitDetailBody({ detail, petName, onOpenDocument }: Props) {
             ))}
           </View>
         </View>
+      ) : null}
+
+      {asked ? (
+        <ThemedText style={styles.asked}>{asked} questions</ThemedText>
       ) : null}
 
       {!visit.notes?.trim() && !hasPlan && detail.documents.length === 0 ? (
@@ -201,6 +211,11 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
     marginTop: 2,
+  },
+  asked: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginTop: theme.space3,
   },
   bare: {
     fontSize: theme.textSM,

@@ -7,6 +7,7 @@ import { Header, SectionLabel } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { AppointmentBlock } from '../../components/vetvisits/AppointmentBlock';
+import { AppointmentActions } from '../../components/vetvisits/AppointmentActions';
 import { VisitRow } from '../../components/vetvisits/VisitRow';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
 import { BookVisitSheet, type BookVisitSubmit, type VisitMode } from '../../components/vetvisits/BookVisitSheet';
@@ -288,6 +289,13 @@ export default function VetVisitsScreen() {
             <View style={styles.section}>
               <SectionLabel label="Next" header />
               <AppointmentBlock appointment={home.next} style={styles.nextBlock} />
+              {/* The appointment's OWN id and pet ride the route (AC 11) — the
+                  screens it opens never ask the store which pet this is. */}
+              <AppointmentActions
+                petName={petName}
+                onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
+                onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${home.next?.id}`)}
+              />
             </View>
           ) : null}
 
@@ -300,7 +308,17 @@ export default function VetVisitsScreen() {
                   the owner made it and nothing else in the app can show it. */}
               <SectionLabel label="Waiting on you" header />
               {home.awaiting.map((appt) => (
-                <AppointmentBlock key={appt.id} appointment={appt} style={styles.nextBlock} />
+                <View key={appt.id}>
+                  <AppointmentBlock appointment={appt} style={styles.nextBlock} />
+                  {/* No *At the vet* here: the day has passed, and a door into the
+                      in-room notes surface would be offering the owner a room they
+                      have left. The draft they typed there is not lost — it seeds
+                      the notes field on the screen this opens. */}
+                  <AppointmentActions
+                    petName={petName}
+                    onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${appt.id}`)}
+                  />
+                </View>
               ))}
               <ThemedText style={styles.awaitingNote}>
                 This day has passed. Log the visit to move it into {petName}’s history.

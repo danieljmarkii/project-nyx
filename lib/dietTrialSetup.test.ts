@@ -17,6 +17,17 @@
 
 const mockRunAsync = jest.fn().mockResolvedValue({ changes: 1, lastInsertRowId: 0 });
 const mockGetFirstAsync = jest.fn().mockResolvedValue(null);
+// CUL-902/CUL-945: `startDietTrial` now asks whether the visit link it was handed
+// belongs to this pet BEFORE the transaction opens, through `visitIsForPet` — one
+// SELECT on `vet_visits`. Backed by a table this mock answers from, so the tests
+// below drive the REAL check rather than a stub of it (C-34).
+const mockVisits: { id: string; pet_id: string; deleted_at: string | null }[] = [];
+const mockGetAllAsync = jest.fn(async (_sql: string, params: unknown[] = []) => {
+  const [visitId, petId] = params as string[];
+  return mockVisits.filter(
+    (v) => v.id === visitId && v.pet_id === petId && v.deleted_at === null,
+  );
+});
 // The real withTransactionAsync wraps the callback in BEGIN/COMMIT; running it
 // inline keeps the assertions about WHAT is written while still proving the writes
 // go through the transactional path (asserted directly below).
@@ -25,6 +36,7 @@ jest.mock('./db', () => ({
   getDb: () => ({
     runAsync: mockRunAsync,
     getFirstAsync: mockGetFirstAsync,
+    getAllAsync: mockGetAllAsync,
     withTransactionAsync: mockWithTransactionAsync,
   }),
 }));
@@ -57,6 +69,7 @@ import {
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
   type StartTrialInput,
 } from './dietTrialSetup';
+import { VetVisitLinkRefused } from './vetVisitLink';
 import { useSyncStore } from '../store/syncStore';
 import { toLocalDayKey } from './utils';
 
@@ -85,8 +98,17 @@ beforeEach(() => {
   mockRunAsync.mockClear();
   mockWithTransactionAsync.mockClear();
   mockGetFirstAsync.mockClear().mockResolvedValue(null);
+  mockGetAllAsync.mockClear();
   mockSyncTrials.mockClear();
   mockSyncTrialFoods.mockClear();
+  // 'visit-7' is pet-1's; the other two are the shapes migration 067 refuses with a
+  // TERMINAL 23514 (CUL-945) — another pet's visit, and a soft-deleted one.
+  mockVisits.length = 0;
+  mockVisits.push(
+    { id: 'visit-7', pet_id: 'pet-1', deleted_at: null },
+    { id: 'visit-other', pet_id: 'pet-2', deleted_at: null },
+    { id: 'visit-gone', pet_id: 'pet-1', deleted_at: '2026-09-01T00:00:00.000Z' },
+  );
 });
 
 // ── The duration table (P-1, provisional pending Dr. Chen) ──────────────────
@@ -745,6 +767,33 @@ describe('startDietTrial — the vet-visit link', () => {
       /\bUPDATE\s+diet_trials\s+SET\b/i.test(q),
     );
     expect(updates).toEqual([]);
+  });
+
+  // CUL-945 — the link is refused ON THE DEVICE when it is not this pet's.
+  //
+  // The blast radius is why this is not a nicety: `23514` is TERMINAL, so the first
+  // push quarantines the WHOLE TRIAL — the parent AND the allowed-food set that
+  // decides what counts as off-diet — while the client goes on scoring meals against
+  // a trial the server never recorded. Refused before the transaction opens, so
+  // nothing partial can land.
+  it('refuses another pet’s visit, and opens no transaction at all', async () => {
+    await expect(
+      startDietTrial(input({ vetVisitId: 'visit-other' })),
+    ).rejects.toBeInstanceOf(VetVisitLinkRefused);
+    expect(mockWithTransactionAsync).not.toHaveBeenCalled();
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it('refuses a soft-deleted visit, which the server would refuse too', async () => {
+    await expect(
+      startDietTrial(input({ vetVisitId: 'visit-gone' })),
+    ).rejects.toBeInstanceOf(VetVisitLinkRefused);
+    expect(mockWithTransactionAsync).not.toHaveBeenCalled();
+  });
+
+  it('asks nothing when no link is passed — the Pet-tab path pays no read', async () => {
+    await startDietTrial(input());
+    expect(mockGetAllAsync).not.toHaveBeenCalled();
   });
 
   it('stores NULL on the Pet-tab path, where no visit exists', async () => {

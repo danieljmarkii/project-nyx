@@ -46,6 +46,8 @@ function appointment(over: Partial<LocalVetAppointment> = {}): LocalVetAppointme
     clinic_name: 'Riverside Animal Hospital',
     vet_name: 'Dr. Chen',
     reason: 'recheck',
+    notes_draft: null,
+    questions: null,
     vet_visit_id: null,
     cancelled_at: null,
     deleted_at: null,

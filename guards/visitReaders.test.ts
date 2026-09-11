@@ -128,14 +128,23 @@ const ALLOWED: Record<string, string> = {
   // contract and a reviewer is what enforces it.
   'lib/medicationSetup.ts':
     'startRegimen writes medications.vet_visit_id in the regimen INSERT — the ' +
-    'provenance of a course started from the after-visit screen. Writes the column, ' +
-    'reads no visit; the dose counts and the course dates it also writes come from ' +
-    'the form, never from the link.',
+    'provenance of a course started from the after-visit screen. Writes the column; ' +
+    'its ONE read of a visit is lib/vetVisitLink.ts\'s same-pet check (CUL-945), a ' +
+    'yes/no on the link it is about to write and never a value. The dose counts and ' +
+    'the course dates it also writes come from the form, never from the link.',
   'lib/dietTrialSetup.ts':
     'startDietTrial writes diet_trials.vet_visit_id in the trial INSERT, inside the ' +
-    'existing transaction (spec §5.1 — never a follow-up UPDATE). Writes the column, ' +
-    'reads no visit; `started_at` and the target duration come from the owner\'s ' +
-    'choices on the setup sheet.',
+    'existing transaction (spec §5.1 — never a follow-up UPDATE). Writes the column; ' +
+    'same single read as medicationSetup — the CUL-945 same-pet check, a yes/no. ' +
+    '`started_at` and the target duration come from the owner\'s choices on the ' +
+    'setup sheet.',
+  'lib/vetVisitLink.ts':
+    'visitIsForPet — the CUL-945 same-pet check, and the ONLY thing in this file. It ' +
+    'answers a BOOLEAN about a link a write path is about to set, and reads no ' +
+    'column off the visit: no date, no clinic, no id is returned to a caller. It is ' +
+    'a separate module precisely so the two write paths that need it (which sit in ' +
+    'Home\'s import closure) do not have to pull lib/vetVisits.ts in with them — ' +
+    'guards/homeWrites.test.ts measured that when they did.',
 
   // ── Surfaces that are ABOUT a visit ──
   'app/vet-visit.tsx':

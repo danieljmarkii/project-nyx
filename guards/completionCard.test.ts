@@ -76,6 +76,26 @@ const RULES = [
     handle: 'showLook',
     why: 'a look without its card loses the completion beat AND its Undo — and a look carrying a note is not recreatable, so Undo is the only way back (T-22, C-21)',
   },
+  {
+    // CUL-902 (VV-4). The odd one out in this list, and deliberately so: the handle is
+    // a COMPONENT rather than a `momentStore` handle, because the saved moment is a
+    // full screen at the end of a flow rather than a bottom card over a surface the
+    // owner is already looking at. What it shares with the three above is the thing
+    // this guard is actually about — a write whose completion surface carries
+    // something the record cannot say on its own. Here that is what the save did to
+    // the vet report's WINDOW and to Home's "since last visit", which is derived from
+    // the record at save time (`readVisitConsequence`) and is false in one of its
+    // three branches. A path that skipped the moment would leave an owner to find out
+    // from a report.
+    //
+    // `logVetVisit` is NOT registered beside it, and that is a stated limit rather
+    // than an oversight: it is also the write behind VV-2's one-sheet historic entry
+    // (`app/vet-visits/index.tsx`), where the list itself is the confirmation.
+    // Whether that sheet should say the same thing is CUL-947 — filed, not folded in.
+    helper: 'logVisitFromAppointment',
+    handle: 'VisitSavedMoment',
+    why: 'a logged visit moves the vet report\'s window and Home\'s "since last visit", and only the moment says so (§4.1 D2, AC 8)',
+  },
 ] as const;
 
 /** The rules whose helper has no caller yet, by decision. Derived rather than
@@ -104,7 +124,7 @@ const EXEMPT: Record<string, string> = {
 };
 
 /** The helper's own module never counts as a call site. */
-const DEFINITIONS = ['lib/meals.ts', 'lib/medicationDose.ts', 'lib/looks.ts'];
+const DEFINITIONS = ['lib/meals.ts', 'lib/medicationDose.ts', 'lib/looks.ts', 'lib/vetVisits.ts'];
 
 const EXEMPTION = /\/\/\s*completion-card-ok:\s*\S+/;
 

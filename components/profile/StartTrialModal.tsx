@@ -88,6 +88,12 @@ interface Props {
   onAddFood: () => void;
   /** Screen C's quiet action. */
   onLogFirstMeal: () => void;
+  /** CUL-902 (VV-4) — PROVENANCE: the visit this trial was prescribed at, when the
+   *  after-visit screen is the host. Absent on the Pet-tab path. It rides
+   *  `startDietTrial`'s own transaction (spec §5.1) and is refused on the device if
+   *  it is not this pet's (CUL-945). A link says where a trial CAME FROM; the trial's
+   *  start date, coverage and target stay its own (CUL-746, TG-5). */
+  vetVisitId?: string | null;
 }
 
 type Step = 'loading' | 'blocked' | 'form' | 'picker' | 'protein-picker' | 'done';
@@ -104,6 +110,7 @@ function toSelection(food: PickerFood): TrialFoodSelection {
 
 export function StartTrialModal({
   visible, petId, petName, species, onClose, onStarted, onAddFood, onLogFirstMeal,
+  vetVisitId,
 }: Props) {
   const [step, setStep] = useState<Step>('loading');
   const [pickerTarget, setPickerTarget] = useState<PickerTarget>('primary');
@@ -320,6 +327,7 @@ export function StartTrialModal({
       }
       const trialId = await startDietTrial({
         petId,
+        vetVisitId,
         primaryFoods,
         permittedFoods,
         indication,

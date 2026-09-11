@@ -39,9 +39,84 @@ export interface LocalVetAppointment {
   clinic_name: string | null;
   vet_name: string | null;
   reason: string | null;
+  /** The C1 in-room draft (CUL-902). TEXT locally, TEXT server-side. */
+  notes_draft: string | null;
+  /** `VisitQuestion[]` as JSON TEXT locally, JSONB server-side. */
+  questions: string | null;
   vet_visit_id: string | null;
   cancelled_at: string | null;
   deleted_at: string | null;
+}
+
+/**
+ * One prepared question (migration 066's `questions` element shape).
+ *
+ * Authored before the visit (VV-5's *Add a question* and Get ready) and ticked
+ * during it (C1). `asked_at` is an INSTANT, not a boolean, because the tick is a
+ * thing that happened at a time — and because a boolean cannot be un-set without
+ * losing the distinction between "never asked" and "un-ticked by mistake".
+ *
+ * The questions are never COPIED onto the visit at save (CUL-902, on the fly):
+ * `vet_visits` has no column for them, and a copy would be the second store §5.1
+ * forbids for the photo. The visit reaches them through the appointment that names
+ * it (`vet_appointments.vet_visit_id`), which is the same link the visit already
+ * uses for attendance.
+ */
+export interface VisitQuestion {
+  id: string;
+  text: string;
+  /** 'record' — proposed from the record by Get ready; 'owner' — typed. */
+  source: 'record' | 'owner';
+  source_ref?: string | null;
+  asked_at: string | null;
+}
+
+/**
+ * Parse the stored JSON text, defensively.
+ *
+ * Returns `[]` for anything that is not an array of question-shaped objects rather
+ * than throwing: this column round-trips through JSONB and through a sync path that
+ * already replaces unparseable text with null (`parseQuestionsForPush`), so a
+ * malformed value is a thing the reader can meet. A screen that throws on it would
+ * take the in-room notes field down with it, which is the one surface that must not
+ * fail — the draft beside it is what the owner is typing.
+ */
+export function parseQuestions(raw: string | null | undefined): VisitQuestion[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.warn('[vetVisits] questions were not valid JSON — read as none');
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: VisitQuestion[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') continue;
+    const q = item as Record<string, unknown>;
+    if (typeof q.id !== 'string' || typeof q.text !== 'string') continue;
+    out.push({
+      id: q.id,
+      text: q.text,
+      source: q.source === 'record' ? 'record' : 'owner',
+      source_ref: typeof q.source_ref === 'string' ? q.source_ref : null,
+      asked_at: typeof q.asked_at === 'string' ? q.asked_at : null,
+    });
+  }
+  return out;
+}
+
+/** The inverse. `null` for an empty list, so an untouched appointment stores NULL. */
+export function serializeQuestions(questions: ReadonlyArray<VisitQuestion>): string | null {
+  return questions.length > 0 ? JSON.stringify(questions) : null;
+}
+
+/** 'asked 3 of 4' — null below one question, where the ratio is noise (mock D3). */
+export function askedSummary(questions: ReadonlyArray<VisitQuestion>): string | null {
+  if (questions.length === 0) return null;
+  const asked = questions.filter((q) => !!q.asked_at).length;
+  return `Asked ${asked} of ${questions.length}`;
 }
 
 // ── "Time optional" (§8 VV-2 decide-on-the-fly; VV-1 left the mechanism here) ────
@@ -441,7 +516,8 @@ function lastVisitLine(last: VisitListRow, now: Date): string {
 const VISIT_COLUMNS =
   'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at';
 const APPOINTMENT_COLUMNS =
-  'id, pet_id, scheduled_at, clinic_name, vet_name, reason, vet_visit_id, cancelled_at, deleted_at';
+  'id, pet_id, scheduled_at, clinic_name, vet_name, reason, notes_draft, questions, ' +
+  'vet_visit_id, cancelled_at, deleted_at';
 
 /**
  * Everything the card and the list need, for ONE pet.
@@ -565,6 +641,9 @@ export async function readVisitLinks(
 export interface VetVisitDetail {
   visit: LocalVetVisit;
   links: VisitLinks;
+  /** The questions prepared for this visit, read back through the appointment that
+   *  names it (CUL-902). Empty for a visit logged with no appointment behind it. */
+  questions: VisitQuestion[];
   medications: Array<{ id: string; drugName: string; doseAmount: string | null; status: string }>;
   trials: Array<{ id: string; label: string; status: string }>;
   documents: Array<{ groupId: string; title: string | null; kind: string; documentDate: string | null }>;
@@ -611,8 +690,19 @@ export async function readVetVisitDetail(visitId: string): Promise<VetVisitDetai
     [visitId],
   );
 
+  // The prepared questions live on the APPOINTMENT, not on the visit — there is no
+  // column for them here, and a copy would be a second store for one fact (§5.1's
+  // rule for the photo, applied to the ticks). One extra indexed read rather than a
+  // duplicated column.
+  const appointment = await db.getAllAsync<{ questions: string | null }>(
+    `SELECT questions FROM vet_appointments
+      WHERE vet_visit_id = ? AND deleted_at IS NULL LIMIT 1`,
+    [visitId],
+  );
+
   return {
     visit,
+    questions: parseQuestions(appointment[0]?.questions ?? null),
     links: {
       medicationNames: medications.map((m) => m.drug_name),
       trialCount: trials.length,
@@ -753,4 +843,474 @@ function trimOrNull(v: string | null | undefined): string | null {
 /** 'YYYY-MM-DD' for a Date, read in the device's zone (never `toISOString`). */
 export function localDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// VV-4 — the visit itself (CUL-902; spec §4.1 C1/D1/D2/D3)
+//
+// Everything below serves three screens: "At the vet" (the in-room draft and the
+// ticks), "How did it go?" (the record-aware plan rows) and the visit's own Edit.
+// It lives HERE for the reason the file header already gives — `guards/visitReaders`
+// makes this the one file the companion may read the visit tables through, so
+// app/vet-visits/ and components/vetvisits/ name no table at all.
+// ════════════════════════════════════════════════════════════════════════════════
+
+/** One appointment by id, live rows only. Null for a missing, cancelled or deleted one. */
+export async function readAppointment(appointmentId: string): Promise<LocalVetAppointment | null> {
+  const rows = await getDb().getAllAsync<LocalVetAppointment>(
+    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
+      WHERE id = ? AND deleted_at IS NULL AND cancelled_at IS NULL LIMIT 1`,
+    [appointmentId],
+  );
+  return rows[0] ?? null;
+}
+
+/** The appointment a visit was logged from, if there was one — the visit's route to
+ *  its prepared questions (see `VisitQuestion`). Null for a visit logged cold. */
+export async function readAppointmentForVisit(visitId: string): Promise<LocalVetAppointment | null> {
+  const rows = await getDb().getAllAsync<LocalVetAppointment>(
+    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
+      WHERE vet_visit_id = ? AND deleted_at IS NULL LIMIT 1`,
+    [visitId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Save the in-room draft (AC 6).
+ *
+ * A plain local write at `synced = 0`, debounced by the CALLER rather than here: the
+ * debounce is a property of the keystroke stream, and a module that owned a timer
+ * would make the write untestable without one. The queue pushes it like any other
+ * row, so a phone call, a force-quit or a dead battery costs at most the last
+ * keystrokes — which is the whole of "saved as you type".
+ *
+ * `updated_at` MOVES on every save (`syncQueue.test.ts` scans for this), and the
+ * quarantine pair is cleared in the same statement so a row a server refusal parked
+ * re-arms when the owner types into it (the `updateRegimen` shape).
+ */
+export async function saveNotesDraft(appointmentId: string, draft: string): Promise<void> {
+  const now = new Date().toISOString();
+  const res = await getDb().runAsync(
+    `UPDATE vet_appointments
+        SET notes_draft = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ?`,
+    [draft.length > 0 ? draft : null, now, appointmentId],
+  );
+  // A local UPDATE that matched nothing resolves `{ changes: 0 }` with no error
+  // (C-39) — and on THIS path the silence would be the worst kind: the owner is
+  // watching "Saved as you type" under a field that is saving nowhere.
+  if (res.changes === 0) {
+    throw new Error(`saveNotesDraft: no appointment row matched id ${appointmentId}`);
+  }
+}
+
+/**
+ * Tick or un-tick a prepared question, returning the list as it now stands.
+ *
+ * Read-modify-write on the JSON column, which is safe here because the only writer
+ * is the screen in the owner's hand; the alternative — a questions child table — was
+ * ruled against in §5.1 for a list of a dozen strings nothing counts across visits.
+ *
+ * Un-ticking is supported and is not symmetry for its own sake: the tick is a
+ * fingertip target in a room where the owner is holding an animal, and a mis-tap
+ * that cannot be undone would leave the record asserting a question was asked.
+ */
+export async function setQuestionAsked(
+  appointmentId: string,
+  questionId: string,
+  asked: boolean,
+  now: Date = new Date(),
+): Promise<VisitQuestion[]> {
+  const appointment = await readAppointment(appointmentId);
+  if (!appointment) {
+    throw new Error(`setQuestionAsked: no appointment row matched id ${appointmentId}`);
+  }
+  const next = parseQuestions(appointment.questions).map((q) =>
+    q.id === questionId ? { ...q, asked_at: asked ? now.toISOString() : null } : q,
+  );
+  const res = await getDb().runAsync(
+    `UPDATE vet_appointments
+        SET questions = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ?`,
+    [serializeQuestions(next), now.toISOString(), appointmentId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`setQuestionAsked: no appointment row matched id ${appointmentId}`);
+  }
+  return next;
+}
+
+// ── The plan rows read the record before they ask (§4.1 D1, CUL-825) ────────────
+
+/**
+ * An active course, as the plan row needs it.
+ *
+ * NO DOSE COUNT AND NO ADHERENCE. A row says what the record HOLDS — the drug, the
+ * dose as prescribed, the day it started — and never a number it computed over the
+ * course's children; those belong to the course's own surfaces (CUL-746: one
+ * population, one owner).
+ *
+ * The rest of the columns are here for one reason: *Changed* opens the course's own
+ * edit rather than a mini-form (§8's ruled default — a second course would split the
+ * dose count), and that editor seeds from the whole row. Reading them here is what
+ * keeps that a LOCAL read, so the door opens in a clinic car park.
+ */
+export interface ActiveCourse {
+  id: string;
+  petId: string;
+  medicationItemId: string | null;
+  drugName: string;
+  doseAmount: string | null;
+  route: string | null;
+  dosesPerDay: number | null;
+  scheduleNotes: string | null;
+  indication: string | null;
+  prescribedBy: string | null;
+  /** 'YYYY-MM-DD'. Rendered as "since {date}", never as a duration (C-19). */
+  startedAt: string;
+  targetDurationDays: number | null;
+  targetDurationDoses: number | null;
+  /** The visit this course already names, if any — what makes *Keep* idempotent. */
+  vetVisitId: string | null;
+}
+
+/**
+ * The pet's active courses, from the LOCAL mirror.
+ *
+ * Local, not PostgREST, and that is the point of VV-3: this screen's whole job
+ * happens in a clinic car park. The Pet tab reads the same courses remotely
+ * (`profile.tsx`) and is why CUL-938 exists; nothing here inherits that.
+ */
+export async function readActiveCourses(petId: string): Promise<ActiveCourse[]> {
+  const rows = await getDb().getAllAsync<{
+    id: string; pet_id: string; medication_item_id: string | null; drug_name: string;
+    dose_amount: string | null; route: string | null; doses_per_day: number | null;
+    schedule_notes: string | null; indication: string | null; prescribed_by: string | null;
+    started_at: string; target_duration_days: number | null; target_duration_doses: number | null;
+    vet_visit_id: string | null;
+  }>(
+    `SELECT id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day,
+            schedule_notes, indication, prescribed_by, started_at,
+            target_duration_days, target_duration_doses, vet_visit_id
+       FROM medications
+      WHERE pet_id = ? AND status = 'active'
+      ORDER BY started_at DESC, created_at DESC`,
+    [petId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    petId: r.pet_id,
+    medicationItemId: r.medication_item_id,
+    drugName: r.drug_name,
+    doseAmount: r.dose_amount,
+    route: r.route,
+    // SQLite hands NUMERIC back as a number, but a hydrated row round-trips through
+    // PostgREST, which serialises it as a string ("1.00") — the coercion
+    // `app/(tabs)/profile.tsx` does at its own data boundary, for the same reason:
+    // the frequency chip switches on this value.
+    dosesPerDay: r.doses_per_day == null ? null : Number(r.doses_per_day),
+    scheduleNotes: r.schedule_notes,
+    indication: r.indication,
+    prescribedBy: r.prescribed_by,
+    startedAt: r.started_at,
+    targetDurationDays: r.target_duration_days == null ? null : Number(r.target_duration_days),
+    targetDurationDoses: r.target_duration_doses == null ? null : Number(r.target_duration_doses),
+    vetVisitId: r.vet_visit_id,
+  }));
+}
+
+// ── The CUL-945 guard: a link is refused on the device, not 25 cycles later ─────
+
+/**
+ * Does this visit belong to this pet, on this device?
+ *
+ * WHY THIS EXISTS AT ALL. Migration 067's `enforce_vet_visit_link_same_pet` raises
+ * `23514` for a link across pets or accounts, and `23514` is TERMINAL
+ * (`lib/syncQueue.ts`), so the FIRST push quarantines. What is lost is not the link
+ * but the WHOLE PRESCRIPTION — drug, dose, schedule, indication — never recorded
+ * server-side while it goes on rendering locally on Home, the widget and the
+ * rundown. `updateRegimen` cannot clear the column (by design: provenance is set
+ * once), so an owner edit re-arms the row and it re-quarantines. Permanently.
+ * That is CUL-945, and it is latent only because no caller passed a link until now.
+ *
+ * So the device answers first. `false` for a visit that is missing, soft-deleted, or
+ * another pet's — a missing visit is refused rather than waved through, because the
+ * server will refuse it too and the owner is standing here now.
+ *
+ * KNOWN LIMIT, stated rather than implied: a device that has not yet hydrated a
+ * visit another device logged will answer `false` for a link that would in fact be
+ * legal. That is the safe direction — it costs a provenance link the owner can set
+ * later from the record, where the bricked state costs the prescription.
+ */
+// The same-pet CHECK and its refusal live in `lib/vetVisitLink.ts`, not here, and
+// the reason is measured rather than stylistic: their two callers (`startRegimen`,
+// `startDietTrial`) sit inside Home's transitive import closure, so importing this
+// model from them pulled every write below into the set `guards/homeWrites.test.ts`
+// scans. Re-exported so the companion's own screens still reach them through one
+// module — see that file's header.
+export { visitIsForPet, VetVisitLinkRefused } from './vetVisitLink';
+
+/**
+ * The way OUT of the bricked state (CUL-945's third clause).
+ *
+ * Clears `vet_visit_id` on this pet's courses and trials that are BOTH quarantined
+ * on the same-pet refusal AND carrying a link this device cannot resolve for the
+ * pet — then re-arms them, so the next push carries the record without the link.
+ *
+ * BOTH CONDITIONS, and the first is what makes this safe. "The link does not resolve
+ * locally" is true of a perfectly good link on a device that has not hydrated the
+ * visit yet, and clearing it there would destroy real provenance. A row the SERVER
+ * has already refused with `23514` is a different thing: the refusal is the evidence
+ * that the link is wrong, and dropping it is strictly a recovery. The code prefix is
+ * how `formatSyncError` writes the column ("code first so the column is greppable by
+ * failure class").
+ *
+ * Returns how many rows it repaired, so a caller can say so or stay quiet.
+ */
+export async function repairRefusedVisitLinks(petId: string): Promise<number> {
+  const db = getDb();
+  const now = new Date().toISOString();
+  let repaired = 0;
+  for (const table of ['medications', 'diet_trials'] as const) {
+    const res = await db.runAsync(
+      `UPDATE ${table}
+          SET vet_visit_id = NULL,
+              updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+        WHERE pet_id = ?
+          AND vet_visit_id IS NOT NULL
+          AND sync_error LIKE '23514:%'
+          AND NOT EXISTS (
+                SELECT 1 FROM vet_visits v
+                 WHERE v.id = ${table}.vet_visit_id
+                   AND v.pet_id = ${table}.pet_id
+                   AND v.deleted_at IS NULL
+              )`,
+      [now, petId],
+    );
+    repaired += res.changes;
+  }
+  return repaired;
+}
+
+// ── Writing the visit (§4.1 D1) ─────────────────────────────────────────────────
+
+export interface VisitFromAppointmentInput {
+  /** The appointment ROW — `pet_id` is taken from here and never from the store's
+   *  active pet (AC 11). Passing the row rather than an id is the point: a caller
+   *  cannot supply a pet and an appointment that disagree. */
+  appointment: Pick<LocalVetAppointment, 'id' | 'pet_id' | 'clinic_name' | 'vet_name' | 'reason' | 'notes_draft'>;
+  /** 'YYYY-MM-DD', the local calendar day of the visit (never `toISOString()` — the
+   *  CUL-946 bug on the screen this replaces). */
+  visitedAt: string;
+  clinicName?: string | null;
+  vetName?: string | null;
+  reason?: string | null;
+  /** The notes as they stand. Defaults to the appointment's draft, which is what
+   *  "the draft moves into vet_visits.notes" means. */
+  notes?: string | null;
+  now?: Date;
+  newId?: () => string;
+}
+
+/**
+ * Create the visit this appointment became, and mark the appointment attended.
+ *
+ * ONE TRANSACTION, for the reason `startDietTrial` wraps its own: the visit row and
+ * the attendance link are a single fact. A throw between them leaves a visit nothing
+ * points at and an appointment still sitting on Home asking whether the visit
+ * happened — with the owner's notes now in a row they have no door to.
+ *
+ * The draft is MOVED, not copied: `notes_draft` is nulled in the same transaction so
+ * the record holds one copy of what the owner typed.
+ */
+export async function logVisitFromAppointment(input: VisitFromAppointmentInput): Promise<string> {
+  const { newId = uuid, now = new Date() } = input;
+  const db = getDb();
+  const id = newId();
+  const nowIso = now.toISOString();
+  const appt = input.appointment;
+  const notes = input.notes !== undefined ? input.notes : appt.notes_draft;
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO vet_visits
+         (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        id,
+        // FROM THE APPOINTMENT. The shipped screen reads `activePet` at save time
+        // (`app/vet-visit.tsx:117`) and AC 11 is the test that catches it.
+        appt.pet_id,
+        input.visitedAt,
+        trimOrNull(input.clinicName !== undefined ? input.clinicName : appt.clinic_name),
+        trimOrNull(input.vetName !== undefined ? input.vetName : appt.vet_name),
+        trimOrNull(input.reason !== undefined ? input.reason : appt.reason),
+        trimOrNull(notes),
+        nowIso,
+        nowIso,
+      ],
+    );
+    const res = await db.runAsync(
+      `UPDATE vet_appointments
+          SET vet_visit_id = ?, notes_draft = NULL,
+              updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+        WHERE id = ?`,
+      [id, nowIso, appt.id],
+    );
+    if (res.changes === 0) {
+      // Inside the transaction, so the visit INSERT above rolls back with it. An
+      // appointment that vanished under the screen (deleted on another device) must
+      // not leave a half-attended pair behind.
+      throw new Error(`logVisitFromAppointment: no appointment row matched id ${appt.id}`);
+    }
+  });
+
+  return id;
+}
+
+/** The fields the after-visit screen and Edit both write. Every one is optional; an
+ *  omitted key leaves the column alone, because these three callers each own a
+ *  different subset of the row. */
+export interface VisitDetailsPatch {
+  visitedAt?: string;
+  clinicName?: string | null;
+  vetName?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+  /** 'YYYY-MM-DD' — the date the vet said to come back on, or null to clear it. */
+  nextVisitAt?: string | null;
+}
+
+/**
+ * Update a visit's own fields (D1's Save over a lazily-created row, and D3's Edit).
+ *
+ * Column-by-column rather than a fixed UPDATE list: `notes` and `next_visit_at` have
+ * three distinct meanings here — unchanged, cleared, and set — and a fixed statement
+ * can only express two of them. The C-10 rule restated: a field preserves on
+ * omission when the caller is not describing it.
+ */
+export async function updateVisitDetails(visitId: string, patch: VisitDetailsPatch): Promise<void> {
+  const sets: string[] = [];
+  const args: (string | null)[] = [];
+  if (patch.visitedAt !== undefined) { sets.push('visited_at = ?'); args.push(patch.visitedAt); }
+  if (patch.clinicName !== undefined) { sets.push('clinic_name = ?'); args.push(trimOrNull(patch.clinicName)); }
+  if (patch.vetName !== undefined) { sets.push('vet_name = ?'); args.push(trimOrNull(patch.vetName)); }
+  if (patch.reason !== undefined) { sets.push('reason = ?'); args.push(trimOrNull(patch.reason)); }
+  if (patch.notes !== undefined) { sets.push('notes = ?'); args.push(trimOrNull(patch.notes)); }
+  if (patch.nextVisitAt !== undefined) { sets.push('next_visit_at = ?'); args.push(patch.nextVisitAt); }
+  // Nothing to write is not an error and must not become a bare `SET updated_at`:
+  // moving the version of a row nothing changed re-queues it for no reason and,
+  // under LWW, lets it win over a real edit from another device.
+  if (sets.length === 0) return;
+
+  const now = new Date().toISOString();
+  const res = await getDb().runAsync(
+    `UPDATE vet_visits
+        SET ${sets.join(', ')}, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ? AND deleted_at IS NULL`,
+    [...args, now, visitId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`updateVisitDetails: no visit row matched id ${visitId}`);
+  }
+}
+
+// ── The three link writers (provenance only — a link never moves a number) ──────
+
+/**
+ * *Keep* on a plan row: this course carries on, and it came from this visit.
+ *
+ * `started_at` NEVER MOVES, and neither does anything else the course computes from
+ * (§4.1 D1, TG-5). The one column written is the link — which is why *Keep* leaves
+ * `COUNT(*) WHERE status = 'active'` exactly where it was (AC 7).
+ *
+ * Guarded by `visitIsForPet` at the call site rather than here, because the caller
+ * holds the pet the screen is about; see `linkCourseToVisit`'s callers.
+ */
+export async function linkCourseToVisit(medicationId: string, visitId: string): Promise<void> {
+  const now = new Date().toISOString();
+  const res = await getDb().runAsync(
+    `UPDATE medications
+        SET vet_visit_id = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ?`,
+    [visitId, now, medicationId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`linkCourseToVisit: no medication row matched id ${medicationId}`);
+  }
+}
+
+/** The same for a running trial: *Keep* is a link and nothing else. */
+export async function linkTrialToVisit(trialId: string, visitId: string): Promise<void> {
+  const now = new Date().toISOString();
+  const res = await getDb().runAsync(
+    `UPDATE diet_trials
+        SET vet_visit_id = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ?`,
+    [visitId, now, trialId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`linkTrialToVisit: no diet trial row matched id ${trialId}`);
+  }
+}
+
+// A document captured in the room is filed under the visit through Vet Files' own
+// `linkVetDocumentVisit` (`lib/vetDocumentLibrary.ts`) — the ONE function that
+// implements D7's report-window protection rule, regression-tested against a real
+// database. A second writer of the same column here would be a second place for
+// that rule to be got wrong.
+
+// ── What the save did to the rest of the app (the D2 moment, §4.1 D2 / AC 8–9) ──
+
+/** The two record facts the saved moment's consequence lines are derived from. */
+export interface VisitConsequence {
+  /** No other live visit for this pet is dated on or after this one. */
+  isLatest: boolean;
+  /** The visit's day is strictly before today — the report's rung-1 test. */
+  isBeforeToday: boolean;
+}
+
+/**
+ * Ask the record what this visit changed. Both surfaces the moment speaks about —
+ * the vet report's window and Home's "since last visit" — are anchored on the pet's
+ * LATEST visit, and neither is anchored on "the one just saved".
+ *
+ * That distinction is the whole reason this is a read rather than a constant. A
+ * visit logged late (the owner catching up on a visit from March, with April's
+ * already on record) changes neither surface, and a moment that told them it had
+ * would be describing an app they are not using.
+ *
+ * The two conditions differ, and they differ for a reason worth keeping straight:
+ * the rundown's anchor is an UNBOUNDED `MAX(visited_at)`, so a visit logged today is
+ * the anchor today; the report's rung 1 is STRICTLY BEFORE today
+ * (`generate-report/report.ts` — "ignore today/future-dated visits"), so the same
+ * visit becomes the report's anchor tomorrow. The moment says both, separately.
+ */
+export async function readVisitConsequence(
+  visit: Pick<LocalVetVisit, 'id' | 'pet_id' | 'visited_at'>,
+  now: Date = new Date(),
+): Promise<VisitConsequence> {
+  const rows = await getDb().getAllAsync<{ later: number }>(
+    `SELECT COUNT(*) AS later FROM vet_visits
+      WHERE pet_id = ? AND id != ? AND deleted_at IS NULL AND visited_at >= ?`,
+    [visit.pet_id, visit.id, visit.visited_at],
+  );
+  return {
+    isLatest: (rows[0]?.later ?? 0) === 0,
+    // Compared as DAY KEYS, both 'YYYY-MM-DD' and both fixed-width, which is the one
+    // shape where a string comparison is the right tool (C-40 is about INSTANTS in
+    // two spellings; a DATE column has one). `localDateKey` reads the device's own
+    // calendar, never `toISOString()`.
+    isBeforeToday: visit.visited_at < localDateKey(now),
+  };
+}
+
+/** The visit a running trial already names, if any — what makes *Keep* idempotent. */
+export async function readTrialVisitLink(trialId: string): Promise<string | null> {
+  const rows = await getDb().getAllAsync<{ vet_visit_id: string | null }>(
+    `SELECT vet_visit_id FROM diet_trials WHERE id = ? LIMIT 1`,
+    [trialId],
+  );
+  return rows[0]?.vet_visit_id ?? null;
 }
