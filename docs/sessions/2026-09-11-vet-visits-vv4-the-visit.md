@@ -202,7 +202,37 @@ eight, which is the pin working rather than loosening.
 
   All three fixes were mutation-proven: reverting each one reds the test written for it.
 
-- **`code-reviewer`** — see the PR for its findings and what changed.
+- **`code-reviewer` returned fix-before-merge.** It reviewed the committed tree while
+  the adversarial fixes were still in the working tree, so three of its findings are
+  the same ones (the future-dated visit, the repair predicate, the haptic) and it
+  confirmed the fixes independently. It found **one the adversarial pass did not**:
+
+  **`handleSave` never joined the `busyRow` mutex that every plan handler takes.** It
+  checked only `saving`, and the Save button was only ever disabled by `loading`. The
+  in-flight promise closed the two-visits half, but the remaining half is real: the
+  moment's `linked` list is built from the row handlers' own `note()` calls, so a Save
+  landing before a row's write returned would show the owner a list missing that row's
+  line. Save now takes the same mutex and the button shows it — a control that refuses
+  behind the scenes and looks live reads as broken.
+
+  It also pushed back on the reachability half of the future-date finding, and it was
+  right that a clamp alone is not the whole answer: **the door itself was wrong.**
+  "How did it go?" rendered for `home.next`, which reaches weeks into the future, and
+  answering it marks the appointment attended — so a mis-tap on a six-week recheck
+  CONSUMED the booking, with no way back before VV-6's delete (CUL-939). Both in-visit
+  doors now render only on the appointment's own day (`AppointmentView.isToday`); a
+  future appointment's door is *Get ready*, and that is VV-5's.
+
+  Everything else it checked came back clean: AC 11's pet identity traced through every
+  write path, the C-29/C-40 date handling, `logVisitFromAppointment`'s rollback, the
+  `visitId`-before-Modal ordering, CUL-945's refuse-before-write, error copy (C-25),
+  and the theme/ChipGroup/hitSlop pass.
+
+  One note worth keeping about the Save-mutex test: it measures the BEHAVIOUR, not
+  either layer. Removing the button's `disabled` or the handler's guard leaves it
+  green, because each is sufficient alone; removing both reds it. That is the right
+  shape for "this control is inert" — a test pinned to one layer would go red on a
+  refactor that moved the gate — but it is surprising enough that the test says so.
 - **`nyx-voice`** — two fixes. The draft-save failure alert said *"Not saving just
   now / Your notes are on screen. Try leaving and coming back"*, which names a weak
   recovery for a health note; it now says to copy the text somewhere safe first. And

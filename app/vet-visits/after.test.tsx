@@ -296,6 +296,42 @@ describe('the visit is created ONCE, however fast the taps land', () => {
     expect(mockLogFromAppointment).toHaveBeenCalledTimes(1);
   });
 
+  it('Save is INERT while a plan row is writing — one mutex, not two', async () => {
+    // `handleSave` checked only `saving`, so a Save landing while a row's write was in
+    // flight ran concurrently with it. The in-flight promise means they can no longer
+    // create two visits — but the moment's `linked` list is built from the row
+    // handlers' own `note()` calls, and one that had not fired yet would simply be
+    // missing from the list the owner is shown.
+    //
+    // WHAT THIS MEASURES, stated because the mutation result is surprising: the
+    // BEHAVIOUR, not either layer. Two layers now hold it — the button's
+    // `disabled={!!busyRow}` and `handleSave`'s own guard — and removing EITHER alone
+    // leaves this green, because each is sufficient on its own. Removing BOTH reds it
+    // (measured). That is the right shape for a test of "the control is inert": a
+    // test that pinned one layer would go red on a refactor that moved the gate.
+    mockCourses = [course()];
+    // Hold the link write open so `busyRow` stays set across the Save press.
+    let releaseLink: () => void = () => {};
+    mockLinkCourse.mockImplementation(
+      () => new Promise<boolean>((resolve) => { releaseLink = () => resolve(true); }),
+    );
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+
+    await act(async () => { fireEvent.press(screen.getByText('Keep')); });
+    await waitFor(() => expect(mockLinkCourse).toHaveBeenCalled());
+
+    // Save, mid-write. It must not run.
+    await act(async () => { fireEvent.press(screen.getByText('Save Nyx’s visit')); });
+    expect(screen.queryByText('Saved to Nyx’s visits')).toBeNull();
+
+    await act(async () => { releaseLink(); });
+    // And it works again the moment the row is done.
+    await waitFor(() => expect(screen.getByText('Save Nyx’s visit')).toBeTruthy());
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Saved to Nyx’s visits');
+  });
+
   it('a FAILED create can be retried — the in-flight slot is cleared either way', async () => {
     mockCourses = [course()];
     mockLogFromAppointment.mockRejectedValueOnce(new Error('disk full'));

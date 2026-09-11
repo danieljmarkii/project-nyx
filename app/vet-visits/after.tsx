@@ -462,7 +462,13 @@ export default function AfterVisitScreen() {
   }
 
   async function handleSave() {
-    if (saving || !petId) return;
+    // `busyRow` AS WELL AS `saving`, and it is not belt-and-braces: every plan handler
+    // takes that mutex and `handleSave` did not, so a Save landing while a row's write
+    // was still in flight ran concurrently with it. The in-flight promise in
+    // `ensureVisit` means they can no longer create two visits — but the moment's
+    // `linked` list is built from `note()` calls, and one that had not fired yet would
+    // be missing from the list the owner is shown.
+    if (saving || busyRow || !petId) return;
     setSaving(true);
     try {
       // `ensureVisit` writes these same fields when it CREATES the row, so the update

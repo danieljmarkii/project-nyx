@@ -289,13 +289,22 @@ export default function VetVisitsScreen() {
             <View style={styles.section}>
               <SectionLabel label="Next" header />
               <AppointmentBlock appointment={home.next} style={styles.nextBlock} />
-              {/* The appointment's OWN id and pet ride the route (AC 11) — the
+              {/* ON THE DAY ONLY. `next` reaches weeks into the future, and both
+                  doors are about a visit that is happening or has just happened — so
+                  on a recheck booked six weeks out they are a mis-tap that consumes
+                  the booking (the save marks it attended, and there is no way back
+                  before VV-6's delete). A future appointment's door is *Get ready*,
+                  which is VV-5's; until then the block states and does not act.
+
+                  The appointment's OWN id and pet ride the route (AC 11) — the
                   screens it opens never ask the store which pet this is. */}
-              <AppointmentActions
-                petName={petName}
-                onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
-                onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${home.next?.id}`)}
-              />
+              {home.next.isToday ? (
+                <AppointmentActions
+                  petName={petName}
+                  onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
+                  onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${home.next?.id}`)}
+                />
+              ) : null}
             </View>
           ) : null}
 

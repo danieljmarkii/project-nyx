@@ -271,6 +271,10 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
         label={`Save ${petName}’s visit`}
         onPress={onSave}
         loading={saving}
+        // Inert while a plan row's write is in flight. A control that refuses behind
+        // the scenes and looks live is a control that reads as broken — and here the
+        // refusal is real: `handleSave` takes the same mutex the rows do.
+        disabled={!!busyRow}
         style={styles.save}
       />
       <ThemedText style={styles.saveNote}>

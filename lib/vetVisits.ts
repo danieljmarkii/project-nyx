@@ -382,6 +382,19 @@ export interface AppointmentView {
   when: string;
   /** 'Riverside Animal Hospital · Dr. Chen · recheck' */
   where: string;
+  /**
+   * The appointment's day is TODAY — the day its two doors mean anything (CUL-902).
+   *
+   * "At the vet" is a room the owner is not in yet, and "How did it go?" is a question
+   * about a thing that has not happened. Offering either on a recheck booked six weeks
+   * out is a mis-tap that CONSUMES the booking: the save marks the appointment
+   * attended, so it leaves Home and *Next* and there is no way back before VV-6's
+   * delete (CUL-939). `next` is unbounded into the future, so the doors are gated on
+   * this rather than on the list they sit in.
+   *
+   * *Get ready* is the door a future appointment wants, and it is VV-5's.
+   */
+  isToday: boolean;
 }
 
 export interface VetVisitsHome {
@@ -444,6 +457,11 @@ export function buildAppointmentView(
       vetName: appointment.vet_name,
       reason: appointment.reason,
     }),
+    // Compared as LOCAL day keys. The stored value is an instant, so the day is the
+    // reading device's calendar day — the same rule `readVetVisitsHome`'s day split
+    // uses, and never a text compare of two ISO spellings (C-40).
+    isToday: dayStampFromInstant(appointment.scheduled_at) !== null
+      && localDateKey(new Date(appointment.scheduled_at)) === localDateKey(now),
   };
 }
 
