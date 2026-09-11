@@ -1,283 +1,157 @@
 # Culprit — Executive Product & Strategy Review: Kickoff Prompt
 
-*Paste the body below into a fresh session. Scope set with the PM, 2026-09-11.*
+*Paste the body below into a fresh session. Scope set with the PM 2026-09-11; red-teamed by five independent critics before publication.*
 
-**This file is the kickoff, not the deliverable.** The deliverables are `docs/culprit-strategy-review-2026-09.md` (the memo) and a set of Linear issues. The Phase 0 evidence pack already exists at **`docs/culprit-state-of-play-2026-09.md`** — 8 verified research lanes, with a corrections register. Read it; do not re-derive it.
+**This is the kickoff, not the deliverable.** Two companion files are **binding**, not background:
+- **`docs/culprit-state-of-play-2026-09.md`** — the evidence pack. 8 verified research lanes with a corrections register.
+- **`docs/culprit-strategy-review-METHOD.md`** — the method annex: the full workstream specs, the honesty machinery, the five stress tests. Read each section at the point of use.
 
-**Parameters the PM set at commissioning (binding — do not re-litigate):**
+*(The split exists because a kickoff that cannot be held in mind is not a kickoff. A prompt that diagnoses over-production while running five times the length of every prior prompt in this repo has performed the disease.)*
 
-| | |
+| Parameter (binding — do not re-litigate) | |
 |---|---|
-| **Ambition** | A **profitable solo or very small business**. Not venture-scale. Not cost-recovery. Judge every recommendation against that, not against a fundable narrative. |
-| **Cash** | **Essentially none.** No paid acquisition, no paid research, no contractors, no hires. Agent spend is the only money leaving this company. A recommendation that needs a budget is not a recommendation; it is a wish. |
-| **Capacity** | **Variable** — some weeks nights and weekends, some weeks effectively full-time. **Plan for the low case. Treat the high case as upside.** Do not average them. |
-| **Scope of challenge** | **Everything is on the table**, explicitly including Pets > $, the diet-trial wedge, $4.99, iOS-only, the App Store as the launch vehicle, the solo-plus-agents operating model, and whether the product should exist in this form. |
-| **Required outputs** | All four: an unvarnished diagnosis · a launch-forcing plan · a strategy and positioning verdict · a go/no-go with real alternatives. |
+| **Ambition** | A **profitable solo or very small business.** Not venture-scale. |
+| **Cash** | **Essentially none, and that means a ladder, not a zero.** No paid acquisition, research budget, contractors or hires. Everything else is priced: each recommendation carries a tier — **$0 · <$100 · $100–500 · $500–2,000 · >$2,000** — and any tier above $0 names what it buys *in information terms*, the $0 substitute, and how much weaker that substitute is. Above $2,000 goes to an "if the constraint changed" appendix. **Carve-out: entity formation, business insurance and one attorney review are exempt** — risk transfer, not growth spend. |
+| **Capacity** | **Variable.** Plan the low case, treat the high case as upside, never average. Low case = intake Q7; absent an answer, 8 hrs/week, said out loud. |
+| **Scope** | **Everything is on the table**: Pets > $, the diet-trial wedge, $4.99, iOS-only, the App Store as the launch vehicle, the solo-plus-agents operating model, and whether the product should exist in this form. |
+| **Outputs** | All four: unvarnished diagnosis · launch-forcing plan · strategy and positioning verdict · go/no-go with alternatives. |
+
+**The bar.** In twelve months a reader should be able to say *the panel called it* or *the panel was wrong about X* — never *the panel wrote something reasonable*. It fails if it could have been written from `STATUS.md`; if every recommendation is one the PM already agrees with; or if anything recommended sits outside the cash ladder. **Both flattery and its mirror are sycophancy** — harshness reads as courage and gets praised, so severity is guarded as carefully as agreement.
 
 ---
 
-## The outcome this engagement hangs from
+## Session mechanics
 
-A strategy review has two failure modes. The first is a flattering document: a panel that agrees with the founder in nine voices. The second is a *flattering-in-reverse* document: a panel that mistakes severity for insight, because harshness reads as courage and gets praised. **Both are sycophancy.** Guard against both, explicitly and with named mechanisms.
+**Claim CUL-934 first** (`In Progress` + claim comment with branch and timestamp, per CLAUDE.md's Linear ritual) — this is multi-sitting and the claim is what stops sitting 2 starting over. **Mode: DISCOVERY.**
 
-The outcome to produce: **a diagnosis the PM did not already have, a ruling he can act on alone next week with no money, and a ranked list of tests that would prove the panel wrong.** If the memo could have been written from `STATUS.md` without this engagement, it failed. If every recommendation is one the PM already agrees with, it failed. If it recommends anything that needs cash or a second person, it failed.
+**Four sittings.** S1 claim · abort test · intake · ground · outbound package. S2 packets · seats · ballot. S3 two syntheses · memo draft · Steelman pass. S4 rebuttal placeholder · Linear issues · supersession set · `/wrap`. **If a sitting overruns, cut seats before cutting mechanisms.** Four-line state note on the issue each sitting: done · which file holds it · next · blocked.
 
-**The one-sentence bar:** twelve months from now, someone reading this memo alongside what actually happened should be able to say *the panel called it* or *the panel was wrong about X* — never *the panel wrote something reasonable.*
+**Artifacts:** `docs/culprit-strategy-review-2026-09.md` · `-appendix.md` · `docs/strategy-review-2026-09/verified-facts.md` · `docs/strategy-review-2026-09/seats/*.md`. One PR referencing **CUL-934** and **CUL-933**, attached to CUL-934 only.
 
----
-
-## Phase 0.A — PM intake (do this FIRST; the panel does not convene until it is answered)
-
-Every version of this engagement that was designed and rejected optimized an objective function nobody had asked the PM to state. **Ask him, in writing, before any seat is seated.** Present it as a short interview, not a form. Do not proceed on assumed answers; if he declines to answer one, record the refusal and say what the panel therefore cannot conclude.
-
-1. **Do you actually want users?** Asked without judgment. 180 consecutive sessions chose building over shipping. The available readings are sequencing, capacity, avoidance — and a fourth nobody has offered: **preference.** Users bring support load, bug reports, sick animals, and constraints on what you are allowed to change. If the honest answer is *I want to build this, not run it*, then most of what follows is answering the wrong question and the panel must say so on page one.
-2. **What do you want to be true about yourself when this ends?** *I shipped a real product* / *I made money* / *I proved I can build this way* / *I helped sick animals* / *I enjoyed my evenings*. These produce different memos.
-3. **What are you afraid of?** Three candidates are in the record: the vet's reaction, the download counter, and **the support inbox** — the moment a stranger's sick pet becomes your responsibility. A person who built an architecture whose defining rule is *never falsely reassure an owner* is taking on an emotional liability the day real owners arrive, not just an operational one.
-4. **The concrete life questions.** Is there an employer? A savings burn? A partner's tolerance? A date you have privately given yourself? What is the next-best use of fifteen hours a week — more income, more joy, or more optionality? **What are you unwilling to change at any price?**
-5. **Was the pace pleasant or compulsive?** ~7.3 sessions a day for fifty days. No plan should be optimized for throughput if the throughput was a symptom.
-6. **What do *you* think is working, and what isn't?** Capture this **before** the panel forms its own view. **Where the panel and the PM disagree about what is working is the finding** — and it is the cheapest anchor-check available.
-7. **What would you do with $500k and a co-founder?** One question that reveals whether the binding constraint is money, time, or belief.
+**Price the engagement** in the units it imposes: sessions, wall-clock, agent spend, PM hours at the low case — capped at one week of low-case capacity, with what it displaces named.
 
 ---
 
-## Phase 0.B — Verify the ground, once, centrally
+## Phase 0.1 — The abort test
 
-Ten isolated seats must not each re-derive the same facts, and none of them may trust a repo document that describes production. `STATUS.md` is currently **wrong about the live version of `generate-report`**, which is the single most strategically important deploy in the project. Run these once and publish the results into every seat's packet:
+Answer before opening a must-read; post it on CUL-934. **Name three decisions the PM would make differently** having read this memo versus having only sent one email to a vet and waited two weeks. Each: the decision, the ruling expected, what that ruling kills. **"A ruling on shape," "a sequence," "a stopping rule" do not count** — a decision names the thing chosen and the thing dropped. **Fewer than three: write the one-page note and close the session.** Three or more: proceed, and score the memo against them in §2 — a listed decision the memo did not rule is a recorded failure, not a quiet drop.
 
-- `Linear list_issues(team=Culprit, project="App Store Launch")` — and **separate "blocks submission" from "filed under the launch project."** They are different sets and conflating them builds a fake critical path.
-- `Linear list_issues(team=Culprit, label="Waiting on PM")` and by state, for the open-issue count.
-- `Supabase execute_sql` — counts for `auth.users`, `pets`, `events` (live and deleted), `diet_trials`, `vet_reports`, `looks`, and `ai_usage` grouped by surface **and by distinct day and distinct account**.
-- **The account question, settled definitively:** one query joining `auth.users.email` → `pets` → `events`. Two research lanes disagreed about whether a genuinely third-party account has ever existed. *Does even one stranger use this?* is the most decision-relevant fact in the corpus and it is one query. **If the answer is yes, contacting that person is the second-highest-value action available to this company.**
-- `Supabase list_edge_functions` — live versions and dates, against `supabase/functions/deploy-manifest.json`.
-- `select key, value from app_config` — the full flag manifest.
-- Apple iTunes Search API for the named competitors, for current ratings and version dates.
+## Phase 0.2 — The intake
 
-**Must-reads, in this order:**
-1. `docs/culprit-state-of-play-2026-09.md` — **including §8, the corrections register, before citing anything from §2–§7.**
-2. `CLAUDE.md` — the seven principles, the two safety invariants, Pets > $, the Open Questions table, the Persona Conflict Protocol, the decision-brief format, the Tier-2 documentation protocol.
-3. `docs/monetization-and-ai-gating-strategy.md` §13 + §18 — D-M1…D-M8. Note that the doc itself calls $4.99 a *placeholder to validate*, not a locked price.
-4. `docs/culprit-competitive-landscape-2026-07.md` §1, §2, §10, §11 — still the best competitive reference, with §5 of the evidence pack as its delta.
-5. `docs/nyx-research-v1_0.md` — the evidence base, **including its own "not investor-grade" self-flag on the wedge triangulation.**
-6. `docs/vc-financial-projections-PROMPT.md` — the model it commissioned was never written. That absence is a finding, and the prompt's five hard VC questions are a ready-made stress test.
-7. `docs/app-store-readiness.md` + `docs/app-store-submission-guide.md`.
-8. `docs/nyx-design-principles-v1_0.md:139` — read it against D-M1 and notice they contradict.
+Two interviews. **Do not show the second before the first is answered in writing.** The seven questions currently on CUL-934 are superseded; update the issue before asking.
 
-**Robustness check:** if a must-read is missing, **stop and flag it.** Do not proceed by inventing its contents.
+**Interview 1 — un-primed, before the PM is told anything this engagement found. Goes into every packet.**
+1. What do you think is working? Concrete. Name what you would protect at cost. 2. What is not working? 3. Where is the product heading in six months? 4. What decision are you actually stuck on? 5. **Your number**, three figures: stops costing you money · worth the evenings · worth doing instead of the alternative. State the middle one as a dated pair, *$X/month by D, or stop*. Everything is priced against it. 6. What does it cost to run today, and what will you accept at 1,000 users? 7. **Low-case weekly hours, as a number.** 8. **Name one human outside this repo who will be told the date**, and whether you will tell them this week. 9. What are you unwilling to change at any price? 10. What would you do with $500k and a co-founder?
 
----
+**Interview 2 — after Interview 1 is sealed. CEO seat only**; withheld from every other seat, the de-anchored reader, and both synthesizers.
+11. Picture a hundred people using this next month: first thing you feel, first chore you think of? Is there a version where nobody ever uses it and you are still glad you did it? 12. What do you want to be true about yourself when this ends? 13. (a) The morning after launch, which notification would you least like to see? (b) A stranger emails that her cat has vomited three days and asks what you think. **What do you want to say back, and what stops you?** Answer (b) as a support policy — the one launch-day artifact that exists nowhere in the corpus. 14. Which weeks of the last four months would you want more of, and fewer? Name a good week, a bad week, what differed. 15. Best thing you got out of the last four months that is not this app?
 
-## Phase 0.C — The abort clause
+**Confidentiality.** Raw answers never enter the memo, a Linear issue, or any committed file. Only the derived constraint travels — *"plan for 10 hrs/week," "$X/month," "the hard date is March"* — with no employer, financial position or household detail. A declined question records only "declined" and what the panel therefore cannot conclude.
 
-**Before the panel convenes, answer this in three sentences and act on the answer.**
+**This is an input to W2 and W5, not context. A shape the founder has said he will not execute is not an option** — strike it, and say it was struck for that reason, not on merit.
 
-By every framing's own value-of-information logic, the highest-information act available to this company is one email to a veterinarian, and it has been sitting in `Todo` for 71 days at a cost of zero. An engagement that spends multiple sessions and real agent spend to re-derive *send the email* has performed the exact pathology it was convened to diagnose.
+**No PM present and no answer comment on CUL-934: stop.** Comment that the engagement is blocked and end. Proceeding on assumed answers is barred by this prompt's own rule and the session is not exempt.
 
-So: **state what this engagement can produce that sending the email cannot.** If the honest answer is "nothing material," say so, write a one-page note instead of a memo, and close the session. If the answer is "a ruling on shape, a sequence, and a stopping rule that one email cannot give," proceed — and **send the email first, in this session, before the panel convenes.** It costs nothing and it means the panel is reasoning about a live experiment rather than about an unbooked one.
+## Phase 0.3 — The ground
 
-The engagement also prices itself: state the expected session count and rough agent spend up front, and what it displaces. A brief that demands every recommendation name its cost while arriving un-costed fails its own rule on entry.
+**Verify once, centrally**, into `docs/strategy-review-2026-09/verified-facts.md` (query or URL · value · timestamp), pasted into every packet. **Each seat then gets two query credits** — at most two further verifications, requested in writing, naming the question and what the answer would change. The query list, the PII rule on the account question, **Lane 9 (the asset register)** and **the artifact auditor** are specified in **METHOD §0.3**; all four run before any seat is seated.
+
+**Must-reads.** (1) The evidence pack — **§8 first, then §2–§7. §1 is a narrative synthesis by the same pass that produced the lanes, carries no evidence grades, and states a conclusion in its first paragraph: read it last, as argument rather than fact.** (2) `CLAUDE.md` — seven principles, two safety invariants, Pets > $, Open Questions, Conflict Protocol, decision-brief format, Tier-2 protocol. (3) `docs/monetization-and-ai-gating-strategy.md` §13 + §18 — note it calls $4.99 a *placeholder to validate*, not a locked price. (4) `docs/culprit-competitive-landscape-2026-07.md` **§1, §2, §6, §10, §11 — §6 is the only assembled strengths inventory in the corpus, and skipping it is how a reading list becomes an argument.** (5) `docs/nyx-research-v1_0.md`, including its "not investor-grade" self-flag. (6) `docs/vc-financial-projections-PROMPT.md` — its five hard VC questions are a ready-made stress test. (7) `docs/app-store-readiness.md` + the submission guide. (8) `docs/nyx-design-principles-v1_0.md:139`, read against D-M1.
+
+**Robustness:** a missing must-read is stop-and-flag, never an invention. **Exception: `docs/nyx-financial-model-v1_0.md` does not exist — that is a finding (pack §4.1), not a stop.**
+
+## Phase 0.4 — The one outbound act
+
+**The vet email is a Phase 0 deliverable, not a Phase 0 agent action.** Produce three things before the panel convenes. (a) A **decision brief** (CLAUDE.md format) on *send now vs. redeploy `generate-report` first* — one email against one `scripts/deploy-edge.sh generate-report --deploy`; the trade is speed against handing the only veterinary contact a report missing the diet-trial block. (b) The **actual PDF**, generated against the live function, in front of the PM before anyone sends anything. (c) A drafted email **≤120 words that makes indifference an easy and recordable answer** — the modal outcome for a GP with an 11-minute appointment is *"I would not open this,"* and an instrument that cannot capture that returns a false positive. **Consider five, not one**: five cost the same and produce a response *rate* plus a refusal pattern; one produces an anecdote.
+
+**No seat and no phase of this engagement sends mail, books an appointment, or contacts a named human.** Every outbound contact is drafted here and sent by the PM. Both branches produce a dated commitment in this session — the send, or the redeploy as week-1 action #1 with the send scheduled against it. **Neither branch is "later."**
 
 ---
 
 ## The panel
 
-**Do not run a conversation.** The evidence is unambiguous and it matters more than the roster: multi-agent debate degrades accuracy through conformity, not through reasoning (strict conformity ~29% of observations; conformity-driven flips predominantly correct→wrong; even vacuous reasoning induces 20–39% error adoption). Assigned devil's advocacy measurably **backfires** — Nemeth found role-played dissent produces cognitive bolstering of the initial position, while authentic dissent produces better solutions. A "skeptical CTO hat" worn inside one conversation is the single most likely thing to make this panel *more* confident in the PM's priors.
+Multi-agent debate degrades accuracy through conformity, and *assigned* devil's advocacy backfires — so **manufacture authentic difference rather than assigning it.** (That finding is about role-played dissent *inside a shared conversation*, where the group knows it is assigned and discounts it. An isolated sealed seat has no group to perform for: its assigned position is its **prior**, not its **costume**, and it abandons that position in writing if the evidence defeats it. A seat ending where it started says what would have moved it.)
 
-**So: manufacture authentic difference instead of assigning it.**
-
-- Each seat runs in its **own isolated subagent context** (`Agent` tool), writes a **sealed verdict**, and locks it **before seeing any other seat's work**. This repo has the precedent: the nine isolated vet-visit interviews (CUL-878) converged on conditions without contact, which is why that convergence meant something.
-- **Each seat gets a different evidence packet** and a **different starting position it is told to defend on the record.** Not different hats on the same facts.
-- **Sparse topology.** No seat sees the full transcript. Exposure happens once, in writing, after positions are locked.
-- **The CEO seat writes last.** Authority-driven dynamics suppress semantic diversity; a CEO opening remark is the anchor everything else regresses to.
-- **One seat runs de-anchored:** it receives the built app, the market data and the live numbers, but **not** `CLAUDE.md`, **not** `STATUS.md` and **not** the session records. Its first deliverable is its own independent statement of what this product is for. **Where that diverges from the ratified strategy is a finding, not a misunderstanding.**
-
-### Seats
-
-The PM named CEO, CPO, CTO and top-tier management consultants. All four are seated. Five of the six additions below are non-negotiable given the parameters; the roster is deliberately reweighted away from capital, because the ambition is a profitable solo business and a VC lens optimizes the wrong thing.
+- **One fact base, ten different questions.** Identical packet to every seat — verified facts, the pack (§8 first), Lane 9, the auditor's report, the must-reads, Interview 1. What differs is **the question asked** and **the starting position defended on the record**, never the facts; different facts make agreement and disagreement equally uninterpretable. One exception, a subtraction not a substitution: the de-anchored seat gets a strict subset (**METHOD §P1**) and the memo prints exactly what was removed.
+- **Sealed verdicts go to disk, never into the parent.** Each seat writes `seats/<seat>.md` and returns **a 150-word abstract plus its ballot line**. The synthesizers get file paths and read them themselves. The memo quotes dissent by re-reading the file at the moment of writing; **a quotation reconstructed from an abstract is a fabrication.** Exposure happens once, in writing, after every position locks.
+- **The ballot is a fixed header, written before any prose and unrevisable after:**
+  ```
+  SEAT:   GO / GO-WITH-CONDITIONS / NO-GO / STOP:   CONFIDENCE (0-100):
+  DIAGNOSIS (one sentence, naming a mechanism):
+  CRUX (one sentence):    COST OF BEING WRONG:
+  THE ONE NUMBER THAT WOULD FLIP ME:
+  SHAPE (W5 axis 1 + axis 2):    LAUNCH BY (a date, or NOT IN 2026):
+  THE EIGHT ANSWERS (METHOD §P1):
+  ```
+  Report the distribution as counts. **Both syntheses fill the identical header; "divergence" is the count of header fields on which they differ, out of nine, printed `N/9`.** A paragraph about "broad agreement" is not a number.
+- **If the ballot is unanimous, do not re-ballot and do not reassign** (that is the assigned advocacy just ruled out, and it costs a round on the likeliest branch). Each seat instead writes one line — *the strongest reason a competent outsider would disagree, and the observation that would produce it* — straight into the ranked test list. **Ten seats over one pack are not ten independent draws, and that sentence appears wherever the distribution appears.**
+- **The CEO seat is the only one that reads the other sealed verdicts**, after they lock. No CEO text enters any other packet.
 
 | Seat | There to catch what nobody else will |
 |---|---|
-| **CEO (bootstrapped consumer, writes last)** | The shape question. Is this a business, and of what kind? Owns the go/no-go and the stopping rule. |
-| **CPO** | That the product is built for a user who has never touched it, and that "product direction" is a real half of the commission the business seats will otherwise eat. |
-| **CTO** | **Scope is load and blast radius, not architecture.** State the concurrency ceiling and the cost ceiling under a 1,000-user day; name what breaks first and what it costs to find out. The architecture is good; that claim is the one thing the panel may not simply inherit — require the one-line evidence that the exemption is earned. |
-| **Management consultant (MBB, engagement partner)** | Structure: SCQA, a governing thought, a MECE issue tree, the "so what" test on every section, an answer-first one-pager. Owns whether the memo is auditable as an argument. |
-| **Growth / distribution operator (indie, zero-budget)** | The crux, probably. Names the literal first hundred users. This seat is disqualified from using the words "organic," "vets," or "word of mouth" without a name, a URL and a date attached. |
-| **Positioning (Dunford method)** | The competitive alternative a real owner actually has (a paper notebook, the Notes app, ChatGPT, nothing), and the category the product should compete in. Also owns the vitamin-or-painkiller question and its ugly corollary in §"five questions" below. |
-| **Veterinary practice economics** | Whether vets *want* this. Not "is the report good" — **would receiving it make their day worse, and would they hand a client a QR code.** This seat must make indifference a recordable outcome. |
-| **Trust, safety and liability counsel** | The unsigned drafts, the absent entity, the personal-name exposure, the escalation liability, and **state veterinary practice acts** — the one legal question nobody has looked at. |
-| **The Short (adversary)** | Argues the company is worth nothing and the next year is wasted. Must produce the strongest version, not a caricature. |
-| **The Steelman / overstatement auditor** | **The mirror of the Short, and the seat every prior design forgot.** Reviews the panel's own findings for claims stated one notch stronger than their evidence, and writes a mandatory steelman of each attacked thing. Nothing else in this design penalizes a false positive. |
+| **CEO** (bootstrapped consumer; reads the others, writes last) | The shape question and the stopping rule. Holds Interview 2. |
+| **CPO** | That the product is built for a user who has never touched it. **Runs de-anchored** (METHOD §P1). |
+| **CTO** | **Load, cost and blast radius, not architecture** — the ceiling under a 1,000-user day, what breaks first, what finding out costs. **The pack grades the architecture claim `[C]` with a query behind it: same scepticism as every other `[C]` claim, neither more nor less.** Also carries the **do-not-launch-in-2026** brief — a pro-quality argument the Short cannot make in good faith. |
+| **Management consultant (MBB)** | SCQA, governing thought, MECE, the "so what" test, answer-first. Owns whether the memo is auditable as an argument. |
+| **Growth / distribution (indie, zero budget)** | The literal first hundred users. **Disqualified from using "organic," "vets," or "word of mouth" without a name, a URL and a date attached.** |
+| **Positioning (Dunford)** | The competitive alternative a real owner actually has. Vitamin or painkiller. |
+| **Veterinary practice economics** | Whether vets *want* this — **would receiving it make their day worse, would they hand a client a QR code.** Must make indifference recordable. |
+| **Trust, safety & liability counsel** | Unsigned drafts, absent entity, permanent personal-name exposure, escalation liability, and **state veterinary practice acts** — the one legal question nobody has looked at. |
+| **The Short** | The company is worth nothing and the next year is wasted. Strongest version, not a caricature. |
+| **The Null Hypothesis** | **Argues R1 and R2 (METHOD §W1) at full strength; disqualified from conceding either in its sealed verdict**, may concede in exposure. Nobody else owns the premise — the Short argues worthlessness, a different claim. |
+| **The Steelman** | Runs **after the draft exists**, as a review pass. Grades; does not veto (METHOD §M3). |
 
-**Explicitly barred from seats:** every incumbent in-house persona — Dr. Chen, the Designer, the Data Scientist, Jordan, Sam, the `vet-report-cold-read` and `pm-feature-review` subagents. **They cannot audit themselves.** They may be *quoted as subjects*; they may not *vote*.
-
-**One seat, assigned to the Short, also argues the counter-case nobody has made:** *do not launch in 2026.* Launching today ships a July binary with the wedge's payoff 42 days stale and its trial block rendering empty, no crash reporting, no analytics, no push channel, no support process, into a category where first impressions are permanent and Apple's rewritten 4.3(b) now lists "does not attract customers" as a removal criterion. **The pathology may not be the delay. It may be that the delay is undecided rather than chosen.** The panel must defeat this case explicitly or adopt it.
+**Barred from a voting seat:** Dr. Chen, the Designer, the Data Scientist, Jordan, Sam, `vet-report-cold-read`, `pm-feature-review`. They cannot audit themselves. Quote them as subjects, never as validation.
 
 ---
 
 ## Workstreams
 
-Prioritized. Where time runs short, **mark a section "thin — needs follow-up" rather than padding it.**
+**Priority is set by the commission, not the panel's taste.** The PM's five questions are PRIORITY 1, answered literally, in his words and his order, before anything the panel found more interesting. Full specs in **METHOD §W0–§W8**; each is binding.
 
-### W1 — The diagnosis *(PRIORITY 1)*
-Rumelt's kernel or nothing: **diagnosis → guiding policy → coherent action.** The diagnosis must name a **mechanism**, not a vice, and must carry **the observation that would disconfirm it**.
+| | Workstream | → memo | Priority |
+|---|---|---|---|
+| **W0** | **The founder's arithmetic.** Cost to stay alive at 0/100/1k/10k users · what "enough" looks like from intake Q5 · **the break-even conversion gate on W5.** Everything else prices against this. | §6 | 1 |
+| **W1** | **The diagnosis.** Rumelt's kernel. **At least four ranked candidates, three of them mandatory** (R1 the loop would return null · R2 nothing is broken · R3 the constraint is the operating model). | §1 | 1 |
+| **W1.5** | **The denominator.** Expected value against forgone earnings, sunk cost excluded by construction. | verdict box | 1 |
+| **W2** | **The crux.** Ranked, with cost-of-being-wrong. **A crux whose remedy can be completed without changing the business is a symptom.** | §3 | 2 |
+| **W3** | **What is working, and must be protected** — same evidence standard as the criticism, off Lane 9. Includes: *is the operating system the more valuable artifact than the app?* | §5 | 1 |
+| **W4** | **The competitive read.** The PM named it first. Settle the Tend & Mend premise before reasoning from it; rule on 24-month durability. | §4 | 1 |
+| **W5** | **The shape ruling.** Two axes, both ruled: who pays and how · what the product is. **(f) stop is specified to the same depth as the rest.** | §8 | 1 |
+| **W6** | **The launch-forcing plan.** Rule the launch *vehicle* explicitly — App Store is not the only one. Plus **W6.1, the flag manifest**, which may be the shortest path to a shippable product. | §9 | 1 |
+| **W7** | **The 90-day evidence contract.** One table. One mandatory row is not about the product: *the founder keeps working on this.* | §10 | 2 |
+| **W8** | **Product direction.** Species and indication · the missing funnel to the wedge · requested-or-discovered per track · **rule on iOS-only.** | §7 | 1 |
 
-A hypothesis is pre-supplied **to be attacked, not adopted**: *this system's feedback loops all terminate inside itself; the only loop it has never closed is the market loop.* Note the narrower rival reading, because they produce completely different action sets: loops here demonstrably do close — every guard fires, every adversarial review changes code, every PR merges. **If exactly one wire is missing, the action is to attach one wire, not to overhaul a machine that works.** The panel must choose between these two diagnoses explicitly.
+**W2, W7 and W5's buyer-side read are the panel's own additions** and must earn their place by naming what they give the PM that his five questions do not. An addition that cannot is cut, not demoted. Short on time: mark a section **"thin — needs follow-up"**, never pad.
 
-Barred as a diagnosis: *"the PM should prioritize better"* and *"the PM should prioritize launch."* Those are goals wearing a diagnosis's clothes. Send them back.
-
-**Done when:** one paragraph, naming a mechanism, with a disconfirming observation beside it, that a reader who has never seen the repo can act on.
-
-### W2 — The crux *(PRIORITY 1)*
-Each seat names **the crux** in one sentence — the hardest part of the climb, the thing that if solved makes the rest easier — and defends that it is the hardest part. Collect into a ranked list with a **cost of being wrong** per candidate. There is an obvious candidate (nobody outside the household has ever used this) and the panel should be suspicious of how obvious it is.
-
-### W3 — What is working, and must be protected *(PRIORITY 1, non-optional)*
-The PM asked *"what's currently working."* Answer it literally, at **equal length and under the same evidence standard as the criticism** — asymmetric length is how a panel launders a foregone conclusion. Name what would be destroyed by acting on this memo's own recommendations. A purely prosecutorial read biases the panel toward a rescue narrative when the real question may be positioning.
-
-Include the question nobody has asked: **is the operating system the more valuable artifact than the app it produced?** One person shipped 129,698 lines, ~830 PRs, 8,290 tests, 14 build-failing guards and a real case-crossover engine with Monte-Carlo property tests, in about four months. If the founder's durable asset is *I can build production software this way*, the 1.34M-word decision record is the portfolio, not the bloat, and "product direction" has a completely different answer. One seat must argue this seriously.
-
-### W4 — The competitive read, done properly *(PRIORITY 2)*
-The PM named competitive space first. The corpus's only competitive work is desk research, and this pass showed its method has a systematic blind spot.
-
-**Install the top five and use each for a week against the real cat's record.** Write what each does better. That is the obvious CPO move and it has never been done. Start with **Tend & Mend: Cat** (free, App Store since 2026-04-10, markets every cell of the "unoccupied wedge", **zero ratings**), **Everkin** ($6.99/mo, shipped our daily-look seven days before we did, paywalls the vet PDF), and **ThePawcess** ($39 one-time, elimination-diet protocol deeper than our shipped track).
-
-**The mandatory starting prior:** *Tend & Mend shipped the whole wedge, free, five months ago, and nobody came.* Explain their zero first. Then say whether your explanation predicts yours. And check the premise before reasoning from it — a zero-ratings count may be measuring whether an app asks for ratings, not whether anyone uses it.
-
-**Done when:** the panel can state what is genuinely differentiated in a sentence a stranger would believe, and has named the competitive alternative a real owner would actually use instead.
-
-### W5 — The shape ruling *(PRIORITY 2)*
-One forced choice, defended: **(a)** freemium subscription as ratified · **(b)** bounded one-time or per-episode purchase · **(c)** vet-channel B2B2C · **(d)** a different payer entirely · **(e)** deliberately un-monetized public good · **(f)** stop.
-
-Three facts the ruling must metabolize:
-
-1. **The wedge terminates by construction.** A diet trial is 8–12 weeks and then it ends, in a diagnosis, a resolution, or a give-up. **The success case churns.** Engagement is bounded by a disease course, not by a funnel. **State the expected engagement duration in weeks, derived from the protocol itself rather than from a retention assumption, then explain how a $39.99/yr subscription survives it — or rule the shape.** This is the strongest argument in the entire corpus for a one-time price, and no prior analysis made it.
-2. **Pets > $ costs about 5×.** Freemium converts at a 2.1% median download-to-paid; a hard paywall at 10.7%. Pets > $ may well be right, and it is the constitution. **Say out loud what it costs, then decide again.** The ratified free tier also holds the only surface with sustained use, while the Premium bundle's lifetime usage is 56 calls, 40 of them from a QA harness.
-3. **Who already pays money for this exact artifact.** Nowhere in 1.34M words does anyone ask. Three candidates with real budgets, all absent from the record: **pet insurers** (claims substantiation, where the owner has direct monetary incentive), **veterinary pharma and clinical trials** (feline chronic enteropathy and canine CAFR studies recruit owners and pay per completed home diary), and **specialty internal-medicine referral practices** (diet trials are protocol, and the referral letter is the product). Each is B2B2C against a budget, and the app already produces the artifact. Price finding out — it is a few emails.
-
-Add the buyer-side read, which every prior framing treated as a failure state rather than a live option: **is the engine, the safety architecture or the decision record worth something to a vet-SaaS incumbent or an insurer today, pre-launch?** Five emails would price it.
-
-### W6 — The launch-forcing plan *(PRIORITY 2)*
-Executable alone, with no money, at low capacity.
-
-- **A date**, and what gets cut to hit it. Not a target — a date, with the cut list beside it.
-- **The flag manifest as a strategic object:** every rollout flag and every global `ai_*` boolean, with ship state, one line of why, and the reversal. The submission binary is defined by a config table nobody has audited, and flipping flags is the single highest-leverage decision currently available. No competitive or product framing would ever open `app_config` to find it.
-- **The irreversibility list, gating the date independently of the schedule.** After submission, two things are permanent: the **Seller name** (an individual account publishes the founder's legal name on every shipped version) and the **app name and store slug**. These are a different class from lead times.
-- **Instrumentation as a gating dependency, not a recommendation.** The ratified strategy's own §20 says instrumentation precedes the paywall; it is currently scheduled after submission. The first real cohort is the only one that can answer any open question, and it will be spent unmeasured.
-- **Support as a workstream, a cost and an emotional liability.** `support@getculprit.app` is simultaneously the support address, the App Review demo account and the Resend sender. On day one a distressed owner emails about a sick pet. Who answers, in what time, with what boundaries? This is the single most attention-consuming thing about launching, against the constraint everyone agrees is binding.
-- **Two undesigned guaranteed exits:** the pet gets better, and the pet dies. Both are certain in this category. Bereavement in an app that speaks in the pet's name is an ethics and voice problem with no spec, no mock and no mention anywhere in 1.34M words.
-- **Shutdown obligation.** If the founder stops in month 14, what happens to users' health records? The unsigned drafts almost certainly do not cover it.
-
-### W7 — The 90-day evidence contract *(PRIORITY 2)*
-One table. Every strategic bet gets a row: **bet · metric · instrument · continue-threshold · kill-threshold · decision date · who decides.** A bet with no instrument is not a bet, it is a hope, and instrumentation becomes a dependency of the bet rather than a line item competing with it.
-
-### W8 — Product direction *(PRIORITY 3, and it is half the commission)*
-The PM asked where the product is heading. Do not convert this entirely into a business-shape ruling. At minimum:
-
-- **Which species and which indication is this actually built for?** All real data is one cat with chronic vomiting; the per-incident AI chain is `analyze-vomit` / `analyze-stool`. **Elimination diets run at far higher volume for itchy dogs**, where the outcome measure is a pruritus score over weeks, not a photographed incident. The founder's own animal may have biased the product toward the smaller half of its own wedge. State the relative volumes, and what fraction of the built surface serves the larger half.
-- **The funnel to the wedge does not exist.** Onboarding never mentions a diet trial; the trial lives two taps inside the Pet tab, below the fold, behind an empty food library. Day 1 with zero events renders the *lapsed-user* state. There is no reminder, by policy, for a user who must log daily for 8–12 weeks. Name the smallest set of changes that makes the shipped app the product the PM thinks he built, and name what breaks.
-- **Of the last 90 days of build, which item was requested by a user and which was discovered by a session reviewing its own prior work?** Answer for each track.
-- If the memo refuses to answer part of "product direction," **it must say so and say why.** Silent substitution is not allowed.
-
----
-
-## The honesty machinery
-
-Every mechanism below is mandatory. Each one exists because a documented failure mode makes it necessary.
-
-**Against anchoring:**
-- **Seeded refutations.** Hand every seat **three of this research pass's own broken claims** from `docs/culprit-state-of-play-2026-09.md` §8 — the fabricated adherence statistic, the PRO-TECT reversal, the stale `generate-report` version copied from `STATUS.md` — and **require each seat to find a fourth.** A seat that finds none is not reading.
-- **Verify at use, not at citation.** Three of six competitor products had moved within six days of the July sweep being committed. Every load-bearing number in the memo carries a tag: `VERIFIED live` / `REPO-CLAIM` / `ASSUMPTION`, and repo claims about production are re-checked against production.
-- **Apply the distrust inward.** Every prior design pointed "do not trust this repo's documents" at the repo and then reasoned from the recon without confidence bounds. **A count is not a rate.** Nine accounts, several of them tests, cannot produce a "67% drop-off." Eight food extractions is a count. Put bounds on internal evidence or do not speak it as a measurement.
-- **An artifact auditor.** One seat's only job is to audit the evidence pack *as an artifact* — who wrote it, what it was scored on, what it systematically cannot see — and to state the case that its framing is wrong wholesale, not just locally.
-
-**Against convergence:**
-- Sealed, mutually blind verdicts. CEO last. Sparse topology. Different packets, different assigned starting positions.
-- **Report the blind-verdict distribution as a headline number.** If the ballot is **unanimous, the two most confident seats are reassigned to argue the opposite and the panel re-ballots.** Moving the conviction beats leaving a red team where it already was.
-- **Forced dissent quota.** Every seat names one recommendation it expects the other seats to hate.
-- **Dissent is reproduced verbatim and answered clause by clause. A summary of the dissent is a violation.**
-
-**Against unfalsifiable claims:**
-- **Every strategic claim ships as four things:** what would have to be true · the single observation that would disconfirm it · the cheapest test that produces that observation · the date. Roger Martin's rejection test applies: *if this were shown to be untrue, would you reject the associated possibility?* If not, it is a nice-to-have and it gets cut.
-- **Base rates before opinions.** No seat may state a date, a conversion rate or a retention number without first writing the base rate and its source — **including the internal base rate** (180 consecutive sessions chose the other thing).
-- **The one-number rule.** Each seat names the single number that would flip its recommendation. Collected, these are the panel's falsification list.
-- **Forced falsification of recommendations, not just claims.** This repo's own Definition of Done already requires naming the counterexample you tried and why it held. Lift it to the strategy level: **any recommendation with no stated counterexample is struck from the memo.**
-- **Reference-class forecasting.** Base rates from §6 of the evidence pack are the outside view. Without one, every seat grades this product against its own narrative.
-
-**Against severity mistaken for insight:**
-- **The Steelman seat has veto standing** over any finding stated stronger than its evidence.
-- **Mandatory steelman of each attacked thing**, at equal length.
-- **The panel's own output is tagged `[SYNTHETIC]`.** A synthetic panel that rules "your synthetic validation is invalid" and then signs its own verdict has performed the disease. The memo is **at best a hypothesis generator**, and its findings must be ranked by *which of these could be settled by one real human this week.*
-
-**Against a beautiful document that changes nothing:**
-- **The displacement ledger.** Every recommendation names what it kills. A recommendation with no displacement entry does not ship. In this organization, additive advice is free and therefore worthless.
-- **The PM-hour budget.** Every recommendation carries a cost in PM-hours, drawn from a stated weekly budget at the **low** capacity case. **A recommendation set that exceeds the budget is a prioritization failure and gets sent back, not softened.** Arithmetic, not discipline.
-- **Predictions of record.** Three dated, thresholded predictions per seat, printed in the memo and scored at the next review. The July retro failed to bind precisely because nothing was ever scored.
-- **One irreversible real-world action.** The engagement ends with something that happened outside a document — the vet email actually sent, an appointment actually on a calendar, a flag actually flipped, a TestFlight link actually in a stranger's hands. **Without one, this is session 368 doing what the last 180 did.**
-- **Name the second party.** Every enforcement mechanism here is self-administered by the same person who is the diagnosed constraint, which is exactly why the July fix did not hold. The memo must name a commitment device **external to the repo and to the PM**: a date told to another human, a public post, a recurring call with someone, a stranger expecting something on a day. If the panel cannot name one, it must say that its own recommendations are unlikely to bind, and why.
-- **The engagement pre-registers its own failure.** If the top recommendation has not started within 14 days, this memo is recorded as the 368th session record and the next review may not use this format.
-
-**Two blind syntheses.** Every prior design isolated the seats and left the synthesizer unguarded — one agent who has read everything, knows who commissioned the work, and writes the verdict box. That is where polite convergence actually happens. **Run two independent syntheses of the identical sealed verdicts, written blind to each other, and report the divergence between them as the measure of how much the conclusion is authored rather than derived.**
-
-**The pre-mortem, in the past tense.** Prospective hindsight raises correct identification of causes by roughly 30%, and the grammar is load-bearing: *what did go wrong*, not *what could*. Date-stamp it: **"It is 11 September 2027. Culprit has 400 monthly actives and $0 revenue. Write the post-mortem."** Then the inverse: **it worked — what was true that we did not believe on 2026-09-11?**
-
-**The PM rebuttal, on the record.** Before the memo closes, the PM responds. He holds context the panel structurally lacks. **His disagreement is evidence, not resistance,** and it is printed in the memo unedited.
-
----
-
-## The five questions the panel may not dodge
-
-1. **Tend & Mend shipped the entire wedge, free, on 2026-04-10, and has zero ratings.** If the wedge is real and the product was the bottleneck, why did nobody come? Answer that before claiming the lane is ownable.
-2. **Name the first hundred users.** Not a persona, not a segment — the literal mechanism by which human #1 through #100 installs this. If the answer contains "organic," "vets," or "word of mouth," keep going until it contains a name, a URL and a date. Zero budget is a given, not an excuse.
-3. **The vet report has never been read by a vet, the gate has been open 71 days, and it costs one email.** What is the actual reason? And what is the answer if a vet reads it and is simply *indifferent* — which is the modal outcome, not a tail case, for a GP with an 11-minute appointment for whom an unsolicited owner-generated PDF is cost and possibly chart-review liability?
-4. **CUL-914 measured a shipped surface printing its finding on 22–77% of pure-noise records.** If the promise is "we find the culprit," what is the falsification standard for a shipped finding, who owns it, and has any signal ever been retired for failing it? **Before seeking any external evidence, run the detectors against synthetic null records across realistic densities and species and publish a per-detector false-positive rate** — no users, no vet, one weekend of compute. Then run the mirror test: **replay the detectors against a synthetic sparse 8-week trial record.** Every floor was tuned on a high-density chronic case. **If the wedge user structurally never sees a Signal, the product cannot serve its own wedge.**
-5. **$10k/month at the ratified price needs roughly 2,600 concurrent payers, which at the category median needs roughly 90,000 downloads before churn.** The median app makes $72/month a year after launch; 4.6% reach $10k/month. Name the specific mechanism that puts this app in the 4.6%, or name the number that counts as success instead — and if the honest answer is Bearable-shaped (roughly $30k/month after four and a half years, grown through communities, with the doctor report as a trust signal rather than a growth engine), say so plainly, because that is a good outcome and it implies a completely different plan.
+**The honesty machinery (METHOD §M1–§M4) and the five stress tests (METHOD §S) are binding on every seat and on the memo.**
 
 ---
 
 ## The deliverable
 
-**`docs/culprit-strategy-review-2026-09.md`**, ≤6,000 words, in this order:
+**`docs/culprit-strategy-review-2026-09.md` — the memo, ≤2,500 words.** Ceilings, not targets: **§1** kernel 400 (diagnosis · guiding policy · 5–8 subordinated actions, **readable and actionable in 90 seconds**) · **§2** verdict box 200 (go / go-with-conditions / no-go / stop · conditions · the `N/9` divergence · the three abort-test decisions scored · whether the enforcement issue exists) · **§3** crux 150 · **§4–§7** the PM's five questions, 900, **a floor as well as a ceiling — it is what he asked for** (§4 competitive space · §5 what is working and strengths/weaknesses, **which may not be shorter than the section naming what is not** · §6 the arithmetic · §7 product direction) · **§8** shape ruling 400 · **§9** launch plan 500 · **§10–§12** evidence contract, ranked tests, displacement and PM-hours as **tables** · **§13** decision briefs 200, in the CLAUDE.md format. A section that will not fit its ceiling has a finding that is not yet sharp: **cut the finding, not the budget.**
 
-1. **The kernel, page one.** Diagnosis paragraph · guiding policy paragraph · 5–8 subordinated actions. **Readable and actionable in 90 seconds.** If it cannot be, most of the analysis has not been dropped on purpose, and dropping it is the work.
-2. **The verdict box.** Go / go-with-conditions / no-go, with the conditions, and the divergence between the two blind syntheses stated as a number.
-3. **The PM's five questions, answered literally**, in his words, in his order: the competitive space · strengths and weaknesses · where the product is heading · what is working · what is not. **This is what he asked for. If the engagement is delivering a ruling instead of an assessment, page one says so and says why — it does not silently substitute.**
-4. **What is working and must be protected** — equal weight, equal evidence standard.
-5. **The shape ruling**, with the rejected options and why.
-6. **The launch plan**: date, cut list, flag manifest, irreversibility list, support plan, week-1 actions executable with no follow-up questions.
-7. **The 90-day evidence contract** as a table.
-8. **The ranked test list** — every cheap falsifier, ordered by information value ÷ cost, with the date and the owner. **Given that value risk currently sits at zero evidence and no panel can manufacture evidence, this section may be the most valuable in the memo.**
-9. **The displacement ledger and the PM-hour budget**, as tables that must balance.
-10. **Predictions of record** — three per seat, dated and thresholded.
-11. **The pre-mortem and the pre-parade.**
-12. **Dissent, verbatim, answered clause by clause.**
-13. **The PM rebuttal, unedited.**
-14. **Open questions, decidable** — each in the CLAUDE.md decision-brief format (Deciding / Options with the recommendation marked / Consequence, ~4 lines). A bare "thoughts?" is not a decision request.
+**`docs/culprit-strategy-review-2026-09-appendix.md` — no cap.** Sealed verdicts verbatim · dissent answered clause by clause · the Steelman grade table · predictions of record · pre-mortem and pre-parade · the artifact auditor's report · the five stress tests answered · the de-anchored eight-question grid with its file list printed · Lane 9 · the null-replay table · the supersession set · **the PM rebuttal.**
 
-**Also required:**
-- **Linear issues** for everything the memo commissions, on the `Waiting on PM` label where a PM call is the single remaining step. **Not a second checklist in prose** — that drift is the documented pathology.
-- **The supersession protocol.** If the memo rules against a ratified decision, it names **which file changes, by what authority, and in the same pass.** Without this, the memo joins 1.34M words as another correct document nobody obeys — the cure reproducing the disease.
-- **Where it lives, who reopens it, and on what date.** An unowned, unscheduled deliverable is the 368th instance of the pattern.
+**The rule that makes the split honest:** every memo claim names the appendix section carrying its evidence, and **the memo may not summarize a dissent — it names it in one clause and points at it.** A memo claim with no appendix anchor is cut.
+
+**The rebuttal does not block publication** — it ships as `PM rebuttal: PENDING, due <date + 7>` with a Linear comment requesting it, and the memo is not final until filled.
+
+**Also required.** Linear issues for everything commissioned, on `Waiting on PM` where a PM call is the single remaining step — **not a second checklist in prose.** And **the supersession set**: per file, the exact section, the current text, the **proposed replacement**, and the authority, written as a diff the PM applies in one pass and filed as a Tier-2 proposed edit in the same pass. **No file is edited by this session.** First candidate: `docs/nyx-design-principles-v1_0.md:139`, still listing multi-pet, extended history, advanced correlation views and customisation as "what may be premium" — all four free forever since D-M1/D-M8 — in a file every UI session is told to read.
 
 ---
 
 ## Guardrails
 
-- **Tier-2 protocol.** The memo is new and needs no approval. **Do not edit** `CLAUDE.md`, the specs, the design principles or the research docs — propose edits and wait.
-- **No code, no schema, no migrations.** This is DISCOVERY. Flipping a flag or sending an email is not code.
-- **Persona Conflict Protocol.** Never resolve a conflict silently. Dissent is the output, not the friction.
-- **Pets > $ is on the table by the PM's explicit instruction** — but it is the constitution, so overturning it requires the same standard of proof as overturning a clinical invariant, and the memo states the cost of keeping it either way.
-- **Honesty over polish.** One laundered number discredits the memo, and this research pass already produced several. Flag every assumption.
-- **The panel is synthetic and says so.** No seat may cite a persona, a subagent or a simulated panel as *validation* of anything — a vet, a lawyer, a user. It may cite them as *subjects*. Where the existing record already rests on synthetic validation, say so in the same sentence as the claim.
+- **No app code, schema, migrations, or commits to `app/`, `components/`, `lib/`, `store/`, `supabase/`.** Permitted: live **read** queries, Linear writes, drafting outbound mail, writing the memo — **plus one carve-out, the null-record replay.** A throwaway scratchpad script that generates synthetic null and synthetic sparse-trial records, drives the **already-shipped** detectors, and prints a per-detector fire rate commits nothing, needs no user, no vet and no money, and **is the only place this engagement can manufacture real evidence.** Table to the appendix, headline number to the kernel. If it cannot run in-session it becomes **test #1** with a named owner and a date, not a recommendation in prose.
+- **A flag flip is a live production write to `app_config`, not "not code."** Read freely; the session may add the founder's own UUID to an existing allowlist-shaped flag (one reversible statement, no other account affected). **Any `{enabled:true}` global flip is a PM decision, presented as a decision brief and executed by the PM.**
+- **No seat, synthesis or section may write in the PM's voice, infer his answers, or supply a plausible version of them.** The intake and the rebuttal are the only non-synthetic inputs here. An unanswered question prints as the question, the word `UNANSWERED`, and one line on what the panel cannot conclude. **A drafted, suggested or "likely" rebuttal is a violation of this prompt, not a convenience.** An engagement that cannot close without a human is the pathology it was convened to diagnose; one that closes by *impersonating* him is worse.
+- **Tier-2 protocol:** the memo and appendix are new and need no approval; do not edit `CLAUDE.md`, the specs, the design principles or the research docs — propose and wait. **Persona Conflict Protocol:** never resolve a conflict silently.
+- **Pets > $ is on the table by the PM's explicit instruction** — but it is the constitution, so overturning it takes the same standard of proof as overturning a clinical invariant, and the memo states the cost of keeping it either way.
 
 ## Do NOT
 
-- Run this as a conversation, a round table, or "CEO reacts, then CPO reacts."
-- Assign a skeptic hat inside a shared context. It backfires; the literature is clear.
-- Seat Dr. Chen, the Designer, the Data Scientist, Jordan, Sam, or any in-house review subagent as a voting member.
-- Let *"the PM should prioritize better"* stand as a diagnosis.
-- Let a repo document describing production stand unverified. `STATUS.md` is currently wrong about the live version of `generate-report`.
-- Cite anything from §2–§7 of the evidence pack without reading §8 first.
-- Recommend anything requiring cash, a hire, or a co-founder — **except** as an explicitly labelled "if the constraint changed" appendix.
-- Deliver a prosecution with a strengths section stapled to it.
-- Confuse "filed under the App Store Launch project" with "blocks submission."
-- Produce a recommendation set that exceeds the stated PM-hour budget at the **low** capacity case.
-- Convert "product direction" entirely into a business-model ruling without saying that is what you did.
-- End the session without one irreversible thing having happened outside a document.
+- **Recommend paid acquisition, a hire, a contractor or a co-founder**, except in a labelled "if the constraint changed" appendix. **And do not treat every dollar as banned** — price it on the cash ladder. Entity, insurance and one attorney review are exempt.
+- **Deliver a prosecution with a strengths section stapled on.** Lane 9 exists so the symmetry is real.
+- **Cite a persona, subagent or simulated panel as *validation*** — of a vet, a lawyer, or a user. Cite them as *subjects*, and where the existing record already rests on synthetic validation, say so in the same sentence as the claim.
