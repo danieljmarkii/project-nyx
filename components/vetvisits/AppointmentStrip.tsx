@@ -108,7 +108,10 @@ export function AppointmentStrip() {
 
   const onDidntHappen = () => {
     Alert.alert(
-      'Cancel this appointment?',
+      // 'Remove', not 'Cancel': the buttons below say Remove, and on iOS "Cancel"
+      // is also the word for backing out of the dialog — a title and a button using
+      // it for opposite meanings is the one place an owner cannot afford ambiguity.
+      'Remove this appointment?',
       // Says what it does to the record, and what it does not. An owner who
       // rescheduled rather than skipped needs to know the old row is going away.
       `${view.when} will be removed from ${activePet?.name ?? 'your pet'}’s upcoming visits. Nothing else in the record changes.`,

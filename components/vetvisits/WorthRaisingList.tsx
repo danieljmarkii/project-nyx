@@ -72,8 +72,8 @@ export function WorthRaisingList({ worthRaising, questions, onAdd, onRemove, pet
         {signalUnavailable ? (
           <View style={styles.gap}>
             <ThemedText style={styles.gapText}>
-              {petName}’s Signal couldn’t be reached, so anything it has flagged isn’t in this
-              list. The rundown below is from this device and is complete.
+              {petName}’s Signal couldn’t be reached, so anything it has flagged isn’t here.
+              The rundown below is from this device and is complete.
             </ThemedText>
           </View>
         ) : null}

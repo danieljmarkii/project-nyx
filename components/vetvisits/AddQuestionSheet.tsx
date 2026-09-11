@@ -77,7 +77,7 @@ export function AddQuestionSheet({ visible, petName, existingCount, onClose, onS
           <View style={styles.grabber} />
           <ThemedText style={styles.title}>Ask the vet</ThemedText>
           <ThemedText style={styles.subtitle}>
-            It rides into the visit with {petName}, as something to tick off.
+            You’ll see it at the visit, as something to tick off.
           </ThemedText>
 
           {full ? (
