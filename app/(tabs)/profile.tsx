@@ -20,6 +20,12 @@ import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload, getPublicUrl, getSignedUrls } from '../../lib/storage';
 import { VetFilesCard } from '../../components/vetfiles/VetFilesCard';
 import { VET_FILES_ENTRY_ENABLED } from '../../lib/vetFilesEntry';
+import { VetVisitsCard } from '../../components/vetvisits/VetVisitsCard';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../lib/betaFeatures';
+import {
+  buildVetVisitsCardModel, EMPTY_VET_VISITS_HOME, readVetVisitsHome, type VetVisitsHome,
+} from '../../lib/vetVisits';
 import { VET_DOCUMENTS_BUCKET } from '../../lib/vetDocuments';
 import {
   readVetLibrary, buildVetFilesCardModel, VET_DOCUMENT_SIGNED_URL_TTL_SEC,
@@ -486,6 +492,44 @@ export default function ProfileScreen() {
     }
   }, [activePet?.id]);
 
+  // Vet visits card (CUL-900 VV-2; mock A1) — behind the `vet_visits` rollout flag.
+  // Local-first like the Vet Files card beside it: the read is SQLite, so the card
+  // is correct offline and costs no round-trip.
+  const vetVisitsEligible = useAllowlistFlag('vet_visits');
+  const vetVisitsOptedIn = useBetaOptIn('vet_visits');
+  const vetVisitsEnabled = vetVisitsEligible && vetVisitsOptedIn;
+  const [vetVisits, setVetVisits] = useState<VetVisitsHome>(EMPTY_VET_VISITS_HOME);
+  // C-12, and it is load-bearing HERE rather than ceremonial: the card's zero
+  // state is not a quiet placeholder, it is two doors saying "you have nothing
+  // booked and nothing logged". Rendered before the read answers, an owner with
+  // years of visits and an appointment on Tuesday sees that on every focus of this
+  // tab; rendered after a FAILED read, they see it permanently. The empty model is
+  // never shown as a record — the card waits.
+  //
+  // Held as the PET ID the current data belongs to rather than a boolean, which
+  // answers the multi-pet half of the same question for free: a plain `loaded`
+  // flag stays true across a pet switch, so the card would render the previous
+  // pet's appointment and visit count under the new pet's name until the next read
+  // landed (the CUL-574 class, arriving by staleness instead of by fallback).
+  const [vetVisitsLoadedFor, setVetVisitsLoadedFor] = useState<string | null>(null);
+
+  const loadVetVisits = useCallback(async () => {
+    // Dark means dark: the flag gates the READ as well as the card.
+    if (!vetVisitsEnabled || !activePet) return;
+    const petId = activePet.id;
+    try {
+      setVetVisits(await readVetVisitsHome(petId));
+      setVetVisitsLoadedFor(petId);
+    } catch (e) {
+      // The card withholds rather than blanking the tab — a failed read here must
+      // never cost the owner the profile, and it must never be reported as an
+      // empty record. The list screen carries the retry.
+      console.warn('[Profile] load vet visits failed:', e);
+      setVetVisits(EMPTY_VET_VISITS_HOME);
+      setVetVisitsLoadedFor(null);
+    }
+  }, [vetVisitsEnabled, activePet?.id]);
+
   const loadConditions = useCallback(async () => {
     if (!activePet) return;
     setConditionsLoading(true);
@@ -704,7 +748,10 @@ export default function ProfileScreen() {
       // And the Vet Files card, so returning from the library reflects a document
       // just added or renamed there.
       loadVetFiles();
-    }, [loadMedications, loadPastMedications, reloadTrial, loadVetFiles]),
+      // And the visits card, so a booking or a visit added in the list shows here
+      // the moment the owner comes back.
+      loadVetVisits();
+    }, [loadMedications, loadPastMedications, reloadTrial, loadVetFiles, loadVetVisits]),
   );
 
   // CUL-612 — take the optimistic dose back when the completion card's Undo removes
@@ -1486,6 +1533,35 @@ export default function ProfileScreen() {
             style={styles.reportButton}
           />
         </Card>
+
+        {/* ── Vet visits (CUL-900 VV-2, mock A1) ──
+            Between the Vet report card above and Vet Files below, and the order is
+            the argument: the vet cluster reads top-down as report → visits → files.
+            Behind the `vet_visits` rollout flag (G0) — flag-off this tab is
+            byte-identical to an app without the companion, which
+            guards/vetVisitsFlagOff.test.tsx asserts by stubbing
+            components/vetvisits/ and comparing the trees. That is why the card is
+            a namespace module and not JSX written here: UI inline in this file is
+            invisible to the guard.
+
+            The two zero-state doors and "Open visits" all route to the list rather
+            than presenting the booking sheet here. The Pet tab already hosts three
+            RN Modals (edit pet, add medication, start trial) and the owner should
+            land where the row they just created is visible — the list — rather than
+            on the tab it was booked from. */}
+        {vetVisitsEnabled && activePet && vetVisitsLoadedFor === activePet.id && (
+          <VetVisitsCard
+            model={buildVetVisitsCardModel(vetVisits)}
+            // The tab is scoped to `activePet`, so here the active pet IS the
+            // record's pet — but the card is handed a NAME, never the store, so no
+            // surface inside it can reach for `activePet` on its own (CUL-574).
+            petName={activePet.name}
+            onOpen={() => router.push('/vet-visits')}
+            onBook={() => router.push('/vet-visits?add=booked')}
+            onLogPast={() => router.push('/vet-visits?add=happened')}
+            style={styles.sectionGap}
+          />
+        )}
 
         {/* ── Vet Files (B-478 VF-2, mock A1-r2 / A1z) ──
             A sibling of the Vet report card, deliberately adjacent: they are the

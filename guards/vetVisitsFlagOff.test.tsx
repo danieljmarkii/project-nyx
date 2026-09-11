@@ -382,6 +382,7 @@ describe('AC 0 — flag-off is byte-identical to an app without the companion', 
 // ── The C-32 tripwire ───────────────────────────────────────────────────────────
 // Deleted by the PR that invalidates it, exactly as `firstCallerLands` was in
 // guards/completionCard.test.ts.
+/** The PR that landed the first consumer and deleted this file's VV-0 tripwire. */
 const FIRST_CONSUMER_LANDS = 'CUL-900 (VV-2 — the Pet-tab home)';
 /**
  * Two detectors, because one blunt one does not work here — and the reason is
@@ -418,6 +419,33 @@ const FIRST_CONSUMER_LANDS = 'CUL-900 (VV-2 — the Pet-tab home)';
  */
 const CONSUMER_RE = /useAllowlistFlag\(\s*['"]vet_visits['"]\s*\)/;
 const ALIASED_HOOK_RE = /\buseAllowlistFlag\s+as\s+\w+/;
+/**
+ * A VALUE import from the companion namespace, at any relative depth.
+ *
+ * `import type` is excluded deliberately: a type is erased at compile time and
+ * renders nothing, so a type-only import would satisfy the rule while the file
+ * drew its companion UI inline — the exact leak the rule exists to catch.
+ *
+ * STATED BLIND SPOT (C-36 — an undocumented limitation reads as coverage): this
+ * is still a regex over import statements, so it cannot tell a namespace import
+ * that is RENDERED from one that is merely present. A future consumer determined
+ * to draw inline could add an unused value import and pass. It raises the cost of
+ * the leak from "forget the convention" to "write a line that does nothing", and
+ * it does not close it; closing it needs the import bound into the returned tree,
+ * which a regex cannot see. The equality half remains the real backstop for
+ * anything that renders.
+ */
+const IMPORTS_NAMESPACE_RE = /(?:^|\n)\s*import\s+(?!type\s)[^;\n]*from\s+['"][^'"]*components\/vetvisits\//;
+
+/**
+ * Flag consumers excused from the draws-through-the-namespace rule: a file that
+ * reads the flag to DECIDE something without drawing anything (a lib predicate, a
+ * sync branch). Keyed by repo-relative path, valued with why.
+ *
+ * Empty, and that is the assertion (C-32) — every consumer today is a screen that
+ * delegates its drawing. The staleness check below keeps it honest.
+ */
+const DRAWS_ELSEWHERE_OK: Record<string, string> = {};
 
 /** Every non-test source file in the app tree, so the scan cannot miss a consumer. */
 function appSources(dir: string, out: string[] = []): string[] {
@@ -506,18 +534,19 @@ function mockedModuleClosure(): string[] {
   return [...seen].map((abs) => path.relative(REPO_ROOT, abs).split(path.sep).join('/')).sort();
 }
 
-describe('the companion has no consumer yet (VV-0)', () => {
-  it(`exactly zero files read the flag — ${FIRST_CONSUMER_LANDS} is the PR that reds this`, () => {
-    // The empty set made an assertion (C-32). When this goes red, that PR owes
-    // three things in the SAME change, which is the whole point of failing first:
-    //   1. its companion UI under components/vetvisits/, so the equivalence half
-    //      above can stub it — UI written inline in a screen is invisible to it;
-    //   2. the deletion of this case, replaced by the permanent rule below;
-    //   3. the beta shelf's on-state hint in app/settings/beta.tsx, written for the
-    //      no-consumer state ("nothing to see yet") and false the moment there is
-    //      something to see.
-    expect(flagConsumers()).toEqual([]);
-  });
+describe('the companion\'s consumers stay inside the namespace', () => {
+  // The VV-0 tripwire that stood here — `expect(flagConsumers()).toEqual([])` —
+  // was deleted by CUL-900, the PR it named, after it did its job: it went red on
+  // the first consumer and listed all three of them, and the change that turned it
+  // red also paid the two debts it named (the card under components/vetvisits/,
+  // and the beta shelf's on-state hint, which had said "nothing to see yet").
+  // C-32: an empty set is an assertion, and it is deleted by the PR that
+  // invalidates it rather than edited into a list of what happens to be true.
+  //
+  // What replaces it is not a weaker version of it. The tripwire asked "is there a
+  // consumer yet"; the permanent rule below asks the question that matters for the
+  // life of the feature — "is every consumer drawing through the namespace this
+  // file can stub" — which is the premise the whole equivalence half rests on.
 
   it('nobody aliases useAllowlistFlag, so the call-shape scan above has no blind spot', () => {
     // Key-independent and permanent: it outlives the tripwire and keeps the
@@ -550,16 +579,49 @@ describe('the companion has no consumer yet (VV-0)', () => {
   });
 
   it('once a consumer exists, the namespace the equivalence half stubs is non-empty', () => {
-    // The permanent half, and it survives this file's tripwire. Written now, while
-    // both sides are empty, so the rule lands with the guard rather than after the
-    // first PR that could have broken it. A consumer with an empty namespace means
-    // the companion is being drawn somewhere `treeFor` cannot stub, which makes
-    // every comparison above vacuously green.
+    // The permanent half, written by VV-0 while both sides were empty so the rule
+    // would land with the guard rather than after the first PR that could break
+    // it. Both sides are populated as of CUL-900. A consumer with an empty
+    // namespace means the companion is being drawn somewhere `treeFor` cannot
+    // stub, which makes every comparison above vacuously green.
     if (flagConsumers().length === 0) {
       expect(vetVisitsUiModules()).toEqual([]);
       return;
     }
     expect(vetVisitsUiModules().length).toBeGreaterThan(0);
+  });
+
+  it('every file that reads the flag draws through the namespace', () => {
+    // The floor above is satisfied by ANY file existing in the namespace, which
+    // was the right rule while there were zero consumers and is too weak now that
+    // there are three: with the card sitting in `components/vetvisits/`, a LATER
+    // PR (VV-4's after-visit screen, VV-5's Home strip) could write its UI inline
+    // in a screen and this file would stay green over exactly the leak it exists
+    // to catch — the equivalence half cannot stub what is not in the namespace.
+    //
+    // So the rule is per-CONSUMER, not per-directory: a file that reads the flag
+    // imports from the namespace. That is the mechanical form of the convention
+    // VV-0's header states in prose ("a screen may hold the gate; it delegates the
+    // drawing there").
+    //
+    // The exemption is for the honest case this cannot distinguish by reading: a
+    // flag read that DECIDES something without drawing anything (a lib predicate,
+    // a sync branch). None exists today — which is why the exemption is declared
+    // with no members rather than left implicit (C-32).
+    const drawsElsewhere = flagConsumers()
+      .filter((rel) => !(rel in DRAWS_ELSEWHERE_OK))
+      .filter((rel) => !IMPORTS_NAMESPACE_RE.test(readCode(path.join(REPO_ROOT, rel))));
+    expect(drawsElsewhere).toEqual([]);
+  });
+
+  it('the draws-through-the-namespace exemption has no stale entries', () => {
+    // An exemption is not a note (C-32): every entry must still name a real flag
+    // consumer, or it is pre-authorising a hole for a file that no longer exists.
+    // Reads the SAME object the rule above filters on — a second hand-kept copy
+    // here would make this a tautology over its own literal rather than a check of
+    // the registry.
+    const consumers = new Set(flagConsumers());
+    expect(Object.keys(DRAWS_ELSEWHERE_OK).filter((k) => !consumers.has(k))).toEqual([]);
   });
 });
 
