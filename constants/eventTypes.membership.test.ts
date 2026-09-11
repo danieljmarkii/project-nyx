@@ -526,6 +526,36 @@ const WALK: WalkRow[] = [
     },
   },
   {
+    list: 'LOOK_LEAF_TWINS (lib/lookTwins.ts)',
+    governs:
+      'CUL-845 gate 2 — the leaf→look-word twin map, the ONE place a look word and a symptom '
+      + 'leaf are named in the same object, and it may only ever SUPPRESS A ZERO',
+    read: () => scan('lib/lookTwins.ts', 'export const LOOK_LEAF_TWINS', '};'),
+    cough: {
+      now: false,
+      decision: 'NO — the v1 vocabulary names no cough word (§4.2 / §4.3), so there is nothing to '
+        + 'pair. Revisit only if a wave adds one, and then with Dr. Chen, exactly as a new '
+        + 'vocabulary word is added.',
+    },
+    sneeze: { now: false, decision: 'NO — same ground.' },
+    check_in: {
+      now: false,
+      decision: 'NO, AND THE DIRECTION IS THE POINT. `check_in` is the look’s own leaf and could '
+        + 'never be its own twin, but the row exists to record why this map may exist at all after '
+        + 'R10 struck the link. The exception is DIRECTIONAL: this map may remove a card that would '
+        + 'print `Itch/Scratch · 0` over an owner who taps *Scratching more* daily, and nothing '
+        + 'else — it returns a boolean and never a number, so no look count can reach a symptom '
+        + 'tile, a denominator, the engine or Ask (T-5 intact; pinned in lib/lookTwins.test.ts). It '
+        + 'is deliberately NOT registered in guards/symptomLists.test.ts for the reason the '
+        + 'LOOK_WORDS row states at file:line: registration there is a SKIP, and this file names two '
+        + 'leaf keys that the scan should keep reading. Two keys is below that guard’s '
+        + 'three-distinct-key floor anyway, so the decision has nowhere to live but here. The '
+        + 'membership itself is set-equality in lib/lookTwins.test.ts: leaves == {itch, lethargy}, '
+        + 'words == {scratching_more, subdued, sleeping_more}, and `overgrooming` is excluded '
+        + 'because a vet reads one licked spot and generalised itch apart.',
+    },
+  },
+  {
     list: 'signalWatching gap row (lib/signalWatching.ts)',
     governs: 'the sub-floor "watching" register — vomit-anchored BY DESIGN (v1 scoped to the dominant symptom)',
     read: () => scan('lib/signalWatching.ts', 'export const WATCHING_GAP_SYMPTOM_LABEL', ';'),
@@ -568,7 +598,10 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // the adversarial pass caught the label map flipping with no row; the discovery
     // guard is file-keyed and cannot see a second list in a registered file).
     // +2 (CUL-868): the engine's whole source, and the look vocabulary's disjointness.
-    expect(WALK).toHaveLength(21);
+    // +1 (CUL-874 / N-5): LOOK_LEAF_TWINS — the one object that names a look word and a
+    // symptom leaf together. It sits BELOW the discovery guard's three-distinct-key floor
+    // (two leaves), so the walk is the only place its membership decision can live.
+    expect(WALK).toHaveLength(22);
   });
 });
 

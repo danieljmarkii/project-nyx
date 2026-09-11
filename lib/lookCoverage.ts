@@ -37,7 +37,7 @@
 //     Undo never reads as a failed save.
 
 import { localDayIndex, localDayIndexOf, dayKeyFromIndex } from './utils';
-import type { LookDayRow } from './looks';
+import type { LookDayRow } from './lookDayCounts';
 
 /** The rolling window, in local days, inclusive of today. */
 export const LOOK_COVERAGE_WINDOW_DAYS = 28;

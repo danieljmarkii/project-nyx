@@ -20,6 +20,27 @@ jest.mock('react-native-safe-area-context', () => {
 });
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
+
+// Noticed (CUL-874 / N-5). This suite is the FLAG-OFF path: `useAllowlistFlag` returns
+// false, so `lookCardLive` is false, `loadNoticed` returns null before any read, and
+// Patterns renders exactly what it rendered before N-5. The mocks exist because the
+// screen's new imports reach `lib/appConfig` → `lib/supabase`, which throws under jest
+// without env — not because any behaviour here is being stubbed away. The flag-ON wiring
+// has its own suite, app/insights/noticed.test.tsx.
+jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
+jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
+jest.mock('../../hooks/useDietTrial', () => ({
+  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForActivePet: false }),
+}));
+jest.mock('../../lib/looks', () => ({
+  loadLookDays: jest.fn(async () => []),
+  loadVomitLocalDays: jest.fn(async () => []),
+}));
+jest.mock('../../lib/lookWithheld', () => ({
+  loadLookWithheldFacts: jest.fn(async () => null),
+  lookWithheld: () => true,
+}));
+
 // The Signals v2 panels (B-755 PR 9) GA'd (CUL-548): they now load whenever there's an
 // active pet and render when their model has data — no flag gate. This screen-wiring smoke
 // test keeps them OUT of the frame by stubbing both panel loaders to null (no model → no

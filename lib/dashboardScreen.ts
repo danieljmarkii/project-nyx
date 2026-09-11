@@ -29,6 +29,8 @@ import { isEstablishedCount, selectCardState, type CardDisplayState } from './da
 // Type-only: keeps this pure module free of lib/weight's runtime deps (db/sync). The
 // screen computes the trend (getWeightHistory → computeWeightTrend) and passes it in.
 import type { WeightTrend } from './weight';
+import type { NoticedCardModel } from './lookPatterns';
+import { leafZeroContradictsLooks } from './lookTwins';
 
 // ── Priority classes (Principle 3 — safety leads) ────────────────────────────────
 //
@@ -36,12 +38,20 @@ import type { WeightTrend } from './weight';
 // owner-configured (§3): safety-class cards lead, then intake, then descriptive. This
 // mirrors the Home Signal's ranking discipline (safety findings always lead the cap).
 
-export type DashboardCardPriority = 'safety' | 'intake' | 'descriptive';
+export type DashboardCardPriority = 'safety' | 'intake' | 'observation' | 'descriptive';
 
 const PRIORITY_RANK: Record<DashboardCardPriority, number> = {
   safety: 0,
   intake: 1,
-  descriptive: 2,
+  // The daily look's read-back card (CUL-874 / N-5; the daily-look review's E-13). Its
+  // OWN rank rather than a seat in an existing class, because both neighbours would be
+  // wrong: above the intake cards it would sit over the evidence it can look like it is
+  // arguing with (a run of quiet looks beside a falling meal rate — §6.8's
+  // caregiver-placebo guard, drawn as an ordering), and down among the descriptive
+  // rankings it would read as a food stat. Between them is the only honest slot, and
+  // E-13 requires it be computed here rather than by the screen's render order.
+  observation: 2,
+  descriptive: 3,
 };
 
 // ── Card descriptors (data-only; the screen maps each to a PR-2 component) ────────
@@ -150,8 +160,24 @@ export interface WeightTrendCardDescriptor {
   trend: WeightTrend;
 }
 
+/**
+ * *What you noticed* — the daily look's read-back (CUL-874 / N-5, spec §7).
+ *
+ * The whole card arrives PRE-DECIDED in `model` (`lib/lookPatterns.ts`): rows, the
+ * denominator line, the withheld sentence, the calibration line, the one pairing. This
+ * descriptor carries no counts of its own, so there is exactly one place a look
+ * denominator can be got wrong and it is not here.
+ */
+export interface WhatYouNoticedCardDescriptor {
+  kind: 'whatYouNoticed';
+  key: 'whatYouNoticed';
+  priority: 'observation';
+  model: NoticedCardModel;
+}
+
 export type DashboardCard =
   | SymptomCountCard
+  | WhatYouNoticedCardDescriptor
   | CalendarCard
   | IntakeRateCard
   | TopFoodCard
@@ -201,6 +227,31 @@ export interface BuildDashboardInput {
    *  health-trajectory weight card. Always present; an empty trend renders the card's
    *  forward-looking nudge state (the weight-logging habit this card exists to start). */
   weightTrend: WeightTrend;
+  /**
+   * *What you noticed* (CUL-874 / N-5) — the pre-decided card model, or `null`/absent
+   * when Noticed is not live for this pet (the flag, the opt-in, or a species with no
+   * vocabulary).
+   *
+   * OPTIONAL, and that is the flag-off contract: with the field absent NOTHING here
+   * changes. No card is emitted, the zero-count gate below reads an empty map and
+   * suppresses nothing, and `PRIORITY_RANK`'s descriptive shift from 2 to 3 is invisible
+   * because no rank-2 card exists to slot between them — the ordering is a stable sort on
+   * relative rank, so a gap in the sequence reorders nothing. Patterns off the flag is
+   * byte-identical.
+   */
+  noticed?: NoticedCardModel | null;
+  /**
+   * CUL-845 gate 2's read — per-look-word answered-day counts over **this dashboard's**
+   * window, not the Noticed card's.
+   *
+   * Its own field rather than a field on `noticed`, because the window belongs to the
+   * ZERO being suppressed and the zero is a symptom card's: those count a 30-day month
+   * while the Noticed card counts 28, and reading the card's map left a two-day hole
+   * through which `Itch · 0` still printed over an owner tapping *Scratching more*
+   * (the adversarial pass, CUL-874). Absent off the flag, and the gate then suppresses
+   * nothing.
+   */
+  lookWordDaysForZeroGate?: ReadonlyMap<string, number> | null;
 }
 
 /**
@@ -218,6 +269,21 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
   // count of 1 is an honest fact), so these always render populated — but the verdict
   // COLOUR on the delta is gated on isEstablishedCount, the adversarial fix for n=1.
   for (const sc of input.symptomCounts) {
+    // ── CUL-845 gate 2 — a zero is never printed over the owner's own words ────
+    // An owner who taps *Scratching more* daily and never opens the + menu would
+    // otherwise read `Itch/Scratch · 0` here: reassurance produced by the boundary
+    // between the two surfaces rather than by the record. The WHOLE card goes, not just
+    // its number — its delta line ("5 fewer than last month") is the same claim in
+    // another grammar — and the leaf's history stays one tap away in the metric detail.
+    // Only a ZERO is suppressed: a real count stands beside the word, which is the
+    // report's own rule (§8 rule 12 — the disagreement said, not hidden).
+    if (
+      sc.current === 0 &&
+      input.lookWordDaysForZeroGate &&
+      leafZeroContradictsLooks(sc.symptomType, input.lookWordDaysForZeroGate)
+    ) {
+      continue;
+    }
     cards.push({
       kind: 'symptomCount',
       key: `symptom:${sc.symptomType}`,
@@ -286,6 +352,20 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
     established: !isNotEnoughData(input.intakeRate),
     state: selectCardState(input.intakeRate),
   });
+
+  // ── Observation (the daily look's read-back — after intake, above descriptive) ──
+  // Emitted whenever Noticed is live for this pet, INCLUDING its empty and withheld
+  // states: §7 draws the empty state on purpose ("the door exists from day 1, so the room
+  // behind it must"), so a card that renders one calibration line is the designed state
+  // and not an absence to optimise away.
+  if (input.noticed) {
+    cards.push({
+      kind: 'whatYouNoticed',
+      key: 'whatYouNoticed',
+      priority: 'observation',
+      model: input.noticed,
+    });
+  }
 
   // ── Descriptive (rankings + composition — never a verdict colour, §11 #1) ────
   // An empty weight card (no readings) leads the descriptive cluster — present and
