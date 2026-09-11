@@ -60,7 +60,30 @@ jest.mock('../lib/supabase', () => {
 jest.mock('../lib/sync', () => ({ syncPendingVetAppointments: jest.fn() }));
 // The trial facts are a heavy local read with its own suite; null here means "no
 // trial running", which is the quiet case the block comparison wants.
-jest.mock('../lib/dietTrialFacts', () => ({ loadDietTrialFacts: jest.fn(async () => null) }));
+// Controllable, so a test can hold ONE load open inside `buildForAppointment` while a
+// newer one overtakes it.
+//
+// The gate is armed BEFORE the render and captured AT THE CALL, not read from a flag
+// the test clears in between. The first cut did the latter — set a promise, render,
+// then null the promise — and the call it meant to hold happens several awaits later,
+// by which time the flag was already clear. It held nothing, and the test passed
+// against the bug it was written for (proven by mutation, which is the only reason it
+// was caught).
+const mockTrialGate: { holdNext: boolean; release: null | (() => void) } = {
+  holdNext: false,
+  release: null,
+};
+jest.mock('../lib/dietTrialFacts', () => ({
+  loadDietTrialFacts: jest.fn(async () => {
+    if (mockTrialGate.holdNext) {
+      mockTrialGate.holdNext = false;
+      await new Promise<void>((resolve) => {
+        mockTrialGate.release = resolve;
+      });
+    }
+    return null;
+  }),
+}));
 
 // `mock`-prefixed because a factory below reads it, and jest only permits an
 // out-of-scope reference under that name. Mutable so a test can change the questions.
@@ -76,6 +99,7 @@ const mockAppointment = {
   cancelled_at: null,
   deleted_at: null,
 };
+const mockAppointments: Record<string, unknown> = {};
 jest.mock('../lib/vetVisits', () => {
   const actual = jest.requireActual('../lib/vetVisits');
   return {
@@ -84,7 +108,7 @@ jest.mock('../lib/vetVisits', () => {
     // for a pure function is a rule re-derived in the test file (C-34). Only the two
     // functions that touch the database are replaced.
     ...actual,
-    readAppointmentById: jest.fn(async () => mockAppointment),
+    readAppointmentById: jest.fn(async (id: string) => mockAppointments[id] ?? mockAppointment),
     saveAppointmentQuestions: jest.fn(async () => undefined),
   };
 });
@@ -97,7 +121,7 @@ jest.mock('../lib/rundown', () => {
   return { ...actual, buildRundown: jest.fn() };
 });
 
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { buildRundown } from '../lib/rundown';
 import { supabase } from '../lib/supabase';
 import RundownScreen from './rundown';
@@ -123,6 +147,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   params.current = {};
   mockAppointment.questions = null;
+  mockTrialGate.holdNext = false;
+  mockTrialGate.release = null;
+  for (const k of Object.keys(mockAppointments)) delete mockAppointments[k];
   (buildRundown as jest.Mock).mockResolvedValue(FIXTURE);
 });
 
@@ -251,5 +278,39 @@ describe('the questions block', () => {
     await r.findByTestId('rundown-block');
     expect(r.getByText('Should I be worried about the weight?')).toBeTruthy();
     expect(r.getByText('added by you')).toBeTruthy();
+  });
+});
+
+describe('a slow load cannot commit over a newer one', () => {
+  it('shows the appointment the screen was last asked for, not the one that resolved last', async () => {
+    // Found by reading, not by a failure: the first cut put the `await` INSIDE the
+    // object literal handed to `setGetReady`, which means the write happened after the
+    // await and the staleness check sat one line BELOW the write it guarded. The rows
+    // were safe (`buildForAppointment` bails on a stale id); the appointment and the
+    // pet NAME were not.
+    mockAppointments['old'] = { ...mockAppointment, id: 'old', clinic_name: 'Old Clinic' };
+    mockAppointments['new'] = { ...mockAppointment, id: 'new', clinic_name: 'New Clinic' };
+
+    // Arm the gate, then render: the FIRST call into `loadDietTrialFacts` parks.
+    mockTrialGate.holdNext = true;
+    params.current = { appointmentId: 'old' };
+    const r = render(<RundownScreen />);
+
+    // Wait until that first load has actually reached the gate — otherwise the newer
+    // request below could overtake a load that never started, which is a different
+    // (and trivially safe) situation.
+    await waitFor(() => expect(mockTrialGate.release).not.toBeNull());
+
+    // A newer request arrives while the first is parked inside its async work.
+    params.current = { appointmentId: 'new' };
+    r.rerender(<RundownScreen />);
+    await r.findByText(/New Clinic/);
+
+    // Now let the stale one finish. It must not overwrite what is on screen.
+    await act(async () => {
+      mockTrialGate.release?.();
+    });
+    expect(r.queryByText(/Old Clinic/)).toBeNull();
+    expect(r.getByText(/New Clinic/)).toBeTruthy();
   });
 });

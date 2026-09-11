@@ -56,9 +56,13 @@ export function AddQuestionSheet({ visible, petName, existingCount, onClose, onS
     try {
       await onSubmit(trimmed);
       onClose();
+    } catch {
+      // Caught here, not swallowed upstream: the parent surfaces the error (it is the
+      // one that knows the save failed) and this sheet's job is to STAY OPEN over the
+      // owner's typing, which is the only place the question can be recovered from.
+      // Without the catch the rejection escapes an `onPress` handler as an unhandled
+      // promise — same behaviour, plus a red box in dev and a warning in production.
     } finally {
-      // Re-enable even on failure: the parent surfaces the error and the sheet stays
-      // open over the owner's typing, which is the only place it can be recovered from.
       setSaving(false);
     }
   };

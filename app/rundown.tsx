@@ -170,13 +170,20 @@ export default function RundownScreen() {
         return;
       }
 
+      // AWAIT FIRST, THEN CHECK, THEN COMMIT. The first cut put the `await` inside the
+      // object literal, which means `setGetReady` runs AFTER it resolves — so the
+      // staleness check sat one line BELOW the write it was supposed to guard, and a
+      // slow load for pet A could commit A's appointment and A's name over a render
+      // already showing B. `buildForAppointment` bails out on a stale id, so the rows
+      // were safe; the appointment and the pet NAME were not.
+      const worthRaising = await buildForAppointment(built, subjectId, myId, loadIdRef);
+      if (loadIdRef.current !== myId) return;
       setGetReady({
         appointment,
         petName: subjectName,
         questions: parseAppointmentQuestions(appointment.questions),
-        worthRaising: await buildForAppointment(built, subjectId, myId, loadIdRef),
+        worthRaising,
       });
-      if (loadIdRef.current !== myId) return;
       setStatus('ready');
     } catch {
       // No silent failure (house rule) — a warm retry, never a fabricated empty
