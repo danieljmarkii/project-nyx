@@ -2,6 +2,12 @@
 
 **Date:** 2026-09-10 (CUL-873; shipped via #825)
 
+> **Merge note.** A sibling session (the vet-visit companion, #818) landed on `main` while
+> this branch was open and took `v1.39` in CLAUDE.md's version history first. Resolved on
+> meaning rather than by keeping both: theirs keeps 1.39, this session's row became **1.40**,
+> and `v1.37` was archived to keep three rows inline. Nothing else in either diff overlapped —
+> their change is docs-only, under `docs/nyx-vet-visits-requirements.md` and `docs/research/`.
+
 N-4a shipped the **asking** half of the Noticed card — the question, the chips, the unfold,
 Done, and one entry for the completion register's five-second dwell. This session shipped
 what an owner sees **afterwards, every day, forever**, and it shipped with the protection
