@@ -225,6 +225,12 @@ describe('B-421 — one diet-trial day counter, not four', () => {
   const DATE_COLUMN_SURFACES = [
     { file: 'app/(tabs)/profile.tsx', what: 'the Pet tab (counter, Started line, End-regimen write)' },
     { file: 'components/profile/AddMedicationModal.tsx', what: 'the regimen setup modal (the WRITE path)' },
+    // CUL-901 — the module the regimen INSERT/UPDATE moved INTO. C-16's rule, in its
+    // general form: extracting a write out of a scanned file owes the scan an entry
+    // for what came out, or the guard stays green over the very statements it was
+    // written for. `started_at` and `ended_at` reach the row through here now, and
+    // this file writing either one from an instant is the same bug in a new address.
+    { file: 'lib/medicationSetup.ts', what: 'the local-first regimen write path' },
   ];
 
   it.each(DATE_COLUMN_SURFACES)('$what never round-trips a DATE column through UTC', ({ file }) => {

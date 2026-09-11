@@ -193,6 +193,11 @@ describe('StartTrialModal — starting a fresh trial', () => {
     await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
     expect(mockedEnd).not.toHaveBeenCalled();
     expect(screen.props.onStarted).toHaveBeenCalledTimes(1);
+    // CUL-901 — the host is handed the new trial's id. `startDietTrial` always
+    // returned it and this modal dropped it on the floor; VV-4's after-visit screen
+    // has to name the trial it just linked to the visit, and cannot go looking for
+    // "the active one" (a second trial started elsewhere would answer that query).
+    expect(screen.props.onStarted).toHaveBeenCalledWith('trial-new');
 
     // Real day math: a trial started today is day 1 (the inclusive convention).
     expect(screen.getByText('Pixel is on day 1')).toBeTruthy();

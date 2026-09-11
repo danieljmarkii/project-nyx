@@ -1,6 +1,6 @@
 # Medication Logging — Requirements
 
-**Version:** 1.0 | Created: 2026-06-19 | Backlog: **B-117**
+**Version:** 1.1 | Created: 2026-06-19 | Last Updated: 2026-09-11 | Backlog: **B-117**
 **Status:** Decisions ratified by PM (2026-06-19). Build queued — this doc is the build-ready spec + PR-by-PR guide. No schema or code shipped in the spec session.
 
 ---
@@ -158,6 +158,17 @@ The dose itself is an `events` row (`event_type='medication'`, `occurred_at` = a
 
 ### 4.6 Local SQLite mirror (PR 2, client)
 Mirror in `lib/db.ts` with the established discipline (ISO/UTC `updated_at`, `synced` flag, soft-delete, pet-id denormalization): `medication_items_cache`, `medications`, `medication_administrations`. Wire push/pull + watermarks into `lib/sync.ts` (FK order: items → events → regimens → administrations). The `supabase-sync` skill governs the upsert-marks-synced / 0-byte-blob / SQL-bucket traps.
+
+### 4.7 The regimen write is LOCAL-FIRST (amended 2026-09-11, CUL-901 / VV-3)
+**Every write to `medications` goes through `lib/medicationSetup.ts` — `startRegimen` / `updateRegimen` / `endRegimen` — which writes the local row at `synced = 0` and lets the PR 2 queue carry it up.** Nothing writes the table through PostgREST directly.
+
+This amends what PR 7 shipped. `AddMedicationModal` wrote straight to Supabase and showed *"Could not save"* with no signal, and `handleEndRegimen` did the same — the last remote-first writes in a local-first app, and the one place an owner could be told their pet's prescription had not been recorded because a car park has no bars. The push queue for the table had existed since PR 2; only a writer that used it was missing.
+
+- **Why all three paths and not just the create.** Moving the create alone would have shipped a defect rather than fixed one: a course that exists locally but has not yet pushed is invisible to a server-side `.eq('id', …)`, and the edit used `.maybeSingle()`, which answers a zero-row match with `null` and **no error** — the modal would close and the owner's correction would be silently discarded. One table, one queue, one write path.
+- **`vet_visit_id` (CUL-899, migration 066) rides `StartRegimenInput`, not `RegimenWritePayload`.** Two reasons: `buildRegimenPayload` maps FORM fields and a visit link is provenance the caller supplies; and `lib/medications.ts` is in `generate-report`'s shipping closure, where an edit owes the deploy ledger an entry on the held CUL-19 chain for a field no Edge Function reads (C-26).
+- **The link is written in the same INSERT**, never a follow-up UPDATE a crash between the two could lose (vet-visits spec §5.1). It is provenance only: it never moves `started_at`, a dose count, or a course date (CUL-746, TG-5).
+- **B-123 still holds, moved in time rather than away:** `medications_owner` re-validates `pet_id IN (SELECT id FROM pets WHERE user_id = auth.uid())` as the WITH CHECK when the queued row is pushed, and `pushRows` treats a silently RLS-filtered success-with-zero-rows as NOT synced, so a blocked row stays queued instead of being marked as landed.
+- **Known gap, not introduced here:** the Pet tab's own card reads regimens from Supabase (`app/(tabs)/profile.tsx`), unlike the med strip, widget, rundown and dose-linking, which read the local mirror. An offline-created course is therefore durable and visible everywhere except that card on a cold launch. Tracked as CUL-938.
 
 ---
 

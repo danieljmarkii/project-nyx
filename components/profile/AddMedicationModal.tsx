@@ -4,15 +4,20 @@
 // dose thereafter is a single confirm-don't-enter tap (spec §3/§5.4 — the wall of
 // decisions lives on the regimen, not the dose).
 //
-// Writes a `medications` row through the CLIENT supabase, RLS-gated by
-// medications_owner (migration 020). B-123 (re-validate caller ownership before any
-// pet-scoped medications write) is satisfied here by RLS itself: the policy reuses
-// `pet_id IN (SELECT id FROM pets WHERE user_id = auth.uid())` as the INSERT/UPDATE
-// WITH CHECK, so the DB re-checks ownership on every write. There is NO service-role
-// write path in PR 7 to confuse (the confused-deputy shape B-123 guards against);
-// the modal only ever receives the ACTIVE pet's id, never free input, and every
-// write uses `.select()` so a silently RLS-blocked write surfaces as an error rather
-// than a false success (the food_items 009 cautionary tale).
+// LOCAL-FIRST since CUL-901 (VV-3). This modal wrote straight to PostgREST for its
+// whole life and told an owner with no signal "Could not save" — the last remote-first
+// write in a local-first app. It now calls `lib/medicationSetup.ts`, which lands the
+// row in SQLite at `synced = 0` and lets the B-117 push queue carry it up whenever
+// the network returns. Nothing about a medication needs a server to be true.
+//
+// B-123 (re-validate caller ownership before any pet-scoped medications write) is
+// still satisfied by RLS: `medications_owner` reuses `pet_id IN (SELECT id FROM pets
+// WHERE user_id = auth.uid())` as the INSERT/UPDATE WITH CHECK, so the DB re-checks
+// ownership when the queued row is pushed — the check moved in TIME, not away. This
+// modal only ever receives the ACTIVE pet's id, never free input, and `pushRows`
+// treats a success-with-zero-rows (silently RLS-filtered) as NOT synced, so the row
+// stays queued rather than being marked as having landed (the food_items 009
+// cautionary tale, in its sync-layer form).
 import { useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform,
@@ -22,18 +27,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
-import { supabase } from '../../lib/supabase';
 import { getLibraryMedications, PickerMedication } from '../../lib/db';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 import {
   MEDICATION_ROUTE_OPTIONS, buildRegimenPayload, canSaveRegimen,
   resolveDurationColumns, type RegimenFormValues,
 } from '../../lib/medications';
+import { startRegimen, updateRegimen } from '../../lib/medicationSetup';
 import { MedicationNameChips } from '../medication/MedicationNameChips';
 import { ChipGroup } from '../ui/ChipGroup';
 import { ThemedText } from '../ui/ThemedText';
 import { usePetStore } from '../../store/petStore';
-import { surfaceOfferForValueMoment } from '../../lib/dailyRecapOffer';
 
 // The regimen row the card lists and this modal edits. A subset of `medications` —
 // the columns the "Current medications" card and this form touch.
@@ -53,16 +57,6 @@ export interface Regimen {
   target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049); entry UI is PR 3
   status: 'active' | 'completed' | 'stopped';
   ended_at: string | null;
-}
-
-// PostgREST serialises NUMERIC as a string ("1.00"); coerce doses_per_day back to a
-// number so the returned regimen drives the card's frequency/compliance render
-// correctly on the optimistic onAdded/onUpdated path (mirrors loadMedications).
-function coerceRegimen(row: Regimen): Regimen {
-  return {
-    ...row,
-    doses_per_day: row.doses_per_day == null ? null : Number(row.doses_per_day),
-  };
 }
 
 // Frequency presets → doses_per_day. "As needed" (PRN) carries no compliance
@@ -260,40 +254,30 @@ export function AddMedicationModal({
       const payload = buildRegimenPayload(formValues());
 
       if (isEditing && existingRegimen) {
-        // RLS (medications_owner) re-validates ownership of this regimen's pet on
-        // the UPDATE; .select() turns a silent 0-row RLS block into a real error.
-        // maybeSingle (not single) so a 0-row read-back resolves to null instead of
-        // throwing — the write still committed; the card refreshes on next focus.
-        const { data, error } = await supabase
-          .from('medications')
-          .update(payload)
-          .eq('id', existingRegimen.id)
-          .select()
-          .maybeSingle();
-        if (error) throw error;
+        await updateRegimen(existingRegimen.id, payload);
         // Dismiss BEFORE the parent callback, so a hiccup in the optimistic rebuild
         // can never strand the modal with the Save spinner still spinning (the hang
         // the PM hit). The finally clears `saving` either way.
         onClose();
-        if (data) onUpdated?.(coerceRegimen(data as Regimen));
+        // The updated regimen, assembled from what was just WRITTEN rather than read
+        // back. The local row is the record now, and there is nothing to coerce:
+        // `doses_per_day` is already a number here (PostgREST's NUMERIC-as-a-string
+        // is a wire artifact, and this write never goes near the wire). The
+        // lifecycle columns come from the row being edited because `updateRegimen`
+        // deliberately does not touch them.
+        onUpdated?.({ ...existingRegimen, ...payload });
       } else {
-        // pet_id comes from the ACTIVE pet (never free input); the RLS WITH CHECK
-        // re-validates `pet_id IN (pets owned by auth.uid())` on INSERT (B-123).
-        const { data, error } = await supabase
-          .from('medications')
-          .insert({ pet_id: petId, status: 'active', ...payload })
-          .select()
-          .maybeSingle();
-        if (error) throw error;
-        // DR-3 (§4): starting a med course is a value moment — re-surface the Daily
-        // Recap offer once, ever. Fire-and-forget; best-effort + a no-op if already
-        // spent (or the owner is opted in / OS-denied). Only on a NEW regimen — the
-        // isEditing branch above is not a course start.
-        void surfaceOfferForValueMoment('med_course');
+        // pet_id is the ACTIVE pet's (never free input); RLS re-validates
+        // `pet_id IN (pets owned by auth.uid())` when the queued row is pushed.
+        const { id } = await startRegimen({ petId, payload });
         onClose();
-        if (data) onAdded(coerceRegimen(data as Regimen));
+        onAdded({ id, pet_id: petId, ...payload, status: 'active', ended_at: null });
       }
     } catch (e) {
+      // This is NO LONGER the offline path. An unreachable server now leaves the row
+      // queued at `synced = 0` and says nothing at all, which is the point of the
+      // change. What still reaches here is a real device-side write failure, and an
+      // owner told nothing would believe a course was recorded that was not.
       console.error('[AddMedicationModal] save failed:', e);
       Alert.alert('Could not save', 'Something went wrong. Try again.');
     } finally {
