@@ -111,8 +111,12 @@ Not filed, noted here: `readVetVisitsHome` has no `LIMIT` and is shared by the c
 
 ---
 
-## No new convention
+## The convention — C-40
 
-Nothing here generalises past what C-7, C-12, C-18, C-22, C-32 and C-36 already say — this session mostly demonstrated them. The two worth remembering are already written: **a guard's registry is an exemption, and the empty set is the assertion** (C-32, which fired exactly as designed and named its own debts), and **a survived mutant is the tell that a green test measures nothing** (C-18, twice in one session).
+Most of this session demonstrated rules that already existed (C-7, C-12, C-18, C-22, C-32, C-34, C-36). One thing did not: **two ISO spellings of one instant do not compare as text.**
+
+It had bitten three times before — `lib/db.ts:1222`, `lib/widgetSnapshot.ts:191`, `lib/widgetSnapshotV2.ts:110` — and each of those solved it *inside the module that was bitten*, in a comment. Nothing pointed from any of them to the next site, so the fourth was written by a session that had read none of them. That is the argument for the rule existing at all: a fix that stays where it was found is not a fix for the class.
+
+CLAUDE.md carries the rule; `docs/engineering-lessons.md` §C-40 carries the account, including the testing trap this session fell into on the way (asserting the parse in isolation, which is true of the bug too).
 
 No schema, no Edge Function, no deploy, no new secret, no build-phase change. `STATUS.md` gained one word — the vet-visits row's progress pointer now reads VV-0 → VV-2 — and nothing else; the track is still live, so no boundary moved.
