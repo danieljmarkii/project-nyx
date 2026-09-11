@@ -301,6 +301,20 @@ export const LOCAL_WIPE_TABLES = [
   // Surviving a sign-out would leave the prior account's medical paperwork indexed
   // on a device now in someone else's hands.
   'vet_documents',
+  // CUL-899 VV-1 vet_appointments — the booked-visit mirror. Like vet_documents it
+  // declares no local FK on vet_visit_id (see localSchema.ts), so nothing would
+  // throw on a parent-first order; it leads vet_visits because this file's stated
+  // contract is children-before-parents and a future local FK must not silently
+  // turn a reordering into a half-failed wipe.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping. An appointment row names the
+  // clinic and the vet, `reason` says why the animal is being taken in, `questions`
+  // holds what the owner means to ask, and `notes_draft` is whatever she typed in
+  // the exam room before the visit was saved. That is a forward-looking health
+  // concern in her own words about a named household — surviving a sign-out would
+  // leave it on a device now in someone else's hands, and unlike the rest of the
+  // record it describes something that has not happened yet.
+  'vet_appointments',
   'vet_visits',
   // feeding_arrangements (B-040 R1) — a pet-child standing-fact table mirrored
   // from Supabase, so it's account-scoped data that must not leak to the next

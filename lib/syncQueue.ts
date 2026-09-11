@@ -330,6 +330,9 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   { table: 'vet_visits', pendingSince: 'updated_at' },
   { table: 'vet_visit_attachments', pendingSince: 'created_at' },
   { table: 'vet_documents', pendingSince: 'updated_at' },
+  // CUL-899 VV-1 — the booked-visit mirror. LWW on updated_at: a booking is
+  // re-timed, cancelled and typed into, so every one of those has to travel.
+  { table: 'vet_appointments', pendingSince: 'updated_at' },
   { table: 'feeding_arrangements', pendingSince: 'updated_at' },
   { table: 'medications', pendingSince: 'updated_at' },
   { table: 'medication_administrations', pendingSince: 'updated_at' },

@@ -927,7 +927,15 @@ export async function generateReportForPet(
       .eq('id', petId)
       .maybeSingle(),
     supabase.from('user_profiles').select('display_name, timezone').maybeSingle(),
-    supabase.from('vet_visits').select('visited_at, clinic_name, vet_name, reason').eq('pet_id', petId),
+    // CUL-899 VV-1 — `.is('deleted_at', null)` is the most consequential member of
+    // that PR's reader sweep: these rows ARE the scope cascade's rung 1, so a visit
+    // the owner deleted would keep setting the report's window start. It lands on
+    // `main` INERT — live is v13 (Jul 18) and this function's redeploy rides CUL-19,
+    // which gains this reader as a third rider. That inertness is exactly why the
+    // delete CONTROL waits for VV-6: shipping the control first would hide a visit
+    // in the app while the deployed report still counted it.
+    supabase.from('vet_visits').select('visited_at, clinic_name, vet_name, reason')
+      .eq('pet_id', petId).is('deleted_at', null),
     supabase
       .from('diet_trials')
       .select(

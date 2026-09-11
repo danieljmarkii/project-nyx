@@ -185,10 +185,14 @@ export interface VetVisitOption {
 // Newest first: an owner linking a lab PDF is almost always linking it to the visit
 // it came from, which is the most recent one. Capped because this feeds a picker,
 // not an archive — and there is no visit browse surface to page through.
+// CUL-899 VV-1 — `deleted_at IS NULL`: a visit the owner has removed must not be
+// offerable as a filing target. Without it a lab result could be linked to a deleted
+// visit, and because the link is ON DELETE SET NULL rather than a hard constraint,
+// the document would simply lose its link later with nothing to explain why.
 export const VET_VISIT_OPTIONS_QUERY =
   `SELECT id, visited_at, clinic_name, vet_name, reason
    FROM vet_visits
-   WHERE pet_id = ?
+   WHERE pet_id = ? AND deleted_at IS NULL
    ORDER BY visited_at DESC, created_at DESC
    LIMIT 50`;
 

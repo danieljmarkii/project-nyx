@@ -406,6 +406,7 @@ describe('row → Supabase upsert mappers', () => {
     phase: 'elimination', outcome: null, outcome_notes: null, stopped_reason: null,
     ended_at: null, transition_started_at: '2026-06-24',
     target_protein: 'duck', target_protein_set_at: '2026-07-01T00:00:00.000Z',
+    vet_visit_id: null, // CUL-899 — no writer until VV-3, so null is the steady state
     created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
   };
 
@@ -424,10 +425,22 @@ describe('row → Supabase upsert mappers', () => {
         'completed_at', 'created_at', 'ended_at', 'food_item_id', 'food_label', 'id',
         'indication', 'notes', 'outcome', 'outcome_notes', 'pet_id', 'phase',
         'started_at', 'status', 'stopped_reason', 'target_duration_days',
-        'target_protein', 'target_protein_set_at',
+        'target_protein', 'target_protein_set_at', 'vet_visit_id',
         'transition_started_at', 'updated_at', 'vet_name',
       ].sort(),
     );
+  });
+
+  it('forwards the visit link as-is, and it moves NO other value (CUL-899)', () => {
+    // The link is PROVENANCE — where the trial came from — and CUL-746/TG-5 make
+    // that a rule with teeth: it must never become a source of numbers. So this
+    // asserts both halves. The link rides (absent and set), and setting it changes
+    // nothing else on the payload — in particular not `started_at`, which is the
+    // date every coverage denominator in the report is measured from.
+    expect(dietTrialRowToRemote(trial).vet_visit_id).toBeNull();
+    const linked = dietTrialRowToRemote({ ...trial, vet_visit_id: 'visit-9' });
+    expect(linked.vet_visit_id).toBe('visit-9');
+    expect({ ...linked, vet_visit_id: null }).toEqual(dietTrialRowToRemote(trial));
   });
 
   it('never forwards the local-only synced / sync_error columns', () => {

@@ -90,6 +90,12 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     -- normal LWW column update and is resolved stored-first via trialTargetProtein().
     target_protein        TEXT,
     target_protein_set_at TEXT,
+    -- CUL-899 VV-1 / migration 066 — PROVENANCE: the visit this trial came from.
+    -- Never a source of numbers: started_at, the coverage denominators and the
+    -- adherence counts stay the trial's own (CUL-746; TG-5). Declared here AND in
+    -- COLUMN_UPGRADES — the upgrade reaches an installed device, this reaches a
+    -- fresh one and anything building from the DDL constants (the 048 precedent).
+    vet_visit_id          TEXT,
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
     synced                INTEGER NOT NULL DEFAULT 0,
@@ -233,6 +239,11 @@ export interface LocalDietTrial {
   // migration 053 (B-704) — the owner-stated trial protein + its provenance stamp.
   target_protein: string | null;
   target_protein_set_at: string | null;
+  // CUL-899 VV-1 (migration 066) — PROVENANCE: the visit this trial came from.
+  // Never a source of numbers: `started_at`, the coverage denominators and the
+  // adherence counts stay the trial's own (CUL-746: one population, one owner;
+  // TG-5: a link never moves a date). Nothing writes it until VV-3.
+  vet_visit_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -284,6 +295,7 @@ export interface RemoteDietTrialUpsert {
   // path (PR 3), never here.
   target_protein: string | null;
   target_protein_set_at: string | null;
+  vet_visit_id: string | null; // CUL-899 VV-1 — provenance only (migration 066)
   created_at: string;
   updated_at: string;
 }
@@ -313,6 +325,7 @@ export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert
     transition_started_at: row.transition_started_at,
     target_protein: row.target_protein,
     target_protein_set_at: row.target_protein_set_at,
+    vet_visit_id: row.vet_visit_id, // CUL-899 — forwarded as-is; NULL until VV-3 sets it
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
