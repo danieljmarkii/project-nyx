@@ -150,6 +150,42 @@ where congratulating them on tracking would land worst — whatever they were to
 there. The pinned export list in `lib/haptics.test.ts` goes from seven verbs to
 eight, which is the pin working rather than loosening.
 
+## VV-5 landed mid-session, and the two PRs had built the same thing twice
+
+VV-5 (CUL-903, #835) merged onto `main` while this was in review — the lane this
+session had called parallel-safe. It was, on files: no screen, no route and no test of
+VV-5's was touched here. It was **not**, on the model: both PRs independently built a
+model over `vet_appointments.questions`.
+
+- VV-4: `VisitQuestion` · `parseQuestions` · `serializeQuestions`, and `questions` +
+  `notes_draft` widened onto `LocalVetAppointment`.
+- VV-5: `AppointmentQuestion` · `parseAppointmentQuestions` · `saveAppointmentQuestions`,
+  with those two columns kept OFF the shared row type and on `AppointmentDetail`.
+
+Keeping both would have shipped two parsers and two writers over one column — the
+"second, staler home" VV-5's own header refuses, and the shape §5.1 forbids for the
+photo. **VV-5's model won, and it had been written for this**: *"`asked_at` is VV-4's
+— the tick in the exam room. Carried through this module untouched so an edit here can
+never erase one."* So VV-4's question types were deleted and `setQuestionAsked` now
+rides VV-5's reader and writer rather than a second UPDATE of its own, inheriting that
+writer's entry bound, its zero-row throw and its quarantine-clearing write for free.
+
+VV-5's narrow/wide split won too, for the reason it states: *"a column on the shared
+row type that half the reads do not populate is a field every caller has to remember
+is sometimes a lie."* `LocalVetAppointment` went back to narrow and `AppointmentDetail`
+gained `notes_draft`; `readAppointmentById` replaced VV-4's `readAppointment`.
+
+`AppointmentView` keeps **both** new fields, because they answer different questions
+and the comment now says which: VV-5's five-day `resolveStripPhase` decides whether
+Home CARRIES an appointment; VV-4's `isToday` decides whether the visit's own doors
+are live. Naming that distinction in the type is the part worth keeping.
+
+**The lesson worth generalising:** "parallel-safe" was assessed on FILES and the
+collision was in the MODEL. Two PRs on one track, touching disjoint screens, can still
+converge on one column from two directions — and the second one merged is the one that
+discovers it. The check that would have caught it earlier is not a file-overlap scan
+but a question: *what row does the other PR in this track write?*
+
 ## Reviews
 
 - **`adversarial-reviewer` returned FAIL with three findings, all real, all fixed.**
