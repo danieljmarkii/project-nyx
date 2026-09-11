@@ -215,4 +215,22 @@ describe('editing a medication', () => {
       ),
     );
   });
+
+  it('does not report an edit that wrote nothing', async () => {
+    // `onUpdated` used to be called unconditionally after the await, so a write that
+    // matched no local row still repainted the card with the new dose — the card
+    // would show a correction that exists nowhere. `updateRegimen` now throws on a
+    // zero-row match; this is the half that proves the modal honours it.
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockUpdateRegimen.mockRejectedValue(new Error('matched no local row'));
+    const { onUpdated, onClose } = renderModal({ existingRegimen: EXISTING });
+
+    fireEvent.changeText(screen.getByPlaceholderText('e.g. 1 tablet, 5 mg, 0.5 mL'), '2.5 mg');
+    fireEvent.press(screen.getByText('Save'));
+
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not save', expect.any(String)));
+    expect(onUpdated).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
 });

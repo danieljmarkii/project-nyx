@@ -56,6 +56,49 @@ function notifyMedicationsChanged(): void {
   }
 }
 
+/**
+ * A local UPDATE that matched NOTHING, made loud.
+ *
+ * THIS IS THE HALF THE FIRST CUT OF VV-3 LOST, and the rls-privacy-reviewer caught it.
+ * The remote-first paths this module replaced both checked their row count — the edit
+ * read back with `.select()`, the end threw `No row updated (not owned?)` — and a
+ * local `UPDATE … WHERE id = ?` against a row the mirror does not hold returns
+ * `{ changes: 0 }` and resolves happily. Measured, not reasoned: `changes: 0`, no
+ * throw, no row, no queue entry, no banner.
+ *
+ * It is REACHABLE, because the Pet-tab card that offers Edit and End reads regimens
+ * from SUPABASE (`app/(tabs)/profile.tsx`) while this writes the LOCAL mirror, and
+ * the mirror's only other writer is `hydrateMedications`, which runs on mount /
+ * foreground / reconnect — never on tab focus. Two phones on one household account
+ * is enough: device A adds a course, device B already has the app open, sees it from
+ * the server, taps End — and silently ends nothing, while `generate-report`, `ask`
+ * and `generate-signal` all go on reading `status = 'active'`. An owner who believes
+ * she stopped a steroid and a vet report that still lists it is the worst outcome
+ * this module can produce, and it must never be the quiet one.
+ *
+ * So: a write that did not happen throws, the caller's existing catch says so, and
+ * the owner tries again once hydration has run. Honest and annoying beats silent.
+ * CUL-938 (pointing the card at the local mirror) removes the case entirely rather
+ * than reporting it, which is the real fix; this is the guard that holds until then.
+ *
+ * SQLite counts rows MATCHED and written, and every statement here moves
+ * `updated_at` unconditionally, so `changes === 0` means exactly "no such row" — it
+ * can never mean "the row was already in that state".
+ *
+ * NOT A NEW RULE — the same guard, for the same stated reason, is already on all four
+ * of `lib/db.ts`'s by-id local updates (`updateMealFood`, `updateMealIntake`,
+ * `updateDoseAdherence`, `updateDoseHowGiven`): *"SQLite silently affects zero rows …
+ * which would let the UI claim success while persisting nothing."* Extracted to a
+ * helper here only because there are two call sites; the shape is theirs.
+ */
+function assertRowMatched(changes: number, id: string, what: string): void {
+  if (changes === 0) {
+    throw new Error(
+      `[medicationSetup] ${what} matched no local row (id ${id}) — nothing was written`,
+    );
+  }
+}
+
 /** Queue the flush. Fire-and-forget by design: offline the row simply stays at
  *  `synced = 0` and the next cycle picks it up, which is the entire point of
  *  writing locally first. `syncPendingMedications` is already
@@ -68,15 +111,30 @@ function flushMedications(context: string): void {
 }
 
 export interface StartRegimenInput {
-  /** The ACTIVE pet's id, or the appointment's (VV-4) — never free input. RLS
-   *  re-validates ownership on the eventual push (B-123, medications_owner). */
+  /** The ACTIVE pet's id, or the appointment's (VV-4) — never free input, and on the
+   *  VV-4 path it comes from the APPOINTMENT ROW rather than `activePet` (AC 11: open
+   *  the screen for pet A, switch the store to B, save → the row must still be A's).
+   *
+   *  NOTHING HERE ENFORCES THAT. A wrong id is caught only by RLS, on the push, ~25
+   *  sync cycles later, by which point the owner has been told the course was saved
+   *  and it is rendering on Home and the widget. The rule is the caller's to keep. */
   petId: string;
   /** The column payload from `buildRegimenPayload` — the form's fields only. */
   payload: RegimenWritePayload;
   /** CUL-899/CUL-901 — PROVENANCE: the visit this course came from, written in the
    *  SAME INSERT, never a follow-up UPDATE a crash between the two could lose
    *  (spec §5.1). It never moves a number: `started_at`, the dose counts and the
-   *  course's own dates stay its own (CUL-746, TG-5). Absent on the Pet-tab path. */
+   *  course's own dates stay its own (CUL-746, TG-5). Absent on the Pet-tab path.
+   *
+   *  ⚠ READ CUL-945 BEFORE PASSING ONE. A visit belonging to another pet or another
+   *  account is refused by migration 067's same-pet trigger with `23514`, which is
+   *  TERMINAL (`lib/syncQueue.ts`) — so the FIRST push quarantines, and what is lost
+   *  is not the link but the WHOLE PRESCRIPTION: drug, dose, schedule, indication,
+   *  never recorded server-side while still rendering locally. Nothing here can clear
+   *  a bad link afterwards (`updateRegimen` does not touch this column, by design),
+   *  so an owner edit re-arms the row and it re-quarantines forever. VV-4 owes this
+   *  column a same-pet check on the device and a way to clear it; it is latent only
+   *  because no caller passes one yet. */
   vetVisitId?: string | null;
 }
 
@@ -147,7 +205,7 @@ export async function updateRegimen(id: string, payload: RegimenWritePayload): P
   const now = new Date().toISOString();
   const p = payload;
 
-  await db.runAsync(
+  const res = await db.runAsync(
     `UPDATE medications
         SET medication_item_id = ?, drug_name = ?, dose_amount = ?, route = ?,
             doses_per_day = ?, schedule_notes = ?, indication = ?, prescribed_by = ?,
@@ -161,6 +219,10 @@ export async function updateRegimen(id: string, payload: RegimenWritePayload): P
       now, id,
     ],
   );
+  // BEFORE the tick and the flush: neither means anything if nothing was written,
+  // and a hydration signal over an absent row would repaint the card as though the
+  // edit had landed.
+  assertRowMatched(res.changes, id, 'the regimen edit');
 
   notifyMedicationsChanged();
   flushMedications('regimen edit');
@@ -181,13 +243,14 @@ export async function endRegimen(id: string, endedAt: string): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
 
-  await db.runAsync(
+  const res = await db.runAsync(
     `UPDATE medications
         SET status = 'completed', ended_at = ?,
             updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
       WHERE id = ?`,
     [endedAt, now, id],
   );
+  assertRowMatched(res.changes, id, 'the course ending');
 
   notifyMedicationsChanged();
   flushMedications('regimen end');

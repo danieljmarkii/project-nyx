@@ -32,9 +32,15 @@ interface RawDb {
 }
 
 let mockDb: RawDb;
-const mockRunAsync = jest.fn(async (sql: string, params: unknown[] = []) => {
-  mockDb.prepare(sql).run(...(params as never[]));
-});
+// RETURNS the run result, like the real `expo-sqlite` (`{ changes, lastInsertRowId }`).
+// The first cut of this mock swallowed it, and that is precisely why the suite could
+// not see the missing zero-row guard: a stand-in narrower than the API it stands in
+// for makes the caller's use of the dropped half untestable, which is the same fixture
+// lesson as C-35 from the other end. `node:sqlite` reports `changes` under the same
+// name, so the shape below is real, not invented.
+const mockRunAsync = jest.fn(async (sql: string, params: unknown[] = []) =>
+  mockDb.prepare(sql).run(...(params as never[])) as { changes: number },
+);
 jest.mock('./db', () => ({
   getDb: () => ({
     runAsync: mockRunAsync,
@@ -304,6 +310,45 @@ describe('endRegimen', () => {
     await expect(endRegimen('med-1', '2026-09-11')).resolves.toBeUndefined();
     await flush();
     expect(queued().map((r) => r.id)).toEqual(['med-1']);
+  });
+});
+
+// ── The branch both reviewers found, and no test covered ────────────────────
+//
+// Every test above seeds the row first, which is the C-35 trap in miniature: the
+// happy fixture made the whole "target is not in the local mirror" branch invisible,
+// and that branch is where the silent data loss lived. It is REACHABLE because the
+// Pet-tab card offering Edit and End reads Supabase while these write SQLite, and
+// nothing hydrates the mirror on tab focus.
+
+describe('a write whose target the local mirror does not hold', () => {
+  it('endRegimen throws rather than reporting an ending that happened nowhere', async () => {
+    await expect(endRegimen('never-hydrated-here', '2026-09-11')).rejects.toThrow(
+      /matched no local row/,
+    );
+  });
+
+  it('updateRegimen throws rather than discarding the owner’s correction', async () => {
+    await expect(updateRegimen('never-hydrated-here', payload())).rejects.toThrow(
+      /matched no local row/,
+    );
+  });
+
+  it('queues nothing and signals nothing when nothing was written', async () => {
+    // The tick and the flush are AFTER the check on purpose: a hydration signal over
+    // an absent row repaints the card as though the write had landed, and a flush
+    // finding an empty queue is the thing that makes the failure look like success.
+    await expect(endRegimen('never-hydrated-here', '2026-09-11')).rejects.toThrow();
+    expect(queued()).toEqual([]);
+    expect(mockSyncMedications).not.toHaveBeenCalled();
+    expect(useSyncStore.getState().hydrationTick).toBe(0);
+  });
+
+  it('still writes, and does not throw, for a row the mirror DOES hold', async () => {
+    // The other direction, so the guard cannot pass by refusing everything.
+    seedSyncedRow('med-1', '2026-09-01T00:00:00.000Z');
+    await expect(endRegimen('med-1', '2026-09-11')).resolves.toBeUndefined();
+    expect(rowById('med-1')!.status).toBe('completed');
   });
 });
 
