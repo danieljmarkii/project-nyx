@@ -12,6 +12,7 @@ import { clearBetaOptIns } from './betaFeatures';
 import { clearDailyRecapOffer } from './dailyRecapOffer';
 import { clearSignalArrival } from './signalArrival';
 import { clearSignalFold } from './signalFold';
+import { clearLookWithheld } from './lookWithheld';
 import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
@@ -233,4 +234,11 @@ export async function wipeLocalSession(): Promise<void> {
   // next person on a shared device must not open an incident belonging to a pet they
   // have never seen and find its findings already compressed.
   await clearObservationFold();
+  // CUL-873 (daily-look spec T-16) — the per-pet withheld-day marks, the fold's sibling
+  // and AsyncStorage-resident for the same reason. This one is closer to health data than
+  // the folds are: a mark records that on a given day THIS device judged that animal's
+  // eating to need attention. Leaving it behind would both leak that judgment and, on the
+  // next account, suppress a coverage footer for a pet whose record never earned it. Same
+  // FR-9 parity rule as the rest of this list.
+  await clearLookWithheld();
 }

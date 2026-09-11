@@ -157,6 +157,52 @@ describe('T-22 — a look’s note reaches no Edge Function but the vet report',
   });
 });
 
+// ── THE CUE AND THE DOCUMENT IT NAMES (CUL-873) ──────────────────────────────
+//
+// T-22 requires the note's field to say which document the note leaves the account on,
+// because free text about a household leaves whenever the report does. The cue as the spec
+// writes it (*Printed on the vet report you make · …*) assumes Appendix G exists — and it
+// does not yet: §10 gives it to N-6, which rides the held CUL-19 redeploy, while GA is
+// gated on N-4b and N-5 only. So the two are pinned to each other rather than to a date.
+//
+// The moment `generate-report` selects `looks.notes`, this test requires the cue to name
+// the report; while it selects none, it requires the cue NOT to. Either half failing is
+// the same defect in opposite directions: a promise the app does not keep, or a document
+// that silently prints something the owner was never told about.
+describe('T-22 — the note’s cue names the report only once the report prints it', () => {
+  const REPORT_DIR = path.join(ROOT, 'supabase/functions/generate-report');
+
+  /** Does the report actually read the column? Reuses this file's own detector rather than
+   *  a second regex, so "prints it" means exactly what the scan above means by it. */
+  function reportSelectsLookNotes(): boolean {
+    const files = fs
+      .readdirSync(REPORT_DIR)
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
+    return files.some(
+      (f) => findLookNotesSelects(fs.readFileSync(path.join(REPORT_DIR, f), 'utf8')).length > 0,
+    );
+  }
+
+  it('the cue and the report agree about whether the note is printed', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { lookNoteCue } = require('../lib/lookCard') as typeof import('../lib/lookCard');
+    const cue = lookNoteCue('Mochi');
+    const namesTheReport = /vet report/i.test(cue);
+    expect([reportSelectsLookNotes(), namesTheReport]).toEqual([
+      reportSelectsLookNotes(),
+      reportSelectsLookNotes(),
+    ]);
+  });
+
+  it('the cue keeps the share-link promise either way', () => {
+    // §9 rule 4 — an unauthenticated render excludes the note BY CONSTRUCTION, so this
+    // clause is a commitment rather than a claim and does not wait on N-6.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { lookNoteCue } = require('../lib/lookCard') as typeof import('../lib/lookCard');
+    expect(lookNoteCue('Mochi')).toMatch(/shared link/i);
+  });
+});
+
 describe('the detector itself', () => {
   // CUL-613: a guard that has only ever been green has not been tested. These probes
   // are the shapes a real violation takes.

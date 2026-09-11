@@ -18,15 +18,20 @@
 //   3. THE ARRIVAL — the look just written, as an entry with its hour and *Undo*, for
 //      the completion register's dwell. Then the question comes back, cleared.
 //
-// WHAT THE ARRIVAL IS NOT, AND WHY THE LINE IS HERE. §10 gives the persistent TODAY
-// LIST to N-4b (CUL-873) — the entries that stay, the folded ask row, the receipts, the
-// coverage footer, the list cap — and it gives that PR the withheld predicate
-// (`lib/lookWithheld.ts`, T-20) in the same breath. That pairing is not an accident of
-// sequencing: a list that persists can draw *nothing unusual* on Home under a pet whose
-// record carries a live intake concern, and the withheld entry is what stops it (floor
-// item 12, Dr. Chen's ledger row 15). So this PR renders ONE entry, for the dwell, for
-// the look the owner has this second finished making — which is the completion beat
-// N-4a owns and the only home Undo has — and the list arrives with its protection.
+// THE TODAY LIST AND ITS PROTECTION ARRIVED TOGETHER (CUL-873 / N-4b), and §10 paired
+// them on purpose rather than by sequencing: a list that PERSISTS can draw *nothing
+// unusual* on Home under a pet whose record carries a live intake concern, so the entries
+// that stay and `lib/lookWithheld.ts` are one change (floor item 12, Dr. Chen's ledger row
+// 15). N-4a shipped one entry for the register's dwell; this card now keeps the day's
+// entries, folds the question to one line beneath them, hangs a receipt under the entry
+// that earned it, carries the coverage footer, and takes a note after the save.
+//
+//   4. THE RESTING LIST — today's looks, newest first, each with its hour and its `›` to
+//      the record; the newest carries *Undo* only while the register says its beat is
+//      live. Two entries, the rest behind *N more today ›* (T-15: the list never becomes
+//      a feed). Under a live intake concern a QUIET entry withholds its words and says
+//      why (`LookWithheldEntry`) while a symptom-class entry still speaks — the
+//      asymmetry is `entryWithholdsWords`, not a branch here.
 //
 // ── THE RULES THAT ARE NOT OBVIOUS FROM THE TREE ─────────────────────────────
 // • NOTHING IS PRE-SELECTED and NOTHING RE-SORTS ON A TAP (§3.1a, the round-2 product
@@ -50,7 +55,16 @@
 // Noticed card in v1, and `lookSpeciesOf` returns null rather than guessing a list).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, LayoutChangeEvent, Pressable, StyleSheet, Text, View, Animated } from 'react-native';
+import {
+  Alert,
+  LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  Animated,
+} from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
@@ -68,9 +82,34 @@ import { useEventStore, type NyxEvent } from '../../store/eventStore';
 import { LOOK_DWELL_MS, useMomentStore } from '../../store/momentStore';
 import { useUiStore } from '../../store/uiStore';
 import { openMenu, selectChip } from '../../lib/haptics';
-import { insertLook, loadLookDays, answeredDays } from '../../lib/looks';
+import { insertLook, loadLookDays, answeredDays, updateLookNote, type LookDayRow } from '../../lib/looks';
+import { syncPendingLooks } from '../../lib/sync';
+import { lookCoverage, lookCoverageText } from '../../lib/lookCoverage';
+import { leadReceipt, receiptsFor } from '../../lib/lookReceipts';
+import {
+  entryWithholdsWords,
+  intakeArm,
+  loadLookWithheldFacts,
+  lookWithheldState,
+  markWithheldToday,
+  readLastWithheldDay,
+  type LookWithheldFacts,
+} from '../../lib/lookWithheld';
+import {
+  LookWithheldEntry,
+  LookWithheldReasonLine,
+  WITHHELD_UNDO_FADE_MS,
+} from './LookWithheldEntry';
+import { Skeleton } from '../ui/Skeleton';
 import { wordsToLocalText } from '../../lib/lookWordsCodec';
-import { describeLook, gridChipLabel, gridSectionsFor, isLookRow, lookSummary } from '../../lib/lookDisplay';
+import {
+  describeLook,
+  gridChipLabel,
+  gridSectionsFor,
+  isLookRow,
+  lookHeadline,
+  lookSummary,
+} from '../../lib/lookDisplay';
 import {
   LOOK_HEAD_WORDS,
   LOOK_OPENING_CHIP_KEY,
@@ -94,21 +133,36 @@ import {
   LOOK_FEWER_WORDS,
   LOOK_HINT,
   LOOK_MORE_WORDS,
+  lookNoteCue,
+  LOOK_NOTE_LINK,
+  LOOK_NOTE_MAX_LENGTH,
+  LOOK_NOTE_PLACEHOLDER,
   LOOK_PATTERNS_DOOR,
+  LOOK_TODAY_CAP,
   LOOK_UNDO,
+  LOOK_UNDO_NOTE_TITLE,
   intakeDoorLabel,
   lookDoneSummary,
   lookFirstLookLine,
+  lookFoldedAsk,
+  lookMoreToday,
+  lookMoreTodayHref,
   lookOpeningChipUnfoldLine,
   lookQuestion,
+  lookUndoNoteBody,
 } from '../../lib/lookCard';
 import { EMERGENCY_DOOR_LABEL, type EmergencyRead } from '../../lib/lookEmergency';
-import { loadEmergencyFacts, withTrialRefusal } from '../../lib/lookEmergencyFacts';
+import { loadEmergencyFacts, withIntakeRefusal } from '../../lib/lookEmergencyFacts';
 import { useGridDisclosure, useLookArrival } from '../motion/lookMotion';
 
 /** The last half-second of the dwell, in which *Undo* fades before the chevron takes its
- *  slot (T-15). A tap during the fade still undoes. */
-const UNDO_FADE_MS = 500;
+ *  slot (T-15). A tap during the fade still undoes.
+ *
+ *  IMPORTED, not redeclared. The withheld entry renders the same control on the same
+ *  clock, and the code review caught the first cut declaring a private 500 here while
+ *  `LookWithheldEntry` exported its own — two numbers the owner feels as one, equal only
+ *  by coincidence until somebody retunes one of them. */
+const UNDO_FADE_MS = WITHHELD_UNDO_FADE_MS;
 
 /** Two chips stacked in a wrapping row face each other with their full vertical reach
  *  between them, so the row gap is the SUM of the two hitSlops — derived from the chip's
@@ -118,17 +172,61 @@ const CHIP_ROW_GAP = CHIP_VERTICAL_REACH * 2;
 /** The reach a wrapper must declare when it is the responder for an inert chip — the
  *  chip's own, never a number that happens to equal it today. */
 const CHIP_REACH_SLOP = { top: CHIP_VERTICAL_REACH, bottom: CHIP_VERTICAL_REACH } as const;
+
+/** The reach every small control on this card declares — the entry's chevron, its Undo,
+ *  the card's own doors. One number, so the gaps below can be derived from it. */
+const ROW_CONTROL_REACH = 8;
+
+/**
+ * The note link's own reach. Its row is 32pt by design (T-22), which is under the 44pt
+ * floor, so 6 on each side is what makes the target 44 — derived from the shortfall, not
+ * chosen.
+ */
+const NOTE_LINK_REACH = 6;
+const NOTE_LINK_SLOP = { top: NOTE_LINK_REACH, bottom: NOTE_LINK_REACH } as const;
+
+/** What must separate the note link from the entry's chevron above it: the sum of the two
+ *  facing reaches (C-5), never a number that happens to equal it today. */
+const NOTE_LINK_ROW_GAP = ROW_CONTROL_REACH + NOTE_LINK_REACH;
+
+/** What must separate two controls where the lower one is at the 44pt floor and carries no
+ *  slop of its own: the upper one's reach alone. */
+const NOTE_LINK_REACH_GAP = ROW_CONTROL_REACH;
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
 import { formatTime } from '../../lib/utils';
 
+/** What one resting read answers with. Held as ONE object so a consumer cannot pair
+ *  today's record with the previous pet's withheld facts — the three fields travel with
+ *  the `petId` they were read for (C-9). */
+interface RestingRead {
+  petId: string;
+  record: LookDayRow[];
+  facts: LookWithheldFacts;
+  /** `undefined` when the device-local mark could not be read; the footer suppresses on
+   *  it (see `lib/lookCoverage.ts`). */
+  lastWithheldDay: string | null | undefined;
+}
+
 interface Props {
   /**
-   * The diet trial's own refusal register for the ACTIVE pet, already fail-closed by
-   * Home (`isAnimalNotEating` over a fresh input). Folded into the emergency door's
-   * facts as an OR — a refusal either register can see is a refusal, and neither may
-   * cancel the other. Optional so a test can render the card without a trial.
+   * The diet trial's own refusal register for the ACTIVE pet (`isAnimalNotEating`).
+   *
+   * THREE-STATE, and the third state is the point (CUL-873). `null` means Home has not
+   * confirmed the trial facts belong to the pet on screen — and the two readers of this
+   * one fact must take that opposite ways, which is C-12's "ask what its `null` costs
+   * THIS caller" made concrete:
+   *
+   *   • the EMERGENCY DOOR takes it as a positive fact or nothing (`=== true`), because a
+   *     door that escalated on unloaded facts would read *Call your vet today.* forever
+   *     for a healthy pet whose trial card failed to load once — the cry-wolf direction;
+   *   • the WITHHELD PREDICATE takes `null` as unanswered and fails CLOSED, because
+   *     drawing a quiet run before the facts land is the direction that cannot be taken
+   *     back.
+   *
+   * Optional so a test can render the card without a trial; `false` is the honest default
+   * for "no trial", which is most pets.
    */
-  trialNotEating?: boolean;
+  trialNotEating?: boolean | null;
   /** Measured by Home so the pinned exits know where this card is (C-22: a
    *  passthrough on `Card`, never a wrapper View that would change what it measures). */
   onLayout?: (event: LayoutChangeEvent) => void;
@@ -143,8 +241,11 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   const optedIn = useBetaOptIn('daily_look');
   const { todayEvents } = useEvents();
   const prependEvent = useEventStore((s) => s.prependEvent);
+  const patchInToday = useEventStore((s) => s.patchInToday);
   const showLook = useMomentStore((s) => s.showLook);
   const undo = useMomentStore((s) => s.undo);
+  const pauseDwell = useMomentStore((s) => s.pauseDwell);
+  const resumeDwell = useMomentStore((s) => s.resumeDwell);
   const momentPayload = useMomentStore((s) => s.payload);
   const momentVisible = useMomentStore((s) => s.visible);
   const momentRemoved = useMomentStore((s) => s.removed);
@@ -167,6 +268,19 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   // record (C-12), and "this is the first look" is exactly the claim a premature
   // empty would make wrongly.
   const [everLooked, setEverLooked] = useState<boolean | null>(null);
+  // The resting state's read: today's record, the withheld facts and the footer's memory,
+  // loaded together so the entries, the receipt and the footer never disagree about the
+  // same pet. `null` is IN FLIGHT — a read that hasn't answered is never an empty record
+  // (C-12), and here the empty answer would be "nothing is wrong with her eating".
+  const [resting, setResting] = useState<RestingRead | null>(null);
+  // The question, folded once the day holds a look. Tapping the folded row re-opens the
+  // chips IN PLACE, cleared (R9 / T-14 — the card never closes the question).
+  const [askOpen, setAskOpen] = useState(false);
+  // The note after the save (T-22). `noteFor` is the event whose field is open, so a
+  // second look arriving closes it rather than moving it.
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const species = lookSpeciesOf(activePet?.species);
   const live = eligible && optedIn && species !== null && activePet !== null;
@@ -184,34 +298,75 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   const submittingRef = useRef(false);
   submittingRef.current = submitting;
 
+  // The two fields every effect below actually reads. Hoisted so a dependency array names
+  // a PRIMITIVE rather than the store object, whose reference changes on any unrelated pet
+  // mutation and would re-issue this card's three reads each time (the code review).
+  const petId = activePet?.id ?? null;
+  const petSpecies = activePet?.species ?? null;
+
   const disclosure = useGridDisclosure({ open: gridOpen, reducedMotion, appActive });
 
-  // The arrival: the ONE look this card just wrote, read back from the row it
-  // optimistically prepended so the entry renders through the same resolver every other
-  // look surface uses.
+  // The withheld state, decided once per render from the loaded facts and read by
+  // everything below: the entries, the receipt and the footer. `'unknown'` while anything
+  // is in flight — the card renders a skeleton on it rather than either claim.
+  const withheldState = activePet
+    ? lookWithheldState({ id: activePet.id }, resting?.petId === activePet.id ? resting.facts : null)
+    : 'unknown';
+  const withheld = withheldState === 'withheld';
+
+  // TODAY'S LOOKS, newest first — the list that stays.
   //
   // SCOPED BY THE ROW'S OWN PET, not by what the loader was asked for (C-9).
   // `loadTodayEvents` re-queries on a pet switch, but the store holds the PREVIOUS pet's
-  // rows until that read answers — so without this the card could render another
-  // animal's look, with an Undo beside it, under this animal's question.
-  const beatRow = useMemo(
+  // rows until that read answers — so without this the card could render another animal's
+  // look, with an Undo beside it, under this animal's question.
+  //
+  // From the STORE rather than from the record read, so the entry the owner just made
+  // appears the instant `insertLook` returns (the optimistic prepend). The record read
+  // that lands a beat later is what the RECEIPT is derived from — a receipt is not the
+  // completion beat and may honestly wait for the record it describes.
+  const todayLooks = useMemo(
     () =>
-      justWritten
-        ? todayEvents.find(
-            (e) => e.id === justWritten && isLookRow(e) && e.pet_id === activePet?.id,
-          ) ?? null
-        : null,
-    [todayEvents, justWritten, activePet?.id],
+      todayEvents
+        .filter((e) => isLookRow(e) && e.pet_id === activePet?.id)
+        .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)),
+    [todayEvents, activePet?.id],
   );
+  const newestLook = todayLooks[0] ?? null;
+
   // The register decides how long the beat holds, not this card — one clock (C-20's
-  // reasoning applied to the dwell). When it lets go, the question comes back cleared.
+  // reasoning applied to the dwell). It governs exactly two things now: whether the newest
+  // entry offers *Undo* rather than its chevron, and whether the arrival animation plays.
   const beatLive =
-    beatRow !== null &&
+    justWritten !== null &&
     momentVisible &&
     !momentRemoved &&
     momentPayload?.kind === 'look' &&
-    momentPayload.eventId === beatRow.id;
-  const asking = !beatLive;
+    momentPayload.eventId === justWritten &&
+    todayLooks.some((e) => e.id === justWritten);
+
+  // The chips are open on a day with no look, and whenever the owner re-opens the folded
+  // question. They are NOT hidden during the beat any more: the arrival, the folded ask
+  // and the footer all sit on the card together (§3.1a's beat-4 frame).
+  const asking = todayLooks.length === 0 || askOpen;
+
+  // The record the receipts read, once it has answered FOR THIS PET.
+  const record: readonly LookDayRow[] =
+    resting && activePet && resting.petId === activePet.id ? resting.record : [];
+  const recordAnswered = resting !== null && activePet !== null && resting.petId === activePet.id;
+
+  // The footer. Absent while anything is in flight, absent on a day with no look, absent
+  // below the floor, absent while withheld and until the window clears (T-16).
+  const coverageText =
+    recordAnswered && resting
+      ? lookCoverageText(
+          lookCoverage(record, {
+            nowMs: Date.now(),
+            withheldNow: withheldState !== 'open',
+            lastWithheldDay: resting.lastWithheldDay,
+          }),
+        )
+      : null;
 
   const arrival = useLookArrival({
     entryKey: justWritten,
@@ -223,30 +378,65 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     appActive,
   });
 
-  // Has this pet ever been looked at? Only ever used to decide whether the day-1 line
-  // renders, so it is read once per pet and never counted aloud.
+  // THE RESTING READ — the record, the withheld facts and the footer's memory, in ONE
+  // effect for one pet at one instant.
   //
-  // The unknown state is reset ONLY when the pet changes, never on a re-read: resetting
-  // it on every refresh would blink the day-1 line off and back on each time an
-  // unrelated row lands, and a line that says "this is the first look" should not
-  // flicker while the owner is reading it.
+  // They are loaded together because they are read together: the entries decide whether
+  // to speak their words from the withheld facts, the receipt is derived from the record
+  // AND reduced by those same facts, and the footer is suppressed by both the live state
+  // and the mark. Three separate loaders would let the card render a coverage number for
+  // a frame with the withheld state still in flight — which is the one frame the whole
+  // protection exists to prevent.
+  //
+  // Also the day-1 line's answer: has this pet ever been looked at. The unknown state is
+  // reset ONLY when the pet changes, never on a re-read — resetting on every refresh
+  // would blink the day-1 line off and back on each time an unrelated row lands, and a
+  // line that says "this is the first look" should not flicker while it is being read.
   const everLookedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!live || !activePet) return;
+    if (!live || !petId) return;
     let cancelled = false;
-    if (everLookedFor.current !== activePet.id) {
-      everLookedFor.current = activePet.id;
+    if (everLookedFor.current !== petId) {
+      everLookedFor.current = petId;
       setEverLooked(null);
+      // The whole read is dropped on a pet switch, never carried: a retained "not
+      // withheld" belongs to the animal it was read for (C-9), and this card would
+      // otherwise draw one cat's quiet run under the other's name.
+      setResting(null);
+      setAskOpen(false);
+      setNoteFor(null);
     }
-    loadLookDays(activePet.id)
-      .then((rows) => {
-        if (!cancelled) setEverLooked(answeredDays(rows) > 0);
+    Promise.all([
+      loadLookDays(petId),
+      loadLookWithheldFacts({ id: petId, species: petSpecies }, trialNotEating ?? null),
+      readLastWithheldDay(petId),
+    ])
+      .then(([record, facts, lastWithheldDay]) => {
+        if (cancelled || activePetIdRef.current !== petId) return;
+        setEverLooked(answeredDays(record) > 0);
+        setResting({ petId, record, facts, lastWithheldDay });
       })
-      .catch((e) => console.warn('[LookCard] look history read failed:', e));
+      // A FAILED read stays in flight rather than becoming an answer. Home re-reads on
+      // focus, on a sync tick and on pull-to-refresh, so the card self-heals; what it
+      // must never do is treat a database error as "her eating is fine" or as a reason to
+      // assert that it is not.
+      .catch((e) => console.warn('[LookCard] resting read failed:', e));
     return () => {
       cancelled = true;
     };
-  }, [live, activePet?.id, todayEvents.length, activePet]);
+    // The PRIMITIVES this body reads, never the `activePet` object. `pets` is a fresh
+    // reference on any unrelated store mutation — a name edit, a photo, a weigh-in — and
+    // listing the object here re-issued all three reads on every one of them. The id and
+    // species guards inside made that invisible rather than harmless (the code review).
+  }, [live, petId, petSpecies, todayEvents.length, trialNotEating]);
+
+  // Remember the day we withheld, so the footer stays away until the window has moved past
+  // it (T-16). Fire-and-forget and idempotent within a day — the mark is the footer's only
+  // memory of a state that is otherwise purely live.
+  useEffect(() => {
+    if (!live || !petId || !withheld) return;
+    markWithheldToday(petId).catch(() => {});
+  }, [live, petId, withheld]);
 
   // T-11 — THE PET SWITCH. A draft belongs to the pet it was started for; if the header
   // moves, the words do not follow. Cleared and SAID, never silently re-pointed.
@@ -280,6 +470,133 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
         : `${saved ? 'That look was saved' : 'Nothing was saved'} — this is ${activePet.name}’s question now.`,
     );
   }, [activePet?.id, capturedPetId, pets, activePet]);
+
+  /**
+   * Does this row's ENTRY withhold its words — the asymmetry inside the withheld state.
+   *
+   * Lifted to the card because two things read it and they must not disagree: the row
+   * itself, and the reason line drawn once beneath the group. `entryWithholdsWords` owns
+   * the rule; this only adds "…and the pet is being withheld at all".
+   */
+  const withholdsWords = useCallback(
+    (row: NyxEvent): boolean => {
+      if (!withheld || !activePet) return false;
+      const described = describeLook(row, { species: activePet.species, sex });
+      const words = described.kind === 'observed' ? described.words.map((w) => w.key) : [];
+      return entryWithholdsWords(words, lookSpeciesOf(activePet.species));
+    },
+    [withheld, activePet, sex],
+  );
+
+  /**
+   * The ONE receipt line under an entry, or null (PM-ruled 2026-09-10).
+   *
+   * Derived at render from the record as it stands (T-18) — never stored, never latched —
+   * which is what makes an Undo re-arm the first-day form and a backdated *Off* move the
+   * first day, with no code here knowing either of those things happened.
+   *
+   * A row not yet in the record read earns nothing: the entry the owner just made appears
+   * from the store immediately, and its receipt arrives with the read that describes it.
+   */
+  const receiptTextFor = useCallback(
+    (row: NyxEvent): string | null => {
+      if (!recordAnswered || !activePet) return null;
+      const stored = record.find((r) => r.eventId === row.id);
+      if (!stored) return null;
+      return (
+        leadReceipt(
+          receiptsFor(
+            { eventId: stored.eventId, localDay: stored.localDay, words: stored.words },
+            record,
+            {
+              petName,
+              pet: { species: activePet.species, sex },
+              nowMs: Date.now(),
+              withheld,
+            },
+          ),
+        )?.text ?? null
+      );
+    },
+    [record, recordAnswered, activePet, petName, sex, withheld],
+  );
+
+  /**
+   * THE LIST CAP (E-10, T-15) — two entries, the rest behind a door. A trivial cap, and
+   * deliberately not the med strip's §7 collapse, which is a per-med cadence rule.
+   *
+   * ── PLUS WHATEVER EARNED A RECEIPT ─────────────────────────────────────────
+   * §3.3 floor (5): a receipt attaches to the EARLIEST look of the day carrying the word
+   * and stays there when a later look arrives, because "a good afternoon never removes a
+   * concern the card already said". A newest-first cap of two does exactly that removal on
+   * the third look of the day — and the product review named the correlation that makes it
+   * worst: the day an owner answers three times is the symptomatic day.
+   *
+   * So the cap governs the entries that earned NOTHING. In practice this adds at most one
+   * row (a receipt belongs to one entry per word, and the card renders one line), and it
+   * adds it only on a day the record had something to say — which is the day T-15's "never
+   * a feed" was never arguing about.
+   */
+  const visibleLooks = todayLooks.filter(
+    (row, i) => i < LOOK_TODAY_CAP || receiptTextFor(row) !== null,
+  );
+  const hiddenLooks = todayLooks.length - visibleLooks.length;
+
+  // ── THE NOTE, AFTER THE SAVE (T-22) ────────────────────────────────────────
+  // Never a field on the way IN (Principle 1). It opens on the newest entry only, and it
+  // closes when the next look arrives — the effect below, rather than a branch at the call
+  // site, so a second Done cannot leave a field hanging under the wrong row.
+  useEffect(() => {
+    if (noteFor && newestLook?.id !== noteFor) {
+      setNoteFor(null);
+      setNoteDraft('');
+    }
+  }, [newestLook?.id, noteFor]);
+
+  const openNote = useCallback(
+    (eventId: string) => {
+      openMenu();
+      setNoteFor(eventId);
+      setNoteDraft('');
+    },
+    [],
+  );
+
+  const saveNote = useCallback(
+    async (eventId: string) => {
+      const text = noteDraft.trim();
+      if (noteSaving) return;
+      if (text.length === 0) {
+        setNoteFor(null);
+        return;
+      }
+      setNoteSaving(true);
+      try {
+        // `looks.notes` and NEVER `events.notes` (T-22, §9 rule 1) — the parent's column
+        // is NULL by CHECK for a `check_in`, because Ask's recall fetch selects
+        // `events.notes` with no type filter. `updateLookNote` is the one statement that
+        // writes this column (C-20's shape, applied to a field), so this call site cannot
+        // invent a second door to it.
+        await updateLookNote(eventId, text);
+        // The store's row, so the note renders under the entry without waiting for a
+        // re-read — and so the Undo confirm below can NAME it.
+        patchInToday(eventId, { look_note: text } as Partial<NyxEvent>);
+        // The parent is untouched, so only the child is queued: events first, then looks,
+        // is the ordering `insertLook` establishes and the child's drain gates on the
+        // parent being synced regardless.
+        syncPendingLooks().catch((e: unknown) => console.error('[LookCard] note push failed:', e));
+        setNoteFor(null);
+        setNoteDraft('');
+      } catch (e) {
+        // A failed write is always said (C-12). The field stays open with her words in it.
+        console.error('[LookCard] note save failed:', e);
+        Alert.alert('Couldn’t save that note', 'Please try again in a moment.');
+      } finally {
+        setNoteSaving(false);
+      }
+    },
+    [noteDraft, noteSaving, patchInToday],
+  );
 
   const summary = live ? lookDoneSummary(petName, draft, { species: activePet?.species, sex }) : null;
 
@@ -404,6 +721,11 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
       setJustWritten(result.eventId);
       setDraft(emptyDraft());
       setCapturedPetId(null);
+      // The question folds again (R9 / T-14) — the second look is a second ENTRY, made by
+      // re-opening this row, never an edit of the first.
+      setAskOpen(false);
+      setNoteFor(null);
+      setNoteDraft('');
       if (gridOpen) closeGrid();
     } catch (e) {
       // A failed write is always said (C-12). Calm, no error code, points at the one
@@ -418,7 +740,7 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   // Undo — the shared reversal (C-20), reached through the store so this card cannot
   // invent a second delete path. The words come back still selected, chips open: a slip
   // costs nothing, and the look is the only thing that was written.
-  const handleUndo = useCallback(
+  const runUndo = useCallback(
     async (eventId: string, restore: LookDraft, rowPetId: string) => {
       const result = await undo(eventId);
       if (result === 'removed') {
@@ -430,17 +752,77 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
         if (rowPetId === activePet?.id) {
           setDraft(restore);
           setCapturedPetId(activePet?.id ?? null);
+          // …and the chips have to be OPEN for her to see them. The folded row would
+          // otherwise swallow the words the Undo just handed back, which is the same
+          // "no visible save" finding in reverse.
+          setAskOpen(true);
         }
         setJustWritten(null);
-        return;
+        return 'removed' as const;
       }
       if (result === 'failed') {
         // The row is still in the record and the owner has been told it is not — the
         // one unrecoverable lie this surface could tell, so it is said instead.
         Alert.alert('Couldn’t undo that', 'The look is still saved. Please try again.');
       }
+      if (result === 'ignored') {
+        // Only reachable after an explicit CONFIRM (the note branch below), where silence
+        // would read as "removed". A bare Undo tap that no-ops is not spoken — C-21's own
+        // distinction, and the reason this branch is gated on having asked.
+        return 'ignored' as const;
+      }
+      return result;
     },
     [activePet?.id, undo],
+  );
+
+  /**
+   * Undo, with the one gate a look can earn (T-22, C-21).
+   *
+   * A look is recreatable — three taps — so its Undo is one tap, and that is the whole
+   * reason the card offers a way back rather than a confirm. A NOTE is not recreatable:
+   * no surface in the app exposes a removed one, and the sentence she typed at 2am about
+   * what she saw is gone for good. So a note-bearing look takes the photo rule's confirm,
+   * and the body NAMES the note — the owner would otherwise have no way to know it was
+   * going.
+   *
+   * `pauseDwell` holds the card open across the dialog. Without it the gate is worse than
+   * no gate: the 5s runs from the reveal, so an owner who taps at 4.5s and reads for a
+   * second confirms against a card that has already dismissed — `undo()` then refuses on
+   * `!visible`, returns 'ignored', and the look silently survives a removal she explicitly
+   * authorised (the NamedCompletionCard measurement, inherited).
+   */
+  const handleUndo = useCallback(
+    (eventId: string, restore: LookDraft, rowPetId: string, note: string | null) => {
+      if (!note) {
+        void runUndo(eventId, restore, rowPetId);
+        return;
+      }
+      pauseDwell();
+      Alert.alert(
+        LOOK_UNDO_NOTE_TITLE,
+        lookUndoNoteBody(note),
+        [
+          { text: 'Keep it', style: 'cancel', onPress: resumeDwell },
+          {
+            text: 'Take it back',
+            style: 'destructive',
+            onPress: () => {
+              void runUndo(eventId, restore, rowPetId).then((result) => {
+                if (result === 'ignored') {
+                  // She confirmed and nothing happened. Said out loud rather than left as
+                  // a silent no-op (C-21): after an explicit confirm, silence reads as
+                  // "removed", and the look is still in the record.
+                  Alert.alert('That look is still saved', 'Open it from the record to remove it.');
+                }
+              });
+            },
+          },
+        ],
+        { cancelable: true, onDismiss: resumeDwell },
+      );
+    },
+    [runUndo, pauseDwell, resumeDwell],
   );
 
   const openEmergency = useCallback(() => {
@@ -456,7 +838,25 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     const petId = activePet.id;
     loadEmergencyFacts(petId)
       .then((facts) => {
-        const merged = withTrialRefusal(facts, trialNotEating);
+        // BOTH intake registers, each a positive fact or nothing, never ignorance (T-20):
+        // the trial's (`=== true`, since the withheld predicate takes the SAME field the
+        // other way — see the prop's own doc) and the record-local arm's qualifying meals.
+        //
+        // The second one is what stops the card and the door disagreeing about the same
+        // animal: without it a non-trial cat with two refused bowls had her card withhold
+        // its words while the door one tap away still printed the intake conditionals as
+        // UNMET (the adversarial pass). `?? []` resolves an unanswered read to "no
+        // evidence" HERE rather than in the helper, because on this surface ignorance must
+        // not escalate.
+        const merged = withIntakeRefusal(
+          facts,
+          trialNotEating === true,
+          // The SAME call the card's own withholding makes, so the two cannot answer
+          // differently about one animal. `?? []` resolves an unanswered read to "no
+          // evidence" here rather than in the helper, because on this surface ignorance
+          // must not escalate (T-20).
+          resting?.petId === petId ? intakeArm(resting.facts.recentQualifyingMeals ?? []) : false,
+        );
         // The loader returns null on a failed read — the one case that falls through to
         // the imperative (fail closed). A late answer for a pet the owner has since
         // switched away from is dropped rather than rendered under the new pet's name.
@@ -464,7 +864,7 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
         setEmergencyRead(merged ? { status: 'ready', facts: merged } : { status: 'failed' });
       })
       .catch(() => setEmergencyRead({ status: 'failed' }));
-  }, [activePet?.id, trialNotEating, activePet]);
+  }, [activePet?.id, trialNotEating, resting]);
 
   // Publish the pinned exits while the grid is open, and clear them on every path out
   // — including unmount, which is the backstop that keeps a stuck flag from costing the
@@ -519,18 +919,92 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
           </Pressable>
         </View>
 
-        {/* THE ARRIVAL — the look just made, for the register's dwell (§3.1a, R14). The
-            list that KEEPS them is N-4b's, with the withheld predicate that protects it
-            (see the header). */}
-        {beatLive && beatRow && (
+        {/* THE TODAY LIST (T-15, R14). Three kinds of line — entry, receipt, footer — and
+            none of them ever shares a line with another.
+
+            THE SKELETON IS NOT DECORATION. While the withheld read is in flight the card
+            knows it has entries and does not yet know whether it may speak their words, so
+            it says neither (C-12). The alternative measured on paper was worse in both
+            directions: render the words and a quiet run flashes under a live concern;
+            render the withheld copy and every owner on every cold open is told for a frame
+            that her pet's eating needs attention. */}
+        {todayLooks.length > 0 && (
           <View style={styles.entries} testID="look-entries">
-            <LookEntry
-              row={beatRow}
-              pet={{ species: activePet.species, sex }}
-              arrival={arrival}
-              onUndo={handleUndo}
-            />
+            {withheldState === 'unknown' ? (
+              <LookEntriesSkeleton count={Math.min(todayLooks.length, LOOK_TODAY_CAP)} />
+            ) : (
+              visibleLooks.map((row) => (
+                <LookTodayRow
+                  key={row.id}
+                  row={row}
+                  pet={{ species: activePet.species, sex }}
+                  petName={petName}
+                  isNewest={row.id === newestLook?.id}
+                  withheld={withholdsWords(row)}
+                  arrival={row.id === justWritten ? arrival : null}
+                  undoLive={beatLive && row.id === justWritten}
+                  onUndo={handleUndo}
+                  receipt={receiptTextFor(row)}
+                  noteOpen={noteFor === row.id}
+                  noteDraft={noteDraft}
+                  noteSaving={noteSaving}
+                  onOpenNote={() => openNote(row.id)}
+                  onChangeNote={setNoteDraft}
+                  onSaveNote={() => saveNote(row.id)}
+                />
+              ))
+            )}
+            {/* THE REASON, ONCE (the product review). It belongs to the card, not to an
+                entry, so it is drawn here rather than inside each one — and it is drawn
+                only when at least one entry actually withheld, because a card whose only
+                look carried a symptom word withheld nothing and owes no explanation. */}
+            {withheld && visibleLooks.some(withholdsWords) && (
+              <LookWithheldReasonLine
+                petName={petName}
+                sex={sex}
+                onOpenRecord={() =>
+                  router.push(`/event/${visibleLooks.find(withholdsWords)?.id}` as never)
+                }
+              />
+            )}
+            {withheldState !== 'unknown' && hiddenLooks > 0 && (
+              <Pressable
+                onPress={() => router.push(lookMoreTodayHref() as never)}
+                // The box and the margin belong on the RESPONDER, not on the text inside
+                // it: a `marginTop` on the child sits INSIDE the Pressable, so the
+                // separation it was meant to buy is inside the touch area instead of
+                // beside it. Caught by the geometry test reading the flattened style off
+                // this node and finding none (C-5: assert the RENDERED box).
+                style={styles.moreTodayRow}
+                accessibilityRole="button"
+                accessibilityLabel={`Show ${hiddenLooks} more of today's looks in history`}
+                testID="look-more-today"
+              >
+                <ThemedText style={styles.moreToday}>{lookMoreToday(hiddenLooks)}</ThemedText>
+              </Pressable>
+            )}
           </View>
+        )}
+
+        {/* THE FOLDED ASK (R9 / T-14) — the card never closes the question. One line,
+            re-opening the chips in place and CLEARED, so a second look is a second row in
+            the record rather than an edit of the first. */}
+        {!asking && (
+          <Pressable
+            onPress={() => {
+              openMenu();
+              setDraft(emptyDraft());
+              setNoteFor(null);
+              setAskOpen(true);
+            }}
+            style={styles.askRow}
+            accessibilityRole="button"
+            accessibilityLabel={`${lookFoldedAsk(petName)} Opens the words again.`}
+            testID="look-folded-ask"
+          >
+            <ThemedText style={styles.askRowText}>{lookFoldedAsk(petName)}</ThemedText>
+            <ThemedText style={styles.caret}>▾</ThemedText>
+          </Pressable>
         )}
 
         {asking && (
@@ -760,6 +1234,17 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
             )}
           </>
         )}
+
+        {/* THE COVERAGE FOOTER (R11, T-16) — a LINE, not a door. The card's one door stays
+            on its label, so nothing tappable faces the ask row's caret (C-5) and the line
+            never wraps into the entry above it (R14). Its numbers are tabular figures at
+            the line's end for the same reason: a proportional digit is what turns a
+            one-line footer into a two-line one between "4" and "28". */}
+        {coverageText && (
+          <ThemedText style={styles.coverage} testID="look-coverage">
+            {coverageText}
+          </ThemedText>
+        )}
       </Card>
 
       <LookEmergencySheet
@@ -800,15 +1285,29 @@ function LookEntry({
   row,
   pet,
   arrival,
+  undoLive,
   onUndo,
+  note,
+  isNewest,
 }: {
   row: NyxEvent;
   pet: { species?: string | null; sex: 'male' | 'female' | 'unknown' };
-  arrival: ReturnType<typeof useLookArrival>;
-  onUndo: (eventId: string, restore: LookDraft, rowPetId: string) => void;
+  /** The arrival choreography, or null for an entry this card did not just write — the
+   *  same row renders identically when Home re-reads it a minute later, and re-drawing it
+   *  then would announce a record the owner did not just make (C-30: the trigger switches
+   *  on the FACT). */
+  arrival: ReturnType<typeof useLookArrival> | null;
+  /** Is the register still offering the reversal for this row? The AUTHORITY is the
+   *  register's, never this component's — it only decides which of the two controls sits
+   *  in the slot. */
+  undoLive: boolean;
+  onUndo: (eventId: string, restore: LookDraft, rowPetId: string, note: string | null) => void;
+  note: string | null;
+  isNewest: boolean;
 }) {
   const undoOpacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
+    if (!undoLive) return;
     // The last half-second of the register's own dwell (T-15). Named off the store's
     // constant rather than a number typed here, so the two cannot drift apart.
     const at = Math.max(0, LOOK_DWELL_MS - UNDO_FADE_MS);
@@ -823,13 +1322,18 @@ function LookEntry({
       clearTimeout(timer);
       undoOpacity.setValue(1);
     };
-  }, [row.id, undoOpacity]);
+  }, [row.id, undoOpacity, undoLive]);
 
   const described = describeLook(row, pet);
   // The ONE resolver, so this entry, History's row and the record screen name the same
   // look identically (`lib/lookDisplay.ts`). Null is a look this build cannot describe
   // — the row then reads as the bare act and NEVER falls through to the absence phrase.
-  const words = lookSummary(described);
+  //
+  // The HEADLINE form, because this entry has no prefix in front of it: `lookSummary`
+  // lower-cases for the surfaces that do (*You noticed: off, …*), and here that left the
+  // most-read string in the feature reading as a fragment — beside an unresolvable row
+  // rendering a capitalised *Noticed* in the same slot.
+  const words = lookHeadline(described);
   const { fill, ring } = nodeDotColors('look', NODE_TINT_DAY, theme.colorSurface);
   // What Undo puts back: the words as they were chosen. The absence row restores as the
   // absence, which is a real answer and not an empty draft (L-6).
@@ -838,12 +1342,13 @@ function LookEntry({
       ? { kind: 'absence' }
       : { kind: 'words', words: described.words.map((w) => w.key) };
 
+  const time = formatTime(new Date(row.occurred_at));
   return (
     <View style={styles.entry}>
       <Animated.View
-        style={[styles.ring, { backgroundColor: fill, borderColor: ring }, arrival.ringStyle]}
+        style={[styles.ring, { backgroundColor: fill, borderColor: ring }, arrival?.ringStyle]}
       />
-      <Animated.View style={[styles.entryBody, arrival.wordsStyle]}>
+      <Animated.View style={[styles.entryBody, arrival?.wordsStyle]}>
         {/* L-16 / R16 — A QUIET ENTRY IS QUIET. The observed-absence row takes the
             secondary ink a size down; a row carrying words keeps the primary ink. The
             reassuring half is never the headline (the retired round-2 row's finding,
@@ -852,18 +1357,207 @@ function LookEntry({
           {words ?? 'Noticed'}
         </ThemedText>
       </Animated.View>
-      <ThemedText style={styles.entryTime}>{formatTime(new Date(row.occurred_at))}</ThemedText>
-      <Animated.View style={{ opacity: undoOpacity }}>
+      {/* An OLDER entry's note shows as a mark beside its hour rather than as a line, so
+          an engaged day never stacks nine lines (T-22). The quote itself is one tap away,
+          on the record. */}
+      {!isNewest && note && (
+        <ThemedText style={styles.noteMark} accessibilityLabel="Has a note">
+          ❞
+        </ThemedText>
+      )}
+      <ThemedText style={styles.entryTime}>{time}</ThemedText>
+      {undoLive ? (
+        <Animated.View style={{ opacity: undoOpacity }}>
+          <Pressable
+            onPress={() => onUndo(row.id, restore, row.pet_id, note)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Undo. ${words ?? 'the look'}`}
+            testID={`look-undo-${row.id}`}
+          >
+            <ThemedText style={styles.undo}>{LOOK_UNDO}</ThemedText>
+          </Pressable>
+        </Animated.View>
+      ) : (
+        // The chevron takes the slot once the register lets go. Every entry's `›` opens
+        // the record, where a word can be changed and every look — the absence and the
+        // withheld entry included — carries the note field (§3.3, T-22).
         <Pressable
-          onPress={() => onUndo(row.id, restore, row.pet_id)}
+          onPress={() => router.push(`/event/${row.id}` as never)}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={`Undo. ${words ?? 'the look'}`}
-          testID={`look-undo-${row.id}`}
+          accessibilityLabel={`Open the record. ${words ?? 'the look'}, ${time}`}
+          testID={`look-open-${row.id}`}
         >
-          <ThemedText style={styles.undo}>{LOOK_UNDO}</ThemedText>
+          <ThemedText style={styles.caret}>›</ThemedText>
         </Pressable>
-      </Animated.View>
+      )}
+    </View>
+  );
+}
+
+/**
+ * ONE ROW OF THE TODAY LIST — the entry, its note and its receipt, in that order.
+ *
+ * THREE KINDS OF LINE, NEVER SHARED (T-15). The entry is the ring, the words, the hour
+ * and the control; the note is hers, in quotes, in the primary ink with no rule; the
+ * receipt is the app's, secondary. The footer is the card's and lives outside this row
+ * entirely. R14's whole complaint was a saved state whose reason text wrapped into the
+ * verb beside it, so nothing here is allowed to share a line with anything else.
+ *
+ * THE WITHHELD SPLIT IS BY HOST, not by a flag inside `LookEntry` (C-7 / C-16): a quiet
+ * entry under a live intake concern renders `LookWithheldEntry`, its own file, named in
+ * `guards/haptics.test.ts`. A symptom-class entry still speaks — `entryWithholdsWords`
+ * owns that asymmetry so this component does not grow an opinion about intake.
+ */
+function LookTodayRow({
+  row,
+  pet,
+  petName,
+  isNewest,
+  withheld,
+  arrival,
+  undoLive,
+  onUndo,
+  receipt,
+  noteOpen,
+  noteDraft,
+  noteSaving,
+  onOpenNote,
+  onChangeNote,
+  onSaveNote,
+}: {
+  row: NyxEvent;
+  pet: { species?: string | null; sex: 'male' | 'female' | 'unknown' };
+  petName: string;
+  isNewest: boolean;
+  /** Does THIS ROW withhold its words — already resolved by the card through
+   *  `withholdsWords`, never re-derived here. The code review found the two derivations
+   *  side by side: guaranteed to agree today, and one edit away from not. */
+  withheld: boolean;
+  arrival: ReturnType<typeof useLookArrival> | null;
+  undoLive: boolean;
+  onUndo: (eventId: string, restore: LookDraft, rowPetId: string, note: string | null) => void;
+  receipt: string | null;
+  noteOpen: boolean;
+  noteDraft: string;
+  noteSaving: boolean;
+  onOpenNote: () => void;
+  onChangeNote: (text: string) => void;
+  onSaveNote: () => void;
+}) {
+  const described = describeLook(row, pet);
+  const note = described.note;
+
+  if (withheld) {
+    // The whole row: no note link (the note would reprint the withheld claim in her own
+    // words on the card that just refused to print it) and no receipt beyond what
+    // `receiptsFor` already reduced to a bare first date — which for a wordless entry is
+    // nothing at all. The REASON is not here either: it is one line per card, drawn once
+    // beneath the group, because two quiet looks stacked the same paragraph twice and a
+    // repeated system message reads as a defect (the product review).
+    //
+    // The way back IS here. This state withholds the WORDS; it was never the reversal, and
+    // shipping it without one left the beat most likely to be mis-tapped with neither a
+    // confirm nor an Undo (C-21).
+    return (
+      <LookWithheldEntry
+        occurredAt={row.occurred_at}
+        petName={petName}
+        sex={pet.sex}
+        undoLive={undoLive}
+        dwellMs={LOOK_DWELL_MS}
+        onUndo={() => onUndo(row.id, { kind: 'absence' }, row.pet_id, note)}
+        onOpenRecord={() => router.push(`/event/${row.id}` as never)}
+        testID={`look-withheld-${row.id}`}
+      />
+    );
+  }
+
+  return (
+    <View>
+      <LookEntry
+        row={row}
+        pet={pet}
+        arrival={arrival}
+        undoLive={undoLive}
+        onUndo={onUndo}
+        note={note}
+        isNewest={isNewest}
+      />
+
+      {/* THE NOTE. The link lives on the NEWEST entry only and goes the moment a note
+          exists or the next look arrives (T-22). Never under an absence, whose qualifier
+          should have been a word — she can still take a note on the record screen, which
+          carries the field for every look. */}
+      {isNewest && !note && !noteOpen && described.kind === 'observed' && (
+        <Pressable
+          onPress={onOpenNote}
+          // Its OWN 32pt row, never sharing hit area with the entry's chevron above it
+          // (C-5): the two controls are eight points apart and do completely different
+          // things.
+          style={styles.noteLinkRow}
+          hitSlop={NOTE_LINK_SLOP}
+          accessibilityRole="button"
+          accessibilityLabel="Say more about this look"
+          testID={`look-note-link-${row.id}`}
+        >
+          <ThemedText style={styles.noteLink}>{LOOK_NOTE_LINK}</ThemedText>
+        </Pressable>
+      )}
+
+      {isNewest && noteOpen && (
+        <View style={styles.noteFieldWrap}>
+          <TextInput
+            style={styles.noteField}
+            placeholder={LOOK_NOTE_PLACEHOLDER}
+            placeholderTextColor={theme.colorTextTertiary}
+            value={noteDraft}
+            onChangeText={onChangeNote}
+            // Return SAVES (T-22) — one line, one gesture, no second button to find.
+            onSubmitEditing={onSaveNote}
+            returnKeyType="done"
+            maxLength={LOOK_NOTE_MAX_LENGTH}
+            editable={!noteSaving}
+            autoFocus
+            accessibilityLabel="A note on this look"
+            testID={`look-note-field-${row.id}`}
+          />
+          {/* The T&S cue, and it names the DOCUMENT rather than saying something vague
+              about privacy: a note leaves the account whenever the report does (§9). */}
+          <ThemedText style={styles.noteCue}>{lookNoteCue(petName)}</ThemedText>
+        </View>
+      )}
+
+      {/* Hers: quotes, primary ink, no rule — above the app's own line (T-22). */}
+      {isNewest && note && (
+        <ThemedText style={styles.note} testID={`look-note-${row.id}`}>{`“${note}”`}</ThemedText>
+      )}
+
+      {receipt && (
+        <ThemedText style={styles.receipt} testID={`look-receipt-${row.id}`}>
+          {receipt}
+        </ThemedText>
+      )}
+    </View>
+  );
+}
+
+/** The list while the withheld read is in flight — content-shaped, under a second, hidden
+ *  from assistive tech (C-12's `SkeletonRows` shape). It draws the RING, because the card
+ *  already knows an entry exists; what it does not yet know is whether it may say what the
+ *  entry holds. */
+function LookEntriesSkeleton({ count }: { count: number }) {
+  return (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" testID="look-entries-skeleton">
+      {Array.from({ length: count }, (_, i) => (
+        <View key={i} style={styles.entry}>
+          <View style={[styles.ring, { borderColor: theme.colorBorder }]} />
+          <View style={styles.entryBody}>
+            <Skeleton width="70%" height={theme.textSM} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
@@ -1002,5 +1696,110 @@ const styles = StyleSheet.create({
   caret: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
+  },
+  // ── The today list's own lines (CUL-873) ───────────────────────────────────
+  noteMark: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+  },
+  // ── THE STACK'S GEOMETRY (C-5) ────────────────────────────────────────────
+  // Four touchables now sit in a column on this card — an entry's chevron, the note
+  // link, the cap's door and the folded ask row — and each pair's separation is DERIVED
+  // from the facing reach rather than eyeballed:
+  //
+  //     needed(a, b) = facing hitSlop(a) + facing hitSlop(b)
+  //
+  // Two of them are at or above the 44pt floor already, so they take the box and DROP the
+  // slop (C-5's own "controls already at the 44pt floor: grow the box or drop the slop") —
+  // which is what makes an 8pt margin sufficient beneath a chevron that reaches 8. The note
+  // link is the one control the spec pins UNDER the floor (T-22: "its own 32 pt row"), so
+  // it keeps 6pt of reach to make 44 and pays for it with a 16pt margin above.
+  // `LookCard.test.tsx` asserts every one of these off the FLATTENED style, never off the
+  // tokens restated in the test.
+  moreTodayRow: {
+    // Already at the floor by its box, so no slop — and 8 clears the chevron's 8 above it.
+    // On the RESPONDER, so the margin separates rather than being swallowed.
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: NOTE_LINK_REACH_GAP,
+  },
+  moreToday: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccentInk,
+  },
+  askRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    // 44pt by its box, so no slop either: it is the one control that re-opens the question
+    // and it sits directly beneath whichever of the three above it rendered.
+    minHeight: 44,
+    marginTop: NOTE_LINK_REACH_GAP,
+  },
+  askRowText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  coverage: {
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorTextSecondary,
+    marginTop: theme.space1,
+    // R14 / T-16 — tabular figures so the line cannot re-flow between "4" and "28" and
+    // wrap into the row above it.
+    fontVariant: ['tabular-nums'],
+  },
+  receipt: {
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorTextSecondary,
+    // Aligned under the words rather than the ring, so it reads as this entry's line and
+    // not as a new item in the list.
+    marginLeft: NODE_DOT_SIZE + theme.space1,
+    marginBottom: theme.space1,
+  },
+  note: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    // HERS: the primary ink, no rule (T-22). The receipt below is the app's — secondary,
+    // and a size down. The two are never confusable.
+    color: theme.colorTextPrimary,
+    marginLeft: NODE_DOT_SIZE + theme.space1,
+    marginBottom: theme.space1,
+  },
+  noteLinkRow: {
+    // ITS OWN 32pt ROW (T-22) — never sharing hit area with the entry's chevron, which
+    // sits directly above it and does something entirely different. 32 is under the 44pt
+    // floor by design, so the reach makes up the difference and the margin pays for the
+    // reach: `NOTE_LINK_ROW_GAP` is `chevron 8 + this row's 6`, derived from both, never
+    // typed as 14.
+    minHeight: 32,
+    justifyContent: 'center',
+    marginTop: NOTE_LINK_ROW_GAP,
+    marginLeft: NODE_DOT_SIZE + theme.space1,
+  },
+  noteLink: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+  },
+  noteFieldWrap: {
+    marginLeft: NODE_DOT_SIZE + theme.space1,
+    marginBottom: theme.space1,
+  },
+  noteField: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextPrimary,
+    // A TextInput names its own family — RN does not inherit one, and `ThemedText`
+    // cannot wrap an input (C-2's carve-out).
+    fontFamily: theme.fontBody,
+    minHeight: 44,
+    paddingVertical: theme.space1,
+  },
+  noteCue: {
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorTextTertiary,
   },
 });

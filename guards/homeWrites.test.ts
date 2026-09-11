@@ -86,6 +86,14 @@ const WRITE_CALLS = [
   'insertMedicationDose',
   'insertLook',
   'updateEvent',
+  // CUL-873 — the `looks` child's two UPDATE doors, and they were missing. The list
+  // already carried `updateEvent` under the sentence above ("UPDATES COUNT AS WRITES"),
+  // but the note lives on `looks.notes` and reaches it through a different helper, so N-4b
+  // could add a Home control that writes a synced table with this guard green. Found by
+  // reading the guard rather than the sentence about it (C-32), on the PR that became its
+  // first caller — which is the only moment the omission is cheap.
+  'updateLookNote',
+  'updateLookForEdit',
   'reverseLoggedEvent',
   'softDeleteEvent',
 ];
@@ -118,7 +126,20 @@ const RAW_MUTATION = /\b(INSERT\s+INTO|UPDATE\s+[A-Za-z_][\w.]*\s+SET|DELETE\s+F
  */
 const ALLOW: Record<string, readonly string[]> = {
   'components/home/MedStrip.tsx': ['insertMedicationDose'],
-  'components/home/LookCard.tsx': ['insertLook'],
+  // `updateLookNote` is INSIDE the look's own class, not a third one, and the distinction
+  // is worth stating because the note opens a field and D1's forbidden shape is "a control
+  // that opens a form" (CUL-873, T-22 / R16, PM-ruled on round 4).
+  //
+  // What makes it the same class: it writes to the look's OWN row, on the entry the owner
+  // has just this second made, creating no record the app did not already hold and
+  // touching no other table. D1's second door is a control that starts a NEW record from
+  // Home; this one annotates the one that just landed, after the save, and never before it
+  // (Principle 1: nothing on the way IN asks for typing).
+  //
+  // It is named rather than assumed because the value is a list of exact helpers and not a
+  // boolean — the third adversarial pass's own reason: an allow-set that said "LookCard
+  // may write" would also permit `insertSimpleEvent('itch')`.
+  'components/home/LookCard.tsx': ['insertLook', 'updateLookNote'],
 };
 
 /**
@@ -154,7 +175,10 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
     helpers: ['updateEvent', 'softDeleteEvent'],
     why: 'declares both, and holds the events table\u2019s own statements',
   },
-  'lib/looks.ts': { helpers: ['insertLook'], why: 'declares insertLook' },
+  'lib/looks.ts': {
+    helpers: ['insertLook', 'updateLookNote', 'updateLookForEdit'],
+    why: 'declares insertLook and the two edit doors onto the looks child (CUL-873)',
+  },
   'lib/meals.ts': { helpers: ['insertMeal'], why: 'declares insertMeal' },
   'lib/medicationDose.ts': {
     helpers: ['insertMedicationDose'],
@@ -442,9 +466,24 @@ describe('§3.2 — Home carries exactly two write classes', () => {
   it('pins the allow-set to exactly the two ruled classes', () => {
     // The set is the RULE, so it is asserted rather than merely consulted: widening it
     // is a spec edit, and this makes that edit visible in a diff.
+    //
+    // It fired exactly once, on CUL-873, and the entry it forced into this diff is the
+    // note (`updateLookNote`). Recorded here rather than only in the PR, because the next
+    // person to widen this line should see what a legitimate widening looked like:
+    //
+    //   • it is STILL TWO CLASSES. The classes are the med confirm and the daily look;
+    //     what grew is the list of helpers the look's own file may reach, from one to two.
+    //   • the second helper writes the look's OWN row (`looks.notes`), on the entry the
+    //     owner has just made, creating no record the app did not already hold.
+    //   • it was already ruled — T-22 / R16 put the note on the card in round 4, and §10
+    //     assigns it to this PR. The pin did not authorise it; it made it visible, which
+    //     is the whole job.
+    //
+    // A widening that cannot say all three of those is a third class, and a third class is
+    // a Tier-2 amendment to `docs/nyx-med-strip-requirements.md` §0.1 — never a diff.
     expect(ALLOW).toEqual({
       'components/home/MedStrip.tsx': ['insertMedicationDose'],
-      'components/home/LookCard.tsx': ['insertLook'],
+      'components/home/LookCard.tsx': ['insertLook', 'updateLookNote'],
     });
   });
 

@@ -84,6 +84,7 @@ const INTAKE_SCORE: Record<string, number> = {
   all: 4,
 };
 const FINISHED_SCORE = 3; // most | all
+const PICKED_SCORE = 1; // refused | picked — the decline half (CUL-873, T-20)
 
 /**
  * Minimum-sample floors (§11 #5). Reuses the Signal's intake-baseline bar
@@ -445,10 +446,12 @@ export function computeIntakeDeclineFrequencyForMonth(
   const range = calendarMonthRange(m, nowMs);
   if (range.lastDayIndex < range.firstDayIndex) return [];
   const { buckets, byIndex } = createDayBuckets(range.firstDayIndex, range.lastDayIndex);
-  for (const meal of meals) {
+  // Qualifying = the computeIntakeRate denominator: rated, non-treat, non-free-fed.
+  // CUL-873 (E-5) — through the SHARED helper, not the hand-inlined inverse this loop
+  // used to carry. The two agreed when they were written and nothing made them stay
+  // agreed; `qualifyingIntakeMeals.parity.test.ts` now fails the build if they diverge.
+  for (const meal of qualifyingIntakeMeals(meals, freeFed)) {
     if (!Number.isFinite(meal.ms) || meal.ms < range.startMs || meal.ms >= range.endMs) continue;
-    // Qualifying = the computeIntakeRate denominator: rated, non-treat, non-free-fed.
-    if (meal.foodType === 'treat' || meal.intakeRating == null || isFreeFedMeal(meal, freeFed)) continue;
     // Unfinished = the inverse of "finished" (most/all) — one shared definition, so the
     // calendar's decline days are exactly the meals the finished-rate excludes.
     if (isFinishedMeal(meal)) continue;
@@ -766,15 +769,45 @@ function isFinishedMeal(m: AnalyticsMeal): boolean {
   return (INTAKE_SCORE[m.intakeRating as string] ?? 0) >= FINISHED_SCORE;
 }
 
-/** Rated, non-treat, non-free-fed meals — the ONE definition of an intake-rate
- *  "qualifying meal" (§11 #1 treats-out, §11 #6 free-fed-out), shared by BOTH the
- *  finished-rate big number (computeIntakeRate) and its sparkline shape
- *  (computeIntakeRateSeries) so the two can never apply different rules and tell
- *  different stories. */
-function qualifyingIntakeMeals(rows: AnalyticsMeal[], freeFed: ReadonlySet<string>): AnalyticsMeal[] {
+/**
+ * Rated, non-treat, non-free-fed meals — the ONE definition of an intake-rate
+ * "qualifying meal" (§11 #1 treats-out, §11 #6 free-fed-out), shared by the
+ * finished-rate big number (computeIntakeRate), its sparkline shape
+ * (computeIntakeRateSeries), the decline calendar (computeIntakeDeclineFrequencyForMonth)
+ * and — since CUL-873 — the daily look's withheld predicate (`lib/lookWithheld.ts`).
+ *
+ * EXPORTED BY CUL-873 (the daily-look spec's E-5), and the export is the point rather
+ * than a convenience. T-20 requires the look's record-local arm to read "the intake
+ * detector's OWN qualifying set", because the alternative was measured: N-4a's first cut
+ * of the emergency door re-derived a meal predicate from the same COLUMN and a refused
+ * pill-pocket treat printed *Call your vet today.* Reading the same column is not the
+ * same predicate, so the fourth consumer calls this rather than restating it — and the
+ * third, the decline calendar, stopped restating it in the same change.
+ */
+export function qualifyingIntakeMeals(rows: AnalyticsMeal[], freeFed: ReadonlySet<string>): AnalyticsMeal[] {
   return rows.filter(
     (m) => m.foodType !== 'treat' && m.intakeRating != null && !isFreeFedMeal(m, freeFed),
   );
+}
+
+/**
+ * Was this meal REFUSED OR PICKED AT — the "positive intake fact" half of T-20's
+ * record-local arm (`lib/lookWithheld.ts`), on the WSAVA scale this module already owns.
+ *
+ * `refused` (0) or `picked` (1), never a `some` (2). It is deliberately NOT
+ * `!isFinishedMeal` — that inverse would fold `some` in, and a cat who ate half her
+ * dinner is not a cat whose eating needs attention.
+ *
+ * An UNRATED meal is never a refusal. `isFinishedMeal` can default an unknown rating to
+ * 0 safely (unrated is genuinely not finished); the same default here would make every
+ * unrated bowl a refusal, which is the "a logging gap is not anorexia" defect T-20 struck
+ * the second arm for. So this asks the table for a KNOWN score rather than defaulting.
+ * Callers reach it through `qualifyingIntakeMeals`, which has already dropped the unrated
+ * — the belt is here anyway, because the predicate is the one making the claim.
+ */
+export function isRefusedOrPickedMeal(m: AnalyticsMeal): boolean {
+  const score = INTAKE_SCORE[m.intakeRating as string];
+  return score !== undefined && score <= PICKED_SCORE;
 }
 
 /**
@@ -1312,6 +1345,31 @@ export async function getMealTreatComposition(
  * detector. Window-INDEPENDENT by design — see detectIntakeDecline. `species` is
  * passed by the caller (lib/ stays free of the pet store).
  */
+/**
+ * This pet's QUALIFYING meals in [startMs, endMs), newest first — the read behind the
+ * daily look's record-local withheld arm (CUL-873, T-20).
+ *
+ * A wrapper, not a new query: `readMealRows` + `readFreeFedFoodIds` + the shared
+ * `qualifyingIntakeMeals` filter, in that order, so the look can never see a meal the
+ * intake detectors would have excluded. The free-fed read is the reason this lives here
+ * rather than in `lib/lookWithheld.ts` — the exclusion set is per-pet arrangement state
+ * this module already resolves, and a second resolution is a second chance to disagree.
+ *
+ * PROPAGATES a local-DB error, like every read wrapper in this section: the look's loader
+ * catches it and fails CLOSED. Newest first because the arm asks about "the last three".
+ */
+export async function getQualifyingIntakeMeals(
+  petId: string,
+  startMs: number,
+  endMs: number,
+): Promise<AnalyticsMeal[]> {
+  const [meals, freeFedFoodIds] = await Promise.all([
+    readMealRows(petId, startMs, endMs),
+    readFreeFedFoodIds(petId),
+  ]);
+  return qualifyingIntakeMeals(meals, freeFedFoodIds).sort((a, b) => b.ms - a.ms);
+}
+
 export async function getIntakeDecline(
   petId: string,
   species: Species,

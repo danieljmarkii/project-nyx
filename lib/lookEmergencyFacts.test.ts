@@ -7,7 +7,7 @@
 const mockGetAll = jest.fn();
 jest.mock('./db', () => ({ getDb: () => ({ getAllAsync: (...a: unknown[]) => mockGetAll(...a) }) }));
 
-import { EMERGENCY_WINDOW_MS, loadEmergencyFacts, withTrialRefusal } from './lookEmergencyFacts';
+import { EMERGENCY_WINDOW_MS, loadEmergencyFacts, withIntakeRefusal } from './lookEmergencyFacts';
 
 const NOW = Date.parse('2026-09-10T18:00:00Z');
 
@@ -86,28 +86,64 @@ describe('a failed read', () => {
   });
 });
 
-describe('withTrialRefusal — the OR that is never an AND', () => {
+describe('withIntakeRefusal — the OR that is never an AND', () => {
   const QUIET = { refusedRecently: false, vomitCount24h: 0, lethargyRecently: false };
 
   it('raises the intake fact when the trial register has one', () => {
-    expect(withTrialRefusal(QUIET, true)).toEqual({ ...QUIET, refusedRecently: true });
+    expect(withIntakeRefusal(QUIET, true)).toEqual({ ...QUIET, refusedRecently: true });
   });
 
   it('leaves a quiet record quiet when the register is silent', () => {
-    expect(withTrialRefusal(QUIET, false)).toEqual(QUIET);
+    expect(withIntakeRefusal(QUIET, false)).toEqual(QUIET);
   });
 
   it('never turns an unanswered read into an answered one', () => {
     // The fail-closed state has to survive the merge, in both directions: a trial fact
     // does not make the rest of the record known, and its absence does not make a failed
     // read succeed.
-    expect(withTrialRefusal(null, true)).toBeNull();
-    expect(withTrialRefusal(null, false)).toBeNull();
+    expect(withIntakeRefusal(null, true)).toBeNull();
+    expect(withIntakeRefusal(null, false)).toBeNull();
   });
 
   it('cannot CANCEL a refusal the read already found', () => {
     // OR, never AND — neither register may stand the other down (the R1 asymmetry).
     const refusing = { ...QUIET, refusedRecently: true };
-    expect(withTrialRefusal(refusing, false)).toEqual(refusing);
+    expect(withIntakeRefusal(refusing, false)).toEqual(refusing);
+  });
+});
+
+// ── The fourth consumer, wired (CUL-873) ─────────────────────────────────────
+//
+// The adversarial pass checked the claim rather than believing it and found nothing
+// outside `lib/lookWithheld.ts` importing `intakeArm`, so the card and the door could
+// disagree about whether the same animal was eating. These pin the OR.
+describe('withIntakeRefusal — two registers, one OR', () => {
+  const QUIET = { refusedRecently: false, vomitCount24h: 0, lethargyRecently: false };
+
+  it('the trial register alone still fires it', () => {
+    expect(withIntakeRefusal(QUIET, true)?.refusedRecently).toBe(true);
+  });
+
+  it('the RECORD-LOCAL arm alone fires it — the non-trial cat the gap was measured on', () => {
+    // Two refused bowls today, no trial. Before this wiring her card withheld its words
+    // while this door printed *Not eating for a day* as an UNMET conditional.
+    expect(withIntakeRefusal(QUIET, false, true)?.refusedRecently).toBe(true);
+  });
+
+  it('neither register firing leaves the fact alone', () => {
+    expect(withIntakeRefusal(QUIET, false, false)?.refusedRecently).toBe(false);
+  });
+
+  it('an omitted arm is NO EVIDENCE, never a refusal — ignorance must not escalate', () => {
+    expect(withIntakeRefusal(QUIET, false)?.refusedRecently).toBe(false);
+  });
+
+  it('neither register can cancel the other', () => {
+    expect(withIntakeRefusal(QUIET, true, false)?.refusedRecently).toBe(true);
+    expect(withIntakeRefusal(QUIET, false, true)?.refusedRecently).toBe(true);
+  });
+
+  it('a failed facts read stays null through both registers', () => {
+    expect(withIntakeRefusal(null, true, true)).toBeNull();
   });
 });

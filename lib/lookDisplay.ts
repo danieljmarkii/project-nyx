@@ -99,7 +99,7 @@ export function isLookRow(row: { event_type: string }): boolean {
  * cat's *Accident indoors* is the dog's; `outside_box` is one key with two labels).
  * The sibling is the fallback, never the default.
  */
-function resolveWord(key: string, pet: LookPetContext): ResolvedLookWord | null {
+export function resolveWord(key: string, pet: LookPetContext): ResolvedLookWord | null {
   if (key === LOOK_OPENING_CHIP_KEY) {
     // The opening chip is a word key like any other in `looks.words`, but it is not
     // in LOOK_WORDS — its label follows `pets.sex`, and a pet whose sex nobody
@@ -156,7 +156,7 @@ export function describeLook(row: LookRowFields, pet: LookPetContext = {}): Desc
  * initialisms (§4.2 / §4.3), so nothing here loses a capital it needed, and
  * `toLowerCase()` over the whole string would flatten one that did.
  */
-function inSentence(head: string): string {
+export function inSentence(head: string): string {
   return head.charAt(0).toLowerCase() + head.slice(1);
 }
 
@@ -174,6 +174,29 @@ export function lookSummary(described: DescribedLook): string | null {
   if (described.kind === 'unknown') return null;
   if (described.words.length === 0) return null;
   return described.words.map((w) => inSentence(w.head)).join(', ');
+}
+
+/**
+ * The summary as a HEADLINE — the form for a surface where the words stand alone.
+ *
+ * `lookSummary` lower-cases its first word on purpose: it was built for the surfaces that
+ * put a prefix in front of it (History's *Noticed · off, eating grass*, the Recap's *You
+ * noticed: off, …*), and inside those sentences a capital would be wrong.
+ *
+ * The Noticed card has no prefix. Its label sits several lines up as a section header, so
+ * the entry renders as the first thing on its own line — and the product review's cold
+ * read of `○ off   7:12 ›` was "off what?": a fragment with no frame, sitting beside an
+ * unresolvable row that falls back to a capitalised *Noticed* in the identical slot. One
+ * card, two casings, neither one a sentence.
+ *
+ * So the case is a property of the SURFACE and it is resolved here, off the same resolver,
+ * rather than by either caller re-deriving a string. Returns null for the same rows
+ * `lookSummary` does — there is nothing honest to headline.
+ */
+export function lookHeadline(described: DescribedLook): string | null {
+  const summary = lookSummary(described);
+  if (!summary) return null;
+  return summary.charAt(0).toUpperCase() + summary.slice(1);
 }
 
 /** The observed-absence row's phrase, in one place because it is the one string in

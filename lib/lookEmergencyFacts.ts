@@ -35,16 +35,13 @@
 //     positive fact said she had not eaten, the more the door reassured.
 //
 // A safety page that cries wolf daily is one an owner stops believing, and that is the
-// same failure as the delay. So the intake fact is NOT derived here. It comes from the
-// caller, as the trial card's own refusal register (`isAnimalNotEating`), which is the
-// predicate CUL-871 named — and T-20 puts the RECORD-LOCAL arm, the one that speaks for
-// a pet with no trial, in `lib/lookWithheld.ts` (N-4b / CUL-873): two of the last three
-// QUALIFYING meals (rated, non-treat, non-free-fed) refused or picked, within the
-// intake detector's own recency bound, on the exported qualifying-set helper with the
-// parity test and the feeder-frequency fixtures E-5 requires before that threshold is
-// trusted. Until then a pet with no trial simply does not collapse the intake rows —
-// the honest permanent-threshold state `subdued_hiding` and `wont_drink` already carry
-// — rather than collapsing them on a predicate this module invented.
+// same failure as the delay. So the intake fact is NOT derived here. Both of the door's
+// intake registers come from elsewhere and are folded in by `withTrialRefusal`: the trial
+// card's own (`isAnimalNotEating`, the predicate CUL-871 named) and the RECORD-LOCAL arm
+// that speaks for a pet with no trial — two of the last three QUALIFYING meals (rated,
+// non-treat, non-free-fed) refused or picked inside its own recency bound, which lives in
+// `lib/lookWithheld.ts` (N-4b / CUL-873) and is shared with the Noticed card so the two
+// can never disagree about whether this animal is eating.
 
 import { getDb } from './db';
 import type { EmergencyFacts } from './lookEmergency';
@@ -89,19 +86,44 @@ export async function loadEmergencyFacts(
 }
 
 /**
- * Fold in the intake fact this read deliberately does not derive: the diet trial's own
- * refusal register (`isAnimalNotEating`), resolved by the caller.
+ * Fold in the intake facts this read deliberately does not derive.
  *
- * It is the ONLY intake fact the door has in v1, and it is a POSITIVE fact or nothing —
- * never ignorance (T-20: "the withheld state is triggered by a positive intake fact,
- * never by ignorance"). A caller that cannot tell passes `false`, because a door that
- * escalated on an unloaded trial card would read *Call your vet today.* forever for a
- * healthy animal whose facts failed to load once.
+ * TWO REGISTERS, ONE OR: the diet trial's own (`isAnimalNotEating`, resolved by the
+ * caller) and the record-local arm (`intakeArm` over the qualifying meals, CUL-873). A
+ * refusal either register can see is a refusal, and neither may cancel the other.
+ *
+ * ── WHY THE SECOND ONE IS HERE NOW ───────────────────────────────────────────
+ * N-4a shipped the trial register alone with a comment promising the record-local arm
+ * "when N-4b exports it", and N-4b's own module header then claimed the door had it —
+ * "one predicate, four consumers". The adversarial pass checked rather than believed, and
+ * found nothing outside `lib/lookWithheld.ts` importing `intakeArm`. The measured cost of
+ * the gap: a non-trial cat with two refused bowls today had her Noticed card WITHHOLD its
+ * words, while the emergency door one tap away still printed *Not eating for a day* and
+ * *Subdued and not eating a full meal in 24 hours* as UNMET conditionals — the card and
+ * the door disagreeing about whether the same animal was eating, which is the exact split
+ * "one predicate" exists to prevent.
+ *
+ * ── WHY IT TAKES A BOOLEAN AND NOT THE MEAL ROWS ─────────────────────────────
+ * The first wiring imported `intakeArm` here, which dragged `lib/analytics` — and through
+ * it `feedingArrangements` → `sync` → `supabase` — into a module whose whole point is that
+ * it is a small read with no chain behind it (C-26: a module's boundary is what imports
+ * it). The caller already holds both registers and already imports `intakeArm` for the
+ * card's own withholding, so it evaluates the arm and hands over the answer. ONE predicate
+ * is still one predicate: the card cannot compute the door's refusal differently from its
+ * own, because it calls the same function once for both.
+ *
+ * Every arm is a POSITIVE fact or nothing — never ignorance (T-20). A caller that cannot
+ * tell passes `false`, because a door that escalated on unloaded facts would read *Call
+ * your vet today.* forever for a healthy animal whose facts failed to load once. The
+ * caller resolving an unanswered meal read to "no evidence" is deliberate and happens at
+ * the call site, rather than this function guessing which way ignorance should fall.
  */
-export function withTrialRefusal(
+export function withIntakeRefusal(
   facts: EmergencyFacts | null,
   trialNotEating: boolean,
+  recordLocalRefusal: boolean = false,
 ): EmergencyFacts | null {
   if (facts === null) return null;
-  return trialNotEating ? { ...facts, refusedRecently: true } : facts;
+  const refused = trialNotEating || recordLocalRefusal;
+  return refused ? { ...facts, refusedRecently: true } : facts;
 }
