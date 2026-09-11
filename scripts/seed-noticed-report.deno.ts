@@ -1,6 +1,15 @@
 // Render a vet report over a seeded record that exercises the Noticed block (CUL-875).
 //
-//   deno run --allow-read --allow-write scripts/seed-noticed-report.ts <out.html>
+//   deno run --allow-read --allow-write scripts/seed-noticed-report.deno.ts <out.html>
+//
+// The `.deno.ts` suffix is load-bearing: tsconfig excludes `scripts/**/*.deno.ts` from the
+// app's `tsc` run, because `Deno` is a global here and is not in the app's type
+// environment. This file was written without it and the pre-push hook caught it — which
+// is the exact forgetting the tsconfig comment predicts, now for the third time.
+//
+// Sibling: `scripts/render-trial-report-sample.deno.ts`, which does the same job for the
+// diet-trial branches. Separate on purpose — each seeds the record ITS feature needs, and
+// one script trying to hold both would make neither's fixture readable.
 //
 // Its only job is producing the ARTIFACT the `vet-report-cold-read` subagent reads. That
 // review is mandatory on every change to the report's content, and it must be given the
