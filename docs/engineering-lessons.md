@@ -185,6 +185,31 @@ The split within the file is the tell worth generalising: the pure-function suit
 
 ---
 
+
+### C-34 · A MIRRORED constant must answer the same question, and a header that claims a wiring is asserted or deleted (2026-09-11, CUL-873):
+
+**The rule, in one line: a number copied from another module inherits that module's QUESTION, not just its value — and a comment describing how two modules are wired is a claim the build must check, because prose is where a wiring goes to die.**
+
+Two halves, both found by the `adversarial-reviewer` pass the daily-look spec put on N-4b, and both of the same shape: the code asserted something about itself that nothing tested.
+
+**Half one — the mirrored constant.** `lib/lookWithheld.ts`'s record-local arm asks "may Home draw *nothing unusual* beside a live intake concern?" T-20 wrote its recency bound as `DECLINE.refusalRecencyDays`, the intake detector's own two days, and the build mirrored it with a comment saying so. The pass broke it with a case that is not exotic:
+
+> A cat with a 14-day twice-daily baseline of clean bowls refuses three meals in a row, and her owner — reasonably — stops putting food down for an animal that has stopped eating. **Forty-nine hours after the last refusal, with no intervening evidence of any kind, the gate flipped from withheld to open.** Home then drew *Nothing unusual · 7:12* with a coverage count over a cat three days into a hunger strike. Arm 1 carried the identical bound, so nothing else on the card covered it: `detectIntakeDecline`'s trigger B skips a refusal older than the bound, and its trigger A skips a day holding no rated meal. Measured at bound+1s; held at +2h and +30h.
+
+The two numbers were never the same number. **The detector's bound gates a FINDING** — "escalate now" — and a finding may reasonably go quiet as its evidence ages; that is what recency is *for* there. **This one gates a SUPPRESSION** — "do not draw the reassuring thing" — and a suppression must outlast the clinical window it protects, which for a cat is hepatic lipidosis, measured in days. Sharing one constant made the suppression inherit a decay rule written for the opposite purpose, and the mirror comment made that look deliberate.
+
+Decoupled, and set to **3** from the pass's own 2/3/4/5/7 sweep: at three the under-fire is closed, and every counterexample the fourth adversarial pass used to *strike* the first draft's second arm stays closed at three and at every bound through seven (the once-a-week rater, the fortnightly picky cat, the recovered cat whose refusals are superseded). It is not the struck arm returning — that arm fired on *ignorance*, a record with no refusal in it at all; this one requires the newest qualifying meal on the record to **be** a refusal.
+
+**The generalisation:** before mirroring a constant, say out loud what question each consumer asks of it. Same value, same question → mirror it and name the source. Same value, different question → **two constants**, each with its own derivation written down, even when they are equal on the day you write them. The comment that says "mirrors X so the two can never drift" is only true when drifting would be the bug; here *agreeing* was the bug.
+
+**Half two — the claimed wiring.** `lib/lookWithheld.ts`'s header said `intakeArm` was what the emergency door takes, "so the door and the card can never disagree about whether this animal is eating", and the issue's own engineering note said the same. Nothing outside that module and its test imported it. The measured cost: a non-trial cat with two refused bowls had her Noticed card **withhold its words** while the door one tap away still printed *Not eating for a day* and *Subdued and not eating a full meal in 24 hours* as **unmet conditionals** — the two surfaces disagreeing about one animal, which is the exact split "one predicate" exists to prevent.
+
+Worse, and the part worth carrying: **the card's own test mock was stubbing the fold to a passthrough** (`withTrialRefusal: (facts) => facts`), inherited from N-4a. So no test on that file could observe whether *either* register reached the sheet, and the header's claim was unfalsifiable by construction. A mock that discards the behaviour under test is not a mock, it is a hole with a name.
+
+**The rule:** a header claiming module A reaches module B is a claim, and a claim in a comment is worth what it costs to write. Either assert it (`expect(withIntakeRefusal(QUIET, false, true)?.refusedRecently).toBe(true)` plus a render-level test that the two surfaces agree on one record) or delete the sentence. And when a mock stands in for a pure function, use `jest.requireActual` — the read is what needs stubbing, never the rule.
+
+**One more, from the same pass and the same family (C-18's edge, sharpened).** The cadence fixtures re-implemented the recency bound as a local `inBound()` helper, so "a once-a-week rater can never reach it" proved a property of the *test's own filter*. Deleting the bound from `loadRecentQualifyingMeals` left **7,576 of 7,577** tests green. A test that re-derives the production rule to check the production rule is a tautology with fixtures; drive the real function, and derive the fixture's boundary from the shipped constant so retuning it moves the test with it.
+
 ## R — Read-These table, full notes
 
 The original rows, verbatim. Each spec named here is itself canonical; these are CLAUDE.md's binding notes about it as they stood when compacted.
