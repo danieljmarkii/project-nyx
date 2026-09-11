@@ -1,0 +1,95 @@
+-- ============================================================
+-- vet_visits — seed the vet-visit companion rollout flag
+-- (Vet visits — the appointment companion, VV-0 / CUL-898)
+-- See: docs/nyx-vet-visits-requirements.md v1.0 §5.5 (the VV-0 row) and the
+--      daily_look template (063) it mirrors verbatim — a dark allowlist flag,
+--      flag-off byte-identical, seed-first, a beta shelf before GA, retire on a
+--      PM GA call only.
+-- ============================================================
+-- The vet-visit companion (book the appointment, the Home strip in the days
+-- before, Get ready, notes in the room, the plan becoming records) ships DARK
+-- behind one allowlist flag so every companion client PR (VV-2 the Pet-tab home,
+-- VV-4 the visit, VV-5 the strip + Get ready, …) lands invisible and the surface
+-- can bake on a hand-picked cohort before it reaches anyone else. This migration
+-- seeds that single eligibility flag. It is the VV-0 gate the whole track queues
+-- behind — seed-first: the seed + the client registration + the shelf row land
+-- BEFORE any consumer.
+--
+--   vet_visits   Eligibility for the vet-visit companion surfaces. Resolved
+--                client-side by resolveAllowlistFlag (lib/appConfig.ts) against
+--                the caller's uid, then AND-ed with the beta-shelf opt-in (the
+--                B-712 two-gate shape). Flag-off => Home / the Pet tab /
+--                /rundown / app/vet-visit.tsx are byte-identical to today;
+--                flag-on + opted-in => the companion surfaces render (VV-2, …).
+--
+-- G0 (PM, 2026-09-10): build behind a rollout flag and retire it at GA. This is
+-- a ROLLOUT GATE ONLY, never a permanent one and never a Premium gate — the
+-- companion is care, not convenience (Principle 7), so GA is every account and
+-- the flag exists only to bake the surface on a cohort before a PM GA call
+-- (flipping enabled:true, then a removal PR).
+--
+-- CLIENT-RENDER-ONLY (spec §5.5, `serverCost: false`): like daily_look (063) /
+-- signal_design_v2 (055) / log_picker_v2 (056) / event_types_v2 (061), this flag
+-- gates only what the CLIENT draws. No Edge Function reads the key — neither
+-- `ask` nor `generate-signal` nor `generate-report` — and VV-1's schema (the
+-- vet_appointments table, the three links, vet_visits.deleted_at) is
+-- account-agnostic and lands for everyone, with the report reader inert until
+-- CUL-19. So there is deliberately NO server-side registration of this key
+-- (supabase/functions/_shared/flags.ts is a generic resolver and needs no
+-- per-key entry), and the B-712 "server-cost betas must gate server-side" rule
+-- is checked and does not bite here.
+--
+-- THE ALLOWLIST SHAPE (spec §5.5, B-712): reuses the experimental-flag primitive
+-- seeded for Ask (037), the widget (054), the Signal uplift (055), the log
+-- picker (056), the taxonomy (061) and Noticed (063) verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- Resolution (already implemented, client-side): enabled=true => on for everyone
+-- (the GA end state); else on iff the caller's uid is in allowlist;
+-- malformed/absent => fail CLOSED (off). No new mechanism, no new table, no new
+-- column, no new policy — app_config already exists (030) with its
+-- read-only-to-authenticated RLS, which this row inherits unchanged.
+--
+-- SHIP-DARK (seed-first, default nobody): {"enabled": false, "allowlist": []}
+-- means the companion is eligible for no one. Creating this row changes nothing
+-- an owner can see. Cohort enablement (the PM's uid) is a later, recorded config
+-- UPDATE (an app_config write, not a deploy side effect), deliberately NOT baked
+-- into this seed — the 037/054/055/056/061/063 lesson: a re-applied seed must
+-- never reset a live allowlist. The App Review demo account (CUL-188) is
+-- deliberately NOT allowlisted (the widget precedent / DB-1): allowlist values
+-- are readable by every authenticated client (B-744), so allowlisting the demo
+-- would leak its UUID and show the reviewer a surface GA users can't reach.
+-- Retirement is a removal PR on an explicit PM GA call, never silent.
+--
+-- Scope: this PR seeds one app_config row (the schema half), isolated per the
+-- CLAUDE.md migration-isolation rule. Riding the SAME PR (the 055/056/061/063
+-- composition): the client registration in lib/appConfig.ts (ALLOWLIST_FLAG_KEYS
+-- + ALLOWLIST_FLAGS_UNSET) and the BETA_REGISTRY row + shelf card
+-- (lib/betaFeatures.ts, app/settings/beta.tsx). Safe for the same reasons: none
+-- of it is schema, the seed is inert without the registration (the flag can't
+-- even be read — extractAllowlistFlags picks only known keys, and
+-- useAllowlistFlag is typed to the registered union), and the shelf card
+-- self-gates on an eligibility that is false for every account under the dark
+-- seed. Nothing CONSUMES the flag yet (VV-0) — guards/vetVisitsFlagOff.test.tsx
+-- asserts exactly that, and reds the day VV-2 lands the first consumer.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'vet_visits';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'vet_visits';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054/055/056/061/063 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('vet_visits', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

@@ -127,4 +127,19 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(queryByText('Home screen widget')).toBeNull();
     expect(queryByText('More event types')).toBeNull();
   });
+
+  it('renders the Vet visits card for an allowlisted account, self-gated otherwise (CUL-898)', () => {
+    // VV-0 AC: app/settings/beta.tsx renders the Vet visits row ONLY for an
+    // allowlisted account. Allowlisted for vet_visits → the card renders (title +
+    // blurb); the betas this account isn't allowlisted for stay gated away. The
+    // zero-eligible case (dark seed reaches nobody → no Vet visits card, empty
+    // state) is the B-729 test above.
+    setAllowlist({ vet_visits: gatedToPm });
+    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+
+    expect(getByText('Vet visits')).toBeTruthy();
+    expect(getByText(/Everything around a vet appointment/)).toBeTruthy();
+    expect(queryByText('Home screen widget')).toBeNull();
+    expect(queryByText('Noticed')).toBeNull();
+  });
 });
