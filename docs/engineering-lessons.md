@@ -404,3 +404,40 @@ Every track here that ships dark (Ask 037, the widget 054, `signal_design_v2` 05
 **The guard shape this leaves behind.** Two rules here were string literals nothing red-flags — the `events(occurred_at, deleted_at)` embed that is the only thing stopping a note the owner took back from printing on a clinic's document (every fixture hand-builds a row that already has the field, so deleting it from the select leaves the suite green), and §9 rule 4's operative clause about a mint that does not exist yet. `guards/reportLookPull.test.ts` pins the first and, per C-32, **registers the second with the empty set as the assertion**: exactly zero share-link renders exist today, so the first one reds the guard and has to come back and state how it meets the rule.
 
 ---
+
+### C-38 · A guard on the CHILD is not the invariant, and a floor derived from the thing it checks cannot catch that thing's removal (2026-09-11, CUL-899):
+
+**The finding, and why it is the same one twice.** Migration 066 added three bare FKs to `vet_visits` and guarded them properly: a `SECURITY DEFINER` trigger on every write to a row carrying `vet_visit_id`, with 045's pinned `search_path`, and a `RAISE` obeying C-31 (only `NEW.*` values, one message for "no such visit" and "another pet's visit" alike — verified byte-identical). It also shipped a `COMMENT ON FUNCTION` asserting the invariant: *an owner could link one pet's row to another pet's visit* named as the thing prevented.
+
+The database did not hold it. `vet_visits.pet_id` is freely mutable under `vet_visits_owner`, and one RLS-legal statement falsified the whole thing:
+
+```sql
+UPDATE vet_visits SET pet_id = <the owner's other pet> WHERE id = V;
+```
+
+Executed against the live schema inside a rolled-back transaction: accepted, 1 row, and three linked rows (a medication, a trial, an appointment) then named a visit belonging to a different pet. **This is 045's own diagnosis, word for word** — *"044 asserts an invariant that the database does not actually enforce — and 044's COMMENT ON FUNCTION states that invariant, so the comment was writing a cheque the code did not cash."* 045 closed the parent half for `vet_documents` by freezing `storage_path` and noted it "closes the `pet_id` half for free"; 066 imported 045's DEFINER + `search_path` half and left the other one behind, while citing 045 in its header. **The generalisable question is: what else can move?** A guard over a reference constrains the row that HOLDS the reference. The thing pointed AT is a separate write path with separate policies, and it is usually the one nobody thinks about.
+
+**The second-order half, which is worse than the bleed.** 066's guard tested `NEW.vet_visit_id IS NOT NULL` — never whether the link had CHANGED — so it re-validated on every write. Once a parent had moved, the linked rows were permanently un-writable:
+
+```sql
+UPDATE medications SET notes = 'an ordinary edit' WHERE id = M;
+ERROR: 23514 vet_visit_id … must reference a vet visit for the same pet (…)
+```
+
+`23514` is in `TERMINAL_SYNC_ERROR_CODES`, so the client quarantines immediately with no retry. An owner would lose the ability to edit her own medication, permanently, with no path in the app to move the visit back. So the predicate is `IS DISTINCT FROM OLD` on **both** the reference and the row's own scope (moving the CHILD invalidates the pair exactly as re-pointing the link does) — and the two fixes are deliberately independent: immutability makes the violation unwritable, the narrowed predicate makes a row that is somehow already violating stay EDITABLE. **Writable-but-violating is repairable by the owner; bricked is not repairable at all.**
+
+Severity, stated as it was: within-account, not cross-tenant — the cross-tenant boundary held under every attack tried, because `vet_visits_owner`'s reused `WITH CHECK` still confines the move to the owner's own pets. Not reachable from the shipped UI. Fixed because it was free at 0 rows and expensive after VV-6 ships a visit edit control, and because a `BEFORE` trigger binds the service role where a policy would not.
+
+**Immutable rather than cascading, and that is a product call, not a technical one.** Re-pointing the children along with the parent would be the other repair and it is wrong: a visit that happened to pet A did not happen to pet B, so moving it is not a correction, it is a fabrication — and it would silently re-attribute a medication's and a trial's provenance. "I logged this under the wrong pet" is a real need whose honest implementation is delete-and-re-log.
+
+**The floor that was itself vacuous.** `guards/visitReaders.test.ts` shipped with a C-36 non-vacuity floor naming three files. The `rls-privacy-reviewer` demonstrated it was partial: plant a real violation in `components/home/` and delete `'components'` from `SCAN_DIRS`, and eight assertions pass over it. **The first fix did not work either** — iterating `SCAN_DIRS` and asserting each entry is walked is ALSO green under that mutation, because un-declaring a directory removes it from the loop. Measured, not reasoned: 25/25 passed. **A floor derived from the thing it is checking cannot catch that thing being removed.** The expected set is now derived from the REPOSITORY — every top-level directory holding non-test TypeScript must be scanned unless named out of scope — which catches both a dropped directory and a new product directory nobody added.
+
+**Three registry entries rejected, in one file, by two registries.** `ALLOWED` is an exemption (C-32), and the staleness assertion caught `lib/hydration.ts` before the guard's first green run — it holds both table names as bare strings in `LOCAL_WIPE_TABLES` plus a comment, and neither is a read. Then the dynamic registry caught two more: `lib/syncQueue.ts` (its `.from(t)` is inside a comment quoting the shape it replaced) and `lib/attachments.ts` (a Storage bucket). Every one was a file the author had *thought about* rather than a file that needed excusing, and registering any of them would have pre-authorised a real read added there later. **The rule earns its ceremony three times in one session.**
+
+**The detector lessons.** VV-0 seeded a rollout flag whose key is also the table name `vet_visits`, so a bare-string scan flags three files that read no table — C-36's collision, inverted. Match the SHAPE of a read (a SQL clause, a `.from()` call), and assert the flag files clean as a measured property rather than allow-listing them. A dynamic `.from(variable)` is invisible to a literal detector and is the idiom `pushRows`/`fetchAllRows` already use, so it needs its own kind and its own registry keyed on the table name's PROVENANCE ("a compile-time union, every member registered"), not the file's purpose. **A detector's exclusions are stated as TESTS**: `Array.from(new Set(xs))` and `Buffer.from(s)` both matched the first draft and were caught by the file's own proofs, not by review.
+
+**And the limits go in the file.** Four evasions remain open (string concatenation, a schema-qualified raw read, an `rpc()`, and C-11's transitive consumer). They are written into the guard's footer with what would close each and when it will matter, because **an undocumented blind spot reads as coverage** — which is how the next author comes to rely on a guard for something it never checked. One of the four was also a reminder to verify a reviewer's example before acting on it: the reported transitive evasion imports `readLastVisitDate`, which is not exported, so it does not compile. The CLASS is real; the demonstration was not.
+
+**One more, from the same pass.** The advisor caught the new `SECURITY DEFINER` function shipping without its `REVOKE` — the third instance in this family, in a migration whose header cites 045 (the second instance) as its pattern, and after 047 wrote the warning in as many words. A written warning in the file you are copying from does not prevent the omission; filed as CUL-935 for the mechanical version.
+
+---
