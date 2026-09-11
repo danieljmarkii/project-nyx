@@ -252,12 +252,29 @@ export function compareWord(
     };
   }
 
-  // ── The two falling-only gates ─────────────────────────────────────────────
-  // Direction is the RATE, not the count: the denominators differ by construction (they
-  // are two self-selected samples), so comparing 3-of-24 with 3-of-12 as "the same" is
-  // the error the denominators exist to prevent. Equal rates are NOT falling — the pair
-  // renders, which says "the same as before" and reassures nobody.
-  const falling = current.days * earlier.answered < earlier.days * current.answered;
+  // ── The two withholding gates, and what "falling" has to mean ─────────────
+  //
+  // THE GATE'S QUESTION IS NOT "did it fall", IT IS "can this READ AS IMPROVEMENT". The
+  // first cut classified direction by the RATE, on the good-sounding ground that the two
+  // denominators are self-selected samples and 3-of-24 is not 3-of-12. That is the right
+  // way to describe a trend and the WRONG predicate for a gate, because the person the
+  // gate protects is reading two NUMERATORS. The adversarial pass broke it both ways:
+  //
+  //   • *6 of 24* then *3 of 8* — she stopped answering except when worried. The rate
+  //     ROSE (25% → 37.5%), so nothing fired and the pair published bare: the reader sees
+  //     six become three, reads improvement, and the caption written for exactly this
+  //     ("you also answered on fewer days this month") could not fire, because it was
+  //     gated on a direction its own sentence is not about.
+  //   • *4 of 10* then *5 of 28* — a true first month. The count ROSE, the rate fell, and
+  //     the RTM guard withheld it. §6.7 says a rising pair is never subject to that rule.
+  //
+  // So the predicate is the COUNT, which is also the noun §6.6's first clause uses ("a
+  // rising symptom-class word count is never withheld"). A count that rose, or held, can
+  // not be read as improvement and is never withheld; a count that fell is, when the
+  // record cannot support the fall. The RATE still decides nothing here and describes
+  // everything: both halves print their own denominator, and the reader does the
+  // comparison the two fractions actually support.
+  const falling = current.days < earlier.days;
   if (falling) {
     const earliest = earliestAnsweredIndex(record);
     if (earliest !== null && earliest >= earlierBounds.firstIndex) {

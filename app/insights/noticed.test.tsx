@@ -99,7 +99,7 @@ import * as analytics from '../../lib/analytics';
 import { notEnoughData } from '../../lib/analytics';
 import { LOOK_VOCAB_VERSION } from '../../constants/lookWords';
 import { localDayIndex, dayKeyFromIndex } from '../../lib/utils';
-import { NOTICED_CARD_HREF } from '../../lib/lookPatterns';
+import { noticedCardHref } from '../../lib/lookPatterns';
 
 const A = analytics as jest.Mocked<typeof analytics>;
 const NOW = Date.now();
@@ -197,8 +197,20 @@ describe('where it lands', () => {
   it('its door opens the record filtered to looks, not an unbuilt metric detail', async () => {
     const { findByTestId } = render(<PatternsScreen />);
     fireEvent.press(await findByTestId('what-you-noticed-card'));
-    expect(router.push).toHaveBeenCalledWith(NOTICED_CARD_HREF);
+    expect(router.push).toHaveBeenCalledWith(expect.stringContaining('/history?type=check_in'));
     expect(router.push).not.toHaveBeenCalledWith(expect.stringContaining('/insights/'));
+  });
+
+  it('the door carries a NONCE, so a second tap re-applies the filter', async () => {
+    // History is a mounted tab whose filter effect returns early on `!params.ts`. Without
+    // this the card's promise ("Opens every look in the record") holds on the first tap
+    // only — an owner who changed the scope in between lands wherever she left it.
+    const { findByTestId } = render(<PatternsScreen />);
+    fireEvent.press(await findByTestId('what-you-noticed-card'));
+    const href = (router.push as jest.Mock).mock.calls[0][0] as string;
+    expect(href).toMatch(/[?&]ts=\d+/);
+    // And it MOVES between taps, which is the whole point of a nonce.
+    expect(noticedCardHref(1)).not.toBe(noticedCardHref(2));
   });
 });
 
@@ -225,6 +237,31 @@ describe('the shared withheld predicate reaches the card (T-20)', () => {
   });
 });
 
+describe('CUL-845 gate 2 reads the SYMPTOM CARDS’ window, not the card’s', () => {
+  it('a look word marked only on days 29 and 30 still suppresses the zero', () => {
+    // The adversarial pass's fixture. The Noticed card counts 28 days; the symptom cards
+    // count a 30-day month and say so in their caption. Reading the card's window left a
+    // two-day hole through which `Itch · 0` printed over an owner tapping *Scratching
+    // more*, in exactly the case CUL-845 gate 2 exists for.
+    mockLoadLookDays.mockResolvedValue([
+      ...record(),
+      ...[28, 29].map((d) => ({
+        eventId: `e-late-${d}`,
+        localDay: dayKeyFromIndex(TODAY - d),
+        createdAt: new Date(NOW - d * 86_400_000).toISOString(),
+        outcome: 'observed' as const,
+        words: ['scratching_more'],
+        vocabVersion: LOOK_VOCAB_VERSION,
+      })),
+    ]);
+    A.getSymptomCounts.mockResolvedValue([{ symptomType: 'itch', current: 0, prior: 4, delta: -4 }]);
+    const { findByTestId, queryByText } = render(<PatternsScreen />);
+    return findByTestId('what-you-noticed-card').then(() => {
+      expect(queryByText('Itch/Scratch')).toBeNull();
+    });
+  });
+});
+
 describe('a failed look read costs the dashboard nothing', () => {
   it('drops the card and leaves every other card standing — never a whole-screen error', async () => {
     mockLoadLookDays.mockRejectedValue(new Error('local read failed'));
@@ -237,12 +274,18 @@ describe('a failed look read costs the dashboard nothing', () => {
 });
 
 describe('the read’s window', () => {
-  it('reads EIGHT weeks, so the comparison has an earlier half to count', async () => {
+  it('reads the WHOLE look record — a first date is a claim about the record, not a window', async () => {
+    // Bounded, this card would name its horizon's first day while Home and the report
+    // named the record's, for the same word, one tap apart — and in the under-stating
+    // direction. Every COUNT is bounded inside the model regardless.
     const { findByTestId } = render(<PatternsScreen />);
     await findByTestId('what-you-noticed-card');
-    const sinceDay = mockLoadLookDays.mock.calls[0][1] as string;
-    // 56 days back, inclusive of today.
-    expect(sinceDay).toBe(dayKeyFromIndex(TODAY - 55));
-    expect(mockLoadVomitDays.mock.calls[0][1]).toBe(sinceDay);
+    expect(mockLoadLookDays.mock.calls[0][1]).toBeUndefined();
+  });
+
+  it('reads EIGHT weeks of vomit days, so the pairing’s read is not narrower than the compare’s', async () => {
+    const { findByTestId } = render(<PatternsScreen />);
+    await findByTestId('what-you-noticed-card');
+    expect(mockLoadVomitDays.mock.calls[0][1]).toBe(dayKeyFromIndex(TODAY - 55));
   });
 });

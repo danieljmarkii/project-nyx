@@ -391,7 +391,9 @@ describe('buildDashboardCards — the Noticed card', () => {
     coverageLine: 'Counted across the 24 of the last 28 days you answered.',
     rows: [],
     withheldLine: null,
+    withheldSpanLine: null,
     calibrationLine: null,
+    multiSelectNote: null,
     empty: true,
     pairing: null,
     wordDaysInWindow: new Map(),
@@ -433,23 +435,32 @@ describe('buildDashboardCards — the Noticed card', () => {
 });
 
 describe('buildDashboardCards — CUL-845 gate 2, the zero-count audit', () => {
-  function noticedWith(words: [string, number][]): NoticedCardModel {
-    return {
-      coverageLine: null,
-      rows: [],
-      withheldLine: null,
-      calibrationLine: null,
-      empty: false,
-      pairing: null,
-      wordDaysInWindow: new Map(words),
-    };
+  /** CUL-845 gate 2 reads its OWN input at the DASHBOARD's window, not the Noticed
+   *  card's — the 30-vs-28-day hole the adversarial pass walked through (a word marked
+   *  only on days 29 and 30 left the gate blind while the zero it should suppress was
+   *  still on screen). These fixtures drive `lookWordDaysForZeroGate`, and pass a card
+   *  model with an EMPTY per-word map alongside, so a regression that re-pointed the
+   *  gate at the card would red every case below. */
+  const cardModel: NoticedCardModel = {
+    coverageLine: null,
+    rows: [],
+    withheldLine: null,
+    withheldSpanLine: null,
+    calibrationLine: null,
+    multiSelectNote: null,
+    empty: false,
+    pairing: null,
+    wordDaysInWindow: new Map(),
+  };
+  function gateWith(words: [string, number][]): ReadonlyMap<string, number> {
+    return new Map(words);
   }
 
   it('30 days of Scratching more and no itch rows renders NO itch card — not even at zero', () => {
     const cards = buildDashboardCards(
       baseInput({
         symptomCounts: [sc('vomit', 2, 1), sc('itch', 0, 5)],
-        noticed: noticedWith([['scratching_more', 30]]),
+        lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel,
       }),
     );
     expect(cards.some((c) => c.key === 'symptom:itch')).toBe(false);
@@ -461,7 +472,7 @@ describe('buildDashboardCards — CUL-845 gate 2, the zero-count audit', () => {
     const cards = buildDashboardCards(
       baseInput({
         symptomCounts: [sc('itch', 2, 5)],
-        noticed: noticedWith([['scratching_more', 30]]),
+        lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel,
       }),
     );
     expect(cards.some((c) => c.key === 'symptom:itch')).toBe(true);
@@ -469,7 +480,7 @@ describe('buildDashboardCards — CUL-845 gate 2, the zero-count audit', () => {
 
   it('a zero with NO contradicting word still renders — an honest zero is not suppressed', () => {
     const cards = buildDashboardCards(
-      baseInput({ symptomCounts: [sc('itch', 0, 5)], noticed: noticedWith([['lip_licking', 9]]) }),
+      baseInput({ symptomCounts: [sc('itch', 0, 5)], lookWordDaysForZeroGate: gateWith([['lip_licking', 9]]), noticed: cardModel }),
     );
     expect(cards.some((c) => c.key === 'symptom:itch')).toBe(true);
   });
@@ -477,7 +488,7 @@ describe('buildDashboardCards — CUL-845 gate 2, the zero-count audit', () => {
   it('lethargy is suppressed by EITHER of its two words', () => {
     for (const word of ['subdued', 'sleeping_more']) {
       const cards = buildDashboardCards(
-        baseInput({ symptomCounts: [sc('lethargy', 0, 3)], noticed: noticedWith([[word, 6]]) }),
+        baseInput({ symptomCounts: [sc('lethargy', 0, 3)], lookWordDaysForZeroGate: gateWith([[word, 6]]), noticed: cardModel }),
       );
       expect(cards.some((c) => c.key === 'symptom:lethargy')).toBe(false);
     }
@@ -485,7 +496,7 @@ describe('buildDashboardCards — CUL-845 gate 2, the zero-count audit', () => {
 
   it('a suppressed leaf also loses its CALENDAR lens — a lens needs current > 0 anyway', () => {
     const cards = buildDashboardCards(
-      baseInput({ symptomCounts: [sc('itch', 0, 5)], noticed: noticedWith([['scratching_more', 30]]) }),
+      baseInput({ symptomCounts: [sc('itch', 0, 5)], lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel }),
     );
     const calendar = cards.find((c) => c.kind === 'calendar') as CalendarCard | undefined;
     expect(calendar?.views.some((v) => v.symptomType === 'itch')).not.toBe(true);

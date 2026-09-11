@@ -25,7 +25,9 @@ function model(over: Partial<NoticedCardModel> = {}): NoticedCardModel {
     coverageLine: 'Counted across the 24 of the last 28 days you answered.',
     rows: [],
     withheldLine: null,
+    withheldSpanLine: null,
     calibrationLine: null,
+    multiSelectNote: null,
     empty: false,
     pairing: null,
     wordDaysInWindow: new Map(),
@@ -70,12 +72,11 @@ describe('the card', () => {
     expect(queryAllByText(/^Symptom/)).toHaveLength(0);
   });
 
-  it('puts the unit word on the FIRST row only (C-3 — the scope where the reader meets the claim)', () => {
+  it('puts the unit word on the first row of each GROUP (C-3 — where the reader meets the claim)', () => {
     const { getByText } = render(<WhatYouNoticedCard model={FULL} onPress={jest.fn()} />);
     getByText('3 of 24 days');
-    // The second symptom row, the absence and the positive all drop it.
-    getByText('19 of 24');
-    getByText('12 of 24');
+    // The SECOND symptom row drops it — the reader is still inside the same group.
+    getByText('3 of 24');
   });
 
   it('renders every sub-line of a row, in order', () => {
@@ -119,12 +120,34 @@ describe('the withheld state', () => {
     ],
     withheldLine:
       'While Mochi’s eating needs attention, her quiet-day counts aren’t shown — a run of ordinary days isn’t a sign she is well. Her looks are on the report, beside her meals.',
+    withheldSpanLine: 'The counts below are from the last 28 days.',
   });
 
   it('renders the sentence and no denominator line', () => {
     const { getByTestId, queryByTestId } = render(<WhatYouNoticedCard model={WITHHELD} onPress={jest.fn()} />);
     getByTestId('noticed-withheld');
     expect(queryByTestId('noticed-coverage')).toBeNull();
+  });
+
+  it('the sentence LEADS the card — the explanation never sits below what it explains', () => {
+    // It used to render after the rows: an owner met *Off · 3 days* with nothing above
+    // it, tried to parse a count in a shape she has never seen here, and only then found
+    // out why. The card's own a11y rule (the denominator is announced before the counts)
+    // is as true of the sentence that stands in for it.
+    const { getByTestId, UNSAFE_root } = render(<WhatYouNoticedCard model={WITHHELD} onPress={jest.fn()} />);
+    const texts: string[] = [];
+    const walk = (node: { children?: unknown[] }) => {
+      for (const child of node.children ?? []) {
+        if (typeof child === 'string') texts.push(child);
+        else walk(child as { children?: unknown[] });
+      }
+    };
+    walk(UNSAFE_root as unknown as { children?: unknown[] });
+    const joined = texts.join(' ');
+    expect(joined.indexOf('quiet-day counts')).toBeLessThan(joined.indexOf('Off'));
+    getByTestId('noticed-withheld-span');
+    const label = getByTestId('what-you-noticed-card').props.accessibilityLabel as string;
+    expect(label.indexOf('quiet-day counts')).toBeLessThan(label.indexOf('Off, 3 days'));
   });
 
   it('renders a BARE count with its noun — the renderer never invents a denominator', () => {
@@ -137,6 +160,44 @@ describe('the withheld state', () => {
     const { getByText } = render(<WhatYouNoticedCard model={WITHHELD} onPress={jest.fn()} />);
     getByText('Off');
     getByText('first marked Sep 2, 2026');
+  });
+});
+
+describe('the multi-select clause', () => {
+  it('renders as its own quiet line when the model carries it', () => {
+    const { getByTestId } = render(
+      <WhatYouNoticedCard
+        model={model({ ...FULL, multiSelectNote: 'A day can carry more than one word, so these counts don’t add up to the days.' })}
+        onPress={jest.fn()}
+      />,
+    );
+    getByTestId('noticed-multiselect');
+  });
+
+  it('is absent when the model withholds it', () => {
+    const { queryByTestId } = render(<WhatYouNoticedCard model={FULL} onPress={jest.fn()} />);
+    expect(queryByTestId('noticed-multiselect')).toBeNull();
+  });
+});
+
+describe('the group labels reach a screen reader', () => {
+  it('announces "Marked — the owner’s claim" and "Activity", not just the rows', () => {
+    // "The label is half the honesty of the row", and without this it reached only a
+    // sighted reader (the product read).
+    const { getByTestId } = render(<WhatYouNoticedCard model={FULL} onPress={jest.fn()} />);
+    const label = getByTestId('what-you-noticed-card').props.accessibilityLabel as string;
+    expect(label).toContain(NOTICED_ABSENCE_GROUP);
+    expect(label).toContain(NOTICED_POSITIVE_GROUP);
+    expect(label.indexOf(NOTICED_ABSENCE_GROUP)).toBeLessThan(label.indexOf('Nothing unusual, 19 of 24'));
+  });
+});
+
+describe('the unit word is re-stated at the head of each group', () => {
+  it('a group label resets the reading context, so the noun does not have to travel it', () => {
+    const { getByText } = render(<WhatYouNoticedCard model={FULL} onPress={jest.fn()} />);
+    getByText('3 of 24 days'); // the first symptom row
+    getByText('19 of 24 days'); // the absence row, first under its own label
+    getByText('12 of 24 days'); // the first activity row
   });
 });
 

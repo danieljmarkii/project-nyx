@@ -206,29 +206,70 @@ describe('§6.6 — the direction rules', () => {
     expect(result.kind).toBe('pair');
   });
 
-  it('EQUAL rates are not falling — the pair renders and reassures nobody', () => {
+  it('an EQUAL count is not falling — the pair renders and reassures nobody', () => {
     const record = [
       ...spreadHalf(0, 3, (d) => (d % 7 === 0 ? ['subdued'] : [])),
       ...spreadHalf(28, 3, (d) => ((d - 28) % 7 === 0 ? ['subdued'] : [])),
       look(70, ['lively']),
     ];
-    const result = compareWord('subdued', record, CAT);
-    expect(result.kind).toBe('pair');
+    expect(compareWord('subdued', record, CAT).kind).toBe('pair');
   });
 
-  it('DIRECTION IS THE RATE, not the raw count — a count that held while she looked twice as much has FALLEN', () => {
-    // 4 of 12 then 4 of 24: the same numerator, half the rate. Comparing counts would call
-    // this flat and publish it; comparing rates calls it a fall and — since the density
-    // ROSE — publishes it honestly as a pair. The point is that the classification is the
-    // rate's, which the density branch below depends on.
+  // ── THE GATE'S PREDICATE IS THE COUNT, NOT THE RATE ───────────────────────
+  // Both of these broke the first cut, which classified direction by the rate. The gate
+  // exists to stop a pair being READ as improvement, and the reader reads two numerators.
+
+  it('a count that FELL while the rate ROSE is still withheld when density fell', () => {
+    // *6 of 24* then *3 of 8*: she stopped answering except when worried. Rate 25% → 37.5%,
+    // so a rate-gated version published this bare — six becoming three, on a third of the
+    // days, with the caption written for exactly this unable to fire.
+    const onCurrent = new Set([0, 1, 7]);
+    const onEarlier = new Set([28, 29, 30, 35, 36, 37]);
     const record = [
-      ...spreadHalf(0, 6, (d) => (d % 7 < 1 ? ['subdued'] : [])),
-      ...spreadHalf(28, 3, (d) => ((d - 28) % 7 < 1 ? ['subdued'] : [])),
-      look(70, ['lively']),
+      // 8 answered, 3 marked → 37.5%.
+      ...spreadHalf(0, 2, (d) => (onCurrent.has(d) ? ['subdued'] : [])),
+      // 24 answered, 6 marked → 25%.
+      ...spreadHalf(28, 6, (d) => (onEarlier.has(d) ? ['subdued'] : [])),
+      look(90, ['lively']), // predates both halves, so the RTM guard is inert here
+    ];
+    expect(compareWord('subdued', record, CAT)).toMatchObject({
+      kind: 'withheld',
+      reason: 'densityFell',
+    });
+
+    // THE FIXTURE REALLY IS THE CASE, not a mis-built one — pinned off the shipped
+    // function rather than re-derived. `restless` is marked on every answered day of both
+    // halves, so its pair exposes the skeleton's own denominators: 8 and 24. With 3 and 6
+    // marked above, that is 37.5% against 25% — the rate ROSE while the count fell.
+    const skeleton = [
+      ...spreadHalf(0, 2, (d) => (d === 0 ? ['restless'] : [])),
+      ...spreadHalf(28, 6, (d) => (d === 28 ? ['restless'] : [])),
+      look(90, ['lively']),
+    ];
+    const shape = compareWord('restless', skeleton, CAT);
+    expect(shape.kind).toBe('pair');
+    if (shape.kind !== 'pair') return;
+    expect(shape.current.answered).toBe(8);
+    expect(shape.earlier.answered).toBe(24);
+    expect(3 / shape.current.answered).toBeGreaterThan(6 / shape.earlier.answered);
+  });
+
+  it('a count that ROSE while the rate fell is NEVER withheld — §6.7’s rising clause', () => {
+    // *4 of 10* then *5 of 28*, the earlier half a true first month. Rate fell, so a
+    // rate-gated RTM guard withheld it; §6.7 says a rising pair is never subject to that.
+    const onEarlier = new Set([28, 29, 35, 36]);
+    const record = [
+      // 28 answered, 5 marked → 17.9%.
+      ...spreadHalf(0, 7, (d) => (d < 5 ? ['subdued'] : [])),
+      // 12 answered, 4 marked → 33.3%. No look predates this half, so it IS the first
+      // month of looks and the RTM guard is armed.
+      ...spreadHalf(28, 3, (d) => (onEarlier.has(d) ? ['subdued'] : [])),
     ];
     const result = compareWord('subdued', record, CAT);
     expect(result.kind).toBe('pair');
     if (result.kind !== 'pair') return;
+    expect(result.current.days).toBeGreaterThan(result.earlier.days);
+    // And the rate really did fall — this is the case, not a mis-built fixture.
     expect(result.current.days * result.earlier.answered).toBeLessThan(
       result.earlier.days * result.current.answered,
     );
@@ -280,6 +321,20 @@ describe('§6.7 — the regression-to-the-mean guard, direction-scoped', () => {
       firstMonth((d) => (d % 7 < 2 ? ['subdued'] : []), () => []),
       CAT,
     );
+    expect(result.kind).toBe('pair');
+  });
+
+  it('is NOT a tautology on a long record — a two-year history’s falling pair still publishes', () => {
+    // THE DEFECT THIS PINS. The screen used to read 56 days, which starts on the SAME
+    // index as the earlier half's first day — so `earliest >= earlierBounds.firstIndex`
+    // was true for every record Patterns could build, every falling pair was withheld
+    // with a sentence that was false about the owner's own record, and §6.6's density
+    // rule was unreachable behind it. The screen now reads the record unbounded
+    // (asserted in app/insights/noticed.test.tsx); this is the shape that proves the
+    // guard discriminates.
+    const twoYears: LookDayRow[] = [];
+    for (let d = 0; d < 700; d += 2) twoYears.push(look(d, d < 60 && d % 14 === 0 ? ['subdued'] : []));
+    const result = compareWord('subdued', twoYears, CAT);
     expect(result.kind).toBe('pair');
   });
 

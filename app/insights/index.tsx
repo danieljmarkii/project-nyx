@@ -16,6 +16,7 @@ import {
   getTopProteins,
   getMealTreatComposition,
   isNotEnoughData,
+  WINDOW_DAYS,
   type AnalyticsWindow,
 } from '../../lib/analytics';
 import {
@@ -62,7 +63,8 @@ import { loadLookDays, loadVomitLocalDays } from '../../lib/looks';
 import { loadLookWithheldFacts, lookWithheld } from '../../lib/lookWithheld';
 import {
   buildNoticedCard,
-  NOTICED_CARD_HREF,
+  lookWordDaysOver,
+  noticedCardHref,
   type NoticedCardModel,
 } from '../../lib/lookPatterns';
 import { localDayIndex, dayKeyFromIndex } from '../../lib/utils';
@@ -88,11 +90,11 @@ const WINDOW: AnalyticsWindow = 'month';
 // "this month" next to the month-scoped cards.
 const WEIGHT_SERIES_LIMIT = 12;
 
-// Noticed reads EIGHT weeks, not four: the card speaks for the last 28 days, but §6.4's
-// comparison needs the 28 before them as its earlier half. The card's own module bounds
-// every number it prints to the 28 it speaks for (a window may INDEX, only the total may
-// be SPOKEN — C-3), so reading wider here cannot widen a denominator.
-const NOTICED_READ_DAYS = 56;
+// Noticed's VOMIT read is eight weeks: the card speaks for the last 28 days, but a read
+// that stops there would be bounded differently from the looks it is intersected with.
+// The card's own module bounds every number it prints to the 28 it speaks for — the vomit
+// days included (a window may INDEX, only the total may be SPOKEN — C-3).
+const NOTICED_VOMIT_READ_DAYS = 56;
 
 export default function PatternsScreen() {
   const { activePet } = usePetStore();
@@ -219,7 +221,8 @@ export default function PatternsScreen() {
           topProteins,
           composition,
           weightTrend,
-          noticed,
+          noticed: noticed?.model ?? null,
+          lookWordDaysForZeroGate: noticed?.zeroGateWordDays ?? null,
         }),
       );
       setStatus('ready');
@@ -366,6 +369,12 @@ export default function PatternsScreen() {
   );
 }
 
+/** What one Noticed load produces: the card, and CUL-845 gate 2's own read. */
+interface NoticedLoad {
+  model: NoticedCardModel;
+  zeroGateWordDays: ReadonlyMap<string, number>;
+}
+
 /**
  * Noticed's three reads, or `null` when the surface is not live for this pet.
  *
@@ -384,25 +393,39 @@ async function loadNoticed(
   trialNotEating: boolean | null,
   live: boolean,
   nowMs: number,
-): Promise<NoticedCardModel | null> {
+): Promise<NoticedLoad | null> {
   if (!live) return null;
   try {
-    const sinceDay = dayKeyFromIndex(localDayIndex(nowMs) - (NOTICED_READ_DAYS - 1));
+    const sinceDay = dayKeyFromIndex(localDayIndex(nowMs) - (NOTICED_VOMIT_READ_DAYS - 1));
     const [record, vomitLocalDays, withheldFacts] = await Promise.all([
-      loadLookDays(pet.id, sinceDay),
+      // THE WHOLE RECORD, UNBOUNDED — the same read Home makes (`components/home/
+      // LookCard.tsx`). A symptom row prints *first {date}*, and that is a claim about
+      // the record and not about a window: bounded to eight weeks it would name the
+      // horizon's first day, so Home would say *first Jun 2* while Patterns said *first
+      // Sep 3* for the same word one tap apart, and the report — which anchors to the
+      // record server-side — would agree with Home against this card, in front of a vet.
+      // Under-stating an onset is also the wrong direction to be wrong in. Every COUNT is
+      // bounded inside `buildNoticedCard` regardless, so the wider read widens no
+      // denominator (C-3). Found by the product read (CUL-874).
+      loadLookDays(pet.id),
       loadVomitLocalDays(pet.id, sinceDay),
       loadLookWithheldFacts({ id: pet.id, species: pet.species }, trialNotEating, nowMs),
     ]);
-    return buildNoticedCard(record, {
-      petName: pet.name,
-      pet: { species: pet.species, sex: pet.sex },
-      nowMs,
+    return {
+      model: buildNoticedCard(record, {
+        petName: pet.name,
+        pet: { species: pet.species, sex: pet.sex },
+        nowMs,
       // The SHARED predicate, not a second opinion: Home and Patterns must never disagree
       // one tap apart (T-20). `lookWithheld` is the fail-closed reading — unloaded facts
       // withhold — which is the right one for a surface that answers today.
-      withheld: lookWithheld({ id: pet.id }, withheldFacts),
-      vomitLocalDays,
-    });
+        withheld: lookWithheld({ id: pet.id }, withheldFacts),
+        vomitLocalDays,
+      }),
+      // CUL-845 gate 2's read, at the SYMPTOM CARDS' window rather than the look card's
+      // — the zero it suppresses is theirs, and the two windows are 30 and 28 days.
+      zeroGateWordDays: lookWordDaysOver(record, { nowMs, days: WINDOW_DAYS[WINDOW] }),
+    };
   } catch (e) {
     console.error('[patterns] Noticed load failed:', e);
     return null;
@@ -454,7 +477,7 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
           // The metric detail for looks is v1.x (§7), so the `›` lands on the History day
           // spine filtered to looks — a real room behind a real door, rather than a
           // chevron that opens a stub.
-          onPress={() => router.push(NOTICED_CARD_HREF)}
+          onPress={() => router.push(noticedCardHref())}
         />
       );
     }

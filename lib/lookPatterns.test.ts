@@ -12,10 +12,13 @@ import {
   noticedCalibrationLine,
   noticedCoverageLine,
   noticedWithheldLine,
+  noticedWithheldSpanLine,
+  lookWordDaysOver,
   noticedWordOrder,
   NOTICED_ABSENCE_GROUP,
   NOTICED_ABSENCE_LABEL,
-  NOTICED_CARD_HREF,
+  noticedCardHref,
+  NOTICED_MULTI_SELECT_NOTE,
   NOTICED_CARD_LABEL,
   NOTICED_POSITIVE_GROUP,
 } from './lookPatterns';
@@ -63,13 +66,35 @@ describe('the denominator line (§7)', () => {
     expect(card.coverageLine).toBe('Counted across the 24 of the last 28 days you answered.');
   });
 
-  it('prints at EVERY coverage, saturation included — unlike Home’s footer (§7 vs T-16)', () => {
+  it('prints at SATURATION — the case §7 overrules Home’s footer for (§7 vs T-16)', () => {
     const full = buildNoticedCard(days(LOOK_COVERAGE_WINDOW_DAYS), MOCHI);
     expect(full.coverageLine).toBe(
       noticedCoverageLine(LOOK_COVERAGE_WINDOW_DAYS, LOOK_COVERAGE_WINDOW_DAYS),
     );
-    const thin = buildNoticedCard(days(3), MOCHI);
-    expect(thin.coverageLine).toBe(noticedCoverageLine(3, LOOK_COVERAGE_WINDOW_DAYS));
+  });
+
+  it('prints at the floor exactly, and at every coverage above it', () => {
+    for (const n of [LOOK_COVERAGE_FLOOR_DAYS, 20, 27]) {
+      expect(buildNoticedCard(days(n), MOCHI).coverageLine).toBe(
+        noticedCoverageLine(n, LOOK_COVERAGE_WINDOW_DAYS),
+      );
+    }
+  });
+
+  it('is ABSENT below the floor — the calibration line says the same number once', () => {
+    const thin = buildNoticedCard(days(3, (d) => (d === 0 ? ['subdued'] : [])), MOCHI);
+    expect(thin.coverageLine).toBeNull();
+    expect(thin.calibrationLine).toBe('Looks build up over time · 3 days answered so far.');
+  });
+
+  it('NEVER prints "Counted across the 0" — an untouched card is the calibration line alone', () => {
+    // Reachable today: any account that opts into the beta on a pet that already has
+    // meals or weight on file renders a dashboard before its first look.
+    const virgin = buildNoticedCard([], MOCHI);
+    expect(virgin.coverageLine).toBeNull();
+    expect(virgin.rows).toEqual([]);
+    expect(virgin.empty).toBe(true);
+    expect(virgin.calibrationLine).toBe('Looks build up over time.');
   });
 
   it('never states the un-answered count as a failure', () => {
@@ -81,9 +106,11 @@ describe('the denominator line (§7)', () => {
     const burst = Array.from({ length: 5 }, (_, n) =>
       look(0, ['subdued'], { eventId: `b-${n}`, createdAt: new Date(NOW + n * 1000).toISOString() }),
     );
-    expect(buildNoticedCard(burst, MOCHI).coverageLine).toBe(
-      noticedCoverageLine(1, LOOK_COVERAGE_WINDOW_DAYS),
-    );
+    // One answered day is below the floor, so the coverage line is absent and the
+    // calibration line carries the count — the point here is that it says ONE.
+    const c = buildNoticedCard(burst, MOCHI);
+    expect(c.coverageLine).toBeNull();
+    expect(c.calibrationLine).toBe('Looks build up over time · 1 day answered so far.');
   });
 
   it('ignores a row outside the window — the window indexes, the total is its own (C-3)', () => {
@@ -182,6 +209,7 @@ describe('§6.6 vs §7’s frame — what the floor holds back', () => {
     const c = buildNoticedCard(days(3), MOCHI);
     expect(c.rows).toEqual([]);
     expect(c.empty).toBe(true);
+    expect(c.coverageLine).toBeNull();
     expect(c.calibrationLine).toBe('Looks build up over time · 3 days answered so far.');
   });
 
@@ -283,6 +311,79 @@ describe('the card’s one pairing (§6.11, L-17)', () => {
   it('is absent with no vomit days at all', () => {
     expect(buildNoticedCard(record, MOCHI).pairing).toBeNull();
   });
+
+  it('is absent BELOW the coverage floor — a card saying "not enough yet" does not also associate', () => {
+    // §6.11's floors bottom out at 13 answered days, one below §7's 14, so without this
+    // the card printed *Looks build up over time · 13 days answered so far* and an
+    // association about the same thirteen days (the adversarial pass).
+    const thin = days(13, (d) => (d <= 2 ? ['lip_licking'] : []));
+    const c = buildNoticedCard(thin, { ...MOCHI, vomitLocalDays: [day(1), day(2), day(3)] });
+    expect(c.calibrationLine).not.toBeNull();
+    expect(c.pairing).toBeNull();
+    expect(c.rows.flatMap((r) => r.detail).join(' ')).not.toContain('vomit days you answered');
+  });
+
+  it('counts only vomit days INSIDE the card’s window, however wide the caller read', () => {
+    // The screen reads eight weeks of vomit days so the pairing's read is not narrower
+    // than the compare's. A vomit from the earlier half is outside this card's 28 days
+    // entirely and must not be scored as one the owner failed to answer.
+    const c = buildNoticedCard(record, {
+      ...MOCHI,
+      vomitLocalDays: [day(1), day(2), day(3), day(40), day(50)],
+    });
+    expect(c.pairing?.unansweredVomitDays).toBe(0);
+  });
+});
+
+describe('the multi-select clause (§8 rule 12, owed to the owner too)', () => {
+  it('renders once the card shows two or more counted rows', () => {
+    const c = buildNoticedCard(days(24, (d) => (d < 3 ? ['subdued'] : [])), MOCHI);
+    expect(c.rows.length).toBeGreaterThanOrEqual(2);
+    expect(c.multiSelectNote).toBe(
+      'A day can carry more than one word, so these counts don’t add up to the days.',
+    );
+  });
+
+  it('is absent with one row — there is nothing to sum', () => {
+    const c = buildNoticedCard(days(7, (d) => (d < 4 ? ['subdued'] : [])), MOCHI);
+    expect(c.rows).toHaveLength(1);
+    expect(c.multiSelectNote).toBeNull();
+  });
+
+  it('is absent under the withheld state — that card prints no denominator to sum toward', () => {
+    const c = buildNoticedCard(
+      days(24, (d) => (d < 3 ? ['subdued'] : d < 6 ? ['lip_licking'] : [])),
+      { ...MOCHI, withheld: true },
+    );
+    expect(c.rows.length).toBeGreaterThanOrEqual(2);
+    expect(c.multiSelectNote).toBeNull();
+  });
+});
+
+describe('lookWordDaysOver — CUL-845 gate 2’s read, at the ZERO’s window', () => {
+  it('counts days, not rows, over the window it is given', () => {
+    const record = [
+      look(0, ['scratching_more']),
+      look(0, ['scratching_more'], { eventId: 'second', createdAt: new Date(NOW + 1).toISOString() }),
+      look(5, ['scratching_more']),
+    ];
+    expect(lookWordDaysOver(record, { nowMs: NOW, days: 30 }).get('scratching_more')).toBe(2);
+  });
+
+  it('SEES days 29 and 30 — the two-day hole the card’s own 28-day map left open', () => {
+    // The adversarial pass's fixture: *Scratching more* marked only on the symptom card's
+    // last two days. At the card's 28 the gate was blind and `Itch · 0` printed over the
+    // owner's own words, in exactly the case CUL-845 gate 2 exists for.
+    const record = [look(28, ['scratching_more']), look(29, ['scratching_more'])];
+    expect(lookWordDaysOver(record, { nowMs: NOW, days: 28 }).get('scratching_more')).toBeUndefined();
+    expect(lookWordDaysOver(record, { nowMs: NOW, days: 30 }).get('scratching_more')).toBe(2);
+  });
+
+  it('drops a day outside the window entirely', () => {
+    expect(
+      lookWordDaysOver([look(40, ['subdued'])], { nowMs: NOW, days: 30 }).get('subdued'),
+    ).toBeUndefined();
+  });
 });
 
 describe('the withheld state (item 12, T-20)', () => {
@@ -345,6 +446,19 @@ describe('the withheld state (item 12, T-20)', () => {
 
   it('keeps the first date, year-stamped — the card prints no window to bound it', () => {
     expect(card.rows[0].detail[0]).toMatch(/^first marked \w+ \d+, \d{4}$/);
+  });
+
+  it('STATES ITS SPAN, so a 28-day count beside a record-wide date is not a duration', () => {
+    // *Off · 1 day · first marked Aug 2* with no window anywhere read as "one day since
+    // August" — a duration the record does not support (C-19). The 28 is the window, a
+    // constant, and never the answered-day total item 12 refuses.
+    expect(card.withheldSpanLine).toBe(noticedWithheldSpanLine(LOOK_COVERAGE_WINDOW_DAYS));
+    expect(card.withheldSpanLine).toContain('28');
+    expect(card.withheldSpanLine).not.toContain('24');
+  });
+
+  it('but not on a card with no rows — a span with nothing to bound frames nothing', () => {
+    expect(buildNoticedCard(days(24), { ...MOCHI, withheld: true }).withheldSpanLine).toBeNull();
   });
 
   it('inflects for a male pet and for one whose sex nobody recorded', () => {
@@ -414,9 +528,7 @@ describe('the card’s labels and door', () => {
     expect(NOTICED_POSITIVE_GROUP).not.toMatch(/never|pair|ink/i);
   });
 
-  it('the door lands on the record filtered to looks, not on an unbuilt detail', () => {
-    expect(NOTICED_CARD_HREF).toBe('/history?type=check_in');
-  });
+
 
   it('no owner-facing string on this card carries an exclamation mark (nyx-voice)', () => {
     const c = buildNoticedCard(days(24, (d) => (d < 3 ? ['subdued'] : [])), MOCHI);

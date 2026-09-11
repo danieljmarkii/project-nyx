@@ -66,13 +66,31 @@ export function WhatYouNoticedCard({ model, onPress, testID }: Props) {
   // before the counts (it is what stops each count being misread) and the withheld
   // sentence in full — a state whose entire content is an explanation is the one that
   // must not be reduced to "What you noticed, button".
+  const say = (rows: NoticedRow[], group: string | null) =>
+    rows.length === 0
+      ? []
+      : [
+          // The group label is spoken, not just drawn. "Marked — the owner's claim" is
+          // half the honesty of the absence row, and without this it reached only a
+          // sighted reader (the product read, CUL-874).
+          ...(group ? [group] : []),
+          ...rows.map(
+            (r, i) =>
+              `${r.label}, ${noticedRowValue(r, i === 0)}` +
+              (r.detail.length > 0 ? `. ${r.detail.join('. ')}` : ''),
+          ),
+        ];
   const a11yLabel = [
     NOTICED_CARD_LABEL,
-    model.coverageLine,
-    ...model.rows.map(
-      (r, i) => `${r.label}, ${noticedRowValue(r, i === 0)}${r.detail.length > 0 ? `. ${r.detail.join('. ')}` : ''}`,
-    ),
+    // The withheld sentence and the denominator lead the announcement for the same
+    // reason they lead the card: they are what stops every count below being misread.
     model.withheldLine,
+    model.withheldSpanLine,
+    model.coverageLine,
+    ...say(symptomRows, null),
+    ...say(absenceRows, NOTICED_ABSENCE_GROUP),
+    ...say(positiveRows, NOTICED_POSITIVE_GROUP),
+    model.multiSelectNote,
     model.calibrationLine,
   ]
     .filter(Boolean)
@@ -93,8 +111,30 @@ export function WhatYouNoticedCard({ model, onPress, testID }: Props) {
         <ChevronRight size={18} color={theme.colorTextDisabled} />
       </View>
 
-      {/* The denominator, as the act — always first, never a miss (§7, G9). Absent only
-          under the withheld state, where the answered-day total is the refused number. */}
+      {/* The denominator, as the act — always first, never a miss (§7, G9). Absent under
+          the withheld state (the answered-day total is the refused number) and below the
+          coverage floor (the calibration line says the same number once).
+
+          THE WITHHELD SENTENCE TAKES ITS SLOT. It used to render after the rows, which
+          put the explanation below the thing it explains: an owner met *Off · 3 days*
+          with nothing above it, tried to parse a count in a shape she has never seen on
+          this card, and only then found out why. The component's own a11y rule — the
+          denominator is announced BEFORE the counts, because it is what stops each count
+          being misread — is exactly as true of the sentence that stands in for it. Found
+          by the product read (CUL-874). */}
+      {model.withheldLine != null && (
+        <ThemedText style={styles.withheld} testID="noticed-withheld">
+          {model.withheldLine}
+        </ThemedText>
+      )}
+      {/* The withheld card's span. Without it the rows below pair a 28-day count with a
+          date from the whole record and no window anywhere — *Off · 1 day · first marked
+          Aug 2* read as "one day since August" (C-19). */}
+      {model.withheldSpanLine != null && (
+        <ThemedText style={styles.coverage} testID="noticed-withheld-span">
+          {model.withheldSpanLine}
+        </ThemedText>
+      )}
       {model.coverageLine != null && (
         <ThemedText style={styles.coverage} testID="noticed-coverage">
           {model.coverageLine}
@@ -119,7 +159,7 @@ export function WhatYouNoticedCard({ model, onPress, testID }: Props) {
               <Row
                 key={row.key}
                 row={row}
-                withUnit={symptomRows.length === 0}
+                withUnit
                 weightStyle={styles.quietLabel}
                 quietValue
               />
@@ -132,11 +172,11 @@ export function WhatYouNoticedCard({ model, onPress, testID }: Props) {
         <>
           <ThemedText style={styles.groupLabel}>{NOTICED_POSITIVE_GROUP}</ThemedText>
           <View style={styles.rows}>
-            {positiveRows.map((row) => (
+            {positiveRows.map((row, i) => (
               <Row
                 key={row.key}
                 row={row}
-                withUnit={symptomRows.length === 0 && absenceRows.length === 0}
+                withUnit={i === 0}
                 weightStyle={styles.quietLabel}
                 quietValue
               />
@@ -145,12 +185,11 @@ export function WhatYouNoticedCard({ model, onPress, testID }: Props) {
         </>
       )}
 
-      {/* The withheld sentence — ONE line, replacing the absence and positive rows. It
-          says what is withheld and why, because "withheld" alone implies the hidden
-          number was the bad one, on the worst week (Sam). */}
-      {model.withheldLine != null && (
-        <ThemedText style={styles.withheld} testID="noticed-withheld">
-          {model.withheldLine}
+      {/* The multi-select clause — §8's, owed here too. Without it a reader adds the
+          column, gets more than the denominator, and concludes the card is broken. */}
+      {model.multiSelectNote != null && (
+        <ThemedText style={styles.footnote} testID="noticed-multiselect">
+          {model.multiSelectNote}
         </ThemedText>
       )}
 
@@ -281,6 +320,12 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightSM,
+    marginTop: theme.space1,
+  },
+  footnote: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.lineHeightXS,
     marginTop: theme.space1,
   },
   calibration: {

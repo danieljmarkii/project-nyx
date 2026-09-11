@@ -240,6 +240,18 @@ export interface BuildDashboardInput {
    * byte-identical.
    */
   noticed?: NoticedCardModel | null;
+  /**
+   * CUL-845 gate 2's read — per-look-word answered-day counts over **this dashboard's**
+   * window, not the Noticed card's.
+   *
+   * Its own field rather than a field on `noticed`, because the window belongs to the
+   * ZERO being suppressed and the zero is a symptom card's: those count a 30-day month
+   * while the Noticed card counts 28, and reading the card's map left a two-day hole
+   * through which `Itch · 0` still printed over an owner tapping *Scratching more*
+   * (the adversarial pass, CUL-874). Absent off the flag, and the gate then suppresses
+   * nothing.
+   */
+  lookWordDaysForZeroGate?: ReadonlyMap<string, number> | null;
 }
 
 /**
@@ -265,7 +277,11 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
     // another grammar — and the leaf's history stays one tap away in the metric detail.
     // Only a ZERO is suppressed: a real count stands beside the word, which is the
     // report's own rule (§8 rule 12 — the disagreement said, not hidden).
-    if (sc.current === 0 && input.noticed && leafZeroContradictsLooks(sc.symptomType, input.noticed.wordDaysInWindow)) {
+    if (
+      sc.current === 0 &&
+      input.lookWordDaysForZeroGate &&
+      leafZeroContradictsLooks(sc.symptomType, input.lookWordDaysForZeroGate)
+    ) {
       continue;
     }
     cards.push({

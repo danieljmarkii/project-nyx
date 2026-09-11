@@ -100,11 +100,20 @@ export const LOOK_TWIN_LEAVES: readonly string[] = Object.keys(LOOK_LEAF_TWINS);
 /** Every look word this map names, likewise. */
 export const LOOK_TWIN_WORDS: readonly string[] = Object.values(LOOK_LEAF_TWINS).flat();
 
-/** Both halves of the map are real keys — a typo here would silently disable the gate
- *  (a leaf that never matches, a word whose count is always zero), which is the failure
- *  mode a map of two literal sets has. Checked at module load rather than only in a test,
- *  because the cost is one pass over four strings and the alternative is a gate that
- *  looks present and is not. */
+/**
+ * Both halves of the map are real keys — a typo here would silently disable the gate (a
+ * leaf that never matches, a word whose count is always zero), which is the failure mode
+ * a map of two literal sets against two other files has.
+ *
+ * ITS ONLY CALLER IS `lookTwins.test.ts`, AND THE COMMENT USED TO SAY OTHERWISE. The
+ * first draft claimed it was "checked at module load rather than only in a test";
+ * nothing called it at module load, and the adversarial pass caught the sentence — C-34
+ * ("a header that claims a wiring is asserted or deleted"), one PR after that lesson was
+ * written. It is not wired up at load on purpose: a throw there would take the app down
+ * over a typo in a card's suppression list, and a silent console warning is the thing
+ * nobody reads. The build-blocking assertion in the test is the enforcement; this
+ * sentence now says so.
+ */
 export function twinMapKeysAreReal(): boolean {
   const words = new Set<string>();
   for (const list of Object.values(LOOK_WORDS)) for (const w of list) words.add(w.key);
