@@ -237,8 +237,8 @@ readable diff.
 
 ## Verification
 
-`npx tsc --noEmit` clean. `npm test` — **7,614 passed / 350 suites**, including
-all 15 guards. The five touched suites green under all three CI timezones
+`npx tsc --noEmit` clean. `npm test` — **7,614 passed / 350 suites** on the branch,
+and **7,787 / 356** after merging `main` (Noticed N-5), including all 16 guards. The five touched suites green under all three CI timezones
 (Kiritimati +14, Chatham +12:45, Honolulu −10).
 
 ## Decisions made
@@ -270,6 +270,36 @@ all 15 guards. The five touched suites green under all three CI timezones
   *coverage*: a companion node rendered only inside a stubbed child would not be
   seen. None of the stubbed children has a companion surface in it today; VV-2 and
   VV-5 should re-check that when they add theirs.
+
+## A collision worth recording: two sessions, two shared counters, one silent merge
+
+Noticed N-5 (#828) merged onto `main` while this branch was open and independently
+claimed **both** shared identifiers this session had taken: `CLAUDE.md` **v1.41**
+and convention **C-35**. Neither session did anything wrong — the counters are
+allocated by reading the current head, and both read the same head.
+
+The part worth keeping is how the two collisions behaved differently under git:
+
+- `CLAUDE.md` **conflicted**, because both rows landed at the same insertion point.
+  Loud, and impossible to miss.
+- `docs/engineering-lessons.md` **auto-merged clean** — the two `### C-35` sections
+  went in at different offsets, so git had no textual reason to object. The result
+  was a file with two different conventions both numbered C-35, and nothing in the
+  build would ever have said so: no test reads convention numbers.
+
+That second one is exactly the failure `docs/sessions/README.md` was written
+about — a resolution that "keeps both sides" — arriving without a conflict to warn
+anybody. It was caught only by diffing the incoming head's identifiers against this
+branch's *before* merging, rather than by trusting a clean merge.
+
+**The generalisable bit: a shared monotonic counter in a doc is a merge hazard that
+git cannot see.** `CLAUDE-md-history.md`'s v-rows and the lessons file's `C-NN`
+headings are both append-only sequences maintained by hand across parallel
+sessions, and only the ones that happen to append at the same byte offset will ever
+conflict. Before merging a long-lived branch that took a number, re-read the number
+on the incoming head. N-5 merged first, so it keeps v1.41 / C-35; this session is
+**v1.42 / C-36**, and the version table dropped to three rows by archiving v1.39
+(N-5 had already archived v1.38 — checked, not duplicated).
 
 ## PM Action Items
 
