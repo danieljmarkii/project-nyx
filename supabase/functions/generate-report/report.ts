@@ -139,6 +139,27 @@ export type {
   TrialMedicationOverlap,
   TrialPermittedFood,
 } from './trial.ts'
+// CUL-875 (Noticed N-6) — the daily look's block. Pure assembly, like `trial.ts`.
+// The types are re-exported below so the I/O shell has one import surface for the
+// report's inputs, exactly as it does for every other row shape.
+import {
+  buildNoticed,
+  type NoticedBlock,
+  type ReportAudience,
+  type ReportLookInput,
+} from './noticed.ts'
+export type {
+  NoticedBlock,
+  NoticedDay,
+  NoticedEntry,
+  NoticedIntake,
+  NoticedStrip,
+  NoticedStripDay,
+  NoticedWordCount,
+  ReportAudience,
+  ReportLookInput,
+} from './noticed.ts'
+export { NOTICED_BARS_MIN_ANSWERED_DAYS, NOTICED_STRIP_DAYS, lookNotesIncluded } from './noticed.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -599,6 +620,39 @@ export interface ReportInput {
    * incomplete one is a false negative on the axis the guard exists for.
    */
   eventsSinceIso?: string | null
+  /**
+   * CUL-875 — every LIVE look row the pull returned (soft-deleted parents already
+   * dropped by the I/O shell). NOT window-scoped: the page-1 line's "answered on N days
+   * before it" clause reads back past the window on purpose.
+   *
+   * Optional so every pre-N-6 fixture and the `resolveScope` pre-pull keep compiling;
+   * absent ⇒ no Noticed block, which is simply a report for an account that never
+   * answered.
+   */
+  lookRows?: ReportLookInput[]
+  /**
+   * Did `lookRows` come back as the pet's WHOLE live look record?
+   *
+   * The B-613 discipline applied to the one sentence on the Noticed block that reads
+   * outside the window: when the pull may have been truncated, the pre-first-day
+   * coverage count becomes a floor and names no start date, rather than printing a
+   * query's edge as though it were the record's own beginning (C-19).
+   *
+   * ABSENT ⇒ unknown ⇒ treated as INCOMPLETE, the direction that cannot mislead. The
+   * caller earns `true` by observing its query was not capped, never by assuming it.
+   */
+  lookRowsComplete?: boolean
+  /**
+   * CUL-875 D3 / §9 rule 4 — who this render is for, and therefore whether the owner's
+   * own sentences may appear on it.
+   *
+   * REQUIRED, with no default anywhere, because it describes a value every call makes
+   * (C-10). A new render path — the share-link mint of PR 6 above all — must decide
+   * rather than inherit; and the `shared_link` arm carries no notes field at all, so
+   * "an unauthenticated render excludes the note by construction" is checked by `tsc`
+   * rather than remembered.
+   */
+  audience: ReportAudience
 }
 
 // ── Date / window helpers (tz-aware calendar-day math) ───────────────────────
@@ -682,7 +736,26 @@ export interface ReportScope {
  * A `requestedWindow` overrides all three → basis 'custom' (the cherry-pick guard fires).
  * All bounds are inclusive local calendar days; detectionNow is the window end instant.
  */
-export function resolveScope(input: ReportInput): ReportScope {
+/**
+ * What `resolveScope` actually reads — five fields, not the whole report input.
+ *
+ * NARROWED AT CUL-875, and the narrowing is the honest version of a signature that was
+ * already misleading: the window cascade has never touched events, doses, photos or the
+ * render's audience, and typing it as `ReportInput` made every caller construct a whole
+ * report just to ask "what window is this?" — including `index.ts`'s own pre-pull, which
+ * builds a stub with a dozen empty arrays for exactly that reason.
+ *
+ * It is a WIDENING for every existing caller (a `ReportInput` still satisfies it), so
+ * nothing had to change at a call site; what it stops is a new REQUIRED field on
+ * `ReportInput` — `audience` was the first — forcing a decision on a function that will
+ * never read it.
+ */
+export type ScopeResolutionInput = Pick<
+  ReportInput,
+  'now' | 'timezone' | 'requestedWindow' | 'vetVisits' | 'dietTrials'
+>
+
+export function resolveScope(input: ScopeResolutionInput): ReportScope {
   const tz = input.timezone
   const nowMs = parseMs(input.now) ?? 0
   const todayKey = localDayKey(input.now, tz) ?? new Date(nowMs).toISOString().slice(0, 10)
@@ -2196,6 +2269,15 @@ export interface ReportSnapshot {
    * analysis-scoped). Appendix E renders when `incidentPhotos.length > 0 OR this > 0`.
    */
   incidentPhotosAnalyzedNoRetained: number
+  /**
+   * CUL-875 — the owner's daily looks: the page-1 line, the graph and the appendix.
+   * NULL when no look falls in the window (no designed empty state, deliberately — a
+   * section headed *Owner's observations* over a zero invites the reader to score her).
+   *
+   * It sits BESIDE the record and enters nothing in it: no symptom count, no
+   * denominator of another section, no safety flag, no detector (§10.5).
+   */
+  noticed: NoticedBlock | null
 }
 
 // ── Small pure helpers ────────────────────────────────────────────────────────
@@ -2259,6 +2341,26 @@ function strictPluralityIntake(ratings: IntakeRating[]): IntakeRating | null {
  * intake, and a shared constant would invite one to be derived from the other.
  */
 const INTAKE_SCALE: readonly IntakeRating[] = ['all', 'most', 'some', 'picked', 'refused']
+
+/**
+ * Did the owner record this meal as LEFT — picked at or refused (CUL-875, §5 rule 12)?
+ *
+ * Derived from `INTAKE_SCALE`'s own ordering rather than a copied list of ratings, so
+ * this and the client's `isRefusedOrPickedMeal` (`lib/analytics.ts`) share a SHAPE — "at
+ * or below picked" — instead of two literals that can drift apart. Deliberately NOT
+ * `!== 'all'` and not the inverse of "finished": a cat who ate half her dinner (`some`)
+ * is not a cat whose eating needs attention, and folding `some` in here would put a
+ * disagreement clause on the report for an ordinary supper.
+ *
+ * An unrated meal never reaches this — the caller filters on `intakeRating != null`
+ * first — because defaulting an unknown rating to a refusal is the "a logging gap is not
+ * anorexia" defect T-20 struck an entire arm for.
+ */
+function leftMostOfIt(rating: IntakeRating): boolean {
+  const pickedAt = INTAKE_SCALE.indexOf('picked')
+  const at = INTAKE_SCALE.indexOf(rating)
+  return at >= 0 && pickedAt >= 0 && at >= pickedAt
+}
 
 /**
  * Every rating in a group, counted, along the intake scale (B-532). Ratings with zero
@@ -4247,6 +4349,52 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     secondHalfLoggedDays,
   }
 
+  // ── Noticed — the owner's daily looks (CUL-875 / N-6, spec §8) ───────────────
+  //
+  // Assembled LAST and read by nobody above: a look enters no count, no denominator and
+  // no flag on this report (§10.5). The three record-side sets below are the record
+  // speaking for itself beside her claim, never a look feeding the record.
+  //
+  // Day keys are the OWNER's local days on both sides of every intersection. The look
+  // row carries its own stored `local_day` (T-19) and these are bucketed with the same
+  // `localDayKey` every other count on this report uses, so "the day she marked nothing
+  // unusual" and "the day he vomited" are the same calendar day for a reader.
+  const vomitLocalDays = new Set<string>()
+  for (const e of windowEvents) {
+    if (e.type !== 'vomit') continue
+    const key = localDayKey(e.occurredAt, tz)
+    if (key !== null) vomitLocalDays.add(key)
+  }
+  // The intake half of §5 honesty rule 12. `foodType === 'meal'` is THE report's own
+  // qualifying predicate (it is what `ratedMealsInWindow` and page 1's completion rate
+  // already count over), so the sentence beside the absence claim reads the same
+  // population as the Intake section it points at — C-3, the predicate the neighbouring
+  // sentence uses.
+  const ratedWindowMeals = windowMeals.filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
+  const mealLeftLocalDays = new Set<string>()
+  for (const e of ratedWindowMeals) {
+    if (!leftMostOfIt(e.meal!.intakeRating as IntakeRating)) continue
+    const key = localDayKey(e.occurredAt, tz)
+    if (key !== null) mealLeftLocalDays.add(key)
+  }
+  const noticed = buildNoticed({
+    rows: input.lookRows ?? [],
+    startDayNum,
+    endDayNum,
+    windowDays,
+    pullComplete: input.lookRowsComplete ?? false,
+    vomitLocalDays,
+    mealLeftLocalDays,
+    // "The intake record is empty for the window" (T-20's blind case) is a fact about
+    // RATED meals, not about meal rows: a free-fed bowl and an unrated meal both leave
+    // the record unable to say whether she ate, and `lib/analytics.ts`'s own words are
+    // that a logging gap is not anorexia.
+    hasRatedMeals: ratedWindowMeals.length > 0,
+    species: input.pet.species,
+    sex: input.pet.sex,
+    audience: input.audience,
+  })
+
   return {
     generatedAt: input.now,
     timezone: tz,
@@ -4278,6 +4426,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     provenance,
     incidentPhotos,
     incidentPhotosAnalyzedNoRetained,
+    noticed,
   }
 }
 

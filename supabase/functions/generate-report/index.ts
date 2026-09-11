@@ -54,6 +54,8 @@ import {
   type ReportConditionInput,
   type ReportAttachmentInput,
   type IncidentPhoto,
+  type ReportAudience,
+  type ReportLookInput,
   TRIAL_ANCHOR_GRACE_DAYS,
 } from './report.ts'
 import { renderReport } from './render.ts'
@@ -112,6 +114,21 @@ const MAX_EMBEDDED_PHOTOS = 40
 // Same base64 ceiling analyze-vomit uses (isolate memory + a sane per-image cap). A 1000px figure is
 // comfortably under it; anything over is skipped (placeholder), never embedded raw.
 const MAX_EMBED_IMAGE_BYTES = 3_900_000
+
+/**
+ * How many look rows one report pulls.
+ *
+ * Below Supabase's default PostgREST `max-rows` (1000) ON PURPOSE: a cap at or above the
+ * server's own ceiling is undetectable — the query would come back short of the cap while
+ * still being truncated, and `pullComplete` would claim a completeness nobody verified.
+ * Under it, a full page is unambiguous.
+ *
+ * 900 answers is about two and a half years at one a day. If it ever binds, nothing on
+ * the report becomes wrong: the pull is ordered newest-first, so the window keeps every
+ * row it had, and the one sentence that reads further back says "at least" instead of
+ * naming a date.
+ */
+const LOOK_PULL_CAP = 900
 
 // ── DB row shapes (the raw select results) ────────────────────────────────────
 
@@ -190,6 +207,26 @@ interface AiAnalysisRow {
 }
 
 type ParentEventJoin = { occurred_at: string; deleted_at: string | null }
+
+/**
+ * A daily-look row (migration 064), joined to its parent for timing + soft-delete.
+ *
+ * The parent join is NOT optional decoration. After an Undo the child row and the
+ * owner's sentence survive at rest with no schema-side signal, and the service role
+ * sees them — so `deleted_at` on the parent is the ONLY thing standing between a note
+ * the owner took back and a document made for her clinic. Same shape, same reason, as
+ * `WeightRow` (the `mapWeightRows` precedent named in the N-1 privacy review).
+ */
+export interface LookRow {
+  event_id: string
+  local_day: string
+  outcome: string
+  words: string[] | null
+  notes: string | null
+  vocab_version: number | null
+  created_at: string
+  events: ParentEventJoin | ParentEventJoin[] | null
+}
 
 interface WeightRow {
   event_id: string
@@ -474,6 +511,44 @@ export function mapWeightRows(rows: WeightRow[], lookbackMs?: number): ReportWei
     const kg = num(r.weight_kg)
     if (kg === null) continue
     out.push({ eventId: r.event_id, weightKg: kg, occurredAt: ev.occurred_at })
+  }
+  return out
+}
+
+/**
+ * Daily looks → the report's input rows, soft-deleted parents dropped.
+ *
+ * THE DROP IS THE WHOLE PRIVACY GUARD (N-1's review, rule 2). `local_day` is read as
+ * STORED and never re-derived from the parent's `occurred_at` — T-19 exists because the
+ * device and this function bucket days on two different clocks, and re-deriving here
+ * would put Home's answered-day count and the report's at odds over the same rows.
+ *
+ * NO LOOKBACK TRIM, deliberately, unlike doses and weigh-ins: the page-1 line's
+ * "answered on N days before it" clause reads back past the window on purpose, and the
+ * query's own floor is what bounds the pull. `generateReportForPet` passes that floor to
+ * assembly so the clause degrades to a floor rather than printing a query bound as if it
+ * were the record's first day.
+ */
+export function mapLookRows(rows: LookRow[]): ReportLookInput[] {
+  const out: ReportLookInput[] = []
+  for (const r of rows) {
+    const ev = first(r.events)
+    if (!ev || ev.deleted_at) continue
+    if (typeof r.local_day !== 'string' || r.local_day.length === 0) continue
+    out.push({
+      eventId: r.event_id,
+      localDay: r.local_day,
+      createdAt: r.created_at ?? ev.occurred_at,
+      occurredAt: ev.occurred_at,
+      // The column is CHECK-bounded to these two values (064); anything else is a
+      // corrupt read, and 'observed' is the safe direction — an absence day is the only
+      // one a surface may describe as "nothing unusual", and it must never be inferred.
+      // Mirrors `hydrateLooks` (lib/looks.ts) rather than deciding again.
+      outcome: r.outcome === 'nothing_unusual' ? 'nothing_unusual' : 'observed',
+      words: Array.isArray(r.words) ? r.words.filter((w): w is string => typeof w === 'string') : [],
+      vocabVersion: typeof r.vocab_version === 'number' ? r.vocab_version : 1,
+      notes: typeof r.notes === 'string' ? r.notes : null,
+    })
   }
   return out
 }
@@ -792,6 +867,16 @@ export async function generateReportForPet(
   // report's trial "Day N" buckets by the same clock the owner's card does. Default null ⇒
   // stored zone (the pre-B-443 behaviour), so every existing call site is unaffected.
   requestTimezone: string | null = null,
+  // CUL-875 / §9 rule 4 — who this render is for. THIS function is the authenticated
+  // owner-facing path and nothing else, so the default is her own render; the default is
+  // `includeLookNotes: true` because *Include your notes* is default-on for the PDF she
+  // is handing to a vet.
+  //
+  // A DEFAULT IS SAFE HERE AND ONLY HERE. PR 6's unauthenticated `view-report` route is
+  // a DIFFERENT entry point, and the `shared_link` arm carries no notes field at all, so
+  // it cannot reach this default by omission — it has to be constructed, and
+  // constructing it excludes the notes. That is the whole point of the union.
+  audience: ReportAudience = { kind: 'owner', includeLookNotes: true },
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const nowIso = new Date(nowMs).toISOString()
 
@@ -864,22 +949,11 @@ export async function generateReportForPet(
 
   // 2. Resolve the window (§6 cascade) from the small window-determining rows, so
   //    the heavy event pull can be bounded to cover exactly that window (+ buffer).
-  const scope = resolveScope({
-    now: nowIso,
-    timezone,
-    pet,
-    ownerName,
-    requestedWindow,
-    events: [],
-    aiAnalyses: [],
-    weightChecks: [],
-    doses: [],
-    medications: [],
-    dietTrials,
-    vetVisits,
-    feedingArrangements: [],
-    conditions: [],
-  })
+  //    The five fields the cascade actually reads (`ScopeResolutionInput`), not a stub
+  //    report with a dozen empty arrays: the window has never depended on events, doses,
+  //    photos or the render's audience, and the stub only existed because the parameter
+  //    was typed as the whole input.
+  const scope = resolveScope({ now: nowIso, timezone, requestedWindow, dietTrials, vetVisits })
   // The trial the block will describe, resolved HERE only to bound the pull (B-613). One
   // predicate, one call shape — `report.ts` calls the same function with the same window
   // and grace, so the pull is stretched for exactly the trial the block reports on.
@@ -896,6 +970,7 @@ export async function generateReportForPet(
     arrangementsRes,
     conditionsRes,
     attachmentsRes,
+    looksRes,
   ] = await Promise.all([
     // All non-deleted events over the lookback (every type — report.ts scopes,
     // dedups and filters by type internally; meals carry their food join).
@@ -964,6 +1039,31 @@ export async function generateReportForPet(
     // meal/food photo pulled here is simply never surfaced as an incident. Metadata rows are tiny,
     // so no lookback bound is needed (the storage fetch itself is capped in embedIncidentPhotos).
     supabase.from('event_attachments').select('event_id, storage_path, mime_type, sort_order').eq('pet_id', petId),
+    // CUL-875 — the daily looks (migration 064). THE ONE PLACE IN supabase/functions/
+    // WHERE A LOOK'S NOTE IS SELECTED (guards/lookNotes.test.ts pins it at exactly one;
+    // spec T-22 / §9 rule 1 — the note's only home on this document is its appendix).
+    //
+    // The `events` embed is load-bearing, not metadata: `looks` has no soft-delete of
+    // its own, so a look the owner took back — and the sentence she typed with it —
+    // survives at rest, and `mapLookRows` drops it on the parent's `deleted_at`. The
+    // embed names no constraint because `looks` has a single FK to `events` (unlike
+    // medication_administrations' two, the B-196 ambiguity crash).
+    //
+    // NO DATE BOUND, and an EXPLICIT ORDER + CAP instead. The pre-first-day coverage
+    // clause ("answered on 118 days before it since May 3") reads back past the window
+    // by design, so a `.gte` would make that sentence a statement about the query. The
+    // cap is what stops an unbounded pull, and the ORDER is what makes it safe:
+    // newest-first means anything the cap drops is the OLDEST, so every window-scoped
+    // number — the page-1 counts, the bars, the strip, the appendix — is untouched, and
+    // the single clause that reads older than the window is the single clause that
+    // degrades (to a floor with no start date, `pullComplete: false` below).
+    supabase
+      .from('looks')
+      .select('event_id, local_day, outcome, words, notes, vocab_version, created_at, events(occurred_at, deleted_at)')
+      .eq('pet_id', petId)
+      .order('local_day', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(LOOK_PULL_CAP),
   ])
 
   // weight_checks / medication_administrations carry no occurred_at column (it lives on
@@ -999,6 +1099,9 @@ export async function generateReportForPet(
     medicationItems = mapMedicationItemRows(rowsOrThrow<MedicationItemRow>(medItemsRes, 'medication_items'))
   }
 
+  const rawLookRows = rowsOrThrow<LookRow>(looksRes, 'looks')
+  const lookRows = mapLookRows(rawLookRows)
+
   const input: ReportInput = {
     now: nowIso,
     timezone,
@@ -1020,6 +1123,18 @@ export async function generateReportForPet(
     // B-613 — how far back `events` actually reaches, so assembly can tell "nothing was
     // logged in the cropped trial days" apart from "the cropped days were never pulled".
     eventsSinceIso: lookbackIso,
+    lookRows,
+    // EARNED, never assumed. A short page is a page the cap did not bind on, so these
+    // rows are the pet's whole live look record and the pre-first-day clause may name
+    // the date it starts from. A full page means rows may be missing off the old end,
+    // and the clause degrades to "at least N" with no date rather than presenting a
+    // query's edge as the record's beginning (C-19).
+    //
+    // Counted on the RAW rows, before `mapLookRows` drops soft-deleted parents: it is
+    // the QUERY that was capped, and a page filled with undone looks truncated the pull
+    // exactly as much as a page of live ones.
+    lookRowsComplete: rawLookRows.length < LOOK_PULL_CAP,
+    audience,
   }
 
   // 4. Pure assembly → (PR 7) embed the incident-photo bytes → pure render.
@@ -1066,6 +1181,7 @@ const handler = async (req: Request): Promise<Response> => {
   let petId: string
   let requestedWindow: { startDate: string; endDate: string } | null = null
   let requestTimezone: string | null = null
+  let includeNotes = true
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -1078,12 +1194,25 @@ const handler = async (req: Request): Promise<Response> => {
       end_date?: string
       // B-443 — the caller's device IANA zone (validated in resolveIanaZone before use).
       timezone?: string
+      // CUL-875 — the owner's *Include your notes* option, governing whether her daily-
+      // look notes appear in the report's Noticed appendix. Default ON, so an older
+      // client that sends nothing keeps the spec's default rather than silently
+      // dropping a column it does not know exists.
+      includeNotes?: boolean
+      include_notes?: boolean
     }
     petId = body.petId ?? ''
     const start = body.startDate ?? body.start_date
     const end = body.endDate ?? body.end_date
     if (start && end) requestedWindow = { startDate: start, endDate: end }
     requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
+    // ONLY an explicit `false` turns it off. Anything else — absent, null, a string, a
+    // number — is the default, because this is an authenticated OWNER render and the
+    // decision it governs has a spec'd default (on). The one thing a malformed value
+    // must never do is flip it: `Boolean(body.includeNotes)` would read `undefined` as
+    // off and silently drop the column for every older client.
+    const rawNotes = body.includeNotes ?? body.include_notes
+    includeNotes = rawNotes !== false
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -1109,7 +1238,19 @@ const handler = async (req: Request): Promise<Response> => {
 
   try {
     const callerJwt = authHeader.replace(/^Bearer\s+/i, '').trim() || null
-    const { status, body } = await generateReportForPet(supabase, petId, Date.now(), requestedWindow, callerJwt, adminClient, requestTimezone)
+    const { status, body } = await generateReportForPet(
+      supabase,
+      petId,
+      Date.now(),
+      requestedWindow,
+      callerJwt,
+      adminClient,
+      requestTimezone,
+      // This route is authenticated and owner-facing; PR 6's public `view-report` route
+      // is a different entry point and constructs the `shared_link` arm, which has no
+      // notes field to carry (§9 rule 4).
+      { kind: 'owner', includeLookNotes: includeNotes },
+    )
     return Response.json(body, {
       status,
       // no-store: the report is a snapshot of health data; never cache it at any hop.

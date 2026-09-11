@@ -23,8 +23,35 @@
 // Nothing here reads the database, the clock, or a store. The soft-delete join that makes
 // every count honest lives on the READER (`loadLookDays`, still in `lib/looks.ts`), which
 // is the only thing that ever produces a `LookDayRow`.
+//
+// ── AND NOTHING HERE IMPORTS ANYTHING (CUL-875 / N-6) ────────────────────────
+// That is now a load-bearing property, not a coincidence. `generate-report` imports this
+// file directly (`../../../lib/lookDayCounts.ts`), so the vet report's answered-day line,
+// its bars and its appendix count on the SAME functions Home and Patterns do. Deno
+// resolves specifiers literally and type-checks by default, so a single extensionless
+// import here — even a type-only one — makes the whole module unreachable from the Edge
+// Function and forces the mirror this file exists to prevent. If you need something from
+// another module, move the thing you need INTO this file or give the specifier its `.ts`;
+// never add an import that reaches the write path.
 
-import type { LookOutcome } from './looks';
+/**
+ * The two outcomes (migration 064's CHECK). `nothing_unusual` is the observed-absence
+ * row (L-6) — a real answer, never "no data".
+ *
+ * DEFINED HERE, NOT IN `lib/looks.ts`, SINCE CUL-875 / N-6 — and the move is the whole
+ * reason the vet report can share this module rather than mirror it. Deno resolves an
+ * import specifier literally, so the extensionless `import type { LookOutcome } from
+ * './looks'` this file used to carry made it unresolvable from
+ * `supabase/functions/generate-report/`, and the only way to give the report the four
+ * day counts would have been a second implementation kept honest by a parity test. That
+ * is the diet-trial §5.3 defect written down in advance: two surfaces re-deriving the
+ * same count from the same rows and disagreeing by a denominator. Moving one type union
+ * makes this file import-free, so there is ONE set of counters in two runtimes.
+ *
+ * `lib/looks.ts` re-exports it below its own re-export of the counters, so every caller
+ * that has imported it from there since N-2 is untouched.
+ */
+export type LookOutcome = 'observed' | 'nothing_unusual';
 
 /** One look row, reduced to what a COUNT needs. `localDay` is the stored key,
  *  never a re-derivation from `occurred_at` (T-19).

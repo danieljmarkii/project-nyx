@@ -69,6 +69,8 @@ import type {
   IncidentPhoto,
   SymptomLogPhenotype,
   ProteinSetView,
+  NoticedBlock,
+  NoticedWordCount,
 } from './report.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -3560,7 +3562,224 @@ function atAGlance(snap: ReportSnapshot): string {
   <div class="sec">
     <h2>At a glance <span class="aside">${aside}</span></h2>
     <div class="tiles">${tiles.join('')}</div>
+    ${noticedLine(snap)}
+    ${noticedGraph(snap)}
   </div>`
+}
+
+// ── Noticed — the owner's daily looks (CUL-875 / N-6, spec §8) ────────────────
+//
+// THREE RULES GOVERN EVERY STRING BELOW, and each of them was a defect first:
+//
+//  1. **The unit is the answered DAY and the verb is the owner's ACT.** Never
+//     "episodes" (§10.2a), never looks (R9). The denominator names what SHE did —
+//     *answered on 42 of 46 days* — because a denominator that named her pet's state
+//     would make a record-keeping number read as a health number.
+//  2. **The absence is her CLAIM, never the report's observation.** *Marked nothing
+//     unusual on 34 of the 42* — `marked`, with its denominator, every time. The
+//     round-2 adversarial pass (G9) caught the first draft stating it as a finding.
+//  3. **The absence is never a bar.** A bar invites a length comparison, and on the
+//     first draft the LONGEST bar was the reassuring one (81% of the track). Floor 3:
+//     coverage is never a good day. Only symptom-class counts are ever sized here.
+//
+// And one that is easy to lose in a refactor: ACTIVITY WORDS NEVER APPEAR ON PAGE 1.
+// A rise in *Lively* never reassures, and a page-1 tally of activities invites exactly
+// that reading. They are ink in the appendix, where the record is read row by row.
+
+/** A word's head, lowercased for mid-sentence use (*off on 6*, *lip-licking on 2*). */
+function noticedWordPhrase(label: string, dayCount: number): string {
+  return `${h(label.toLowerCase())} on ${num(dayCount)}`
+}
+
+/**
+ * The pre-first-day coverage clause — what stops *off on 6* reading as a new problem.
+ *
+ * Two forms, and the difference is whether the pull can stand behind a start date.
+ * Complete ⇒ *(first Sep 2; answered on 118 days before it since May 3)*. Truncated ⇒
+ * the count as a FLOOR with no date, because the earliest row is then a fact about the
+ * query rather than about the record (C-19).
+ */
+function noticedFirstClause(w: NoticedWordCount): string {
+  const first = `first ${h(fmtDay(w.firstDay))}`
+  const p = w.priorCoverage
+  if (!p) return ` (${first})`
+  if (p.sinceDay === null) {
+    return ` (${first}; answered on at least ${num(p.answeredDays)} days before it)`
+  }
+  return ` (${first}; answered on ${num(p.answeredDays)} days before it since ${h(fmtDay(p.sinceDay))})`
+}
+
+/**
+ * The intake sentence beside the absence claim (§5 honesty rule 12).
+ *
+ * The report NEVER withholds — it says the disagreement. Home keeps quiet days off the
+ * card while a pet's eating needs attention (T-20); this document does the opposite,
+ * because the vet reading it is the person who can act on the contradiction.
+ */
+function noticedIntakeClause(snap: ReportSnapshot, n: NoticedBlock): string {
+  if (n.intake.kind === 'no_record') {
+    // T-20's blind case. Said in the line's own words rather than left for the reader to
+    // infer, because *marked nothing unusual on 34 of the 42* beside an unrated bowl
+    // reads as though the bowl had been watched.
+    return ` No meal in this window carries an intake rating, so nothing here speaks to what ${h(
+      snap.signalment.name,
+    )} ate.`
+  }
+  if (n.intake.kind !== 'disagreement') return ''
+  const days = n.intake.days
+  // B-599 — point at the appendix only when it renders. A pointer to a section that is
+  // not on the document is the dangling reference this report has paid for before.
+  const pointer = mealsAppendixVisible(snap) ? ` &mdash; see appendix&nbsp;E` : ''
+  const dates = days.slice(0, 4).map((d) => h(fmtDay(d))).join(', ')
+  const more = days.length > 4 ? `, and ${num(days.length - 4)} more` : ''
+  return ` Including ${num(days.length)} of those ${days.length === 1 ? 'days' : 'days'} carrying a meal recorded as picked at or refused (${dates}${more}${pointer}).`
+}
+
+/**
+ * The page-1 line (§3 item 4).
+ *
+ * One sentence of counts, then the reconciliation clause, then intake. The clause is not
+ * optional garnish: 6 + 4 + 2 + 34 is 46 over a denominator of 42, which is correct under
+ * multi-select and reads as an arithmetic error to a cold reader. It is also stated in
+ * BOTH directions — see `activityOnlyDays`.
+ */
+function noticedLine(snap: ReportSnapshot): string {
+  const n = snap.noticed
+  if (!n) return ''
+  const parts: string[] = [`Answered on ${num(n.answeredDays)} of ${num(n.windowDays)} days`]
+  for (const w of n.concernWords) {
+    parts.push(`${noticedWordPhrase(w.label, w.dayCount)}${noticedFirstClause(w)}`)
+  }
+  if (n.absenceDays > 0) {
+    // LAST, and with its denominator. The owner's claim closes the line; it never leads
+    // it, and it is never a bare count.
+    parts.push(`marked nothing unusual on ${num(n.absenceDays)} of the ${num(n.answeredDays)}`)
+  }
+  // The reconciliation clause, true in both directions (see NoticedBlock.activityOnlyDays).
+  const activityBit =
+    n.activityOnlyDays > 0
+      ? `, and ${num(n.activityOnlyDays)} answered ${
+          n.activityOnlyDays === 1 ? 'day carries' : 'days carry'
+        } only an activity word, which page 1 never lists`
+      : ''
+  const reconcile =
+    `<div class="noticed-note">A day can carry more than one word${activityBit}, so these counts do not sum to the days answered. ` +
+    `Every entry is listed in appendix&nbsp;${lastAppendixLetter(snap)}.${noticedIntakeClause(snap, n)}</div>`
+  return `
+    <div class="noticed-line">
+      <div class="noticed-h">Owner&rsquo;s observations (Noticed)</div>
+      <div class="noticed-counts">${parts.join(' &middot; ')}.</div>
+      ${reconcile}
+    </div>`
+}
+
+/**
+ * The graph: bars for the symptom-class words, then the dated strip.
+ *
+ * Below the floor the bars do not render AT ALL — not a shorter bar, not a caveated one.
+ * Four answered days and two *Off* draws a bar at half the track on a clinical document,
+ * from a self-selected sample of four; the line and the strip carry the same facts with
+ * their denominators visible, so nothing is lost but the misreading.
+ */
+function noticedGraph(snap: ReportSnapshot): string {
+  const n = snap.noticed
+  if (!n) return ''
+  return `
+    <div class="noticed-graph">
+      ${noticedBars(snap, n)}
+      ${noticedStrip(snap, n)}
+    </div>`
+}
+
+function noticedBars(snap: ReportSnapshot, n: NoticedBlock): string {
+  if (!n.barsRender || n.concernWords.length === 0) return ''
+  const rows = n.concernWords
+    .map((w) => {
+      // The fill is days-with-the-word over days ANSWERED — never over the window, which
+      // would silently reward a sparse record with a shorter bar.
+      const pct = n.answeredDays > 0 ? Math.min(100, (w.dayCount / n.answeredDays) * 100) : 0
+      return `
+        <div class="nb-row">
+          <div class="nb-lab">${h(w.label)}<span class="nb-first">first ${h(fmtDay(w.firstDay))}</span></div>
+          <div class="nb-track"><div class="nb-fill" style="width:${pct.toFixed(1)}%"></div></div>
+          <div class="nb-val num">${h(w.dayCount)} of ${h(n.answeredDays)}</div>
+        </div>`
+    })
+    .join('')
+  // The absence, as a SENTENCE under the bars. Never a bar (rule 3 above).
+  const absence =
+    n.absenceDays > 0
+      ? `<div class="nb-absence">Marked nothing unusual on ${num(n.absenceDays)} of the ${num(
+          n.answeredDays,
+        )} days answered &mdash; the owner&rsquo;s claim, not a finding.</div>`
+      : ''
+  return `
+      <div class="nb">
+        <div class="nb-title">Days each word was recorded <span class="aside">${h(
+          fmtRange(n.barsStartDate, n.barsEndDate),
+        )} &middot; of the ${h(n.answeredDays)} days answered</span></div>
+        ${rows}
+        ${absence}
+      </div>`
+}
+
+/**
+ * The dated 28-day strip.
+ *
+ * Its span is its OWN and is named in its own title, because it is not the bars' span —
+ * the third adversarial pass found a reader meeting *6 of 42* above three ● here with no
+ * way to tell they were one word over two windows. The per-word sentence beneath is the
+ * reconciliation.
+ *
+ * An unanswered day draws a FAINT DOT rather than a blank. A blank is the visual default
+ * and reads as "nothing seen", so a vomit's ▲ would float over a void.
+ */
+function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
+  const s = n.strip
+  if (s.days.length === 0) return ''
+  const cells = s.days
+    .map((d) => {
+      const glyph =
+        d.mark === 'absence'
+          ? `<span class="ns-o">&#9675;</span>`
+          : d.mark === 'observation'
+            ? `<span class="ns-f">&#9679;</span>`
+            : `<span class="ns-n">&middot;</span>`
+      const vom = d.vomit ? `<span class="ns-v">&#9650;</span>` : `<span class="ns-v ns-vn"></span>`
+      return `<div class="ns-cell" title="${h(d.day)}">${vom}${glyph}</div>`
+    })
+    .join('')
+  const spoken = s.wordDaysInSpan
+    .map((w) => `${h(w.label.toLowerCase())} on ${num(w.dayCount)} of these ${num(s.days.length)}`)
+    .join(' &middot; ')
+  const absent =
+    s.wordsAbsentInSpan.length > 0
+      ? `${s.wordDaysInSpan.length > 0 ? ' &middot; ' : ''}${s.wordsAbsentInSpan
+          .map((w) => h(w.label.toLowerCase()))
+          .join(', ')} ${s.wordsAbsentInSpan.length === 1 ? 'falls' : 'fall'} entirely before this span`
+      : ''
+  const reconcile = spoken || absent ? `<div class="ns-words">${spoken}${absent}.</div>` : ''
+  // BOTH sides of this count are answered days (§6.11's lesson, applied to a caption):
+  // a vomit day nobody answered is not a day nothing was seen, and saying so is what
+  // stops the row of ○ reading as "she was fine on the others".
+  const vomCaption =
+    s.unansweredVomitDays > 0
+      ? `<div class="ns-cap">${num(s.unansweredVomitDays)} vomit ${
+          s.unansweredVomitDays === 1 ? 'day was' : 'days were'
+        } not answered &mdash; no observation was recorded for ${
+          s.unansweredVomitDays === 1 ? 'it' : 'them'
+        }.</div>`
+      : ''
+  return `
+      <div class="ns">
+        <div class="nb-title">The last four weeks <span class="aside">${h(
+          fmtRange(s.startDate, s.endDate),
+        )} &middot; ${h(s.answeredDays)} of these ${h(s.days.length)} days answered</span></div>
+        <div class="ns-row">${cells}</div>
+        <div class="ns-legend"><span class="ns-o">&#9675;</span> answered, nothing unusual &nbsp; <span class="ns-f">&#9679;</span> an observation recorded &nbsp; <span class="ns-n">&middot;</span> not answered &nbsp; <span class="ns-v">&#9650;</span> a vomit logged that day</div>
+        ${reconcile}
+        ${vomCaption}
+      </div>`
 }
 
 /** The diet-trial At-a-glance tiles (the pre-round-2 set — appropriate only when a trial is active). */
@@ -4922,8 +5141,35 @@ function hasIncidentPhotos(snap: ReportSnapshot): boolean {
 function photosAppendixLetter(snap: ReportSnapshot): string {
   return mealsAppendixVisible(snap) ? 'F' : 'E'
 }
-/** The last LETTERED appendix (drives the page-1 orient line + the divider): photos → meals → D. */
+
+/**
+ * CUL-875 — does the Noticed appendix render, and at which letter?
+ *
+ * THE LETTER IS COMPUTED, NOT `G`. The spec (§8) names it "Appendix G" on the assumption
+ * that A–F always render; they do not. E is the meals appendix and is conditional, the
+ * photos appendix takes E or F depending on whether meals rendered, and the "How to read"
+ * page is deliberately unlettered. So on a report with no meals and no photos, Noticed is
+ * **E**, and printing "G" would put a letter on the page that the letterhead's own
+ * *Appendices A–D* line contradicts.
+ *
+ * That is not a hypothetical: the first round-2 artifact said "A–F" over a document whose
+ * last appendix was D, and the cold read found a careful vet hunting for an appendix that
+ * was not there — on a document whose entire pitch is "every figure traces to an
+ * appendix". One source of truth for the letter, exactly as the photos appendix already
+ * has. Noticed sits LAST because it is the owner's own layer beside the record, read after
+ * the record, and because appending keeps every existing letter where a reader of an
+ * earlier report expects it.
+ */
+function hasNoticed(snap: ReportSnapshot): boolean {
+  return snap.noticed !== null && snap.noticed.days.length > 0
+}
+function noticedAppendixLetter(snap: ReportSnapshot): string {
+  if (hasIncidentPhotos(snap)) return mealsAppendixVisible(snap) ? 'G' : 'F'
+  return mealsAppendixVisible(snap) ? 'F' : 'E'
+}
+/** The last LETTERED appendix (drives the page-1 orient line + the divider): Noticed → photos → meals → D. */
 function lastAppendixLetter(snap: ReportSnapshot): string {
+  if (hasNoticed(snap)) return noticedAppendixLetter(snap)
   if (hasIncidentPhotos(snap)) return photosAppendixLetter(snap)
   return mealsAppendixVisible(snap) ? 'E' : 'D'
 }
@@ -4931,6 +5177,7 @@ function lastAppendixLetter(snap: ReportSnapshot): string {
 function appendixDivider(snap: ReportSnapshot): string {
   const eBit = mealsAppendixVisible(snap) ? ' &middot; E — meals &amp; intake' : ''
   const photoBit = hasIncidentPhotos(snap) ? ` &middot; ${photosAppendixLetter(snap)} — incident photos` : ''
+  const noticedBit = hasNoticed(snap) ? ` &middot; ${noticedAppendixLetter(snap)} — Noticed (owner's observations)` : ''
   // The lifetime medication-history table (§4.4) is un-lettered by design (one table, not a second
   // appendix — D2) but it renders between C and D, so name it in the map where it sits, or a reader
   // scanning the contents line never learns it exists (cold-read scannability nit).
@@ -4939,7 +5186,7 @@ function appendixDivider(snap: ReportSnapshot): string {
   return `
   <div class="divider">
     <span class="k">End of clinical summary</span>
-    The appendices are the reference record behind every figure on page&nbsp;1: A — event log &middot; B — diet history &middot; C — off-diet exposures${medHistBit} &middot; D — medications${eBit}${photoBit} &middot; How to read this report.
+    The appendices are the reference record behind every figure on page&nbsp;1: A — event log &middot; B — diet history &middot; C — off-diet exposures${medHistBit} &middot; D — medications${eBit}${photoBit}${noticedBit} &middot; How to read this report.
   </div>`
 }
 
@@ -5309,6 +5556,108 @@ function incidentPhotoCard(p: IncidentPhoto, tz: string | null): string {
 // then the off-diet exposures (the confounders), then medications (PM round-3 #3 — a vet reads
 // the diet before the exceptions to it). Function names track CONTENT, not letter, so the
 // physical order here is the letter order.
+/**
+ * How much of one note this document prints before it says it shortened it.
+ *
+ * `looks.notes` has NO length bound at rest (N-1's privacy review stored a 2 MB note),
+ * and the service role reads whatever is there — so a cap belongs to the render or the
+ * PDF is unbounded. The client's field caps at 300, so a normally-written note is never
+ * touched by this; it exists for the row the client did not write.
+ *
+ * NEVER A SILENT TRUNCATION (that review's rule 4): when it bites, the report says so
+ * and says where the whole sentence still lives.
+ */
+const NOTICED_NOTE_CAP = 1000
+
+function noticedNoteHtml(note: string, petName: string): string {
+  if (note.length <= NOTICED_NOTE_CAP) return `<div class="ng-note">&ldquo;${h(note)}&rdquo;</div>`
+  return (
+    `<div class="ng-note">&ldquo;${h(note.slice(0, NOTICED_NOTE_CAP))}&rdquo; ` +
+    `<span class="ng-trunc">[shortened for this report &mdash; the whole note is in ${h(petName)}&rsquo;s record]</span></div>`
+  )
+}
+
+/**
+ * Appendix — Noticed (spec §8).
+ *
+ * GROUPED BY DAY, and the grouping is a clinical claim, not a layout preference: "units
+ * are answered days, never episodes" binds the appendix's SHAPE as well as its counts, so
+ * two looks on one day are two lines under ONE day heading and can never be counted as
+ * two episodes by a vet scanning rows.
+ *
+ * Never summarised, never averaged, never coloured. Un-answered days are simply absent —
+ * round 1's "didn't look" glyph left with its chip (R8), and the strip on page 1 is where
+ * the un-answered days are visible as days.
+ *
+ * WHAT IS NOT HERE, BY CONSTRUCTION: a soft-deleted look (dropped at the query, N-1 rule
+ * 2 — a note the owner took back never prints), a word outside the closed vocabulary
+ * (dropped in assembly, rule 1 — the column is unbounded at rest and the review stored
+ * `<script>…` in one), and the note itself whenever this is not the owner's own render
+ * (§9 rule 4 — an unauthenticated mint carries no notes decision to inherit).
+ */
+function noticedAppendix(snap: ReportSnapshot): string {
+  const n = snap.noticed
+  if (!n || !hasNoticed(snap)) return ''
+  const letter = noticedAppendixLetter(snap)
+  const petName = snap.signalment.name
+  const rows = n.days
+    .map((d) => {
+      const lines = d.entries
+        .map((e) => {
+          const words =
+            e.words.length > 0
+              ? e.words.map((w) => h(w.label)).join(', ')
+              : e.outcome === 'nothing_unusual'
+                ? `<span class="ng-abs">Nothing unusual</span>`
+                : `<span class="ng-abs">&mdash;</span>`
+          // Present-only, like every other disclosure on this document: a row that lost
+          // nothing says nothing.
+          const dropped =
+            e.unknownWords > 0
+              ? ` <span class="ng-trunc">[${h(e.unknownWords)} word${
+                  e.unknownWords === 1 ? '' : 's'
+                } this version of the app does not recognise, not shown]</span>`
+              : ''
+          const note = e.note ? noticedNoteHtml(e.note, petName) : ''
+          return `
+          <tr>
+            <td class="ng-hour num">${h(fmtLocalTime(e.occurredAt, snap.timezone))}</td>
+            <td class="ng-words">${words}${dropped}${note}</td>
+            <td class="ng-obs"></td>
+          </tr>`
+        })
+        .join('')
+      return `
+        <tr class="ng-day"><td colspan="3">${h(fmtDayYear(d.day))}</td></tr>
+        ${lines}`
+    })
+    .join('')
+  // The note column's STATE is always said. A column that is simply missing reads as
+  // "she wrote nothing"; a withheld one has to say it was withheld, or the report quietly
+  // edits the owner's record on her behalf.
+  const noteState = n.notesIncluded
+    ? n.days.some((d) => d.entries.some((e) => e.note !== null))
+      ? ` The owner&rsquo;s own notes are printed beneath the words they belong to, at her request.`
+      : ''
+    : n.notesWithheld > 0
+      ? ` ${num(n.notesWithheld)} of these entries carr${n.notesWithheld === 1 ? 'ies' : 'y'} a written note, not printed on this copy.`
+      : ''
+  return `
+<section class="page">
+  <p class="appx-title serif">Appendix ${h(letter)} &mdash; Noticed (owner&rsquo;s observations)</p>
+  <p class="appx-sub">A once-a-day check the owner answers from a fixed list of words, grouped by the day she answered. Two entries on one day are two lines under that day &mdash; they are not two episodes. These are the owner&rsquo;s observations of ${h(
+    petName,
+  )}, not examination findings, and they are counted nowhere else on this report: no symptom total, no frequency chart and no flag reads them. Days she did not answer are not listed; page&nbsp;1&rsquo;s four-week strip shows them as days.${noteState}</p>
+  <table class="tbl ng">
+    <thead><tr><th>Time</th><th>What she recorded</th><th>Observer</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <p class="appx-foot">The &ldquo;Observer&rdquo; column is blank by design: the app records one account per pet today, so every entry here is the account holder&rsquo;s. ${h(
+    petName,
+  )}&rsquo;s record keeps the full list of words available to her; a word she was never offered cannot appear.</p>
+</section>`
+}
+
 function appendixBCD(snap: ReportSnapshot): string {
   // The `*` marker is defined ONCE for the sheet, between its two users (appendix B's
   // protein rows and appendix C's protein column), and only when a marker was actually
@@ -6223,6 +6572,16 @@ function appendixF(snap: ReportSnapshot): string {
         snap,
       )}, most recent first — the owner's own photos, attached when the event was logged. Location, device and capture-time metadata are removed before embedding, and the images are downscaled. A photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1; a clear photo is never an all-clear.</dd>`
     : ''
+  // CUL-875 — gated exactly like `photoDt` above, for the same B-599 reason: a legend
+  // entry describing a section the report does not carry is a dangling reference. What it
+  // teaches is the one thing a vet cannot get from the appendix itself — that these are
+  // the owner's words from a fixed list, counted nowhere else, and that a run of
+  // "nothing unusual" is a record of her ANSWERING, never a record of health.
+  const noticedDt = hasNoticed(snap)
+    ? `<dt>Noticed (owner&rsquo;s observations)</dt><dd>A once-a-day check the owner answers by picking from a fixed list of plain-language words — never free text, never a score. The unit is a <b>day she answered</b>, not an episode: several entries on one day count once, and page&nbsp;1 says so where the counts do not sum. <b>&ldquo;Marked nothing unusual&rdquo; is her claim about a day, not an examination and not an all-clear</b>, which is why it is printed with its denominator and never drawn as a bar. These observations are counted <b>nowhere else on this report</b> — no symptom total, no frequency chart, no flag reads them — so a word here and a logged symptom are two separate records and are meant to be read side by side. Every entry is in appendix&nbsp;${noticedAppendixLetter(
+        snap,
+      )}.</dd>`
+    : ''
   return `
 <section class="page">
   <p class="appx-title serif">How to read this report</p>
@@ -6245,6 +6604,7 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Photo analysis</dt><dd>For photographed incidents, structured fields (colour, contents, blood, foreign material) are read automatically from the photo the owner took. These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
     ${chronicityWindowDt}
     ${photoDt}
+    ${noticedDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo;${
@@ -6321,6 +6681,7 @@ ${appendixA(snap)}
 ${appendixBCD(snap)}
 ${mealsAppendix(snap)}
 ${incidentPhotosAppendix(snap)}
+${noticedAppendix(snap)}
 ${appendixF(snap)}
 </body>
 </html>`
@@ -6418,6 +6779,50 @@ const STYLE = `
   .tile .v{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.05;}
   .tile .v small{font-size:13px;color:var(--muted);font-weight:600;}
   .tile .l{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35;}
+
+  /* Noticed — the owner's daily looks (CUL-875 / N-6). ONE HUE, THIN MARKS, DIRECT
+     LABELS, NO COLOUR ON A DAY (§5 rule 8): every mark here is --ink / --muted /
+     --faint, so the strip and the bars read identically in a B&W photocopy, which is
+     what most of these documents become. Nothing below encodes a datum in colour. */
+  .noticed-line{margin-top:14px;border-top:1px solid var(--hair);padding-top:11px;}
+  .noticed-h{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);}
+  .noticed-counts{font-size:12.5px;line-height:1.55;margin-top:4px;}
+  .noticed-note{font-size:11px;line-height:1.5;color:var(--muted);margin-top:4px;}
+  .noticed-graph{margin-top:11px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+  .nb-title{font-size:10.5px;font-weight:700;color:var(--ink);margin-bottom:6px;}
+  .nb-title .aside{font-weight:500;color:var(--faint);letter-spacing:0;text-transform:none;font-size:10px;}
+  .nb-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+  .nb-lab{flex:0 0 116px;font-size:11px;line-height:1.25;}
+  .nb-first{display:block;font-size:9.5px;color:var(--faint);}
+  .nb-track{flex:1 1 auto;height:9px;background:var(--fill);border:1px solid var(--hair);border-radius:2px;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .nb-fill{height:100%;background:var(--bar);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .nb-val{flex:0 0 auto;font-size:10.5px;color:var(--muted);white-space:nowrap;}
+  .nb-absence{font-size:10.5px;line-height:1.45;color:var(--muted);margin-top:7px;border-top:1px solid var(--hair2);padding-top:6px;}
+  /* The strip. Each cell is a fixed column so 28 days sit on one row at page width; the
+     vomit mark rides ABOVE the day's own glyph rather than replacing it, so a vomit mark
+     never hides whether the day was answered.
+     (No glyph characters in THIS comment: the stylesheet is interpolated into the
+     document, so a CSS comment is shipped bytes — the R2-6 test, which forbids a triangle
+     anywhere on a chartless report, catches exactly that and caught it here. And no
+     backticks either: this comment lives inside a template literal.) */
+  .ns-row{display:flex;gap:2px;align-items:flex-end;}
+  .ns-cell{flex:1 1 0;min-width:0;text-align:center;line-height:1;}
+  .ns-v{display:block;font-size:7px;height:9px;color:var(--ink);}
+  .ns-vn{visibility:hidden;}
+  .ns-o{font-size:10px;color:var(--muted);}
+  .ns-f{font-size:10px;color:var(--ink);}
+  .ns-n{font-size:12px;color:var(--nub);}
+  .ns-legend{font-size:9.5px;color:var(--muted);margin-top:6px;line-height:1.5;}
+  .ns-words{font-size:10.5px;color:var(--ink);margin-top:5px;line-height:1.45;}
+  .ns-cap{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.45;}
+  /* The Noticed appendix. A day heading spans the table so two entries under one day can
+     never be read as two rows a vet counts as two episodes. */
+  .ng-day td{font-weight:700;background:var(--fill);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .ng-hour{white-space:nowrap;width:58px;color:var(--muted);}
+  .ng-obs{width:70px;}
+  .ng-abs{color:var(--muted);}
+  .ng-note{margin-top:3px;font-size:11px;line-height:1.5;color:var(--ink);}
+  .ng-trunc{color:var(--faint);font-size:10px;}
 
   /* Trend charts (the hero) */
   .trend{border:1px solid var(--hair);border-radius:10px;padding:10px 15px 4px;background:#fff;}

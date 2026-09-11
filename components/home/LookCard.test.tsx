@@ -103,6 +103,7 @@ import { commonAncestor, owningTouchable } from '../../testUtils/tree';
 import { useEventStore } from '../../store/eventStore';
 import { useMomentStore } from '../../store/momentStore';
 import { useUiStore } from '../../store/uiStore';
+import { lookNoteCue } from '../../lib/lookCard';
 
 const WRITTEN = {
   eventId: 'e1',
@@ -922,12 +923,17 @@ describe('the note, after the save (T-22)', () => {
     const field = t.getByTestId('look-note-field-e1');
     expect(field.props.placeholder).toBe('Say more — what did you see?');
     expect(field.props.maxLength).toBe(300);
-    // The T&S cue says where the note goes — and only what is true today. It cannot name
-    // the vet report while `generate-report` prints no look notes; `guards/lookNotes.test.ts`
-    // is what keeps the cue and the report telling the same story in both directions.
-    expect(
-      t.getByText('Kept in Mochi’s record — never on a shared link unless you choose it'),
-    ).toBeTruthy();
+    // The T&S cue says where the note goes — and only what is true today.
+    // `guards/lookNotes.test.ts` is what keeps the cue and the report telling the same
+    // story in both directions; it named the record while `generate-report` printed no
+    // look notes, and names the report since CUL-875 landed the appendix.
+    //
+    // Asserted THROUGH the function rather than as a literal, deliberately. A hardcoded
+    // copy here is a second definition of a Trust & Safety string that has now been
+    // rewritten twice, and its only effect is to fail this test when the guard's rule is
+    // correctly obeyed elsewhere — which is what it did.
+    expect(t.getByText(lookNoteCue('Mochi'))).toBeTruthy();
+    expect(lookNoteCue('Mochi')).toMatch(/vet report/i);
     fireEvent.changeText(field, '  wouldn’t come up on the bed  ');
     await act(async () => {
       fireEvent(field, 'submitEditing');

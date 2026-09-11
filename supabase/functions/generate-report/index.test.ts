@@ -30,7 +30,13 @@ import {
   computeLookbackIso,
   generateReportForPet,
 } from './index.ts'
-import { assembleReport, resolveScope, type ReportInput, type IncidentPhoto } from './report.ts'
+import {
+  assembleReport,
+  resolveScope,
+  type IncidentPhoto,
+  type ReportInput,
+  type ScopeResolutionInput,
+} from './report.ts'
 import { renderReport } from './render.ts'
 
 const NOW = '2026-07-02T12:00:00Z'
@@ -369,11 +375,10 @@ Deno.test('mapVetVisitRows / mapConditionRows: straight field renames', () => {
 // ── computeLookbackIso ──────────────────────────────────────────────────────
 
 Deno.test('computeLookbackIso: recent window → base 180d floor governs', () => {
-  const scope = resolveScope({
-    now: NOW, timezone: null, pet: mapPet({ id: 'p', name: 'x', species: 'dog', breed: null, sex: 'unknown', date_of_birth: null, weight_kg: null }),
-    ownerName: null, events: [], aiAnalyses: [], weightChecks: [], doses: [], medications: [],
-    dietTrials: [], vetVisits: [], feedingArrangements: [], conditions: [],
-  })
+  // CUL-875 — `resolveScope` takes `ScopeResolutionInput` (the five fields the cascade
+  // reads), not a whole stub report. The stub only existed because the parameter was
+  // typed as `ReportInput`.
+  const scope = resolveScope({ now: NOW, timezone: null, requestedWindow: null, dietTrials: [], vetVisits: [] })
   // no trial/visit → 90-day fallback window; base floor (now-180d) is earlier than
   // (windowStart - 90d) = now-180d ... they tie, so the floor is now-180d.
   const iso = computeLookbackIso(scope, NOW_MS)
@@ -385,10 +390,8 @@ Deno.test('computeLookbackIso: an old since-visit window is still fully covered 
   // which is earlier than the 180d base floor.
   const visit = new Date(NOW_MS - 300 * MS_PER_DAY).toISOString().slice(0, 10)
   const scope = resolveScope({
-    now: NOW, timezone: null, pet: mapPet({ id: 'p', name: 'x', species: 'dog', breed: null, sex: 'unknown', date_of_birth: null, weight_kg: null }),
-    ownerName: null, events: [], aiAnalyses: [], weightChecks: [], doses: [], medications: [],
-    dietTrials: [], vetVisits: [{ visitedAt: visit, clinicName: null, vetName: null, reason: null }],
-    feedingArrangements: [], conditions: [],
+    now: NOW, timezone: null, requestedWindow: null, dietTrials: [],
+    vetVisits: [{ visitedAt: visit, clinicName: null, vetName: null, reason: null }],
   })
   const iso = computeLookbackIso(scope, NOW_MS)
   const windowStartMs = Date.parse(`${scope.startDate}T00:00:00.000Z`)
@@ -403,11 +406,8 @@ Deno.test('computeLookbackIso: an old since-visit window is still fully covered 
 // than the existing 90d pre-window buffer off a long trial's head, so the floor gains a
 // third term — bounded, and never one that raises the floor.
 
-const emptyScopeInput = (over: Record<string, unknown> = {}) => ({
-  now: NOW, timezone: null,
-  pet: mapPet({ id: 'p', name: 'x', species: 'dog' as const, breed: null, sex: 'unknown' as const, date_of_birth: null, weight_kg: null }),
-  ownerName: null, events: [], aiAnalyses: [], weightChecks: [], doses: [], medications: [],
-  dietTrials: [], vetVisits: [], feedingArrangements: [], conditions: [],
+const emptyScopeInput = (over: Partial<ScopeResolutionInput> = {}): ScopeResolutionInput => ({
+  now: NOW, timezone: null, requestedWindow: null, dietTrials: [], vetVisits: [],
   ...over,
 })
 
@@ -476,6 +476,7 @@ Deno.test('integration: mapped rows assemble + render to HTML naming the pet', (
       stool_blood_type: null, stool_mucus_present: null, edited_at: null }]),
     weightChecks: [], doses: [], medications: [], dietTrials: [], vetVisits: [],
     feedingArrangements: [], conditions: [],
+    audience: { kind: 'owner', includeLookNotes: true },
   }
   const snap = assembleReport(input)
   const html = renderReport(snap)
@@ -489,8 +490,16 @@ Deno.test('integration: mapped rows assemble + render to HTML naming the pet', (
 // ── generateReportForPet: ownership guard via injected fake client ────────────
 
 // Minimal fake matching the subset of the supabase-js chainable query builder the
-// shell uses: .from().select().eq().maybeSingle()/.is().gte(). Each table resolves
-// to a canned { data } (or { data: null } for an unowned pet).
+// shell uses: .from().select().eq().maybeSingle()/.is().gte()/.order().limit(). Each
+// table resolves to a canned { data } (or { data: null } for an unowned pet).
+//
+// EVERY CHAINABLE METHOD THE SHELL CALLS HAS TO BE HERE, and that is not a formality:
+// `.order()` / `.limit()` arrived with the CUL-875 look pull, and until they were added
+// three tests failed with `.order is not a function` — including the one asserting that
+// an events-read error surfaces as "events read failed", which passed its own assertion
+// through a DIFFERENT throw. A fake that is missing a method fails loudly here, which is
+// the good case; the bad case is a fake that swallows one and lets a test claim to have
+// exercised a query shape it never built.
 function fakeClient(tables: Record<string, unknown>) {
   const builder = (table: string) => {
     const result = tables[table] as { single?: unknown; list?: unknown; error?: { message: string } } | undefined
@@ -501,6 +510,8 @@ function fakeClient(tables: Record<string, unknown>) {
     chain.eq = ret
     chain.is = ret
     chain.gte = ret
+    chain.order = ret
+    chain.limit = ret
     chain.maybeSingle = () => Promise.resolve({ data: result?.single ?? null, error: err })
     chain.then = (onF: (v: { data: unknown; error: unknown }) => unknown) =>
       Promise.resolve({ data: result?.list ?? [], error: err }).then(onF)

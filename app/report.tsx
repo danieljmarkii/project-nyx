@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, Alert, Switch, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { router } from 'expo-router';
@@ -10,6 +10,8 @@ import { NightMoment } from '../components/brand/NightMoment';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
+import { useAllowlistFlag } from '../hooks/useAppConfig';
+import { useBetaOptIn } from '../lib/betaFeatures';
 import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
 import {
   flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
@@ -89,6 +91,10 @@ export default function ReportScreen() {
   const [staleLine, setStaleLine] = useState<string | null>(null);
 
   const [rangeMode, setRangeMode] = useState<RangeMode>('default');
+  // CUL-875 — *Include your Noticed notes* (T-22, §9 rule 4). Default ON: it is the
+  // owner's own PDF, made to be handed to a vet, and the note is the context the report
+  // otherwise cannot carry.
+  const [includeNotes, setIncludeNotes] = useState(true);
   // Custom window defaults to the same 90-day span as the fallback, so "Custom…"
   // opens on a sensible range the owner narrows from, rather than an empty picker.
   const [customStart, setCustomStart] = useState(() => {
@@ -110,9 +116,13 @@ export default function ReportScreen() {
   // cherry-pick disclosure; "Custom…" sends an explicit window → disclosure.
   const requestParams = useMemo<VetReportParams | null>(() => {
     if (!petId) return null;
-    if (rangeMode === 'default') return { petId };
-    return { petId, startDate: customStartKey, endDate: customEndKey };
-  }, [petId, rangeMode, customStartKey, customEndKey]);
+    // `includeNotes` rides on both branches: it is a property of the DOCUMENT, not of
+    // the window, and leaving it off the default branch would make the option silently
+    // inert for every owner who never opens "Custom…".
+    const base = { petId, includeNotes };
+    if (rangeMode === 'default') return base;
+    return { ...base, startDate: customStartKey, endDate: customEndKey };
+  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes]);
 
   // `token` guards against a stale response: if the pet or the selected range
   // changes while a generate call is in flight, the older response must not
@@ -199,6 +209,15 @@ export default function ReportScreen() {
   // unmounting the whole surface to a full-screen spinner on every tap (Calm bar).
   // The full spinner is reserved for the very first load, when there's nothing yet.
   const regenerating = status === 'loading' && report !== null;
+
+  // The option ships DARK with the rest of Noticed. Both gates, never one: eligibility
+  // (the allowlist) and the owner's own opt-in are two separate questions, and an account
+  // that has neither has no look rows, so the appendix the toggle governs cannot exist
+  // for it. Showing the control anyway would leak the feature onto every report screen
+  // before GA (CUL-876) and offer a switch over nothing.
+  const lookEligible = useAllowlistFlag('daily_look');
+  const lookOptedIn = useBetaOptIn('daily_look');
+  const showNotesOption = lookEligible && lookOptedIn;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -300,6 +319,29 @@ export default function ReportScreen() {
                 if (date) setCustomEnd(date);
               }}
             />
+          )}
+
+          {showNotesOption && (
+            <View style={styles.notesOption}>
+              <View style={styles.notesOptionText}>
+                <Text style={styles.notesOptionLabel}>Include your Noticed notes</Text>
+                {/* Two facts, and the second one is CUL-848's gap said out loud rather
+                    than left for the owner to discover on the document. A control named
+                    "your notes" that governs one of two note fields has to say which, or
+                    turning it off reads as a promise the report does not keep. */}
+                <Text style={styles.notesOptionHint}>
+                  What you wrote on your daily looks, printed in the report’s Noticed appendix. Notes you
+                  add to a meal or a symptom are always included.
+                </Text>
+              </View>
+              <Switch
+                value={includeNotes}
+                onValueChange={setIncludeNotes}
+                trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+                ios_backgroundColor={theme.colorBorderStrong}
+                accessibilityLabel="Include your Noticed notes in the report"
+              />
+            </View>
           )}
 
           {resolvedLabel && <Text style={styles.rangeResolved}>{resolvedLabel}</Text>}
@@ -430,6 +472,32 @@ const styles = StyleSheet.create({
   customField: {
     flex: 1,
     gap: theme.space1,
+  },
+  // The notes option. A row, not a chip group: it is a two-state property of the
+  // document that carries a sentence of explanation, and a chip pair would put the
+  // explanation somewhere other than beside the control it explains.
+  notesOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    marginTop: theme.space2,
+    paddingTop: theme.space2,
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+  },
+  notesOptionText: {
+    flex: 1,
+  },
+  notesOptionLabel: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+  },
+  notesOptionHint: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    marginTop: 2,
   },
   customFieldLabel: {
     fontFamily: theme.fontBody,
