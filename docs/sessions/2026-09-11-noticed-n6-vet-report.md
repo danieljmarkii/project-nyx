@@ -56,6 +56,23 @@ The rest: the strip drew an activity day identically to a concern (inflating a S
 - **Three of my own assertions were satisfied by class names in the stylesheet.** `/nb-track/.test(html)` is true of the rule `.nb-track{…}`, so the test checking that no bar renders below the floor was green against a report that drew one. Every assertion now goes through a `body()` helper that drops the `<style>` block.
 - **`scripts/*.deno.ts` is a convention the pre-push hook enforces.** The seed script was written as `seed-noticed-report.ts` and failed `tsc` on `Deno` being undefined — the third time the tsconfig comment's own prediction has come true.
 
+## The cold read's second pass, which was the sharper one
+
+The first read estimated page 1 off the stylesheet. The re-read **rendered both artifacts to A4 in headless Chromium** and measured, which found four more blockers and retracted one of its own earlier recommendations:
+
+1. **Two vomit-day sentences over two populations.** *"On 2 of the 2 vomit days she answered"* sat three lines above the strip's *"2 vomit days were not answered"* — one window-scoped, one strip-scoped, neither labelled, and 2 + 2 = 4 under a safety band saying six. A vet concluded two of six vomiting days went unobserved; the record said four. Each sentence was internally correct; together they partitioned nothing.
+2. **The calibration fact ignored ordering.** Three of the five dense "misses" were 09:00 looks against evening vomits — 22:15, 12:05, 18:45. There was nothing to notice yet, and a sentence meant to calibrate her quiet days was inviting a reader to discard them. A day counts only when a look was recorded at or after that day's earliest vomit.
+3. **The counts read as a partition and were not one, and the disclosure was suppressed by an arithmetic coincidence.** The reconciliation clause was gated on `countsSum !== answeredDays`; on the dense record one multi-word day and one activity-only day cancelled exactly, so the clause vanished precisely where the ambiguity still existed. Gated on the reasons now — and closing it opened a hole of its own, because the unreadable-days sentence had been riding the same gate.
+4. **`.noticed-graph` split the A4 fold**, at y 853–1047 against a boundary at 1039, with a second condition bringing the legend within 6 px.
+
+**The retraction is worth recording as much as the blockers.** The first read said cut the bar chart first. Measured, it saves **60 px on the dense report and 0 px on the sparse one** — the strip beside it sets the row height, and on a thin record the bars are already suppressed. Its revised list (the tautological *Reading the trend* callout, the photo-less *Vomit characteristics* section, the duplicate empty weight strip, two duplicate tiles) reaches ~1.40 pages, and one page is unreachable without deleting clinical content. Estimating and measuring gave opposite advice about the same element.
+
+**And the branch nothing had ever rendered.** Fix 8 (*"first marked …, before this window"*) could not be signed off, because every first date in both fixtures fell inside the window even though the record reached back to May. A branch no artifact renders is a branch no cold read has ever seen — the dense fixture now carries a concern word first marked in July.
+
+## The CI break my own change caused
+
+Making `ReportInput.audience` required broke `scripts/render-trial-report-sample.deno.ts`, the sibling that renders the diet-trial artifacts for this same cold-read gate. CI type-checks it in **its own step** (`deno check --lock=deno.lock scripts/*.deno.ts`) that my local `deno test supabase/functions/` never touched — and ci.yml says why that step exists, two paragraphs below the one I had read. Reproduced red, fixed, verified green, and the whole CI set now runs locally before every push.
+
 ## New guard — `guards/reportLookPull.test.ts`
 
 Two privacy rules here are string literals nothing red-flags:
@@ -76,7 +93,7 @@ The `audience`-has-no-default and the note's pull bound are pinned here too.
 
 ## Persona sign-off
 
-`Dr. Chen` ✓ (cold read, on two rendered artifacts — first pass NOT READY on 8 blockers, all fixed; re-read result on the issue) · `Data Scientist / adversarial-reviewer` ✓ (FAIL on 8 breaks, all fixed; tried a word marked before the window, a vocabulary key the held deploy does not know, the look's own parent event, a report generated from another timezone, 1,197 rows against the 900 cap, a 16-day contiguous burst, a quiet 41-of-46 record, and a 5-day window — and tried T-14's mixed day, ten taps in a day, the appendix's day grouping, the absence-never-a-bar rule and the notes union, which held) · `Trust & Safety / rls-privacy-reviewer` ✓ (FAIL on the default `audience`, proven end to end; cross-user reach, service-role scope, prototype keys, `<script>` keys, 20,000 keys, an `<img onerror>` note, the cap disclosure, the wipe and the deletion cascade all held) · `Engineer / code-reviewer` ✓ · `Designer` ✓ (Principle 6 — one hue, no colour on a day, the absence never sized) · `QA` ✓ (7782 jest, 1588 deno, `tsc` clean).
+`Dr. Chen` ✓ (cold read ×2 — NOT READY on 8 blockers, then NOT READY on 4 more from an A4 render; all twelve fixed. A third read is the PM's to call for) · `Data Scientist / adversarial-reviewer` ✓ (FAIL on 8 breaks, all fixed; tried a word marked before the window, a vocabulary key the held deploy does not know, the look's own parent event, a report generated from another timezone, 1,197 rows against the 900 cap, a 16-day contiguous burst, a quiet 41-of-46 record, and a 5-day window — and tried T-14's mixed day, ten taps in a day, the appendix's day grouping, the absence-never-a-bar rule and the notes union, which held) · `Trust & Safety / rls-privacy-reviewer` ✓ (FAIL on the default `audience`, proven end to end; cross-user reach, service-role scope, prototype keys, `<script>` keys, 20,000 keys, an `<img onerror>` note, the cap disclosure, the wipe and the deletion cascade all held) · `Engineer / code-reviewer` ✓ · `Designer` ✓ (Principle 6 — one hue, no colour on a day, the absence never sized) · `QA` ✓ (7782 jest, 1588 deno, `tsc` clean).
 
 ## Residuals filed
 
