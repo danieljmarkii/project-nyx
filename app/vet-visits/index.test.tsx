@@ -10,8 +10,10 @@ import type { VetVisitsHome } from '../../lib/vetVisits';
 // wrong pet. Spec §2 names that shape as the one this track must not inherit, and
 // this file drives the store mid-flight to prove it did not.
 
-const mockBook = jest.fn(async () => 'new-appointment');
-const mockLog = jest.fn(async () => 'new-visit');
+// Typed by their real signatures so `mock.calls[0][0]` is the input object rather
+// than an empty tuple — the assertions below are ABOUT that object's `petId`.
+const mockBook = jest.fn(async (_input: { petId: string; scheduledAt: string }) => 'new-appointment');
+const mockLog = jest.fn(async (_input: { petId: string; visitedAt: string }) => 'new-visit');
 let mockHome: VetVisitsHome = { next: null, visits: [] };
 
 jest.mock('expo-router', () => ({
@@ -53,8 +55,8 @@ jest.mock('../../lib/vetVisits', () => {
       vetName: 'Dr. Chen',
       suggestedDate: null,
     })),
-    bookVetAppointment: (...args: unknown[]) => mockBook(...(args as [])),
-    logVetVisit: (...args: unknown[]) => mockLog(...(args as [])),
+    bookVetAppointment: mockBook,
+    logVetVisit: mockLog,
   };
 });
 
@@ -144,7 +146,7 @@ describe('AC 2 — booking', () => {
 
     await waitFor(() => expect(mockBook).toHaveBeenCalledTimes(2));
     // A row EACH (the Vet Files D13 duplicate-on-add shape), not one shared row.
-    expect(mockBook.mock.calls.map((c) => (c[0] as { petId: string }).petId)).toEqual(['pet-a', 'pet-b']);
+    expect(mockBook.mock.calls.map((c) => c[0].petId)).toEqual(['pet-a', 'pet-b']);
   });
 
   it('does not offer "Also for" in a one-pet account', async () => {
