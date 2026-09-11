@@ -126,6 +126,63 @@ describe('withholding', () => {
     expect(coverage(record, { lastWithheldDay: mark }).form).toBe('absent');
   });
 
+  // ── The adversarial pass's measured break, walked in time ──────────────────
+  //
+  // At 28 of 28 she withholds on day −20 (the last day she opened the app), the clinic has
+  // the cat from −19 to −13 with the app never opened, and she resumes on −12. The first
+  // cut suppressed only until the MARKED DAY left the window — at which point the clinic's
+  // unanswered days were still inside it, and the footer returned reading a number that had
+  // fallen because her cat was ill.
+  describe('the window must clear the whole illness, not just the mark', () => {
+    /** Answered every day from `fromDaysAgo` back to `toDaysAgo`, inclusive. */
+    function answeredRange(fromDaysAgo: number, toDaysAgo: number): LookDayRow[] {
+      const out: LookDayRow[] = [];
+      for (let d = fromDaysAgo; d <= toDaysAgo; d += 1) out.push(row(d));
+      return out;
+    }
+
+    /** Answered daily up to the withheld day, nothing while the cat was in the clinic,
+     *  answered daily since she came home. */
+    function illnessRecord(markDaysAgo: number, resumedDaysAgo: number): LookDayRow[] {
+      return [
+        ...answeredRange(0, resumedDaysAgo),
+        ...answeredRange(markDaysAgo, markDaysAgo + 40),
+      ];
+    }
+
+    it('is ABSENT while the unanswered clinic days are still in the window', () => {
+      // Withheld on day −20 (the last day she opened the app), clinic −19…−13 with the app
+      // never opened, home and answering again from −12. The MARK has left the 28-day
+      // window's reach as a suppression trigger on its own; the GAP it caused has not.
+      const record = illnessRecord(20, 12);
+      const mark = dayKeyFromIndex(TODAY_INDEX - 20);
+      expect(coverage(record, { lastWithheldDay: mark })).toEqual({
+        form: 'absent',
+        reason: 'withheld',
+      });
+      // And this is what it would otherwise have printed — a number that fell because her
+      // cat was ill, which is the reading T-16 exists to refuse.
+      expect(lookCoverageText(coverage(record, { lastWithheldDay: null }))).toMatch(
+        /^Answered 21 of the last 28 days$/,
+      );
+    });
+
+    it('returns only once the window starts at or after the day she came back', () => {
+      const mark = dayKeyFromIndex(TODAY_INDEX - 40);
+      // Resumed exactly 27 days ago: the window opens on her first answered day back, so
+      // no part of the illness is inside the span the number speaks for.
+      expect(coverage(illnessRecord(40, 27), { lastWithheldDay: mark }).form).toBe('window');
+      // One day short and the gap is back in range.
+      expect(coverage(illnessRecord(40, 26), { lastWithheldDay: mark }).form).toBe('absent');
+    });
+
+    it('a mark with NO answered day after it suppresses — she has not come back', () => {
+      const record = answeredRange(30, 60);
+      const mark = dayKeyFromIndex(TODAY_INDEX - 20);
+      expect(coverage(record, { lastWithheldDay: mark }).form).toBe('absent');
+    });
+  });
+
   it('a mark that could not be READ suppresses — the safe direction', () => {
     expect(coverage(answered(28), { lastWithheldDay: undefined })).toEqual({
       form: 'absent',

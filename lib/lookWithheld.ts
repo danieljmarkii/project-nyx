@@ -60,21 +60,57 @@ import { lookWordKind, type LookSpecies } from '../constants/lookWords';
 const MS_PER_DAY = 86_400_000;
 
 /**
- * `DECLINE.refusalRecencyDays` — the intake detector's own recency bound, mirrored here
- * because that config object is module-private to `lib/analytics.ts` and mirrors
- * `detection.ts` in turn.
+ * The arm's recency bound — THREE days, and deliberately NOT the intake detector's two.
  *
+ * ── WHY THERE IS A BOUND AT ALL ──────────────────────────────────────────────
  * A WINDOW IN ROWS IS A GAP WEARING A FACT'S CLOTHES (the fourth adversarial pass). With
  * only "the last three qualifying meals" and no clock, a dog rated once a week carries a
- * September concern into December, and a bag of training treats fires it. So the window
- * is applied to the ROWS FIRST and the "last three" is taken from what survives — which
- * is also what makes the arm honestly unreachable for a sparse rater rather than
- * permanently latched.
+ * September concern into December, and a bag of training treats fires it. So the window is
+ * applied to the ROWS FIRST and the "last three" is taken from what survives.
+ *
+ * ── WHY IT IS NOT `DECLINE.refusalRecencyDays` (T-20's literal wording) ───────
+ * T-20 writes the bound as the detector's own, and the adversarial gate the spec put on
+ * this threshold ruled that half of it UNSOUND, with the counterexample named:
+ *
+ *   A cat with a 14-day twice-daily baseline of clean bowls refuses three meals in a row,
+ *   and her owner — reasonably — stops putting food down for an animal that has stopped
+ *   eating. Forty-nine hours after the last refusal, with NO intervening evidence of any
+ *   kind, the gate flipped from withheld to open and Home drew *Nothing unusual · 7:12*
+ *   with a coverage count over a cat three days into a hunger strike. Arm 1 carried the
+ *   identical bound, so nothing else on the card covered it: `detectIntakeDecline`'s
+ *   trigger B skips a refusal older than the bound and its trigger A skips a day holding
+ *   no rated meal. Measured at bound+1s; held at +2h and +30h.
+ *
+ * THE TWO NUMBERS ANSWER DIFFERENT QUESTIONS, which is why sharing one was the error: the
+ * detector's bound gates a FINDING ("escalate now"), and a finding may reasonably go quiet
+ * as its evidence ages. This one gates a SUPPRESSION ("do not draw the reassuring thing"),
+ * and a suppression must outlast the clinical window it protects. For a cat that window is
+ * hepatic lipidosis, which is measured in days, not hours.
+ *
+ * THREE, from the sweep rather than from taste. The gate swept 2 / 3 / 4 / 5 / 7 days: at
+ * three, the under-fire above is closed, and every counterexample the fourth pass used to
+ * STRIKE the first draft's second arm stays closed at three and at every bound through
+ * seven — the once-a-week rater (unreachable), the fortnightly picky cat (unreachable),
+ * the recovered cat whose refusals are superseded (inert, because the "last three" row cap
+ * and not the clock is what discards superseded evidence). So the number buys the
+ * protection without re-opening anything the strike was for.
+ *
+ * This is NOT the struck second arm returning. That arm fired on IGNORANCE — a record with
+ * no refusal in it at all. This one requires the newest qualifying meal on the record to
+ * BE a refusal.
  */
-export const LOOK_REFUSAL_RECENCY_DAYS = 2;
+export const LOOK_REFUSAL_RECENCY_DAYS = 3;
 
-/** How many of the last three must be refused or picked. Provisional (§2 item 12), ruled
- *  by the adversarial gate at this PR; the cadence table is in the PR body. */
+/**
+ * How many of the last three must be refused or picked.
+ *
+ * RULED SOUND by the adversarial gate the spec put on it (§2 item 12, T-20), which could
+ * not break it in either direction the row cap owns: treats excluded, `some` excluded, one
+ * refusal followed by a full dinner inert, sparse raters unreachable, superseded refusals
+ * discarded. The count also earns its keep asymmetrically — a withheld day costs 28 days
+ * of coverage footer, so a 1-of-1 threshold would make the footer unreachable for any
+ * mildly picky cat. The cadence table is in the PR body.
+ */
 export const LOOK_REFUSAL_MIN = 2;
 
 /** How many recent qualifying meals the arm looks back over. */

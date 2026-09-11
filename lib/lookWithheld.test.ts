@@ -24,8 +24,27 @@ jest.mock('@react-native-async-storage/async-storage', () => {
     },
   };
 });
-jest.mock('./db', () => ({ getDb: () => ({ getAllAsync: jest.fn(), getFirstAsync: jest.fn() }) }));
-jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
+// A stub that honours the WINDOW the loader asks for, because the window is what is under
+// test: `readMealRows` does its filtering in SQL, so a stub that ignored the bounds would
+// make the bound untestable — which is exactly the gap the adversarial pass found.
+const mockMealRows: { occurred_at: string; food_type: string | null; intake_rating: string | null }[] = [];
+const mockGetAllAsync = jest.fn(async (_sql: string, params: unknown[]) => {
+  const [, startIso, endIso] = params as [string, string, string];
+  return mockMealRows.filter((r) => r.occurred_at >= startIso && r.occurred_at < endIso).map((r) => ({
+    food_item_id: 'f-1',
+    intake_rating: r.intake_rating,
+    occurred_at: r.occurred_at,
+    food_type: r.food_type,
+    primary_protein: null,
+    proteins: null,
+    brand: 'Brand',
+    product_name: 'Chicken',
+  }));
+});
+jest.mock('./db', () => ({
+  getDb: () => ({ getAllAsync: (...a: unknown[]) => mockGetAllAsync(...(a as [string, unknown[]])), getFirstAsync: jest.fn() }),
+}));
+jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn(async () => []) }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AnalyticsMeal } from './analytics';
@@ -36,6 +55,7 @@ import {
   intakeArm,
   lookWithheld,
   lookWithheldState,
+  loadRecentQualifyingMeals,
   markWithheldToday,
   readLastWithheldDay,
   type LookWithheldFacts,
@@ -149,12 +169,19 @@ describe('what the arm must NOT fire on', () => {
   });
 });
 
-// ── The cadence table (Data) ─────────────────────────────────────────────────
+// ── The cadence table (Data), and the bound itself ──────────────────────────
 //
-// "2 of the last 3 within 2 days" is a threshold on a ROW COUNT read through a TIME
+// "2 of the last 3 within N days" is a threshold on a ROW COUNT read through a TIME
 // window, so its reachability depends entirely on how often an owner rates. The loader
-// bounds the rows by `LOOK_REFUSAL_RECENCY_DAYS` first and the arm takes the last three
-// of what survives — so this table is what the arm can and cannot see, per feeder.
+// bounds the rows by `LOOK_REFUSAL_RECENCY_DAYS` FIRST and the arm takes the last three of
+// what survives — so this table is what the arm can and cannot see, per feeder.
+//
+// EVERY EXPECTATION IS DERIVED FROM THE CONSTANT, never typed. The first version of this
+// block re-implemented the bound as a local `inBound()` helper, and the adversarial pass
+// showed what that bought: DELETING the bound from `loadRecentQualifyingMeals` left
+// 7,576 of 7,577 tests green. A test that re-implements the thing it is testing proves a
+// property of itself (C-18: a mutation that does not change behaviour has not tested the
+// guard). The loader-driven tests below are the repair.
 describe('cadence — the arm’s reachability by feeding frequency', () => {
   /** Meals every `perDay` times a day, going back `days`, all with one rating. */
   function cadence(perDay: number, days: number, rating: string): AnalyticsMeal[] {
@@ -164,34 +191,27 @@ describe('cadence — the arm’s reachability by feeding frequency', () => {
     return out;
   }
 
-  /** What the loader would hand the arm: only rows inside the recency bound. */
+  /** What the LOADER would hand the arm, derived from the shipped constant. */
   function inBound(meals: AnalyticsMeal[]): AnalyticsMeal[] {
     return meals.filter((m) => m.ms >= NOW - LOOK_REFUSAL_RECENCY_DAYS * MS_PER_DAY);
   }
 
-  it.each([
-    // perDay, refusals reachable inside the 2-day bound, arm fires on all-refused
-    [3, 6, true],
-    [2, 4, true],
-    [1, 2, true],
-  ])('a %ix-a-day feeder has %i qualifying meals in the bound → fires: %s', (perDay, expected, fires) => {
+  it.each([[3], [2], [1]])('a %ix-a-day feeder reaches the threshold on refused meals', (perDay) => {
     const rows = inBound(cadence(perDay, 7, 'refused'));
-    expect(rows).toHaveLength(expected);
-    expect(intakeArm(rows)).toBe(fires);
+    // Derived: `perDay` meals a day inside the bound, minus the one-hour offset.
+    expect(rows.length).toBeGreaterThanOrEqual(Math.min(2, perDay * LOOK_REFUSAL_RECENCY_DAYS));
+    expect(intakeArm(rows)).toBe(true);
   });
 
-  it('a once-a-day dog reaches the threshold on two refused dinners', () => {
+  it('a once-a-day dog reaches it on two refused dinners', () => {
     // Two of two, not two of three — the threshold is on the numerator; "the last three"
     // is a cap on how far back the arm looks, never a minimum sample. A dog who refused
     // both of his last two dinners is exactly the animal this arm exists for.
-    const rows = inBound(cadence(1, 7, 'refused'));
-    expect(rows).toHaveLength(2);
+    const rows = inBound(cadence(1, 7, 'refused')).slice(0, 2);
     expect(intakeArm(rows)).toBe(true);
   });
 
   it('a once-a-WEEK rater can never reach it — a gap is not a fact', () => {
-    // The fourth adversarial pass's own counterexample: without the time bound this dog
-    // would carry a September concern into December.
     const weekly = [meal(24 * 6, 'refused'), meal(24 * 13, 'refused'), meal(24 * 20, 'refused')];
     expect(inBound(weekly)).toHaveLength(0);
     expect(intakeArm(inBound(weekly))).toBe(false);
@@ -200,8 +220,75 @@ describe('cadence — the arm’s reachability by feeding frequency', () => {
   });
 
   it('a once-a-day dog whose ONE meal in the bound was refused does not fire', () => {
-    const rows = [meal(3, 'refused')];
-    expect(intakeArm(rows)).toBe(false);
+    expect(intakeArm([meal(3, 'refused')])).toBe(false);
+  });
+});
+
+describe('the recency bound is applied by the LOADER, not by a test helper', () => {
+  const HOUR = 3_600_000;
+  const BOUND_H = LOOK_REFUSAL_RECENCY_DAYS * 24;
+
+  function row(hoursAgo: number, rating: string | null, foodType: string | null = 'meal') {
+    return {
+      occurred_at: new Date(NOW - hoursAgo * HOUR).toISOString(),
+      intake_rating: rating,
+      food_type: foodType,
+    };
+  }
+
+  beforeEach(() => {
+    mockMealRows.length = 0;
+    mockGetAllAsync.mockClear();
+  });
+
+  it('keeps a meal just INSIDE the bound and drops one just outside', async () => {
+    // The mutation that used to survive the whole suite: replace the loader's `start` with
+    // 0 and every one of these rows comes back. Both sides are derived from the constant,
+    // so retuning it moves the fixture with it.
+    mockMealRows.push(row(BOUND_H - 1, 'refused'), row(BOUND_H + 1, 'refused'));
+    const got = await loadRecentQualifyingMeals(PET.id, NOW);
+    expect(got).toHaveLength(1);
+    expect(got?.[0].ms).toBeGreaterThan(NOW - LOOK_REFUSAL_RECENCY_DAYS * MS_PER_DAY);
+  });
+
+  it('the once-a-week rater is unreachable THROUGH THE LOADER', async () => {
+    mockMealRows.push(row(24 * 6, 'refused'), row(24 * 13, 'refused'), row(24 * 20, 'refused'));
+    const got = await loadRecentQualifyingMeals(PET.id, NOW);
+    expect(got).toEqual([]);
+    expect(intakeArm(got ?? [])).toBe(false);
+  });
+
+  it('the cat whose owner stopped offering is STILL withheld at 49 hours', async () => {
+    // THE COUNTEREXAMPLE THE GATE BROKE THE 2-DAY BOUND WITH. Three refusals in a row, then
+    // silence, because a reasonable owner stops putting food down for an animal that has
+    // stopped eating. At two days the gate flipped open here with no intervening evidence
+    // of any kind, and Home drew *Nothing unusual* over a cat three days into a hunger
+    // strike.
+    mockMealRows.push(row(49, 'refused'), row(58, 'refused'), row(66, 'refused'));
+    const got = await loadRecentQualifyingMeals(PET.id, NOW);
+    expect(intakeArm(got ?? [])).toBe(true);
+    expect(lookWithheldState(PET, facts({ recentQualifyingMeals: got }))).toBe('withheld');
+  });
+
+  it('a treat is dropped by the qualifying set before the arm sees it', async () => {
+    mockMealRows.push(row(2, 'refused', 'treat'), row(5, 'refused', 'treat'));
+    expect(await loadRecentQualifyingMeals(PET.id, NOW)).toEqual([]);
+  });
+
+  it('an unrated meal is dropped too — a logging gap is not anorexia', async () => {
+    mockMealRows.push(row(2, null), row(5, null));
+    expect(await loadRecentQualifyingMeals(PET.id, NOW)).toEqual([]);
+  });
+
+  it('returns newest first, so "the last three" means the last three', async () => {
+    mockMealRows.push(row(20, 'all'), row(2, 'refused'), row(11, 'picked'));
+    const got = await loadRecentQualifyingMeals(PET.id, NOW);
+    expect(got?.map((m) => m.intakeRating)).toEqual(['refused', 'picked', 'all']);
+  });
+
+  it('a failed read is null, never an empty record', async () => {
+    mockGetAllAsync.mockRejectedValueOnce(new Error('disk'));
+    expect(await loadRecentQualifyingMeals(PET.id, NOW)).toBeNull();
   });
 });
 

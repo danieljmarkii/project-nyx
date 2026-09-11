@@ -51,7 +51,11 @@ const mockLoadFacts = jest.fn(async () => ({
 }));
 jest.mock('../../lib/lookEmergencyFacts', () => ({
   loadEmergencyFacts: (...args: unknown[]) => mockLoadFacts(...(args as [])),
-  withTrialRefusal: (facts: unknown) => facts,
+  // The REAL fold, because it is pure and because stubbing it to a passthrough is what let
+  // the door and the card disagree about the same animal unobserved: N-4a's stub discarded
+  // the trial register too, so no test on this file could see whether either arm reached
+  // the sheet (CUL-873, the adversarial pass's fourth break). Only the READ is mocked.
+  withIntakeRefusal: jest.requireActual('../../lib/lookEmergencyFacts').withIntakeRefusal,
 }));
 
 const mockHaptics = {
@@ -871,6 +875,32 @@ describe('the withheld state (floor item 12, T-20)', () => {
     await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
   });
 
+  it('the footer is held back while a fact is merely UNRESOLVED, not only when withheld', async () => {
+    // The adversarial pass's third break: `withheldNow: withheldState !== 'open'` was the
+    // only thing keeping the footer off screen while the trial fact was unresolved, and
+    // swapping it for the plain `withheld` boolean left all 150 look tests green.
+    // `trialNotEating` is null on every cold start until `useDietTrial` answers, so this is
+    // the frame every owner passes through.
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: MOCHI.id,
+      serverIntakeDecline: false,
+      trialNotEating: null,
+      recentQualifyingMeals: [],
+    });
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0, ['subdued']),
+      ...Array.from({ length: 25 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
+    // Not withheld (nothing positive), not open (a fact has not answered) — so no number.
+    expect(t.queryByTestId('look-coverage')).toBeNull();
+    // …and the words are held too, rather than either claim being made.
+    expect(t.queryByText('Off')).toBeNull();
+    expect(t.queryByTestId('look-withheld-e1')).toBeNull();
+  });
+
   it('the withheld entry never marks the day when the state is merely UNKNOWN', async () => {
     mockLoadWithheldFacts.mockReturnValue(new Promise(() => {}));
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
@@ -1112,6 +1142,55 @@ describe('what the product review changed', () => {
     const t = render(<LookCard />);
     await waitFor(() => expect(t.getByText('Off')).toBeTruthy());
     expect(t.queryByTestId('look-withheld-reason')).toBeNull();
+  });
+
+  it('the emergency door and the card never disagree about whether she is eating', async () => {
+    // The adversarial pass's fourth break: a non-trial cat with two refused bowls had her
+    // card WITHHOLD its words while the door one tap away still printed *Not eating for a
+    // day* as an UNMET conditional — because nothing outside `lib/lookWithheld.ts`
+    // imported `intakeArm`, however firmly the header said otherwise.
+    const refused = [
+      { ms: Date.now() - 2 * 3_600_000, foodItemId: 'f', foodLabel: null, foodType: 'meal', primaryProtein: null, intakeRating: 'refused' },
+      { ms: Date.now() - 9 * 3_600_000, foodItemId: 'f', foodLabel: null, foodType: 'meal', primaryProtein: null, intakeRating: 'refused' },
+    ];
+    // A CAT, because that is the record the break was measured on and the species whose
+    // triage row *Not eating for a day* stands on a refusal alone — a dog's intake rows
+    // want lethargy beside it (`lib/lookEmergency.ts`).
+    mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: JUNIPER.id,
+      serverIntakeDecline: false,
+      trialNotEating: false,
+      recentQualifyingMeals: refused,
+    });
+    useEventStore.setState({
+      todayEvents: [
+        lookRow('e1', 1, {
+          pet_id: JUNIPER.id,
+          look_outcome: 'nothing_unusual',
+          look_words: null,
+        }),
+      ],
+    });
+    // The card withholds…
+    const t = render(<LookCard />);
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+    // …and the door, opened from the same card, is handed the same refusal. The question
+    // is folded once a look exists, so the grid is two gestures away rather than one.
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-folded-ask'));
+    });
+    await waitFor(() => expect(t.getByTestId('look-more-words')).toBeTruthy());
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-more-words'));
+    });
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-emergency-door'));
+    });
+    // `refusedRecently` reaches the sheet as TRUE, so the intake threshold collapses to the
+    // imperative instead of rendering as one more unmet conditional to read past.
+    await waitFor(() => expect(t.getByTestId('look-emergency-imperative')).toBeTruthy());
+    expect(t.queryByText('Not eating for a day')).toBeNull();
   });
 
   it('a receipt-bearing entry survives the two-entry cap (§3.3 rule 5)', async () => {

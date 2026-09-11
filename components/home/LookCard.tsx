@@ -88,13 +88,18 @@ import { lookCoverage, lookCoverageText } from '../../lib/lookCoverage';
 import { leadReceipt, receiptsFor } from '../../lib/lookReceipts';
 import {
   entryWithholdsWords,
+  intakeArm,
   loadLookWithheldFacts,
   lookWithheldState,
   markWithheldToday,
   readLastWithheldDay,
   type LookWithheldFacts,
 } from '../../lib/lookWithheld';
-import { LookWithheldEntry, LookWithheldReasonLine } from './LookWithheldEntry';
+import {
+  LookWithheldEntry,
+  LookWithheldReasonLine,
+  WITHHELD_UNDO_FADE_MS,
+} from './LookWithheldEntry';
 import { Skeleton } from '../ui/Skeleton';
 import { wordsToLocalText } from '../../lib/lookWordsCodec';
 import {
@@ -147,12 +152,17 @@ import {
   lookUndoNoteBody,
 } from '../../lib/lookCard';
 import { EMERGENCY_DOOR_LABEL, type EmergencyRead } from '../../lib/lookEmergency';
-import { loadEmergencyFacts, withTrialRefusal } from '../../lib/lookEmergencyFacts';
+import { loadEmergencyFacts, withIntakeRefusal } from '../../lib/lookEmergencyFacts';
 import { useGridDisclosure, useLookArrival } from '../motion/lookMotion';
 
 /** The last half-second of the dwell, in which *Undo* fades before the chevron takes its
- *  slot (T-15). A tap during the fade still undoes. */
-const UNDO_FADE_MS = 500;
+ *  slot (T-15). A tap during the fade still undoes.
+ *
+ *  IMPORTED, not redeclared. The withheld entry renders the same control on the same
+ *  clock, and the code review caught the first cut declaring a private 500 here while
+ *  `LookWithheldEntry` exported its own — two numbers the owner feels as one, equal only
+ *  by coincidence until somebody retunes one of them. */
+const UNDO_FADE_MS = WITHHELD_UNDO_FADE_MS;
 
 /** Two chips stacked in a wrapping row face each other with their full vertical reach
  *  between them, so the row gap is the SUM of the two hitSlops — derived from the chip's
@@ -288,6 +298,12 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   const submittingRef = useRef(false);
   submittingRef.current = submitting;
 
+  // The two fields every effect below actually reads. Hoisted so a dependency array names
+  // a PRIMITIVE rather than the store object, whose reference changes on any unrelated pet
+  // mutation and would re-issue this card's three reads each time (the code review).
+  const petId = activePet?.id ?? null;
+  const petSpecies = activePet?.species ?? null;
+
   const disclosure = useGridDisclosure({ open: gridOpen, reducedMotion, appActive });
 
   // The withheld state, decided once per render from the loaded facts and read by
@@ -378,10 +394,8 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   // line that says "this is the first look" should not flicker while it is being read.
   const everLookedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!live || !activePet) return;
+    if (!live || !petId) return;
     let cancelled = false;
-    const petId = activePet.id;
-    const petSpecies = activePet.species;
     if (everLookedFor.current !== petId) {
       everLookedFor.current = petId;
       setEverLooked(null);
@@ -410,15 +424,19 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [live, activePet?.id, activePet?.species, todayEvents.length, trialNotEating, activePet]);
+    // The PRIMITIVES this body reads, never the `activePet` object. `pets` is a fresh
+    // reference on any unrelated store mutation — a name edit, a photo, a weigh-in — and
+    // listing the object here re-issued all three reads on every one of them. The id and
+    // species guards inside made that invisible rather than harmless (the code review).
+  }, [live, petId, petSpecies, todayEvents.length, trialNotEating]);
 
   // Remember the day we withheld, so the footer stays away until the window has moved past
   // it (T-16). Fire-and-forget and idempotent within a day — the mark is the footer's only
   // memory of a state that is otherwise purely live.
   useEffect(() => {
-    if (!live || !activePet || !withheld) return;
-    markWithheldToday(activePet.id).catch(() => {});
-  }, [live, activePet?.id, withheld, activePet]);
+    if (!live || !petId || !withheld) return;
+    markWithheldToday(petId).catch(() => {});
+  }, [live, petId, withheld]);
 
   // T-11 — THE PET SWITCH. A draft belongs to the pet it was started for; if the header
   // moves, the words do not follow. Cleared and SAID, never silently re-pointed.
@@ -820,10 +838,25 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     const petId = activePet.id;
     loadEmergencyFacts(petId)
       .then((facts) => {
-        // `=== true` — the positive fact or nothing, never ignorance (T-20). The
-        // withheld predicate above takes the SAME field the other way; the two readings
-        // are named in the prop's own doc.
-        const merged = withTrialRefusal(facts, trialNotEating === true);
+        // BOTH intake registers, each a positive fact or nothing, never ignorance (T-20):
+        // the trial's (`=== true`, since the withheld predicate takes the SAME field the
+        // other way — see the prop's own doc) and the record-local arm's qualifying meals.
+        //
+        // The second one is what stops the card and the door disagreeing about the same
+        // animal: without it a non-trial cat with two refused bowls had her card withhold
+        // its words while the door one tap away still printed the intake conditionals as
+        // UNMET (the adversarial pass). `?? []` resolves an unanswered read to "no
+        // evidence" HERE rather than in the helper, because on this surface ignorance must
+        // not escalate.
+        const merged = withIntakeRefusal(
+          facts,
+          trialNotEating === true,
+          // The SAME call the card's own withholding makes, so the two cannot answer
+          // differently about one animal. `?? []` resolves an unanswered read to "no
+          // evidence" here rather than in the helper, because on this surface ignorance
+          // must not escalate (T-20).
+          resting?.petId === petId ? intakeArm(resting.facts.recentQualifyingMeals ?? []) : false,
+        );
         // The loader returns null on a failed read — the one case that falls through to
         // the imperative (fail closed). A late answer for a pet the owner has since
         // switched away from is dropped rather than rendered under the new pet's name.
@@ -831,7 +864,7 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
         setEmergencyRead(merged ? { status: 'ready', facts: merged } : { status: 'failed' });
       })
       .catch(() => setEmergencyRead({ status: 'failed' }));
-  }, [activePet?.id, trialNotEating, activePet]);
+  }, [activePet?.id, trialNotEating, resting]);
 
   // Publish the pinned exits while the grid is open, and clear them on every path out
   // — including unmount, which is the backstop that keeps a stuck flag from costing the
@@ -907,7 +940,7 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
                   pet={{ species: activePet.species, sex }}
                   petName={petName}
                   isNewest={row.id === newestLook?.id}
-                  withheld={withheld}
+                  withheld={withholdsWords(row)}
                   arrival={row.id === justWritten ? arrival : null}
                   undoLive={beatLive && row.id === justWritten}
                   onUndo={handleUndo}
@@ -1398,6 +1431,9 @@ function LookTodayRow({
   pet: { species?: string | null; sex: 'male' | 'female' | 'unknown' };
   petName: string;
   isNewest: boolean;
+  /** Does THIS ROW withhold its words — already resolved by the card through
+   *  `withholdsWords`, never re-derived here. The code review found the two derivations
+   *  side by side: guaranteed to agree today, and one edit away from not. */
   withheld: boolean;
   arrival: ReturnType<typeof useLookArrival> | null;
   undoLive: boolean;
@@ -1412,10 +1448,8 @@ function LookTodayRow({
 }) {
   const described = describeLook(row, pet);
   const note = described.note;
-  const words = described.kind === 'observed' ? described.words.map((w) => w.key) : [];
-  const holdWords = withheld && entryWithholdsWords(words, lookSpeciesOf(pet.species));
 
-  if (holdWords) {
+  if (withheld) {
     // The whole row: no note link (the note would reprint the withheld claim in her own
     // words on the card that just refused to print it) and no receipt beyond what
     // `receiptsFor` already reduced to a bare first date — which for a wordless entry is
