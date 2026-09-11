@@ -1,4 +1,5 @@
 import { visibleFindings } from './signalVisible';
+import { isStoodDown } from './signalCopy';
 import {
   splitPastCourses,
   pastMedTileValue,
@@ -64,7 +65,7 @@ import type { MedItemName } from './rundown';
 // first and walk into the room reassured.
 
 /** Which of the record's own voices a row is quoting. */
-export type WorthRaisingSource = 'signal' | 'trial' | 'course' | 'weight';
+export type WorthRaisingSource = 'signal' | 'intake' | 'trial' | 'course' | 'weight';
 
 export interface WorthRaisingRow {
   /** Stable within one build — the list is re-derived at render, never stored. */
@@ -120,6 +121,12 @@ export interface WorthRaisingInput {
   suppressTrialResponse: boolean;
   /** `resolveTrialStrip`'s model for this pet, or null when no trial is running. */
   trialStrip: TrialStripModel | null;
+  /**
+   * The DEVICE-LOCAL intake-decline headline (`TrialCardInput.intakeDeclineHeadline`),
+   * or null. Separate from `trialStrip` because `resolveTrialStrip` deliberately
+   * DISCARDS it — see `intakeRow`.
+   */
+  intakeDeclineHeadline: string | null;
   /** The rundown built for this same screen — quoted, and the source of `facts`. */
   rundown: Rundown;
   nowMs: number;
@@ -168,7 +175,11 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   // the cap applies to `optional` alone. The server already ranks safety first, so in
   // every ordinary case this is also the server's order — but it holds even if the
   // engine ever ranked a benign finding higher, which is what AC 5 requires.
-  const safety = signalRows.filter((r) => r.isSafety);
+  //
+  // The device-local decline joins them, AHEAD of the server's, because it is the row
+  // that survives when the server cannot be reached at all (see `intakeRow`).
+  const localIntake = intakeRow(input.intakeDeclineHeadline);
+  const safety = [...(localIntake ? [localIntake] : []), ...signalRows.filter((r) => r.isSafety)];
   return {
     rows: [...safety, ...optional.slice(0, WORTH_RAISING_CAP)],
     signalUnavailable: input.findings === null,
@@ -197,7 +208,18 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
  */
 function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
   if (!input.findings) return [];
+  // AT MOST ONE STAND-DOWN MARKER. They are ABSENCE statements — *"Vomiting has been
+  // quiet for 14 days. That isn't an all-clear."* — and one is useful context at a
+  // recheck, which is why the class is not dropped (the issue's own counterexample
+  // expects it quoted). Two is not: `mergeStandDowns` ranks every marker at the TOP of
+  // the insight band, so a GI pet whose chronic vomiting AND chronic loose stool both
+  // quieted during the trial — the wedge case exactly — spent two capped slots saying
+  // nothing happened, and pushed an ESTABLISHED food–symptom correlation off a page
+  // where it appears nowhere else. The rundown block has a tile for timing and none for
+  // a correlation; the correlation is the row with no second home.
+  let standDowns = 0;
   return visibleFindings(input.findings, input.suppressTrialResponse, input.nowMs)
+    .filter((f) => !isStoodDown(f.finding) || ++standDowns <= 1)
     .map((f, i) => ({
       id: `signal-${i}`,
       // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit.
@@ -207,6 +229,38 @@ function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
       sourceLabel: 'from the Signal',
       isSafety: f.finding.priorityClass === 'safety',
     }));
+}
+
+/**
+ * The device's OWN intake-decline flag — the one row here that does not need the
+ * network, and the reason this function exists at all.
+ *
+ * `resolveTrialStrip` discards `intakeDeclineHeadline` on purpose: on Home the Signal
+ * card ABOVE the trial strip owns that statement, so repeating it in the strip would
+ * say the same thing twice. **Get ready has no Signal card above it.** So passing only
+ * `resolveTrialStrip(trialInput)` dropped the headline entirely — and dropped it
+ * hardest in the state where it is the only safety fact available, because the Signal's
+ * findings come from a network cache and this comes from SQLite.
+ *
+ * The measured shape (adversarial re-run): a cat on day 12 of a hydrolyzed trial whose
+ * device holds `consecutive_low`, `daysBelowBaseline: 3` — the 48-hour feline hepatic-
+ * lipidosis window — with the cache unreachable. Worth raising rendered one row, the
+ * trial's day count, under a gap line asserting that the local half of this page was
+ * COMPLETE. It was not.
+ *
+ * `isSafety: true` and above the cap, like any other safety row. Quoted verbatim from
+ * the same object `trialRow` quotes, so the two cannot disagree about the same pet.
+ */
+function intakeRow(headline: string | null): WorthRaisingRow | null {
+  if (!headline) return null;
+  return {
+    id: 'intake-decline',
+    text: headline,
+    detail: null,
+    source: 'intake',
+    sourceLabel: 'from this device’s record',
+    isSafety: true,
+  };
 }
 
 /** The running trial, in the Home strip's own words. */
@@ -244,20 +298,35 @@ function courseRow(
   nowMs: number,
 ): WorthRaisingRow | null {
   const { shown } = splitPastCourses(courses, nowMs);
-  // `source === 'regimen'` is load-bearing, not tidiness. A DOSE-DERIVED course carries
-  // `end: {kind:'none'}` BY CONSTRUCTION — `deriveMedicationCourses` says so outright
-  // ("no regimen, no status, so `end` is always `none`") — so `end.kind !== 'ended'` is
-  // permanently true for every ad-hoc dose an owner has ever logged. Without this clause
-  // one Cerenia tablet given yesterday rendered as a course with no end recorded and held
-  // a capped slot forever. The row's question — *is she still meant to be on this?* — is
-  // only meaningful about a course the owner SET UP and never ended; for a PRN dose it is
-  // fabricated.
+  // WHAT "no end recorded" CAN ACTUALLY MEAN, worked out the hard way across two
+  // adversarial passes — the first found the row over-firing, the second found the
+  // correction had killed it outright.
   //
-  // `.find` rather than `[0]`, and no early return on an unnameable row: the first cut
-  // took the first unterminated course of any kind and returned null when it could not
-  // name it, so a nameless orphan dose SUPPRESSED the real unterminated regimen behind
-  // it — while the rundown's past-meds block, printed directly below, named them both.
-  const course = shown.find((c) => c.source === 'regimen' && c.end.kind !== 'ended');
+  // `splitPastCourses` drops active courses (the Current-meds block owns them), and for
+  // a REGIMEN `end.kind === 'ended'` ⟺ `status ∈ {completed, stopped}` ⟺ `!isActive`.
+  // So among the shown courses, a regimen ALWAYS has an owner-recorded end, and
+  // `source === 'regimen' && end.kind !== 'ended'` is UNSATISFIABLE for every state the
+  // database can hold. It rendered nothing at all — and took `screen()`, the runtime
+  // half of AC 5's preference guard, down with it, since this is its only call site.
+  //
+  // A dose-derived course is therefore the only thing the H1 register can ever show as
+  // "No end recorded" — which is what the source set names. The first pass's objection
+  // stands and is answered by the COUNT, not by the kind: one Cerenia tablet given
+  // yesterday is a PRN dose and the question *is she still meant to be on this?* is
+  // fabricated about it; nine doses across five weeks with no regimen behind them is a
+  // pattern nobody wrote down, and that is exactly the thing to say out loud. `>= 2` is
+  // the plainest boundary between a one-off and a repeat, and it is the course's OWN
+  // count (`dosesLogged`, quoted), not a threshold over a window.
+  //
+  // Residual, stated rather than hidden: a genuinely open regimen — the steroid started
+  // in July and never ended — is `status = 'active'`, so it sits in Current meds and
+  // never reaches here. Raising every active course would fire for every medicated pet.
+  // Filed rather than invented.
+  //
+  // `.find` rather than `[0]`, and no early return on an unnameable row: an earlier cut
+  // returned null when it could not name a course, so a nameless orphan SUPPRESSED the
+  // one behind it while the block below named them both.
+  const course = shown.find((c) => c.source === 'doses' && c.dosesLogged >= 2);
   if (!course) return null;
   return screen({
     id: `course-${course.key}`,
@@ -345,7 +414,12 @@ function weightRow(rundown: Rundown): WorthRaisingRow | null {
   // The bound is the report's own rung 1 — STRICTLY BEFORE TODAY (`report.ts` skips
   // today- and future-dated visits) — so this page and the document it hands the vet
   // agree about which visit is the last one.
-  const startOfToday = new Date();
+  // THE RUNDOWN'S CLOCK, like every other read in this module. A fresh `new Date()`
+  // here was a THIRD clock (the re-run found it): the gate judged "today" on the wall
+  // clock while the sentence below printed its date off `generatedAtMs`, so the two
+  // could disagree for any caller that passes `buildRundown` an explicit `nowMs` — and
+  // it made the CUL-946 bound impossible to pin with a fixture.
+  const startOfToday = new Date(rundown.generatedAtMs);
   startOfToday.setHours(0, 0, 0, 0);
   if (visitMs >= startOfToday.getTime()) return null;
 

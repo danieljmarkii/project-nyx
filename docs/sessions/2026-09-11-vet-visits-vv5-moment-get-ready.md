@@ -105,6 +105,26 @@ Its regression test was then **green over nothing on the first cut** — it arme
 
 ---
 
+## The re-falsification, and why C-19 requires it
+
+C-19 says: *on a safety surface re-run the falsification pass after every correction.* It was run against the corrected tree and returned **FAIL with four** — and two of the four were **my fixes over-correcting**. That is the whole argument for the rule.
+
+**A live, device-local intake decline reached no row at all.** The worst finding of the session, and it was never in the first pass's scope because the first pass was reading a module that had already discarded the fact. `resolveTrialStrip` drops `intakeDeclineHeadline` deliberately — on Home the Signal card *above* the trial strip owns that statement, so repeating it would say the same thing twice. **Get ready has no Signal card above it.** Passing only `resolveTrialStrip(trialInput)` dropped the headline entirely, and dropped it hardest in the state where it is the only safety fact the page has: the Signal's findings come from a network cache, and this comes from SQLite.
+
+The measured shape: a cat on day 12 of a hydrolyzed trial whose device holds `consecutive_low`, `daysBelowBaseline: 3` — the 48-hour feline hepatic-lipidosis window — with the cache unreachable. Worth raising rendered **one row**, the trial's day count, under a gap line asserting that the local half of this page was *complete*. It was not. The row is now `isSafety: true` above the cap, and `intakeDeclineHeadline` is **required** on the input type rather than optional — C-37's rule, that a default on a safety-relevant parameter is the decision.
+
+**`courseRow` was unreachable for every state the database can hold.** The first pass found the row over-firing (every ad-hoc dose is permanently "no end recorded"); the fix excluded dose-derived courses — and `splitPastCourses` drops active ones, while for a regimen `end.kind === 'ended'` ⟺ `status ∈ {completed, stopped}` ⟺ `!isActive`. So `source === 'regimen' && end.kind !== 'ended'` is **unsatisfiable**. The row rendered for nobody, and took `screen()` — the runtime half of AC 5's preference guard — down with it, since this is its only call site. Both course tests passed over a fixture `deriveMedicationCourses` cannot emit: **C-35 again, in a file whose own header applies C-35 to the weight fixture two functions above.**
+
+The honest resolution is that the objection was about the **count**, not the kind: one tablet is a PRN dose and the question *is she still meant to be on this?* is fabricated about it; nine doses across five weeks with no regimen behind them is a pattern nobody wrote down. The predicate is `source === 'doses' && dosesLogged >= 2` — the course's own count, quoted, not a threshold over a window. **Residual stated rather than invented:** a genuinely open regimen — the steroid started in July and never ended — is `status = 'active'`, so it lives in Current meds and never reaches here, and raising every active course would fire for every medicated pet.
+
+**An Established correlation could still be capped off**, by *two* stand-down markers plus `trial_response`. One marker is useful context at a recheck, which is why the class is not dropped; two spend capped slots saying nothing happened, and `mergeStandDowns` ranks every marker at the top of the insight band. At most one now — and the correlation is the row with no second home, since the rundown block has a tile for timing and none for a correlation.
+
+**A third clock.** The weight gate judged "today" on a fresh `new Date()` while the sentence printed its date off `generatedAtMs` — so the one-clock rule this module states was applied to one row and not the other, and the CUL-946 bound could not be pinned by a fixture at all.
+
+Two things generalise from the re-run. **A fix aimed at over-firing can land past zero**, and the tell is that its tests still pass — because the fixture moved with the predicate. And **a lens that discards a fact for a good reason on one surface discards it for no reason on another**: `resolveTrialStrip`'s omission is correct on Home and a safety hole here, which nothing in either module says out loud.
+
+---
+
 ## Residuals
 
 - **CUL-948** — the CI timezone matrix has no DST zone, so every local-day rounding rule in the repo is written correctly and checked by nothing. One zone in `.github/workflows/ci.yml` fixes it, and it may red existing tests, which is the point.

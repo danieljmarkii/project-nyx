@@ -94,6 +94,13 @@ const UNSCREENED: Record<string, string> = {
     'called "the kibble she prefers" lost its coverage denominator (meals logged on ' +
     '20 of 23 days) silently, with no test. A screen that deletes evidence to avoid a ' +
     'word is the wrong trade on a page a clinician reads.',
+  intakeRow:
+    'QUOTED, not composed — `TrialCardInput.intakeDeclineHeadline` verbatim — AND a ' +
+    'SAFETY row, which makes screening it the one thing this module may never do: ' +
+    '`screen` DROPS on a trip, and dropping this row removes the only statement about ' +
+    'a pet that has stopped eating, in the state (no network) where it is the only ' +
+    'safety fact the page has at all. Its copy is composed in `lib/dietTrialCard.ts` ' +
+    'and rendered unscreened on Home, where the same words already reach the owner.',
   weightRow:
     'QUOTED, not composed: the rundown’s own weight tile, rendered verbatim in the ' +
     'block directly below this section. Its other half is a DATE and the order of two ' +
@@ -219,7 +226,7 @@ describe('AC 5 — no row turns a decline into a taste', () => {
     expect(Object.keys(UNSCREENED).filter((fn) => !builders.has(fn))).toEqual([]);
   });
 
-  it('the unscreened set is exactly the three QUOTED rows', () => {
+  it('the unscreened set is exactly the four QUOTED rows', () => {
     // Stated as an equality rather than a subset: widening this set is a decision about
     // what the app may say about a decline, and it should have to be written into a diff.
     //
@@ -227,7 +234,12 @@ describe('AC 5 — no row turns a decline into a taste', () => {
     // composed and renders unscreened elsewhere on the same screen. The row this module
     // actually assembles (the course row's `${name} — ${value}` join, where owner
     // free-text meets a string written here) is not in the set and never should be.
-    expect(Object.keys(UNSCREENED).sort()).toEqual(['buildSignalRows', 'trialRow', 'weightRow']);
+    expect(Object.keys(UNSCREENED).sort()).toEqual([
+      'buildSignalRows',
+      'intakeRow',
+      'trialRow',
+      'weightRow',
+    ]);
   });
 
   it('no preference vocabulary is written into the render path’s own copy', () => {

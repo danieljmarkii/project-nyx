@@ -27,6 +27,9 @@ const DAY = 86_400_000;
 // ages into a different answer on a calendar boundary.
 const NOW = Date.now();
 
+/** The drug-name cache, so a dose-derived course can be named (`resolveCourseName`). */
+const NAMES = new Map([['item-x', { generic: null, brand: 'Cerenia' }]]);
+
 const weighIn = (daysAgo: number) => ({
   weightKg: 4.1,
   occurredAt: new Date(NOW - daysAgo * DAY).toISOString(),
@@ -55,7 +58,7 @@ function rundown(over: Partial<Rundown> = {}): Rundown {
     pastMedications: [],
     facts: {
       courses: [],
-      medItemNames: new Map(),
+      medItemNames: NAMES,
       lastVisitAt: null,
       weighIns: [{ weightKg: 4.1, occurredAt: new Date(NOW - 5 * DAY).toISOString() }],
     },
@@ -96,20 +99,35 @@ function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
     findings: [],
     suppressTrialResponse: false,
     trialStrip: null,
+    intakeDeclineHeadline: null,
     rundown: rundown(),
     nowMs: NOW,
     ...over,
   };
 }
 
+/**
+ * A course the way `deriveMedicationCourses` can actually emit one INTO
+ * `splitPastCourses().shown` — which is narrower than it looks, and the narrowness is
+ * the whole of the course row's design (C-35).
+ *
+ * `shown` excludes active courses, and for a REGIMEN `end.kind === 'ended'` ⟺
+ * `status ∈ {completed, stopped}` ⟺ `!isActive`. So a shown regimen ALWAYS carries an
+ * owner-recorded end, and the first cut's fixture — `source: 'regimen'`, `isActive:
+ * false`, `end: {kind:'none'}` — is a combination the derivation cannot produce. Two
+ * tests were green over it while the production row rendered for nobody.
+ *
+ * A dose-derived course is the only thing the H1 register can ever show as "No end
+ * recorded", so that is what this builds.
+ */
 function course(over: Partial<MedicationCourse> = {}): MedicationCourse {
   const lastDose = new Date(NOW - 7 * DAY).toISOString();
   return {
-    key: 'c1',
-    source: 'regimen',
-    regimenId: 'r1',
-    medicationItemId: null,
-    drugName: 'Cerenia',
+    key: 'item:item-x',
+    source: 'doses',
+    regimenId: null,
+    medicationItemId: 'item-x',
+    drugName: null,
     isActive: false,
     tally: { given: 9, partial: 0, missed: 0, refused: 0, unrated: 0 },
     dosesLogged: 9,
@@ -160,7 +178,7 @@ describe('a row is a QUOTE, never a new claim', () => {
 
   it("quotes the course's H1 register — silence reads 'No end recorded', never 'completed'", () => {
     const { rows } = buildWorthRaising(
-      input({ rundown: rundown({ facts: { courses: [course()], medItemNames: new Map(), lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
+      input({ rundown: rundown({ facts: { courses: [course()], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
     );
     expect(rows[0].text).toContain('Cerenia');
     expect(rows[0].text).toContain('9 doses');
@@ -169,7 +187,15 @@ describe('a row is a QUOTE, never a new claim', () => {
   });
 
   it('never raises a course the owner DID end — that question is answered', () => {
+    // A REGIMEN, because only a regimen can carry an ending: `end.kind === 'ended'` is
+    // constructed from `status ∈ {completed, stopped}`, and a dose-derived course has no
+    // status at all. This is the shape `splitPastCourses().shown` is mostly full of.
     const ended = course({
+      key: 'r1',
+      source: 'regimen',
+      regimenId: 'r1',
+      drugName: 'Prednisolone',
+      medicationItemId: null,
       end: {
         kind: 'ended',
         status: 'completed',
@@ -177,7 +203,7 @@ describe('a row is a QUOTE, never a new claim', () => {
       } satisfies MedicationCourseEnd,
     });
     const { rows } = buildWorthRaising(
-      input({ rundown: rundown({ facts: { courses: [ended], medItemNames: new Map(), lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
+      input({ rundown: rundown({ facts: { courses: [ended], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
     );
     expect(rows).toHaveLength(0);
   });
@@ -288,7 +314,7 @@ describe('the preference screen — and its deliberate asymmetry', () => {
     // safe here and only here: an assembled row is never a safety statement.
     const named = course({ drugName: 'Picky-Chew' });
     const { rows } = buildWorthRaising(
-      input({ rundown: rundown({ facts: { courses: [named], medItemNames: new Map(), lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
+      input({ rundown: rundown({ facts: { courses: [named], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
     );
     expect(rows).toHaveLength(0);
   });
@@ -350,7 +376,7 @@ describe('the weight gap — a DATE, never an invented duration', () => {
     const { rows } = buildWorthRaising(
       input({
         rundown: rundown({
-          facts: { courses: [], medItemNames: new Map(), lastVisitAt, weighIns: [weighIn(60)] },
+          facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(60)] },
         }),
       }),
     );
@@ -369,7 +395,7 @@ describe('the weight gap — a DATE, never an invented duration', () => {
     const { rows } = buildWorthRaising(
       input({
         rundown: rundown({
-          facts: { courses: [], medItemNames: new Map(), lastVisitAt, weighIns: [weighIn(10)] },
+          facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(10)] },
         }),
       }),
     );
@@ -381,7 +407,7 @@ describe('the weight gap — a DATE, never an invented duration', () => {
     const { rows } = buildWorthRaising(
       input({
         rundown: rundown({
-          facts: { courses: [], medItemNames: new Map(), lastVisitAt, weighIns: [weighIn(94)] },
+          facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(94)] },
         }),
       }),
     );
@@ -397,7 +423,7 @@ describe('the weight gap — a DATE, never an invented duration', () => {
     const { rows } = buildWorthRaising(
       input({
         rundown: rundown({
-          facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [weighIn(400)] },
+          facts: { courses: [], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(400)] },
         }),
       }),
     );
@@ -476,7 +502,7 @@ describe('the ordering keeps the Signal band above the two weakest rows', () => 
         rundown: rundown({
           facts: {
             courses: [course()],
-            medItemNames: new Map(),
+            medItemNames: NAMES,
             lastVisitAt,
             weighIns: [weighIn(200)],
           },
@@ -495,53 +521,38 @@ describe('the ordering keeps the Signal band above the two weakest rows', () => 
 });
 
 describe('the course row asks a question the record can actually answer', () => {
-  it('ignores a dose-derived course, whose `end` is `none` BY CONSTRUCTION', () => {
-    // `deriveMedicationCourses`: "no regimen, no status, so `end` is always `none`". So
-    // `end.kind !== 'ended'` is permanently true for every ad-hoc dose ever logged, and
-    // one Cerenia tablet given yesterday held a capped slot forever under a question —
-    // *is she still meant to be on this?* — that is fabricated for a PRN dose.
-    const adHoc = course({
-      key: 'item:x',
-      source: 'doses',
-      regimenId: null,
-      drugName: null,
-      medicationItemId: 'item-x',
-      dosesLogged: 1,
-    });
+  it('ignores a ONE-OFF PRN dose — the row’s question is fabricated about it', () => {
+    // One tablet given yesterday is a PRN dose, and *is she still meant to be on this?*
+    // is not a question the record is posing about it. The boundary is the course's own
+    // count, not a threshold over a window.
+    const oneOff = course({ dosesLogged: 1 });
     const { rows } = buildWorthRaising(
       input({
         rundown: rundown({
-          facts: {
-            courses: [adHoc],
-            medItemNames: new Map([['item-x', { generic: null, brand: 'Cerenia' }]]),
-            lastVisitAt: null,
-            weighIns: [weighIn(5)],
-          },
+          facts: { courses: [oneOff], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(5)] },
         }),
       }),
     );
     expect(rows).toHaveLength(0);
   });
 
-  it('does not let a nameless orphan dose suppress the real unterminated regimen', () => {
-    // The first cut took the first unterminated course of ANY kind and returned null
-    // when it could not name it — so the orphan masked the regimen behind it, while the
-    // rundown's past-meds block, printed directly below, named them both.
-    const orphan = course({
+  it('does not let a one-off dose suppress the repeated run behind it', () => {
+    // An earlier cut took the FIRST match of any kind and returned null when it could
+    // not name it, so the row in front masked the one behind — while the rundown's
+    // past-meds block, printed directly below, named them both.
+    const oneOff = course({
       key: 'item:unspecified',
-      source: 'doses',
-      regimenId: null,
-      drugName: null,
       medicationItemId: null,
+      dosesLogged: 1,
       lastDoseIso: new Date(NOW - 1 * DAY).toISOString(),
     });
-    const regimen = course({ key: 'r1', drugName: 'Prednisolone' });
+    const repeated = course({ dosesLogged: 9 });
     const { rows } = buildWorthRaising(
       input({
         rundown: rundown({
           facts: {
-            courses: [orphan, regimen],
-            medItemNames: new Map(),
+            courses: [oneOff, repeated],
+            medItemNames: NAMES,
             lastVisitAt: null,
             weighIns: [weighIn(5)],
           },
@@ -549,7 +560,8 @@ describe('the course row asks a question the record can actually answer', () => 
       }),
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].text).toContain('Prednisolone');
+    expect(rows[0].text).toContain('Cerenia');
+    expect(rows[0].text).toContain('9 doses');
   });
 });
 
@@ -565,7 +577,7 @@ describe('the weight gate refuses a future "last visit"', () => {
         rundown: rundown({
           facts: {
             courses: [],
-            medItemNames: new Map(),
+            medItemNames: NAMES,
             lastVisitAt: tomorrow,
             weighIns: [weighIn(0)],
           },
@@ -581,7 +593,7 @@ describe('the weight gate refuses a future "last visit"', () => {
         rundown: rundown({
           facts: {
             courses: [],
-            medItemNames: new Map(),
+            medItemNames: NAMES,
             lastVisitAt: new Date(NOW - 2 * DAY).toISOString().slice(0, 10),
             weighIns: [weighIn(30)],
           },
@@ -637,7 +649,7 @@ describe('the course window runs on the RUNDOWN’s clock, not a fresh one', () 
           generatedAtMs,
           facts: {
             courses: [borderline],
-            medItemNames: new Map(),
+            medItemNames: NAMES,
             lastVisitAt: null,
             weighIns: [weighIn(5)],
           },
@@ -647,5 +659,116 @@ describe('the course window runs on the RUNDOWN’s clock, not a fresh one', () 
     expect(rows.map((r) => r.text)).toEqual([
       expect.stringContaining('Prednisolone'),
     ]);
+  });
+});
+
+// ── The RE-RUN's findings (CUL-903, 2026-09-11 — C-19's re-falsification) ─────────
+
+describe('the device’s OWN intake decline is a row, and survives with no network', () => {
+  const HEADLINE = 'Mochi has left most of their food for 3 days.';
+
+  it('renders it as a SAFETY row even when the Signal cache is unreachable', () => {
+    // The measured failure: a cat on day 12 of a hydrolyzed trial whose device holds
+    // `consecutive_low`, `daysBelowBaseline: 3` — the 48-hour feline hepatic-lipidosis
+    // window — with the cache offline. Worth raising rendered ONE row, the trial's day
+    // count, under a gap line asserting the local half of this page was complete.
+    //
+    // `resolveTrialStrip` discards the headline on purpose (on Home the Signal card
+    // above owns it). Get ready has no Signal card above it.
+    const { rows, signalUnavailable } = buildWorthRaising(
+      input({
+        findings: null,
+        intakeDeclineHeadline: HEADLINE,
+        trialStrip: {
+          header: 'Diet trial · day 12 of 42',
+          line: null,
+          progressFraction: 0.28,
+          trialResponseLine: null,
+        },
+      }),
+    );
+    expect(signalUnavailable).toBe(true);
+    expect(rows[0].text).toBe(HEADLINE);
+    expect(rows[0].isSafety).toBe(true);
+    expect(rows[0].source).toBe('intake');
+  });
+
+  it('keeps it above the cap, like any other safety row', () => {
+    const benign = Array.from({ length: 9 }, (_, i) => finding({ text: `Benign ${i}.`, rank: i + 1 }));
+    const { rows } = buildWorthRaising(input({ findings: benign, intakeDeclineHeadline: HEADLINE }));
+    expect(rows[0].text).toBe(HEADLINE);
+    expect(rows.length).toBeGreaterThan(WORTH_RAISING_CAP);
+  });
+
+  it('is absent when the device holds no decline', () => {
+    const { rows } = buildWorthRaising(input({ intakeDeclineHeadline: null }));
+    expect(rows.some((r) => r.source === 'intake')).toBe(false);
+  });
+});
+
+describe('at most ONE stand-down marker', () => {
+  it('does not spend two capped slots saying nothing happened', () => {
+    // `mergeStandDowns` ranks every marker at the TOP of the insight band, so a GI pet
+    // whose chronic vomiting AND chronic loose stool both quieted during the trial — the
+    // wedge case — pushed an Established correlation off a page where it has no second
+    // home. The rundown block has a tile for timing and none for a correlation.
+    const marker = (symptom: 'vomit' | 'diarrhea', rank: number) =>
+      finding({
+        text: `${symptom} has been quiet for 14 days. That isn't an all-clear.`,
+        rank,
+        finding: {
+          type: 'stood_down',
+          priorityClass: 'insight',
+          symptomType: symptom,
+          recencyDays: 14,
+          tier: 'standard',
+          lastEpisodeIso: new Date(NOW - 20 * DAY).toISOString(),
+          stoodDownAt: new Date(NOW - 1 * DAY).toISOString(),
+          formerRank: rank,
+        } satisfies SignalFinding,
+      });
+    const correlation = finding({
+      text: 'Vomiting has followed chicken on 5 of 7 days it was eaten.',
+      rank: 3,
+    });
+
+    const { rows } = buildWorthRaising(
+      input({
+        findings: [marker('vomit', 0), marker('diarrhea', 1), correlation],
+        trialStrip: {
+          header: 'Rabbit trial · day 23 of 56',
+          line: null,
+          progressFraction: 0.41,
+          trialResponseLine: null,
+        },
+      }),
+    );
+    expect(rows.filter((r) => r.text.includes("isn't an all-clear"))).toHaveLength(1);
+    expect(rows.map((r) => r.text)).toContain(correlation.text);
+  });
+});
+
+describe('one clock, everywhere in this module', () => {
+  it('judges "today" for the weight gate on the RUNDOWN’s clock, not the wall clock', () => {
+    // A third clock: the gate read `new Date()` while the sentence printed off
+    // `generatedAtMs`, so the CUL-946 bound could not be pinned by a fixture at all.
+    const generatedAtMs = NOW - 10 * DAY;
+    // Five days AFTER the rundown was built — the CUL-946 shape relative to the row's
+    // own clock — but still in the past on the wall clock.
+    const lastVisitAt = new Date(NOW - 5 * DAY).toISOString().slice(0, 10);
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          generatedAtMs,
+          facts: {
+            courses: [],
+            medItemNames: NAMES,
+            lastVisitAt,
+            weighIns: [weighIn(300)],
+          },
+        }),
+      }),
+    );
+    expect(rows.some((r) => r.source === 'weight')).toBe(false);
   });
 });

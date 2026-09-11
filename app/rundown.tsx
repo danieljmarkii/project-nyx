@@ -428,6 +428,13 @@ async function buildForAppointment(
     // suppresses the reassuring trial_response row rather than letting it through.
     suppressTrialResponse: trialInput ? isAnimalNotEating(trialInput) : true,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
+    // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards this
+    // headline because on Home the Signal card above the strip owns the statement —
+    // and Get ready has no Signal card above it, so passing only the strip dropped a
+    // device-local SAFETY fact on the page read aloud in the exam room. A default here
+    // would have handed that over silently (C-37: a default on a safety-relevant
+    // parameter is the decision).
+    intakeDeclineHeadline: trialInput?.intakeDeclineHeadline ?? null,
     rundown: built,
     nowMs: Date.now(),
   });
