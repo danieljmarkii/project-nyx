@@ -163,6 +163,47 @@ const MUST_STAY_CLEAN = [
 /** The three VV-0 flag files. Not exemptions — a measured property of the detector. */
 const FLAG_KEY_ONLY = ['lib/appConfig.ts', 'lib/betaFeatures.ts', 'app/settings/beta.tsx'];
 
+/**
+ * Files holding a PostgREST read whose table name is a VARIABLE.
+ *
+ * A separate registry from `ALLOWED` because it excuses a different thing: `ALLOWED`
+ * says "this file may touch visit data"; this says "this file's table name cannot be
+ * read off the page, and here is why it still cannot reach a visit table". A file
+ * can need one, the other, or both.
+ *
+ * Every entry must justify the table name's PROVENANCE, not the file's purpose —
+ * "it's the sync layer" is not a reason, "the name is a compile-time union and every
+ * member is registered" is.
+ */
+const DYNAMIC_FROM_ALLOWED: Record<string, string> = {
+  'lib/sync.ts':
+    'pushRows/fetchAllRows take `table: QueueTable` — a compile-time string-literal ' +
+    'union (lib/sync.ts), pinned against the real schema by syncQueue.test.ts. The ' +
+    'name can only ever be a table this file already declares, and the file is in ' +
+    'ALLOWED anyway.',
+  // NOT HERE, and both were on the first draft — the staleness assertion below
+  // rejected them before this detector's first green run, which is now the SECOND
+  // time in one file that a registry entry turned out to record only that someone
+  // had thought about the file (C-32):
+  //   * `lib/syncQueue.ts` — its `.from(t)` is inside a COMMENT quoting the shape
+  //     this module replaced. `blankComments` removes it; the module issues no query.
+  //   * `lib/attachments.ts` — `supabase.storage.from(EVENT_ATTACHMENT_BUCKET)`, a
+  //     bucket, already excluded by the pattern.
+  // Neither needed an exemption, and registering them would have pre-authorised a
+  // real dynamic read added to either file later.
+  'lib/storage.ts':
+    'supabase.storage.from(bucket) — the Storage API, not a table. It lands here ' +
+    'rather than in the pattern exclusion because one call site writes ' +
+    '`.storage\\n  .from(bucket)` across two lines, which the lookbehind cannot see. ' +
+    'Registered, so a future `supabase.from(x)` in this file still has to say why.',
+  'supabase/functions/delete-account/index.ts':
+    'The deletion cascade iterates a hardcoded table list to purge storage paths. ' +
+    'It is the one place that SHOULD reach every table, visits included — that is ' +
+    'AC 12, and the probe verifies it leaves zero rows.',
+  'supabase/functions/extract-medication-from-photo/index.ts':
+    'A Storage bucket constant, not a table.',
+};
+
 // ── The detector ─────────────────────────────────────────────────────────────
 
 const TABLES = '(?:vet_visits|vet_appointments)';
@@ -184,9 +225,38 @@ const TABLE_PATTERNS: readonly RegExp[] = [
  *  records that this guard is WHY the appointment's link is not called `visit_id`. */
 const COLUMN_PATTERN = /\bvet_visit_id\b/;
 
+/**
+ * A PostgREST read whose TABLE NAME IS NOT A LITERAL — `.from(table)`, `.from(t)`,
+ * `.from(step.name)`.
+ *
+ * The two detectors above cannot see these, and the VV-1 rls-privacy-reviewer
+ * demonstrated the evasion: `const T = 'vet_visits'; sb.from(T)` planted in
+ * `lib/dietTrial.ts` scored zero hits. It is not hypothetical either — `pushRows`
+ * and `fetchAllRows` in `lib/sync.ts` are written in exactly this shape, so it is
+ * the idiom a future generic `readTable(name)` helper would reach for.
+ *
+ * A dynamic `.from()` cannot be cleared by reading it, so a file containing one is a
+ * file this guard cannot vouch for — it is registered in `DYNAMIC_FROM_ALLOWED` with
+ * the reason its table name cannot reach a visit table. Measured before writing the
+ * rule: SIX files in the product tree, and every one of them is sync/deletion
+ * fabric. A rule that costs six entries is a rule; one that cost sixty would be a
+ * scope error (C-33).
+ *
+ * `.storage.from(` is excluded because it is a different API entirely — a Storage
+ * BUCKET, not a table. Left in, it would flag four files that touch no table at all.
+ *
+ * The JS built-ins are excluded for a blunter reason: `Array.from(new Set(xs))` and
+ * `Buffer.from(s, 'utf8')` are `.from(` with a non-literal argument and have nothing
+ * to do with a database. Caught by this file's own detector proofs on the first run
+ * — which is the whole reason a guard states its exclusions as tests rather than as
+ * confidence.
+ */
+const DYNAMIC_FROM_PATTERN =
+  /(?<!\.storage|\bArray|\bBuffer|\bObject|\bDate|\bPromise|\bNumber|\bString)\.from\(\s*(?!['"`]|\))/;
+
 export interface VisitReadFinding {
   readonly file: string;
-  readonly kinds: readonly ('table' | 'column')[];
+  readonly kinds: readonly ('table' | 'column' | 'dynamic')[];
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -220,9 +290,10 @@ export function scanVisitReaders(root: string): VisitReadFinding[] {
     // the rule — and this codebase is full of them, because every one of the files
     // below explains why it may do this — is not evidence that the rule is broken.
     const src = blankComments(fs.readFileSync(abs, 'utf8'));
-    const kinds: ('table' | 'column')[] = [];
+    const kinds: ('table' | 'column' | 'dynamic')[] = [];
     if (TABLE_PATTERNS.some((re) => re.test(src))) kinds.push('table');
     if (COLUMN_PATTERN.test(src)) kinds.push('column');
+    if (DYNAMIC_FROM_PATTERN.test(src)) kinds.push('dynamic');
     if (kinds.length > 0) {
       findings.push({ file: path.relative(root, abs).split(path.sep).join('/'), kinds });
     }
@@ -247,11 +318,81 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
     expect(findings.length).toBeGreaterThanOrEqual(10);
   });
 
+  it('SCAN_DIRS covers every directory that ships product code', () => {
+    // The floor above names files in `lib/`, `supabase/` and (via the staleness
+    // assertion) `app/` — so it proves the walker RUNS, not that it walks what it
+    // claims. The VV-1 rls-privacy-reviewer demonstrated the gap: delete
+    // 'components' from SCAN_DIRS and the suite is green over a real planted
+    // violation in `components/home/`. That is the C-36 vacuity mode one level up.
+    //
+    // ⚠ AND THE FIRST FIX FOR IT DID NOT WORK, which is the reason this comment is
+    // long. Iterating SCAN_DIRS and asserting each entry is walked is ALSO green
+    // under that mutation — un-declaring a directory simply removes it from the
+    // loop. A floor derived from the thing it is checking cannot catch the thing
+    // being removed. (Proven: planted the violation, dropped 'components', 25/25
+    // passed.)
+    //
+    // So the expected set is DERIVED FROM THE REPOSITORY instead: every top-level
+    // directory that actually holds non-test TypeScript must be scanned, unless it
+    // is named here as deliberately out of scope. That catches both directions — a
+    // scanned directory quietly dropped, AND a brand-new product directory nobody
+    // thought to add.
+    const OUT_OF_SCOPE = new Set([
+      'guards', // a guard's fixtures ARE the anti-pattern (C-18) — see the header
+      'scripts', // service-role operator SQL/TS, not shipped; CUL-739 owns its scoping
+      'testUtils', // test scaffolding, never bundled
+      'docs', // one stray .ts in a doc example
+      'node_modules',
+      'ios',
+      'android',
+      '.expo',
+    ]);
+
+    const productDirs = fs
+      .readdirSync(ROOT, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+      .map((e) => e.name)
+      .filter((name) => !OUT_OF_SCOPE.has(name))
+      .filter((name) => walk(path.join(ROOT, name)).length > 0);
+
+    // `supabase/functions` is declared at its nested path, so match on the root segment.
+    const scannedRoots = new Set(SCAN_DIRS.map((d) => d.split('/')[0]));
+    expect(productDirs.filter((d) => !scannedRoots.has(d))).toEqual([]);
+
+    // And every declared directory must still exist and hold files — a renamed or
+    // emptied entry is a silent hole in the other direction.
+    for (const dir of SCAN_DIRS) {
+      expect(fs.existsSync(path.join(ROOT, dir))).toBe(true);
+      expect(walk(path.join(ROOT, dir)).length).toBeGreaterThan(0);
+    }
+  });
+
   it('no file outside the allow-set reads visit data', () => {
-    const unexpected = findings.filter((f) => !(f.file in ALLOWED));
+    const unexpected = findings.filter(
+      (f) => f.kinds.some((k) => k !== 'dynamic') && !(f.file in ALLOWED),
+    );
     // Printed with the kind, so a failure says what to do: a `column` hit on a new
     // file is usually a link being consumed; a `table` hit is usually a new query.
     expect(unexpected.map((f) => `${f.file} (${f.kinds.join('+')})`)).toEqual([]);
+  });
+
+  it('no file reads a table through a VARIABLE without saying why it is safe', () => {
+    // The evasion the rls-privacy-reviewer proved: `const T = 'vet_visits';
+    // sb.from(T)` is invisible to both literal detectors. A dynamic name cannot be
+    // cleared by reading it, so the file has to be registered with the provenance of
+    // its table name.
+    const unexplained = findings
+      .filter((f) => f.kinds.includes('dynamic'))
+      .map((f) => f.file)
+      .filter((f) => !(f in DYNAMIC_FROM_ALLOWED));
+    expect(unexplained).toEqual([]);
+  });
+
+  it('the dynamic registry has no stale entries either', () => {
+    const dynamicFiles = new Set(
+      findings.filter((f) => f.kinds.includes('dynamic')).map((f) => f.file),
+    );
+    expect(Object.keys(DYNAMIC_FROM_ALLOWED).filter((f) => !dynamicFiles.has(f))).toEqual([]);
   });
 
   it('the registry has no stale entries — an exemption is not a note (C-32)', () => {
@@ -418,4 +559,71 @@ describe('the detector itself', () => {
     );
     expect(hits()).toEqual(['lib/i.ts (table+column)']);
   });
+
+  // ── The dynamic detector (the rls-privacy-reviewer's evasion) ──────────────
+
+  it('FLAGS the const-indirection evasion that defeated the literal detectors', () => {
+    // Verbatim the shape the reviewer planted in lib/dietTrial.ts and scored zero on.
+    writeFixture(
+      root,
+      'lib/j.ts',
+      [`const T = 'vet_visits';`, `const rows = await sb.from(T).select('visited_at');`].join('\n'),
+    );
+    expect(hits()).toEqual(['lib/j.ts (dynamic)']);
+  });
+
+  it('FLAGS a generic table helper — the shape a coverage module would use', () => {
+    writeFixture(
+      root,
+      'lib/k.ts',
+      `export async function readTable(name: string) { return sb.from(name).select('*'); }`,
+    );
+    expect(hits()).toEqual(['lib/k.ts (dynamic)']);
+  });
+
+  it('IGNORES a Storage bucket read — a different API, not a table', () => {
+    writeFixture(root, 'lib/l.ts', `await supabase.storage.from(bucket).createSignedUrl(p, 60)`);
+    expect(hits()).toEqual([]);
+  });
+
+  it('IGNORES Array.from and a literal .from(), which are not dynamic table reads', () => {
+    writeFixture(
+      root,
+      'lib/m.ts',
+      [`const xs = Array.from(new Set(ys));`, `const q = Buffer.from(s, 'utf8');`].join('\n'),
+    );
+    expect(hits()).toEqual([]);
+  });
 });
+
+// ── Limits this guard does NOT close, stated rather than left to be discovered ──
+//
+// The VV-1 rls-privacy-reviewer ran eight evasions against this file. The dynamic
+// detector above closes the one that mattered most. These are the ones that remain,
+// written down because a guard whose blind spots are undocumented reads as stronger
+// than it is — which is how the next author comes to rely on it for something it
+// never checked:
+//
+//   1. STRING CONCATENATION — `'SELECT … FROM ' + 'vet_' + 'visits'`, or a template
+//      literal with the table in an interpolation. Not closed, and not worth closing
+//      with a regex: the honest tool is a TS AST pass with constant folding, which is
+//      a different guard. Nothing in the tree builds a table name this way today.
+//
+//   2. A SCHEMA-QUALIFIED raw read — `FROM public.vet_visits`. Currently theoretical:
+//      no Edge Function runs raw SQL (the only `rpc()` call in the tree is
+//      `record_ai_usage`), and the local SQLite dialect has no schemas. It would be
+//      one more alternation in TABLE_PATTERNS the day that changes.
+//
+//   3. A TRANSITIVE CONSUMER — importing a visit-reading helper out of an
+//      allow-listed file and using its result in a count. This is C-11 verbatim ("a
+//      transitive consumer is invisible to the scan"). Measured today: the allow-set
+//      exports exactly one thing that carries visit data, `VET_VISIT_OPTIONS_QUERY`
+//      (a query STRING, whose consumers are themselves scanned because using it means
+//      calling `db.getAllAsync`). `lib/rundown.ts`'s `readLastVisitDate` is NOT
+//      exported — the reviewer's specific example does not compile — so the hole is
+//      narrower than reported, but the CLASS is real and it opens the moment VV-2
+//      exports its first `listAppointments()`. The rule for VV-2, stated here because
+//      that is when it will be needed: a helper that returns visit data is exported
+//      from an allow-listed file ONLY if its own callers are scanned too.
+//
+//   4. An `rpc()` to a server function that reads visits. No such function exists.

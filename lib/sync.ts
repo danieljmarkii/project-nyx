@@ -1493,23 +1493,63 @@ async function drainVetAppointmentsQueue(): Promise<void> {
 }
 
 /**
+ * The server's bound on `vet_appointments.questions`, minus headroom for the
+ * difference between this string and the JSON PostgREST re-serialises.
+ *
+ * Migration 066 CHECKs `length(questions::text) <= 65536`. This is deliberately
+ * BELOW it, because the two sides do not measure the same bytes: `jsonb_out` may
+ * re-order keys and normalises whitespace and unicode escapes, so a payload that is
+ * 65,536 characters HERE can be a different length THERE. Clearing the server bound
+ * by a margin is what makes "the client never reaches the CHECK" true rather than
+ * approximately true.
+ */
+const APPOINTMENT_QUESTIONS_PUSH_BOUND = 60000;
+
+/**
  * The local TEXT column → the value PostgREST should send for a JSONB column.
  *
- * Returns null for absent, blank or unparseable text, and for anything that parses
- * to a non-array — migration 066 CHECKs `jsonb_typeof = 'array'`, and a violation of
- * a CHECK is a terminal 23514, which quarantines the row and wedges that
- * appointment's sync forever. Dropping a malformed list loses the questions; sending
- * it loses the appointment, its draft and every future edit to it.
+ * Returns null for absent, blank or unparseable text, for anything that parses to a
+ * non-array, and for an array too large for the server's CHECK.
+ *
+ * ⚠ WHY IT DROPS RATHER THAN SENDS. Both of migration 066's CHECKs on this column
+ * are enforced by the SERVER, and a CHECK violation is `23514` — which is in
+ * `TERMINAL_SYNC_ERROR_CODES`, so the client quarantines the row IMMEDIATELY with no
+ * retry. Sending a payload the server will refuse does not lose the questions, it
+ * loses the whole appointment: the row stops syncing, and with it the scheduled
+ * time, the in-room draft and every future edit. Dropping the list is the smaller
+ * loss, and it is the only one that is recoverable.
+ *
+ * ⚠ AND THE LENGTH HALF IS NOT BELT-AND-BRACES. 066's header called the 64 KB bound
+ * reachable "only by a bug or an attacker"; the VV-1 rls-privacy-reviewer MEASURED
+ * it at twelve spec-shaped questions of ~5.2 KB each — a paste, not a marathon — and
+ * the "~4x the product cap" that claim rested on is a cap no shipped code enforces
+ * (VV-2 is not built). This function is what actually keeps a legitimate client off
+ * the CHECK. Migration 067 corrects the column comment to say so.
+ *
+ * When VV-2 ships the question editor it should bound the list at ENTRY too, where
+ * the owner can see it happen — a silent drop here is a backstop, never the UX.
  */
 function parseQuestionsForPush(raw: string | null): unknown[] | null {
   if (!raw) return null;
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : null;
+    parsed = JSON.parse(raw);
   } catch {
     console.warn('[sync] vet_appointment questions were not valid JSON — sent as null');
     return null;
   }
+  if (!Array.isArray(parsed)) return null;
+  if (raw.length > APPOINTMENT_QUESTIONS_PUSH_BOUND) {
+    // Measured against the LOCAL text, which is what we hold. Bounded below the
+    // server's own limit (see the constant), so this fires first and the CHECK
+    // stays unreachable.
+    console.warn(
+      `[sync] vet_appointment questions exceed ${APPOINTMENT_QUESTIONS_PUSH_BOUND} chars ` +
+        '— sent as null rather than wedging the appointment on a terminal 23514',
+    );
+    return null;
+  }
+  return parsed;
 }
 
 // Compress an image attachment before (re)upload so the sync/ensure paths never
@@ -2659,9 +2699,18 @@ async function hydrateVetAppointments(db: Db, stale: () => boolean): Promise<voi
          cancelled_at=excluded.cancelled_at, deleted_at=excluded.deleted_at,
          updated_at=excluded.updated_at, synced=1
        WHERE vet_appointments.synced = 1`,
-      // created_at rides the INSERT branch only, like every other LWW hydrate in
-      // this file (hydrateMeals / hydrateWeightChecks / hydrateVetDocuments): it is
-      // immutable for a given id, so re-writing it could only ever corrupt the row.
+      // created_at rides the INSERT branch only: it is immutable for a given id, so
+      // re-writing it could only ever corrupt the row.
+      //
+      // ⚠ This is the MAJORITY convention here, not a universal one, and the
+      // difference is worth stating because an earlier draft of this comment claimed
+      // "every other LWW hydrate in this file" and that was false. It matches
+      // hydrateMeals / hydrateWeightChecks / hydrateVetDocuments; hydrateEvents,
+      // hydrateVetVisits and hydrateMedications still carry
+      // `created_at=excluded.created_at` in their SET clause. Harmless in practice
+      // (the server value round-trips from the same push), but genuinely
+      // inconsistent — left alone here rather than swept, because changing the
+      // write path of three live mirrors is not this PR's scope. CUL-936 tracks it.
       [a.id, a.pet_id, a.scheduled_at, a.clinic_name ?? null, a.vet_name ?? null,
        a.reason ?? null, serialiseQuestionsForLocal(a.questions), a.notes_draft ?? null,
        a.vet_visit_id ?? null, a.cancelled_at ?? null, a.deleted_at ?? null,

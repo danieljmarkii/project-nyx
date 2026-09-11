@@ -402,6 +402,19 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
     // one, and the entry's own comment claims the ordering is proven. (Added after
     // code-reviewer pointed out the claim covered deletion only.)
     expect(order('looks')).toBeLessThan(order('events'));
+    // CUL-899 — vet_appointments, the vet_documents rule a second time: no local FK
+    // is declared on its vet_visit_id (an appointment may name a visit this device
+    // has not pulled yet), so nothing would throw on a parent-first order, and only
+    // this assertion pins the stated contract.
+    //
+    // It is here because the entry landed WITHOUT it and code-reviewer proved the
+    // gap by mutation: swapping the two lines in LOCAL_WIPE_TABLES left all 45 tests
+    // green. That is the third time this exact half has been missed on this list —
+    // the `looks` comment directly above records the second — so the rule for
+    // whoever adds the next mirror table: the derived-set test catches a MISSING
+    // entry, never a MISORDERED one, and every entry whose own comment claims an
+    // ordering owes a line here.
+    expect(order('vet_appointments')).toBeLessThan(order('vet_visits'));
   });
 
   // B-424 — this used to compare the constant against a HARDCODED list, which

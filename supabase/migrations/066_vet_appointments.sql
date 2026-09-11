@@ -7,6 +7,18 @@
 --   HARDENED same-pet trigger — SECURITY DEFINER, pinned search_path).
 -- ============================================================
 --
+-- ⚠ AMENDED BY MIGRATION 067 — READ IT BEFORE CHANGING ANYTHING HERE.
+-- The same-pet guard below is enforced on the CHILD only. `vet_visits.pet_id` stayed
+-- freely mutable, so ONE RLS-legal `UPDATE vet_visits SET pet_id` moved a visit to
+-- the owner's other pet and left all three linked tables naming a visit belonging to
+-- a different pet — and, because the guard re-validated on EVERY write, permanently
+-- bricked those rows (terminal 23514 → client quarantine). Found by the VV-1
+-- rls-privacy-reviewer and reproduced against the live schema. 067 closes both
+-- halves and corrects three statements in this file's prose (the "every reader"
+-- claim on `deleted_at`, the invariant asserted in COMMENT ON FUNCTION, and the
+-- `questions` bound's "only by a bug or an attacker"). This file is left as applied
+-- so the record stays honest — the 045 discipline.
+--
 -- WHAT THIS IS. The substrate for the vet-visit companion, and nothing else. No UI
 -- ships in this PR (VV-2 onward) and no server-side reader gains a new input: the
 -- one Edge-Function change that rides with it is a FILTER on an existing pull, and
