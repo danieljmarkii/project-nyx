@@ -481,3 +481,27 @@ The guard was already house style — all four of `lib/db.ts`'s by-id local upda
 **Testing it has its own trap, and this session fell in it.** The first assertion written for the fix checked that `new Date(spelling).getTime() >= bound` for both spellings — the *parsing*, in isolation. That is true of the fix and equally true of the bug, so it survived the mutation that put the lexical compare back, and measured nothing. C-34 verbatim: a test that re-derives the rule rather than driving the shipped function is a tautology with fixtures. The guard that replaced it drives the real `readVetVisitsHome` with each spelling, and asserts the premise in a separate case — that the two strings are the same instant **and** that they compare differently as text — so a future runtime change that removed the hazard would show up as a failing premise rather than as silent green.
 
 **What is safe.** `ORDER BY scheduled_at` over the fixed-width first 19 characters is fine: two different instants always differ inside them. It is the BOUND that must parse — the comparison against a value produced by a different writer.
+
+---
+
+### C-41 · A rule whose effect is at the TAIL of a virtualized list is not observable from the rendered tree, and a synchronous tree guard cannot see an async-gated leak (2026-09-11, CUL-904)
+
+Two tests went green over nothing in one session, on the same PR, for the same underlying reason: **the thing the assertion was about was never rendered.** Neither was found by reading. Both were found by breaking the source, which is the only reason they are here rather than shipped.
+
+**The first.** History withholds a dated non-event row — a free-feeding boundary, or now a vet visit — that is older than the oldest loaded event while more events remain unpaginated, so it never renders above events that have simply not loaded yet. The screen-level test of that rule deleted the clause and **stayed green**: the row the mutation should have released sorts to the bottom of a 51-row list, below a `FlatList`'s render window. No fixture repairs this, because the rule's entire effect is *at the tail*, and the tail is precisely what a virtualized list does not mount.
+
+So the rule left the screen for `lib/historyTimeline.ts` and is asserted over data. The precedent was already in the neighbouring file — `lib/historyDateFilter.ts` says in its own header that it was "extracted pure so it is unit-testable without mounting the whole screen" (B-308) — and the same argument had simply not been applied to the merge beside it. Three mutations bite it now: dropping the tail clause, applying it to one row kind and not the other, and sorting a visit at UTC midnight instead of its own key.
+
+**The rule:** before testing a list rule through a rendered tree, ask **where the rule's effect lands in the list**. At the head, a screen test is fine. At the tail, or past `initialNumToRender`, the screen test is measuring virtualization and the rule belongs in a pure module.
+
+**The second, and it is the sharper one because the guard was correct and still blind.** `guards/vetVisitsFlagOff.test.tsx` proves flag-off equivalence by comparing a rendered tree against the same tree with the feature's namespace stubbed out (C-36). VV-6 added History to its `SURFACES` — correctly, since a surface absent from that list has its flag-off tree checked by nothing — then deleted History's flag check to prove the addition bites. **The suite stayed green.**
+
+`treeFor` renders and snapshots **synchronously**, so what it compares is the first frame. A companion node drawn straight from the tree — the mutation AC 0 names, and the one the guard's own fixture proof drives — is caught. A node whose render waits on an async read is not, because on the first frame neither side has it. **Home's appointment strip has the same shape and therefore the same hole.**
+
+The first response was to make the guard's mock DB answer the visit query with a real row, under a comment claiming "proven by removing History's gate and watching this go red". **That claim was false and was nearly committed inside a guard.** Every consumer gates the READ as well as the render, so with the flag off no query runs on either side and the row changes nothing. This is C-38's failure (045's cheque — a comment writing what the code does not cash) arriving in the file whose whole job is to make a promise structural. The mock was reverted; the blind spot is now stated in `SURFACES`' own docblock, because **an undocumented blind spot reads as coverage**.
+
+**Where the proof went instead:** the screen's own suite, where the data is controllable and effects are flushed — flag-off renders no row **and issues no read**, over a fixture that *would* answer if it were called, so a missing row cannot mean "the fixture was empty". That last clause is the C-35 discipline applied to a negative assertion: an absence proves the gate only when the thing being gated was available to leak.
+
+**What was deliberately not done:** widening `treeFor` to flush effects. It would close both halves, and it makes four other screens render their loaded state — a change to their comparisons for one row's benefit, which is a decision, not a rider.
+
+**The pairing worth carrying.** Both defects are the same sentence: *the assertion never saw the thing it was about.* One because the list did not mount it, one because the frame was too early. Neither is visible in a passing test run, and the only instrument that found either was a mutation actually executed against the source.
