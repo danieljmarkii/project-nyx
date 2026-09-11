@@ -75,6 +75,17 @@ export type AppConfigKey = keyof AppConfigValues;
 // and a look never enters the engine or any coverage line, so there is no
 // server-side registration of this key. Nothing consumes it yet (N-0).
 //
+// `vet_visits` is the vet-visit companion rollout flag (Vet visits — the
+// appointment companion, migration 065 — VV-0) — same shape, same fail-closed
+// resolution. It gates the companion's CLIENT surfaces (the Pet-tab home VV-2,
+// the visit VV-4, the Home strip + Get ready VV-5) AND-ed with the beta-shelf
+// opt-in. A ROLLOUT gate only (G0): GA is every account — the companion is care,
+// not convenience, so it is never a Premium gate. Client-render-only: VV-1's
+// schema (vet_appointments, the three links, vet_visits.deleted_at) is
+// account-agnostic and lands for everyone, and no Edge Function reads the key,
+// so there is no server-side registration of it. Nothing consumes it yet (VV-0
+// — pinned by guards/vetVisitsFlagOff.test.tsx).
+//
 // Two keys that once lived here have GRADUATED to GA and been retired client-side
 // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
 // uplift, migration 055) and `signals_v2` (the Signals-v2 lanes, migration 057). The
@@ -89,6 +100,7 @@ export const ALLOWLIST_FLAG_KEYS = [
   'log_picker_v2',
   'event_types_v2',
   'daily_look',
+  'vet_visits',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -107,6 +119,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   log_picker_v2: undefined,
   event_types_v2: undefined,
   daily_look: undefined,
+  vet_visits: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

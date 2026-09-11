@@ -104,4 +104,6 @@ The `audience`-has-no-default and the note's pull bound are pinned here too.
 
 ## Conventions added
 
-`CLAUDE.md` § Code Conventions **C-36**, full account `docs/engineering-lessons.md` §C-36.
+`CLAUDE.md` § Code Conventions **C-37**, full account `docs/engineering-lessons.md` §C-37.
+
+**And the numbering collision, for the second time in one day.** This session wrote C-36 and CLAUDE.md v1.42. So did VV-0 (CUL-898), which merged to `main` while this branch was open — and VV-0's own record documents the identical collision with N-5 a few hours earlier. On merging: **CLAUDE.md conflicted loudly** (the rows shared an insertion point) while **`docs/engineering-lessons.md` auto-merged into two sections both numbered C-36**, with nothing in the build able to notice. VV-0 merged first, so it keeps C-36 and v1.42; this session renumbered to C-37 and v1.43, and the file carries a note at the join. The lesson is the one VV-0 already wrote down and this session then walked into anyway: **a shared monotonic counter in a doc is a merge hazard git cannot see** — diff the incoming head's identifiers before merging, because a clean merge is not evidence. Worth noting the reason it recurred: both sessions read a head that did not yet contain the other's work, so neither could have avoided it by reading more carefully. What catches it is checking at MERGE time, not at write time.
