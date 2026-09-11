@@ -498,17 +498,34 @@ export default function ProfileScreen() {
   const vetVisitsOptedIn = useBetaOptIn('vet_visits');
   const vetVisitsEnabled = vetVisitsEligible && vetVisitsOptedIn;
   const [vetVisits, setVetVisits] = useState<VetVisitsHome>(EMPTY_VET_VISITS_HOME);
+  // C-12, and it is load-bearing HERE rather than ceremonial: the card's zero
+  // state is not a quiet placeholder, it is two doors saying "you have nothing
+  // booked and nothing logged". Rendered before the read answers, an owner with
+  // years of visits and an appointment on Tuesday sees that on every focus of this
+  // tab; rendered after a FAILED read, they see it permanently. The empty model is
+  // never shown as a record — the card waits.
+  //
+  // Held as the PET ID the current data belongs to rather than a boolean, which
+  // answers the multi-pet half of the same question for free: a plain `loaded`
+  // flag stays true across a pet switch, so the card would render the previous
+  // pet's appointment and visit count under the new pet's name until the next read
+  // landed (the CUL-574 class, arriving by staleness instead of by fallback).
+  const [vetVisitsLoadedFor, setVetVisitsLoadedFor] = useState<string | null>(null);
 
   const loadVetVisits = useCallback(async () => {
     // Dark means dark: the flag gates the READ as well as the card.
     if (!vetVisitsEnabled || !activePet) return;
+    const petId = activePet.id;
     try {
-      setVetVisits(await readVetVisitsHome(activePet.id));
+      setVetVisits(await readVetVisitsHome(petId));
+      setVetVisitsLoadedFor(petId);
     } catch (e) {
-      // The card degrades to its zero state rather than blanking the tab — the
-      // Vet Files precedent directly above.
+      // The card withholds rather than blanking the tab — a failed read here must
+      // never cost the owner the profile, and it must never be reported as an
+      // empty record. The list screen carries the retry.
       console.warn('[Profile] load vet visits failed:', e);
       setVetVisits(EMPTY_VET_VISITS_HOME);
+      setVetVisitsLoadedFor(null);
     }
   }, [vetVisitsEnabled, activePet?.id]);
 
@@ -1533,7 +1550,7 @@ export default function ProfileScreen() {
             RN Modals (edit pet, add medication, start trial) and the owner should
             land where the row they just created is visible — the list — rather than
             on the tab it was booked from. */}
-        {vetVisitsEnabled && activePet && (
+        {vetVisitsEnabled && activePet && vetVisitsLoadedFor === activePet.id && (
           <VetVisitsCard
             model={buildVetVisitsCardModel(vetVisits)}
             // The tab is scoped to `activePet`, so here the active pet IS the

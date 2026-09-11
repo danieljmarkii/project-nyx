@@ -89,6 +89,28 @@ describe('the time-optional sentinel', () => {
   it('an unparseable instant is not claimed to carry a time', () => {
     expect(appointmentTimeKnown('not-a-date')).toBe(false);
   });
+
+  it('MEASURES the known limit: the sentinel is read in the reading zone', () => {
+    // Not a wish — a demonstration, so the limit documented in the module header
+    // is a number someone can check rather than a paragraph someone can believe.
+    //
+    // The CI timezone matrix cannot see this: it runs the whole suite at one fixed
+    // TZ per job, so compose-time and read-time always agree inside a run. Here
+    // the two are deliberately different, built by hand rather than by moving the
+    // process clock.
+    //
+    // Composed at local midnight in a UTC−7 zone, an appointment is 07:00Z. Read
+    // back in UTC−10 that is 21:00 the PREVIOUS day: a time appears where none was
+    // given, and the day slips by one. If a later PR adds `scheduled_time_known`,
+    // this test is what should change — and it should change to assert the
+    // opposite.
+    const composedAtMidnightUtcMinus7 = '2026-09-16T07:00:00.000Z';
+    const readInUtcMinus10 = new Date(composedAtMidnightUtcMinus7);
+    const hoursThere = (readInUtcMinus10.getUTCHours() - 10 + 24) % 24;
+    expect(hoursThere).toBe(21);
+    // …which is not midnight, so the read would report a time that was never given.
+    expect(hoursThere === 0).toBe(false);
+  });
 });
 
 describe('dates as the owner reads them', () => {

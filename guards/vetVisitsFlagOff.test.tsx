@@ -419,8 +419,23 @@ const FIRST_CONSUMER_LANDS = 'CUL-900 (VV-2 — the Pet-tab home)';
  */
 const CONSUMER_RE = /useAllowlistFlag\(\s*['"]vet_visits['"]\s*\)/;
 const ALIASED_HOOK_RE = /\buseAllowlistFlag\s+as\s+\w+/;
-/** An import from the companion namespace, at any relative depth. */
-const IMPORTS_NAMESPACE_RE = /from\s+['"][^'"]*components\/vetvisits\//;
+/**
+ * A VALUE import from the companion namespace, at any relative depth.
+ *
+ * `import type` is excluded deliberately: a type is erased at compile time and
+ * renders nothing, so a type-only import would satisfy the rule while the file
+ * drew its companion UI inline — the exact leak the rule exists to catch.
+ *
+ * STATED BLIND SPOT (C-36 — an undocumented limitation reads as coverage): this
+ * is still a regex over import statements, so it cannot tell a namespace import
+ * that is RENDERED from one that is merely present. A future consumer determined
+ * to draw inline could add an unused value import and pass. It raises the cost of
+ * the leak from "forget the convention" to "write a line that does nothing", and
+ * it does not close it; closing it needs the import bound into the returned tree,
+ * which a regex cannot see. The equality half remains the real backstop for
+ * anything that renders.
+ */
+const IMPORTS_NAMESPACE_RE = /(?:^|\n)\s*import\s+(?!type\s)[^;\n]*from\s+['"][^'"]*components\/vetvisits\//;
 
 /**
  * Flag consumers excused from the draws-through-the-namespace rule: a file that

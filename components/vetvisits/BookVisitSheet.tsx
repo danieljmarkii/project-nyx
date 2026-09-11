@@ -90,10 +90,13 @@ export function BookVisitSheet({
   const [reason, setReason] = useState('');
   const [alsoFor, setAlsoFor] = useState<Set<string>>(new Set());
 
-  // Re-seed on each OPEN rather than on mount: the sheet is kept mounted by its
-  // host, so a mount-time seed would hand the second booking the first one's
-  // half-typed reason. The prefill is a starting point the owner may overwrite —
-  // seeding it here and not on every render is what lets them.
+  // Re-seed on each OPEN rather than on mount. The only caller today unmounts this
+  // sheet between openings (`{sheetMode ? <BookVisitSheet …/> : null}`), so a
+  // mount-time seed would be equivalent — but a future caller that holds it mounted
+  // and toggles `visible` (VV-4's edit flow is the obvious one) would otherwise hand
+  // the second booking the first one's half-typed reason, and its left-open pickers.
+  // The prefill is a starting point the owner may overwrite; seeding here and not on
+  // every render is what lets them.
   useEffect(() => {
     if (!visible) return;
     setMode(initialMode);
@@ -102,6 +105,8 @@ export function BookVisitSheet({
     setReason('');
     setTime(null);
     setAlsoFor(new Set());
+    setShowDayPicker(false);
+    setShowTimePicker(false);
     // The last visit's own "come back on" date seeds the day when it named one and
     // that date has not already passed — a recheck the owner is now booking. A
     // past next_visit_at is a date they are already late for, so it seeds nothing
@@ -113,6 +118,43 @@ export function BookVisitSheet({
 
   const dayLabel = useMemo(() => formatVisitWeekday(localDateKey(day)), [day]);
   const isBooked = mode === 'booked';
+
+  /**
+   * Flip the arm, and bring the date with it.
+   *
+   * The two arms have OPPOSITE date bounds — a booking is in the future, a logged
+   * visit is in the past — and `minimumDate`/`maximumDate` only constrain the
+   * PICKER. A date already in state when the arm flips is not re-validated by
+   * anything, so the first version of this sheet could write a future
+   * `visited_at`: open "Add" (which lands on `booked` and seeds the last visit's
+   * `next_visit_at`, a date weeks out), tap "Already happened", and submit without
+   * reopening the picker.
+   *
+   * That is not a cosmetic slip. `vet_visits.visited_at` is the date the report's
+   * window rung 1 keys off, the rundown's `MAX(visited_at)` trusts, and the Vet
+   * Files link picker lists — the reason migration 066 put bookings in a separate
+   * table at all was to make "a visit that happened" unable to hold a future date.
+   * A future row written through this sheet would have walked straight past that.
+   *
+   * So the clamp lives on the transition, not in the picker: switching to
+   * `happened` pulls a future date back to today, switching to `booked` pushes a
+   * past one forward. The owner's date survives whenever it is legal in the new
+   * arm, which is the common case.
+   */
+  function changeMode(next: VisitMode) {
+    setMode(next);
+    const today = new Date();
+    const todayStart = startOfDay(today);
+    if (next === 'happened') {
+      // A visit that happened is remembered as a day with no time, so a time
+      // carried over from the booked arm would be written nowhere and shown
+      // nowhere — clearing it keeps the sheet honest about what it will save.
+      setTime(null);
+      if (day.getTime() > today.getTime()) setDay(today);
+    } else if (startOfDay(day).getTime() < todayStart.getTime()) {
+      setDay(today);
+    }
+  }
 
   function submit() {
     const key = localDateKey(day);
@@ -160,7 +202,7 @@ export function BookVisitSheet({
             <ChipGroup
               options={MODE_OPTIONS}
               value={mode}
-              onChange={(next) => next && setMode(next as VisitMode)}
+              onChange={(next) => next && changeMode(next as VisitMode)}
               // A required choice: one of the two is always true, so a second tap
               // on the active chip must not clear it.
               allowDeselect={false}

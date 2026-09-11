@@ -63,9 +63,23 @@ export interface LocalVetAppointment {
 //     collision — a real noon appointment silently losing its printed time — is
 //     plausible where midnight's is not.
 //
-// The honest fix, if a surface ever needs to distinguish "unset" from "midnight"
-// for real, is a column (`scheduled_time_known`), which is a migration and
-// therefore its own PR. Nothing in v1 needs it.
+// KNOWN LIMIT — the sentinel is read in the READING device's zone, not the one it
+// was composed in. `appointmentTimeKnown` re-parses the instant and asks for its
+// LOCAL hours, so compose and read agree only while the device's zone does. Change
+// the zone between booking and viewing (travel, or a manual change) and a
+// no-time booking can render a fabricated clock time, an early-morning one can
+// read as no-time, and a large enough offset can shift the DISPLAYED day by one.
+//
+// This is a different failure from DST, which `Date`'s own offset math handles for
+// a fixed zone. It is also structurally invisible to the CI timezone matrix, which
+// runs the whole suite at one fixed `TZ` per job — compose and read always agree
+// inside a run — so `lib/vetVisits.test.ts` drives the mismatch explicitly rather
+// than leaving it to a job that cannot see it.
+//
+// Accepted for v1, not overlooked: the fix is the `scheduled_time_known` column,
+// which is a migration and therefore its own PR, and the blast radius is a
+// misprinted time on a booking rather than anything the record computes from.
+// Filed as a follow-up on the issue.
 export function appointmentTimeKnown(scheduledAt: string): boolean {
   const d = new Date(scheduledAt);
   if (Number.isNaN(d.getTime())) return false;
@@ -531,10 +545,17 @@ export async function readVetVisitDetail(visitId: string): Promise<VetVisitDetai
       WHERE vet_visit_id = ? ORDER BY created_at ASC`,
     [visitId],
   );
+  // MIN(page_index) is not decoration: SQLite may take each BARE column in a
+  // GROUP BY from an arbitrary member row, so an aggregate is what makes the
+  // selection deterministic — the convention `lib/vetDocumentLibrary.ts` already
+  // documents for the same table. Harmless today (title/kind/document_date are
+  // only ever written group-wide) but that is an invariant elsewhere in the code,
+  // not a property of this query.
   const documents = await db.getAllAsync<{
     document_group_id: string; title: string | null; kind: string; document_date: string | null;
   }>(
-    `SELECT document_group_id, title, kind, document_date FROM vet_documents
+    `SELECT document_group_id, title, kind, document_date, MIN(page_index) AS page_index
+       FROM vet_documents
       WHERE vet_visit_id = ? AND deleted_at IS NULL
       GROUP BY document_group_id
       ORDER BY created_at DESC`,

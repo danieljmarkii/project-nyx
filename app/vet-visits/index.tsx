@@ -84,9 +84,20 @@ export default function VetVisitsScreen() {
   // and cleared BEFORE the effect it triggers: in state, an already-scheduled
   // passive effect re-enters with the pre-clear closure and opens the sheet twice
   // (C-22).
+  //
+  // Armed from the ref's INITIALISER, which React evaluates on the first render
+  // only. The first version armed it in the render body — `if (add === …)
+  // pendingAdd.current = add` — which is not a one-shot at all: the param stays in
+  // the URL for the life of the screen, so the very next render (the one
+  // `setSheetMode` itself causes) re-armed the ref the focus effect had just
+  // cleared. Push a visit, come back, and the booking sheet opened again
+  // unrequested. The ref was doing its job; the SOURCE was re-supplying the
+  // request. The param is also stripped below once consumed, so a re-focus reads
+  // a clean URL rather than relying on this initialiser alone.
   const { add } = useLocalSearchParams<{ add?: string }>();
-  const pendingAdd = useRef<VisitMode | null>(null);
-  if (add === 'booked' || add === 'happened') pendingAdd.current = add;
+  const pendingAdd = useRef<VisitMode | null>(
+    add === 'booked' || add === 'happened' ? add : null,
+  );
 
   const load = useCallback(async () => {
     // A dark feature reads nothing either: the gate is not only about pixels.
@@ -116,7 +127,13 @@ export default function VetVisitsScreen() {
         if (cancelled) return;
         const intent = pendingAdd.current;
         pendingAdd.current = null;
-        if (intent) setSheetMode(intent);
+        if (intent) {
+          setSheetMode(intent);
+          // Clear the request at its source too. Without this the URL still reads
+          // `?add=booked` on every later focus of this screen, which is a standing
+          // instruction nobody issued.
+          router.setParams({ add: undefined });
+        }
       });
       return () => {
         cancelled = true;
