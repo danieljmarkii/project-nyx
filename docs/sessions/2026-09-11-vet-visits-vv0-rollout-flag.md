@@ -154,7 +154,17 @@ inspection, and two of them were **green tests that proved nothing**.
    legitimate uses of the same token, the answer is a second orthogonal detector,
    not an exemption list.
 
-A fifth, smaller one: the mutation fixture cannot `require('react')`. A file in
+5. **The normalizer's cycle guard tracked everything visited, not the ancestor
+   path.** RN reuses one registered style object across many elements, so every
+   appearance after the first collapsed to `'[circular]'` and took its content out
+   of the comparison. Measured on a four-node tree with a single reused style:
+   **three** false markers. The comparison still *passed* — both sides erase the
+   same things in the same order — which is what makes it the dangerous kind of
+   bug: fidelity lost silently, in a guard whose only job is to notice a
+   difference. Fixed by entering on the way down and releasing on the way out, so
+   only a real cycle is cut.
+
+A sixth, smaller one: the mutation fixture cannot `require('react')`. A file in
 the OS temp directory has neither the repo's babel transform nor its
 `node_modules` on its resolution path, and reaching react by absolute path yields
 a *different module instance* from the renderer's — which produced an unrendered

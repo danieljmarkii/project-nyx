@@ -230,8 +230,22 @@ function normalize(node: unknown, seen: WeakSet<object> = new WeakSet()): unknow
   if (node === null || typeof node !== 'object') {
     return typeof node === 'function' ? '[fn]' : node;
   }
+  // `seen` tracks the ANCESTOR PATH, not everything visited: entered on the way
+  // down and released on the way out. A visited-set is the easier thing to write
+  // and it is wrong here — RN reuses one registered style object across many
+  // elements, so the second and later appearances of a perfectly acyclic shared
+  // object would collapse to '[circular]' and take whatever they contain out of
+  // the comparison. Only a real cycle should be cut.
   if (seen.has(node)) return '[circular]';
   seen.add(node);
+  try {
+    return normalizeEntered(node, seen);
+  } finally {
+    seen.delete(node);
+  }
+}
+
+function normalizeEntered(node: object, seen: WeakSet<object>): unknown {
   if (Array.isArray(node)) return node.map((n) => normalize(n, seen));
 
   const o = node as Record<string, unknown>;
