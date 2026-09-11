@@ -63,17 +63,19 @@ export function WorthRaisingList({ worthRaising, questions, onAdd, onRemove, pet
           />
         ))}
 
-        {/* The gap named, never swallowed (C-12). The Signal's findings live in a
-            cache this device reads over the network — the same read Home makes — so
-            offline they are simply not here. Everything else on this page came from
-            local SQLite and is complete. An owner who cannot tell "nothing standing"
-            from "we could not look" reads the first and walks into the room
-            reassured, which is the one direction this page may not fail in. */}
+        {/* The gap named, never swallowed (C-12). The Signal's findings live in a cache
+            this device reads over the network — the same read Home makes — so they can
+            be missing for two reasons: the read failed (offline), or the engine has
+            never run for this pet. Both mean the list may be incomplete, and the copy
+            says only that, without claiming which. An owner who cannot tell "nothing
+            standing" from "we could not look" reads the first and walks into the room
+            reassured, which is the one direction this page may not fail in.
+            Everything else here came from local SQLite and IS complete. */}
         {signalUnavailable ? (
           <View style={styles.gap}>
             <ThemedText style={styles.gapText}>
-              {petName}’s Signal couldn’t be reached, so anything it has flagged isn’t here.
-              The rundown below is from this device and is complete.
+              {petName}’s Signal couldn’t be read on this device, so anything it has flagged
+              isn’t in this list. The rundown below is from this device and is complete.
             </ThemedText>
           </View>
         ) : null}

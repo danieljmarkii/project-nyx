@@ -16,6 +16,12 @@
 //    structural half — the words can also arrive as DATA (a drug name is owner
 //    free-text), and only the runtime screen catches those.
 //
+// "Assembles" is narrow on purpose, and the registry below carries the reason per
+// row. A row that QUOTES another module's sentence is not screened here, because
+// screening it would mean this section silently disagreeing with the identical
+// string rendered elsewhere on the same page — and, measured, would delete a
+// coverage denominator over a word in a food name.
+//
 // ── THE REGISTERED EXEMPTION IS THE INTERESTING PART (C-32) ──────────────────────
 // `buildSignalRows` must NOT be screened, and that is a decision rather than an
 // oversight, so it is registered with its reason and asserted to still exist. AC 5
@@ -74,8 +80,24 @@ const UNSCREENED: Record<string, string> = {
   buildSignalRows:
     'AC 5 requires the Signal’s phrased sentence VERBATIM. Screening it would edit a ' +
     'sentence the engine composed, or drop it — and a dropped row can be a SAFETY ' +
-    'finding, which is the one outcome this list may not cause. The intake invariant ' +
-    'is enforced where that copy is written (generate-signal/phrasing.ts).',
+    'finding, which is the one outcome this list may not cause. Server-side cover is ' +
+    'PARTIAL and the gap is stated rather than implied (C-38): generate-signal/' +
+    'phrasing.ts screens /\\b(picky|fussy|finicky)\\b/i and only on priorityClass ' +
+    '"safety", so `prefers` / `preference` / `pickiness` and every insight-lane string ' +
+    'are unscreened at both ends. Accepted, because the alternative — editing or ' +
+    'dropping a safety sentence here — is worse; widening phrasing.ts is the fix.',
+  trialRow:
+    'QUOTED, not composed: `TrialStripModel.header` / `.line` verbatim, the exact ' +
+    'strings the Home trial strip renders UNSCREENED. Screening here would make Worth ' +
+    'raising disagree with the same sentence rendered elsewhere in the app. It was ' +
+    'screened in the first cut, and that cost a real number: a trial whose food is ' +
+    'called "the kibble she prefers" lost its coverage denominator (meals logged on ' +
+    '20 of 23 days) silently, with no test. A screen that deletes evidence to avoid a ' +
+    'word is the wrong trade on a page a clinician reads.',
+  weightRow:
+    'QUOTED, not composed: the rundown’s own weight tile, rendered verbatim in the ' +
+    'block directly below this section. Its other half is a DATE and the order of two ' +
+    'dates the record holds — no owner free-text reaches either.',
 };
 
 function read(rel: string): string {
@@ -197,11 +219,15 @@ describe('AC 5 — no row turns a decline into a taste', () => {
     expect(Object.keys(UNSCREENED).filter((fn) => !builders.has(fn))).toEqual([]);
   });
 
-  it('the quoted Signal row is the ONLY unscreened one', () => {
-    // Stated as an equality rather than a subset: widening this set is a decision
-    // about what the app may say about a decline, and it should have to be written
-    // into a diff.
-    expect(Object.keys(UNSCREENED)).toEqual(['buildSignalRows']);
+  it('the unscreened set is exactly the three QUOTED rows', () => {
+    // Stated as an equality rather than a subset: widening this set is a decision about
+    // what the app may say about a decline, and it should have to be written into a diff.
+    //
+    // Every member is here for ONE reason — it reproduces a string another module
+    // composed and renders unscreened elsewhere on the same screen. The row this module
+    // actually assembles (the course row's `${name} — ${value}` join, where owner
+    // free-text meets a string written here) is not in the set and never should be.
+    expect(Object.keys(UNSCREENED).sort()).toEqual(['buildSignalRows', 'trialRow', 'weightRow']);
   });
 
   it('no preference vocabulary is written into the render path’s own copy', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -62,7 +62,20 @@ export function AppointmentStrip() {
   // pet's name (the VV-2 card's own defect, avoided here by construction).
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
 
+  // Monotonic load id, the `app/rundown.tsx` / insights / report pattern.
+  //
+  // `loadedFor` alone is not enough, and the gap is an out-of-order WRITE rather than a
+  // wrong render. It stops the strip ever SHOWING pet A's appointment while B is active
+  // — the render check below compares it against the current `petId` — but a slow read
+  // for A resolving AFTER a fast read for B sets `loadedFor` back to A, and the strip B
+  // had correctly rendered vanishes. It only comes back on the next focus (another
+  // switch, or leaving and returning to Home), so a real upcoming appointment silently
+  // does not show after a routine pet switch — on a surface whose whole job is to
+  // surface it. Found by `code-reviewer`, reproduced by holding A's read open.
+  const loadIdRef = useRef(0);
+
   const load = useCallback(async () => {
+    const myId = ++loadIdRef.current;
     if (!enabled || !petId) {
       setAppointment(null);
       setLoadedFor(petId);
@@ -70,17 +83,19 @@ export function AppointmentStrip() {
     }
     try {
       const next = await readHomeAppointment(petId);
+      if (loadIdRef.current !== myId) return;
       // The after-the-day ask is suppressed once THIS DEVICE has shown it
       // (`lib/appointmentAsked.ts`). An unreadable store answers "already asked",
       // because re-asking every launch about a visit the owner dismissed is the
       // failure that cannot be un-seen.
-      if (next?.phase === 'after' && (await hasAskedAboutAppointment(next.id))) {
-        setAppointment(null);
-      } else {
-        setAppointment(next);
-      }
+      const asked = next?.phase === 'after' ? await hasAskedAboutAppointment(next.id) : false;
+      // Re-checked after the SECOND await too: the storage read is a second chance for a
+      // newer load to overtake this one.
+      if (loadIdRef.current !== myId) return;
+      setAppointment(asked ? null : next);
       setLoadedFor(petId);
     } catch (err) {
+      if (loadIdRef.current !== myId) return;
       console.warn('[appointment-strip] read failed:', err);
       // A failed read draws NOTHING, which is the honest direction here: this strip
       // only ever ADDS a row to Home, so its silence removes no claim and asserts

@@ -314,3 +314,51 @@ describe('a slow load cannot commit over a newer one', () => {
     expect(r.getByText(/New Clinic/)).toBeTruthy();
   });
 });
+
+describe('a Signal that has never been generated is not "nothing standing"', () => {
+  it('names the gap when there is no ai_signals row at all', async () => {
+    // The worst of the adversarial findings. `readSignalCache` returns null for NO ROW
+    // and gets there WITHOUT THROWING — PostgREST's `maybeSingle()` answers zero rows
+    // with `{data: null, error: null}` — so `row?.findings ?? []` turned "the engine has
+    // never run for this pet" into "the engine found nothing": no gap line, quiet-record
+    // treatment, on a record nobody has looked at. Reachable on a new pet booking a
+    // first appointment.
+    //
+    // Note the default harness at the top of this file IS that case (`maybeSingle` is
+    // stubbed to `{data: null, error: null}`), which is why the quiet-record tests above
+    // now assert the gap line's ABSENCE only where the cache genuinely answered.
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() =>
+      expect(r.getByText(/Signal couldn’t be read on this device/)).toBeTruthy(),
+    );
+  });
+
+  it('does NOT name a gap when the engine answered with no findings', async () => {
+    // The genuinely quiet record: a cache row exists and its findings are empty. This is
+    // the only state that earns mock B1b.
+    const { supabase } = jest.requireMock('../lib/supabase') as {
+      supabase: { from: jest.Mock };
+    };
+    const chain = supabase.from('ai_signals') as unknown as { maybeSingle: jest.Mock };
+    chain.maybeSingle.mockResolvedValueOnce({
+      data: {
+        signal_text: null,
+        is_building: false,
+        findings: [],
+        coverage: [],
+        generated_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      },
+      error: null,
+    });
+
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    expect(r.getByText('Your questions')).toBeTruthy();
+    expect(r.queryByText(/Signal couldn’t be read/)).toBeNull();
+    expect(r.queryByText(/nothing to raise/i)).toBeNull();
+  });
+});

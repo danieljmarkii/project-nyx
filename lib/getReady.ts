@@ -1,5 +1,10 @@
 import { visibleFindings } from './signalVisible';
-import { splitPastCourses, pastMedTileValue, pastMedEndDetail } from './rundown';
+import {
+  splitPastCourses,
+  pastMedTileValue,
+  pastMedEndDetail,
+  resolveCourseName,
+} from './rundown';
 // The C-19-correct date formatter (year-stamped outside this year), and the
 // companion's own — Get ready is a companion surface.
 import { formatVisitDate } from './vetVisits';
@@ -122,11 +127,41 @@ export interface WorthRaisingInput {
 
 export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   const signalRows = buildSignalRows(input);
+  // The trial leads the optional rows, the Signal's insight findings follow, and the
+  // course and the weight gap come last.
+  //
+  // Why the insights sit ABOVE the course and the weight rather than below everything
+  // (the first cut) — the adversarial pass measured it: with a trial, an unterminated
+  // course and a weight gap all present, three of four slots went to the two weakest
+  // rows and an ESTABLISHED food–symptom correlation, the most actionable thing the app
+  // can say, never reached the page.
+  //
+  // Why the trial still outranks them: a wedge owner at a RECHECK for the trial, whose
+  // Signal carries four benign findings, would otherwise open this page and find no
+  // mention of the trial the appointment is about.
+  //
+  // A STOOD-DOWN MARKER STAYS IN, and that was reconsidered rather than assumed. It
+  // ranks at the TOP of the insight band (`generate-signal/standDown.ts` puts it at
+  // `max(formerRank, safetyCount)`), so the first instinct on seeing it displace a
+  // correlation was to drop the whole class as "an absence, not a thing to raise".
+  // That is wrong on the clinical read and the issue says so directly: the marker's
+  // own copy refuses to reassure (*"That isn't an all-clear"*), and "the vomiting has
+  // been quiet a fortnight" is exactly what a vet wants at a recheck for vomiting.
+  // The ORDER is what fixes the displacement — the two weakest rows yield, not the
+  // Signal's band.
   const optional = [
     trialRow(input.trialStrip),
-    courseRow(input.rundown.facts.courses, input.rundown.facts.medItemNames, input.nowMs),
-    weightRow(input.rundown, input.nowMs),
     ...signalRows.filter((r) => !r.isSafety),
+    courseRow(
+      input.rundown.facts.courses,
+      input.rundown.facts.medItemNames,
+      // The RUNDOWN's clock, not a fresh one. `splitPastCourses` windows at 12 months,
+      // and reading `Date.now()` here opened a second window over the population the
+      // block below already split — seconds wide, and enough for Worth raising to
+      // disagree with the rows printed under it about which courses exist.
+      input.rundown.generatedAtMs,
+    ),
+    weightRow(input.rundown),
   ].filter((r): r is WorthRaisingRow => r !== null);
 
   // THE PARTITION IS THE SAFETY RULE. Every safety row leads and sits ABOVE the cap;
@@ -177,7 +212,9 @@ function buildSignalRows(input: WorthRaisingInput): WorthRaisingRow[] {
 /** The running trial, in the Home strip's own words. */
 function trialRow(strip: TrialStripModel | null): WorthRaisingRow | null {
   if (!strip) return null;
-  return screen({
+  // Not screened: every character here is the Home trial strip's own, rendered
+  // unscreened there and quoted unchanged here (see `screen`).
+  return {
     id: 'trial',
     // "Diet trial · day 23 of 56". `line` is null while a safety flag is live on the
     // strip, and the row is header-only then rather than borrowing another line.
@@ -186,7 +223,7 @@ function trialRow(strip: TrialStripModel | null): WorthRaisingRow | null {
     source: 'trial',
     sourceLabel: 'from the trial',
     isSafety: false,
-  });
+  };
 }
 
 /**
@@ -207,28 +244,32 @@ function courseRow(
   nowMs: number,
 ): WorthRaisingRow | null {
   const { shown } = splitPastCourses(courses, nowMs);
-  // Recency-ordered by the derivation; the first unterminated one is the live question.
-  const course = shown.find((c) => c.end.kind !== 'ended');
+  // `source === 'regimen'` is load-bearing, not tidiness. A DOSE-DERIVED course carries
+  // `end: {kind:'none'}` BY CONSTRUCTION — `deriveMedicationCourses` says so outright
+  // ("no regimen, no status, so `end` is always `none`") — so `end.kind !== 'ended'` is
+  // permanently true for every ad-hoc dose an owner has ever logged. Without this clause
+  // one Cerenia tablet given yesterday rendered as a course with no end recorded and held
+  // a capped slot forever. The row's question — *is she still meant to be on this?* — is
+  // only meaningful about a course the owner SET UP and never ended; for a PRN dose it is
+  // fabricated.
+  //
+  // `.find` rather than `[0]`, and no early return on an unnameable row: the first cut
+  // took the first unterminated course of any kind and returned null when it could not
+  // name it, so a nameless orphan dose SUPPRESSED the real unterminated regimen behind
+  // it — while the rundown's past-meds block, printed directly below, named them both.
+  const course = shown.find((c) => c.source === 'regimen' && c.end.kind !== 'ended');
   if (!course) return null;
-  const name = courseName(course, names);
-  if (!name) return null;
   return screen({
     id: `course-${course.key}`,
-    text: `${name} — ${pastMedTileValue(course)}`,
+    // `resolveCourseName` is the RUNDOWN's own namer, exported rather than reimplemented.
+    // The first cut had a private copy without its `?? 'Medication'` fallback, which is
+    // how the two surfaces came to disagree about whether a course had a name at all.
+    text: `${resolveCourseName(course, names)} — ${pastMedTileValue(course)}`,
     detail: pastMedEndDetail(course),
     source: 'course',
     sourceLabel: 'from the course',
     isSafety: false,
   });
-}
-
-/** A regimen names itself; a dose-derived course is named from the drug identity. */
-function courseName(course: MedicationCourse, names: Map<string, MedItemName>): string | null {
-  const own = course.drugName?.trim();
-  if (own) return own;
-  const item = course.medicationItemId ? names.get(course.medicationItemId) : undefined;
-  // Brand-first, the app's owner-facing naming rule (B-171).
-  return item?.brand?.trim() || item?.generic?.trim() || null;
 }
 
 /**
@@ -250,6 +291,9 @@ function courseName(course: MedicationCourse, names: Map<string, MedItemName>): 
  *   2. The newest weigh-in predates the last logged visit — i.e. THE VET'S OWN NUMBER
  *      IS STILL THE NEWEST ONE. Nothing has been measured since they last saw this
  *      animal, which is precisely the thing worth saying out loud at the next visit.
+ *      Bounded to a visit STRICTLY BEFORE TODAY, the report's own rung-1 rule: the
+ *      date behind it is an unbounded `MAX(visited_at)`, and a future-dated row made
+ *      the gate fire over a pet weighed an hour ago.
  *
  * Gate 2 fires only for a pet with a logged prior visit, so a first-time owner sees
  * it only through gate 1. That under-fires rather than over-claims, which is the
@@ -259,48 +303,70 @@ function courseName(course: MedicationCourse, names: Map<string, MedItemName>): 
  * costs nothing, while "no weigh-in in 94 days" is a duration that would inherit
  * whichever window produced it.
  */
-function weightRow(rundown: Rundown, nowMs: number): WorthRaisingRow | null {
+function weightRow(rundown: Rundown): WorthRaisingRow | null {
   const tile = rundown.tiles.find((t: RundownTile) => t.key === 'weight');
   if (!tile) return null;
   const { weighIns, lastVisitAt } = rundown.facts;
-  const now = new Date(nowMs);
 
   // GATE 1 is answered by the TILE, not by the readings — quoted, never re-derived.
   // `buildRundown` sets `empty` on exactly the branch whose value is "No weigh-ins
   // logged", so this asks the rundown whether it is saying there is nothing, rather
-  // than asking the readings and then printing a sentence composed from something
-  // else. Reading `weighIns.length === 0` here and printing `tile.value` would let
-  // the two disagree, and the row would assert a gap while showing a range.
+  // than asking the readings and printing a sentence composed from something else.
   if (tile.empty === true) {
-    return screen({
+    // Not screened: the rundown's own tile value, quoted (see `screen`).
+    return {
       id: 'weight-none',
       text: tile.value,
       detail: null,
       source: 'weight',
       sourceLabel: 'from the record',
       isSafety: false,
-    });
+    };
   }
 
   if (!lastVisitAt || weighIns.length === 0) return null;
   // Oldest-first from `getWeightHistory`, so the last element is the newest reading.
   const newest = weighIns[weighIns.length - 1];
   const newestMs = Date.parse(newest.occurredAt);
-  // A visit is a DATE with no time; comparing it as the START of its own day means a
+  // A visit is a DATE with no time; comparing against the START of its own day means a
   // weigh-in taken later the same day as the visit counts as "since", which is the
   // reading the owner would give it.
   const visitMs = Date.parse(`${lastVisitAt}T00:00:00`);
   if (Number.isNaN(newestMs) || Number.isNaN(visitMs)) return null;
+
+  // A FUTURE-DATED VISIT IS NOT "THE LAST VISIT" (adversarial pass). `facts.lastVisitAt`
+  // is `readLastVisitDate`'s unbounded `MAX(visited_at)` — the reader migration 066 and
+  // CLAUDE.md both name as undefended — so a visit row dated tomorrow made this gate
+  // fire against a pet weighed an hour ago and print "Last weighed Sep 11 — before the
+  // last visit" on a page that also says the visit has not happened. Live today via
+  // CUL-946, which serialises `visited_at` through `toISOString()` and stores every
+  // evening's visit as tomorrow.
+  //
+  // The bound is the report's own rung 1 — STRICTLY BEFORE TODAY (`report.ts` skips
+  // today- and future-dated visits) — so this page and the document it hands the vet
+  // agree about which visit is the last one.
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  if (visitMs >= startOfToday.getTime()) return null;
+
   if (newestMs >= visitMs) return null;
 
-  return screen({
+  const when = formatVisitDate(localDateKeyOf(newest.occurredAt), new Date(rundown.generatedAtMs));
+  return {
     id: 'weight-stale',
-    text: tile.value,
-    detail: `Last weighed ${formatVisitDate(localDateKeyOf(newest.occurredAt), now)} — before the last visit`,
+    // THE CLAIM LEADS, the range supports it (Dr. Chen's lens, adversarial pass). The
+    // first cut put `tile.value` here — so read aloud, item four of *Worth raising* was
+    // "8.6–9.4 lb", a range over up to sixty readings, with the actual thing worth
+    // raising in tertiary fine print underneath.
+    //
+    // Both halves are still record-anchored: a DATE, and the order of two dates the
+    // record already holds. No duration is stated and no window is opened (C-19).
+    text: `Last weighed ${when} — before the last visit`,
+    detail: tile.detail ? `${tile.value} · ${tile.detail}` : tile.value,
     source: 'weight',
     sourceLabel: 'from the record',
     isSafety: false,
-  });
+  };
 }
 
 /** An instant's local calendar day, so `formatVisitDate` reads it in the owner's zone. */
@@ -311,14 +377,28 @@ function localDateKeyOf(iso: string): string {
 }
 
 /**
- * Refuse a row this module assembled if it turns a decline into a taste.
+ * Refuse a row whose text THIS MODULE composed, if it turns a decline into a taste.
  *
- * Dropping is safe HERE and only here: none of the three assembled rows is a safety
- * statement, so its absence removes nothing the owner needs to be warned about. The
- * Signal's rows never reach this function — see `PREFERENCE_RE`.
+ * ── WHAT IT COVERS, AND WHY THAT IS NARROWER THAN THE FIRST CUT ──────────────────
+ * Exactly one row is composed here: the course row's `${name} — ${value}` join, where
+ * owner free-text (a drug name) meets a string this module wrote. Everything else is
+ * QUOTED VERBATIM from a module that renders the same sentence elsewhere on the same
+ * screen — the trial strip's header and line, the rundown's weight tile — and
+ * screening those here would mean Worth raising silently disagreeing with the identical
+ * string printed two hundred pixels below it. Quoted, never re-derived, applies to the
+ * screen as much as to the counts.
+ *
+ * That narrowing came from a measured harm, not from principle alone. The blanket
+ * version nulled the DETAIL of any tripping row — so a trial whose food is called
+ * "the kibble she prefers" lost its coverage denominator (*meals logged on 20 of 23
+ * days*), silently, with no test and no way for the owner to know a number had been
+ * removed. A screen that deletes evidence to avoid a word is the wrong trade on a page
+ * a clinician reads.
+ *
+ * Dropping the whole row is safe here and only here: the course row is not a safety
+ * statement, so its absence warns nobody of nothing. The Signal's rows never reach this
+ * function at all — see `PREFERENCE_RE`.
  */
 function screen(row: WorthRaisingRow): WorthRaisingRow | null {
-  if (PREFERENCE_RE.test(row.text)) return null;
-  if (row.detail && PREFERENCE_RE.test(row.detail)) return { ...row, detail: null };
-  return row;
+  return PREFERENCE_RE.test(row.text) ? null : row;
 }

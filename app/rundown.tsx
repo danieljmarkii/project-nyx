@@ -235,7 +235,17 @@ export default function RundownScreen() {
     [getReady],
   );
 
-  const petName = activePet?.name ?? 'your pet';
+  // The SUBJECT's name, never `activePet`'s (CUL-574 / AC 11, and this screen's own
+  // header). Before any read has answered the screen genuinely does not know whose
+  // record it is, so it names nobody rather than naming the active pet — which in
+  // Get-ready mode can be a different animal from the one the page is about. There is
+  // no `?? activePet?.name` rung, for the reason `resolveRecordPetName` has none:
+  // correct-but-anonymous beats confidently wrong (C-9).
+  //
+  // Not reachable from today's only entry point (the strip always opens its own pet's
+  // appointment) and reachable from the next one — the CUL-253 reminder deep link is a
+  // planned, open item.
+  const subjectName = getReady?.petName ?? rundown?.petName ?? null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -255,7 +265,9 @@ export default function RundownScreen() {
       {status === 'loading' && (
         <View style={styles.center}>
           <WhorlSpinner size="md" ground="day" />
-          <Text style={styles.loadingText}>Pulling {petName}’s record together…</Text>
+          <Text style={styles.loadingText}>
+            {subjectName ? `Pulling ${subjectName}’s record together…` : 'Pulling the record together…'}
+          </Text>
         </View>
       )}
 
@@ -373,21 +385,33 @@ async function buildForAppointment(
   myId: number,
   loadIdRef: { current: number },
 ): Promise<WorthRaising> {
-  const pet = usePetStore.getState().pets.find((p) => p.id === subjectId) ?? null;
+  // ONE snapshot, read once. Two `getState()` calls here were not a race — both are
+  // synchronous with no await between them — but a reader has to prove that each time.
+  const { pets } = usePetStore.getState();
+  const pet = pets.find((p) => p.id === subjectId) ?? null;
 
   const [findings, trialInput] = await Promise.all([
     readSignalCache(subjectId)
-      .then((row) => row?.findings ?? [])
-      // Unreadable cache (offline / never generated). NULL, not [] — an empty list
-      // says "nothing standing" and this says "we could not look".
+      // `row ? row.findings : null` — NOT `row?.findings ?? []`, and the difference is
+      // the whole point of the two states.
+      //
+      // `readSignalCache` returns null when there is NO CACHE ROW, and it gets there
+      // without throwing: PostgREST's `maybeSingle()` answers zero rows with
+      // `{data: null, error: null}`. So the `?? []` form turned "the engine has never
+      // run for this pet" into "the engine found nothing" — `signalUnavailable` false,
+      // no gap line, and the quiet-record treatment on a record nobody has looked at.
+      // Reachable on a new pet booking a first appointment, and on any pet whose regens
+      // have never succeeded. Absence of a computed finding is not absence of a finding.
+      //
+      // `row.findings` is already `[]` when the engine ran and found nothing, so the
+      // genuinely-quiet record still renders mock B1b.
+      .then((row) => (row ? row.findings : null))
+      // A throw is the other unreadable case (offline, or a failed request).
       .catch(() => null),
     pet
       ? loadDietTrialFacts({
           pet: { id: pet.id, name: pet.name, species: pet.species, sex: pet.sex },
-          otherPetNames: usePetStore
-            .getState()
-            .pets.filter((p) => p.id !== pet.id)
-            .map((p) => p.name),
+          otherPetNames: pets.filter((p) => p.id !== pet.id).map((p) => p.name),
           signalsV2: true,
         }).catch(() => null)
       : Promise.resolve(null),

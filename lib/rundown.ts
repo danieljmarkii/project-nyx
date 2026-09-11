@@ -517,7 +517,7 @@ export interface MedItemName {
 // none, so we resolve the drug library's brand-first name (B-171, the app's owner-facing
 // naming rule); a nameless dose (no item, or an uncached one) falls back to plain
 // "Medication" — honest (doses happened, the drug is unknown), never a guess.
-function resolveCourseName(course: MedicationCourse, itemNames: Map<string, MedItemName>): string {
+export function resolveCourseName(course: MedicationCourse, itemNames: Map<string, MedItemName>): string {
   if (course.drugName && course.drugName.trim().length > 0) return course.drugName;
   const item = course.medicationItemId ? itemNames.get(course.medicationItemId) : undefined;
   return (item ? drugDisplayName(item.generic, item.brand) : null) ?? 'Medication';

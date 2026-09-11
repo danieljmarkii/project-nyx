@@ -6,6 +6,7 @@
 jest.mock('./supabase', () => ({ supabase: {} }));
 
 import { buildWorthRaising, WORTH_RAISING_CAP } from './getReady';
+import { medHistoryCutoffMs } from './rundown';
 import type { WorthRaisingInput } from './getReady';
 import type { CachedFinding, SignalFinding } from './signal';
 import type { Rundown, RundownTile } from './rundown';
@@ -355,8 +356,12 @@ describe('the weight gap — a DATE, never an invented duration', () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].source).toBe('weight');
-    expect(rows[0].detail).toContain('Last weighed');
-    expect(rows[0].detail).toContain('before the last visit');
+    // THE CLAIM leads and the range supports it: read aloud, item four of *Worth
+    // raising* used to be "4.0–4.2 kg", a range over up to sixty readings, with the
+    // actual thing worth raising in fine print underneath.
+    expect(rows[0].text).toContain('Last weighed');
+    expect(rows[0].text).toContain('before the last visit');
+    expect(rows[0].detail).toContain('4.0–4.2 kg');
   });
 
   it('stays silent when the pet HAS been weighed since the last visit', () => {
@@ -423,5 +428,224 @@ describe('the B-789 suppression is inherited, not re-derived', () => {
   it('lets it through when the record shows no refusal', () => {
     const { rows } = buildWorthRaising(input({ findings: [reassuring], suppressTrialResponse: false }));
     expect(rows).toHaveLength(1);
+  });
+});
+
+// ── The adversarial pass's findings, each pinned (CUL-903, 2026-09-11) ────────────
+
+describe('the ordering keeps the Signal band above the two weakest rows', () => {
+  it('does not cap an Established correlation off the page to make room for a weight date', () => {
+    // The measured case: a wedge owner's record with a trial, an unterminated course
+    // and a weight gap. The first ordering gave three of four optional slots to the
+    // trial, the course and the weight, leaving ONE for the whole insight band — and a
+    // stand-down marker ranks at the top of that band, so the app's single most
+    // actionable sentence did not reach the page read aloud in the exam room.
+    const standDown = finding({
+      text: 'No vomiting logged for Mochi in 14 days.',
+      rank: 1,
+      finding: {
+        type: 'stood_down',
+        priorityClass: 'insight',
+        symptomType: 'vomit',
+        recencyDays: 14,
+        tier: 'standard',
+        lastEpisodeIso: new Date(NOW - 20 * DAY).toISOString(),
+        stoodDownAt: new Date(NOW - 1 * DAY).toISOString(),
+        formerRank: 1,
+      } satisfies SignalFinding,
+    });
+    const correlation = finding({
+      text: 'Chicken shows up before Mochi’s vomiting — 7 of 9 episodes.',
+      rank: 2,
+    });
+    const lastVisitAt = new Date(NOW - 40 * DAY).toISOString().slice(0, 10);
+
+    const { rows } = buildWorthRaising(
+      input({
+        findings: [
+          finding({ text: 'Mochi has finished 2 of 6 meals rated since Tuesday.', rank: 0, finding: SAFETY }),
+          standDown,
+          correlation,
+        ],
+        trialStrip: {
+          header: 'Hydrolyzed trial · day 23 of 56',
+          line: 'Royal Canin HP · ends Oct 12 · meals logged on 20 of 23 days',
+          progressFraction: 0.41,
+          trialResponseLine: null,
+        },
+        rundown: rundown({
+          facts: {
+            courses: [course()],
+            medItemNames: new Map(),
+            lastVisitAt,
+            weighIns: [weighIn(200)],
+          },
+        }),
+      }),
+    );
+
+    const texts = rows.map((r) => r.text);
+    expect(texts[0]).toContain('2 of 6 meals'); // safety still leads, above the cap
+    expect(texts).toContain(correlation.text);
+    // The stand-down stays too — the issue's own counterexample expects it, and its
+    // copy refuses to reassure. It is the WEIGHT row that yields.
+    expect(texts).toContain(standDown.text);
+    expect(rows.some((r) => r.source === 'weight')).toBe(false);
+  });
+});
+
+describe('the course row asks a question the record can actually answer', () => {
+  it('ignores a dose-derived course, whose `end` is `none` BY CONSTRUCTION', () => {
+    // `deriveMedicationCourses`: "no regimen, no status, so `end` is always `none`". So
+    // `end.kind !== 'ended'` is permanently true for every ad-hoc dose ever logged, and
+    // one Cerenia tablet given yesterday held a capped slot forever under a question —
+    // *is she still meant to be on this?* — that is fabricated for a PRN dose.
+    const adHoc = course({
+      key: 'item:x',
+      source: 'doses',
+      regimenId: null,
+      drugName: null,
+      medicationItemId: 'item-x',
+      dosesLogged: 1,
+    });
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: {
+            courses: [adHoc],
+            medItemNames: new Map([['item-x', { generic: null, brand: 'Cerenia' }]]),
+            lastVisitAt: null,
+            weighIns: [weighIn(5)],
+          },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('does not let a nameless orphan dose suppress the real unterminated regimen', () => {
+    // The first cut took the first unterminated course of ANY kind and returned null
+    // when it could not name it — so the orphan masked the regimen behind it, while the
+    // rundown's past-meds block, printed directly below, named them both.
+    const orphan = course({
+      key: 'item:unspecified',
+      source: 'doses',
+      regimenId: null,
+      drugName: null,
+      medicationItemId: null,
+      lastDoseIso: new Date(NOW - 1 * DAY).toISOString(),
+    });
+    const regimen = course({ key: 'r1', drugName: 'Prednisolone' });
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: {
+            courses: [orphan, regimen],
+            medItemNames: new Map(),
+            lastVisitAt: null,
+            weighIns: [weighIn(5)],
+          },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toContain('Prednisolone');
+  });
+});
+
+describe('the weight gate refuses a future "last visit"', () => {
+  it('stays silent when the last visit has not happened yet', () => {
+    // `facts.lastVisitAt` is `readLastVisitDate`'s unbounded MAX(visited_at), which
+    // CLAUDE.md names as undefended — and CUL-946 puts a tomorrow-dated row there for
+    // every visit logged after ~5pm PDT. Without the bound this printed
+    // "Last weighed <today> — before the last visit" over a pet weighed an hour ago.
+    const tomorrow = new Date(NOW + DAY).toISOString().slice(0, 10);
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: {
+            courses: [],
+            medItemNames: new Map(),
+            lastVisitAt: tomorrow,
+            weighIns: [weighIn(0)],
+          },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('still fires for a visit strictly before today', () => {
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: {
+            courses: [],
+            medItemNames: new Map(),
+            lastVisitAt: new Date(NOW - 2 * DAY).toISOString().slice(0, 10),
+            weighIns: [weighIn(30)],
+          },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source).toBe('weight');
+  });
+});
+
+describe('the screen no longer deletes a denominator', () => {
+  it('keeps the trial’s coverage line when the FOOD is named "the kibble she prefers"', () => {
+    // The blanket screen nulled the detail of any tripping row, so a real coverage
+    // denominator vanished over a word in a food name — silently, with no test.
+    const line = 'The kibble she prefers · ends Oct 12 · meals logged on 20 of 23 days';
+    const { rows } = buildWorthRaising(
+      input({
+        trialStrip: {
+          header: 'Hydrolyzed trial · day 23 of 56',
+          line,
+          progressFraction: 0.41,
+          trialResponseLine: null,
+        },
+      }),
+    );
+    expect(rows[0].detail).toBe(line);
+  });
+});
+
+describe('the course window runs on the RUNDOWN’s clock, not a fresh one', () => {
+  it('shows the same courses the block below it shows', () => {
+    // `splitPastCourses` windows at 12 months. Reading `Date.now()` here opened a SECOND
+    // window over the population the rundown block had already split, so Worth raising
+    // could disagree with the rows printed directly under it about which courses exist.
+    //
+    // The first version of this test could not see it: both clocks were `NOW` in every
+    // fixture, so the mutation that swapped them changed nothing. The two are separated
+    // here, and the course is placed in the gap between the two cutoffs — shown under
+    // the rundown's clock, folded under a fresh one.
+    const generatedAtMs = NOW - 30 * DAY;
+    const cutoffRundown = medHistoryCutoffMs(generatedAtMs);
+    const cutoffFresh = medHistoryCutoffMs(NOW);
+    expect(cutoffRundown).toBeLessThan(cutoffFresh); // the premise
+
+    const inTheGap = new Date((cutoffRundown + cutoffFresh) / 2).toISOString();
+    const borderline = course({ drugName: 'Prednisolone', lastDoseIso: inTheGap });
+
+    const { rows } = buildWorthRaising(
+      input({
+        nowMs: NOW,
+        rundown: rundown({
+          generatedAtMs,
+          facts: {
+            courses: [borderline],
+            medItemNames: new Map(),
+            lastVisitAt: null,
+            weighIns: [weighIn(5)],
+          },
+        }),
+      }),
+    );
+    expect(rows.map((r) => r.text)).toEqual([
+      expect.stringContaining('Prednisolone'),
+    ]);
   });
 });

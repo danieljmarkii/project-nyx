@@ -15,19 +15,29 @@ jest.mock('expo-router', () => ({
 const flags = { eligible: true, optedIn: true };
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => flags.eligible }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => flags.optedIn }));
+const activePet: { current: { id: string; name: string; species: string } } = {
+  current: { id: 'p1', name: 'Mochi', species: 'cat' },
+};
 jest.mock('../../store/petStore', () => {
-  const pet = { id: 'p1', name: 'Mochi', species: 'cat' };
-  const state = { activePet: pet, pets: [pet] };
+  const read = () => ({ activePet: activePet.current, pets: [activePet.current] });
   return {
     usePetStore: Object.assign(
-      (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
-      { getState: () => state },
+      (selector?: (s: ReturnType<typeof read>) => unknown) =>
+        selector ? selector(read()) : read(),
+      { getState: read },
     ),
   };
 });
 jest.mock('../../lib/sync', () => ({ syncPendingVetAppointments: jest.fn(async () => undefined) }));
 
 const mockHome = { current: null as unknown };
+// Per-pet answers plus a controllable hold, so a test can park ONE read open while a
+// newer one for a different pet overtakes it.
+const mockByPet: Record<string, unknown> = {};
+const mockGate: { holdNext: boolean; release: null | (() => void) } = {
+  holdNext: false,
+  release: null,
+};
 const mockAsked = { value: false };
 jest.mock('../../lib/vetVisits', () => {
   const actual = jest.requireActual('../../lib/vetVisits');
@@ -35,7 +45,15 @@ jest.mock('../../lib/vetVisits', () => {
     // The formatters and `resolveStripPhase` are PURE and stay real — a mock standing
     // in for a pure function makes the test re-derive the rule it is checking (C-34).
     ...actual,
-    readHomeAppointment: jest.fn(async () => mockHome.current),
+    readHomeAppointment: jest.fn(async (petId: string) => {
+      if (mockGate.holdNext) {
+        mockGate.holdNext = false;
+        await new Promise<void>((resolve) => {
+          mockGate.release = resolve;
+        });
+      }
+      return petId in mockByPet ? mockByPet[petId] : mockHome.current;
+    }),
     cancelVetAppointment: jest.fn(async () => undefined),
   };
 });
@@ -73,6 +91,10 @@ beforeEach(() => {
   flags.optedIn = true;
   mockHome.current = null;
   mockAsked.value = false;
+  mockGate.holdNext = false;
+  mockGate.release = null;
+  for (const k of Object.keys(mockByPet)) delete mockByPet[k];
+  activePet.current = { id: 'p1', name: 'Mochi', species: 'cat' };
 });
 
 describe('the flag gates the strip AND the read', () => {
@@ -230,5 +252,37 @@ describe('*It didn’t* — Home’s one write, and it is confirmed first', () =
     // And the strip stays put, so the owner can see the appointment is still there.
     expect(r.queryByText(/Did Tuesday/)).toBeTruthy();
     spy.mockRestore();
+  });
+});
+
+describe('a slow read for the previous pet cannot hide the current pet’s strip', () => {
+  it('keeps pet B’s appointment when pet A’s read resolves late', async () => {
+    // `loadedFor` alone stops the strip ever SHOWING A's row under B's name — the render
+    // check does that. What it does not stop is the out-of-order WRITE: A's late read
+    // sets `loadedFor` back to A, and the strip B had correctly rendered disappears
+    // until the next focus. A real upcoming appointment silently missing after a routine
+    // pet switch, on the surface whose whole job is to surface it.
+    mockByPet['p1'] = homeAppointment('upcoming');
+    mockByPet['p2'] = {
+      ...(homeAppointment('upcoming') as HomeAppointment),
+      id: 'appt-2',
+      petId: 'p2',
+      view: { ...(homeAppointment('upcoming') as HomeAppointment).view, where: 'Second Clinic' },
+    };
+
+    mockGate.holdNext = true;
+    const r = render(<AppointmentStrip />);
+    await waitFor(() => expect(mockGate.release).not.toBeNull());
+
+    // The owner switches pets; B's read is fast and renders.
+    activePet.current = { id: 'p2', name: 'Biscuit', species: 'dog' };
+    r.rerender(<AppointmentStrip />);
+    await r.findByText('Second Clinic');
+
+    // A's stale read lands. B must still be on screen.
+    await act(async () => {
+      mockGate.release?.();
+    });
+    expect(r.queryByText('Second Clinic')).toBeTruthy();
   });
 });
