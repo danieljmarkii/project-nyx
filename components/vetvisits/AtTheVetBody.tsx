@@ -60,6 +60,11 @@ export function AtTheVetBody({
         </ThemedText>
       </View>
 
+      {/* No questions section when none were prepared, and no empty state for it
+          either. An empty state may be forward-looking; it may not ask for an action
+          there is no door for (the rule VV-2's visit detail already carries) — and
+          *Add a question* is VV-5's. In a room where the owner is holding an animal,
+          a line saying they prepared nothing is chrome that only shames. */}
       {questions.length > 0 ? (
         <View style={styles.block}>
           <SectionLabel label="Your questions" header style={styles.sectionLabel} />
@@ -100,7 +105,12 @@ export function AtTheVetBody({
           activeOpacity={0.7}
           disabled={capturing}
           accessibilityRole="button"
-          accessibilityLabel={`Photograph the paperwork for ${petName}`}
+          // `disabled` here is a TRUE claim — the control exists and is busy — so it
+          // is paired with a label that says why (C-7). An unexplained "dimmed" is
+          // what makes a screen reader report a dead end.
+          accessibilityLabel={
+            capturing ? 'Saving the photo' : `Photograph the paperwork for ${petName}`
+          }
           accessibilityState={{ disabled: capturing }}
         >
           <Camera size={18} color={theme.colorAccentInk} strokeWidth={2} />

@@ -79,6 +79,15 @@ describe('§5.6 — each moment maps to its documented pattern', () => {
     expect(mockImpact).toHaveBeenCalledWith('rigid');
   });
 
+  it('a saved vet visit plays the SOFT TAP, never the success pattern (CUL-902)', () => {
+    // The rule is the issue's, and it is about the moment rather than the severity:
+    // the owner has just come out of a vet's room, and a phone congratulating them on
+    // tracking is the wrong beat whatever they were told in there.
+    haptics.commitVisit();
+    expect(mockImpact).toHaveBeenCalledWith('soft');
+    expect(mockNotification).not.toHaveBeenCalled();
+  });
+
   it('the first-insight arrival plays the soft success tap (§4)', () => {
     haptics.insightArrival();
     expect(mockNotification).toHaveBeenCalledWith('success');
@@ -86,7 +95,7 @@ describe('§5.6 — each moment maps to its documented pattern', () => {
 });
 
 describe('silence on safety (D7) — the absence is the API', () => {
-  it('exports exactly the seven verbs, and nothing a safety surface could call', () => {
+  it('exports exactly the eight verbs, and nothing a safety surface could call', () => {
     // There is no `safetyArrival` / `alert` / `warn` verb, deliberately: plainness is
     // the severity signal, and a buzz on bad news is the phone rewarding it. Pinning
     // the export list means adding one is a visible, argued change — not a slip.
@@ -99,6 +108,7 @@ describe('silence on safety (D7) — the absence is the API', () => {
     expect(Object.keys(haptics).sort()).toEqual([
       'commitRoutine',
       'commitSymptom',
+      'commitVisit',
       'destructiveConfirm',
       'insightArrival',
       'openMenu',

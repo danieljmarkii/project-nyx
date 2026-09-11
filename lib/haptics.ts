@@ -88,6 +88,24 @@ export function commitSymptom(): void {
 }
 
 /**
+ * A vet visit was saved (CUL-902 / VV-4).
+ *
+ * A SINGLE SOFT TAP, never the success pattern — the issue's ruling, and the same
+ * shape as `commitSymptom` for a DIFFERENT reason, which is why it is its own verb
+ * rather than a second caller of that one (C-34: same value, different question →
+ * two constants, each with its derivation written down; and the naming rule here is
+ * one verb per MOMENT, so `commitSymptom()` on a visit would be a name that lies).
+ *
+ * The reason is not that a visit is worrying. It is that the owner has just come out
+ * of a vet's room, which is the one moment in this app where the phone congratulating
+ * them on tracking would land worst — whatever they were told in there. The visit is
+ * recorded; that is all the beat says.
+ */
+export function commitVisit(): void {
+  play(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft));
+}
+
+/**
  * A chip picked up on a completion card — intake (WSAVA), adherence, vehicle.
  *
  * The selection tick: the lightest verb in the set, because these rows are answered

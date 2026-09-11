@@ -143,12 +143,17 @@ export function describeVisitSave(args: {
   linked: LinkedLine[];
 }): VisitSaveSummary {
   const { petName, consequence, linked } = args;
-  const anchorsReport = consequence.isLatest;
+  // A FUTURE-DATED visit anchors nothing and is claimed for nothing — not the report,
+  // which skips it until the day arrives, and not Home, whose unbounded
+  // `MAX(visited_at)` WOULD adopt it and then render an absence over a window that
+  // cannot contain anything. The second is why this gates both lines rather than only
+  // the report's: a true sentence about a false window is the worse of the two.
+  const anchorsAnything = consequence.isLatest && consequence.dayRelation !== 'after_today';
 
   let reportLine: string | null = null;
-  if (anchorsReport && consequence.isBeforeToday) {
+  if (anchorsAnything && consequence.dayRelation === 'before_today') {
     reportLine = `${petName}’s vet report now starts from this visit.`;
-  } else if (anchorsReport) {
+  } else if (anchorsAnything) {
     reportLine =
       `From tomorrow, ${petName}’s vet report starts from this visit. ` +
       'One you build today still covers up to yesterday.';
@@ -160,7 +165,7 @@ export function describeVisitSave(args: {
     // Home's "since last visit" is anchored on the pet's most recent visit with no
     // before-today bound, so it moves the moment this visit becomes the latest —
     // which is why it is a separate sentence from the report's, not a clause in it.
-    homeLine: anchorsReport ? '“Since last visit” on Home starts again from here.' : null,
+    homeLine: anchorsAnything ? '“Since last visit” on Home starts again from here.' : null,
     linked,
     offlineLine: VISIT_OFFLINE_LINE,
   };

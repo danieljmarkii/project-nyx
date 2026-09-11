@@ -26,7 +26,7 @@ describe('describeVisitSave — the saved moment (AC 8)', () => {
   it('names the pet in the heading', () => {
     const s = describeVisitSave({
       petName: 'Mochi',
-      consequence: { isLatest: true, isBeforeToday: false },
+      consequence: { isLatest: true, dayRelation: 'today' as const },
       linked: [],
     });
     expect(s.heading).toBe('Saved to Mochi’s visits');
@@ -35,7 +35,7 @@ describe('describeVisitSave — the saved moment (AC 8)', () => {
   it('lists what was linked, in the order it was given', () => {
     const s = describeVisitSave({
       petName: 'Mochi',
-      consequence: { isLatest: true, isBeforeToday: false },
+      consequence: { isLatest: true, dayRelation: 'today' as const },
       linked: LINKED,
     });
     expect(s.linked.map((l) => l.title)).toEqual(['Cerenia kept', 'Oct 28 · recheck']);
@@ -44,7 +44,7 @@ describe('describeVisitSave — the saved moment (AC 8)', () => {
   it('carries the Vet Files offline line verbatim', () => {
     const s = describeVisitSave({
       petName: 'Mochi',
-      consequence: { isLatest: true, isBeforeToday: false },
+      consequence: { isLatest: true, dayRelation: 'today' as const },
       linked: [],
     });
     expect(s.offlineLine).toBe(VISIT_OFFLINE_LINE);
@@ -56,15 +56,19 @@ describe('the report-window sentence (AC 9)', () => {
   // A visit logged TODAY. The report's rung 1 is the most recent visit STRICTLY
   // BEFORE today, so this visit anchors the window from TOMORROW — and a report the
   // owner builds in the car park still runs up to yesterday.
-  const today = { isLatest: true, isBeforeToday: false };
+  const today = { isLatest: true, dayRelation: 'today' } as const;
   // A visit logged for an earlier day, and still the most recent one. It is the
   // anchor already.
-  const earlier = { isLatest: true, isBeforeToday: true };
+  const earlier = { isLatest: true, dayRelation: 'before_today' } as const;
   // A visit logged LATE, behind one already on file. It changes nothing.
-  const behind = { isLatest: false, isBeforeToday: true };
+  const behind = { isLatest: false, dayRelation: 'before_today' } as const;
+  // THE FOURTH STATE, and the one the first cut could not represent: a recheck booked
+  // six weeks out, opened from *Next* and saved with no tap on the picker. The report
+  // skips a future-dated visit for as long as the date is in the future.
+  const future = { isLatest: true, dayRelation: 'after_today' } as const;
 
   it('never says "from today", in any branch — the rule the mock’s D2 frame breaks', () => {
-    for (const consequence of [today, earlier, behind]) {
+    for (const consequence of [today, earlier, behind, future]) {
       const s = describeVisitSave({ petName: 'Mochi', consequence, linked: LINKED });
       // Every string the moment renders, not just the report line: the ban is on the
       // SURFACE, and a "from today" that drifted into the heading or a linked note
@@ -103,6 +107,26 @@ describe('the report-window sentence (AC 9)', () => {
     expect(s.homeLine).toBeNull();
   });
 
+  it('says NOTHING about the report for a FUTURE-dated visit', () => {
+    // Driven from the real `resolveScope` by the adversarial pass: a visit dated 47
+    // days out returns `fallback_90d`, not `since_visit`, for all 47 of them — so
+    // "From tomorrow, your vet report starts from this visit" was false for a month
+    // and a half. The seeds are clamped so this screen can no longer write one; this
+    // is the other half, so the copy cannot make the claim if a future row arrives by
+    // sync from a device that did.
+    const s = describeVisitSave({ petName: 'Mochi', consequence: future, linked: [] });
+    expect(s.reportLine).toBeNull();
+  });
+
+  it('says NOTHING about Home either for a future-dated visit — the truer sentence is the worse one', () => {
+    // Home's anchor IS unbounded, so "since last visit starts again from here" would
+    // be literally true — and that is the harm: the rundown then renders an absence
+    // over a window that cannot contain anything, which is a false all-clear on the
+    // surface an owner reads in the exam room.
+    expect(describeVisitSave({ petName: 'Mochi', consequence: future, linked: [] }).homeLine)
+      .toBeNull();
+  });
+
   it('moves Home’s "since last visit" on any latest visit, today’s included', () => {
     // Home's anchor is an UNBOUNDED MAX(visited_at) (`lib/rundown.ts`), so it moves
     // the moment this visit is the latest — a DIFFERENT bound from the report's, and
@@ -113,8 +137,25 @@ describe('the report-window sentence (AC 9)', () => {
       .toContain('Since last visit');
   });
 
+  it('never asserts wellness, in any branch (clinical-guardrails Pattern 8)', () => {
+    // The saved moment is not an AI read, and the n=1 rule does not reach it — but
+    // it IS the most health-adjacent confirmation in the app, and Pattern 8's
+    // discipline applies wherever an owner-facing template can drift: the invariant
+    // is an assertion, never a comment. A future edit adding "everything's recorded,
+    // you're all set" is exactly the drift this catches.
+    for (const consequence of [today, earlier, behind, future]) {
+      const s = describeVisitSave({ petName: 'Mochi', consequence, linked: LINKED });
+      const everything = [s.heading, s.reportLine, s.homeLine, s.offlineLine]
+        .concat(s.linked.flatMap((l) => [l.title, l.note]))
+        .filter((v): v is string => !!v)
+        .join(' ');
+      expect(/\b(fine|okay|ok|healthy|well|all clear|nothing to worry|all set)\b/i.test(everything))
+        .toBe(false);
+    }
+  });
+
   it('never renders an exclamation mark (nyx-voice)', () => {
-    for (const consequence of [today, earlier, behind]) {
+    for (const consequence of [today, earlier, behind, future]) {
       const s = describeVisitSave({ petName: 'Mochi', consequence, linked: LINKED });
       expect([s.heading, s.reportLine, s.homeLine, s.offlineLine].join(' ')).not.toContain('!');
     }

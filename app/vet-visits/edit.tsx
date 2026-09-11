@@ -13,6 +13,7 @@ import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetVisits } from '../../lib/sync';
 import { dayKeyToLocalDate } from '../../lib/utils';
 import {
+  clampVisitDate,
   localDateKey,
   readVetVisitDetail,
   updateVisitDetails,
@@ -58,7 +59,11 @@ export default function EditVisitScreen() {
           // `visited_at` is a DATE column, read back through `dayKeyToLocalDate` — a
           // bare `new Date(key)` parses UTC midnight, which for anyone behind UTC
           // seeds the picker with the PREVIOUS day (B-441).
-          visitedAt: dayKeyToLocalDate(detail.visit.visited_at) ?? new Date(),
+          //
+          // Clamped for the same reason the after-visit screen is: a future-dated row
+          // can arrive by sync from a device that wrote one, and saving this screen
+          // without touching the picker would write it straight back.
+          visitedAt: clampVisitDate(dayKeyToLocalDate(detail.visit.visited_at) ?? new Date()),
           clinicName: detail.visit.clinic_name ?? '',
           vetName: detail.visit.vet_name ?? '',
           reason: detail.visit.reason ?? '',

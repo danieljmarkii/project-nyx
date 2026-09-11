@@ -82,7 +82,10 @@ export default function AtTheVetScreen() {
       // a note they believe is saving and is not is the worst thing this screen can
       // produce — and the standing line under the field says it is saving.
       console.warn('[at-the-vet] draft save failed:', err);
-      Alert.alert('Not saving just now', 'Your notes are on screen. Try leaving and coming back.');
+      Alert.alert(
+        'Your notes aren’t saving',
+        'What you’ve typed is still on screen. Copy it somewhere safe, then leave and come back to try again.',
+      );
     }
   }, [appointmentId]);
 

@@ -19,7 +19,7 @@ import type { ActiveCourse, LocalVetAppointment } from '../../lib/vetVisits';
 type LogArgs = { appointment: Pick<LocalVetAppointment, 'id' | 'pet_id'>; visitedAt: string };
 
 const mockLogFromAppointment = jest.fn(async (_input: LogArgs) => 'new-visit');
-const mockLinkCourse = jest.fn(async (_id: string, _visit: string) => undefined);
+const mockLinkCourse = jest.fn(async (_id: string, _visit: string) => true);
 const mockUpdateVisit = jest.fn(async () => undefined);
 const mockRepair = jest.fn(async (_petId: string) => 0);
 let mockAppointment: LocalVetAppointment | null = null;
@@ -48,7 +48,7 @@ jest.mock('../../lib/sync', () => ({
   syncPendingVetVisits: jest.fn(async () => undefined),
   syncPendingVetDocuments: jest.fn(async () => undefined),
 }));
-jest.mock('../../lib/haptics', () => ({ commitRoutine: jest.fn() }));
+jest.mock('../../lib/haptics', () => ({ commitVisit: jest.fn() }));
 jest.mock('../../lib/visitPaperwork', () => ({
   captureVisitPaperwork: jest.fn(async () => ({ groupId: null, skipped: null })),
   forgetPaperwork: jest.fn(async () => undefined),
@@ -91,7 +91,7 @@ jest.mock('../../lib/vetVisits', () => {
     logVisitFromAppointment: (input: LogArgs) => mockLogFromAppointment(input),
     logVetVisit: jest.fn(async () => 'cold-visit'),
     linkCourseToVisit: (id: string, visit: string) => mockLinkCourse(id, visit),
-    linkTrialToVisit: jest.fn(async () => undefined),
+    linkTrialToVisit: jest.fn(async () => true),
     updateVisitDetails: () => mockUpdateVisit(),
     bookVetAppointment: jest.fn(async () => 'new-appointment'),
   };
@@ -155,7 +155,7 @@ const modals = () => screen.UNSAFE_queryAllByType(Modal);
 beforeEach(() => {
   jest.clearAllMocks();
   mockLogFromAppointment.mockImplementation(async () => 'new-visit');
-  mockLinkCourse.mockImplementation(async () => undefined);
+  mockLinkCourse.mockImplementation(async () => true);
   mockUpdateVisit.mockImplementation(async () => undefined);
   mockRepair.mockImplementation(async () => 0);
   mockAppointment = appointment();
@@ -192,6 +192,48 @@ describe('AC 11 — the screen writes under the appointment’s pet', () => {
     // A screen that renamed itself here would be telling the owner this visit belongs
     // to a pet it does not.
     expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
+  });
+});
+
+describe('a visit that HAPPENED cannot be dated in the future', () => {
+  it('clamps an appointment booked weeks out to today, with no tap on the picker', async () => {
+    // The adversarial path, in two taps: an owner books a six-week recheck, then taps
+    // *How did it go?* under **Next** — which `app/vet-visits/index.tsx` renders with
+    // no date gate — and just saves. `maximumDate` on the picker constrains a PICK,
+    // never a seed, so the unclamped version wrote `visited_at` 42 days out. The
+    // report then skipped the row for 42 days while the rundown's unbounded
+    // MAX(visited_at) adopted it and rendered an absence over an impossible window.
+    const weeksOut = new Date();
+    weeksOut.setDate(weeksOut.getDate() + 42);
+    mockAppointment = appointment({ scheduled_at: weeksOut.toISOString() });
+
+    render(<AfterVisitScreen />);
+    await screen.findByText('Save Nyx’s visit');
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+
+    await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
+    const written = mockLogFromAppointment.mock.calls[0][0].visitedAt;
+    const now = new Date();
+    const todayKey =
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    // Anchored to the clock rather than to a literal date, so this cannot fail on a
+    // calendar boundary instead of on a change (C-29's time-axis half).
+    expect(written).toBe(todayKey);
+  });
+
+  it('leaves a PAST appointment’s own day alone — the clamp is a ceiling, not a default', async () => {
+    const lastWeek = new Date();
+    lastWeek.setDate(lastWeek.getDate() - 7);
+    mockAppointment = appointment({ scheduled_at: lastWeek.toISOString() });
+
+    render(<AfterVisitScreen />);
+    await screen.findByText('Save Nyx’s visit');
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+
+    await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
+    const expected =
+      `${lastWeek.getFullYear()}-${String(lastWeek.getMonth() + 1).padStart(2, '0')}-${String(lastWeek.getDate()).padStart(2, '0')}`;
+    expect(mockLogFromAppointment.mock.calls[0][0].visitedAt).toBe(expected);
   });
 });
 
@@ -235,6 +277,42 @@ describe('AC 7 — exactly one Modal (the CUL-662 pin)', () => {
   });
 });
 
+describe('the visit is created ONCE, however fast the taps land', () => {
+  it('two plan actions in one tick create ONE visit, not two', async () => {
+    mockCourses = [course()];
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+
+    // `busyRow` is STATE, so two presses in the same tick both read `null` and both
+    // proceed past it. Two `vet_visits` rows for one visit is the worst outcome on
+    // this screen: the appointment points at one, the plan links split across both,
+    // and the report window anchors on whichever sorts first.
+    await act(async () => {
+      fireEvent.press(screen.getByText('Keep'));
+      fireEvent.press(screen.getByLabelText('Add — Started something new?'));
+    });
+
+    await waitFor(() => expect(mockLinkCourse).toHaveBeenCalled());
+    expect(mockLogFromAppointment).toHaveBeenCalledTimes(1);
+  });
+
+  it('a FAILED create can be retried — the in-flight slot is cleared either way', async () => {
+    mockCourses = [course()];
+    mockLogFromAppointment.mockRejectedValueOnce(new Error('disk full'));
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+
+    await act(async () => { fireEvent.press(screen.getByText('Keep')); });
+    await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
+    expect(mockLinkCourse).not.toHaveBeenCalled();
+
+    // A retry must be a retry, not a re-await of a promise that already rejected.
+    await act(async () => { fireEvent.press(screen.getByText('Keep')); });
+    await waitFor(() => expect(mockLinkCourse).toHaveBeenCalledTimes(1));
+    expect(mockLogFromAppointment).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('AC 7 — the plan rows read the record before they ask', () => {
   it('renders an ACTIVE course as a confirmation, not a blank form', async () => {
     mockCourses = [course()];
@@ -259,6 +337,25 @@ describe('AC 7 — the plan rows read the record before they ask', () => {
     // *Keep* must leave it exactly where it was.
     const { endRegimen } = jest.requireMock('../../lib/medicationSetup');
     expect(endRegimen).not.toHaveBeenCalled();
+  });
+
+  it('*Keep* on an ALREADY-linked course says "still on it", never "linked to this visit"', async () => {
+    // First provenance wins, so the write returns false — and the moment's line must
+    // follow the record rather than the verdict (CUL-825). The line is what an owner
+    // reads to know what the save did; claiming a link it did not make would be the
+    // moment lying about where a prescription came from.
+    mockCourses = [course({ vetVisitId: 'visit-march' })];
+    mockLinkCourse.mockResolvedValue(false);
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+
+    fireEvent.press(screen.getByText('Keep'));
+    await waitFor(() => expect(mockLinkCourse).toHaveBeenCalledTimes(1));
+
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Saved to Nyx’s visits');
+    expect(screen.getByText('still on it')).toBeTruthy();
+    expect(screen.queryByText('linked to this visit')).toBeNull();
   });
 
   it('*Stopped* ends the course, and does NOT link it', async () => {
@@ -317,8 +414,10 @@ describe('the saved moment (AC 8)', () => {
     fireEvent.press(screen.getByText('Save Nyx’s visit'));
 
     await screen.findByText('Saved to Nyx’s visits');
-    const { commitRoutine } = jest.requireMock('../../lib/haptics');
-    expect(commitRoutine).toHaveBeenCalledTimes(1);
+    // `commitVisit`, not `commitRoutine` — the verb a meal uses plays the system
+    // SUCCESS notification, and the issue rules that out for a visit.
+    const { commitVisit } = jest.requireMock('../../lib/haptics');
+    expect(commitVisit).toHaveBeenCalledTimes(1);
   });
 });
 

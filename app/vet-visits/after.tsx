@@ -13,7 +13,7 @@ import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
-import { commitRoutine } from '../../lib/haptics';
+import { commitVisit } from '../../lib/haptics';
 import { syncPendingMedications, syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import { linkVetDocumentVisit } from '../../lib/vetDocumentLibrary';
 import { endRegimen } from '../../lib/medicationSetup';
@@ -35,6 +35,7 @@ import {
 } from '../../lib/vetVisitPlan';
 import {
   bookVetAppointment,
+  clampVisitDate,
   formatVisitDate,
   linkCourseToVisit,
   linkTrialToVisit,
@@ -124,6 +125,14 @@ export default function AfterVisitScreen() {
   // later (C-22's reasoning — consumption has to be visible to every closure).
   const visitIdRef = useRef<string | null>(null);
   const [visitId, setVisitId] = useState<string | null>(null);
+  // The create, while it is in flight. `visitIdRef` alone makes `ensureVisit`
+  // idempotent only AFTER the write resolves, and `busyRow` cannot close the window
+  // either — it is STATE, so two presses landing in one tick both read `null` and both
+  // proceed. Two `vet_visits` rows for one visit is the worst outcome on this screen:
+  // the appointment points at one of them, the plan links split across both, and the
+  // report window anchors on whichever sorts first. A promise in a ref is what makes
+  // the second caller wait for the first rather than race it.
+  const creatingVisit = useRef<Promise<string> | null>(null);
   // Seeded once from the record; a re-focus (returning from /food-capture) must not
   // overwrite what the owner has typed since.
   const seeded = useRef(false);
@@ -172,7 +181,11 @@ export default function AfterVisitScreen() {
           // The appointment's own day, read as a LOCAL calendar day — the instant is
           // stored UTC and `toISOString().slice(0, 10)` would log an evening visit in
           // the Americas as tomorrow (CUL-946, live on the screen this replaces).
-          visitedAt: appt ? new Date(appt.scheduled_at) : new Date(),
+          //
+          // CLAMPED, because this screen is reachable from *Next* — an appointment
+          // that has NOT happened yet — and the picker's `maximumDate` constrains a
+          // pick, never a seed. See `clampVisitDate`.
+          visitedAt: appt ? clampVisitDate(new Date(appt.scheduled_at)) : new Date(),
           clinicName: appt?.clinic_name ?? prefill?.clinicName ?? '',
           vetName: appt?.vet_name ?? prefill?.vetName ?? '',
           reason: appt?.reason ?? '',
@@ -215,11 +228,12 @@ export default function AfterVisitScreen() {
    */
   const ensureVisit = useCallback(async (): Promise<string> => {
     if (visitIdRef.current) return visitIdRef.current;
+    if (creatingVisit.current) return creatingVisit.current;
     if (!petId) throw new Error('ensureVisit: no pet for this screen');
 
     const visitedAt = localDateKey(fields.visitedAt);
-    const id = appointment
-      ? await logVisitFromAppointment({
+    const create = appointment
+      ? logVisitFromAppointment({
           appointment,
           visitedAt,
           clinicName: fields.clinicName,
@@ -227,7 +241,7 @@ export default function AfterVisitScreen() {
           reason: fields.reason,
           notes: fields.notes,
         })
-      : await logVetVisit({
+      : logVetVisit({
           petId,
           visitedAt,
           clinicName: fields.clinicName,
@@ -235,6 +249,18 @@ export default function AfterVisitScreen() {
           reason: fields.reason,
           notes: fields.notes,
         });
+    // Parked in the ref SYNCHRONOUSLY, before the first `await` — a second caller
+    // arriving one tick later must find it there, not after it resolves.
+    creatingVisit.current = create;
+
+    let id: string;
+    try {
+      id = await create;
+    } finally {
+      // Cleared on failure too, so a retry is a retry rather than a re-await of a
+      // promise that already rejected.
+      creatingVisit.current = null;
+    }
 
     visitIdRef.current = id;
     setVisitId(id);
@@ -283,6 +309,7 @@ export default function AfterVisitScreen() {
   async function handleCourseVerdict(course: ActiveCourse, verdict: CourseVerdict) {
     if (busyRow) return;
     setBusyRow(course.id);
+    let linkedNow = false;
     try {
       const id = await ensureVisit();
       if (verdict === 'stopped') {
@@ -294,7 +321,10 @@ export default function AfterVisitScreen() {
         await endRegimen(course.id, localDateKey(new Date()));
         syncPendingMedications().catch(console.error);
       } else {
-        await linkCourseToVisit(course.id, id);
+        // The RETURN says whether the link landed: it is first-wins, so a course
+        // prescribed at an earlier visit keeps saying so, and the line below must not
+        // claim otherwise (CUL-825 — ask, never assert).
+        linkedNow = await linkCourseToVisit(course.id, id);
         syncPendingMedications().catch(console.error);
         if (verdict === 'changed') setSheet({ kind: 'med', editing: toRegimen(course) });
       }
@@ -302,7 +332,7 @@ export default function AfterVisitScreen() {
       note({
         key: `course:${course.id}`,
         title: `${course.drugName} ${courseVerdictLabel(verdict)}`,
-        note: verdict === 'stopped' ? 'ended today' : 'linked to this visit',
+        note: verdict === 'stopped' ? 'ended today' : linkedNow ? 'linked to this visit' : 'still on it',
       });
       if (petId) await loadPlan(petId);
     } catch (err) {
@@ -330,7 +360,7 @@ export default function AfterVisitScreen() {
       // as an UPDATE (§5.1 — the same-insert rule is about new rows), and doing it
       // before the end means a crash between the two leaves a running trial with its
       // provenance recorded rather than an ended one with none.
-      await linkTrialToVisit(trial.id, id);
+      const linkedNow = await linkTrialToVisit(trial.id, id);
       if (verdict === 'ended') {
         const { complete } = describeActiveTrial(trial);
         await endActiveTrial({
@@ -345,7 +375,7 @@ export default function AfterVisitScreen() {
       note({
         key: 'trial',
         title: `${trial.foodLabel?.trim() || 'Diet trial'} ${trialVerdictLabel(verdict)}`,
-        note: verdict === 'ended' ? 'ended today' : 'linked to this visit',
+        note: verdict === 'ended' ? 'ended today' : linkedNow ? 'linked to this visit' : 'still running',
       });
       if (petId) await loadPlan(petId);
     } catch (err) {
@@ -435,11 +465,16 @@ export default function AfterVisitScreen() {
     if (saving || !petId) return;
     setSaving(true);
     try {
-      // `ensureVisit` writes these same fields when it CREATES the row, so the
-      // update is only for a row a plan action created earlier in this session.
-      // Writing them twice would move `updated_at` on a row nothing changed, which
-      // under LWW lets a no-op win over another device's real edit.
-      const existed = visitIdRef.current !== null;
+      // `ensureVisit` writes these same fields when it CREATES the row, so the update
+      // is only for a row that already existed when this call started. Writing them
+      // twice would move `updated_at` on a row nothing changed, which under LWW lets
+      // a no-op win over another device's real edit.
+      //
+      // The in-flight slot counts as "existed", and that is not belt-and-braces: a
+      // create started by a plan action and still resolving did NOT see the fields as
+      // they stand now, so skipping the update there would silently drop whatever the
+      // owner typed between the two.
+      const existed = visitIdRef.current !== null || creatingVisit.current !== null;
       const id = await ensureVisit();
       if (existed) {
         await updateVisitDetails(id, {
@@ -467,10 +502,12 @@ export default function AfterVisitScreen() {
           linked,
         }),
       );
-      // A soft impact, never a success chime: a vet visit is a record of something
-      // that happened, and `guards/haptics.test.ts` keeps the verb vocabulary one per
-      // moment. Fire-and-forget, like every verb in lib/haptics.
-      commitRoutine();
+      // A soft impact, never a success chime (the issue's ruling). `commitRoutine`
+      // — the verb a meal or a dose uses — plays the system SUCCESS notification,
+      // which is exactly the beat a vet visit must not have; `commitVisit` is its own
+      // verb rather than a second caller of `commitSymptom`, because the vocabulary is
+      // one verb per MOMENT. Fire-and-forget, like every verb in lib/haptics.
+      commitVisit();
     } catch (err) {
       sayFailed(err, 'save');
     } finally {
@@ -480,8 +517,24 @@ export default function AfterVisitScreen() {
 
   async function handleRegimenAdded(regimen: Regimen) {
     setSheet(null);
-    note({ key: `course:${regimen.id}`, title: `${regimen.drug_name} started`, note: 'linked to this visit' });
-    if (petId) await loadPlan(petId);
+    // ASKED OF THE RECORD, not asserted (CUL-825). `startRegimen` throws when the
+    // link is refused, so reaching here should mean the link landed — but "should"
+    // is the word this rule exists to delete, and a line claiming provenance the row
+    // does not hold would be the moment lying about where a prescription came from.
+    //
+    // `readActiveCourses` rather than `loadPlan`, because adding a medication cannot
+    // have changed the trial — and the list it returns is the one this row is about,
+    // so it is used for both the line and the re-render. Guarded on `petId`: an
+    // unguarded `: []` would empty a list the owner is looking at.
+    if (!petId) return;
+    const courses = await readActiveCourses(petId);
+    const written = courses.find((c) => c.id === regimen.id);
+    note({
+      key: `course:${regimen.id}`,
+      title: `${regimen.drug_name} started`,
+      note: written?.vetVisitId ? 'linked to this visit' : 'started',
+    });
+    setCourses(courses);
   }
 
   async function handleTrialStarted(trialId: string) {

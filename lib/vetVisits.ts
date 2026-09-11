@@ -840,6 +840,29 @@ function trimOrNull(v: string | null | undefined): string | null {
   return t.length > 0 ? t : null;
 }
 
+/**
+ * A visit that HAPPENED cannot be in the future, so a seeded date never is.
+ *
+ * THE SEED IS THE HOLE, not the picker. `AfterVisitBody` and `VisitEditBody` both
+ * carry `maximumDate={new Date()}`, and `maximumDate` constrains a PICK — a date
+ * already in state when the screen opens is not re-validated by anything, so an
+ * owner who books a six-week recheck, taps *How did it go?* under *Next* and just
+ * saves writes `visited_at` 42 days out without ever opening the picker. The report
+ * then skips the row (rung 1 ignores today/future-dated visits) for 42 days while
+ * the rundown's UNBOUNDED `MAX(visited_at)` adopts it and renders an absence over a
+ * window that cannot contain anything — a false all-clear on the surface an owner
+ * reads in the exam room.
+ *
+ * `BookVisitSheet` already writes this lesson down for its own mode transition;
+ * VV-4 re-opened it one line above its own bound, and the adversarial pass drove it.
+ * Clamped to the START of today rather than to `now`, so the returned value is a
+ * calendar day rather than a wall-clock instant the caller has to trim.
+ */
+export function clampVisitDate(candidate: Date, now: Date = new Date()): Date {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  return localDateKey(candidate) > localDateKey(now) ? today : candidate;
+}
+
 /** 'YYYY-MM-DD' for a Date, read in the device's zone (never `toISOString`). */
 export function localDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1061,10 +1084,24 @@ export { visitIsForPet, VetVisitLinkRefused } from './vetVisitLink';
  * BOTH CONDITIONS, and the first is what makes this safe. "The link does not resolve
  * locally" is true of a perfectly good link on a device that has not hydrated the
  * visit yet, and clearing it there would destroy real provenance. A row the SERVER
- * has already refused with `23514` is a different thing: the refusal is the evidence
- * that the link is wrong, and dropping it is strictly a recovery. The code prefix is
- * how `formatSyncError` writes the column ("code first so the column is greppable by
- * failure class").
+ * has already refused ABOUT THIS COLUMN is a different thing: the refusal is the
+ * evidence that the link is wrong, and dropping it is strictly a recovery.
+ *
+ * THE MATCH IS THE TRIGGER'S OWN SENTENCE, NOT THE BARE SQLSTATE, and the adversarial
+ * pass is why. `23514` is `check_violation` — not a link code. `medications` carries
+ * two other named CHECKs from migration 049, and `lib/medications.ts` says outright
+ * that the local mirror does NOT enforce the server's mutual-exclusion one — so a
+ * locally-representable row produces a non-link `23514`. Paired with the second arm
+ * (true for any visit this device has not hydrated: the household's second phone),
+ * matching on the code alone destroys a VALID link, re-arms the row, and it
+ * re-quarantines on the real constraint with its provenance gone for good
+ * (`updateRegimen` cannot set the column back).
+ *
+ * So the predicate reads the message migrations 066/067 raise — "vet_visit_id %% must
+ * reference a vet visit for the same pet (%%)" — which `formatSyncError` parks after
+ * the code ("code first so the column is greppable by failure class"). C-31 keeps that
+ * message stable and safe to match: it names only `NEW.*` values, never a field read
+ * off another row.
  *
  * Returns how many rows it repaired, so a caller can say so or stay quiet.
  */
@@ -1080,6 +1117,7 @@ export async function repairRefusedVisitLinks(petId: string): Promise<number> {
         WHERE pet_id = ?
           AND vet_visit_id IS NOT NULL
           AND sync_error LIKE '23514:%'
+          AND sync_error LIKE '%vet_visit_id%must reference a vet visit for the same pet%'
           AND NOT EXISTS (
                 SELECT 1 FROM vet_visits v
                  WHERE v.id = ${table}.vet_visit_id
@@ -1219,40 +1257,53 @@ export async function updateVisitDetails(visitId: string, patch: VisitDetailsPat
 // ── The three link writers (provenance only — a link never moves a number) ──────
 
 /**
- * *Keep* on a plan row: this course carries on, and it came from this visit.
+ * *Keep* on a plan row: this course carries on, and — if the record does not already
+ * say where it came from — it came from this visit.
  *
  * `started_at` NEVER MOVES, and neither does anything else the course computes from
  * (§4.1 D1, TG-5). The one column written is the link — which is why *Keep* leaves
  * `COUNT(*) WHERE status = 'active'` exactly where it was (AC 7).
  *
+ * FIRST PROVENANCE WINS: `WHERE … AND vet_visit_id IS NULL`, so a course prescribed
+ * at March's visit and confirmed again in September keeps saying March. The first
+ * draft wrote the column unconditionally, and the adversarial pass drove what that
+ * costs: tapping *Keep* RELOCATED the link, so March's visit silently stopped listing
+ * Cerenia in its plan and September's started. `readVisitLinks`' own header says the
+ * visit contributes no number of its own — and the number it renders had just moved
+ * between two visits.
+ *
+ * The diff's argument for *Stopped* was already the argument for this: `vet_visit_id`
+ * is where a course CAME FROM, and a course kept here started somewhere else. Returns
+ * whether it wrote, so the caller's line can say which of the two happened rather
+ * than assert one (CUL-825).
+ *
  * Guarded by `visitIsForPet` at the call site rather than here, because the caller
- * holds the pet the screen is about; see `linkCourseToVisit`'s callers.
+ * holds the pet the screen is about.
  */
-export async function linkCourseToVisit(medicationId: string, visitId: string): Promise<void> {
+export async function linkCourseToVisit(medicationId: string, visitId: string): Promise<boolean> {
   const now = new Date().toISOString();
   const res = await getDb().runAsync(
     `UPDATE medications
         SET vet_visit_id = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
-      WHERE id = ?`,
+      WHERE id = ? AND vet_visit_id IS NULL`,
     [visitId, now, medicationId],
   );
-  if (res.changes === 0) {
-    throw new Error(`linkCourseToVisit: no medication row matched id ${medicationId}`);
-  }
+  // No zero-row throw: zero rows is the ORDINARY outcome for an already-linked course,
+  // and is indistinguishable here from a missing one. The caller is the after-visit
+  // screen, which read the course from the local mirror a moment ago.
+  return res.changes > 0;
 }
 
-/** The same for a running trial: *Keep* is a link and nothing else. */
-export async function linkTrialToVisit(trialId: string, visitId: string): Promise<void> {
+/** The same for a running trial, and first-wins for the same reason. */
+export async function linkTrialToVisit(trialId: string, visitId: string): Promise<boolean> {
   const now = new Date().toISOString();
   const res = await getDb().runAsync(
     `UPDATE diet_trials
         SET vet_visit_id = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
-      WHERE id = ?`,
+      WHERE id = ? AND vet_visit_id IS NULL`,
     [visitId, now, trialId],
   );
-  if (res.changes === 0) {
-    throw new Error(`linkTrialToVisit: no diet trial row matched id ${trialId}`);
-  }
+  return res.changes > 0;
 }
 
 // A document captured in the room is filed under the visit through Vet Files' own
@@ -1263,12 +1314,31 @@ export async function linkTrialToVisit(trialId: string, visitId: string): Promis
 
 // ── What the save did to the rest of the app (the D2 moment, §4.1 D2 / AC 8–9) ──
 
+/**
+ * Where this visit's day sits relative to today.
+ *
+ * THREE STATES, NOT A BOOLEAN, and the boolean it replaces is the bug the
+ * adversarial pass found. `isBeforeToday: false` conflated *dated today* — which
+ * becomes the report's anchor TOMORROW, so "starts from this visit" is true — with
+ * *dated after today*, which the report's rung 1 skips (`report.ts`: "ignore
+ * today/future-dated visits") for as long as the date is in the future. Driven
+ * against the real `resolveScope`, a visit dated six weeks out made the moment
+ * promise a window the report returned `fallback_90d` for, for 47 days.
+ *
+ * The seeds that could produce one are clamped (`app/vet-visits/after.tsx`,
+ * `app/vet-visits/edit.tsx`), so the after-visit screen can no longer write a future
+ * visit. This type is the second half of that fix rather than a belt on it: a future
+ * row can still arrive by sync from a device that wrote one, and the copy must be
+ * unable to make the claim when it does.
+ */
+export type VisitDayRelation = 'before_today' | 'today' | 'after_today';
+
 /** The two record facts the saved moment's consequence lines are derived from. */
 export interface VisitConsequence {
   /** No other live visit for this pet is dated on or after this one. */
   isLatest: boolean;
-  /** The visit's day is strictly before today — the report's rung-1 test. */
-  isBeforeToday: boolean;
+  /** Where the visit's day sits relative to today — see `VisitDayRelation`. */
+  dayRelation: VisitDayRelation;
 }
 
 /**
@@ -1296,13 +1366,17 @@ export async function readVisitConsequence(
       WHERE pet_id = ? AND id != ? AND deleted_at IS NULL AND visited_at >= ?`,
     [visit.pet_id, visit.id, visit.visited_at],
   );
+  // Compared as DAY KEYS, both 'YYYY-MM-DD' and both fixed-width, which is the one
+  // shape where a string comparison is the right tool (C-40 is about INSTANTS in two
+  // spellings; a DATE column has one). `localDateKey` reads the device's own
+  // calendar, never `toISOString()`.
+  const todayKey = localDateKey(now);
   return {
     isLatest: (rows[0]?.later ?? 0) === 0,
-    // Compared as DAY KEYS, both 'YYYY-MM-DD' and both fixed-width, which is the one
-    // shape where a string comparison is the right tool (C-40 is about INSTANTS in
-    // two spellings; a DATE column has one). `localDateKey` reads the device's own
-    // calendar, never `toISOString()`.
-    isBeforeToday: visit.visited_at < localDateKey(now),
+    dayRelation:
+      visit.visited_at < todayKey ? 'before_today'
+      : visit.visited_at === todayKey ? 'today'
+      : 'after_today',
   };
 }
 

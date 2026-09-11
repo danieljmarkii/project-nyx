@@ -93,7 +93,10 @@ export function PlanActionRow({
           activeOpacity={0.7}
           disabled={busy}
           accessibilityRole="button"
-          accessibilityLabel={`${actionLabel} — ${title}`}
+          // A TRUE `disabled` claim (the control exists; its write is in flight), so
+          // the label says why rather than leaving a screen reader with "dimmed" and
+          // no reason (C-7).
+          accessibilityLabel={busy ? `Saving — ${title}` : `${actionLabel} — ${title}`}
           accessibilityState={{ disabled: !!busy }}
         >
           <ThemedText style={styles.actionLabel}>{actionLabel}</ThemedText>
@@ -105,7 +108,7 @@ export function PlanActionRow({
             activeOpacity={0.7}
             disabled={busy}
             accessibilityRole="button"
-            accessibilityLabel={`${secondaryLabel} — ${title}`}
+            accessibilityLabel={busy ? `Saving — ${title}` : `${secondaryLabel} — ${title}`}
             accessibilityState={{ disabled: !!busy }}
           >
             <ThemedText style={styles.secondaryLabel}>{secondaryLabel}</ThemedText>

@@ -64,6 +64,8 @@ import {
   readAppointment,
   readVetVisitDetail,
   readVisitConsequence,
+  linkCourseToVisit,
+  linkTrialToVisit,
   repairRefusedVisitLinks,
   saveNotesDraft,
   serializeQuestions,
@@ -365,13 +367,22 @@ describe('readVisitConsequence', () => {
   it('a visit logged TODAY is the latest, and is NOT before today', async () => {
     seedVisit('v1', { visited_at: '2026-09-16' });
     expect(await readVisitConsequence({ id: 'v1', pet_id: PET, visited_at: '2026-09-16' }, NOW))
-      .toEqual({ isLatest: true, isBeforeToday: false });
+      .toEqual({ isLatest: true, dayRelation: 'today' });
   });
 
   it('a visit dated yesterday is the latest AND before today', async () => {
     seedVisit('v1', { visited_at: '2026-09-15' });
     expect(await readVisitConsequence({ id: 'v1', pet_id: PET, visited_at: '2026-09-15' }, NOW))
-      .toEqual({ isLatest: true, isBeforeToday: true });
+      .toEqual({ isLatest: true, dayRelation: 'before_today' });
+  });
+
+  it('a FUTURE-dated visit reads as after_today, not as "today"', async () => {
+    // The state a boolean could not hold. A recheck booked six weeks out, opened from
+    // *Next*: the report's rung 1 skips it until the day arrives, so the moment must
+    // be able to tell this apart from a visit dated today.
+    seedVisit('v1', { visited_at: '2026-10-28' });
+    expect(await readVisitConsequence({ id: 'v1', pet_id: PET, visited_at: '2026-10-28' }, NOW))
+      .toEqual({ isLatest: true, dayRelation: 'after_today' });
   });
 
   it('a visit logged LATE, behind one already on file, is not the latest', async () => {
@@ -435,8 +446,13 @@ describe('repairRefusedVisitLinks', () => {
   }
   const course = (id: string) => mockDb.prepare('SELECT * FROM medications WHERE id = ?').all(id)[0];
 
-  it('clears a link the SERVER refused and that resolves to nothing here', async () => {
-    seedCourse('m1', { vet_visit_id: 'gone-visit', sync_error: '23514: vet_visit_id must reference…' });
+  /** The sentence migrations 066/067 raise, as `formatSyncError` parks it: the code,
+   *  then the message. Verbatim, because the repair's predicate matches it. */
+  const LINK_REFUSAL =
+    '23514: vet_visit_id 4f3a… must reference a vet visit for the same pet (9b21…)';
+
+  it('clears a link the SERVER refused ABOUT THIS COLUMN, when it resolves to nothing here', async () => {
+    seedCourse('m1', { vet_visit_id: 'gone-visit', sync_error: LINK_REFUSAL });
     expect(await repairRefusedVisitLinks(PET)).toBe(1);
 
     const row = course('m1');
@@ -459,7 +475,7 @@ describe('repairRefusedVisitLinks', () => {
 
   it('leaves a refused row whose link IS valid here — the refusal was something else', async () => {
     seedVisit('v1');
-    seedCourse('m1', { vet_visit_id: 'v1', sync_error: '23514: some other check' });
+    seedCourse('m1', { vet_visit_id: 'v1', sync_error: LINK_REFUSAL });
     expect(await repairRefusedVisitLinks(PET)).toBe(0);
     expect(course('m1').vet_visit_id).toBe('v1');
   });
@@ -469,8 +485,30 @@ describe('repairRefusedVisitLinks', () => {
     expect(await repairRefusedVisitLinks(PET)).toBe(0);
   });
 
+  it('leaves a NON-LINK 23514 alone, even with an unresolvable link on the row', async () => {
+    // The adversarial counterexample, and the reason the predicate reads the trigger's
+    // SENTENCE rather than the SQLSTATE. `23514` is `check_violation` — not a link
+    // code: migration 049 puts two more named CHECKs on `medications`, and the local
+    // mirror deliberately does not enforce the mutual-exclusion one, so a row that is
+    // perfectly representable here is refused there for a reason that has nothing to
+    // do with the visit.
+    //
+    // The second arm ("this device cannot resolve the link") is true of any visit a
+    // household's second phone has not hydrated yet — so on the bare code these two
+    // rows would have had a VALID link destroyed, re-armed, re-quarantined on the real
+    // constraint, and their provenance lost for good (`updateRegimen` cannot set the
+    // column back).
+    seedCourse('m1', {
+      vet_visit_id: 'not-hydrated-yet',
+      sync_error: '23514: new row for relation "medications" violates check constraint '
+        + '"medications_one_duration_denomination"',
+    });
+    expect(await repairRefusedVisitLinks(PET)).toBe(0);
+    expect(course('m1').vet_visit_id).toBe('not-hydrated-yet');
+  });
+
   it('never reaches another pet’s rows', async () => {
-    seedCourse('theirs', { pet_id: 'pet-b', vet_visit_id: 'gone', sync_error: '23514: x' });
+    seedCourse('theirs', { pet_id: 'pet-b', vet_visit_id: 'gone', sync_error: LINK_REFUSAL });
     expect(await repairRefusedVisitLinks(PET)).toBe(0);
     expect(course('theirs').vet_visit_id).toBe('gone');
   });
@@ -540,5 +578,53 @@ describe('readVetVisitDetail — the questions ride in through the appointment',
     seedVisit('v1');
     const detail = await readVetVisitDetail('v1');
     expect(detail!.questions).toEqual([]);
+  });
+});
+
+// ── The links are PROVENANCE, and provenance is first-wins ─────────────────────
+
+describe('linkCourseToVisit / linkTrialToVisit', () => {
+  function seedCourse(id: string, vetVisitId: string | null): void {
+    mockDb
+      .prepare(
+        `INSERT INTO medications (id, pet_id, drug_name, started_at, status, vet_visit_id,
+                                  created_at, updated_at, synced)
+         VALUES (?, ?, 'cerenia', '2026-03-04', 'active', ?, 'c', 'u', 1)`,
+      )
+      .run(id, PET, vetVisitId);
+  }
+  const course = (id: string) => mockDb.prepare('SELECT * FROM medications WHERE id = ?').all(id)[0];
+
+  it('writes the link on a course that has none, and says it did', async () => {
+    seedCourse('m1', null);
+    expect(await linkCourseToVisit('m1', 'visit-sep')).toBe(true);
+    expect(course('m1').vet_visit_id).toBe('visit-sep');
+    expect(course('m1').synced).toBe(0);
+  });
+
+  it('NEVER relocates a link an earlier visit already holds', async () => {
+    // The adversarial counterexample: a course prescribed at March's visit, confirmed
+    // again with *Keep* in September. An unconditional write moved the link — so
+    // March's visit silently stopped listing Cerenia in its plan and September's
+    // started. `vet_visit_id` is where a course CAME FROM, which is exactly the
+    // argument the *Stopped* branch already makes for not linking at all.
+    seedCourse('m1', 'visit-march');
+    expect(await linkCourseToVisit('m1', 'visit-sep')).toBe(false);
+    expect(course('m1').vet_visit_id).toBe('visit-march');
+    // And it did not re-queue a row it did not change.
+    expect(course('m1').synced).toBe(1);
+  });
+
+  it('a trial link is first-wins too', async () => {
+    mockDb
+      .prepare(
+        `INSERT INTO diet_trials (id, pet_id, food_item_id, started_at, target_duration_days,
+                                  status, vet_visit_id, created_at, updated_at, synced)
+         VALUES ('t1', ?, 'f1', '2026-03-04', 56, 'active', 'visit-march', 'c', 'u', 1)`,
+      )
+      .run(PET);
+    expect(await linkTrialToVisit('t1', 'visit-sep')).toBe(false);
+    expect(mockDb.prepare('SELECT * FROM diet_trials WHERE id = ?').all('t1')[0].vet_visit_id)
+      .toBe('visit-march');
   });
 });
