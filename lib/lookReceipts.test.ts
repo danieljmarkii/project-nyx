@@ -11,6 +11,7 @@ import { receiptsFor, leadReceipt, LOOK_RECEIPT_COUNT_FLOOR_DAYS } from './lookR
 import { lookCoverage } from './lookCoverage';
 import { localDayIndex, dayKeyFromIndex } from './utils';
 import type { LookDayRow } from './looks';
+import { LOOK_VOCAB_VERSION } from '../constants/lookWords';
 
 const NOW = Date.now();
 const TODAY = localDayIndex(NOW);
@@ -28,6 +29,7 @@ function look(daysAgo: number, words: string[] = [], seq = 0): LookDayRow {
     createdAt: new Date(NOW - daysAgo * 86_400_000 + seq * 3_600_000).toISOString(),
     outcome: words.length > 0 ? 'observed' : 'nothing_unusual',
     words,
+    vocabVersion: LOOK_VOCAB_VERSION,
   };
 }
 

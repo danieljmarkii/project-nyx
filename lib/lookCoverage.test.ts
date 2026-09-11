@@ -11,6 +11,7 @@ jest.mock('./db', () => ({ getDb: () => ({ getAllAsync: jest.fn(), getFirstAsync
 import { lookCoverage, lookCoverageText, LOOK_COVERAGE_WINDOW_DAYS } from './lookCoverage';
 import { localDayIndex, dayKeyFromIndex } from './utils';
 import type { LookDayRow } from './looks';
+import { LOOK_VOCAB_VERSION } from '../constants/lookWords';
 
 const NOW = Date.now();
 const TODAY_INDEX = localDayIndex(NOW);
@@ -23,6 +24,7 @@ function row(daysAgo: number, over: Partial<LookDayRow> = {}): LookDayRow {
     createdAt: new Date(NOW - daysAgo * 86_400_000).toISOString(),
     outcome: 'nothing_unusual',
     words: [],
+    vocabVersion: LOOK_VOCAB_VERSION,
     ...over,
   };
 }
@@ -215,6 +217,7 @@ describe('timezone honesty (C-29)', () => {
         createdAt: new Date(NOW - i * 86_400_000).toISOString(),
         outcome: 'nothing_unusual' as const,
         words: [],
+        vocabVersion: LOOK_VOCAB_VERSION,
       }));
       expect(
         lookCoverageText(
@@ -235,6 +238,7 @@ describe('timezone honesty (C-29)', () => {
       createdAt: new Date(NOW - i * 86_400_000).toISOString(),
       outcome: 'nothing_unusual' as const,
       words: [],
+      vocabVersion: LOOK_VOCAB_VERSION,
     }));
     expect(lookCoverage(record, { nowMs: NOW, timeZone, withheldNow: false, lastWithheldDay: null }).form).toBe('ratio');
   });

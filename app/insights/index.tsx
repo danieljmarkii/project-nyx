@@ -52,6 +52,20 @@ import { getTrialPanel, type TrialSoFarModel } from '../../lib/patternsTrial';
 import { TimingPanelCard } from '../../components/dashboard/TimingPanelCard';
 import { TrialSoFarCard } from '../../components/dashboard/TrialSoFarCard';
 import { ThemedText } from '../../components/ui/ThemedText';
+import { WhatYouNoticedCard } from '../../components/dashboard/WhatYouNoticedCard';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../lib/betaFeatures';
+import { useDietTrial } from '../../hooks/useDietTrial';
+import { isAnimalNotEating } from '../../lib/dietTrialCard';
+import { lookCardLive } from '../../lib/lookCard';
+import { loadLookDays, loadVomitLocalDays } from '../../lib/looks';
+import { loadLookWithheldFacts, lookWithheld } from '../../lib/lookWithheld';
+import {
+  buildNoticedCard,
+  NOTICED_CARD_HREF,
+  type NoticedCardModel,
+} from '../../lib/lookPatterns';
+import { localDayIndex, dayKeyFromIndex } from '../../lib/utils';
 
 // The "Patterns" dashboard (B-023 PR 3/4) — tier 2 of the intelligence ladder (§2): the
 // full story on demand. Summary-led layout (§7): the AI summary (AiSummaryCard, cache-only,
@@ -73,6 +87,12 @@ const WINDOW: AnalyticsWindow = 'month';
 // SERIES_LIMIT; every number is anchored to an explicit date, so it never reads as
 // "this month" next to the month-scoped cards.
 const WEIGHT_SERIES_LIMIT = 12;
+
+// Noticed reads EIGHT weeks, not four: the card speaks for the last 28 days, but §6.4's
+// comparison needs the 28 before them as its earlier half. The card's own module bounds
+// every number it prints to the 28 it speaks for (a window may INDEX, only the total may
+// be SPOKEN — C-3), so reading wider here cannot widen a denominator.
+const NOTICED_READ_DAYS = 56;
 
 export default function PatternsScreen() {
   const { activePet } = usePetStore();
@@ -103,6 +123,26 @@ export default function PatternsScreen() {
     scrollRef.current?.scrollTo({ y: cardsY.current, animated: true });
   }, []);
 
+  // Noticed (CUL-874 / N-5) — the SAME three gates Home's card takes (`lookCardLive`:
+  // the allowlist flag ∧ the beta opt-in ∧ a species with a vocabulary), read through the
+  // same helper so the two surfaces cannot drift on eligibility. Off any of the three,
+  // `noticed` stays null and `buildDashboardCards` emits nothing — Patterns off the flag
+  // is byte-identical.
+  const lookEligible = useAllowlistFlag('daily_look');
+  const lookOptedIn = useBetaOptIn('daily_look');
+  const noticedLive = lookCardLive({
+    eligible: lookEligible,
+    optedIn: lookOptedIn,
+    species: activePet?.species,
+  });
+  // Arm 2 of the withheld predicate. The SAME loader Home uses (`useDietTrial`), and the
+  // same fail-closed read: `input` is retained across a pet switch, so a non-null input is
+  // not proof it belongs to this pet, and an unconfirmed record is `null` — ignorance, which
+  // `lookWithheldState` resolves to 'unknown' and `lookWithheld` then fails CLOSED on. A
+  // quiet run drawn during the switch window is the one direction that cannot be taken back.
+  const { input: trialInput, inputIsForActivePet: trialFactsFresh } = useDietTrial();
+  const trialNotEating = trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
+
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [cards, setCards] = useState<DashboardCard[]>([]);
   const [dashState, setDashState] = useState<DashboardState>('empty');
@@ -119,6 +159,7 @@ export default function PatternsScreen() {
     const pet = usePetStore.getState().activePet;
     if (!pet) return;
     const myId = ++loadIdRef.current;
+    const nowMs = Date.now();
     if (showLoading) setStatus('loading');
     // The frequency calendar pages by CALENDAR month (Calendar v3 N5b), so its first paint
     // is today's calendar month (not the trailing WINDOW the other cards use). Loaded here
@@ -159,6 +200,8 @@ export default function PatternsScreen() {
       ]);
       if (loadIdRef.current !== myId) return; // superseded by a newer load — drop these results
       const weightTrend = computeWeightTrend(weightReadings, weightReadingTotal);
+      const noticed = await loadNoticed(pet, trialNotEating, noticedLive, nowMs);
+      if (loadIdRef.current !== myId) return; // the look read is a second await — re-check
       setDashState(
         selectDashboardState({ symptomCounts, composition, weightReadingCount: weightTrend.readingCount }),
       );
@@ -176,6 +219,7 @@ export default function PatternsScreen() {
           topProteins,
           composition,
           weightTrend,
+          noticed,
         }),
       );
       setStatus('ready');
@@ -185,7 +229,7 @@ export default function PatternsScreen() {
       console.error('[patterns] load failed:', e);
       setStatus('error');
     }
-  }, []);
+  }, [noticedLive, trialNotEating]);
 
   useFocusEffect(
     useCallback(() => {
@@ -322,6 +366,49 @@ export default function PatternsScreen() {
   );
 }
 
+/**
+ * Noticed's three reads, or `null` when the surface is not live for this pet.
+ *
+ * `null` — never an empty model — is what keeps the flag-off path byte-identical: an
+ * empty model would still emit the card (§7 draws the empty state on purpose), and this
+ * is the one place that distinction is made.
+ *
+ * A FAILED READ IS ALSO `null`, and that is the fail-closed direction: this card's whole
+ * content is counts about an animal, so the honest response to "the record did not
+ * answer" is to draw no card, never a card with zeroes in it. It is caught here rather
+ * than by the caller's try/catch so a look-read fault cannot blank the whole dashboard —
+ * the Signals-v2 panels' own rule (`allSettled`), applied to a third additive surface.
+ */
+async function loadNoticed(
+  pet: { id: string; name: string; species: string | null; sex: 'male' | 'female' | 'unknown' },
+  trialNotEating: boolean | null,
+  live: boolean,
+  nowMs: number,
+): Promise<NoticedCardModel | null> {
+  if (!live) return null;
+  try {
+    const sinceDay = dayKeyFromIndex(localDayIndex(nowMs) - (NOTICED_READ_DAYS - 1));
+    const [record, vomitLocalDays, withheldFacts] = await Promise.all([
+      loadLookDays(pet.id, sinceDay),
+      loadVomitLocalDays(pet.id, sinceDay),
+      loadLookWithheldFacts({ id: pet.id, species: pet.species }, trialNotEating, nowMs),
+    ]);
+    return buildNoticedCard(record, {
+      petName: pet.name,
+      pet: { species: pet.species, sex: pet.sex },
+      nowMs,
+      // The SHARED predicate, not a second opinion: Home and Patterns must never disagree
+      // one tap apart (T-20). `lookWithheld` is the fail-closed reading — unloaded facts
+      // withhold — which is the right one for a surface that answers today.
+      withheld: lookWithheld({ id: pet.id }, withheldFacts),
+      vomitLocalDays,
+    });
+  } catch (e) {
+    console.error('[patterns] Noticed load failed:', e);
+    return null;
+  }
+}
+
 /** Title-case a canonicalized (lowercase) protein for display ("chicken" → "Chicken"). */
 function displayProtein(protein: string): string {
   return protein.charAt(0).toUpperCase() + protein.slice(1);
@@ -356,6 +443,18 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
             router.push({ pathname: '/insights/[metric]', params: { metric: card.symptomType } })
           }
           accessibilityHint={`Opens ${label}'s full trend`}
+        />
+      );
+    }
+    case 'whatYouNoticed': {
+      return (
+        <WhatYouNoticedCard
+          key={card.key}
+          model={card.model}
+          // The metric detail for looks is v1.x (§7), so the `›` lands on the History day
+          // spine filtered to looks — a real room behind a real door, rather than a
+          // chevron that opens a stub.
+          onPress={() => router.push(NOTICED_CARD_HREF)}
         />
       );
     }
