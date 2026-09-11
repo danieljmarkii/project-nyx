@@ -136,7 +136,7 @@ Every line marked in the PR body. AC 10 is VV-6's and passes; the other twelve w
 ## Residuals
 
 - **CUL-949 / CUL-950 / CUL-951 / CUL-952 / CUL-953** — the finish-pass findings. CUL-949 and CUL-950 block GA.
-- **The flag-off guard's async blind spot** is documented but not closed. Closing it means flushing effects in `treeFor` for all five surfaces; worth doing deliberately, not as a rider.
+- **CUL-954** — the flag-off guard's async blind spot: documented in the guard, not closed, and **`AppointmentStrip` on Home has the same hole**. Closing it means flushing effects in `treeFor` for all five surfaces, which changes four other screens' comparisons; worth doing deliberately, not as a rider.
 - **CUL-19** unchanged. The delete control is queued behind it; the rider was already filed at VV-1.
 
 ## Not done, and deliberately
