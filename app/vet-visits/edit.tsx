@@ -103,7 +103,7 @@ export default function EditVisitScreen() {
       else router.replace(`/vet-visits/${visitId}`);
     } catch (err) {
       console.warn('[vet-visit-edit] save failed:', err);
-      Alert.alert('Could not save', 'Try that again in a moment.');
+      Alert.alert('That didn’t save', 'Try that again in a moment.');
     } finally {
       setSaving(false);
     }
