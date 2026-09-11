@@ -94,4 +94,4 @@ Not filed, noted here: `readVetVisitsHome` has no `LIMIT` and is shared by the c
 
 Nothing here generalises past what C-7, C-12, C-18, C-22, C-32 and C-36 already say — this session mostly demonstrated them. The two worth remembering are already written: **a guard's registry is an exemption, and the empty set is the assertion** (C-32, which fired exactly as designed and named its own debts), and **a survived mutant is the tell that a green test measures nothing** (C-18, twice in one session).
 
-No schema, no Edge Function, no deploy, no new secret, no build-phase change.
+No schema, no Edge Function, no deploy, no new secret, no build-phase change. `STATUS.md` gained one word — the vet-visits row's progress pointer now reads VV-0 → VV-2 — and nothing else; the track is still live, so no boundary moved.
