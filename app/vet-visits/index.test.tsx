@@ -191,6 +191,47 @@ describe('AC 2 — booking', () => {
   });
 });
 
+describe('the appointment’s two doors belong to its own day', () => {
+  function nextAppt(isToday: boolean) {
+    return {
+      id: 'a-next',
+      petId: 'pet-a',
+      stamp: { day: '28', month: 'Oct' },
+      when: 'Wed, Oct 28',
+      day: 'Wed, Oct 28',
+      where: 'Riverside Animal Hospital · recheck',
+      isToday,
+    };
+  }
+
+  it('offers both doors on the day', async () => {
+    mockHome = { next: nextAppt(true), awaiting: [], visits: [] };
+    render(<VetVisitsScreen />);
+    expect(await screen.findByText('At the vet')).toBeTruthy();
+    expect(screen.getByText('How did it go?')).toBeTruthy();
+  });
+
+  it('offers NEITHER on a booking weeks out — the mis-tap consumed the booking', async () => {
+    // "How did it go?" on a recheck six weeks away is a question about a thing that
+    // has not happened, and answering it marks the appointment attended: it leaves
+    // Home and *Next* with no way back before VV-6's delete (CUL-939). A future
+    // appointment's door is *Get ready*, which is VV-5's; until then the block states
+    // and does not act.
+    mockHome = { next: nextAppt(false), awaiting: [], visits: [] };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Wed, Oct 28');
+    expect(screen.queryByText('At the vet')).toBeNull();
+    expect(screen.queryByText('How did it go?')).toBeNull();
+  });
+
+  it('still renders the appointment itself — the gate is on the actions, not the row', async () => {
+    mockHome = { next: nextAppt(false), awaiting: [], visits: [] };
+    render(<VetVisitsScreen />);
+    expect(await screen.findByText('Wed, Oct 28')).toBeTruthy();
+    expect(screen.getByText('Next')).toBeTruthy();
+  });
+});
+
 describe('a booking whose day has passed', () => {
   it('is rendered, not hidden — with the day it needs and what to do about it', async () => {
     mockHome = {
@@ -203,6 +244,7 @@ describe('a booking whose day has passed', () => {
           when: 'Mon, Sep 8',
           day: 'Mon, Sep 8',
           where: 'Riverside Animal Hospital · recheck',
+          isToday: false,
         },
       ],
       visits: [],
@@ -221,7 +263,7 @@ describe('a booking whose day has passed', () => {
     mockHome = {
       next: null,
       awaiting: [
-        { id: 'a-past', petId: 'pet-a', stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '' },
+        { id: 'a-past', petId: 'pet-a', stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '', isToday: false },
       ],
       visits: [],
     };

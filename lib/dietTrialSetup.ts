@@ -26,6 +26,7 @@
 // so an owner-visible fix (ending the other trial) re-arms a quarantined push
 // rather than leaving a permanently-parked row.
 import { getDb } from './db';
+import { visitIsForPet, VetVisitLinkRefused } from './vetVisitLink';
 import { canonicalizeProtein } from './protein';
 import type { TrialFoodRole } from './dietTrial';
 import { trialStopReasons, type TrialOutcome } from './dietTrialCompletion';
@@ -942,6 +943,13 @@ export async function addTrialFood(params: {
  * writing locally first.
  */
 export async function startDietTrial(input: StartTrialInput): Promise<string> {
+  // CUL-945 — the same device-side refusal `startRegimen` carries, for the same
+  // reason and with the same blast radius: migration 067's `23514` is TERMINAL, so a
+  // bad link quarantines the WHOLE TRIAL — the allowed set included — rather than the
+  // link. Refused before the transaction opens, so nothing partial can land.
+  if (input.vetVisitId && !(await visitIsForPet(input.vetVisitId, input.petId))) {
+    throw new VetVisitLinkRefused(input.vetVisitId, input.petId);
+  }
   const db = getDb();
   const now = new Date().toISOString();
   const rows = buildTrialRows(input, now);

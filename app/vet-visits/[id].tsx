@@ -12,10 +12,11 @@ import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
 
-// One visit as written (CUL-900 VV-2; mock D3 without ⋯).
+// One visit as written (CUL-900 VV-2; mock D3). *Edit* landed in VV-4 (CUL-902).
 //
-// Read-only in this PR: *Edit* is VV-4's and *Delete* is VV-6's, the latter gated
-// on CUL-19 deploying the reader that honours `deleted_at`.
+// *Delete* is still VV-6's, gated on CUL-19 deploying the reader that honours
+// `deleted_at` — a control that soft-deletes a visit the live report still counts
+// would move nothing an owner can see.
 export default function VetVisitScreen() {
   const eligible = useAllowlistFlag('vet_visits');
   const optedIn = useBetaOptIn('vet_visits');
@@ -72,6 +73,27 @@ export default function VetVisitScreen() {
       <Header
         leading="back"
         onLeadingPress={() => (router.canGoBack() ? router.back() : router.replace('/vet-visits'))}
+        right={
+          // Inline rather than behind the mock's ⋯ — the header's own rule is that a
+          // single secondary action does not hide in a tap-to-reveal menu (B-075, a
+          // PM call). VV-6 adds *Delete* (gated on CUL-19) and that is the PR where
+          // the pair becomes a menu.
+          //
+          // Absent, never `disabled`, while the read is in flight or the row is gone:
+          // `disabled` is an accessibility CLAIM that a control exists and is
+          // unavailable, and here no control exists at all (C-7).
+          detail ? (
+            <TouchableOpacity
+              onPress={() => router.push(`/vet-visits/edit?visit=${detail.visit.id}`)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${petName}’s visit`}
+            >
+              <ThemedText style={styles.editLabel}>Edit</ThemedText>
+            </TouchableOpacity>
+          ) : undefined
+        }
       />
       {loading ? (
         <View style={styles.centre}>
@@ -113,6 +135,11 @@ export default function VetVisitScreen() {
 }
 
 const styles = StyleSheet.create({
+  editLabel: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccentInk,
+  },
   container: {
     flex: 1,
     backgroundColor: theme.colorNeutralLight,

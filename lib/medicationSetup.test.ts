@@ -41,12 +41,19 @@ let mockDb: RawDb;
 const mockRunAsync = jest.fn(async (sql: string, params: unknown[] = []) =>
   mockDb.prepare(sql).run(...(params as never[])) as { changes: number },
 );
+// CUL-902: the module gained ONE read — `visitIsForPet`'s same-pet check on the
+// visit link (CUL-945) — so `getAllAsync` is now a real read against the same
+// in-memory database rather than a throw. Real, not stubbed, because the thing under
+// test is that a bad link is REFUSED BEFORE THE INSERT, and a stub of the check
+// would be a test of the stub (C-34: the read is what needs standing in for, never
+// the rule).
+const mockGetAllAsync = jest.fn(async (sql: string, params: unknown[] = []) =>
+  mockDb.prepare(sql).all(...(params as never[])),
+);
 jest.mock('./db', () => ({
   getDb: () => ({
     runAsync: mockRunAsync,
-    // The module writes and never reads; present so a future read fails loudly
-    // rather than silently resolving undefined.
-    getAllAsync: () => { throw new Error('medicationSetup does not read'); },
+    getAllAsync: mockGetAllAsync,
   }),
 }));
 
@@ -75,6 +82,7 @@ jest.mock('./utils', () => {
 import { MEDICATION_SCHEMA_SQL, type RegimenWritePayload } from './medications';
 import { NOT_QUARANTINED_SQL } from './syncQueue';
 import { endRegimen, startRegimen, updateRegimen } from './medicationSetup';
+import { VetVisitLinkRefused } from './vetVisitLink';
 import { useSyncStore } from '../store/syncStore';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -124,6 +132,7 @@ function seedSyncedRow(id: string, updatedAt: string, quarantined = true): void 
 beforeEach(() => {
   mockIdSeq = 0;
   mockRunAsync.mockClear();
+  mockGetAllAsync.mockClear();
   mockSyncMedications.mockClear().mockResolvedValue(undefined);
   mockSurfaceOffer.mockClear();
   useSyncStore.setState({ hydrationTick: 0 });
@@ -133,6 +142,14 @@ beforeEach(() => {
   // The FK target medication_administrations needs; this suite never writes a dose.
   mockDb.exec('CREATE TABLE events (id TEXT PRIMARY KEY, deleted_at TEXT);');
   mockDb.exec(MEDICATION_SCHEMA_SQL);
+  // The three columns `visitIsForPet` asks about, and nothing else — this suite is
+  // not testing the visit model, it is testing what the regimen write does with its
+  // answer. 'visit-7' is pet-1's; 'visit-other' belongs to another pet, which is the
+  // shape migration 067 refuses with a TERMINAL 23514 (CUL-945).
+  mockDb.exec('CREATE TABLE vet_visits (id TEXT PRIMARY KEY, pet_id TEXT, deleted_at TEXT);');
+  mockDb.prepare('INSERT INTO vet_visits (id, pet_id, deleted_at) VALUES (?, ?, NULL)').run('visit-7', 'pet-1');
+  mockDb.prepare('INSERT INTO vet_visits (id, pet_id, deleted_at) VALUES (?, ?, NULL)').run('visit-other', 'pet-2');
+  mockDb.prepare('INSERT INTO vet_visits (id, pet_id, deleted_at) VALUES (?, ?, ?)').run('visit-gone', 'pet-1', '2026-09-01T00:00:00.000Z');
 });
 
 afterEach(() => mockDb.close());
@@ -320,6 +337,63 @@ describe('endRegimen', () => {
 // and that branch is where the silent data loss lived. It is REACHABLE because the
 // Pet-tab card offering Edit and End reads Supabase while these write SQLite, and
 // nothing hydrates the mirror on tab focus.
+
+// ── CUL-945 — a wrong visit link must not brick the prescription ──────────────
+//
+// The failure this prevents is not "the link is missing". Migration 067's same-pet
+// trigger raises `23514`, which `lib/syncQueue.ts` classifies TERMINAL, so the FIRST
+// push quarantines the WHOLE ROW — drug, dose, schedule, indication — and nothing on
+// the client can clear `vet_visit_id` afterwards (`updateRegimen` does not touch the
+// column, by design). The course renders on Home, the widget and the rundown forever
+// while the vet report never sees it.
+//
+// So the device refuses first, and it refuses BEFORE the insert: the assertions below
+// are about what is NOT in the database, which is the half a happy-path test cannot
+// see (C-13 — assert the return in the REFUSED case, not only on the happy path).
+describe('startRegimen — a visit link that is not this pet\'s (CUL-945)', () => {
+  it('refuses ANOTHER PET\'S visit, and writes no row at all', async () => {
+    await expect(
+      startRegimen({ petId: 'pet-1', payload: payload(), vetVisitId: 'visit-other' }),
+    ).rejects.toBeInstanceOf(VetVisitLinkRefused);
+
+    // The whole point: the prescription is not half-written, and it is not written
+    // with a null link either. Nothing landed, so nothing can quarantine.
+    expect(mockDb.prepare('SELECT * FROM medications').all()).toEqual([]);
+    // And nothing was queued or signalled for a write that did not happen.
+    expect(mockSyncMedications).not.toHaveBeenCalled();
+    expect(mockSurfaceOffer).not.toHaveBeenCalled();
+  });
+
+  it('refuses a visit this device cannot see, rather than trusting the caller', async () => {
+    await expect(
+      startRegimen({ petId: 'pet-1', payload: payload(), vetVisitId: 'visit-never-existed' }),
+    ).rejects.toBeInstanceOf(VetVisitLinkRefused);
+    expect(mockDb.prepare('SELECT * FROM medications').all()).toEqual([]);
+  });
+
+  it('refuses a SOFT-DELETED visit — the server will refuse it too', async () => {
+    await expect(
+      startRegimen({ petId: 'pet-1', payload: payload(), vetVisitId: 'visit-gone' }),
+    ).rejects.toBeInstanceOf(VetVisitLinkRefused);
+    expect(mockDb.prepare('SELECT * FROM medications').all()).toEqual([]);
+  });
+
+  it('does not ask at all when no link is passed — the Pet-tab path is untouched', async () => {
+    await startRegimen({ petId: 'pet-1', payload: payload() });
+    // The check is a read, and a read on every regimen write would be a cost paid by
+    // the 99% of courses that carry no link. `?? null` on the column is not the same
+    // as "ask about null".
+    expect(mockGetAllAsync).not.toHaveBeenCalled();
+    expect(mockDb.prepare('SELECT * FROM medications').all()).toHaveLength(1);
+  });
+
+  it('carries the link when it IS this pet\'s — the guard is not just a refusal', async () => {
+    const { id } = await startRegimen({
+      petId: 'pet-1', payload: payload(), vetVisitId: 'visit-7',
+    });
+    expect(rowById(id)?.vet_visit_id).toBe('visit-7');
+  });
+});
 
 describe('a write whose target the local mirror does not hold', () => {
   it('endRegimen throws rather than reporting an ending that happened nowhere', async () => {

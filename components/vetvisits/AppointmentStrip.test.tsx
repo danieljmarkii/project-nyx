@@ -80,6 +80,9 @@ function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
       stamp: { day: '16', month: 'Sep' },
       when: 'Tuesday · 3:00 pm',
       day: 'Tuesday',
+      // VV-4's gate on the visit's own doors; the strip has its own five-day window
+      // (`resolveStripPhase`) and never reads this.
+      isToday: true,
       where: 'Riverside Animal Hospital · recheck',
     },
   };

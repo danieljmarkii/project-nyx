@@ -33,6 +33,7 @@
 // nothing anywhere says so. `handleEndRegimen` failed loudly on the same row.
 // One table, one queue, one write path (PM-ruled, 2026-09-11).
 import { getDb } from './db';
+import { visitIsForPet, VetVisitLinkRefused } from './vetVisitLink';
 import { syncPendingMedications } from './sync';
 import { useSyncStore } from '../store/syncStore';
 import { uuid } from './utils';
@@ -150,6 +151,14 @@ export interface StartRegimenInput {
  * not providing.
  */
 export async function startRegimen(input: StartRegimenInput): Promise<{ id: string }> {
+  // CUL-945 — THE DEVICE ANSWERS FIRST. A link across pets or accounts is refused by
+  // migration 067 with `23514`, which is TERMINAL, so the first push quarantines and
+  // what is lost is the WHOLE PRESCRIPTION rather than the link. The owner is
+  // standing here now; 25 sync cycles later they are not. The read is one indexed
+  // row on an id the caller already holds.
+  if (input.vetVisitId && !(await visitIsForPet(input.vetVisitId, input.petId))) {
+    throw new VetVisitLinkRefused(input.vetVisitId, input.petId);
+  }
   const db = getDb();
   const id = uuid();
   // ISO/UTC TEXT, like every other mirror timestamp, so LWW compares these on one

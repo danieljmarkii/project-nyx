@@ -11,7 +11,7 @@ import {
   formatVisitWeekday,
   formatWhereLine,
   localDateKey,
-  type LocalVetAppointment,
+  type AppointmentDetail,
   type LocalVetVisit,
   type VisitLinks,
 } from './vetVisits';
@@ -38,7 +38,7 @@ function visit(over: Partial<LocalVetVisit> = {}): LocalVetVisit {
   };
 }
 
-function appointment(over: Partial<LocalVetAppointment> = {}): LocalVetAppointment {
+function appointment(over: Partial<AppointmentDetail> = {}): AppointmentDetail {
   return {
     id: 'a1',
     pet_id: 'pet-a',
@@ -46,6 +46,8 @@ function appointment(over: Partial<LocalVetAppointment> = {}): LocalVetAppointme
     clinic_name: 'Riverside Animal Hospital',
     vet_name: 'Dr. Chen',
     reason: 'recheck',
+    notes_draft: null,
+    questions: null,
     vet_visit_id: null,
     cancelled_at: null,
     deleted_at: null,
@@ -368,6 +370,28 @@ describe('the appointment view', () => {
     expect(view.petId).toBe('pet-b');
     expect(view.where).toBe('Riverside Animal Hospital · Dr. Chen · recheck');
     expect(view.stamp).toEqual({ day: '16', month: 'Sep' });
+  });
+
+  // `isToday` gates the two doors that only mean something on the day (CUL-902): an
+  // appointment booked six weeks out offered "How did it go?", which CONSUMES the
+  // booking on a mis-tap — the save marks it attended, so it leaves Home and *Next*
+  // and there is no way back before VV-6's delete.
+  it('is today ON the appointment\'s own day, whatever the hour', () => {
+    // The fixture's appointment is 3pm on Sep 16. Both an early-morning and a
+    // late-evening "now" on that day are the same day.
+    expect(buildAppointmentView(appointment(), new Date(2026, 8, 16, 6, 0)).isToday).toBe(true);
+    expect(buildAppointmentView(appointment(), new Date(2026, 8, 16, 23, 30)).isToday).toBe(true);
+  });
+
+  it('is NOT today the day before, or the day after', () => {
+    expect(buildAppointmentView(appointment(), new Date(2026, 8, 15, 23, 59)).isToday).toBe(false);
+    expect(buildAppointmentView(appointment(), new Date(2026, 8, 17, 0, 1)).isToday).toBe(false);
+  });
+
+  it('is NOT today for a booking weeks out — the case the doors were consuming', () => {
+    const sixWeeksOut = composeScheduledAt(new Date(2026, 9, 28), null);
+    expect(buildAppointmentView(appointment({ scheduled_at: sixWeeksOut }), new Date(2026, 8, 16))
+      .isToday).toBe(false);
   });
 });
 

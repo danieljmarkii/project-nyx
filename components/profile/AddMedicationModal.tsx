@@ -104,13 +104,20 @@ interface Props {
   visible: boolean;
   petId: string;
   existingRegimen?: Regimen;
+  /** CUL-902 (VV-4) — PROVENANCE: the visit this course was prescribed at, when the
+   *  after-visit screen is the host. Absent on the Pet-tab path, which is every
+   *  other caller. It rides `startRegimen`'s own INSERT (spec §5.1 — never a
+   *  follow-up UPDATE a crash could lose) and is refused on the device if it is not
+   *  this pet's (CUL-945). It never moves a number: `started_at` and every dose
+   *  count stay the course's own. */
+  vetVisitId?: string | null;
   onClose: () => void;
   onAdded: (regimen: Regimen) => void;
   onUpdated?: (regimen: Regimen) => void;
 }
 
 export function AddMedicationModal({
-  visible, petId, existingRegimen, onClose, onAdded, onUpdated,
+  visible, petId, existingRegimen, vetVisitId, onClose, onAdded, onUpdated,
 }: Props) {
   const isEditing = existingRegimen != null;
 
@@ -269,7 +276,7 @@ export function AddMedicationModal({
       } else {
         // pet_id is the ACTIVE pet's (never free input); RLS re-validates
         // `pet_id IN (pets owned by auth.uid())` when the queued row is pushed.
-        const { id } = await startRegimen({ petId, payload });
+        const { id } = await startRegimen({ petId, payload, vetVisitId });
         onClose();
         onAdded({ id, pet_id: petId, ...payload, status: 'active', ended_at: null });
       }

@@ -7,6 +7,7 @@ import { Header, SectionLabel } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { AppointmentBlock } from '../../components/vetvisits/AppointmentBlock';
+import { AppointmentActions } from '../../components/vetvisits/AppointmentActions';
 import { VisitRow } from '../../components/vetvisits/VisitRow';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
 import { BookVisitSheet, type BookVisitSubmit, type VisitMode } from '../../components/vetvisits/BookVisitSheet';
@@ -288,6 +289,22 @@ export default function VetVisitsScreen() {
             <View style={styles.section}>
               <SectionLabel label="Next" header />
               <AppointmentBlock appointment={home.next} style={styles.nextBlock} />
+              {/* ON THE DAY ONLY. `next` reaches weeks into the future, and both
+                  doors are about a visit that is happening or has just happened — so
+                  on a recheck booked six weeks out they are a mis-tap that consumes
+                  the booking (the save marks it attended, and there is no way back
+                  before VV-6's delete). A future appointment's door is *Get ready*,
+                  which is VV-5's; until then the block states and does not act.
+
+                  The appointment's OWN id and pet ride the route (AC 11) — the
+                  screens it opens never ask the store which pet this is. */}
+              {home.next.isToday ? (
+                <AppointmentActions
+                  petName={petName}
+                  onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
+                  onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${home.next?.id}`)}
+                />
+              ) : null}
             </View>
           ) : null}
 
@@ -300,7 +317,17 @@ export default function VetVisitsScreen() {
                   the owner made it and nothing else in the app can show it. */}
               <SectionLabel label="Waiting on you" header />
               {home.awaiting.map((appt) => (
-                <AppointmentBlock key={appt.id} appointment={appt} style={styles.nextBlock} />
+                <View key={appt.id}>
+                  <AppointmentBlock appointment={appt} style={styles.nextBlock} />
+                  {/* No *At the vet* here: the day has passed, and a door into the
+                      in-room notes surface would be offering the owner a room they
+                      have left. The draft they typed there is not lost — it seeds
+                      the notes field on the screen this opens. */}
+                  <AppointmentActions
+                    petName={petName}
+                    onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${appt.id}`)}
+                  />
+                </View>
               ))}
               <ThemedText style={styles.awaitingNote}>
                 This day has passed. Log the visit to move it into {petName}’s history.

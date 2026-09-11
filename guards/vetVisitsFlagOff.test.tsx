@@ -470,10 +470,25 @@ function drawsThroughNamespace(rel: string, src: string): boolean {
  * reads the flag to DECIDE something without drawing anything (a lib predicate, a
  * sync branch). Keyed by repo-relative path, valued with why.
  *
- * Empty, and that is the assertion (C-32) — every consumer today is a screen that
- * delegates its drawing. The staleness check below keeps it honest.
+ * The staleness check below keeps it honest: an entry that stops reading the flag is
+ * a pre-authorised hole for whatever lands in that file next.
  */
-const DRAWS_ELSEWHERE_OK: Record<string, string> = {};
+const DRAWS_ELSEWHERE_OK: Record<string, string> = {
+  // CUL-902 (VV-4). This is the OLD log-a-visit screen, and flag-on it draws nothing
+  // at all: it returns a `<Redirect>` to the companion's own after-visit capture,
+  // after every hook, so the two branches keep one hook order. It reads the flag to
+  // DECIDE, which is exactly what this exemption is for — and the equality half of
+  // this file still covers it, because flag-OFF the redirect is not in the tree and
+  // the screen must render identically to an app without the companion.
+  //
+  // The gate lives HERE rather than at each door on purpose: the Pet tab, the
+  // rundown's `log-visit` tile (`app/rundown.tsx:67`) and any deep link all arrive
+  // through this file, so one redirect moves all three. The file itself is deleted
+  // at GA along with the flag.
+  'app/vet-visit.tsx':
+    'reads the flag to REDIRECT to /vet-visits/after and draws nothing flag-on; ' +
+    'flag-off it is the untouched shipped screen (CUL-902)',
+};
 
 /** Every non-test source file in the app tree, so the scan cannot miss a consumer. */
 function appSources(dir: string, out: string[] = []): string[] {

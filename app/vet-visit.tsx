@@ -4,12 +4,14 @@ import {
   ScrollView, Animated, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { usePetStore } from '../store/petStore';
+import { useAllowlistFlag } from '../hooks/useAppConfig';
+import { useBetaOptIn } from '../lib/betaFeatures';
 import { useAuthStore } from '../store/authStore';
 import { getDb } from '../lib/db';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
@@ -24,6 +26,19 @@ function isoToDateOnly(iso: string): string {
 }
 
 export default function VetVisitModal() {
+  // CUL-902 (VV-4) — flag-on, this screen is REPLACED by the companion's own
+  // after-visit capture, and the redirect lives here rather than at each door so
+  // every entry point follows one gate: the Pet tab, the rundown's `log-visit` tile
+  // (`app/rundown.tsx`), and any deep link. The file itself goes at GA.
+  //
+  // Flag-OFF nothing below changes and no companion module is imported, which is
+  // what keeps AC 0 true for this screen: a `<Redirect>` that never renders is not
+  // in the tree. It is a redirect rather than an effect for the `(tabs)/_layout.tsx`
+  // reason — it resolves before anything paints, so there is no frame of the old
+  // screen to see.
+  const vetVisitsEligible = useAllowlistFlag('vet_visits');
+  const vetVisitsOptedIn = useBetaOptIn('vet_visits');
+
   const { activePet } = usePetStore();
   const { user } = useAuthStore();
 
@@ -60,6 +75,9 @@ export default function VetVisitModal() {
     const t = setTimeout(() => router.back(), 1200);
     return () => clearTimeout(t);
   }, [step]);
+
+  // After every hook, so the hook order is identical in both branches.
+  if (vetVisitsEligible && vetVisitsOptedIn) return <Redirect href="/vet-visits/after" />;
 
   async function handlePickPhoto(source: 'camera' | 'library') {
     const options: ImagePicker.ImagePickerOptions = {

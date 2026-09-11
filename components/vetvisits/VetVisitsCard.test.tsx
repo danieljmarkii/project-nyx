@@ -5,7 +5,7 @@ import {
   buildVetVisitsCardModel,
   buildVisitListRow,
   composeScheduledAt,
-  type LocalVetAppointment,
+  type AppointmentDetail,
   type LocalVetVisit,
 } from '../../lib/vetVisits';
 
@@ -28,13 +28,15 @@ const visit: LocalVetVisit = {
   deleted_at: null,
 };
 
-const appointment: LocalVetAppointment = {
+const appointment: AppointmentDetail = {
   id: 'a1',
   pet_id: 'pet-a',
   scheduled_at: composeScheduledAt(new Date(2026, 8, 16), new Date(2026, 8, 16, 15, 0)),
   clinic_name: 'Riverside Animal Hospital',
   vet_name: 'Dr. Chen',
   reason: 'recheck',
+  notes_draft: null,
+  questions: null,
   vet_visit_id: null,
   cancelled_at: null,
   deleted_at: null,
