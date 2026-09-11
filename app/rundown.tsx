@@ -1,34 +1,70 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { theme } from '../constants/theme';
-import { Header, PrimaryButton, Card } from '../components/ui';
+import { Header, PrimaryButton } from '../components/ui';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
-import { RundownTileRow } from '../components/ask/RundownTileRow';
-import { usePetStore } from '../store/petStore';
+import { RundownBlock } from '../components/ask/RundownBlock';
+import { AddQuestionSheet } from '../components/vetvisits/AddQuestionSheet';
 import {
-  buildRundown,
-  rundownToPlainText,
-  rundownDateLine,
-  pastMedsSectionLabel,
-  type Rundown,
-  type RundownTap,
-} from '../lib/rundown';
+  GetReadyMoreMenu,
+  GetReadyMoreTrigger,
+  GetReadyTitle,
+} from '../components/vetvisits/GetReadyHeader';
+import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
+import { useAllowlistFlag } from '../hooks/useAppConfig';
+import { useBetaOptIn } from '../lib/betaFeatures';
+import { resolveRecordPetName, usePetStore } from '../store/petStore';
+import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
+import { buildWorthRaising, type WorthRaising } from '../lib/getReady';
+import { loadDietTrialFacts } from '../lib/dietTrialFacts';
+import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
+import { readSignalCache } from '../lib/signal';
+import { syncPendingVetAppointments } from '../lib/sync';
+import {
+  buildAppointmentView,
+  parseAppointmentQuestions,
+  readAppointmentById,
+  saveAppointmentQuestions,
+  type AppointmentQuestion,
+  type AppointmentDetail,
+} from '../lib/vetVisits';
+import { uuid } from '../lib/utils';
 import { profileFocusHref } from '../lib/profileFocus';
 
-// The vet-visit rundown (Ask / B-228 PR A6, spec §3.3 + mock §7).
+// The vet-visit rundown (Ask / B-228 PR A6, spec §3.3 + mock §7), and — with an
+// `appointmentId` — GET READY (CUL-903 VV-5; vet-visits spec §4.1 B1, mock B1 / B1b).
 //
-// A deterministic, one-tap preset that assembles the answers a clinician asks
-// for at the start of a visit — NO model call, so it works CAPPED and OFFLINE
-// (every tile reads the local mirror via lib/rundown). The two exam-room actions:
-// "Share the full vet report" hands off to the Step-9 flow (the clinical
-// artifact); "Save for the visit" shares the rundown itself as portable text so
-// the anxious owner in the consult room has it in hand — no persistence needed
-// (§10), the rundown is the pinnable artifact.
+// ── ONE ROUTE, TWO JOBS, AND THAT IS AN ACCEPTANCE CRITERION ─────────────────────
+// "Promote, don't rebuild" (the PM on the rundown). Get ready IS this screen with an
+// appointment attached: the same deterministic, offline, capped-safe rundown, under
+// a job title, with the record's own things-to-raise and the owner's questions above
+// it and ONE primary below it. AC 4 requires the rundown block to be byte-identical
+// between the two modes, which is why both render `RundownBlock` rather than two
+// copies of the same JSX.
 //
-// Entry is Ask-internal (S5): A5's Ask surface pushes here via its rundown chip.
-// The route stands alone so A6 is parallel-safe with the Ask client build.
+// ── ZERO MODEL CALLS, AND ONE NEAR-MISS WORTH NAMING ─────────────────────────────
+// AC 4 also requires zero model calls through mount and every tap. The obvious way
+// to read the Signal's findings here is `useSignal()` — and it would have broken
+// that: the hook refreshes a stale cache (`readSignalsAndRefresh` →
+// `regenerateSignal` → `functions.invoke('generate-signal')`), and that function
+// makes the Haiku phrasing call. Opening Get ready on a day-old cache would have
+// spent a model call and, worse, made this screen's content depend on one.
+//
+// So it reads `readSignalCache` DIRECTLY — a select of findings the engine already
+// computed, never the refreshing wrapper. Get ready reports the record; it never
+// asks for it to be re-judged because a visit is coming.
+//
+// The cache is a network read (it is on Home too), so offline it simply does not
+// answer. That is handed to `buildWorthRaising` as `findings: null` — distinct from
+// an empty list — and the section says so rather than falling silent (C-12).
+//
+// ── THE PET IS THE APPOINTMENT'S ────────────────────────────────────────────────
+// In Get-ready mode every read is scoped to `appointment.pet_id`, never to
+// `activePet` (CUL-574 / AC 11), including the trial facts — which is why this
+// screen calls `loadDietTrialFacts` itself instead of `useDietTrial()`, whose whole
+// contract is "the active pet".
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -70,11 +106,37 @@ function navigateTo(tap: RundownTap): void {
   }
 }
 
+/** Everything the Get-ready chrome needs. Absent in plain-rundown mode. */
+interface GetReadyState {
+  appointment: AppointmentDetail;
+  petName: string;
+  questions: AppointmentQuestion[];
+  worthRaising: WorthRaising;
+}
+
 export default function RundownScreen() {
   const activePet = usePetStore((s) => s.activePet);
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<Status>('loading');
   const [rundown, setRundown] = useState<Rundown | null>(null);
+  const [getReady, setGetReady] = useState<GetReadyState | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  const eligible = useAllowlistFlag('vet_visits');
+  const optedIn = useBetaOptIn('vet_visits');
+  const companionOn = eligible && optedIn;
+  const { appointmentId, ask } = useLocalSearchParams<{ appointmentId?: string; ask?: string }>();
+  // Off the flag the param is inert and this is the shipped rundown, unchanged —
+  // which is what AC 0 asserts about `/rundown`.
+  const wantsGetReady = companionOn && typeof appointmentId === 'string' && appointmentId.length > 0;
+
+  // The strip's *Add a question* opens this screen with the sheet up. A ONE-SHOT held
+  // in a ref and armed from the ref's initialiser, never in the render body: the
+  // param stays in the URL for the life of the screen, so a render-body assignment
+  // re-arms it on every render and the sheet re-opens each time the owner dismisses
+  // it (C-22, and the exact defect VV-2's list screen shipped and fixed).
+  const pendingAsk = useRef(ask === '1');
 
   // Monotonic load id so a slow load can never commit over a newer one (pet
   // switch / retry) — the insights / report pattern.
@@ -85,17 +147,36 @@ export default function RundownScreen() {
   // build (the report.tsx pattern) — the loadIdRef guard alone only prevents a
   // stale response winning; the reactive dep is what triggers the fresh load.
   const load = useCallback(async () => {
-    const pet = usePetStore.getState().activePet;
-    if (!pet) {
-      setStatus('error');
-      return;
-    }
     const myId = ++loadIdRef.current;
     setStatus('loading');
     try {
-      const built = await buildRundown(pet.id, pet.name);
+      // The appointment decides the subject in Get-ready mode. Resolved FIRST,
+      // because everything below is scoped to its pet.
+      const appointment = wantsGetReady ? await readAppointmentById(appointmentId) : null;
+      const subjectId = appointment?.pet_id ?? usePetStore.getState().activePet?.id ?? null;
+      if (!subjectId) {
+        if (loadIdRef.current === myId) setStatus('error');
+        return;
+      }
+      const subjectName = resolveRecordPetName(usePetStore.getState().pets, subjectId);
+
+      const built = await buildRundown(subjectId, subjectName);
       if (loadIdRef.current !== myId) return;
       setRundown(built);
+
+      if (!appointment) {
+        setGetReady(null);
+        setStatus('ready');
+        return;
+      }
+
+      setGetReady({
+        appointment,
+        petName: subjectName,
+        questions: parseAppointmentQuestions(appointment.questions),
+        worthRaising: await buildForAppointment(built, subjectId, myId, loadIdRef),
+      });
+      if (loadIdRef.current !== myId) return;
       setStatus('ready');
     } catch {
       // No silent failure (house rule) — a warm retry, never a fabricated empty
@@ -103,14 +184,24 @@ export default function RundownScreen() {
       if (loadIdRef.current !== myId) return;
       setStatus('error');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- petId is the intended trigger; pet is read fresh inside
-  }, [petId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- petId is the intended trigger; the subject is read fresh inside
+  }, [petId, wantsGetReady, appointmentId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const onSave = useCallback(async () => {
+  // Consume the one-shot once there is something to open the sheet over, then strip
+  // the param so a re-focus reads a clean URL rather than relying on the ref alone.
+  useEffect(() => {
+    if (!getReady || !pendingAsk.current) return;
+    pendingAsk.current = false;
+    setSheetOpen(true);
+    router.setParams({ ask: undefined });
+  }, [getReady]);
+
+  const onCopyAsText = useCallback(async () => {
+    setMenuOpen(false);
     if (!rundown) return;
     try {
       await Share.share({ message: rundownToPlainText(rundown) });
@@ -119,14 +210,39 @@ export default function RundownScreen() {
     }
   }, [rundown]);
 
+  const writeQuestions = useCallback(
+    async (next: AppointmentQuestion[]) => {
+      if (!getReady) return;
+      try {
+        await saveAppointmentQuestions(getReady.appointment.id, next);
+        setGetReady({ ...getReady, questions: next });
+        syncPendingVetAppointments().catch(() => {});
+      } catch (err) {
+        console.warn('[get-ready] question save failed:', err);
+        // Never a silent failure, and never an optimistic list: the row on screen is
+        // still what the record holds.
+        Alert.alert('Couldn’t save that', 'Your questions are unchanged — try again.');
+        throw err;
+      }
+    },
+    [getReady],
+  );
+
   const petName = activePet?.name ?? 'your pet';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header
-        title={activePet ? `${activePet.name} — visit rundown` : 'Visit rundown'}
+        title={
+          getReady
+            ? ''
+            : activePet
+              ? `${activePet.name} — visit rundown`
+              : 'Visit rundown'
+        }
         leading="back"
         onLeadingPress={() => router.back()}
+        right={getReady ? <GetReadyMoreTrigger onPress={() => setMenuOpen(true)} /> : undefined}
       />
 
       {status === 'loading' && (
@@ -151,63 +267,141 @@ export default function RundownScreen() {
       {status === 'ready' && rundown && (
         <>
           <ScrollView contentContainerStyle={styles.scroll}>
-            <Text style={styles.intro}>
-              The clinician’s opening questions, straight from {petName}’s record. Tap any line to
-              open its source in the app.
-            </Text>
-            <Text style={styles.dateLine}>{rundownDateLine(rundown.generatedAtMs)}</Text>
-            <Card noPadding style={styles.tileCard}>
-              {rundown.tiles.map((tile, i) => (
-                <RundownTileRow
-                  // key: index-scoped by section — a pet can have multiple symptom
-                  // and med rows sharing a `key`, so the position disambiguates.
-                  key={`${tile.key}-${i}`}
-                  tile={tile}
-                  isLast={i === rundown.tiles.length - 1}
-                  onPress={tile.tap ? () => navigateTo(tile.tap as RundownTap) : undefined}
-                />
-              ))}
-            </Card>
-
-            {/* Past medications — its own labelled card (B-140 PR 4). A course a vet
-                asks about ("has she been on steroids?") that ended is invisible in the
-                Current-meds block above; this is where the past lives, in read-aloud rows.
-                Rendered only when there is past history — an absent history is silence,
-                not a finding, so there is no empty state here. */}
-            {rundown.pastMedications.length > 0 && (
+            {getReady ? (
               <>
-                <Text style={styles.sectionLabel}>{pastMedsSectionLabel()}</Text>
-                <Card noPadding style={styles.tileCard}>
-                  {rundown.pastMedications.map((tile, i) => (
-                    <RundownTileRow
-                      key={`${tile.key}-${i}`}
-                      tile={tile}
-                      isLast={i === rundown.pastMedications.length - 1}
-                      onPress={tile.tap ? () => navigateTo(tile.tap as RundownTap) : undefined}
-                    />
-                  ))}
-                </Card>
+                {/* The strip's own `when` / `where`, through the SAME builder — so the
+                    page and the strip that opened it can never disagree about when
+                    the visit is or where it is. */}
+                <GetReadyTitle
+                  when={buildAppointmentView(getReady.appointment).when}
+                  where={buildAppointmentView(getReady.appointment).where}
+                  petName={getReady.petName}
+                />
+                <WorthRaisingList
+                  worthRaising={getReady.worthRaising}
+                  questions={getReady.questions}
+                  petName={getReady.petName}
+                  onAdd={() => setSheetOpen(true)}
+                  onRemove={(id) =>
+                    writeQuestions(getReady.questions.filter((q) => q.id !== id)).catch(() => {})
+                  }
+                />
+                <Text style={styles.sectionLabel}>The rundown · last 30 days</Text>
               </>
-            )}
+            ) : null}
+
+            <RundownBlock rundown={rundown} petName={rundown.petName} onTap={navigateTo} />
           </ScrollView>
 
           <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>
-            <PrimaryButton label="Share the full vet report" onPress={() => router.push('/report')} />
-            <PrimaryButton
-              // "Share", not "Save" — it opens the OS share sheet (no in-app
-              // persistence, §10); the label matches what actually happens.
-              label="Share the rundown"
-              onPress={onSave}
-              variant="secondary"
-              style={styles.saveBtn}
-            />
-            <Text style={styles.barHint}>The report is the clinical record; the rundown is the quick answer.</Text>
+            {getReady ? (
+              // ONE primary (R-share). The rundown is not for the vet — all nine
+              // lenses said so independently — so the only hand-off here is the
+              // report, and the text share sits under ⋯ as *Copy as text*.
+              <>
+                <PrimaryButton label="Send the vet report" onPress={() => router.push('/report')} />
+                <Text style={styles.barHint}>
+                  The report is the clinical record. This page is your quick answer.
+                </Text>
+              </>
+            ) : (
+              <>
+                <PrimaryButton label="Share the full vet report" onPress={() => router.push('/report')} />
+                <PrimaryButton
+                  // "Share", not "Save" — it opens the OS share sheet (no in-app
+                  // persistence, §10); the label matches what actually happens.
+                  label="Share the rundown"
+                  onPress={onCopyAsText}
+                  variant="secondary"
+                  style={styles.saveBtn}
+                />
+                <Text style={styles.barHint}>The report is the clinical record; the rundown is the quick answer.</Text>
+              </>
+            )}
           </View>
         </>
       )}
+
+      {getReady ? (
+        <>
+          <GetReadyMoreMenu
+            petName={getReady.petName}
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            onCopyAsText={onCopyAsText}
+            onChangeAppointment={() => {
+              setMenuOpen(false);
+              router.push('/vet-visits');
+            }}
+          />
+          <AddQuestionSheet
+            visible={sheetOpen}
+            petName={getReady.petName}
+            existingCount={getReady.questions.length}
+            onClose={() => setSheetOpen(false)}
+            onSubmit={async (text) => {
+              await writeQuestions([
+                ...getReady.questions,
+                { id: uuid(), text, source: 'owner', source_ref: null, asked_at: null },
+              ]);
+            }}
+          />
+        </>
+      ) : null}
     </SafeAreaView>
   );
 }
+
+/**
+ * Worth raising, for this appointment's pet.
+ *
+ * The Signal cache is read here and its FAILURE is kept distinct from its emptiness
+ * (`findings: null` vs `[]`) — the whole point of the gap line the section renders.
+ * The trial facts fail closed the way Home's do: an input that is not confirmed for
+ * this pet suppresses the reassuring trial row rather than risking the previous pet's.
+ */
+async function buildForAppointment(
+  built: Rundown,
+  subjectId: string,
+  myId: number,
+  loadIdRef: { current: number },
+): Promise<WorthRaising> {
+  const pet = usePetStore.getState().pets.find((p) => p.id === subjectId) ?? null;
+
+  const [findings, trialInput] = await Promise.all([
+    readSignalCache(subjectId)
+      .then((row) => row?.findings ?? [])
+      // Unreadable cache (offline / never generated). NULL, not [] — an empty list
+      // says "nothing standing" and this says "we could not look".
+      .catch(() => null),
+    pet
+      ? loadDietTrialFacts({
+          pet: { id: pet.id, name: pet.name, species: pet.species, sex: pet.sex },
+          otherPetNames: usePetStore
+            .getState()
+            .pets.filter((p) => p.id !== pet.id)
+            .map((p) => p.name),
+          signalsV2: true,
+        }).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  if (loadIdRef.current !== myId) {
+    return { rows: [], signalUnavailable: false };
+  }
+
+  return buildWorthRaising({
+    findings,
+    // The same fail-closed rule Home applies (B-789): absence of a refusal fact
+    // during a failed load is not evidence of eating, so an unloadable trial
+    // suppresses the reassuring trial_response row rather than letting it through.
+    suppressTrialResponse: trialInput ? isAnimalNotEating(trialInput) : true,
+    trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
+    rundown: built,
+    nowMs: Date.now(),
+  });
+}
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colorSurface },
@@ -242,20 +436,6 @@ const styles = StyleSheet.create({
     padding: theme.space2,
     gap: theme.space2,
   },
-  intro: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textSM,
-    lineHeight: theme.lineHeightSM,
-    color: theme.colorTextSecondary,
-    paddingHorizontal: theme.space1,
-  },
-  dateLine: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    paddingHorizontal: theme.space1,
-    marginTop: -theme.space1,
-  },
   sectionLabel: {
     fontFamily: theme.fontBodySemibold,
     fontSize: theme.textSM,
@@ -263,9 +443,6 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     paddingHorizontal: theme.space1,
     marginTop: theme.space1,
-  },
-  tileCard: {
-    overflow: 'hidden',
   },
   bar: {
     paddingHorizontal: theme.space2,

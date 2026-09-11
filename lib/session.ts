@@ -12,6 +12,7 @@ import { clearBetaOptIns } from './betaFeatures';
 import { clearDailyRecapOffer } from './dailyRecapOffer';
 import { clearSignalArrival } from './signalArrival';
 import { clearSignalFold } from './signalFold';
+import { clearAppointmentAsked } from './appointmentAsked';
 import { clearLookWithheld } from './lookWithheld';
 import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
@@ -241,4 +242,12 @@ export async function wipeLocalSession(): Promise<void> {
   // next account, suppress a coverage footer for a pet whose record never earned it. Same
   // FR-9 parity rule as the rest of this list.
   await clearLookWithheld();
+  // CUL-903 (vet-visits spec §4.1 A2b) — the per-appointment "this device already
+  // asked" marks, AsyncStorage-resident like the folds above. Account-adjacent device
+  // state in both directions: leaving it behind would suppress the after-the-day ask for
+  // a booking the next account did make (the id space is uuids, so the risk is the
+  // inherited MAP, not a collision), and the mark itself records that a particular
+  // animal had a vet appointment on a particular day. Same FR-9 parity rule as the rest
+  // of this list.
+  await clearAppointmentAsked();
 }

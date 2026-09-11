@@ -14,6 +14,7 @@ import { CrossPetSafetyBanner } from '../../components/home/CrossPetSafetyBanner
 import { SignalZone } from '../../components/home/SignalZone';
 import { TrialStrip } from '../../components/home/TrialStrip';
 import { MedStrip } from '../../components/home/MedStrip';
+import { AppointmentStrip } from '../../components/vetvisits/AppointmentStrip';
 import { LookCard } from '../../components/home/LookCard';
 import { LookExits, exitVisibility } from '../../components/home/LookExits';
 import { TodayZone } from '../../components/home/TodayZone';
@@ -221,6 +222,22 @@ export default function HomeScreen() {
               lead, and a trial is context, not an insight. `resolveTrialStrip`
               returns null unless a trial is ACTIVE, so Home gains nothing when
               there isn't one. */}
+          {/* CUL-903 VV-5 (§4.1 A2) — the appointment strip, BETWEEN the Signal and the
+              trial strip, in the trial strip's register for the same reason the strip
+              below it gives: a visit that is coming is CONTEXT, not an insight, so a
+              live safety or intake card keeps its place above it with its own ask
+              intact. Nothing here changes, dates or re-phrases a Signal string because
+              an appointment exists, and the strip never gains urgency styling.
+
+              It draws nothing unless the account is allowlisted AND opted in AND this
+              pet has a booking inside the five-day window (or one whose day just
+              passed, asked once) — so Home is byte-identical off the flag.
+
+              It carries ONE write: *It didn't* → `cancelled_at`. That is Home's third
+              write class and a Tier-2 amendment to `docs/nyx-med-strip-requirements.md`
+              §0.1, PM-approved 2026-09-11 as one CONFIRMATION and no form — see the
+              component header and `guards/homeWrites.test.ts`. */}
+          <AppointmentStrip />
           <TrialStrip model={trialStripModel} />
           {/* B-614 §8/D9 — one compact strip PER active/recent medication, BELOW
               the trial strip and ABOVE Today. The trial is the wedge's primary

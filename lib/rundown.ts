@@ -33,7 +33,7 @@ import {
   isNotEnoughData,
   type IntakeRate,
 } from './analytics';
-import { getWeightHistory, computeWeightTrend } from './weight';
+import { getWeightHistory, computeWeightTrend, type WeightReading } from './weight';
 import { symptomLabel } from './metricDetail';
 import { toLocalDayKey, dayKeyToLocalDate, formatCalendarDate } from './utils';
 import {
@@ -88,6 +88,29 @@ export interface Rundown {
   // has no ended/past courses (no designed empty state here — an absent history is
   // silence, not a finding; the current-meds tile already answers "on anything now?").
   pastMedications: RundownTile[];
+  /**
+   * Inputs this build ALREADY read, exposed so a second consumer quotes the same
+   * derivation instead of running its own (CUL-903 VV-5 — Get ready's "Worth
+   * raising" sits above this block on the same screen).
+   *
+   * Nothing renders these, so the rundown's tree is unchanged and AC 4's
+   * byte-identical comparison is untouched. They are here rather than re-read
+   * because the alternative is two derivations over one population, which is the
+   * §5.3 lesson: a second `deriveMedicationCourses` pass is the same predicate run
+   * twice today and two predicates the first time either caller is edited.
+   */
+  facts: RundownFacts;
+}
+
+export interface RundownFacts {
+  /** The ONE shared course derivation over the whole regimen + dose history. */
+  courses: MedicationCourse[];
+  /** The drug-name cache a dose-derived course is named from. */
+  medItemNames: Map<string, MedItemName>;
+  /** The pet's most recent logged visit ('YYYY-MM-DD'), or null. */
+  lastVisitAt: string | null;
+  /** Every weigh-in the weight tile was computed over, oldest first. */
+  weighIns: WeightReading[];
 }
 
 // The window every count is scoped to — stated on-screen and in the export so a
@@ -906,5 +929,11 @@ export async function buildRundown(
   const courses = deriveMedicationCourses({ regimens: allRegimens, doses: allDoses });
   const pastMedications = buildPastMedications(courses, medItemNames, nowMs);
 
-  return { petName, generatedAtMs: nowMs, tiles, pastMedications };
+  return {
+    petName,
+    generatedAtMs: nowMs,
+    tiles,
+    pastMedications,
+    facts: { courses, medItemNames, lastVisitAt: lastVisit, weighIns: weightReadings },
+  };
 }
