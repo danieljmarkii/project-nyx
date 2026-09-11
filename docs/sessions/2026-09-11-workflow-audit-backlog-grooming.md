@@ -61,7 +61,7 @@ The full set is `docs/workflow-retro-2026-09.md` §3. The two with the widest re
 
 ## What this session deliberately did NOT do
 
-No Linear writes beyond filing the nine issues below — no status corrections, no label hygiene, no sweep. The PM ruled the scheduled pass may make safe writes; **that ruling is for the pass, not for a discovery session**, and the write-boundary table (CUL-919) is a hard prerequisite for any of it. Applying ~90 hygiene writes before the boundary is written down is exactly the shape the audit is warning about.
+No Linear writes beyond filing the ten issues above — no status corrections, no label hygiene, no sweep. The PM ruled the scheduled pass may make safe writes; **that ruling is for the pass, not for a discovery session**, and the write-boundary table (CUL-922) is a hard prerequisite for any of it. Applying ~90 hygiene writes before the boundary is written down is exactly the shape the audit is warning about.
 
 No code, no schema, no deploy, no build-phase change. The `personas.md` edit is the retro log entry, which the ritual itself instructs. Every other `/docs/` and CLAUDE.md change is proposed, not written.
 
