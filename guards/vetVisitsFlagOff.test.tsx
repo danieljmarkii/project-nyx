@@ -194,8 +194,14 @@ function registerSwitchable(abs: string): void {
     const actual = jest.requireActual(abs) as Record<string, unknown>;
     const wrappers = new Map<string, unknown>();
     return new Proxy(actual, {
-      get(target, key: string) {
-        const real = target[key];
+      get(target, key: string | symbol) {
+        const real = target[key as string];
+        // Symbol keys pass straight through. A UI module is unlikely to export a
+        // symbol-keyed function, but the Proxy sees every lookup the runtime makes
+        // (Symbol.toStringTag, Symbol.iterator, jest's own probes), and wrapping
+        // one of those into a React component would be a quiet way to break a
+        // module the guard is only supposed to observe.
+        if (typeof key === 'symbol') return real;
         if (key === '__esModule' || typeof real !== 'function') return real;
         if (!wrappers.has(key)) {
           const Real = real as React.ComponentType<Record<string, unknown>>;
