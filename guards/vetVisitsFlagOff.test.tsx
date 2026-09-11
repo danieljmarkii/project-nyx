@@ -352,7 +352,29 @@ describe('AC 0 — flag-off is byte-identical to an app without the companion', 
 // Deleted by the PR that invalidates it, exactly as `firstCallerLands` was in
 // guards/completionCard.test.ts.
 const FIRST_CONSUMER_LANDS = 'CUL-900 (VV-2 — the Pet-tab home)';
+/**
+ * Two detectors, because one blunt one does not work here — and the reason is
+ * worth keeping, since it is a consequence of the key name this PR chose.
+ *
+ * The obvious hardening is to match the bare key `['"]vet_visits['"]`, which is
+ * immune to the bypass C-33 had to close in `guards/homeWrites.test.ts`: an
+ * ALIASED import (`import { useAllowlistFlag as useFlag }`) walks straight past a
+ * call-shape regex. Measured before adopting it (C-33 again: scope a detector by
+ * running it), it flags **`lib/sync.ts`, `lib/hydration.ts` and
+ * `lib/syncQueue.ts`** — none of them flag reads. `vet_visits` is also the name of
+ * a TABLE that has existed since long before this flag, which is precisely why
+ * the key was named to match it. So the bare key cannot separate "reads the flag"
+ * from "pushes the table", and exempting the sync fabric would blind the scan to
+ * a consumer added there later.
+ *
+ * So: (a) the call shape, which is what a consumer actually looks like, and
+ * (b) a separate, key-independent assertion that nobody aliases the hook —
+ * currently true everywhere in the repo, so it costs nothing and closes (a)'s one
+ * hole. A future alias reds (b) and lands the job of teaching (a) about it on the
+ * PR that introduces it.
+ */
 const CONSUMER_RE = /useAllowlistFlag\(\s*['"]vet_visits['"]\s*\)/;
+const ALIASED_HOOK_RE = /\buseAllowlistFlag\s+as\s+\w+/;
 
 /** Every non-test source file in the app tree, so the scan cannot miss a consumer. */
 function appSources(dir: string, out: string[] = []): string[] {
@@ -365,13 +387,18 @@ function appSources(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-function flagConsumers(): string[] {
-  const roots = ['app', 'components', 'hooks', 'lib', 'store']
+/** Every scanned source file in the app tree, both detectors over the same set. */
+function allAppSources(): string[] {
+  return ['app', 'components', 'hooks', 'lib', 'store']
     .map((d) => path.join(REPO_ROOT, d))
-    .filter((d) => fs.existsSync(d));
+    .filter((d) => fs.existsSync(d))
+    .flatMap((root) => appSources(root));
+}
+
+function flagConsumers(): string[] {
   const hits: string[] = [];
-  for (const root of roots) {
-    for (const abs of appSources(root)) {
+  {
+    for (const abs of allAppSources()) {
       if (CONSUMER_RE.test(fs.readFileSync(abs, 'utf8'))) hits.push(path.relative(REPO_ROOT, abs));
     }
   }
@@ -386,6 +413,17 @@ describe('the companion has no consumer yet (VV-0)', () => {
     //      above can stub it — UI written inline in a screen is invisible to it;
     //   2. the deletion of this case, replaced by the permanent rule below.
     expect(flagConsumers()).toEqual([]);
+  });
+
+  it('nobody aliases useAllowlistFlag, so the call-shape scan above has no blind spot', () => {
+    // Key-independent and permanent: it outlives the tripwire and keeps the
+    // consumer scan honest for every later companion PR. True across the whole
+    // repo today, so it costs nothing until someone makes it cost something —
+    // at which point teaching CONSUMER_RE about the alias is their job.
+    const aliased = allAppSources().filter((abs) =>
+      ALIASED_HOOK_RE.test(fs.readFileSync(abs, 'utf8')),
+    );
+    expect(aliased.map((abs) => path.relative(REPO_ROOT, abs))).toEqual([]);
   });
 
   it('once a consumer exists, the namespace the equivalence half stubs is non-empty', () => {
