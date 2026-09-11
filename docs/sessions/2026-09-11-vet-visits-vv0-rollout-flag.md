@@ -185,9 +185,59 @@ so could not have detected finding 3.
 - **The equivalence half** — the fixture's ungated companion card: the trees
   differ, the marker is present in one and absent in the other.
 
+## `code-reviewer` — five findings, all closed
+
+The review ran against the first commit and reported that two of its findings
+(the aliased-import gap and the `normalize()` cycle collapse) had already been
+closed by follow-up commits it watched land while it worked. Of the rest:
+
+1. **The consumer scan did not strip comments** — a real regression against the
+   very precedent this file cites. `guards/completionCard.test.ts` blanks comments
+   because *a sentence about its rule* was once matched as a call to it; this file
+   quoted that lineage and skipped the discipline. I had reasoned the false-red
+   direction was "safe", and that reasoning is worth less than it sounds: this
+   repo's comments routinely quote a sibling flag's exact call shape, so it is a
+   plausible future false alarm, and it reds the namespace case too for an
+   unrelated reason. Now reads through `guards/blankComments.ts` — the shared
+   single-pass walker that already existed and that I should have reached for.
+   Proven in **both** directions (C-18): prose quoting the call shape stays green,
+   a real call in the same file still reds.
+2. **The `WeightTrendCard` mock was a blind spot the equivalence cannot see
+   through.** The reviewer made concrete what the header had only conceded in the
+   abstract: an unconditional companion render placed inside the *real*
+   `WeightTrendCard` left the Pet tab **green**, because the mock replaces the
+   component before its body runs on both branches. The same leak in the screen is
+   caught. Now enforced rather than assumed — a new case walks the transitive local
+   imports of every module this file mocks, derived from the file's own
+   `jest.mock` calls so adding a mock cannot silently widen the hole, and fails if
+   any of them reaches `components/vetvisits/`. Proven by mutation.
+3. **The "premise" test did not test the premise.** It passed a local `DARK_SEED`
+   to `resolveAllowlistFlag`, which `lib/appConfig.test.ts` already covers and
+   which says nothing about this environment — and its comment claimed a
+   mis-resolving flag would leave the comparisons "vacuous and still green", which
+   is backwards: the equivalence stubs the namespace regardless of the flag, so a
+   flag stuck on would turn a correctly gated card into a difference and red the
+   guard. It fails safe. Replaced with an assertion through the hook the *screens*
+   call, which is the thing that was genuinely unasserted.
+4. A comment referenced `firstConsumerLands`; the identifier is
+   `FIRST_CONSUMER_LANDS`. Fixed.
+5. **The on-state hint named a Pet-tab section that does not exist until VV-2.**
+   Procedural rather than theoretical: the `daily_look` precedent allowlisted the
+   PM in the same session as the seed, so an owner could toggle this on today and
+   go hunting for a screen that is not there — the exact failure an on-state hint
+   exists to prevent. Rewritten for the state that actually ships, and the tripwire
+   now names the string as one of three things VV-2 owes.
+
+The reviewer's verdict on the shipped product surface (migration, flag
+registration, shelf card) was that it is correct, tested and byte-identical-off as
+claimed; every finding was in the safety net this PR builds for VV-2. It confirmed
+by mutation, not by reading, that the primary mechanism works: an ungated card
+injected into a copy of the real `app/(tabs)/profile.tsx` reds the guard with a
+readable diff.
+
 ## Verification
 
-`npx tsc --noEmit` clean. `npm test` — **7,612 passed / 350 suites**, including
+`npx tsc --noEmit` clean. `npm test` — **7,614 passed / 350 suites**, including
 all 15 guards. The five touched suites green under all three CI timezones
 (Kiritimati +14, Chatham +12:45, Honolulu −10).
 

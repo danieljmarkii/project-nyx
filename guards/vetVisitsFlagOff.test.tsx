@@ -39,7 +39,7 @@
 // Equivalence can only see what it can stub, so the companion's rendering lives in
 // `components/vetvisits/`. A screen may hold the gate, but it delegates the
 // drawing to that namespace — UI written inline in a screen is invisible to this
-// guard. `firstConsumerLands` below is the C-32 shape that makes that stick: it
+// guard. `FIRST_CONSUMER_LANDS` below is the C-32 shape that makes that stick: it
 // asserts EXACTLY ZERO consumers of the flag today and names the PR that will red
 // it, because "every consumer is gated" proves nothing over an empty set, and a
 // guard completed after the first consumer is a guard completed after the bug.
@@ -135,6 +135,7 @@ import * as React from 'react';
 import * as fs from 'fs';
 import * as path from 'path';
 import { render } from '@testing-library/react-native';
+import { blankComments } from './blankComments';
 import { createFixtureRoot, writeFixture, removeFixtureRoot } from './fixtureRoot';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -321,10 +322,6 @@ const SURFACES: ReadonlyArray<{ name: string; load: () => ComponentType }> = [
   { name: 'app/vet-visit.tsx', load: () => require('../app/vet-visit').default },
 ];
 
-// The shipped seed (065). Every surface below renders under it: the flag is OFF for
-// this caller, which is the state the whole assertion is about.
-const DARK_SEED = { enabled: false, allowlist: [] as string[] };
-
 /** Rendered nodes in a normalized tree — the non-vacuity measure below. */
 function nodeCount(node: unknown): number {
   if (node === null || typeof node !== 'object') return 0;
@@ -343,14 +340,28 @@ function nodeCount(node: unknown): number {
 const MIN_SURFACE_NODES = 5;
 
 describe('AC 0 — flag-off is byte-identical to an app without the companion', () => {
-  it('the seed this runs under is off for the caller (the premise, not an assumption)', () => {
-    // Cheap, but it is the premise every case below rests on: if the dark seed ever
-    // resolved ON, all four comparisons would be vacuous and still green.
-    const {
-      resolveAllowlistFlag,
-    } = require('../lib/appConfig') as typeof import('../lib/appConfig');
-    expect(resolveAllowlistFlag(DARK_SEED, 'u1', false)).toBe(false);
-    expect(resolveAllowlistFlag(DARK_SEED, null, false)).toBe(false);
+  it('the four screens below really do render with the flag OFF', () => {
+    // AC 0 is a claim about the flag-OFF tree specifically, so "the flag is off
+    // here" has to be asserted rather than assumed — and it has to be asserted
+    // through the hook the SCREENS call, not a resolver invoked on a local object.
+    // The first draft did the latter: it passed `DARK_SEED` to
+    // `resolveAllowlistFlag` directly, which is already covered by
+    // `lib/appConfig.test.ts` and says nothing about this environment. Worse, its
+    // comment claimed a mis-resolving flag would make the comparisons "vacuous and
+    // still green"; `code-reviewer` pointed out that is backwards — the equivalence
+    // half stubs the namespace regardless of the flag, so a flag stuck ON would
+    // turn a correctly gated card into a DIFFERENCE and red the guard. It fails
+    // safe. What was actually unasserted is the plain premise, so assert that.
+    const seen: boolean[] = [];
+    const Probe = () => {
+      seen.push(
+        (require('../hooks/useAppConfig') as typeof import('../hooks/useAppConfig'))
+          .useAllowlistFlag('vet_visits'),
+      );
+      return null;
+    };
+    render(React.createElement(Probe));
+    expect(seen).toEqual([false]);
   });
 
   it.each(SURFACES)('$name renders identically with the companion absent', ({ load }) => {
@@ -392,6 +403,18 @@ const FIRST_CONSUMER_LANDS = 'CUL-900 (VV-2 — the Pet-tab home)';
  * currently true everywhere in the repo, so it costs nothing and closes (a)'s one
  * hole. A future alias reds (b) and lands the job of teaching (a) about it on the
  * PR that introduces it.
+ *
+ * BOTH read comment-blanked source (`guards/blankComments.ts`, the shared
+ * single-pass walker C-18 mandates). The first draft did not, on the reasoning
+ * that a false red on a tripwire is the safe direction — and `code-reviewer`
+ * showed that reasoning is worth less than it sounds: this repo's comments
+ * routinely quote a sibling flag's exact call shape (`lib/appConfig.ts`'s per-key
+ * blocks do it, and so does the header of this very file), so a *sentence about*
+ * the rule matched as a call to it is a plausible future false alarm, not a
+ * hypothetical one — and it reds the companion namespace case too, for a reason
+ * that has nothing to do with either. That is the same false positive
+ * `guards/completionCard.test.ts` documents; this file cited that precedent and
+ * then skipped the discipline that made it work.
  */
 const CONSUMER_RE = /useAllowlistFlag\(\s*['"]vet_visits['"]\s*\)/;
 const ALIASED_HOOK_RE = /\buseAllowlistFlag\s+as\s+\w+/;
@@ -407,6 +430,11 @@ function appSources(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/** Source with every comment blanked — what both detectors below actually read. */
+function readCode(abs: string): string {
+  return blankComments(fs.readFileSync(abs, 'utf8'));
+}
+
 /** Every scanned source file in the app tree, both detectors over the same set. */
 function allAppSources(): string[] {
   return ['app', 'components', 'hooks', 'lib', 'store']
@@ -419,19 +447,75 @@ function flagConsumers(): string[] {
   const hits: string[] = [];
   {
     for (const abs of allAppSources()) {
-      if (CONSUMER_RE.test(fs.readFileSync(abs, 'utf8'))) hits.push(path.relative(REPO_ROOT, abs));
+      if (CONSUMER_RE.test(readCode(abs))) hits.push(path.relative(REPO_ROOT, abs));
     }
   }
   return hits.sort();
 }
 
+/**
+ * The repo-local modules this file mocks away, plus everything they import,
+ * transitively — the set the comparison above is structurally blind to.
+ *
+ * Derived by reading this file's own `jest.mock(...)` calls rather than from a
+ * hand-kept list, so adding a mock at the top cannot silently widen the blind spot
+ * without widening this check with it. Regex over blanked source rather than the
+ * TS AST: `guards/homeWrites.test.ts` has an AST walker for the same job but a test
+ * file cannot be imported by another test file without jest re-running its suites
+ * (the note in `guards/blankComments.ts`), and here a loose match errs SAFE — an
+ * over-matched specifier can only add a module to a set that must stay empty.
+ */
+const MOCK_CALL_RE = /jest\.mock\(\s*['"](\.[^'"]+)['"]/g;
+const LOCAL_SPEC_RE = /(?:from\s*|require\(\s*|import\(\s*)['"](\.[^'"]+)['"]/g;
+
+function resolveSpec(fromFile: string, spec: string): string | null {
+  const base = path.resolve(path.dirname(fromFile), spec);
+  const candidates = /\.(ts|tsx)$/.test(spec)
+    ? [base]
+    : [base + '.ts', base + '.tsx', path.join(base, 'index.ts'), path.join(base, 'index.tsx')];
+  for (const candidate of candidates) {
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      /* not this candidate */
+    }
+  }
+  return null;
+}
+
+function mockedModuleClosure(): string[] {
+  const selfPath = path.join(REPO_ROOT, 'guards/vetVisitsFlagOff.test.tsx');
+  const self = readCode(selfPath);
+  const stack: string[] = [];
+  for (const m of self.matchAll(MOCK_CALL_RE)) {
+    const resolved = resolveSpec(selfPath, m[1]);
+    // Only repo-local mocks resolve; the external ones (expo-router, RN, …) do not
+    // and are irrelevant — they cannot import a companion module.
+    if (resolved) stack.push(resolved);
+  }
+  const seen = new Set<string>();
+  while (stack.length) {
+    const cur = stack.pop() as string;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const m of readCode(cur).matchAll(LOCAL_SPEC_RE)) {
+      const resolved = resolveSpec(cur, m[1]);
+      if (resolved && !seen.has(resolved)) stack.push(resolved);
+    }
+  }
+  return [...seen].map((abs) => path.relative(REPO_ROOT, abs).split(path.sep).join('/')).sort();
+}
+
 describe('the companion has no consumer yet (VV-0)', () => {
   it(`exactly zero files read the flag — ${FIRST_CONSUMER_LANDS} is the PR that reds this`, () => {
-    // The empty set made an assertion (C-32). When this goes red, that PR owes two
-    // things in the SAME change, which is the whole point of failing here first:
+    // The empty set made an assertion (C-32). When this goes red, that PR owes
+    // three things in the SAME change, which is the whole point of failing first:
     //   1. its companion UI under components/vetvisits/, so the equivalence half
     //      above can stub it — UI written inline in a screen is invisible to it;
-    //   2. the deletion of this case, replaced by the permanent rule below.
+    //   2. the deletion of this case, replaced by the permanent rule below;
+    //   3. the beta shelf's on-state hint in app/settings/beta.tsx, written for the
+    //      no-consumer state ("nothing to see yet") and false the moment there is
+    //      something to see.
     expect(flagConsumers()).toEqual([]);
   });
 
@@ -440,10 +524,29 @@ describe('the companion has no consumer yet (VV-0)', () => {
     // consumer scan honest for every later companion PR. True across the whole
     // repo today, so it costs nothing until someone makes it cost something —
     // at which point teaching CONSUMER_RE about the alias is their job.
-    const aliased = allAppSources().filter((abs) =>
-      ALIASED_HOOK_RE.test(fs.readFileSync(abs, 'utf8')),
-    );
+    const aliased = allAppSources().filter((abs) => ALIASED_HOOK_RE.test(readCode(abs)));
     expect(aliased.map((abs) => path.relative(REPO_ROOT, abs))).toEqual([]);
+  });
+
+  it('no module this file mocks away can hide a companion node from the comparison', () => {
+    // The mocks at the top of this file are what let four real screens mount, and
+    // the header argues they cannot weaken the assertion because both sides of the
+    // differential share them. True for the EQUALITY — and `code-reviewer` showed
+    // it is not the whole story for COVERAGE: an unconditional companion render
+    // placed inside the real `WeightTrendCard` (rather than inside the screen) left
+    // "the Pet tab renders identically" GREEN, because the mock replaces the
+    // component before its body runs on both branches. The same leak in the screen
+    // itself is caught. So the blind spot is exactly "a mocked-away module, or
+    // anything it pulls in, draws the companion".
+    //
+    // Nothing enforced that until now. This does, the way the tripwire above
+    // enforces the delegation discipline: every repo-local module this file mocks
+    // is walked to its transitive local imports, and none of them may reach
+    // `components/vetvisits/`. When one does, the choice is forced into the open —
+    // stop mocking it, or stub it at a finer grain — rather than being discovered
+    // as a leak that shipped.
+    const offenders = mockedModuleClosure().filter((rel) => rel.startsWith('components/vetvisits/'));
+    expect(offenders).toEqual([]);
   });
 
   it('once a consumer exists, the namespace the equivalence half stubs is non-empty', () => {

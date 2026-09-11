@@ -78,17 +78,26 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // distinct from the widget grid, the picker pen and the taxonomy shapes.
       return { Icon: Eye };
     case 'vet_visits':
-      // An on-state hint, like the widget's and unlike the rest: the companion is
-      // the one beta whose surfaces stay invisible until the owner has an
-      // appointment on file, so an owner who flips it on and looks at Home would
-      // otherwise see nothing and reasonably think it broke. The hint says where
-      // to start (the Pet tab's card) rather than "it's on" alone. A stethoscope
-      // reads as the vet, distinct from the widget grid, the picker pen, the
-      // taxonomy shapes and Noticed's eye.
+      // An on-state hint, like the widget's and unlike the rest: this is the one
+      // beta whose surfaces stay invisible until there is an appointment on file,
+      // so an owner who flips it on and sees no change would reasonably think it
+      // broke. A stethoscope reads as the vet, distinct from the widget grid, the
+      // picker pen, the taxonomy shapes and Noticed's eye.
+      //
+      // The copy is written for the state that actually ships TODAY, which is VV-0:
+      // the flag has no consumer at all, so turning it on changes nothing anywhere.
+      // The first draft said "open your pet's profile and find Vet visits" — true
+      // after VV-2 and a dead end before it. The risk is procedural rather than
+      // theoretical: the daily_look precedent allowlisted the PM in the same session
+      // as the seed, and a hint that sends someone hunting for a screen that does
+      // not exist is the exact failure an on-state hint exists to prevent.
+      // CUL-900 (VV-2) rewrites this to name the Pet-tab card once that card is
+      // there; the tripwire in guards/vetVisitsFlagOff.test.tsx reds on that PR and
+      // names this string as one of the three things it owes.
       return {
         Icon: Stethoscope,
         onHint:
-          'It’s on. Open your pet’s profile and find Vet visits to add an appointment — the rest appears as the day gets closer.',
+          'It’s on, though there is nothing to see yet — the vet-visit screens are still being built, and they will show up here as they land.',
       };
     default:
       return { Icon: FlaskConical };
