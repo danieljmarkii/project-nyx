@@ -109,6 +109,24 @@ Five issues filed, none folded in:
 
 ---
 
+## `code-reviewer`: fix-before-merge, and the third green-over-nothing
+
+Two source-verified bugs and one anti-pattern, all three in this diff, all three fixed and each pinned by a test proven by reverting the fix.
+
+**The focus effect had the flag in its deps** — the same failure this diff's own comment at `history.tsx:311` says `loadVisitsRef` exists to avoid, arriving through a different door twenty lines down. Verified in `node_modules` rather than taken on the reviewer's word: `expo-router/build/useFocusEffect.js` runs its outer effect on `[effect, navigation, optionalNavigation]` and calls the callback **immediately** under `if (navigation.isFocused())`, with the comment *"We need to run the effect on initial render/dep changes if the screen is focused"*. It is not gated on a navigation event. So a flag re-resolving on foreground or sign-in — which `hooks/useAppConfig.ts` does routinely — with History on screen, reset the offset to 0, collapsed the expanded row under the owner's finger, and re-queried the whole timeline.
+
+**And the harness could not have caught it**, which is the part that generalises. The suite's `useFocusEffect` mock was `useEffect(() => cb(), [])`. The real hook depends on `effect`. A mock with narrower deps than the thing it stands in for makes an entire class of bug unexpressible — **C-39's rule ("a mock narrower than its API makes the missing half untestable") arriving on a hook instead of an API, one session later.** The mock is now `[cb]`, and the test that flips the flag mid-mount fails against the old deps array.
+
+**`loadVisits` had half of `AppointmentStrip`'s guard.** It adopted the pet check and not the ordering one. Five triggers reach it, so two reads for the *same* pet can overlap; the older resolving last clobbered the fresher rows, and the pet check cannot see that because the pet never changed. `AppointmentStrip`'s own comment records that its `loadIdRef` was added by `code-reviewer` for exactly this — so the fix was already in the repo, in the sibling file, and was copied incompletely.
+
+**C-12 for the second source.** `loaded` / `loadError` are driven by `loadEvents` alone, which was *complete* while every row in the stream came from the timeline query. It stopped being complete the moment this PR added a second source: a pet whose only record is a vet visit has `events = []` as soon as that query answers, so the screen rendered **"Nothing logged yet" over a record holding a visit** — for a frame while the visit read was in flight, and permanently if it failed. That is CUL-575's own sentence, re-entering through a door the state machine did not know existed.
+
+The visit read now carries its own answered/error bits feeding the same three-state gate, and the flag-off path answers *immediately* — otherwise the empty state waits forever on a read that is never going to happen.
+
+**What ties this round to the two failures above:** all three are the same mistake in different clothes — *a mechanism that was complete for the sources it knew about, extended with a source it did not.* The focus deps, the ordering guard, the `loaded` flag. None was visible in a passing suite.
+
+---
+
 ## The §7 AC walk
 
 Every line marked in the PR body. AC 10 is VV-6's and passes; the other twelve were re-walked with the surface that verifies each named. AC 12 was executed live at VV-1 inside a rolled-back transaction and this diff opens no new boundary. AC 0 passes **with the caveat above written into the guard** rather than left implied.
