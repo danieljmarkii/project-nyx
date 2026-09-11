@@ -1,4 +1,5 @@
-import { composeScheduledAt, readVetVisitsHome } from './vetVisits';
+import { composeScheduledAt, readVetVisitsHome, readVisitsForHistory } from './vetVisits';
+import { toLocalDayKey } from './utils';
 
 // CUL-900 VV-2 — `readVetVisitsHome`'s day split, driven against a stubbed DB.
 //
@@ -17,9 +18,13 @@ const rows: { appointments: Record<string, unknown>[]; visits: Record<string, un
   visits: [],
 };
 
+/** Every SQL string the readers under test issued, for the filter assertions. */
+const sqlSeen: string[] = [];
+
 jest.mock('./db', () => ({
   getDb: () => ({
     getAllAsync: async (sql: string) => {
+      sqlSeen.push(sql);
       if (/FROM vet_appointments/.test(sql)) return rows.appointments;
       if (/FROM vet_visits/.test(sql)) return rows.visits;
       // The three link reads (medications / diet_trials / vet_documents).
@@ -42,9 +47,25 @@ function appointmentRow(scheduledAt: string) {
   };
 }
 
+function visitRow(over: Record<string, unknown> = {}) {
+  return {
+    id: 'v1',
+    pet_id: 'pet-a',
+    visited_at: '2026-07-30',
+    clinic_name: 'Riverside Animal Hospital',
+    vet_name: 'Dr. Chen',
+    reason: 'GI follow-up',
+    notes: null,
+    next_visit_at: null,
+    deleted_at: null,
+    ...over,
+  };
+}
+
 beforeEach(() => {
   rows.appointments = [];
   rows.visits = [];
+  sqlSeen.length = 0;
 });
 
 describe('a no-time booking for today survives the server round-trip', () => {
@@ -101,5 +122,69 @@ describe('a no-time booking for today survives the server round-trip', () => {
 
     expect(home.next).toBeNull();
     expect(home.awaiting).toHaveLength(1);
+  });
+});
+
+// ── readVisitsForHistory (CUL-904 VV-6) ─────────────────────────────────────────
+
+describe('readVisitsForHistory — the History timeline row', () => {
+  it('sorts a visit at LOCAL midnight of its calendar day, not UTC midnight', async () => {
+    rows.visits = [visitRow({ visited_at: '2026-07-30' })];
+
+    const [out] = await readVisitsForHistory('pet-a');
+
+    // Built from the key's PARTS, which is the whole distinction: the wrong
+    // implementation is `new Date('2026-07-30')`, and that is UTC midnight — the
+    // PREVIOUS calendar day for every owner behind UTC, and a different one ahead
+    // of it. A visit would then sort into the wrong day and be filtered out by the
+    // wrong day's scope bound.
+    expect(out.sortMs).toBe(new Date(2026, 6, 30).getTime());
+    // The same claim from the other side: whatever instant it picked, the LOCAL
+    // calendar day of that instant is the day the owner recorded.
+    expect(toLocalDayKey(new Date(out.sortMs))).toBe('2026-07-30');
+
+    // HONEST LIMIT: in a UTC environment local and UTC midnight are the same
+    // instant, so both assertions above are true of the bug as well. What makes
+    // this bite is the `App (jest, non-UTC timezones)` CI job (UTC+14 / +12:45 /
+    // −10) — the C-29 matrix, which exists for exactly this class. Run this file
+    // with TZ=Pacific/Auckland to see it fail against `new Date(key)`.
+  });
+
+  it('asks the database for live rows only — the delete control lands on a reader that already filters', async () => {
+    rows.visits = [visitRow()];
+    await readVisitsForHistory('pet-a');
+
+    const visitSql = sqlSeen.find((q) => /FROM vet_visits/.test(q));
+    // VV-1 shipped `deleted_at` ahead of its control precisely so every reader
+    // would already honour it. A reader written without the filter is the thing
+    // that makes the control unshippable later (spec §5.3), and this row is the
+    // newest reader of the table.
+    expect(visitSql).toMatch(/deleted_at IS NULL/);
+  });
+
+  it('drops a row whose date cannot be parsed rather than placing it somewhere wrong', async () => {
+    rows.visits = [visitRow({ id: 'bad', visited_at: 'not-a-date' }), visitRow({ id: 'ok' })];
+
+    const out = await readVisitsForHistory('pet-a');
+
+    // A row with no usable day has no honest position in a chronological stream:
+    // at the epoch it sits silently under the owner's entire history, and at `now`
+    // it claims to have happened today. It keeps its place in the Vet visits list,
+    // which is not ordered against events.
+    expect(out.map((v) => v.id)).toEqual(['ok']);
+  });
+
+  it('carries the reason and the where-line, and nulls an empty reason rather than inventing one', async () => {
+    rows.visits = [
+      visitRow({ id: 'a', reason: '  ', clinic_name: 'Riverside', vet_name: null }),
+      visitRow({ id: 'b', reason: 'GI follow-up', clinic_name: null, vet_name: null }),
+    ];
+
+    const out = await readVisitsForHistory('pet-a');
+
+    // A visit logged with only a date is an ordinary record. `null` lets the row
+    // omit the line; a stand-in string would make it read as a gap.
+    expect(out[0]).toMatchObject({ reason: null, where: 'Riverside' });
+    expect(out[1]).toMatchObject({ reason: 'GI follow-up', where: '' });
   });
 });

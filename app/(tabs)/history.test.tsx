@@ -12,11 +12,14 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
+// Mutable so the type-lens test can arrive through the same doorway Ask uses
+// (?type=&window=&ts=) rather than reaching into the screen's state.
+let mockParams: Record<string, string> = {};
 jest.mock('expo-router', () => {
   const React = require('react');
   return {
     router: { push: jest.fn() },
-    useLocalSearchParams: () => ({}),
+    useLocalSearchParams: () => mockParams,
     useFocusEffect: (cb: () => void | (() => void)) => {
       React.useEffect(() => cb(), []);
     },
@@ -57,6 +60,22 @@ jest.mock('../../store/petStore', () => {
 });
 // Mutable so a test can simulate the owner switching pets mid-write.
 let mockPetState: { activePet: { id: string } | null } = { activePet: { id: 'p1' } };
+// CUL-904 VV-6 — the vet-visit timeline row, behind the `vet_visits` rollout flag.
+// Mutable so one suite can drive both sides of the gate.
+let mockVetVisitsFlag = false;
+jest.mock('../../hooks/useAppConfig', () => ({
+  useAllowlistFlag: () => mockVetVisitsFlag,
+}));
+jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockVetVisitsFlag }));
+// The READ is stubbed; every pure rule in the module is the real one
+// (`jest.requireActual`), because the rule is not what needs standing in — C-34,
+// where a mock that replaced a pure predicate hid the defect it was covering for.
+// `readVisitsForHistory` itself is driven against a stubbed DB in
+// lib/vetVisitsHome.test.ts; this suite owns the screen's half.
+jest.mock('../../lib/vetVisits', () => ({
+  ...jest.requireActual('../../lib/vetVisits'),
+  readVisitsForHistory: jest.fn(async () => []),
+}));
 jest.mock('../../store/syncStore', () => ({
   useSyncStore: (selector: (s: { hydrationTick: number }) => unknown) =>
     selector({ hydrationTick: 0 }),
@@ -85,12 +104,15 @@ jest.mock('../../components/history/EventRow', () => {
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import HistoryScreen from './history';
+import { router } from 'expo-router';
 import { getTimeline } from '../../lib/db';
+import { readVisitsForHistory } from '../../lib/vetVisits';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 
 const mockGetTimeline = getTimeline as jest.Mock;
+const mockReadVisits = readVisitsForHistory as jest.Mock;
 // CUL-641 — Remove is no longer a bare softDeleteEvent; it is the SAME reversal the
 // completion card's Undo performs, so a side-effect added to one is inherited by both.
 const mockReverse = reverseLoggedEvent as jest.Mock;
@@ -114,6 +136,9 @@ let showSpy: jest.SpyInstance;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockParams = {};
+  mockVetVisitsFlag = false;
+  mockReadVisits.mockResolvedValue([]);
   mockPetState = { activePet: { id: 'p1' } };
   useEventStore.setState({ todayEvents: [] });
   showSpy = jest.spyOn(useSnackbarStore.getState(), 'show').mockImplementation(() => {});
@@ -276,5 +301,135 @@ describe('History — a delete that fails', () => {
     await confirmRemove();
 
     await waitFor(() => expect(mockReverse).toHaveBeenCalledWith('e1'));
+  });
+});
+
+// ── The vet visit row (CUL-904 VV-6; spec §4.1 History + §7 AC 10) ──────────────
+//
+// The gate's other half. `guards/vetVisitsFlagOff.test.tsx` compares whole trees
+// but renders them SYNCHRONOUSLY, so it cannot see a row whose render waits on an
+// async read — measured in VV-6 by deleting the gate below and watching that suite
+// stay green. This is where the row's flag is actually falsifiable, because the
+// data is controllable here and the effects are flushed.
+
+/** Local midnight of a 'YYYY-MM-DD', the shape readVisitsForHistory returns. */
+function visitRow(id: string, visitedAt: string, over: Record<string, unknown> = {}) {
+  const [y, m, d] = visitedAt.split('-').map(Number);
+  return {
+    id,
+    petId: 'p1',
+    visitedAt,
+    sortMs: new Date(y, m - 1, d).getTime(),
+    reason: 'GI follow-up',
+    where: 'Riverside Animal Hospital · Dr. Chen',
+    ...over,
+  };
+}
+
+describe('History — the vet visit row', () => {
+  it('renders a visit in the stream, with the record it names', async () => {
+    mockVetVisitsFlag = true;
+    mockGetTimeline.mockResolvedValue([]);
+    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
+
+    const { getByText } = render(<HistoryScreen />);
+
+    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
+    expect(getByText('GI follow-up')).toBeTruthy();
+    expect(getByText('Riverside Animal Hospital · Dr. Chen')).toBeTruthy();
+  });
+
+  it('opens the VISIT, not an event screen', async () => {
+    mockVetVisitsFlag = true;
+    mockGetTimeline.mockResolvedValue([]);
+    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
+
+    const { getByText } = render(<HistoryScreen />);
+    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
+    fireEvent.press(getByText('Vet visit'));
+
+    // Its Edit — and its Delete, once CUL-19 has deployed the reader that honours
+    // `deleted_at` — live on the visit. A record's controls belong on the record,
+    // which is why this row carries neither.
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/vet-visits/[id]',
+      params: { id: 'v1' },
+    });
+  });
+
+  it('flag-off: no row, and no read of the table at all', async () => {
+    mockVetVisitsFlag = false;
+    mockGetTimeline.mockResolvedValue([]);
+    // The read would answer if it were called, so a missing row can only mean the
+    // gate held — rather than the fixture simply being empty, which is the way
+    // this test would otherwise pass over the defect.
+    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
+
+    const { queryByText, getByText } = render(<HistoryScreen />);
+
+    await waitFor(() => expect(getByText('Nothing logged yet')).toBeTruthy());
+    expect(queryByText('Vet visit')).toBeNull();
+    // Dark means dark (G0): the flag gates the READ as well as the row, so a
+    // non-allowlisted owner's device never queries the companion's tables.
+    expect(mockReadVisits).not.toHaveBeenCalled();
+  });
+
+  it('a type lens is a lens over EVENTS, so the visit leaves with the markers', async () => {
+    mockVetVisitsFlag = true;
+    mockParams = { type: 'meal', window: '30d', ts: '1' };
+    mockGetTimeline.mockResolvedValue([row('e1')]);
+    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
+
+    const { getByText, queryByText } = render(<HistoryScreen />);
+
+    await waitFor(() => expect(getByText('event e1')).toBeTruthy());
+    // A visit has no honest answer to "show me only vomit", the same reason a
+    // free-feeding boundary does not appear under one. VV-6's on-the-fly decision:
+    // the all-events lens only; its own lens chip was the alternative and is not v1.
+    expect(queryByText('Vet visit')).toBeNull();
+  });
+
+  // The withholding rule (a row older than the oldest loaded event, while more
+  // remain unpaginated) is NOT tested here. It was, and the test passed over its
+  // own mutation: the row it withholds sorts to the bottom of the list, below a
+  // FlatList's render window, so deleting the rule changed nothing this suite
+  // could see. It moved to lib/historyTimeline.test.ts, over the data.
+
+  it('is not an events row: the timeline query is untouched and it renders through its own component', async () => {
+    mockVetVisitsFlag = true;
+    mockGetTimeline.mockResolvedValue([row('e1')]);
+    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
+
+    const { getByText, queryByTestId } = render(<HistoryScreen />);
+    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
+
+    // AC 10, the screen's half: a visit never becomes an `events` row. The
+    // EventRow stub in this file renders `row-<id>`, so its absence for `v1` is
+    // the mechanical form of "it did not go through the event path" — and
+    // `getTimeline` is called only with an event type filter, never a visit one.
+    expect(queryByTestId('row-v1')).toBeNull();
+    expect(getByText('event e1')).toBeTruthy();
+    for (const call of mockGetTimeline.mock.calls) {
+      expect(call).not.toContain('vet_visit');
+    }
+  });
+
+  it('the retry re-reads visits too, not just the timeline', async () => {
+    mockVetVisitsFlag = true;
+    mockGetTimeline.mockRejectedValueOnce(new Error('transient'));
+    const { getByText } = render(<HistoryScreen />);
+    await waitFor(() => expect(getByText("Couldn't load history")).toBeTruthy());
+
+    const before = mockReadVisits.mock.calls.length;
+    mockGetTimeline.mockResolvedValueOnce([]);
+    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
+    await act(async () => { fireEvent.press(getByText('Try again')); });
+
+    // The visit read is wired into all four of the screen's refresh paths — focus,
+    // the hydration tick, pull-to-refresh and this retry. A loader wired into fewer
+    // of them than the timeline is how a stream comes back showing one half of a
+    // sync; the retry is the one this suite can drive through a real control.
+    expect(mockReadVisits.mock.calls.length).toBeGreaterThan(before);
+    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
   });
 });

@@ -104,9 +104,25 @@ jest.mock('../lib/db', () => {
       await f();
     }),
   };
-  return { getDb: () => db, getRecentFoods: jest.fn(async () => []) };
+  return {
+    getDb: () => db,
+    getRecentFoods: jest.fn(async () => []),
+    // History's timeline read. Answers the quiet record like every reader above.
+    getTimeline: jest.fn(async () => []),
+  };
 });
 jest.mock('../lib/sync', () => ({ syncNow: jest.fn(), syncPendingVetVisits: jest.fn() }));
+// History's remaining leaf dependencies. All four are stubbed for the same reason
+// the Pet tab's chart is — they cannot mount or would reach the network under jest —
+// and none of them draws a companion surface, which the mocked-module closure test
+// below asserts rather than leaves to this comment.
+jest.mock('../lib/haptics', () => ({ destructiveConfirm: jest.fn(), pullThreshold: jest.fn() }));
+jest.mock('../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn(async () => undefined) }));
+jest.mock('../hooks/useWidgetPetLink', () => ({ useWidgetPetLink: () => {} }));
+jest.mock('../lib/feedingArrangements', () => ({
+  getActiveArrangementsForPet: jest.fn(async () => []),
+  getBoundaryMarkers: jest.fn(async () => []),
+}));
 jest.mock('../lib/signal', () => ({ regenerateSignal: jest.fn() }));
 jest.mock('../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn(), prependEvent: jest.fn() }),
@@ -311,15 +327,41 @@ function withCompanionAbsent<T>(fn: () => T): T {
 for (const abs of vetVisitsUiModules()) registerSwitchable(abs);
 
 /**
- * The four surfaces §7 AC 0 names, each loaded through `require` inside
+ * Every surface the companion can reach, each loaded through `require` inside
  * `isolateModules` rather than imported at the top of the file — a top-level
  * import would bind one cached instance and defeat the stubbed render.
+ *
+ * The first four are the ones §7 AC 0 names. History is the FIFTH, added by VV-6
+ * (CUL-904) with the timeline row, and adding it is not optional bookkeeping: this
+ * list is the guard's scope, so a surface absent from it has its flag-off tree
+ * checked by nothing. That is the same blind spot the mocked-module test below
+ * closes one level down — a leak the differential never renders is a leak the
+ * differential cannot see — and the rule generalises: a PR that puts a companion
+ * node on a new screen adds that screen here in the same diff.
+ *
+ * ── THE LIMIT, MEASURED RATHER THAN ASSUMED (C-38: state a guard's blind spots) ──
+ * `treeFor` renders and snapshots SYNCHRONOUSLY, so what these comparisons see is
+ * the first frame. A companion node drawn straight from the tree — VV-2's card, the
+ * mutation the AC names and the one the proof at the foot of this file drives — is
+ * caught. A node whose render waits on an async read is NOT: VV-6 removed History's
+ * flag check and this suite stayed green, because the ungated read had not resolved
+ * by the time the tree was taken. Home's strip has the same shape and therefore the
+ * same hole.
+ *
+ * So this list proves the SYNCHRONOUS half for five surfaces, and a data-dependent
+ * row is proven where its data can be controlled and its effects flushed — for the
+ * History row, `app/(tabs)/history.test.tsx` ("the vet visit row"), which renders
+ * the real screen over a DB holding a visit and asserts the row present flag-on and
+ * absent flag-off. Widening `treeFor` to flush effects would cover both halves here
+ * and was not attempted in VV-6: it makes every surface render its loaded state,
+ * which is a change to four screens' comparisons for one row's benefit.
  */
 const SURFACES: ReadonlyArray<{ name: string; load: () => ComponentType }> = [
   { name: 'Home', load: () => require('../app/(tabs)/index').default },
   { name: 'the Pet tab', load: () => require('../app/(tabs)/profile').default },
   { name: '/rundown', load: () => require('../app/rundown').default },
   { name: 'app/vet-visit.tsx', load: () => require('../app/vet-visit').default },
+  { name: 'History', load: () => require('../app/(tabs)/history').default },
 ];
 
 /** Rendered nodes in a normalized tree — the non-vacuity measure below. */
@@ -340,7 +382,7 @@ function nodeCount(node: unknown): number {
 const MIN_SURFACE_NODES = 5;
 
 describe('AC 0 — flag-off is byte-identical to an app without the companion', () => {
-  it('the four screens below really do render with the flag OFF', () => {
+  it('the screens below really do render with the flag OFF', () => {
     // AC 0 is a claim about the flag-OFF tree specifically, so "the flag is off
     // here" has to be asserted rather than assumed — and it has to be asserted
     // through the hook the SCREENS call, not a resolver invoked on a local object.

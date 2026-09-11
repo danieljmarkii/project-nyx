@@ -26,6 +26,11 @@ import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
 import { formatUtcDayShort } from '../../lib/utils';
 import { isLookRow } from '../../lib/lookDisplay';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
+import { useBetaOptIn } from '../../lib/betaFeatures';
+import { readVisitsForHistory, HistoryVisitRow } from '../../lib/vetVisits';
+import { VisitTimelineRow } from '../../components/vetvisits/VisitTimelineRow';
+import { ListItem, mergeTimelineItems } from '../../lib/historyTimeline';
 import {
   getActiveArrangementsForPet, getBoundaryMarkers,
   ActiveArrangementView, BoundaryMarker,
@@ -40,19 +45,6 @@ type LoadEvents = (
   day: string | null,
   replace: boolean,
 ) => Promise<void>;
-
-// History renders two kinds of timeline row: discrete events, and the quiet
-// free-feeding lifecycle boundary markers (§6a). They're merged into one desc
-// stream so a "Started free-feeding" sits at the foot of its calendar day.
-type ListItem =
-  | { kind: 'event'; event: NyxEvent }
-  | { kind: 'marker'; marker: BoundaryMarker };
-
-function itemSortMs(item: ListItem): number {
-  return item.kind === 'event'
-    ? new Date(item.event.occurred_at).getTime()
-    : item.marker.sortMs;
-}
 
 function rowToEvent(row: TimelineRow): NyxEvent {
   return {
@@ -140,6 +132,11 @@ export default function HistoryScreen() {
   const initialDay: string | null =
     !hasFilterLink && params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
   const { removeFromToday, restoreToToday, todayEvents } = useEventStore();
+  // The `vet_visits` rollout flag (G0). Dark means dark: it gates the READ as well
+  // as the row, so flag-off this screen issues no query against the table and
+  // `visits` stays empty — which is what makes the rendered tree identical to an
+  // app without the companion (AC 0, guards/vetVisitsFlagOff.test.tsx).
+  const vetVisitsEnabled = useAllowlistFlag('vet_visits') && useBetaOptIn('vet_visits');
   // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
   // cycle finishes while this tab is open, so another device's writes appear
   // without a manual pull-to-refresh.
@@ -150,6 +147,9 @@ export default function HistoryScreen() {
   // (currently-active arrangements) + the inline lifecycle boundary markers.
   const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
   const [markers, setMarkers] = useState<BoundaryMarker[]>([]);
+  // Vet visits on the timeline (CUL-904 VV-6), behind the rollout flag. Held as its
+  // own list rather than mapped into `events`: see the ListItem union above.
+  const [visits, setVisits] = useState<HistoryVisitRow[]>([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -272,6 +272,48 @@ export default function HistoryScreen() {
     }
   }, [activePet]);
 
+  // Vet visits on the timeline (CUL-904 VV-6). A cheap local read of a handful of
+  // rows, deliberately unbounded — the scope filter is applied in `merged` beside
+  // the markers', because `visited_at` is a calendar DATE and the scope bounds are
+  // ISO instants, which cannot be compared as text (C-40; see readVisitsForHistory).
+  const loadVisits = useCallback(async () => {
+    if (!vetVisitsEnabled || !activePet) {
+      setVisits([]);
+      return;
+    }
+    const petId = activePet.id;
+    try {
+      const rows = await readVisitsForHistory(petId);
+      // The read is async and the owner can switch pets while it is in flight, so
+      // the result is checked against whoever is active NOW rather than trusted
+      // because it was asked for. Putting pet A's visits under pet B's history is
+      // the CUL-574 class arriving by staleness (the shape AppointmentStrip's
+      // `loadedFor` exists for) — and unlike the strip, this list is merged into a
+      // stream with no pet name on it, so a wrong row would be unattributable.
+      if (usePetStore.getState().activePet?.id !== petId) return;
+      setVisits(rows);
+    } catch (e) {
+      // No silent failures (house rule). The stream is events-first and a visit is
+      // context within it, so a failed visit read leaves prior state and lets the
+      // next focus retry rather than taking the whole timeline down with it — the
+      // same posture `loadFreeFeeding` holds one function up.
+      console.warn('[history] load vet visits failed:', e);
+    }
+  }, [vetVisitsEnabled, activePet?.id]);
+
+  // Its own effect, keyed on the loader's identity, because the FLAG is the thing
+  // that changes after mount: `useAllowlistFlag` re-resolves on foreground and on
+  // sign-in, so an owner allowlisted mid-session would otherwise wait for a
+  // re-focus to see their visits — and one dropped from the allowlist would keep
+  // seeing them. The `!enabled` branch above is what makes the second half true.
+  useEffect(() => { void loadVisits(); }, [loadVisits]);
+
+  // Reached from the hydration effect below, whose deps are deliberately narrow —
+  // the loadEventsRef precedent. Adding `loadVisits` to those deps would re-fire a
+  // full timeline reload every time the flag resolved.
+  const loadVisitsRef = useRef(loadVisits);
+  loadVisitsRef.current = loadVisits;
+
   // Pull-to-refresh: run a full sync cycle (push local writes up + hydrate
   // remote rows down — B-054), then re-read the timeline. This is the deliberate
   // "sync now" gesture; it surfaces another device's writes without the
@@ -292,10 +334,11 @@ export default function HistoryScreen() {
       await Promise.all([
         loadEvents(0, typeFilter, datePreset, dayFilter, true),
         loadFreeFeeding(),
+        loadVisits(),
       ]);
       setRefreshing(false);
     }
-  }, [loadEvents, loadFreeFeeding, typeFilter, datePreset, dayFilter]);
+  }, [loadEvents, loadFreeFeeding, loadVisits, typeFilter, datePreset, dayFilter]);
 
   // Reload fresh on every focus so edits/deletes from the edit modal are reflected
   useFocusEffect(
@@ -305,7 +348,8 @@ export default function HistoryScreen() {
       setExpandedId(null);
       loadEvents(0, typeFilter, datePreset, dayFilter, true);
       loadFreeFeeding();
-    }, [activePet, typeFilter, datePreset, dayFilter]),
+      void loadVisits();
+    }, [activePet, typeFilter, datePreset, dayFilter, vetVisitsEnabled]),
   );
 
   // Reactive refresh-after-hydrate (B-054 §6): when a background sync cycle
@@ -320,6 +364,7 @@ export default function HistoryScreen() {
     }
     loadEvents(0, typeFilterRef.current, datePresetRef.current, dayFilterRef.current, true);
     loadFreeFeeding();
+    void loadVisitsRef.current();
   }, [hydrationTick, loadEvents, loadFreeFeeding]);
 
   // Re-apply a doorway filter on a fresh navigation (the tab persists across switches, so a
@@ -419,6 +464,13 @@ export default function HistoryScreen() {
     router.push({ pathname: '/event/[id]', params: { id: event.id } });
   }
 
+  // A visit opens the visit, not an event screen. Its Edit and (when CUL-19 has
+  // deployed the reader that honours `deleted_at`) its Delete live there, which is
+  // why this row carries neither — a record's controls belong on the record.
+  function handleOpenVisit(visit: HistoryVisitRow) {
+    router.push({ pathname: '/vet-visits/[id]', params: { id: visit.id } });
+  }
+
   function handleDelete(event: NyxEvent) {
     // CUL-869 — two things, both the record screen's confirm one surface over.
     //
@@ -504,36 +556,15 @@ export default function HistoryScreen() {
     );
   }
 
-  // Merge boundary markers into the event stream (§6a). Markers are not a
-  // NyxEvent type, so they only appear when the list isn't type-filtered (a
-  // "Vomit" filter shouldn't surface feeding boundaries). They respect the date
-  // preset, and — while more events remain unpaginated — are withheld if older
-  // than the oldest loaded event, so they never render above events that should
-  // sit below them. Once fully loaded (or with no events at all) all qualifying
-  // markers show.
+  // The merged stream. The rule itself lives in `lib/historyTimeline.ts`, pure, so
+  // it can be asserted over data — its effect is at the TAIL of a virtualized list,
+  // which a rendered-tree test cannot see (measured; the file's header has it).
   const merged = useMemo<ListItem[]>(() => {
-    const eventItems: ListItem[] = events.map((e) => ({ kind: 'event', event: e }));
-    if (typeFilter !== null) return eventItems;
-
     const { after, before } = effectiveRange(datePreset, dayFilter);
-    const cutoffMs = after ? new Date(after).getTime() : null;
-    const beforeMs = before ? new Date(before).getTime() : null;
-    const oldestEventMs = events.length > 0
-      ? new Date(events[events.length - 1].occurred_at).getTime()
-      : null;
-
-    const markerItems: ListItem[] = markers
-      .filter((m) => {
-        if (cutoffMs !== null && m.sortMs < cutoffMs) return false;
-        // Single-day filter: drop markers past the day's upper bound too (B-308).
-        if (beforeMs !== null && m.sortMs >= beforeMs) return false;
-        if (oldestEventMs !== null && hasMore && m.sortMs < oldestEventMs) return false;
-        return true;
-      })
-      .map((m) => ({ kind: 'marker' as const, marker: m }));
-
-    return [...eventItems, ...markerItems].sort((a, b) => itemSortMs(b) - itemSortMs(a));
-  }, [events, markers, typeFilter, datePreset, dayFilter, hasMore]);
+    return mergeTimelineItems({
+      events, markers, visits, typeFilter, after, before, hasMore,
+    });
+  }, [events, markers, visits, typeFilter, datePreset, dayFilter, hasMore]);
 
   // The three "nothing on screen" states, kept mutually exclusive and in priority
   // order (CUL-575). Before this, the screen had ONE of them: an empty list, which a
@@ -556,7 +587,8 @@ export default function HistoryScreen() {
     setHasMore(true);
     loadEvents(0, typeFilter, datePreset, dayFilter, true);
     loadFreeFeeding();
-  }, [loadEvents, loadFreeFeeding, typeFilter, datePreset, dayFilter]);
+    void loadVisits();
+  }, [loadEvents, loadFreeFeeding, loadVisits, typeFilter, datePreset, dayFilter]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -596,10 +628,16 @@ export default function HistoryScreen() {
       <View style={styles.listContainer}>
         <FlatList<ListItem>
           data={merged}
-          keyExtractor={(item) => item.kind === 'event' ? `e:${item.event.id}` : `m:${item.marker.id}`}
+          keyExtractor={(item) =>
+            item.kind === 'event' ? `e:${item.event.id}`
+              : item.kind === 'marker' ? `m:${item.marker.id}`
+                : `v:${item.visit.id}`
+          }
           renderItem={({ item }) =>
             item.kind === 'marker' ? (
               <BoundaryMarkerRow marker={item.marker} />
+            ) : item.kind === 'visit' ? (
+              <VisitTimelineRow row={item.visit} onPress={() => handleOpenVisit(item.visit)} />
             ) : (
               <EventRow
                 event={item.event}
