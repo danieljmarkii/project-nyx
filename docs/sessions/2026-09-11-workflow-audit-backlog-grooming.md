@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-11
 **Mode:** DISCOVERY (PM-initiated: *"take a hard look at our backlog grooming workflows and any workflow that touches our status, project management, Linear"*)
-**Outcome:** shipped via #827 — `docs/workflow-retro-2026-09.md` (the record), the published decision surface, the `personas.md` retro-log entry, and ten Linear issues (CUL-919 … CUL-928, all on the *Backlog → Linear: operationalize the cutover* project).
+**Outcome:** shipped via #829 — `docs/workflow-retro-2026-09.md` (the record), the published decision surface, the `personas.md` retro-log entry, and ten Linear issues (CUL-919 … CUL-928, all on the *Backlog → Linear: operationalize the cutover* project).
 **Decision surface:** <https://claude.ai/code/artifact/0c92f9a1-523c-44b0-b9b5-3a506b63b578> — *The Culprit Workflow Audit*. The artifact is the PM-facing read; this file and the retro are the durable record.
 **Full findings:** `docs/workflow-retro-2026-09.md`. This file is the cross-issue narrative only.
 
