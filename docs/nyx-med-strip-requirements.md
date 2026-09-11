@@ -1,6 +1,6 @@
 # Medication strip on Home — Requirements
 
-**Version:** 1.1 · **Last Updated:** 2026-09-10 · **Backlog:** B-614
+**Version:** 1.2 · **Last Updated:** 2026-09-11 · **Backlog:** B-614
 **Design authority:** `docs/culprit-med-strip-mockups.html` (round 2, design-locked)
 **Composes with:** B-284 N7 (`docs/culprit-in-app-brand-requirements.md` §8.2 "Care due") · B-117 (`docs/nyx-medication-logging-requirements.md`) · B-417 §4.2 (the trial card's logging rule)
 
@@ -61,14 +61,49 @@ describe an owner's observation in advance — that is the whole point of asking
 is not a form, so §4.2's second-door test returns *no* as well. Neither clause reaches
 it; a new one was the honest answer.
 
+**⚠ Amended 2026-09-11 (PM-approved on CUL-903 — the THIRD class, and the first one to
+go through the amendment door this rule opened).** The vet-visit companion's Home
+appointment strip (`docs/nyx-vet-visits-requirements.md` §4.1 A2b) asks once, after an
+appointment's day passes with no visit logged: *Did Tuesday's visit happen?* Its
+**It didn't** writes `vet_appointments.cancelled_at`. So:
+
+> Home carries **exactly three write classes**: the med confirm, the look, and the
+> **appointment strip's one-tap resolution of the ask the app itself raised**. A fourth
+> is a Tier-2 amendment to this rule, never a precedent.
+
+Unlike the look, this one **passes the original test rather than needing a carve-out**,
+and that is why the amendment is narrow enough to be worth making:
+
+- *Can the app describe the row before the owner taps?* **Yes** — it is describing it on
+  screen, in the same breath as asking about it. The strip names the day, the clinic and
+  the reason; the owner is answering a question about a booking they made.
+- *Is it a second door — a control that opens a form?* **No.** It opens nothing, starts
+  no record, and creates nothing the record did not already hold.
+
+The strip's other door, **Add a question**, is a **navigation into Get ready** for
+exactly this reason: typing a question is a form, so it does not happen on Home. That
+split is what keeps this amendment to one sentence — **Home gains a confirmation and
+still carries no form.**
+
+A second bound composes with this one rather than being assumed: the row this write
+touches reaches no count, no coverage line, no Patterns panel and no engine input —
+`guards/visitReaders.test.ts` pins the set of files allowed to read the visit tables at
+all. One guard bounds what Home may write; the other bounds what a visit may influence.
+
 **The bound is enforced, not stated.** `guards/homeWrites.test.ts` computes Home's
 import closure (the entry screen, every card, and every module they reach under
 `components/`, `hooks/`, `store/` and `lib/`) and matches **by effect** — every write
 helper the app has, plus raw SQL that mutates — against an allow-set pinned to exactly
-`{ MedStrip → insertMedicationDose, LookCard → insertLook }`. The spec's own forecast is
-the case it exists for: a one-tap intake confirm on Home (daily-look spec §4.5) is a
-reasonable, useful, third write class, and it would arrive as a small diff on a card that
-already writes. With that guard in place it cannot arrive with CI green.
+`{ MedStrip → insertMedicationDose, LookCard → insertLook + updateLookNote,
+AppointmentStrip → cancelVetAppointment }`. The spec's own forecast is the case it exists
+for: a one-tap intake confirm on Home (daily-look spec §4.5) is a reasonable, useful,
+further write class, and it would arrive as a small diff on a card that already writes.
+With that guard in place it cannot arrive with CI green.
+
+The guard did its job on CUL-903 before a line of the strip was written: mounting *any*
+companion node on Home red it (`lib/vetVisits.ts` holds booking's own `INSERT`, and the
+scan is by reachability), which is what sent the question to the PM rather than letting
+a third class arrive as an allow-set line in a large diff.
 
 ### §0.2 The two things that fall out of the register rule
 

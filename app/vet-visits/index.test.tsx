@@ -201,6 +201,7 @@ describe('a booking whose day has passed', () => {
           petId: 'pet-a',
           stamp: { day: '8', month: 'Sep' },
           when: 'Mon, Sep 8',
+          day: 'Mon, Sep 8',
           where: 'Riverside Animal Hospital · recheck',
         },
       ],
@@ -220,7 +221,7 @@ describe('a booking whose day has passed', () => {
     mockHome = {
       next: null,
       awaiting: [
-        { id: 'a-past', petId: 'pet-a', stamp: null, when: 'Mon, Sep 8', where: '' },
+        { id: 'a-past', petId: 'pet-a', stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '' },
       ],
       visits: [],
     };

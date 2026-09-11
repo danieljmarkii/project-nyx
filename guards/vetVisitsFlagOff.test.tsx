@@ -437,6 +437,34 @@ const ALIASED_HOOK_RE = /\buseAllowlistFlag\s+as\s+\w+/;
  */
 const IMPORTS_NAMESPACE_RE = /(?:^|\n)\s*import\s+(?!type\s)[^;\n]*from\s+['"][^'"]*components\/vetvisits\//;
 
+/** Repo-relative prefix of the namespace itself. */
+const NAMESPACE_PREFIX = 'components/vetvisits/';
+
+/**
+ * Does this flag consumer draw through something the equivalence half can stub?
+ *
+ * Two ways to satisfy it, and the second is not a weakening of the first — it is
+ * STRICTLY STRONGER, which is why it is a branch rather than an exemption:
+ *
+ *   • a SCREEN holds the gate and imports the namespace, so the drawing it delegates
+ *     is stubbed while the screen itself still renders (the VV-2 shape);
+ *   • a file that IS IN the namespace is itself one of the modules `registerSwitchable`
+ *     wraps, so the WHOLE file — gate, hooks, drawing and all — answers as absent. It
+ *     cannot draw anything this guard cannot stub, because it is the thing being
+ *     stubbed.
+ *
+ * VV-5 is the first consumer of the second kind: `AppointmentStrip` holds its own gate
+ * so Home's diff is one line and the companion's logic stays in the companion's
+ * namespace. The relative-path import it uses for its siblings (`./AppointmentBlock`)
+ * never matches the regex above, which is what sent this rule looking — and the right
+ * answer was the branch, not an entry in `DRAWS_ELSEWHERE_OK`, because that registry
+ * excuses a file from the rule and this file MEETS it.
+ */
+function drawsThroughNamespace(rel: string, src: string): boolean {
+  if (rel.startsWith(NAMESPACE_PREFIX)) return true;
+  return IMPORTS_NAMESPACE_RE.test(src);
+}
+
 /**
  * Flag consumers excused from the draws-through-the-namespace rule: a file that
  * reads the flag to DECIDE something without drawing anything (a lib predicate, a
@@ -610,7 +638,7 @@ describe('the companion\'s consumers stay inside the namespace', () => {
     // with no members rather than left implicit (C-32).
     const drawsElsewhere = flagConsumers()
       .filter((rel) => !(rel in DRAWS_ELSEWHERE_OK))
-      .filter((rel) => !IMPORTS_NAMESPACE_RE.test(readCode(path.join(REPO_ROOT, rel))));
+      .filter((rel) => !drawsThroughNamespace(rel, readCode(path.join(REPO_ROOT, rel))));
     expect(drawsElsewhere).toEqual([]);
   });
 

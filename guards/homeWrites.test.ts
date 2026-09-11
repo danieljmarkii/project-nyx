@@ -105,6 +105,17 @@ const WRITE_CALLS = [
   'startRegimen',
   'updateRegimen',
   'endRegimen',
+  // CUL-903 — the companion's four writes, registered on the PR that puts a companion
+  // node on Home (C-32: a rule added after the first caller is a rule added after the
+  // bug). They are named here for a specific reason: `lib/vetVisits.ts` joins
+  // WRITE_PATH below, which stops its raw SQL counting — correctly, since it is the
+  // write LAYER — and WITHOUT these names that registration would make every one of
+  // its writes invisible to this guard from a Home card. The helper names are what
+  // survive the exemption.
+  'bookVetAppointment',
+  'logVetVisit',
+  'cancelVetAppointment',
+  'saveAppointmentQuestions',
 ];
 
 /**
@@ -149,6 +160,21 @@ const ALLOW: Record<string, readonly string[]> = {
   // boolean — the third adversarial pass's own reason: an allow-set that said "LookCard
   // may write" would also permit `insertSimpleEvent('itch')`.
   'components/home/LookCard.tsx': ['insertLook', 'updateLookNote'],
+  // CUL-903 — THE THIRD CLASS, and it is a Tier-2 amendment rather than a marker:
+  // `docs/nyx-med-strip-requirements.md` §0.1 now names it, PM-approved 2026-09-11.
+  //
+  // What it is: the appointment strip's *It didn't*, the owner answering the ask the
+  // app itself just put on screen (*Did Tuesday's visit happen?*). It passes D1's own
+  // test for a confirmation rather than a second door — it writes a row the app is
+  // DESCRIBING IN THE SAME BREATH, opens no form, and starts no record. The strip's
+  // other door, *Add a question*, is a NAVIGATION into Get ready precisely so that
+  // this stays true: Home gains a confirmation and still carries no form.
+  //
+  // And the row it touches reaches nothing the record computes from —
+  // `guards/visitReaders.test.ts` pins that an appointment never enters a count, a
+  // coverage line, Patterns or an engine input. The two guards compose: that one
+  // bounds what a visit may influence, this one bounds what Home may write.
+  'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
 };
 
 /**
@@ -212,6 +238,19 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
     why: 'declares all three (CUL-901); regimen setup writes, Home only reads the courses',
   },
   'lib/dietTrialMirror.ts': { helpers: [], why: 'the trial mirror, written by the sync layer' },
+  'lib/vetVisits.ts': {
+    // It DECLARES all four, so it must be allowed to reach them — the `lib/db.ts` and
+    // `lib/medicationSetup.ts` shape. Per-helper rather than a blanket skip, which is
+    // the distinction the adversarial pass forced: a module is silent about the writes
+    // it owns and loud about every other one in it.
+    helpers: ['bookVetAppointment', 'logVetVisit', 'cancelVetAppointment', 'saveAppointmentQuestions'],
+    why:
+      'the companion\u2019s read/write model (CUL-900) \u2014 booking, logging, cancelling ' +
+      'and the questions all live here, and Home only READS through it. Same shape as ' +
+      'dietTrialSetup/medicationSetup above: the layer a control goes through, not a ' +
+      'control. Its four helpers are in WRITE_CALLS, so a Home card that calls one is ' +
+      'still caught BY NAME \u2014 this entry silences the raw SQL, never the reach.',
+  },
   'lib/feedingArrangements.ts': {
     helpers: [],
     why: 'the arrangements mirror, written by the sync layer',
@@ -494,9 +533,17 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     //
     // A widening that cannot say all three of those is a third class, and a third class is
     // a Tier-2 amendment to `docs/nyx-med-strip-requirements.md` §0.1 — never a diff.
+    //
+    // It fired a SECOND time on CUL-903, and that one IS a third class — the
+    // appointment strip's *It didn't*. Which is what this pin is for: it could not be
+    // added without editing this literal, and editing this literal is what sent the
+    // question to the PM before a line of the strip was written. The amendment is
+    // recorded in `docs/nyx-med-strip-requirements.md` §0.1; the reason it qualifies
+    // is on the ALLOW entry above.
     expect(ALLOW).toEqual({
       'components/home/MedStrip.tsx': ['insertMedicationDose'],
       'components/home/LookCard.tsx': ['insertLook', 'updateLookNote'],
+      'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
     });
   });
 
