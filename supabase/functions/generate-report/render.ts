@@ -3616,23 +3616,43 @@ function noticedFirstClause(w: NoticedWordCount): string {
  * card while a pet's eating needs attention (T-20); this document does the opposite,
  * because the vet reading it is the person who can act on the contradiction.
  */
-function noticedIntakeClause(snap: ReportSnapshot, n: NoticedBlock): string {
-  if (n.intake.kind === 'no_record') {
-    // T-20's blind case. Said in the line's own words rather than left for the reader to
-    // infer, because *marked nothing unusual on 34 of the 42* beside an unrated bowl
-    // reads as though the bowl had been watched.
-    return ` No meal in this window carries an intake rating, so nothing here speaks to what ${h(
-      snap.signalment.name,
-    )} ate.`
-  }
+/**
+ * The record's own intake fact, attached DIRECTLY to the absence claim it contradicts.
+ *
+ * Placement is the whole point and it was wrong once: written as a trailing sentence after
+ * the reconciliation clause, "including 2 of those days…" left a reader to bind "those
+ * days" to the nearest plural, which by then was *the days answered* rather than *the days
+ * she marked nothing unusual*. §5 rule 12's own worked example hangs the clause off the
+ * absence with an em dash, and that is not a stylistic choice — the contradiction is
+ * between HER CLAIM and the bowl, and a clause that floats can attach to the wrong half of
+ * it.
+ */
+function noticedDisagreementClause(snap: ReportSnapshot, n: NoticedBlock): string {
   if (n.intake.kind !== 'disagreement') return ''
   const days = n.intake.days
   // B-599 — point at the appendix only when it renders. A pointer to a section that is
   // not on the document is the dangling reference this report has paid for before.
-  const pointer = mealsAppendixVisible(snap) ? ` &mdash; see appendix&nbsp;E` : ''
+  const pointer = mealsAppendixVisible(snap) ? `; see appendix&nbsp;E` : ''
   const dates = days.slice(0, 4).map((d) => h(fmtDay(d))).join(', ')
   const more = days.length > 4 ? `, and ${num(days.length - 4)} more` : ''
-  return ` Including ${num(days.length)} of those ${days.length === 1 ? 'days' : 'days'} carrying a meal recorded as picked at or refused (${dates}${more}${pointer}).`
+  return ` &mdash; including ${num(days.length)} ${
+    days.length === 1 ? 'day' : 'days'
+  } carrying a meal recorded as picked at or refused (${dates}${more}${pointer})`
+}
+
+/**
+ * T-20's blind case: no rated meal in the window at all.
+ *
+ * A statement about what the RECORD can support rather than about any particular day, so
+ * it sits in the note line rather than hanging off the absence count — *marked nothing
+ * unusual on 32 of the 42* beside an unrated bowl otherwise reads as though the bowl had
+ * been watched.
+ */
+function noticedBlindIntakeSentence(snap: ReportSnapshot, n: NoticedBlock): string {
+  if (n.intake.kind !== 'no_record') return ''
+  return ` No meal in this window carries an intake rating, so nothing here speaks to what ${h(
+    snap.signalment.name,
+  )} ate.`
 }
 
 /**
@@ -3652,8 +3672,12 @@ function noticedLine(snap: ReportSnapshot): string {
   }
   if (n.absenceDays > 0) {
     // LAST, and with its denominator. The owner's claim closes the line; it never leads
-    // it, and it is never a bare count.
-    parts.push(`marked nothing unusual on ${num(n.absenceDays)} of the ${num(n.answeredDays)}`)
+    // it, and it is never a bare count — and the record's disagreement with it, when
+    // there is one, is part of the same clause rather than a sentence away.
+    parts.push(
+      `marked nothing unusual on ${num(n.absenceDays)} of the ${num(n.answeredDays)}` +
+        noticedDisagreementClause(snap, n),
+    )
   }
   // The reconciliation clause, true in both directions (see NoticedBlock.activityOnlyDays).
   const activityBit =
@@ -3664,7 +3688,7 @@ function noticedLine(snap: ReportSnapshot): string {
       : ''
   const reconcile =
     `<div class="noticed-note">A day can carry more than one word${activityBit}, so these counts do not sum to the days answered. ` +
-    `Every entry is listed in appendix&nbsp;${lastAppendixLetter(snap)}.${noticedIntakeClause(snap, n)}</div>`
+    `Every entry is listed in appendix&nbsp;${noticedAppendixLetter(snap)}.${noticedBlindIntakeSentence(snap, n)}</div>`
   return `
     <div class="noticed-line">
       <div class="noticed-h">Owner&rsquo;s observations (Noticed)</div>

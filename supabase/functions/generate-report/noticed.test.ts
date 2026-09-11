@@ -214,7 +214,7 @@ Deno.test('the clause is true in the OTHER direction too — activity-only days 
     look({ day: '2026-09-12', words: ['lively'] }),
     look({ day: '2026-09-13', words: ['subdued'] }),
   ])
-  assert.ok(/carry only an activity note/.test(html), 'the under-count is said')
+  assert.ok(/answered day carries only an activity word/.test(html), 'the under-count is said')
   assert.ok(!/lively/i.test(html.split('Appendix')[0]), 'and the activity word is still not ON page 1')
 })
 
@@ -488,6 +488,51 @@ Deno.test('an absence day that also carries a refused meal is NAMED — the disa
   )!
   assert.equal(n.intake.kind, 'disagreement')
   assert.deepEqual(n.intake.kind === 'disagreement' ? n.intake.days : [], ['2026-09-13', '2026-09-14'])
+})
+
+Deno.test('the disagreement hangs off the ABSENCE claim, not off the end of the block', () => {
+  // Placement is the claim. Written as a trailing sentence, "including 2 of those days…"
+  // binds "those days" to the nearest plural — which by then is *the days answered*, not
+  // *the days she marked nothing unusual*. The contradiction is between HER CLAIM and the
+  // bowl, so the clause has to sit inside that clause.
+  const html = renderWithLooks(
+    [
+      ...quietRun(18, '2026-09-10'),
+      look({ day: '2026-09-12', words: ['subdued'] }),
+    ],
+    {
+      events: [
+        {
+          id: 'm1',
+          type: 'meal',
+          occurredAt: '2026-09-05T13:00:00Z',
+          occurredAtConfidence: 'witnessed',
+          occurredAtEarliest: null,
+          occurredAtLatest: null,
+          severity: null,
+          notes: null,
+          loggedAt: '2026-09-05T13:00:00Z',
+          meal: {
+            foodItemId: 'f1',
+            intakeRating: 'refused',
+            quantity: null,
+            foodType: 'meal',
+            format: 'wet_canned',
+            primaryProtein: 'chicken',
+            proteins: ['chicken'],
+            ingredientsNotes: null,
+            brand: 'RC',
+            productName: 'GI',
+          },
+        },
+      ],
+    },
+  )
+  const counts = /<div class="noticed-counts">([\s\S]*?)<\/div>/.exec(html)![1]
+  assert.ok(/marked nothing unusual on[\s\S]*including <span class="num">1<\/span> day carrying a meal/.test(counts),
+    'the clause is inside the counts line, immediately after the absence')
+  const note = /<div class="noticed-note">([\s\S]*?)<\/div>/.exec(html)![1]
+  assert.ok(!/including/.test(note), 'and not floating in the note paragraph')
 })
 
 Deno.test('a day with an OBSERVATION and a refused meal is not a disagreement — only the absence is', () => {
