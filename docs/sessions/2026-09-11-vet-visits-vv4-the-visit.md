@@ -1,6 +1,6 @@
 # Vet visits VV-4 — the visit: "At the vet", "How did it go?", the saved moment, Edit
 
-**Date:** 2026-09-11 · **Issue:** CUL-902 (+ CUL-945, closed inside it) · shipped via #835
+**Date:** 2026-09-11 · **Issue:** CUL-902 (+ CUL-945, closed inside it) · shipped via #836
 
 ---
 
