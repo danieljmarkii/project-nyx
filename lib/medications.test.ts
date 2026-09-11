@@ -136,6 +136,7 @@ describe('medicationRowToRemote — regimen upsert payload', () => {
     status: 'active',
     ended_at: null,
     notes: null,
+    vet_visit_id: null, // CUL-899 — no writer until VV-3, so null is the steady state
     created_at: '2026-06-01T10:00:00.000Z',
     updated_at: '2026-06-01T10:00:00.000Z',
   };
@@ -146,9 +147,21 @@ describe('medicationRowToRemote — regimen upsert payload', () => {
         'created_at', 'dose_amount', 'doses_per_day', 'drug_name', 'ended_at', 'id',
         'indication', 'medication_item_id', 'notes', 'pet_id', 'prescribed_by', 'route',
         'schedule_notes', 'started_at', 'status', 'target_duration_days',
-        'target_duration_doses', 'updated_at',
+        'target_duration_doses', 'vet_visit_id', 'updated_at',
       ].sort(),
     );
+  });
+
+  it('forwards the visit link as-is, both absent and set (CUL-899)', () => {
+    // Provenance, so the mapper's only job is not to lose it — and not to invent it.
+    // The link is set by VV-3's write path; this asserts the wire carries whatever
+    // the row holds, which is what makes "a link never moves a date" checkable at
+    // the layer above (nothing else in this payload changes when it does).
+    expect(medicationRowToRemote(reg).vet_visit_id).toBeNull();
+    const linked = medicationRowToRemote({ ...reg, vet_visit_id: 'visit-9' });
+    expect(linked.vet_visit_id).toBe('visit-9');
+    expect(linked.started_at).toBe(reg.started_at);
+    expect(linked.target_duration_days).toBe(reg.target_duration_days);
   });
 
   it('passes a PRN regimen (null doses_per_day) and an ad-hoc null item through unchanged', () => {

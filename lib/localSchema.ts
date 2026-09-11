@@ -173,6 +173,13 @@ export const BASE_SCHEMA_SQL = `
       reason          TEXT,
       notes           TEXT,
       next_visit_at   TEXT,
+      -- CUL-899 VV-1 / migration 066 — the soft-delete column, shipped ahead of its
+      -- control (VV-6, gated on CUL-19). Hydration CARRIES it (a tombstone is a
+      -- change that has to travel between devices); the READERS filter on it.
+      -- Declared here AND in COLUMN_UPGRADES: the upgrade path reaches a device that
+      -- already ran an earlier build, this reaches a fresh one and anything building
+      -- from the DDL constants — the source_filename precedent (migration 048).
+      deleted_at      TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
       synced          INTEGER NOT NULL DEFAULT 0,
@@ -264,6 +271,63 @@ export const BASE_SCHEMA_SQL = `
     -- The detail-view page fetch (§4.4 swipeable stack).
     CREATE INDEX IF NOT EXISTS idx_vet_documents_group
       ON vet_documents(document_group_id, page_index);
+
+    -- vet_appointments — the BOOKED, not-yet-happened visit (CUL-899 VV-1).
+    -- Mirrors supabase/migrations/066_vet_appointments.sql.
+    --
+    -- A SEPARATE TABLE FROM vet_visits, AND THAT IS THE WHOLE POINT (G3). Every
+    -- reader of vet_visits — here and server-side — means "a visit that
+    -- happened", and two of them say so only by being unbounded: lib/rundown.ts
+    -- readLastVisitDate is a bare MAX(visited_at), and vetDocumentDetail's link
+    -- picker is reverse-chron with no upper bound. A booking stored in that table
+    -- would become "your last visit" and silently move the rundown's whole
+    -- what-changed-since window. Two tables makes that unwritable rather than
+    -- something four readers each have to remember to filter.
+    --
+    -- An LWW table (updated_at + deleted_at), like vet_documents and unlike the two
+    -- attachment tables: an owner edits a booking (re-times it, cancels it, types
+    -- into notes_draft) and every one of those has to reach her other device.
+    --
+    -- NO local FK on vet_visit_id, deliberately — the vet_documents precedent, for
+    -- the same reason: hydration pulls vet_visits before appointments, but an
+    -- appointment can legitimately name a visit this device has not pulled yet (a
+    -- mid-cycle failure on the visits step skips it and the next trigger retries),
+    -- and a local FK would turn that ordinary transient into a hard insert failure.
+    -- The link's same-pet integrity is enforced server-side by
+    -- enforce_vet_visit_link_same_pet(); the client mirror is not a security boundary.
+    --
+    -- questions is TEXT here, not a JSON type: SQLite has no JSONB, the column is
+    -- read and written whole, and storing the JSON text keeps the local and server
+    -- columns congruent for the push (which sends it straight through).
+    CREATE TABLE IF NOT EXISTS vet_appointments (
+      id            TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      scheduled_at  TEXT NOT NULL,
+      clinic_name   TEXT,
+      vet_name      TEXT,
+      reason        TEXT,
+      questions     TEXT,
+      notes_draft   TEXT,
+      vet_visit_id  TEXT,
+      cancelled_at  TEXT,
+      deleted_at    TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced        INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error    TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vet_appointments_unsynced
+      ON vet_appointments(synced)
+      WHERE synced = 0;
+
+    -- The Next/Past reads VV-2 ships. Soft-deleted rows excluded here (unlike the
+    -- server index, which must also serve the pets cascade) — locally there is no
+    -- cascade to serve, so the list read is the only consumer.
+    CREATE INDEX IF NOT EXISTS idx_vet_appointments_pet
+      ON vet_appointments(pet_id, scheduled_at DESC)
+      WHERE deleted_at IS NULL;
 
     -- feeding_arrangements — pet↔food standing fact ("always available / free-fed").
     -- B-040 R1 (PR 2). Mirrors supabase/migrations/018_feeding_arrangements.sql.
@@ -413,6 +477,19 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // without this add every read/write on the notifications screen throws
   // "no such column" on an upgrading device.
   { table: 'notification_preferences', column: 'use_pet_name', type: 'INTEGER NOT NULL DEFAULT 0' },
+  // CUL-899 VV-1 / migration 066 — the soft-delete column and the two provenance
+  // links. All three ride tables that PREDATE this build, so CREATE TABLE IF NOT
+  // EXISTS is a no-op on an already-installed device and only this path can add
+  // them. (vet_appointments itself needs no entry — it is a new table, so the
+  // CREATE above serves fresh and upgrading devices alike.)
+  //
+  // All nullable, no default, nothing to backfill: no visit has ever been deleted
+  // and no course or trial has ever named one, so NULL is the honest value for
+  // every existing row — which is also exactly what the server migration left
+  // behind (verified: 0 of 7 live rows non-null at apply time).
+  { table: 'vet_visits', column: 'deleted_at', type: 'TEXT' },
+  { table: 'medications', column: 'vet_visit_id', type: 'TEXT' },
+  { table: 'diet_trials', column: 'vet_visit_id', type: 'TEXT' },
   // B-398 — the quarantine pair, on every queue table. Generated from SYNC_QUEUES
   // rather than typed out twelve times, so the set that gets the columns and the
   // set the badge counts are provably the same set.

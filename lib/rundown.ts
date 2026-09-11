@@ -638,11 +638,23 @@ async function readMedicationItemNames(): Promise<Map<string, MedItemName>> {
   return map;
 }
 
-/** The most recent logged vet visit's date (YYYY-MM-DD), or null if none logged. */
+/**
+ * The most recent logged vet visit's date (YYYY-MM-DD), or null if none logged.
+ *
+ * CUL-899 VV-1 — `deleted_at IS NULL` is load-bearing, not hygiene. This is an
+ * UNBOUNDED MAX, and its result is the date `readSinceVisitChanges` measures the
+ * whole "what's changed since your last visit" section from. A soft-deleted visit
+ * left in the MAX would keep anchoring that window to a visit the owner has removed
+ * — and because the anchor moves the window rather than adding a row, the section
+ * would simply go quiet rather than look wrong. Nothing writes `deleted_at` yet (the
+ * control is VV-6); the filter ships with the column so the reader is already correct
+ * when it does.
+ */
 async function readLastVisitDate(petId: string): Promise<string | null> {
   const db = getDb();
   const row = await db.getFirstAsync<{ visited_at: string | null }>(
-    `SELECT MAX(visited_at) AS visited_at FROM vet_visits WHERE pet_id = ?`,
+    `SELECT MAX(visited_at) AS visited_at FROM vet_visits
+      WHERE pet_id = ? AND deleted_at IS NULL`,
     [petId],
   );
   return row?.visited_at ?? null;

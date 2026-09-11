@@ -119,6 +119,7 @@ type QueueTable =
   | 'vet_visits'
   | 'vet_visit_attachments'
   | 'vet_documents'
+  | 'vet_appointments'
   | 'feeding_arrangements'
   | 'medications'
   | 'medication_administrations'
@@ -1248,7 +1249,8 @@ async function drainVetVisitsQueue(): Promise<void> {
     id: string; pet_id: string; visited_at: string;
     clinic_name: string | null; vet_name: string | null;
     reason: string | null; notes: string | null;
-    next_visit_at: string | null; created_at: string; updated_at: string;
+    next_visit_at: string | null; deleted_at: string | null;
+    created_at: string; updated_at: string;
   }>(`SELECT * FROM vet_visits WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 50`);
 
   if (unsyncedVisits.length > 0) {
@@ -1256,6 +1258,11 @@ async function drainVetVisitsQueue(): Promise<void> {
       id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
       clinic_name: v.clinic_name, vet_name: v.vet_name,
       reason: v.reason, notes: v.notes, next_visit_at: v.next_visit_at,
+      // CUL-899 VV-1 — the push ENUMERATES its columns, so a column absent from
+      // this literal can never travel no matter what the local row holds. Nothing
+      // writes it yet (the delete control is VV-6, gated on CUL-19); it is here now
+      // so that when a writer lands it does not also have to find this line.
+      deleted_at: v.deleted_at,
       created_at: v.created_at, updated_at: v.updated_at,
     }));
   }
@@ -1435,6 +1442,73 @@ async function drainVetDocumentsQueue(): Promise<void> {
       console.warn('[sync] vet_document upload failed:', e);
       await recordUploadFailure(db, 'vet_documents', doc, e);
     }
+  }
+}
+
+// CUL-899 VV-1 — push booked appointments up.
+//
+// The plain batch shape (pushRows), not vet_documents' object-then-row loop: an
+// appointment carries no Storage object, so there is nothing to order against the
+// row write. LWW rather than insert-only, because every field on this table is
+// something an owner revises — a clinic re-times the visit, she cancels it, she
+// types into notes_draft in the waiting room — and an insert-only contract ("never
+// overwrite an existing local row") would mean none of that could ever reach her
+// second device.
+//
+// No writer exists yet (VV-2 books, VV-4 drafts), so this drains an empty table
+// today. It ships now because the queue, its ordering and its guard column are
+// substrate: a writer landing in VV-2 should find the pipe already correct rather
+// than have to build it while also building a screen.
+export function syncPendingVetAppointments(): Promise<void> {
+  return serializeQueuePush('vet_appointments', drainVetAppointmentsQueue);
+}
+
+async function drainVetAppointmentsQueue(): Promise<void> {
+  const db = getDb();
+
+  const unsynced = await db.getAllAsync<{
+    id: string; pet_id: string; scheduled_at: string;
+    clinic_name: string | null; vet_name: string | null; reason: string | null;
+    questions: string | null; notes_draft: string | null;
+    vet_visit_id: string | null; cancelled_at: string | null;
+    deleted_at: string | null; created_at: string; updated_at: string;
+  }>(`SELECT * FROM vet_appointments WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 50`);
+
+  if (unsynced.length === 0) return;
+
+  await pushRows(db, 'vet_appointments', unsynced, (a) => ({
+    id: a.id, pet_id: a.pet_id, scheduled_at: a.scheduled_at,
+    clinic_name: a.clinic_name, vet_name: a.vet_name, reason: a.reason,
+    // `questions` is JSONB server-side and TEXT locally. Parsed here rather than
+    // forwarded as a string: PostgREST would store a JSON STRING containing the
+    // array, not the array — so `jsonb_typeof(questions) = 'array'` (migration 066)
+    // would reject it, quarantining the row. A row whose local text is unparseable
+    // sends null rather than wedging the queue on a 23514 it can never satisfy.
+    questions: parseQuestionsForPush(a.questions),
+    notes_draft: a.notes_draft,
+    vet_visit_id: a.vet_visit_id,
+    cancelled_at: a.cancelled_at, deleted_at: a.deleted_at,
+    created_at: a.created_at, updated_at: a.updated_at,
+  }));
+}
+
+/**
+ * The local TEXT column → the value PostgREST should send for a JSONB column.
+ *
+ * Returns null for absent, blank or unparseable text, and for anything that parses
+ * to a non-array — migration 066 CHECKs `jsonb_typeof = 'array'`, and a violation of
+ * a CHECK is a terminal 23514, which quarantines the row and wedges that
+ * appointment's sync forever. Dropping a malformed list loses the questions; sending
+ * it loses the appointment, its draft and every future edit to it.
+ */
+function parseQuestionsForPush(raw: string | null): unknown[] | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    console.warn('[sync] vet_appointment questions were not valid JSON — sent as null');
+    return null;
   }
 }
 
@@ -2079,7 +2153,17 @@ interface RemoteEventAttachment {
 interface RemoteVetVisit {
   id: string; pet_id: string; visited_at: string; clinic_name: string | null;
   vet_name: string | null; reason: string | null; notes: string | null;
-  next_visit_at: string | null; created_at: string; updated_at: string;
+  next_visit_at: string | null; deleted_at: string | null; // CUL-899 (migration 066)
+  created_at: string; updated_at: string;
+}
+interface RemoteVetAppointment {
+  id: string; pet_id: string; scheduled_at: string;
+  clinic_name: string | null; vet_name: string | null; reason: string | null;
+  // JSONB server-side; PostgREST hands back the parsed value, which is re-serialised
+  // on the way into the local TEXT column.
+  questions: unknown; notes_draft: string | null;
+  vet_visit_id: string | null; cancelled_at: string | null; deleted_at: string | null;
+  created_at: string; updated_at: string;
 }
 interface RemoteVetVisitAttachment {
   id: string; vet_visit_id: string; pet_id: string; storage_path: string;
@@ -2104,7 +2188,9 @@ interface RemoteMedication {
   started_at: string; target_duration_days: number | null;
   target_duration_doses: number | null; // B-618 — the doses-denominated sibling (migration 049)
   status: string;
-  ended_at: string | null; notes: string | null; created_at: string; updated_at: string;
+  ended_at: string | null; notes: string | null;
+  vet_visit_id: string | null; // CUL-899 VV-1 — provenance only (migration 066)
+  created_at: string; updated_at: string;
 }
 interface RemoteMedicationAdministration {
   id: string; event_id: string; pet_id: string; medication_id: string | null;
@@ -2124,6 +2210,7 @@ interface RemoteDietTrial {
   ended_at: string | null; transition_started_at: string | null;
   // migration 053 (B-704) — owner-stated trial protein + its provenance stamp.
   target_protein: string | null; target_protein_set_at: string | null;
+  vet_visit_id: string | null; // CUL-899 VV-1 — provenance only (migration 066)
   created_at: string; updated_at: string;
 }
 interface RemoteDietTrialFood {
@@ -2392,9 +2479,17 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
   // FR-3: incremental on updated_at, with overlap.
   const since = await getWatermark('vet_visits');
   const floor = watermarkQueryFloor(since);
+  // ⚠ CUL-899 VV-1: `deleted_at` is SELECTED and WRITTEN, and the pull is NOT
+  // filtered on it. That asymmetry is the decision, and it is the same one
+  // vet_documents made: a soft delete is a CHANGE that has to travel. Filtering
+  // `deleted_at IS NULL` here would mean a visit deleted on one phone simply never
+  // arrives as deleted on the other — the tombstone would be indistinguishable from
+  // a row that was never pulled, and the two devices would disagree forever with no
+  // way to tell which is right. Hydration CARRIES the column; the READERS filter
+  // (lib/rundown.ts, lib/vetDocumentDetail.ts, generate-report).
   const rows = await fetchAllRows<RemoteVetVisit>(
     'vet_visits',
-    'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, created_at, updated_at',
+    'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2405,16 +2500,17 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
   for (const v of toWrite) {
     await db.runAsync(
       `INSERT INTO vet_visits
-        (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,1)
+        (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, visited_at=excluded.visited_at, clinic_name=excluded.clinic_name,
          vet_name=excluded.vet_name, reason=excluded.reason, notes=excluded.notes,
-         next_visit_at=excluded.next_visit_at, created_at=excluded.created_at,
+         next_visit_at=excluded.next_visit_at, deleted_at=excluded.deleted_at,
+         created_at=excluded.created_at,
          updated_at=excluded.updated_at, synced=1
        WHERE vet_visits.synced = 1`,
       [v.id, v.pet_id, v.visited_at, v.clinic_name ?? null, v.vet_name ?? null, v.reason ?? null,
-       v.notes ?? null, v.next_visit_at ?? null, v.created_at, v.updated_at],
+       v.notes ?? null, v.next_visit_at ?? null, v.deleted_at ?? null, v.created_at, v.updated_at],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
@@ -2526,6 +2622,70 @@ async function hydrateVetDocuments(db: Db, stale: () => boolean): Promise<void> 
   if (wm) await setWatermark('vet_documents', wm);
 }
 
+// CUL-899 VV-1 — pull booked appointments down.
+//
+// An LWW table reconciled exactly like vet_visits and vet_documents, and NOT
+// insert-if-absent: a re-timed, cancelled or edited booking has to be able to reach
+// a second device, which an insert-only contract ("never overwrite an existing local
+// row") makes impossible.
+//
+// Like vet_visits above, the pull is NOT filtered on `deleted_at` — the tombstone is
+// the change that has to travel. The Next/Past reads filter (VV-2).
+async function hydrateVetAppointments(db: Db, stale: () => boolean): Promise<void> {
+  const since = await getWatermark('vet_appointments');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteVetAppointment>(
+    'vet_appointments',
+    'id, pet_id, scheduled_at, clinic_name, vet_name, reason, questions, notes_draft, ' +
+      'vet_visit_id, cancelled_at, deleted_at, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(db, 'vet_appointments', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const a of toWrite) {
+    await db.runAsync(
+      `INSERT INTO vet_appointments
+        (id, pet_id, scheduled_at, clinic_name, vet_name, reason, questions, notes_draft,
+         vet_visit_id, cancelled_at, deleted_at, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         pet_id=excluded.pet_id, scheduled_at=excluded.scheduled_at,
+         clinic_name=excluded.clinic_name, vet_name=excluded.vet_name,
+         reason=excluded.reason, questions=excluded.questions,
+         notes_draft=excluded.notes_draft, vet_visit_id=excluded.vet_visit_id,
+         cancelled_at=excluded.cancelled_at, deleted_at=excluded.deleted_at,
+         updated_at=excluded.updated_at, synced=1
+       WHERE vet_appointments.synced = 1`,
+      // created_at rides the INSERT branch only, like every other LWW hydrate in
+      // this file (hydrateMeals / hydrateWeightChecks / hydrateVetDocuments): it is
+      // immutable for a given id, so re-writing it could only ever corrupt the row.
+      [a.id, a.pet_id, a.scheduled_at, a.clinic_name ?? null, a.vet_name ?? null,
+       a.reason ?? null, serialiseQuestionsForLocal(a.questions), a.notes_draft ?? null,
+       a.vet_visit_id ?? null, a.cancelled_at ?? null, a.deleted_at ?? null,
+       a.created_at, a.updated_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('vet_appointments', wm);
+}
+
+/**
+ * The JSONB value PostgREST hands back → the local TEXT column.
+ *
+ * The inverse of `parseQuestionsForPush`, and the pair has to round-trip: whatever
+ * this writes, that must be able to parse and send back unchanged. So null stays
+ * null and only an ARRAY is stored — the server CHECK already forbids anything else,
+ * and storing a non-array would hand the push a value it is obliged to drop.
+ */
+function serialiseQuestionsForLocal(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  return JSON.stringify(value);
+}
+
 async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise<void> {
   // B-040 R1 — a pet-child LWW table, reconciled like events/vet_visits:
   // incremental on updated_at with the commit-skew overlap, replace only when the
@@ -2583,7 +2743,7 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
     'medications',
     'id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
       'schedule_notes, indication, prescribed_by, started_at, target_duration_days, ' +
-      'target_duration_doses, status, ended_at, notes, created_at, updated_at',
+      'target_duration_doses, status, ended_at, notes, vet_visit_id, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2596,8 +2756,8 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
       `INSERT INTO medications
         (id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day,
          schedule_notes, indication, prescribed_by, started_at, target_duration_days,
-         target_duration_doses, status, ended_at, notes, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         target_duration_doses, status, ended_at, notes, vet_visit_id, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, medication_item_id=excluded.medication_item_id,
          drug_name=excluded.drug_name, dose_amount=excluded.dose_amount, route=excluded.route,
@@ -2606,6 +2766,7 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
          started_at=excluded.started_at, target_duration_days=excluded.target_duration_days,
          target_duration_doses=excluded.target_duration_doses,
          status=excluded.status, ended_at=excluded.ended_at, notes=excluded.notes,
+         vet_visit_id=excluded.vet_visit_id,
          created_at=excluded.created_at, updated_at=excluded.updated_at, synced=1
        WHERE medications.synced = 1`,
       [
@@ -2613,7 +2774,8 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
         m.route ?? null, m.doses_per_day ?? null, m.schedule_notes ?? null, m.indication ?? null,
         m.prescribed_by ?? null, m.started_at, m.target_duration_days ?? null,
         m.target_duration_doses ?? null,
-        m.status, m.ended_at ?? null, m.notes ?? null, m.created_at, m.updated_at,
+        m.status, m.ended_at ?? null, m.notes ?? null, m.vet_visit_id ?? null,
+        m.created_at, m.updated_at,
       ],
     );
   }
@@ -2695,7 +2857,7 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
     'id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at, ' +
       'vet_name, notes, food_label, indication, phase, outcome, outcome_notes, ' +
       'stopped_reason, ended_at, transition_started_at, target_protein, ' +
-      'target_protein_set_at, created_at, updated_at',
+      'target_protein_set_at, vet_visit_id, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2709,8 +2871,8 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         (id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at,
          vet_name, notes, food_label, indication, phase, outcome, outcome_notes,
          stopped_reason, ended_at, transition_started_at, target_protein, target_protein_set_at,
-         created_at, updated_at, synced, sync_error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
+         vet_visit_id, created_at, updated_at, synced, sync_error)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, food_item_id=excluded.food_item_id,
          started_at=excluded.started_at, target_duration_days=excluded.target_duration_days,
@@ -2720,6 +2882,7 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
          outcome_notes=excluded.outcome_notes, stopped_reason=excluded.stopped_reason,
          ended_at=excluded.ended_at, transition_started_at=excluded.transition_started_at,
          target_protein=excluded.target_protein, target_protein_set_at=excluded.target_protein_set_at,
+         vet_visit_id=excluded.vet_visit_id,
          updated_at=excluded.updated_at, synced=1, sync_error=NULL
        WHERE diet_trials.synced = 1`,
       [
@@ -2729,6 +2892,7 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         t.outcome ?? null, t.outcome_notes ?? null, t.stopped_reason ?? null,
         t.ended_at ?? null, t.transition_started_at ?? null,
         t.target_protein ?? null, t.target_protein_set_at ?? null,
+        t.vet_visit_id ?? null,
         t.created_at, t.updated_at,
       ],
     );
@@ -2957,6 +3121,13 @@ export async function hydrateFromCloud(): Promise<void> {
   // parents-before-children reading of this list true.
   await runHydrationStep('vet_documents', () => hydrateVetDocuments(db, stale));
   if (stale()) return;
+  // CUL-899 VV-1: vet_appointments declares no local FK on vet_visit_id (the
+  // vet_documents precedent — the link may name a visit this device has not pulled
+  // yet), so nothing would throw on a different order. It runs AFTER vet_visits so
+  // the common case has its linked visit already present, keeping the vet family
+  // contiguous and the parents-before-children reading of this list true.
+  await runHydrationStep('vet_appointments', () => hydrateVetAppointments(db, stale));
+  if (stale()) return;
   await runHydrationStep('feeding_arrangements', () => hydrateFeedingArrangements(db, stale));
   if (stale()) return;
   // B-117: medications has no local FK; medication_administrations.event_id →
@@ -3010,6 +3181,13 @@ async function pushAllQueues(): Promise<void> {
   // committed — otherwise the same-pet trigger's lookup finds no visit and the
   // row is rejected until the next cycle.
   await syncPendingVetDocuments();
+  // CUL-899 VV-1: an appointment's vet_visit_id is nullable, so no server FK forces
+  // this order — but trg_vet_appointments_visit_same_pet (migration 066) looks the
+  // visit up, and a visit logged in the same session that has not landed yet is
+  // invisible to it, so the row would be refused and wait a cycle. Pushing visits
+  // first (above) means the attendance link finds its target already committed.
+  // Same argument, same position as vet_documents.
+  await syncPendingVetAppointments();
   await syncPendingFeedingArrangements();
   await syncPendingMedications();
   await syncPendingMedicationAdministrations();

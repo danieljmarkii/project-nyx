@@ -77,6 +77,13 @@ export const MEDICATION_SCHEMA_SQL = `
     status               TEXT NOT NULL DEFAULT 'active',
     ended_at             TEXT,
     notes                TEXT,
+    -- CUL-899 VV-1 / migration 066 — PROVENANCE: the visit this course came from.
+    -- Never a source of numbers (CUL-746; TG-5 — a link never moves a date), which
+    -- guards/visitReaders.test.ts pins. Declared HERE as well as in COLUMN_UPGRADES:
+    -- the upgrade path is what reaches an already-installed device, this is what a
+    -- fresh device and anything building from the DDL constants get. Both halves
+    -- are load-bearing — the source_filename precedent (migration 048).
+    vet_visit_id         TEXT,
     created_at           TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
     synced               INTEGER NOT NULL DEFAULT 0,
@@ -170,6 +177,11 @@ export interface LocalMedication {
   status: string;
   ended_at: string | null;
   notes: string | null;
+  // CUL-899 VV-1 (migration 066) — PROVENANCE: the visit this course came from.
+  // Never a source of numbers. `started_at`, the dose counts and the course's own
+  // dates stay its own (CUL-746: one population, one owner; TG-5: a link never
+  // moves a date). Nothing writes it until VV-3.
+  vet_visit_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -245,6 +257,7 @@ export interface RemoteMedicationUpsert {
   status: string;
   ended_at: string | null;
   notes: string | null;
+  vet_visit_id: string | null; // CUL-899 VV-1 — provenance only (migration 066)
   created_at: string;
   updated_at: string;
 }
@@ -274,6 +287,7 @@ export function medicationRowToRemote(row: LocalMedication): RemoteMedicationUps
     status: row.status,
     ended_at: row.ended_at,
     notes: row.notes,
+    vet_visit_id: row.vet_visit_id, // CUL-899 — forwarded as-is; NULL until VV-3 sets it
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

@@ -312,6 +312,15 @@ export async function clearLocalData(): Promise<void> {
 // reconciles silently. Soft-deleted events still count as "has data" — the row
 // exists locally, so this isn't a cold start. meals hang off events, so checking
 // the two record tables is sufficient.
+//
+// ⚠ CUL-899 VV-1: this is the ONE reader of vet_visits that deliberately does NOT
+// take `deleted_at IS NULL`, and it is exempted in guards/visitReaders.test.ts on
+// that basis. It asks "does this device hold any rows at all?", not "what does the
+// record say?" — a soft-deleted visit is still a row, so its presence still means
+// the store is populated and hydration should reconcile silently rather than block
+// behind the cold-start overlay. The rule is the same one the events clause above
+// already states; adding a filter here would make a device that had deleted its
+// only visit show "Catching up…" as though it were a fresh install.
 export async function isLocalDataEmpty(): Promise<boolean> {
   const db = getDb();
   const row = await db.getFirstAsync<{ total: number }>(
