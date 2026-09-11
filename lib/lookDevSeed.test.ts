@@ -12,7 +12,7 @@ jest.mock('./sync', () => ({ syncPendingEvents: jest.fn(), syncPendingLooks: jes
 jest.mock('./db', () => ({ getDb: () => ({}) }));
 
 import { buildLookSeed } from './lookDevSeed';
-import { LOOK_WORDS } from '../constants/lookWords';
+import { LOOK_WORDS, LOOK_VOCAB_VERSION } from '../constants/lookWords';
 import { answeredDays, absenceDays, wordDays, answeredVomitDays, type LookDayRow } from './looks';
 
 /** The seed's days as the day-count module would see them, so the assertions below
@@ -29,6 +29,7 @@ function asRecord(species: 'cat' | 'dog'): LookDayRow[] {
     createdAt: `2026-01-01T00:00:${String(i).padStart(2, '0')}.000Z`,
     outcome: d.outcome,
     words: d.words,
+    vocabVersion: LOOK_VOCAB_VERSION,
   }));
 }
 

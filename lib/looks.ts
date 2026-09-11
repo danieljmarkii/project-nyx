@@ -27,6 +27,15 @@
 // `loadLookDays` is the only reader HERE, which is what makes "stated once" true
 // rather than repeated.
 //
+// ⚠ Amended again at CUL-874 / N-5, twice over. The pure DAY COUNTS moved to
+// `lib/lookDayCounts.ts` (re-exported below — one definition, two import paths) so that a
+// render-only surface need not pull this file's write path behind it; and
+// `loadVomitLocalDays` was added, which reads `events` rather than `looks`. Neither
+// touches the join rule: the vomit reader filters `deleted_at IS NULL` on the events
+// table itself, and `loadLookDays` is still the only read of `looks` HERE. The claim that
+// matters is unchanged — a look row is GROUPED BY DAY in exactly one module, and it is
+// therefore the only place a denominator can be got wrong.
+//
 // ⚠ Amended at CUL-869 / N-3, because the original sentence claimed more than it
 // can now keep. `getTimeline` and `getEventById` (lib/db.ts) LEFT JOIN `looks` to
 // carry a look's words and note onto the row every record surface already reads —
@@ -39,9 +48,10 @@
 
 import { getDb } from './db';
 import { syncPendingEvents, syncPendingLooks } from './sync';
-import { uuid, localDayIndex, dayKeyFromIndex } from './utils';
+import { uuid, localDayIndex, localDayIndexOf, dayKeyFromIndex } from './utils';
 import { wordsToLocalText, wordsFromLocalText } from './lookWordsCodec';
 import { LOOK_VOCABULARY, LOOK_VOCAB_VERSION, type LookSpecies } from '../constants/lookWords';
+import type { LookDayRow } from './lookDayCounts';
 
 /** The two outcomes (migration 064's CHECK). 'nothing_unusual' is the
  *  observed-absence row (L-6) — a real answer, never "no data". */
@@ -185,28 +195,8 @@ export async function insertLook(params: InsertLookParams): Promise<InsertLookRe
 
 // ── The day counts ───────────────────────────────────────────────────────────
 
-/** One look row, reduced to what a COUNT needs. `localDay` is the stored key,
- *  never a re-derivation from `occurred_at` (T-19).
- *
- *  `eventId` and `createdAt` joined the shape at CUL-873 / N-4b, and they are here
- *  rather than in a second reader for the reason the header states: this is the only
- *  place a look row is grouped by day, so it is the only place a denominator can be got
- *  wrong — and the RECEIPTS need to say WHICH entry earned a line, not just how many
- *  days hold a word. T-18 attaches a receipt to the earliest look of the day carrying
- *  the word, ties broken by `created_at` then row id; without those two fields that rule
- *  could only be approximated at the render layer, which is where it would drift. */
-export interface LookDayRow {
-  /** The PARENT event's id — what a card's entry is keyed on and what its `›` opens.
-   *  The child's own id is never needed outside the write path. */
-  eventId: string;
-  localDay: string;
-  /** ISO, stamped at insert. The tie-break for "the earliest look of the day" — never a
-   *  substitute for `occurred_at`, which is when the owner LOOKED; this is when the row
-   *  was written, and only two rows on the same day are ever compared by it. */
-  createdAt: string;
-  outcome: LookOutcome;
-  words: string[];
-}
+/** One look row, reduced to what a COUNT needs — MOVED to `lib/lookDayCounts.ts` at
+ *  CUL-874 / N-5 with the counters that read it, and re-exported below. */
 
 /**
  * Every live look for a pet, newest day first — THE ONLY READ of `looks` in the
@@ -226,13 +216,14 @@ export async function loadLookDays(petId: string, sinceDay?: string): Promise<Lo
     created_at: string;
     outcome: string;
     words: string | null;
+    vocab_version: number | null;
   }>(
     // ORDERED WITHIN THE DAY, not just across days (CUL-873). The receipts' attachment
     // rule is "the earliest look of the day carrying the word, ties by `created_at` then
     // id" (T-18), so the order that rule needs is produced HERE, once, by the reader that
     // already owns the day grouping — rather than re-sorted by each consumer, which is
     // how two surfaces come to disagree about which entry earned a line.
-    `SELECT l.event_id, l.local_day, l.created_at, l.outcome, l.words
+    `SELECT l.event_id, l.local_day, l.created_at, l.outcome, l.words, l.vocab_version
        FROM looks l
        JOIN events e ON e.id = l.event_id
       WHERE l.pet_id = ?
@@ -251,82 +242,70 @@ export async function loadLookDays(petId: string, sinceDay?: string): Promise<Lo
     // describe as "nothing unusual" and it must never be inferred.
     outcome: r.outcome === 'nothing_unusual' ? 'nothing_unusual' : 'observed',
     words: wordsFromLocalText(r.words),
+    vocabVersion: typeof r.vocab_version === 'number' ? r.vocab_version : LOOK_VOCAB_VERSION,
   }));
 }
 
-/** The set of days that hold at least one look. THE denominator: every "N of M"
- *  this feature prints has this on one side, and a skipped day is simply absent
- *  (counted as not answered, never as an answered day — §5.6). */
-export function answeredDaySet(rows: readonly LookDayRow[]): Set<string> {
-  return new Set(rows.map((r) => r.localDay));
-}
+// The counters MOVED to `lib/lookDayCounts.ts` at CUL-874 / N-5 and are re-exported
+// here, so every caller that has imported them from this module since N-2 is untouched.
+// The move is about the IMPORT GRAPH, not about ownership: this file holds the write path
+// and therefore drags `./sync` → `./supabase` behind it, and Patterns' pure model,
+// comparison and pairing modules need the counters and nothing else. One definition, two
+// paths — see that file's header.
 
-/** How many days hold at least one look. Days, never looks: ten reflex taps in a
- *  day are one answered day (T-14, §3.3). */
-export function answeredDays(rows: readonly LookDayRow[]): number {
-  return answeredDaySet(rows).size;
-}
+export {
+  answeredDaySet,
+  answeredDays,
+  wordDays,
+  wordDaySet,
+  absenceDays,
+  absenceDaySet,
+  answeredVomitDays,
+  type LookDayRow,
+} from './lookDayCounts';
 
-/** How many days a word was marked. A word marked in two looks the same day counts
- *  ONCE for that day (T-14) — which is the whole reason this is a set of days and
- *  not a row count. */
-export function wordDays(rows: readonly LookDayRow[], word: string): number {
-  return wordDaySet(rows, word).size;
-}
-
-/** The days a word was marked, as their keys — for a pairing that must intersect
- *  two day sets rather than compare two numbers (§6.11). */
-export function wordDaySet(rows: readonly LookDayRow[], word: string): Set<string> {
+/**
+ * The local days a vomit was logged for a pet — the OTHER half of the pairing's unit
+ * (§6.11: *days with ≥ 1 vomit*, never the report's episode count).
+ *
+ * ── WHY IT LIVES HERE AND NOT IN `lib/analytics.ts` ─────────────────────────
+ * `answeredVomitDays` promises its argument is "keyed the SAME way (`local_day`, the
+ * owner's zone)", and analytics buckets symptoms by UTC calendar day
+ * (`computeSymptomFrequencyByDay` → `utcDateKey`). Two keyings, one intersection: every
+ * vomit logged after 7 PM in New York would land on the NEXT UTC day, miss the look
+ * answered beside it, and push the pairing's left numerator down — toward null, the
+ * reassuring direction, on the exact question §6.11 exists to answer honestly. So the
+ * keys that intersection needs are produced next to the promise, on this feature's own
+ * reader, which is also where the soft-delete rule is already stated.
+ *
+ * `sinceDay` bounds the READ ('YYYY-MM-DD', inclusive), never the meaning of a count
+ * (C-3). `timeZone` exists so a timezone-honest fixture can pin the boundary; production
+ * passes nothing and the DEVICE zone is the owner's midnight (T-19, C-29).
+ *
+ * Soft-deleted rows are excluded, so an undone vomit leaves the pairing exactly the way
+ * it leaves every other count.
+ */
+export async function loadVomitLocalDays(
+  petId: string,
+  sinceDay?: string,
+  timeZone?: string,
+): Promise<string[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{ occurred_at: string }>(
+    `SELECT occurred_at FROM events
+      WHERE pet_id = ? AND event_type = 'vomit' AND deleted_at IS NULL`,
+    [petId],
+  );
+  const sinceIndex = sinceDay !== undefined ? localDayIndexOf(sinceDay) : null;
   const days = new Set<string>();
-  for (const r of rows) if (r.words.includes(word)) days.add(r.localDay);
-  return days;
-}
-
-/**
- * How many days are OBSERVED-ABSENCE days: days on which EVERY look was
- * `nothing_unusual` (T-14).
- *
- * The precedence is the honest one and it runs one way only (C-4): a *nothing
- * unusual* at 7 AM and an *off* at 6 PM is an OFF day, never an absence day. The
- * later look does not overwrite the earlier one — the DAY's classification does,
- * and the accusing branch wins. Inverting this would silently convert a day the
- * owner reported something on into a day the record calls clear.
- */
-export function absenceDays(rows: readonly LookDayRow[]): number {
-  return absenceDaySet(rows).size;
-}
-
-/** The observed-absence days, as their keys. */
-export function absenceDaySet(rows: readonly LookDayRow[]): Set<string> {
-  const observed = new Set<string>();
-  const seen = new Set<string>();
-  for (const r of rows) {
-    seen.add(r.localDay);
-    if (r.outcome === 'observed') observed.add(r.localDay);
+  for (const row of rows) {
+    const ms = Date.parse(row.occurred_at);
+    if (!Number.isFinite(ms)) continue;
+    const index = localDayIndex(ms, timeZone);
+    if (sinceIndex !== null && index < sinceIndex) continue;
+    days.add(dayKeyFromIndex(index));
   }
-  for (const day of observed) seen.delete(day);
-  return seen;
-}
-
-/**
- * How many days are BOTH answered and vomit days — the denominator of the same-day
- * pairing (§6.11), and the one number the third adversarial pass caught the spec
- * getting wrong.
- *
- * `vomitLocalDays` is the caller's set of days a vomit was logged, keyed the SAME
- * way (`local_day`, the owner's zone). Both sides of the pairing's margin must
- * count ANSWERED days: a left denominator over ALL vomit days and a right one over
- * answered days scores every unanswered bad day as "nothing seen" — the reassuring
- * direction, on the exact question a worried owner is asking.
- */
-export function answeredVomitDays(
-  rows: readonly LookDayRow[],
-  vomitLocalDays: Iterable<string>,
-): number {
-  const answered = answeredDaySet(rows);
-  let n = 0;
-  for (const day of new Set(vomitLocalDays)) if (answered.has(day)) n += 1;
-  return n;
+  return [...days].sort();
 }
 
 // ── The record's edits (CUL-869 / N-3) ───────────────────────────────────────

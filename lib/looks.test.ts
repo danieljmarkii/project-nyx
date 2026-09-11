@@ -546,8 +546,8 @@ describe('the day counts — the day is the unit, local_day is the key', () => {
 
   it('the counts are pure over the rows they are given', () => {
     const record: LookDayRow[] = [
-      { eventId: 'e1', localDay: '2026-09-01', createdAt: '2026-09-01T07:00:00.000Z', outcome: 'observed', words: ['subdued'] },
-      { eventId: 'e2', localDay: '2026-09-01', createdAt: '2026-09-01T18:00:00.000Z', outcome: 'nothing_unusual', words: [] },
+      { eventId: 'e1', localDay: '2026-09-01', createdAt: '2026-09-01T07:00:00.000Z', outcome: 'observed', words: ['subdued'], vocabVersion: 1 },
+      { eventId: 'e2', localDay: '2026-09-01', createdAt: '2026-09-01T18:00:00.000Z', outcome: 'nothing_unusual', words: [], vocabVersion: 1 },
     ];
     const before = JSON.stringify(record);
     answeredDays(record);

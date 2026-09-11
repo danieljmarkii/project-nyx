@@ -24,6 +24,7 @@ import {
   type MealTreatComposition,
 } from './analytics';
 import type { WeightTrend } from './weight';
+import type { NoticedCardModel } from './lookPatterns';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,21 @@ describe('orderDashboardCards — safety leads, stable within class', () => {
       'intake',
       'food',
       'protein',
+    ]);
+  });
+
+  it('the observation class sits AFTER intake and BEFORE descriptive (CUL-874 / E-13)', () => {
+    const input: { key: string; priority: DashboardCardPriority }[] = [
+      { key: 'food', priority: 'descriptive' },
+      { key: 'noticed', priority: 'observation' },
+      { key: 'intake', priority: 'intake' },
+      { key: 'symptom', priority: 'safety' },
+    ];
+    expect(orderDashboardCards(input).map((c) => c.key)).toEqual([
+      'symptom',
+      'intake',
+      'noticed',
+      'food',
     ]);
   });
 
@@ -360,5 +376,134 @@ describe('sparkFromBuckets', () => {
   it('returns all zeros for a symptom type that never occurs in the window', () => {
     const b = buckets([0, 2, 1], 'vomit');
     expect(sparkFromBuckets(b, 'lethargy')).toEqual([0, 0, 0]);
+  });
+});
+
+
+// ── Noticed: *What you noticed* (CUL-874 / N-5) ───────────────────────────────────
+//
+// The card's own model is tested in lib/lookPatterns.test.ts; these are the two things
+// only the BUILDER can be wrong about — where the card lands, and whether Patterns off
+// the flag is byte-identical.
+
+describe('buildDashboardCards — the Noticed card', () => {
+  const model: NoticedCardModel = {
+    coverageLine: 'Counted across the 24 of the last 28 days you answered.',
+    rows: [],
+    withheldLine: null,
+    withheldSpanLine: null,
+    calibrationLine: null,
+    multiSelectNote: null,
+    empty: true,
+    pairing: null,
+    wordDaysInWindow: new Map(),
+  };
+
+  it('lands after the intake card and above every descriptive one', () => {
+    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 3, 1)], noticed: model }));
+    const keys = cards.map((c) => c.key);
+    expect(keys.indexOf('whatYouNoticed')).toBeGreaterThan(keys.indexOf('intakeRate'));
+    expect(keys.indexOf('whatYouNoticed')).toBeLessThan(keys.indexOf('topFood'));
+    expect(keys.indexOf('whatYouNoticed')).toBeLessThan(keys.indexOf('composition'));
+  });
+
+  it('never leads a symptom count card — it must not sit over the evidence it can seem to argue with', () => {
+    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 3, 1)], noticed: model }));
+    const keys = cards.map((c) => c.key);
+    expect(keys.indexOf('symptom:vomit')).toBeLessThan(keys.indexOf('whatYouNoticed'));
+  });
+
+  it('is emitted in its EMPTY state too — §7 draws the room behind the door on purpose', () => {
+    const cards = buildDashboardCards(baseInput({ noticed: model }));
+    expect(cards.some((c) => c.kind === 'whatYouNoticed')).toBe(true);
+  });
+
+  it('FLAG OFF: the card is absent and every other card is byte-identical', () => {
+    const off = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 3, 1), sc('itch', 0, 4)] }));
+    const withNull = buildDashboardCards(
+      baseInput({ symptomCounts: [sc('vomit', 3, 1), sc('itch', 0, 4)], noticed: null }),
+    );
+    expect(off.some((c) => c.kind === 'whatYouNoticed')).toBe(false);
+    // The rank shift (descriptive 2 → 3) reorders nothing, because the ordering is a
+    // stable sort on RELATIVE rank and there is no rank-2 card to slot between them.
+    expect(withNull).toEqual(off);
+    expect(off.map((c) => c.key)).toEqual([
+      'symptom:vomit', 'symptom:itch', 'calendar', 'intakeRate',
+      'weightTrend', 'topFood', 'topProtein', 'composition',
+    ]);
+  });
+});
+
+describe('buildDashboardCards — CUL-845 gate 2, the zero-count audit', () => {
+  /** CUL-845 gate 2 reads its OWN input at the DASHBOARD's window, not the Noticed
+   *  card's — the 30-vs-28-day hole the adversarial pass walked through (a word marked
+   *  only on days 29 and 30 left the gate blind while the zero it should suppress was
+   *  still on screen). These fixtures drive `lookWordDaysForZeroGate`, and pass a card
+   *  model with an EMPTY per-word map alongside, so a regression that re-pointed the
+   *  gate at the card would red every case below. */
+  const cardModel: NoticedCardModel = {
+    coverageLine: null,
+    rows: [],
+    withheldLine: null,
+    withheldSpanLine: null,
+    calibrationLine: null,
+    multiSelectNote: null,
+    empty: false,
+    pairing: null,
+    wordDaysInWindow: new Map(),
+  };
+  function gateWith(words: [string, number][]): ReadonlyMap<string, number> {
+    return new Map(words);
+  }
+
+  it('30 days of Scratching more and no itch rows renders NO itch card — not even at zero', () => {
+    const cards = buildDashboardCards(
+      baseInput({
+        symptomCounts: [sc('vomit', 2, 1), sc('itch', 0, 5)],
+        lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel,
+      }),
+    );
+    expect(cards.some((c) => c.key === 'symptom:itch')).toBe(false);
+    // And nothing else moved: the honest cards are all still there.
+    expect(cards.some((c) => c.key === 'symptom:vomit')).toBe(true);
+  });
+
+  it('a NON-zero itch count stands beside the word — the disagreement is said, not hidden', () => {
+    const cards = buildDashboardCards(
+      baseInput({
+        symptomCounts: [sc('itch', 2, 5)],
+        lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel,
+      }),
+    );
+    expect(cards.some((c) => c.key === 'symptom:itch')).toBe(true);
+  });
+
+  it('a zero with NO contradicting word still renders — an honest zero is not suppressed', () => {
+    const cards = buildDashboardCards(
+      baseInput({ symptomCounts: [sc('itch', 0, 5)], lookWordDaysForZeroGate: gateWith([['lip_licking', 9]]), noticed: cardModel }),
+    );
+    expect(cards.some((c) => c.key === 'symptom:itch')).toBe(true);
+  });
+
+  it('lethargy is suppressed by EITHER of its two words', () => {
+    for (const word of ['subdued', 'sleeping_more']) {
+      const cards = buildDashboardCards(
+        baseInput({ symptomCounts: [sc('lethargy', 0, 3)], lookWordDaysForZeroGate: gateWith([[word, 6]]), noticed: cardModel }),
+      );
+      expect(cards.some((c) => c.key === 'symptom:lethargy')).toBe(false);
+    }
+  });
+
+  it('a suppressed leaf also loses its CALENDAR lens — a lens needs current > 0 anyway', () => {
+    const cards = buildDashboardCards(
+      baseInput({ symptomCounts: [sc('itch', 0, 5)], lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel }),
+    );
+    const calendar = cards.find((c) => c.kind === 'calendar') as CalendarCard | undefined;
+    expect(calendar?.views.some((v) => v.symptomType === 'itch')).not.toBe(true);
+  });
+
+  it('OFF THE FLAG the zero renders as it always did — no suppression without a look record', () => {
+    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('itch', 0, 5)] }));
+    expect(cards.some((c) => c.key === 'symptom:itch')).toBe(true);
   });
 });

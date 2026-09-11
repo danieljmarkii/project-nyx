@@ -210,6 +210,26 @@ Worse, and the part worth carrying: **the card's own test mock was stubbing the 
 
 **One more, from the same pass and the same family (C-18's edge, sharpened).** The cadence fixtures re-implemented the recency bound as a local `inBound()` helper, so "a once-a-week rater can never reach it" proved a property of the *test's own filter*. Deleting the bound from `loadRecentQualifyingMeals` left **7,576 of 7,577** tests green. A test that re-derives the production rule to check the production rule is a tautology with fixtures; drive the real function, and derive the fixture's boundary from the shipped constant so retuning it moves the test with it.
 
+### C-35 · A shared predicate inherits its CALLER'S window, and a fixture that cannot exist in production is green over nothing (2026-09-11, CUL-874):
+
+**A shared predicate inherits its CALLER'S window, and a fixture that cannot exist in production is green over nothing (2026-09-11, CUL-874).** N-5's Patterns card composes four pure modules over "the pet's look record". The screen read **56 days** — the card speaks for 28 and §6.4's comparison needs the 28 before them — and handed that to every module. Nothing in the modules was wrong and nothing on screen looked wrong. Three defects fell out of the seam, all in the reassuring direction:
+
+1. **The regression-to-the-mean guard became a TAUTOLOGY.** §6.7 withholds a falling pair whose earlier half is the record's first month, tested as `earliestAnsweredIndex(record) >= earlierBounds.firstIndex`. Under a 56-day read the earliest row a record can hold **is** `today − 55`, which is the earlier half's `firstIndex` — the same index, asserted rather than eyeballed (both `20652` / `2026-07-18`). So the condition was true for every record Patterns could ever build: a cat with two years of daily looks and a falling *subdued* count was told *"Comparisons start from the second month of looks"*, a sentence false about her own record. And because the guard runs first, **§6.6's density rule was unreachable in production** — a whole rule, shadowed by a branch that always won.
+2. **The onset date was the horizon's, not the record's.** The same `record` feeds *first {date}*. A word first marked at T−60 printed *first Sep 8* for a July onset, a 57-day error, and the stated onset **walked forward as the window rolled**. Home reads unbounded and the report anchors server-side, so the same word had three first dates across three surfaces — the §5.3 disagreement, in front of a vet, understating chronicity. §6.9's own worked example (*"answered on 118 days before it"*) was unreachable by construction: 118 days needs a 118-day read.
+3. **A clause counted over a span the card does not speak for.** The pairing's *"N vomit days not answered"* subtracted a 28-day intersection from a 56-day vomit set, so a vomit from the earlier half — outside the card entirely — was reported as one the owner failed to answer.
+
+**The rule.** A predicate about *the record* takes the record: the widest read its narrowest claim needs, with every count bounding itself internally (C-3 — a window may INDEX, only the total may be SPOKEN). A module that cannot take the record takes an explicit span and refuses to answer outside it. Neither of those is what a caller passing a convenient window gets you, and the failure has no symptom: the numbers are all plausible.
+
+**The corollary, and it bit on the same PR.** **A GATE's window is the window of the CLAIM IT GATES**, never the neighbouring surface's. CUL-845 gate 2 suppresses `Itch · 0` when the owner's own *Scratching more* contradicts it; it read the Noticed card's **28** days against symptom cards that count **30** and say so in their caption. A word marked only on days 29 and 30 left the gate blind and the zero on screen, in exactly the case the gate exists for. The fix is not a wider window — it is the gate reading its own (`lookWordDaysOver(record, {days})`), because the window belongs to the zero.
+
+**And a gate's DIRECTION is the reader's, not the statistician's.** The same PR gated the density and RTM withholdings on the *rate*, on the good-sounding ground that two self-selected samples make 3-of-24 and 3-of-12 different facts. That is the right way to describe a trend and the wrong predicate for a gate, because the gate asks *can this read as improvement* and the reader is looking at two **numerators**. It broke both ways: *6 of 24* → *3 of 8* published bare (rate rose, count halved, density collapsed, and the caption written for exactly that could not fire because it was gated on a direction its own sentence is not about), while *4 of 10* → *5 of 28* was withheld as a first month though its count rose, which §6.7 forbids. The predicate is the count; the rate still describes everything and decides nothing.
+
+**Why no test caught any of it, which is the half worth carrying.** Every density and RTM test in the shipped suite seeded `look(70, ['lively'])` — with a comment explaining that it disarms the RTM guard so the density rule could be measured alone. A row 70 days back **cannot exist in a record the 56-day read produces.** The suite was green over a shape production never creates, and the comment explaining the fixture is what made it look deliberate. So: **build the fixture the caller could actually hand over**, and when a test needs a row to reach a branch, check the read can produce that row. The regression test now runs a 700-day record and asserts the guard discriminates rather than fires.
+
+**One more, about mutation testing itself.** Twenty-eight mutations were run against this change across two rounds and one survived — the twin gate re-pointed at the card's map. Investigated rather than accepted as a test gap, it turned out the mutation had replaced the `if`'s **guard clause** and left the **argument** on the next line untouched, so it changed no behaviour at all. Re-cut at the argument, it died immediately. **A survived mutant is not always a test gap; sometimes it is a bad mutation.** Read what the mutation actually did to the source before believing what it says about the tests.
+
+---
+
 ## R — Read-These table, full notes
 
 The original rows, verbatim. Each spec named here is itself canonical; these are CLAUDE.md's binding notes about it as they stood when compacted.
@@ -328,7 +348,7 @@ Measured before this rule existed: **102 check-ins in three weeks; 3 of 11 on th
 
 ---
 
-### C-35 · A flag-off guard compares against the code's ABSENCE, and a tree comparison is proven non-vacuous (2026-09-11, CUL-898):
+### C-36 · A flag-off guard compares against the code's ABSENCE, and a tree comparison is proven non-vacuous (2026-09-11, CUL-898):
 
 **The rule, in one line: "flag-off is byte-identical" is asserted as equivalence to the feature's ABSENCE, never as a flag-on/flag-off diff — and any guard whose verdict is `toEqual` over two rendered trees must assert the trees are non-empty before it asserts they match.**
 

@@ -56,7 +56,7 @@ import { LOOK_COVERAGE_FLOOR_DAYS, LOOK_COVERAGE_WINDOW_DAYS } from './lookCover
 import { inSentence, resolveWord, type LookPetContext } from './lookDisplay';
 import { lookSpeciesOf, lookWordKind } from '../constants/lookWords';
 import { dayKeyToLocalDate, formatCalendarDate, localDayIndex, localDayIndexOf, dayKeyFromIndex } from './utils';
-import type { LookDayRow } from './looks';
+import type { LookDayRow } from './lookDayCounts';
 
 /**
  * The count form's floor: answered days inside the window, below which the count does not
@@ -131,11 +131,20 @@ export interface LookReceiptContext {
  * never per date or CONDITIONALLY." The first-day form's *since {date}* can be years back
  * and sits in no band, so it carries the year always. The count form's date is bounded by
  * the four weeks named in its own sentence, so it does not — that is the band, stated.
+ *
+ * EXPORTED at CUL-874 / N-5, when Patterns became its second reader. It stays HERE
+ * rather than moving to `lib/utils` — which is where a shared date formatter would
+ * naturally go, and which three Edge Functions import (C-26: a shared module's boundary
+ * is what imports it, and `guards/edgeFunctionDeploy.test.ts` reds on a change that
+ * touched no Edge Function). This module is already where C-19's band rule is written
+ * down for the look, so the second reader imports the decision and not just the format.
  */
-function datedWithYear(dayKey: string): string | null {
+export function lookDatedWithYear(dayKey: string): string | null {
   const d = dayKeyToLocalDate(dayKey);
   return d ? d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : null;
 }
+
+const datedWithYear = lookDatedWithYear;
 
 /** The word as it reads inside a sentence, through the ONE resolver — so a receipt names
  *  a word exactly as the entry above it does. `null` when this build cannot name the key,
