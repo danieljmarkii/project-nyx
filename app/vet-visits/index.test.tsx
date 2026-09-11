@@ -12,8 +12,10 @@ import type { VetVisitsHome } from '../../lib/vetVisits';
 
 // Typed by their real signatures so `mock.calls[0][0]` is the input object rather
 // than an empty tuple — the assertions below are ABOUT that object's `petId`.
-const mockBook = jest.fn(async (_input: { petId: string; scheduledAt: string }) => 'new-appointment');
-const mockLog = jest.fn(async (_input: { petId: string; visitedAt: string }) => 'new-visit');
+type BookArgs = { petId: string; scheduledAt: string };
+type LogArgs = { petId: string; visitedAt: string };
+const mockBook = jest.fn(async (_input: BookArgs) => 'new-appointment');
+const mockLog = jest.fn(async (_input: LogArgs) => 'new-visit');
 let mockHome: VetVisitsHome = { next: null, visits: [] };
 
 jest.mock('expo-router', () => ({
@@ -55,8 +57,12 @@ jest.mock('../../lib/vetVisits', () => {
       vetName: 'Dr. Chen',
       suggestedDate: null,
     })),
-    bookVetAppointment: mockBook,
-    logVetVisit: mockLog,
+    // Wrapped rather than passed directly: a `jest.mock` factory is hoisted above
+    // the `const` declarations and runs on the first require of the mocked module,
+    // which happens while `mockBook` is still in its temporal dead zone. The arrow
+    // defers the reference to call time, which is the only time it is defined.
+    bookVetAppointment: (input: BookArgs) => mockBook(input),
+    logVetVisit: (input: LogArgs) => mockLog(input),
   };
 });
 
