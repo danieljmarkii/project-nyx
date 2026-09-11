@@ -108,9 +108,15 @@ export function VisitDetailBody({ detail, petName, onOpenDocument }: Props) {
         // Not a failure, and not "no data": most visits logged before this track
         // existed are a date, a clinic and nothing else, and saying so plainly
         // beats an empty screen that reads as a load error (Principle 5).
+        //
+        // It states what the record HOLDS and stops. The first draft ended "…are
+        // saved here when you add them", which is an instruction pointing at an
+        // affordance this screen does not have — Edit is VV-4's — so it sent the
+        // owner hunting for a button on a read-only screen. An empty state may be
+        // forward-looking; it may not ask for an action there is no door for.
         <ThemedText style={styles.bare}>
-          This visit is on the record as a date and a place. Notes and the plan are saved
-          here when you add them.
+          This visit is on the record as a date and a place — nothing else was written
+          down at the time.
         </ThemedText>
       ) : null}
     </View>

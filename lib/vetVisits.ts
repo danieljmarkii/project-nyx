@@ -193,7 +193,19 @@ export function formatWhereLine(
 
 // ── The plan a past visit left behind (mock E1) ─────────────────────────────────
 
-export type PlanTagKind = 'med' | 'diet' | 'plain';
+/**
+ * Four kinds, not three, because two questions are asked of these tags and only
+ * one of them is about colour:
+ *   • the LIST renders all four as pills — "what this visit left behind";
+ *   • the CARD's sentence renders only the three that are a PLAN. A document is
+ *     something the visit produced, not something the vet prescribed.
+ * `recheck` and `document` share the neutral pill styling; they are separate
+ * members so the card can select on meaning rather than on a label string.
+ */
+export type PlanTagKind = 'med' | 'diet' | 'recheck' | 'document';
+
+/** The kinds that belong after the word "Plan:". */
+const PLAN_KINDS: ReadonlySet<PlanTagKind> = new Set<PlanTagKind>(['med', 'diet', 'recheck']);
 
 export interface PlanTag {
   label: string;
@@ -221,11 +233,11 @@ export function derivePlanTags(links: VisitLinks): PlanTag[] {
     tags.push({ label: links.trialCount === 1 ? 'Trial started' : `${links.trialCount} trials started`, kind: 'diet' });
   }
   for (const name of links.medicationNames) tags.push({ label: name, kind: 'med' });
-  if (links.hasNextVisit) tags.push({ label: 'Recheck set', kind: 'plain' });
+  if (links.hasNextVisit) tags.push({ label: 'Recheck set', kind: 'recheck' });
   if (links.documentCount > 0) {
     tags.push({
       label: links.documentCount === 1 ? '1 document' : `${links.documentCount} documents`,
-      kind: 'plain',
+      kind: 'document',
     });
   }
   return tags;
@@ -255,10 +267,32 @@ export interface AppointmentView {
 }
 
 export interface VetVisitsHome {
-  /** The soonest booking that has not been logged or cancelled. */
+  /**
+   * The soonest booking that has not been logged or cancelled, on or after today.
+   * "What is next" — the card's question.
+   */
   next: AppointmentView | null;
+  /**
+   * Bookings whose DAY HAS PASSED with no visit logged against them, newest first.
+   * "What is on file" — the list's question, which is a different one.
+   *
+   * These exist because the owner made them, and until VV-5's Home ask resolves
+   * them (mock A2b) nothing else will. Hiding them was the first draft's answer and
+   * it was wrong in a way the database could not see: every VV-2 surface dropped
+   * the row the morning after, so the owner's only recovery was to re-type the
+   * visit — minting a SECOND row while the original stayed in the record forever,
+   * since no cancel control exists yet. A record surface does not hide a row the
+   * owner put there.
+   *
+   * The card deliberately does not render these: leading the Pet tab with a stale
+   * booking would answer "what is next" with something that is not.
+   */
+  awaiting: AppointmentView[];
   visits: VisitListRow[];
 }
+
+/** The zero value, so five call sites do not each restate the shape. */
+export const EMPTY_VET_VISITS_HOME: VetVisitsHome = { next: null, awaiting: [], visits: [] };
 
 export function buildVisitListRow(
   visit: LocalVetVisit,
@@ -316,6 +350,12 @@ export function buildVetVisitsCardModel(home: VetVisitsHome, now: Date = new Dat
     lastVisitLine: last ? lastVisitLine(last) : null,
     // Zero of BOTH: a booking with no history is not an empty card — it is the
     // card doing its job on day one.
+    //
+    // `awaiting` is deliberately NOT counted. The card answers "what is next and
+    // what happened last", and a booking whose day has passed is neither; leading
+    // the Pet tab with it would answer the first question with something that is
+    // not next. The LIST is where that row is shown (see `VetVisitsHome.awaiting`),
+    // and its own emptiness test does count it.
     isEmpty: home.visits.length === 0 && home.next === null,
   };
 }
@@ -327,13 +367,26 @@ export function buildVetVisitsCardModel(home: VetVisitsHome, now: Date = new Dat
  * left nothing behind in the record is the common case (every visit logged before
  * this track existed), and a card that announces an absence on every one of them
  * would be a permanent complaint about the record's own history.
+ *
+ * Two things the first draft got wrong, both from lowercasing the whole list:
+ *
+ *   • A DRUG NAME IS A PROPER NOUN. "Plan: trial started, cerenia" is not how the
+ *     owner or the vet writes it, and the design authority (mock A1) reads
+ *     "Cerenia". Only the derived phrases — which this file wrote — are lowered
+ *     into the sentence; a name that came from the record keeps its own casing.
+ *   • A DOCUMENT IS NOT A PLAN. "2 documents" belongs on the list row, where the
+ *     pills say what the visit left behind, and not after the word "Plan:", where
+ *     it claims the vet prescribed some paperwork.
  */
 function lastVisitLine(last: VisitListRow): string {
   const head = last.stamp
     ? `Last visit ${last.stamp.month} ${last.stamp.day} — ${last.title}`
     : `Last visit — ${last.title}`;
-  if (last.tags.length === 0) return `${head}.`;
-  return `${head}. Plan: ${last.tags.map((t) => t.label.toLowerCase()).join(', ')}.`;
+  const plan = last.tags
+    .filter((t) => PLAN_KINDS.has(t.kind))
+    .map((t) => (t.kind === 'med' ? t.label : t.label.toLowerCase()));
+  if (plan.length === 0) return `${head}.`;
+  return `${head}. Plan: ${plan.join(', ')}.`;
 }
 
 // ── Reads ───────────────────────────────────────────────────────────────────────
@@ -360,32 +413,32 @@ export async function readVetVisitsHome(petId: string, now: Date = new Date()): 
     [petId],
   );
 
-  // "Upcoming" is bounded by the start of the LOCAL day, not by `now` — an
-  // appointment at 9am today is still today's appointment at 5pm.
+  // Every live booking in ONE read, split in memory rather than by two queries —
+  // so "next" and "awaiting" cannot drift apart on their shared conditions (live =
+  // not deleted, not cancelled, not already logged).
   //
-  // A booking whose day has PASSED without a visit being logged is deliberately
-  // not "Next" here: that state is the A2b ask-once, which lives on Home and is
-  // VV-5's (spec §4.1). It is not lost — the row is in the record, and VV-5 is the
-  // surface that resolves it.
+  // The day bound is the start of the LOCAL day, not `now`: an appointment at 9am
+  // today is still today's appointment at 5pm.
   const appointments = await db.getAllAsync<LocalVetAppointment>(
     `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
       WHERE pet_id = ?
         AND deleted_at IS NULL
         AND cancelled_at IS NULL
         AND vet_visit_id IS NULL
-        AND scheduled_at >= ?
-      ORDER BY scheduled_at ASC
-      LIMIT 1`,
-    [petId, startOfLocalDay(now).toISOString()],
+      ORDER BY scheduled_at ASC`,
+    [petId],
   );
+  const dayStart = startOfLocalDay(now).toISOString();
+  const upcoming = appointments.filter((a) => a.scheduled_at >= dayStart);
+  const past = appointments.filter((a) => a.scheduled_at < dayStart);
 
-  const links = await readVisitLinks(visits.map((v) => v.id));
+  const links = await readVisitLinks(visits);
 
   return {
-    next: appointments[0] ? buildAppointmentView(appointments[0], now) : null,
-    visits: visits.map((v) =>
-      buildVisitListRow(v, links.get(v.id) ?? emptyLinks(v.next_visit_at), now),
-    ),
+    next: upcoming[0] ? buildAppointmentView(upcoming[0], now) : null,
+    // Newest first: the one that just passed is the one the owner is thinking about.
+    awaiting: past.reverse().map((a) => buildAppointmentView(a, now)),
+    visits: visits.map((v) => buildVisitListRow(v, links.get(v.id) ?? emptyLinks(v.next_visit_at), now)),
   };
 }
 
@@ -399,13 +452,19 @@ function emptyLinks(nextVisitAt: string | null): VisitLinks {
  * Reads the CHILD rows: a course, a trial or a document that names this visit. The
  * visit itself contributes no number — which is the whole of AC 10.
  */
-export async function readVisitLinks(visitIds: string[]): Promise<Map<string, VisitLinks>> {
+export async function readVisitLinks(
+  visits: ReadonlyArray<Pick<LocalVetVisit, 'id' | 'next_visit_at'>>,
+): Promise<Map<string, VisitLinks>> {
   const out = new Map<string, VisitLinks>();
-  if (visitIds.length === 0) return out;
+  if (visits.length === 0) return out;
   const db = getDb();
+  const visitIds = visits.map((v) => v.id);
   const placeholders = visitIds.map(() => '?').join(', ');
 
-  for (const id of visitIds) out.set(id, emptyLinks(null));
+  // `next_visit_at` comes from the row the CALLER already read. The first draft
+  // re-queried vet_visits for it — a fourth round trip for a column that was
+  // already in hand.
+  for (const v of visits) out.set(v.id, emptyLinks(v.next_visit_at));
 
   const meds = await db.getAllAsync<{ vet_visit_id: string; drug_name: string }>(
     `SELECT vet_visit_id, drug_name FROM medications
@@ -435,15 +494,6 @@ export async function readVisitLinks(visitIds: string[]): Promise<Map<string, Vi
   for (const d of docs) {
     const entry = out.get(d.vet_visit_id);
     if (entry) entry.documentCount = d.n;
-  }
-
-  const nexts = await db.getAllAsync<{ id: string; next_visit_at: string | null }>(
-    `SELECT id, next_visit_at FROM vet_visits WHERE id IN (${placeholders})`,
-    visitIds,
-  );
-  for (const n of nexts) {
-    const entry = out.get(n.id);
-    if (entry) entry.hasNextVisit = !!n.next_visit_at;
   }
 
   return out;

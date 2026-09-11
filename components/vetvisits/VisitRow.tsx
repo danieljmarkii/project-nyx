@@ -74,6 +74,8 @@ function PlanTagPill({ tag }: { tag: PlanTag }) {
         styles.tag,
         tag.kind === 'med' && styles.tagMed,
         tag.kind === 'diet' && styles.tagDiet,
+        // `recheck` and `document` take the neutral default: they are facts about
+        // the visit, not members of a category family with a tint of its own.
       ]}
     >
       <ThemedText

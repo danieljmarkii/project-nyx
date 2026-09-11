@@ -16,6 +16,7 @@ import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import {
   bookVetAppointment,
+  EMPTY_VET_VISITS_HOME,
   logVetVisit,
   readVetVisitsHome,
   readVisitPrefill,
@@ -24,6 +25,12 @@ import {
 } from '../../lib/vetVisits';
 
 const NO_PREFILL: VisitPrefill = { clinicName: null, vetName: null, suggestedDate: null };
+
+/** 'Juniper', 'Juniper and Moss', 'Juniper, Moss and Pip'. */
+function listNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
 
 // Vet visits — the list (CUL-900 VV-2; mocks E1, E2, E3).
 //
@@ -61,7 +68,7 @@ export default function VetVisitsScreen() {
   // and correct-but-anonymous beats confidently wrong.
   const petName = resolveRecordPetName(pets, petId);
 
-  const [home, setHome] = useState<VetVisitsHome>({ next: null, visits: [] });
+  const [home, setHome] = useState<VetVisitsHome>(EMPTY_VET_VISITS_HOME);
   const [prefill, setPrefill] = useState<VisitPrefill>(NO_PREFILL);
   // `loading` alone cannot carry the three states: the first frame is
   // `visits=[] && !loading`, which would flash the designed empty state at an
@@ -123,36 +130,56 @@ export default function VetVisitsScreen() {
     setSaving(true);
     try {
       if (input.mode === 'booked' && input.scheduledAt) {
-        await bookVetAppointment({
-          petId,
+        const shared = {
           scheduledAt: input.scheduledAt,
           clinicName: input.clinicName,
           vetName: input.vetName,
           reason: input.reason,
-        });
-        // Each pet gets its OWN row (the Vet Files D13 duplicate-on-add shape), so
-        // each pet's Home shows its own appointment and cancelling one leaves the
-        // other standing.
+        };
+        // THIS pet's row first, and on its own. If it throws, nothing was written
+        // and the sheet stays open with the owner's input — a retry is safe.
+        await bookVetAppointment({ petId, ...shared });
+
+        // Then a row EACH for the other pets (the Vet Files D13 duplicate-on-add
+        // shape), so each pet's Home shows its own and cancelling one later leaves
+        // the others standing.
+        //
+        // Deliberately NOT inside the try above. The first draft let a failure on
+        // the second pet fall into the shared catch, which showed "Could not save"
+        // over a save that had already committed for the first — and left the sheet
+        // open, so the obvious retry wrote the first pet's appointment a second
+        // time. A partial result is reported as a partial result.
+        const failedFor: string[] = [];
         for (const otherId of input.alsoForPetIds) {
-          await bookVetAppointment({
-            petId: otherId,
-            scheduledAt: input.scheduledAt,
-            clinicName: input.clinicName,
-            vetName: input.vetName,
-            reason: input.reason,
-          });
+          try {
+            await bookVetAppointment({ petId: otherId, ...shared });
+          } catch (err) {
+            console.warn('[vet-visits] also-for save failed:', err);
+            failedFor.push(resolveRecordPetName(pets, otherId));
+          }
         }
         syncPendingVetAppointments().catch(console.error);
-      } else {
-        await logVetVisit({
-          petId,
-          visitedAt: input.day,
-          clinicName: input.clinicName,
-          vetName: input.vetName,
-          reason: input.reason,
-        });
-        syncPendingVetVisits().catch(console.error);
+        setSheetMode(null);
+        await load();
+        if (failedFor.length > 0) {
+          // Names who did NOT get one, and says plainly that the rest did — the
+          // owner needs to know exactly what to redo.
+          Alert.alert(
+            'Saved, apart from one',
+            `${listNames(failedFor)} did not get an appointment. Add it again from their profile.`,
+          );
+        }
+        return;
       }
+
+      await logVetVisit({
+        petId,
+        visitedAt: input.day,
+        clinicName: input.clinicName,
+        vetName: input.vetName,
+        reason: input.reason,
+      });
+      syncPendingVetVisits().catch(console.error);
       setSheetMode(null);
       await load();
     } catch (err) {
@@ -172,7 +199,12 @@ export default function VetVisitsScreen() {
   // there is no frame of the feature to see.
   if (!enabled) return <Redirect href="/(tabs)/profile" />;
 
-  const isEmpty = loaded && home.visits.length === 0 && home.next === null;
+  // Empty means the RECORD is empty — no history, nothing booked, and nothing
+  // waiting on an answer. `awaiting` counts: a booking whose day has passed is
+  // still something the owner put here, and the designed empty state would bury
+  // the only surface that shows it.
+  const isEmpty =
+    loaded && home.visits.length === 0 && home.next === null && home.awaiting.length === 0;
   const otherPets = pets
     .filter((p) => p.id !== petId)
     .map((p) => ({ id: p.id, name: p.name }));
@@ -239,6 +271,23 @@ export default function VetVisitsScreen() {
             <View style={styles.section}>
               <SectionLabel label="Next" header />
               <AppointmentBlock appointment={home.next} style={styles.nextBlock} />
+            </View>
+          ) : null}
+
+          {home.awaiting.length > 0 ? (
+            <View style={styles.section}>
+              {/* A booking whose day has passed with no visit logged against it.
+                  It is not "Next" and it is not "Past" — it is the record waiting
+                  on an answer, and VV-5's Home ask (mock A2b) is what will resolve
+                  it. Until then it renders here rather than disappearing, because
+                  the owner made it and nothing else in the app can show it. */}
+              <SectionLabel label="Waiting on you" header />
+              {home.awaiting.map((appt) => (
+                <AppointmentBlock key={appt.id} appointment={appt} style={styles.nextBlock} />
+              ))}
+              <ThemedText style={styles.awaitingNote}>
+                This day has passed. Log the visit to move it into {petName}’s history.
+              </ThemedText>
             </View>
           ) : null}
 
@@ -339,5 +388,11 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: 4,
+  },
+  awaitingNote: {
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorTextTertiary,
+    marginTop: 6,
   },
 });

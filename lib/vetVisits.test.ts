@@ -156,8 +156,8 @@ describe('the plan a visit left behind', () => {
     ).toEqual([
       { label: 'Trial started', kind: 'diet' },
       { label: 'Cerenia', kind: 'med' },
-      { label: 'Recheck set', kind: 'plain' },
-      { label: '2 documents', kind: 'plain' },
+      { label: 'Recheck set', kind: 'recheck' },
+      { label: '2 documents', kind: 'document' },
     ]);
   });
 
@@ -186,20 +186,25 @@ describe('the list row', () => {
   it('names the RECORD\'s pet id, so a caller cannot resolve the wrong one', () => {
     expect(buildVisitListRow(visit({ pet_id: 'pet-b' }), NO_LINKS).petId).toBe('pet-b');
   });
+
+  it('still carries the document tag as a pill — only the card\'s sentence drops it', () => {
+    const row = buildVisitListRow(visit(), { ...NO_LINKS, documentCount: 2 }, new Date(2026, 8, 14));
+    expect(row.tags).toEqual([{ label: '2 documents', kind: 'document' }]);
+  });
 });
 
 describe('the Pet-tab card model', () => {
   const now = new Date(2026, 8, 14);
 
   it('is empty only when there is neither a visit nor a booking', () => {
-    expect(buildVetVisitsCardModel({ next: null, visits: [] }, now).isEmpty).toBe(true);
+    expect(buildVetVisitsCardModel({ next: null, awaiting: [], visits: [] }, now).isEmpty).toBe(true);
   });
 
   it('is NOT empty for a first-ever booking with no history', () => {
     // Day one of the feature, and the card is doing its job rather than showing a
     // designed absence over a real appointment.
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment(), now), visits: [] },
+      { next: buildAppointmentView(appointment(), now), awaiting: [], visits: [] },
       now,
     );
     expect(model.isEmpty).toBe(false);
@@ -212,19 +217,36 @@ describe('the Pet-tab card model', () => {
       buildVisitListRow(visit(), { ...NO_LINKS, medicationNames: ['Cerenia'], trialCount: 1 }, now),
       buildVisitListRow(visit({ id: 'v2', visited_at: '2026-05-02' }), NO_LINKS, now),
     ];
-    const model = buildVetVisitsCardModel({ next: null, visits: rows }, now);
+    const model = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now);
     expect(model.countLabel).toBe('2 visits');
-    expect(model.lastVisitLine).toBe('Last visit Jul 30 — GI follow-up. Plan: trial started, cerenia.');
+    expect(model.lastVisitLine).toBe('Last visit Jul 30 — GI follow-up. Plan: trial started, Cerenia.');
   });
 
   it('says "1 visit", not "1 visits"', () => {
     const rows = [buildVisitListRow(visit(), NO_LINKS, now)];
-    expect(buildVetVisitsCardModel({ next: null, visits: rows }, now).countLabel).toBe('1 visit');
+    expect(buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).countLabel).toBe('1 visit');
+  });
+
+  it('keeps a drug name cased, and never calls paperwork a plan', () => {
+    // Two separate defects the product review caught in one line. A drug name is a
+    // proper noun — the design authority reads "Cerenia" — and a document is
+    // something the visit produced, not something the vet prescribed.
+    const rows = [
+      buildVisitListRow(
+        visit(),
+        { medicationNames: ['Cerenia'], trialCount: 1, documentCount: 2, hasNextVisit: true },
+        now,
+      ),
+    ];
+    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
+    expect(line).toBe('Last visit Jul 30 — GI follow-up. Plan: trial started, Cerenia, recheck set.');
+    expect(line).not.toMatch(/cerenia/);
+    expect(line).not.toMatch(/document/);
   });
 
   it('omits the plan half rather than announcing that a visit left nothing behind', () => {
     const rows = [buildVisitListRow(visit(), NO_LINKS, now)];
-    const line = buildVetVisitsCardModel({ next: null, visits: rows }, now).lastVisitLine;
+    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
     expect(line).toBe('Last visit Jul 30 — GI follow-up.');
     expect(line).not.toMatch(/no plan|nothing/i);
   });

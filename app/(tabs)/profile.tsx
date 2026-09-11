@@ -24,7 +24,7 @@ import { VetVisitsCard } from '../../components/vetvisits/VetVisitsCard';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import {
-  buildVetVisitsCardModel, readVetVisitsHome, type VetVisitsHome,
+  buildVetVisitsCardModel, EMPTY_VET_VISITS_HOME, readVetVisitsHome, type VetVisitsHome,
 } from '../../lib/vetVisits';
 import { VET_DOCUMENTS_BUCKET } from '../../lib/vetDocuments';
 import {
@@ -497,7 +497,7 @@ export default function ProfileScreen() {
   const vetVisitsEligible = useAllowlistFlag('vet_visits');
   const vetVisitsOptedIn = useBetaOptIn('vet_visits');
   const vetVisitsEnabled = vetVisitsEligible && vetVisitsOptedIn;
-  const [vetVisits, setVetVisits] = useState<VetVisitsHome>({ next: null, visits: [] });
+  const [vetVisits, setVetVisits] = useState<VetVisitsHome>(EMPTY_VET_VISITS_HOME);
 
   const loadVetVisits = useCallback(async () => {
     // Dark means dark: the flag gates the READ as well as the card.
@@ -508,7 +508,7 @@ export default function ProfileScreen() {
       // The card degrades to its zero state rather than blanking the tab — the
       // Vet Files precedent directly above.
       console.warn('[Profile] load vet visits failed:', e);
-      setVetVisits({ next: null, visits: [] });
+      setVetVisits(EMPTY_VET_VISITS_HOME);
     }
   }, [vetVisitsEnabled, activePet?.id]);
 

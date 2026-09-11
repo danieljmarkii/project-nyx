@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import VetVisitsScreen from './index';
 import type { VetVisitsHome } from '../../lib/vetVisits';
@@ -16,7 +17,7 @@ type BookArgs = { petId: string; scheduledAt: string };
 type LogArgs = { petId: string; visitedAt: string };
 const mockBook = jest.fn(async (_input: BookArgs) => 'new-appointment');
 const mockLog = jest.fn(async (_input: LogArgs) => 'new-visit');
-let mockHome: VetVisitsHome = { next: null, visits: [] };
+let mockHome: VetVisitsHome = { next: null, awaiting: [], visits: [] };
 
 jest.mock('expo-router', () => ({
   Redirect: () => null,
@@ -80,8 +81,12 @@ jest.mock('../../store/petStore', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // `clearAllMocks` clears CALLS but not implementations, so a per-test
+  // `mockImplementation` would leak into the next file-order-dependent test.
+  mockBook.mockImplementation(async () => 'new-appointment');
+  mockLog.mockImplementation(async () => 'new-visit');
   mockParams = {};
-  mockHome = { next: null, visits: [] };
+  mockHome = { next: null, awaiting: [], visits: [] };
   mockStoreState = { pets: [PET_A, PET_B], activePet: PET_A };
 });
 
@@ -183,6 +188,88 @@ describe('AC 2 — booking', () => {
     fireEvent.press(screen.getByText('Add the appointment'));
 
     await waitFor(() => expect(mockBook).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('a booking whose day has passed', () => {
+  it('is rendered, not hidden — with the day it needs and what to do about it', async () => {
+    mockHome = {
+      next: null,
+      awaiting: [
+        {
+          id: 'a-past',
+          petId: 'pet-a',
+          stamp: { day: '8', month: 'Sep' },
+          when: 'Mon, Sep 8',
+          where: 'Riverside Animal Hospital · recheck',
+        },
+      ],
+      visits: [],
+    };
+    render(<VetVisitsScreen />);
+
+    // The row the owner created is on screen. Hiding it was the first draft's
+    // answer, and it made re-typing the only recovery — which mints a SECOND row
+    // and orphans the original, since nothing can cancel an appointment yet.
+    expect(await screen.findByText('Mon, Sep 8')).toBeTruthy();
+    expect(screen.getByText('Waiting on you')).toBeTruthy();
+    expect(screen.getByText(/This day has passed/)).toBeTruthy();
+  });
+
+  it('does not count as the empty state, so the two doors do not replace it', async () => {
+    mockHome = {
+      next: null,
+      awaiting: [
+        { id: 'a-past', petId: 'pet-a', stamp: null, when: 'Mon, Sep 8', where: '' },
+      ],
+      visits: [],
+    };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Mon, Sep 8');
+    expect(screen.queryByText('Nyx’s visits, in one place')).toBeNull();
+  });
+});
+
+describe('a partial "Also for" failure', () => {
+  it('reports what did NOT save, and does not re-offer the row that did', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    // The second pet's write fails; the first has already committed.
+    mockBook.mockImplementation(async (input) => {
+      if (input.petId === 'pet-b') throw new Error('offline');
+      return 'new-appointment';
+    });
+
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Add the next visit'));
+    fireEvent(screen.getByLabelText('Also book this appointment for Juniper'), 'valueChange', true);
+    fireEvent.press(screen.getByText('Add the appointment'));
+
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    // Named, and honest that the rest of the save stood.
+    expect(alert.mock.calls[0][0]).toBe('Saved, apart from one');
+    expect(String(alert.mock.calls[0][1])).toContain('Juniper');
+
+    // The sheet is CLOSED. Leaving it open is what turned the obvious retry into a
+    // duplicate of the appointment that had already been written.
+    await waitFor(() => expect(screen.queryByText('Add the appointment')).toBeNull());
+    expect(mockBook.mock.calls.filter((c) => c[0].petId === 'pet-a')).toHaveLength(1);
+    alert.mockRestore();
+  });
+
+  it('keeps the sheet open when the owner\'s OWN pet failed — nothing was written', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockBook.mockImplementation(async () => {
+      throw new Error('offline');
+    });
+
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Add the next visit'));
+    fireEvent.press(screen.getByText('Add the appointment'));
+
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not save', expect.any(String)));
+    // Still open, with the owner's input — retrying is safe because nothing landed.
+    expect(screen.getByText('Add the appointment')).toBeTruthy();
+    alert.mockRestore();
   });
 });
 

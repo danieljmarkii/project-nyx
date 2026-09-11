@@ -54,7 +54,7 @@ function renderCard(model: ReturnType<typeof buildVetVisitsCardModel>, handlers 
 }
 
 describe('the zero state', () => {
-  const empty = buildVetVisitsCardModel({ next: null, visits: [] }, NOW);
+  const empty = buildVetVisitsCardModel({ next: null, awaiting: [], visits: [] }, NOW);
 
   it('renders E2\'s two doors in place of the appointment and the plan line', () => {
     const props = renderCard(empty);
@@ -78,6 +78,7 @@ describe('the populated card', () => {
     const model = buildVetVisitsCardModel(
       {
         next: buildAppointmentView(appointment, NOW),
+        awaiting: [],
         visits: [buildVisitListRow(visit, { ...NO_LINKS, medicationNames: ['Cerenia'] }, NOW)],
       },
       NOW,
@@ -86,7 +87,7 @@ describe('the populated card', () => {
 
     expect(screen.getByText('1 visit')).toBeTruthy();
     expect(screen.getByText('Wednesday · 3:00 pm')).toBeTruthy();
-    expect(screen.getByText('Last visit Jul 30 — GI follow-up. Plan: cerenia.')).toBeTruthy();
+    expect(screen.getByText('Last visit Jul 30 — GI follow-up. Plan: Cerenia.')).toBeTruthy();
 
     fireEvent.press(screen.getByText('Open visits'));
     expect(props.onOpen).toHaveBeenCalledTimes(1);
@@ -97,7 +98,7 @@ describe('the populated card', () => {
     // either go nowhere or be `disabled`, which is an accessibility claim that a
     // control exists and is unavailable (C-7).
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment, NOW), visits: [] },
+      { next: buildAppointmentView(appointment, NOW), awaiting: [], visits: [] },
       NOW,
     );
     renderCard(model);
@@ -107,7 +108,7 @@ describe('the populated card', () => {
 
   it('shows a first booking without the zero state, and with no count or plan line', () => {
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment, NOW), visits: [] },
+      { next: buildAppointmentView(appointment, NOW), awaiting: [], visits: [] },
       NOW,
     );
     renderCard(model);
@@ -121,7 +122,7 @@ describe('the populated card', () => {
 
   it('reads the appointment as one sentence rather than four fragments', () => {
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment, NOW), visits: [] },
+      { next: buildAppointmentView(appointment, NOW), awaiting: [], visits: [] },
       NOW,
     );
     renderCard(model);

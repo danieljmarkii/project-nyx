@@ -150,6 +150,13 @@ export function BookVisitSheet({
             contentContainerStyle={styles.scrollInner}
             keyboardShouldPersistTaps="handled"
           >
+            {/* The question is ASKED, out loud. The first draft rendered the two
+                chips bare, with the question only in `accessibilityLabel` — which
+                made it the one control on the sheet with no visible label while
+                every field below it had one, and turned the spec's "'Add' asks one
+                thing first" into an assertion a first-timer has to infer from the
+                title changing. */}
+            <SectionLabel label="Has this visit happened?" style={styles.firstLabel} />
             <ChipGroup
               options={MODE_OPTIONS}
               value={mode}
@@ -273,7 +280,12 @@ export function BookVisitSheet({
                     <View style={styles.alsoForMain}>
                       <ThemedText style={styles.alsoForLabel}>Also for {pet.name}</ThemedText>
                       <ThemedText style={styles.alsoForSub}>
-                        Books the same appointment under {pet.name}
+                        {/* A SECOND appointment, not a shared one — each pet's row
+                            is independent, which is what makes cancelling one later
+                            leave the other standing. "The same appointment" would
+                            read as one booking and become a real misunderstanding
+                            the moment a cancel control exists. */}
+                        Books {pet.name} a second appointment at the same time
                       </ThemedText>
                     </View>
                     <Switch
@@ -303,11 +315,22 @@ export function BookVisitSheet({
             />
 
             {/* Says what the save does elsewhere in the app, in the tense it is
-                true in. The reminder line is not a tease — it is the honest edge
-                of what this ships (CUL-253 owns reminders). */}
+                true in — and ONLY what is true today.
+                
+                Mock E3 reads "Shows on Home five days before. No reminder yet",
+                and the frame is drawn in a world where the Home strip (A2, VV-5)
+                exists. It does not exist yet. An owner who books Tuesday's recheck,
+                reads that sentence, then watches Home for five days and sees
+                nothing concludes the save failed — which is worse than saying
+                nothing at all. The line returns, verbatim, with the strip.
+                
+                The `happened` half stays, because it is true now and it is the one
+                consequence of this save the owner cannot see: a logged visit moves
+                the vet report's window. Never "from today" — the report's rung 1 is
+                strictly before today (§4.1 D2, AC 9). */}
             <ThemedText style={styles.footnote}>
               {isBooked
-                ? 'Shows on Home in the days before. No reminder yet — that is its own step.'
+                ? 'No reminder yet — that is its own step.'
                 : 'Your next vet report starts from this visit.'}
             </ThemedText>
           </ScrollView>
@@ -388,6 +411,11 @@ const styles = StyleSheet.create({
   },
   modes: {
     marginBottom: 4,
+  },
+  // The first label sits directly under the sheet's subtitle, which already
+  // carries its own spacing — so it does not take `label`'s top margin.
+  firstLabel: {
+    marginBottom: 6,
   },
   label: {
     marginTop: theme.space2,
