@@ -96,6 +96,15 @@ const WRITE_CALLS = [
   'updateLookForEdit',
   'reverseLoggedEvent',
   'softDeleteEvent',
+  // CUL-901 — the regimen write path, registered the PR it SHIPS (C-32: a rule added
+  // after the first caller is a rule added after the bug). VV-3 gave `medications` a
+  // local-first writer, and VV-4's after-visit screen is about to start courses from
+  // a plan row. The Home medication strip already writes DOSES against a course the
+  // app can describe (D1 = C); a control that CREATES the course is the "second door"
+  // D1 forbids, and it would arrive as a small diff on a card that already writes.
+  'startRegimen',
+  'updateRegimen',
+  'endRegimen',
 ];
 
 /**
@@ -198,6 +207,10 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
     why: 'the weight snapshot reconcile, called from the shared reversal',
   },
   'lib/dietTrialSetup.ts': { helpers: [], why: 'trial setup writes; Home only reads it' },
+  'lib/medicationSetup.ts': {
+    helpers: ['startRegimen', 'updateRegimen', 'endRegimen'],
+    why: 'declares all three (CUL-901); regimen setup writes, Home only reads the courses',
+  },
   'lib/dietTrialMirror.ts': { helpers: [], why: 'the trial mirror, written by the sync layer' },
   'lib/feedingArrangements.ts': {
     helpers: [],

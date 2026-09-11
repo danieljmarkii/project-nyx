@@ -112,6 +112,31 @@ const ALLOWED: Record<string, string> = {
     'travel. A pure mapper — trial coverage, adherence and `started_at` are ' +
     'computed in lib/dietTrial.ts, which does not appear in this set.',
 
+  // ── The two WRITERS of those links (CUL-901 / VV-3) ──
+  //
+  // VV-1 added the columns and their mappers and left nothing setting them; these are
+  // what set them. Both are the same shape and the same argument: the link is written
+  // INTO the course's or the trial's own INSERT and never read back, so neither file
+  // can branch on a visit, count one, or let one move a date — which is the whole
+  // prohibition (CUL-746, TG-5).
+  //
+  // THE BLIND SPOT, stated rather than implied (C-38): `ALLOWED` excuses a FILE, not
+  // a KIND, so these two entries would also cover a `SELECT … FROM vet_visits` added
+  // to either file later — the thing they are supposed to be excused for NOT doing.
+  // Every entry above has the same hole; kind-scoping the allow-set (`column` here,
+  // `table` for the query readers) is CUL-937. Until then the reason string is the
+  // contract and a reviewer is what enforces it.
+  'lib/medicationSetup.ts':
+    'startRegimen writes medications.vet_visit_id in the regimen INSERT — the ' +
+    'provenance of a course started from the after-visit screen. Writes the column, ' +
+    'reads no visit; the dose counts and the course dates it also writes come from ' +
+    'the form, never from the link.',
+  'lib/dietTrialSetup.ts':
+    'startDietTrial writes diet_trials.vet_visit_id in the trial INSERT, inside the ' +
+    'existing transaction (spec §5.1 — never a follow-up UPDATE). Writes the column, ' +
+    'reads no visit; `started_at` and the target duration come from the owner\'s ' +
+    'choices on the setup sheet.',
+
   // ── Surfaces that are ABOUT a visit ──
   'app/vet-visit.tsx':
     'The log-a-visit screen — it WRITES the vet_visits row and its attachments. ' +

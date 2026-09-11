@@ -721,3 +721,55 @@ describe('addTrialFood', () => {
     expect(mockSyncTrialFoods).toHaveBeenCalled();
   });
 });
+
+// ── CUL-901 (VV-3) — the visit link ─────────────────────────────────────────
+//
+// Provenance, and nothing else: it records WHERE a trial came from and never moves
+// one of its numbers (CUL-746 — one population, one owner; TG-5 — a link never moves
+// a date). What is worth pinning is that it rides the trial's OWN insert.
+
+describe('startDietTrial — the vet-visit link', () => {
+  it('writes vet_visit_id in the trial’s own INSERT, inside the transaction', async () => {
+    await startDietTrial(input({ vetVisitId: 'visit-7' }));
+
+    // The parent insert is the first statement inside the transaction.
+    const [sql, params] = mockRunAsync.mock.calls[0];
+    expect(sql).toMatch(/^\s*INSERT INTO diet_trials/);
+    expect(sql).toMatch(/vet_visit_id/);
+    expect(params).toContain('visit-7');
+
+    // NEVER a follow-up UPDATE. VV-4 links a trial it starts from the after-visit
+    // screen, and a second write is one a crash between the two can drop — leaving a
+    // trial whose provenance silently differs from what the owner was just shown.
+    const updates = mockRunAsync.mock.calls.filter(([q]: [string]) =>
+      /\bUPDATE\s+diet_trials\s+SET\b/i.test(q),
+    );
+    expect(updates).toEqual([]);
+  });
+
+  it('stores NULL on the Pet-tab path, where no visit exists', async () => {
+    expect(buildTrialRows(input(), '2026-07-03T10:00:00.000Z').trial.vet_visit_id).toBeNull();
+  });
+
+  it('normalises an explicit null the same way as an absent field', async () => {
+    // Two callers, one row shape: VV-4 may pass the link through as `null` rather
+    // than omitting the key.
+    expect(
+      buildTrialRows(input({ vetVisitId: null }), '2026-07-03T10:00:00.000Z').trial.vet_visit_id,
+    ).toBeNull();
+  });
+
+  it('placeholder count still matches the column list', async () => {
+    // The failure mode a string assertion misses: adding a column and forgetting its
+    // `?` silently shifts every parameter after it, so `created_at` lands in
+    // `updated_at` and the LWW comparison starts reading the wrong clock.
+    await startDietTrial(input({ vetVisitId: 'visit-7' }));
+    const [sql, params] = mockRunAsync.mock.calls[0];
+    const columns = sql.slice(sql.indexOf('(') + 1, sql.indexOf(')')).split(',').length;
+    const placeholders = (sql.slice(sql.indexOf('VALUES')).match(/\?/g) ?? []).length;
+    // Two columns are written as literals (`synced`, `sync_error`), so the bound
+    // parameters are the rest.
+    expect(placeholders).toBe(columns - 2);
+    expect(params).toHaveLength(placeholders);
+  });
+});

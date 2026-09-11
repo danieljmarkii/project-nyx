@@ -285,6 +285,12 @@ export interface TrialFoodSelection {
 
 export interface StartTrialInput {
   petId: string;
+  /** CUL-899/CUL-901 — PROVENANCE: the visit this trial came from, or absent on the
+   *  Pet-tab path. Written in the SAME INSERT below, never a follow-up UPDATE a
+   *  crash between the two could lose (spec §5.1). It is not a source of numbers:
+   *  `started_at`, the coverage denominators and the trial's own dates stay its own
+   *  (CUL-746 — one population, one owner; TG-5 — a link never moves a date). */
+  vetVisitId?: string | null;
   /** ≥1. Order matters: the FIRST is written to the legacy `food_item_id`. */
   primaryFoods: TrialFoodSelection[];
   permittedFoods: TrialFoodSelection[];
@@ -321,6 +327,8 @@ export interface NewTrialRows {
      *  TP-3's mid-trial edit reads, and PR 5's "protein confirmed day N" line). */
     target_protein: string | null;
     target_protein_set_at: string | null;
+    /** CUL-901 — provenance only; see `StartTrialInput.vetVisitId`. */
+    vet_visit_id: string | null;
     created_at: string;
     updated_at: string;
   };
@@ -471,6 +479,10 @@ export function buildTrialRows(
       // never dated, so the report's "confirmed day N" disclosure can trust it.
       target_protein: targetProtein,
       target_protein_set_at: targetProtein != null ? now : null,
+      // Normalized to null here rather than at the INSERT, so `buildTrialRows` — the
+      // pure half this module tests — is what pins "absent and explicitly none are
+      // the same row".
+      vet_visit_id: input.vetVisitId ?? null,
       created_at: now,
       updated_at: now,
     },
@@ -945,15 +957,20 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
       `INSERT INTO diet_trials
          (id, pet_id, food_item_id, started_at, target_duration_days, status,
           food_label, indication, phase, vet_name, transition_started_at,
-          target_protein, target_protein_set_at,
+          target_protein, target_protein_set_at, vet_visit_id,
           created_at, updated_at, synced, sync_error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
       [
         rows.trial.id, rows.trial.pet_id, rows.trial.food_item_id, rows.trial.started_at,
         rows.trial.target_duration_days, rows.trial.status, rows.trial.food_label,
         rows.trial.indication, rows.trial.phase, rows.trial.vet_name,
         rows.trial.transition_started_at,
         rows.trial.target_protein, rows.trial.target_protein_set_at,
+        // CUL-901 — the visit link rides the trial's OWN insert. VV-4 links a trial
+        // it starts from the after-visit screen; a follow-up UPDATE would be a second
+        // write a crash could drop, leaving a trial whose provenance silently differs
+        // from what the owner was shown (spec §5.1).
+        rows.trial.vet_visit_id,
         rows.trial.created_at, rows.trial.updated_at,
       ],
     );

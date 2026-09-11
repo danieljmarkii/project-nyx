@@ -42,6 +42,7 @@ import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
+import { endRegimen } from '../../lib/medicationSetup';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DietTrialCard } from '../../components/profile/DietTrialCard';
@@ -890,20 +891,18 @@ export default function ProfileScreen() {
 
   async function handleEndRegimen(id: string) {
     try {
-      // RLS (medications_owner) re-validates this regimen belongs to the caller's
-      // pet; .select() turns a silent 0-row block into a thrown error, not a false
-      // success. A regimen is "ended", never soft-deleted (migration 020).
-      const { data, error } = await supabase
-        .from('medications')
-        // `ended_at` is a DATE and gets the same treatment as `started_at` (B-441):
-        // `toISOString()` yields the UTC day, so a behind-UTC owner ending a course in
-        // the evening stored TOMORROW — widening the dose-attribution upper bound and
-        // the vet report's regimen span.
-        .update({ status: 'completed', ended_at: toLocalDayKey(new Date()) })
-        .eq('id', id)
-        .select('id');
-      if (error) throw error;
-      if (!data || data.length === 0) throw new Error('No row updated (not owned?)');
+      // Local-first since CUL-901 (VV-3), and not only for symmetry: a course created
+      // offline has no server row to `.eq('id', …)` yet, so the old remote UPDATE
+      // failed on exactly the regimen the owner had just added. RLS still re-validates
+      // ownership when the queued row is pushed. A regimen is "ended" via
+      // status/ended_at, never soft-deleted (migration 020).
+      //
+      // `ended_at` is a DATE and gets the same treatment as `started_at` (B-441):
+      // `toISOString()` yields the UTC day, so a behind-UTC owner ending a course in
+      // the evening stored TOMORROW — widening the dose-attribution upper bound and
+      // the vet report's regimen span. The day key is keyed HERE, from local
+      // components, because this screen is what knows the end means "today".
+      await endRegimen(id, toLocalDayKey(new Date()));
       setMedications((prev) => prev.filter((m) => m.id !== id));
       // The just-ended course now belongs in the Past medications section — refresh it
       // so the row moves down immediately, without waiting for the next tab focus.

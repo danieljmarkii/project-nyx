@@ -73,8 +73,10 @@ interface Props {
   species: string | null;
   /** Dismiss. The form's values are deliberately NOT reset here — see `reset`. */
   onClose: () => void;
-  /** A trial now exists — the card reloads. */
-  onStarted: () => void;
+  /** A trial now exists — the card reloads. Carries the new trial's id (CUL-901):
+   *  `startDietTrial` has always returned it and this host discarded it, which VV-4
+   *  cannot do — the after-visit screen has to name what it just linked. */
+  onStarted: (trialId: string) => void;
   /** The owner wants to capture a food that isn't in the library yet. The host
    *  dismisses this sheet, routes to `/food-capture`, AND re-opens it when the
    *  tab regains focus (B-535) — the form's state survives because this
@@ -316,7 +318,7 @@ export function StartTrialModal({
         setPendingEnd(null);
         setExisting(null);
       }
-      await startDietTrial({
+      const trialId = await startDietTrial({
         petId,
         primaryFoods,
         permittedFoods,
@@ -340,7 +342,7 @@ export function StartTrialModal({
         ),
       });
       setStep('done');
-      onStarted();
+      onStarted(trialId);
     } catch (e) {
       console.error('[StartTrialModal] start trial failed:', e);
       // Covers the end too: if endActiveTrial threw, startDietTrial was never
