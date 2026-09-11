@@ -20,8 +20,16 @@ jest.mock('expo-router', () => {
   return {
     router: { push: jest.fn() },
     useLocalSearchParams: () => mockParams,
+    // Deps `[cb]`, NOT `[]` — this mirrors the real implementation and the
+    // difference is load-bearing. expo-router's `useFocusEffect` runs its outer
+    // effect on `[effect, navigation, optionalNavigation]` and invokes the callback
+    // IMMEDIATELY when `navigation.isFocused()`, so a change to the memoized
+    // callback's identity re-runs the whole focus body without any navigation
+    // happening. A `[]` mock cannot express that, which is why the first version of
+    // this screen could put a config flag in the focus callback's deps and have
+    // every test stay green over a full timeline reset.
     useFocusEffect: (cb: () => void | (() => void)) => {
-      React.useEffect(() => cb(), []);
+      React.useEffect(() => cb(), [cb]);
     },
   };
 });
@@ -431,5 +439,106 @@ describe('History — the vet visit row', () => {
     // sync; the retry is the one this suite can drive through a real control.
     expect(mockReadVisits.mock.calls.length).toBeGreaterThan(before);
     await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
+  });
+});
+
+// ── What code-reviewer found on the VV-6 diff, each pinned ─────────────────────
+
+describe('History — the visit read is a second source, and the screen treats it as one', () => {
+  it('does not say "Nothing logged yet" over a pet whose only record is a vet visit', async () => {
+    mockVetVisitsFlag = true;
+    // The timeline answers EMPTY and answers FIRST — the ordinary case for a pet
+    // with a visit and no logged events, and the one that used to render a claim
+    // about the record before the second source had spoken.
+    mockGetTimeline.mockResolvedValue([]);
+    let release!: (rows: unknown[]) => void;
+    mockReadVisits.mockReturnValue(new Promise((res) => { release = res; }));
+
+    const { queryByText, getByText, queryByTestId } = render(<HistoryScreen />);
+
+    await waitFor(() =>
+      expect(queryByTestId('history-skeleton', { includeHiddenElements: true })).toBeTruthy());
+    expect(queryByText('Nothing logged yet')).toBeNull();
+
+    await act(async () => { release([visitRow('v1', '2026-07-30')]); });
+    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
+    expect(queryByText('Nothing logged yet')).toBeNull();
+  });
+
+  it('renders the error state when the VISIT read fails — not an empty record', async () => {
+    mockVetVisitsFlag = true;
+    mockGetTimeline.mockResolvedValue([]);
+    mockReadVisits.mockRejectedValue(new Error('disk gone'));
+
+    const { getByText, queryByText } = render(<HistoryScreen />);
+
+    // Permanent, not a frame: `loaded` is true and `events` is [], so before this
+    // the screen settled on "Nothing logged yet" and stayed there — the app
+    // asserting an empty record over a read that failed (CUL-575's own sentence).
+    await waitFor(() => expect(getByText("Couldn't load history")).toBeTruthy());
+    expect(queryByText('Nothing logged yet')).toBeNull();
+    expect(queryByText(/disk gone/)).toBeNull();
+  });
+
+  it('flag-off still reaches the designed empty state rather than skeletoning forever', async () => {
+    // The other edge of the same gate: with the flag off no visit read happens, so
+    // nothing is ever going to answer and the empty state must not wait for it.
+    mockVetVisitsFlag = false;
+    mockGetTimeline.mockResolvedValue([]);
+
+    const { getByText } = render(<HistoryScreen />);
+    await waitFor(() => expect(getByText('Nothing logged yet')).toBeTruthy());
+  });
+
+  it('an older visit read resolving last cannot clobber the fresher rows', async () => {
+    mockVetVisitsFlag = true;
+    mockGetTimeline.mockRejectedValueOnce(new Error('transient'));
+    const deferred: Array<(rows: unknown[]) => void> = [];
+    mockReadVisits.mockImplementation(
+      () => new Promise((res) => { deferred.push(res as (rows: unknown[]) => void); }));
+
+    const { getByText, queryByText } = render(<HistoryScreen />);
+    await waitFor(() => expect(getByText("Couldn't load history")).toBeTruthy());
+
+    // A second read starts while the first is still open — the shape an owner
+    // produces by editing a visit and navigating back while a hydration-tick read
+    // is in flight. The pet never changes, so the pet check cannot see this.
+    mockGetTimeline.mockResolvedValue([]);
+    await act(async () => { fireEvent.press(getByText('Try again')); });
+    expect(deferred.length).toBeGreaterThan(1);
+
+    // The NEWER read answers with the real record...
+    await act(async () => { deferred[deferred.length - 1]([visitRow('fresh', '2026-08-01')]); });
+    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
+
+    // ...and then the OLDEST one comes back with what the record used to hold.
+    await act(async () => { deferred[0]([]); });
+
+    // Without the monotonic guard this `setVisits([])` wins and the row the owner
+    // is looking at disappears, with nothing to bring it back until the next focus.
+    expect(getByText('Vet visit')).toBeTruthy();
+    expect(queryByText('Nothing logged yet')).toBeNull();
+  });
+
+  it('a flag resolving while History is on screen does not reset the timeline', async () => {
+    // `useAllowlistFlag` re-resolves on foreground and on sign-in, so this happens
+    // to a mounted, focused History tab in ordinary use. The focus callback's deps
+    // are what decide whether that is free or costs the owner their place: with the
+    // flag in them, expo-router re-invokes the whole focus body — offset back to 0,
+    // the expanded row collapsed, every page re-queried — for a config refresh.
+    mockVetVisitsFlag = false;
+    mockGetTimeline.mockResolvedValue([row('e1')]);
+    const { getByText, rerender } = render(<HistoryScreen />);
+    await waitFor(() => expect(getByText('event e1')).toBeTruthy());
+
+    const timelineCallsBefore = mockGetTimeline.mock.calls.length;
+    mockReadVisits.mockResolvedValue([visitRow('v1', '2026-07-30')]);
+    mockVetVisitsFlag = true;
+    await act(async () => { rerender(<HistoryScreen />); });
+
+    // The visits arrive — the standalone effect owns that...
+    await waitFor(() => expect(getByText('Vet visit')).toBeTruthy());
+    // ...and the timeline was not re-read to get them.
+    expect(mockGetTimeline.mock.calls.length).toBe(timelineCallsBefore);
   });
 });

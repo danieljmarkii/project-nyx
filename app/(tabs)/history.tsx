@@ -150,6 +150,19 @@ export default function HistoryScreen() {
   // Vet visits on the timeline (CUL-904 VV-6), behind the rollout flag. Held as its
   // own list rather than mapped into `events`: see the ListItem union above.
   const [visits, setVisits] = useState<HistoryVisitRow[]>([]);
+  // C-12 for the SECOND source. `loaded` / `loadError` below are driven by
+  // `loadEvents` alone, which was complete while every row in the stream came from
+  // the timeline query. It is not any more: a pet whose only record is a vet visit
+  // has `events = []` the moment the timeline answers, so the screen would render
+  // "Nothing logged yet" over a record that has a visit in it — for a frame while
+  // the visit read is in flight, and PERMANENTLY if that read fails. That is the
+  // exact sentence CUL-575 built this state machine to stop, arriving through a
+  // source the machine did not know about.
+  //
+  // Set once and never reset, matching `loaded`: a later refresh keeps the rows on
+  // screen rather than flashing a skeleton over them.
+  const [visitsAnswered, setVisitsAnswered] = useState(false);
+  const [visitsError, setVisitsError] = useState(false);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -276,12 +289,30 @@ export default function HistoryScreen() {
   // rows, deliberately unbounded — the scope filter is applied in `merged` beside
   // the markers', because `visited_at` is a calendar DATE and the scope bounds are
   // ISO instants, which cannot be compared as text (C-40; see readVisitsForHistory).
+  // Monotonic load id — `AppointmentStrip`'s `loadIdRef`, for the same reason and
+  // against a failure the pet check below cannot see. `loadVisits` is reachable from
+  // five triggers (mount, focus, the hydration tick, pull-to-refresh, retry), so two
+  // reads for the SAME pet can overlap: an owner edits a visit and navigates back
+  // (focus) while a hydration-tick read is still open, and if the older one resolves
+  // last its `setVisits` silently clobbers the fresher rows. The pet check catches a
+  // switch; this catches an out-of-order write. They protect different things and
+  // the file needs both.
+  const visitLoadIdRef = useRef(0);
+
   const loadVisits = useCallback(async () => {
+    const myId = ++visitLoadIdRef.current;
     if (!vetVisitsEnabled || !activePet) {
       setVisits([]);
+      // Nothing to wait for, so the empty state must not be held behind a read that
+      // is never going to happen — flag-off this screen would skeleton forever.
+      setVisitsAnswered(true);
+      setVisitsError(false);
       return;
     }
     const petId = activePet.id;
+    // Cleared per attempt, not per mount: a retry that succeeds takes the error
+    // state down, and one that fails leaves it up (the `loadEvents` rule).
+    setVisitsError(false);
     try {
       const rows = await readVisitsForHistory(petId);
       // The read is async and the owner can switch pets while it is in flight, so
@@ -290,14 +321,19 @@ export default function HistoryScreen() {
       // the CUL-574 class arriving by staleness (the shape AppointmentStrip's
       // `loadedFor` exists for) — and unlike the strip, this list is merged into a
       // stream with no pet name on it, so a wrong row would be unattributable.
+      if (myId !== visitLoadIdRef.current) return;
       if (usePetStore.getState().activePet?.id !== petId) return;
       setVisits(rows);
     } catch (e) {
-      // No silent failures (house rule). The stream is events-first and a visit is
-      // context within it, so a failed visit read leaves prior state and lets the
-      // next focus retry rather than taking the whole timeline down with it — the
-      // same posture `loadFreeFeeding` holds one function up.
+      // No silent failures (house rule). With rows already on screen this leaves
+      // prior state and lets the next focus retry — the posture `loadFreeFeeding`
+      // holds one function up. What it must NOT do is let the screen fall through
+      // to "Nothing logged yet": that is a claim about the record, over a read that
+      // failed. The flag below is what the empty-state gate reads.
       console.warn('[history] load vet visits failed:', e);
+      if (myId === visitLoadIdRef.current) setVisitsError(true);
+    } finally {
+      if (myId === visitLoadIdRef.current) setVisitsAnswered(true);
     }
   }, [vetVisitsEnabled, activePet?.id]);
 
@@ -348,8 +384,18 @@ export default function HistoryScreen() {
       setExpandedId(null);
       loadEvents(0, typeFilter, datePreset, dayFilter, true);
       loadFreeFeeding();
-      void loadVisits();
-    }, [activePet, typeFilter, datePreset, dayFilter, vetVisitsEnabled]),
+      // Through the ref, and the flag is deliberately NOT in the deps below — the
+      // same rule the hydration effect follows, which this first got wrong.
+      // `useFocusEffect` re-runs its outer effect whenever the memoized callback's
+      // identity changes and calls it IMMEDIATELY when the screen is focused
+      // (expo-router/build/useFocusEffect.js: `if (navigation.isFocused())`, deps
+      // `[effect, navigation, optionalNavigation]`) — it is not gated on a real
+      // focus event. So a flag resolving on foreground or sign-in, with History on
+      // screen, would run this whole body: offset reset to 0, the expanded card
+      // collapsed under the owner's finger, and the entire timeline re-queried.
+      // The standalone effect above already re-runs `loadVisits` on a flag change.
+      void loadVisitsRef.current();
+    }, [activePet, typeFilter, datePreset, dayFilter]),
   );
 
   // Reactive refresh-after-hydrate (B-054 §6): when a background sync cycle
@@ -577,14 +623,16 @@ export default function HistoryScreen() {
   // `!loaded` covers the first frame, before the focus effect has even started the
   // read. Gated on activePet: with no pet there is no read to wait for, so the screen
   // must not skeleton forever — it falls through to the designed empty state.
-  const showSkeleton = nothingToShow && !loadError && !!activePet && (loading || !loaded);
-  const showError = nothingToShow && loadError;
-  const isEmpty = nothingToShow && !showSkeleton && !loadError;
+  const showSkeleton = nothingToShow && !loadError && !visitsError && !!activePet
+    && (loading || !loaded || !visitsAnswered);
+  const showError = nothingToShow && (loadError || visitsError);
+  const isEmpty = nothingToShow && !showSkeleton && !loadError && !visitsError;
 
   // The error state's retry, and the same reset the filter handlers do.
   const handleRetry = useCallback(() => {
     setOffset(0);
     setHasMore(true);
+    setVisitsError(false);
     loadEvents(0, typeFilter, datePreset, dayFilter, true);
     loadFreeFeeding();
     void loadVisits();
