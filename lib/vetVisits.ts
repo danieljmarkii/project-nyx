@@ -83,7 +83,17 @@ export interface LocalVetAppointment {
 export function appointmentTimeKnown(scheduledAt: string): boolean {
   const d = new Date(scheduledAt);
   if (Number.isNaN(d.getTime())) return false;
-  return !(d.getHours() === 0 && d.getMinutes() === 0);
+  // "Is this the first instant of its own local day", not "does it read 00:00".
+  //
+  // The two agree on every ordinary day and diverge on one: where a DST
+  // transition lands ON local midnight, that wall-clock time DOES NOT EXIST, so
+  // `new Date(y, m, d, 0, 0, 0, 0)` normalises forward to 01:00 and an
+  // hours-based test reports a fabricated "1:00 am" on a booking where the owner
+  // gave no time at all. Measured: Santiago, Havana, Cairo and Beirut, one day
+  // each per year, and the CI matrix (UTC+14 / +12:45 / −10) cannot see any of
+  // them. Asking `startOfLocalDay` instead makes the sentinel survive the skip,
+  // because both sides normalise the same way.
+  return d.getTime() !== startOfLocalDay(d).getTime();
 }
 
 /**
@@ -157,8 +167,16 @@ export function formatVisitDate(dateOnly: string, now: Date = new Date()): strin
 export function formatVisitWeekday(dateOnly: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateOnly ?? '');
   if (!m) return '';
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  if (Number.isNaN(d.getTime())) return '';
+  // Guarded like its two siblings, which both refuse an out-of-range month while
+  // this one silently rolled over — '2026-13-01' became "Friday, Jan 1" (of 2027,
+  // with the year hidden) and '2026-02-30' put this screen's eyebrow on Mar 2
+  // while the list row's stamp said 30 Feb, for the same record. Two of three
+  // refusing and the third fabricating is the worst of the three arrangements.
+  const monthIdx = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  if (monthIdx < 0 || monthIdx > 11 || day < 1 || day > 31) return '';
+  const d = new Date(Number(m[1]), monthIdx, day);
+  if (Number.isNaN(d.getTime()) || d.getMonth() !== monthIdx) return '';
   return `${WEEKDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
@@ -185,7 +203,16 @@ export function formatAppointmentWhen(scheduledAt: string, now: Date = new Date(
   if (days === 0) stem = 'Today';
   else if (days === 1) stem = 'Tomorrow';
   else if (days > 1 && days < 7) stem = WEEKDAYS[d.getDay()];
-  else stem = `${WEEKDAYS[d.getDay()].slice(0, 3)}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  // Past a week a weekday name is ambiguous, and past a year so is a bare date:
+  // the most common veterinary interval is the annual recheck, which `next_visit_at`
+  // seeds directly, and "Wed, Sep 15" renders identically twelve months apart.
+  // `formatVisitDate` in this same file already stamps the year when it is not
+  // this one (C-19: a year-less date is safe only inside a bounded range); this
+  // branch is outside any bound, so it does the same.
+  else {
+    const stamp = `${WEEKDAYS[d.getDay()].slice(0, 3)}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+    stem = d.getFullYear() === now.getFullYear() ? stamp : `${stamp}, ${d.getFullYear()}`;
+  }
   return appointmentTimeKnown(scheduledAt) ? `${stem} · ${formatClockTime(d)}` : stem;
 }
 
@@ -262,6 +289,8 @@ export function derivePlanTags(links: VisitLinks): PlanTag[] {
 export interface VisitListRow {
   id: string;
   petId: string;
+  /** The raw 'YYYY-MM-DD', for any consumer that needs a date rather than a block. */
+  visitedAt: string;
   stamp: DayStamp | null;
   /** The reason, or an honest stand-in — a visit with no reason typed is ordinary. */
   title: string;
@@ -316,6 +345,7 @@ export function buildVisitListRow(
   return {
     id: visit.id,
     petId: visit.pet_id,
+    visitedAt: visit.visited_at,
     stamp: dayStampFromDate(visit.visited_at),
     // Never "Untitled": a visit with no reason typed is a perfectly ordinary
     // record, and the date is the one thing it always has.
@@ -361,7 +391,7 @@ export function buildVetVisitsCardModel(home: VetVisitsHome, now: Date = new Dat
       ? `${home.visits.length} ${home.visits.length === 1 ? 'visit' : 'visits'}`
       : null,
     next: home.next,
-    lastVisitLine: last ? lastVisitLine(last) : null,
+    lastVisitLine: last ? lastVisitLine(last, now) : null,
     // Zero of BOTH: a booking with no history is not an empty card — it is the
     // card doing its job on day one.
     //
@@ -392,10 +422,13 @@ export function buildVetVisitsCardModel(home: VetVisitsHome, now: Date = new Dat
  *     pills say what the visit left behind, and not after the word "Plan:", where
  *     it claims the vet prescribed some paperwork.
  */
-function lastVisitLine(last: VisitListRow): string {
-  const head = last.stamp
-    ? `Last visit ${last.stamp.month} ${last.stamp.day} — ${last.title}`
-    : `Last visit — ${last.title}`;
+function lastVisitLine(last: VisitListRow, now: Date): string {
+  // Built from `formatVisitDate`, not from `stamp`: the stamp is the two-part
+  // date BLOCK (a numeral over a month, where the row it sits in supplies the
+  // context), and reusing it in a sentence dropped the year — so a 2024 visit
+  // read "Last visit Jul 30", indistinguishable from this year's.
+  const dated = formatVisitDate(last.visitedAt, now);
+  const head = dated ? `Last visit ${dated} — ${last.title}` : `Last visit — ${last.title}`;
   const plan = last.tags
     .filter((t) => PLAN_KINDS.has(t.kind))
     .map((t) => (t.kind === 'med' ? t.label : t.label.toLowerCase()));
@@ -442,9 +475,25 @@ export async function readVetVisitsHome(petId: string, now: Date = new Date()): 
       ORDER BY scheduled_at ASC`,
     [petId],
   );
-  const dayStart = startOfLocalDay(now).toISOString();
-  const upcoming = appointments.filter((a) => a.scheduled_at >= dayStart);
-  const past = appointments.filter((a) => a.scheduled_at < dayStart);
+  // Compared as INSTANTS, never as ISO text. A local write produces
+  // `…T04:00:00.000Z` and the server round-trip produces PostgREST's
+  // `…T04:00:00+00:00` — the same instant in two spellings, and `'+'` (0x2B)
+  // sorts before `'.'` (0x2E), so a lexical `>=` drops the hydrated row at the
+  // exact-equality second. That second is LOCAL MIDNIGHT, which is the no-time
+  // sentinel — so the row it dropped was "a booking for today with no time
+  // given", the default this sheet's own placeholder steers every owner toward,
+  // on the one day the card matters most. After a sync it moved from *Next* to
+  // *Waiting on you* and the Pet-tab card reverted to its zero state, all while
+  // the row's own label still read "Today".
+  //
+  // The B-055 class, which this repo has written down three times —
+  // `lib/db.ts:1222`, `lib/widgetSnapshot.ts:191`, `lib/widgetSnapshotV2.ts:110`
+  // — each mitigating by parsing rather than by comparing text. This did neither
+  // until the adversarial pass drove it.
+  const dayStart = startOfLocalDay(now).getTime();
+  const instantOf = (a: LocalVetAppointment) => new Date(a.scheduled_at).getTime();
+  const upcoming = appointments.filter((a) => instantOf(a) >= dayStart);
+  const past = appointments.filter((a) => instantOf(a) < dayStart);
 
   const links = await readVisitLinks(visits);
 

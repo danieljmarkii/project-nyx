@@ -47,7 +47,9 @@ Both mandatory reviews returned findings. `code-reviewer` returned **fix-before-
 
 **A future-dated `visited_at` was reachable in three taps.** The booking sheet's two arms have opposite date bounds, `minimumDate`/`maximumDate` constrain only the *picker*, and a date already in state when the arm flipped was re-validated by nothing. Open "Add" (which lands on `booked` and seeds the last visit's `next_visit_at`, a date weeks out) → tap "Already happened" → submit. A `vet_visits` row dated in the future.
 
-That is the one date `generate-report`'s window rung 1, the rundown's `MAX(visited_at)` and the Vet Files link picker all trust not to be one — **making it unwritable is the entire argument for putting bookings in their own table** (G3, migration 066), and this walked straight past the structure that was built to prevent it. The clamp now lives on the transition rather than in the picker.
+Making a future `visited_at` unwritable is the entire argument for putting bookings in their own table (G3, migration 066), and this walked straight past the structure built to prevent it. The clamp now lives on the transition rather than in the picker.
+
+**A correction, since this session stated the consequence wrongly three times** (the PR body, this record's first draft, and CUL-939): a future `visited_at` does **not** truncate the report window. `generate-report/report.ts:800` skips today- and future-dated visits explicitly — `if (vNum === null || vNum >= todayNum) continue` — so rung 1 ignores the row. The reader that *is* undefended is the rundown: `lib/rundown.ts:653` takes an unbounded `MAX(visited_at)`, so a future row becomes "your last visit" and the what-changed-since window is computed from a date that has not happened, reporting that nothing changed. The report risk is real but belongs to a mis-dated **past** visit, which can legitimately become the most recent one before today. Found by `adversarial-reviewer`, which read the guard rather than the claim about it.
 
 The sheet had **no test file at all**, which is why it shipped unguarded: the screen-level tests never switched the mode chip after opening. `BookVisitSheet.test.tsx` now exists.
 
@@ -72,6 +74,24 @@ Two in one session, both caught by mutation rather than by reading:
 
 ---
 
+## The adversarial pass, and why it was not ceremonial
+
+The DoD mandates it for anything feeding the vet report. `visited_at` does, so it ran — and returned **FAIL with five findings**, four of them in this PR's own files. All five are fixed here; each has a test that reds against the pre-fix code, proven by planting six mutations in a scratch copy.
+
+**The worst was a class this repo has already named three times.** `readVetVisitsHome` split appointments into *Next* and *Waiting on you* with a lexical `>=` over ISO text. A local write spells an instant `…T04:00:00.000Z`; PostgREST hands the same instant back as `…T04:00:00+00:00`; `'+'` (0x2B) sorts before `'.'` (0x2E). So the hydrated row loses the comparison at the exact-equality second — **and that second is local midnight, which is the no-time sentinel.** The row it dropped was "a booking for today, no time given", the default the sheet's own *Optional* placeholder steers every owner toward. After a sync it moved to *Waiting on you* under the caption *"This day has passed"*, over a row whose own label still read **"Today"**, and the Pet-tab card reverted to its zero state. This is the B-055 class, mitigated by parsing in `lib/db.ts:1222`, `lib/widgetSnapshot.ts:191` and `lib/widgetSnapshotV2.ts:110`, and by neither here.
+
+**The clamp was on the transition and not on the seed** — same bug, one line up. The prefill seeded `next_visit_at` whenever it was in the future, which is right for *booked* and exactly backwards for *happened*: open the sheet on that arm for a pet whose last visit named a recheck, press Save, and it emitted a future `visited_at` in **zero taps**. Unreachable from a shipped door today and reachable the moment VV-4's edit flow or VV-5's "log the visit" ask opens this sheet — both of which exist to open it for a pet that *has* visits. `suggestedDate` was `null` in 100% of the fixtures in both test files, so 52 green tests said nothing about the seed. Seed and transition now read **one predicate**.
+
+**A DST transition that lands on local midnight has no local midnight.** `new Date(y, m, d, 0, 0, 0, 0)` normalises forward to 01:00, so an hours-based sentinel printed a fabricated *"1:00 am"* on a booking with no time. Santiago, Havana, Cairo and Beirut; one day each per year; invisible to the CI matrix (UTC+14 / +12:45 / −10 never skip midnight). The predicate now asks `startOfLocalDay` instead, so both sides normalise the same way and the sentinel survives the skip. This is **distinct from** the documented CUL-941 limit, which is about a zone *change*.
+
+**Year-less dates outside a bounded range**, on both surfaces — C-19, where `formatVisitDate` in the same module already got it right. An annual recheck (the commonest veterinary interval, and exactly what `next_visit_at` seeds) rendered identically twelve months apart, and the card's last-visit line built from the date *block* rather than the date, so a 2024 visit read as this year's. Plus `formatVisitWeekday`, the only one of three parsers with no month guard: it rolled `2026-13-01` over to *"Friday, Jan 1"* — of 2027, with the year hidden — where both siblings refuse.
+
+**And a second green test that measured nothing.** The first assertion written for the lexical-compare fix checked the *parsing* in isolation, which is true of the fix and of the bug alike; it survived the mutation that put the bug back. It now drives the real `readVetVisitsHome` against both spellings, in its own file (`lib/vetVisitsHome.test.ts`) because it needs `getDb` stubbed. That is C-34 — *a test that re-derives the production rule is a tautology with fixtures* — repeated in the same session that wrote it into this record.
+
+**Held, with reasons:** `Math.round` over `startOfLocalDay` across both DST directions (rounding absorbs ±1h and the weekday branch is bounded at <7 days); the transition clamp in both directions; malformed instants degrading to empty rather than wrong; the SQL `ORDER BY scheduled_at`.
+
+---
+
 ## Accepted, with the limit measured
 
 The midnight sentinel is read in the **reading** device's zone, so a zone change between booking and viewing can print a time that was never given, hide an early-morning one, or shift the displayed day. It is **structurally invisible to the CI timezone matrix**, which runs one fixed `TZ` per job — compose and read always agree inside a run — so the test builds the mismatch by hand rather than leaving it to a job that cannot see it. Accepted for v1: the fix is a `scheduled_time_known` column, a column is a migration, and a migration is its own PR. **CUL-941.**
@@ -85,6 +105,7 @@ The midnight sentinel is read in the **reading** device's zone, so a zone change
 - **CUL-941** — the `scheduled_time_known` column.
 - **CUL-942** — two log-a-visit doors during the beta; the rundown tile still opens the old screen, which captures more. Mostly resolves at VV-4.
 - **CUL-943** — "Also for {pet}" gives no acknowledgement on success.
+- **CUL-946** (`Waiting on PM`, **Urgent**) — `app/vet-visit.tsx:122` serialises `visited_at` through `toISOString()`, so every visit logged after ~5pm PDT / ~8pm EDT is saved as **tomorrow**. Live today, not behind the flag. Turned up by the adversarial pass while checking this PR's invariant, and out of its scope.
 
 Not filed, noted here: `readVetVisitsHome` has no `LIMIT` and is shared by the card (which needs a count and one row) and the list (which needs every row), so the Pet tab does avoidable work on every focus. Properly batched, not N+1. A separate card read would be a second predicate over one population, which is the trade to weigh if it ever matters.
 

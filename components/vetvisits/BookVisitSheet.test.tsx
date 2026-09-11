@@ -147,6 +147,61 @@ describe('switching the arm carries the date with it', () => {
   });
 });
 
+describe('the prefill seed is clamped by arm', () => {
+  // The adversarial pass's third finding, and the fixture shape that made it
+  // invisible: `suggestedDate` was null in EVERY fixture in this file and in the
+  // screen's, so 52 green tests said nothing about the seed at all.
+  function futureKey(daysOut: number): string {
+    const d = daysFromToday(daysOut);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  it('does NOT seed a future recheck onto the "already happened" arm', () => {
+    // Zero taps, owner touches nothing: open on `happened` for a pet whose last
+    // visit named a recheck four weeks out, press Save. This used to emit a
+    // future `visited_at`. Unreachable from a shipped door today; reachable the
+    // moment VV-4's edit flow or VV-5's "log the visit" ask opens this sheet for
+    // a pet that has visits — which is exactly what both are for.
+    const onSubmit = renderSheet({
+      initialMode: 'happened',
+      prefill: { ...PREFILL, suggestedDate: futureKey(28) },
+    });
+    fireEvent.press(screen.getByText(/Save .*’s visit/));
+    expect(onSubmit.mock.calls[0][0].day).toBe(localDateKey(new Date()));
+  });
+
+  it('DOES seed that same recheck onto the booking arm, which is what it is for', () => {
+    // The seed is not disabled — it is asked the right question. A future recheck
+    // is exactly the date an owner opening "book the next visit" wants.
+    const onSubmit = renderSheet({
+      initialMode: 'booked',
+      prefill: { ...PREFILL, suggestedDate: futureKey(28) },
+    });
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].day).toBe(futureKey(28));
+  });
+
+  it('ignores a past recheck on the booking arm — a date already missed', () => {
+    const onSubmit = renderSheet({
+      initialMode: 'booked',
+      prefill: { ...PREFILL, suggestedDate: futureKey(-14) },
+    });
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].day).toBe(localDateKey(new Date()));
+  });
+
+  it('seeds a past visit date onto the "already happened" arm', () => {
+    // The mirror of the first case, and the reason the predicate is two-sided
+    // rather than "never seed on happened".
+    const onSubmit = renderSheet({
+      initialMode: 'happened',
+      prefill: { ...PREFILL, suggestedDate: futureKey(-14) },
+    });
+    fireEvent.press(screen.getByText(/Save .*’s visit/));
+    expect(onSubmit.mock.calls[0][0].day).toBe(futureKey(-14));
+  });
+});
+
 describe('the sheet asks its question, and requires only a date', () => {
   it('asks happened-or-booked out loud, not only to a screen reader', () => {
     renderSheet();

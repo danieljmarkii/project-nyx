@@ -107,13 +107,24 @@ export function BookVisitSheet({
     setAlsoFor(new Set());
     setShowDayPicker(false);
     setShowTimePicker(false);
-    // The last visit's own "come back on" date seeds the day when it named one and
-    // that date has not already passed — a recheck the owner is now booking. A
-    // past next_visit_at is a date they are already late for, so it seeds nothing
-    // and today stands.
+    // The last visit's own "come back on" date seeds the day, but ONLY on the arm
+    // it is legal for — and that qualifier is the fix, not the original rule.
+    //
+    // The seed used to test `seeded >= startOfDay(today)` unconditionally, which
+    // is right for `booked` and exactly backwards for `happened`: open this sheet
+    // on the happened arm for a pet whose last visit named a future recheck, and
+    // it emitted a future `visited_at` in ZERO taps, with the owner touching
+    // nothing. The clamp added for the mode TRANSITION did not cover it — same
+    // bug, one line up — and `suggestedDate` is null in every fixture in this
+    // file and in the screen's, so 52 green tests said nothing about it.
+    //
+    // Unreachable from a shipped door today (both `?add=happened` doors render
+    // only at zero visits, where there is no prefill to seed from) and reachable
+    // the moment VV-4's edit flow or VV-5's "log the visit" ask opens this sheet
+    // for a pet that has visits — which is the whole point of both.
     const seeded = prefill.suggestedDate ? parseDayKey(prefill.suggestedDate) : null;
     const today = new Date();
-    setDay(seeded && seeded.getTime() >= startOfDay(today).getTime() ? seeded : today);
+    setDay(seeded && isLegalForMode(seeded, initialMode, today) ? seeded : today);
   }, [visible, initialMode, prefill.clinicName, prefill.vetName, prefill.suggestedDate]);
 
   const dayLabel = useMemo(() => formatVisitWeekday(localDateKey(day)), [day]);
@@ -144,16 +155,11 @@ export function BookVisitSheet({
   function changeMode(next: VisitMode) {
     setMode(next);
     const today = new Date();
-    const todayStart = startOfDay(today);
-    if (next === 'happened') {
-      // A visit that happened is remembered as a day with no time, so a time
-      // carried over from the booked arm would be written nowhere and shown
-      // nowhere — clearing it keeps the sheet honest about what it will save.
-      setTime(null);
-      if (day.getTime() > today.getTime()) setDay(today);
-    } else if (startOfDay(day).getTime() < todayStart.getTime()) {
-      setDay(today);
-    }
+    // A visit that happened is remembered as a day with no time, so a time
+    // carried over from the booked arm would be written nowhere and shown
+    // nowhere — clearing it keeps the sheet honest about what it will save.
+    if (next === 'happened') setTime(null);
+    if (!isLegalForMode(day, next, today)) setDay(today);
   }
 
   function submit() {
@@ -380,6 +386,21 @@ export function BookVisitSheet({
       </KeyboardAvoidingView>
     </Modal>
   );
+}
+
+/**
+ * Whether a date may stand on a given arm. ONE predicate, read by both the seed
+ * and the mode transition — they answer the same question, and answering it in
+ * two places is what let the seed keep the answer the transition had already
+ * rejected.
+ *
+ * A booking is today or later; a visit that happened is today or earlier. Today
+ * is legal on both, which is why the common case is never disturbed.
+ */
+function isLegalForMode(day: Date, mode: VisitMode, now: Date): boolean {
+  return mode === 'booked'
+    ? startOfDay(day).getTime() >= startOfDay(now).getTime()
+    : day.getTime() <= now.getTime();
 }
 
 function startOfDay(d: Date): Date {

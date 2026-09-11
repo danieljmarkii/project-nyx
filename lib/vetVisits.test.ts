@@ -90,6 +90,26 @@ describe('the time-optional sentinel', () => {
     expect(appointmentTimeKnown('not-a-date')).toBe(false);
   });
 
+  it('survives a DST transition that lands ON local midnight', () => {
+    // Where the transition is at 00:00 the wall-clock midnight DOES NOT EXIST, so
+    // `new Date(y, m, d, 0, 0, 0, 0)` normalises forward to 01:00 — and an
+    // hours-based sentinel then reports "1:00 am" on a booking with no time
+    // given. Four zones, one day each per year; the CI matrix cannot see any of
+    // them, so the instant is built here by hand.
+    //
+    // Driven through the SHIPPED predicate rather than re-derived: the fix is that
+    // it asks `startOfLocalDay`, which normalises the same way the compose did.
+    const skipDay = new Date(2026, 8, 6); // Santiago's spring-forward, at midnight
+    const iso = composeScheduledAt(skipDay, null);
+    const back = new Date(iso);
+    // Whatever the zone did to it, it is still the first instant of its own local
+    // day — which is the whole claim "no time was given" rests on.
+    const firstInstant = new Date(back.getTime());
+    firstInstant.setHours(0, 0, 0, 0);
+    expect(back.getTime()).toBe(firstInstant.getTime());
+    expect(appointmentTimeKnown(iso)).toBe(false);
+  });
+
   it('MEASURES the known limit: the sentinel is read in the reading zone', () => {
     // Not a wish — a demonstration, so the limit documented in the module header
     // is a number someone can check rather than a paragraph someone can believe.
@@ -113,6 +133,32 @@ describe('the time-optional sentinel', () => {
   });
 });
 
+describe('the day split is over INSTANTS, not ISO text', () => {
+  // The adversarial pass's first finding, driven at the boundary it broke on.
+  //
+  // A local write spells the instant `…T04:00:00.000Z`; the server round-trip
+  // spells the same instant `…T04:00:00+00:00`. `'+'` (0x2B) sorts before `'.'`
+  // (0x2E), so a lexical `>=` against an ISO bound drops the hydrated row at the
+  // exact-equality second — and that second is local midnight, which is the
+  // no-time sentinel. The dropped row is therefore "a booking for today with no
+  // time", the default the sheet's own "Optional" placeholder steers everyone
+  // toward, on the day the card matters most.
+  it('the two ISO spellings of one instant really do compare differently as text', () => {
+    const local = '2026-09-16T04:00:00.000Z';
+    const hydrated = '2026-09-16T04:00:00+00:00';
+    expect(new Date(local).getTime()).toBe(new Date(hydrated).getTime());
+    // The premise, asserted rather than believed — if a future Node ever changed
+    // this, the guard below would be measuring nothing.
+    expect(hydrated >= local).toBe(false);
+  });
+
+  // The behavioural half — driving the real `readVetVisitsHome` with each
+  // spelling — is `lib/vetVisitsHome.test.ts`, which needs `getDb` stubbed. The
+  // first version of it lived here and asserted the PARSING in isolation, which
+  // is true of the fix and of the bug alike; it survived the mutation that put
+  // the lexical compare back, and measured nothing.
+});
+
 describe('dates as the owner reads them', () => {
   it('reads a calendar date as LOCAL, not as UTC midnight', () => {
     // `new Date('2026-07-30')` is UTC midnight by spec, so west of Greenwich a
@@ -131,6 +177,39 @@ describe('dates as the owner reads them', () => {
     expect(dayStampFromDate('')).toBeNull();
     expect(dayStampFromDate('2026-13-01')).toBeNull();
     expect(formatVisitDate('nonsense')).toBe('');
+  });
+
+  it('all THREE parsers refuse the same garbage — none of them fabricates', () => {
+    // `formatVisitWeekday` was the only one of the three without a month guard,
+    // and it did not fail closed: it rolled over. '2026-13-01' became "Friday,
+    // Jan 1" — of 2027, with the year hidden — and '2026-02-30' put this screen's
+    // eyebrow on Mar 2 while the list row's stamp said 30 Feb, for one record.
+    // Two siblings refusing and the third inventing is the worst arrangement of
+    // the three.
+    for (const bad of ['2026-13-01', '2026-00-10', '']) {
+      expect(dayStampFromDate(bad)).toBeNull();
+      expect(formatVisitDate(bad)).toBe('');
+      expect(formatVisitWeekday(bad)).toBe('');
+    }
+    // A real calendar overflow ('Feb 30'). The two block-formatters read the three
+    // numbers literally and cannot see it; the weekday parser CONSTRUCTS a Date,
+    // so it is the one that could roll over to Mar 2 — and now refuses instead.
+    expect(formatVisitWeekday('2026-02-30')).toBe('');
+    // …and it still answers for a real date.
+    expect(formatVisitWeekday('2026-07-30')).toBe('Thursday, Jul 30');
+  });
+
+  it('stamps the year on a far appointment, so an annual recheck is unambiguous', () => {
+    // The most common veterinary interval is the annual recheck, and
+    // `next_visit_at` seeds it directly — "Wed, Sep 15" renders identically
+    // twelve months apart. C-19: a year-less date is safe only inside a bounded
+    // range, and past seven days there is no bound.
+    const now = new Date(2026, 8, 14, 9, 0);
+    const nextYear = composeScheduledAt(new Date(2027, 8, 15), new Date(2027, 8, 15, 15, 0));
+    expect(formatAppointmentWhen(nextYear, now)).toBe('Wed, Sep 15, 2027 · 3:00 pm');
+    // This year stays bare — the year is added where it disambiguates, not always.
+    const thisYear = composeScheduledAt(new Date(2026, 9, 28), new Date(2026, 9, 28, 15, 0));
+    expect(formatAppointmentWhen(thisYear, now)).toBe('Wed, Oct 28 · 3:00 pm');
   });
 
   it('names the near days and falls back to a date once a weekday is ambiguous', () => {
@@ -232,6 +311,15 @@ describe('the Pet-tab card model', () => {
     expect(model.isEmpty).toBe(false);
     expect(model.countLabel).toBeNull();
     expect(model.lastVisitLine).toBeNull();
+  });
+
+  it('stamps the year on an older last visit rather than reading as this one', () => {
+    // `lastVisitLine` built its date from `stamp` — the two-part date BLOCK, whose
+    // context comes from the row it sits in — and so dropped the year inside a
+    // sentence that has no such context.
+    const rows = [buildVisitListRow(visit({ visited_at: '2024-07-30' }), NO_LINKS, now)];
+    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
+    expect(line).toBe('Last visit Jul 30, 2024 — GI follow-up.');
   });
 
   it('counts the visits and summarises the last one with its plan', () => {
