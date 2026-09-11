@@ -21,6 +21,19 @@ export interface VetReportParams {
   // (since-visit → active trial → 90-day fallback), resolved server-side.
   startDate?: string;
   endDate?: string;
+  /**
+   * CUL-875 — *Include your Noticed notes* (T-22, §9 rule 4). Governs whether the
+   * sentences the owner wrote on her daily looks are printed in the report's Noticed
+   * appendix. Default ON, so omitting it keeps the spec's default.
+   *
+   * IT GOVERNS THE LOOK NOTE AND NOTHING ELSE TODAY. The older `events.notes` field —
+   * the 300-character box on every symptom and meal — has printed verbatim in appendix A
+   * and E since Step 9 with no disclosure anywhere in the product; whether it gains a cue
+   * and joins this toggle is CUL-848, a PM decision that is still open. Until it is
+   * ruled, this flag must not be renamed to something that implies it covers both, and
+   * the screen's copy says which notes it means.
+   */
+  includeNotes?: boolean;
 }
 
 export interface VetReport {

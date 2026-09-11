@@ -273,6 +273,10 @@ function cleanCase(): ReportInput {
     vetVisits: [{ visitedAt: '2026-05-18', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'chronic pruritus — start elimination diet' }],
     feedingArrangements: [],
     conditions: [{ conditionName: 'Chronic pruritus', status: 'active', diagnosedAt: '2026-03-02' }],
+    // CUL-875 — `audience` is REQUIRED on ReportInput with no default: a privacy
+    // decision a caller can omit is a privacy decision taken silently. These
+    // fixtures render the owner's own artifact for the cold read.
+    audience: { kind: 'owner', includeLookNotes: true },
   }
 }
 
@@ -358,6 +362,10 @@ function refusedCase(): ReportInput {
       },
     ],
     conditions: [{ conditionName: 'Chronic vomiting', status: 'active', diagnosedAt: '2026-04-10' }],
+    // CUL-875 — `audience` is REQUIRED on ReportInput with no default: a privacy
+    // decision a caller can omit is a privacy decision taken silently. These
+    // fixtures render the owner's own artifact for the cold read.
+    audience: { kind: 'owner', includeLookNotes: true },
   }
 }
 
@@ -489,6 +497,10 @@ function completedCase(): ReportInput {
       },
     ],
     conditions: [{ conditionName: 'Atopic dermatitis', status: 'active', diagnosedAt: '2025-11-14' }],
+    // CUL-875 — `audience` is REQUIRED on ReportInput with no default: a privacy
+    // decision a caller can omit is a privacy decision taken silently. These
+    // fixtures render the owner's own artifact for the cold read.
+    audience: { kind: 'owner', includeLookNotes: true },
   }
 }
 
@@ -609,6 +621,10 @@ function truncatedCase(): ReportInput {
     ],
     feedingArrangements: [],
     conditions: [{ conditionName: 'Chronic intermittent vomiting', status: 'active', diagnosedAt: '2026-02-17' }],
+    // CUL-875 — `audience` is REQUIRED on ReportInput with no default: a privacy
+    // decision a caller can omit is a privacy decision taken silently. These
+    // fixtures render the owner's own artifact for the cold read.
+    audience: { kind: 'owner', includeLookNotes: true },
   }
 }
 
@@ -706,6 +722,10 @@ function pastWindowCase(): ReportInput {
     vetVisits: [{ visitedAt: '2026-04-06', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'chronic diarrhoea — start novel-protein trial' }],
     feedingArrangements: [],
     conditions: [{ conditionName: 'Chronic diarrhoea', status: 'active', diagnosedAt: '2026-01-22' }],
+    // CUL-875 — `audience` is REQUIRED on ReportInput with no default: a privacy
+    // decision a caller can omit is a privacy decision taken silently. These
+    // fixtures render the owner's own artifact for the cold read.
+    audience: { kind: 'owner', includeLookNotes: true },
     // THE OWNER PICKED THE DATES. Trial Apr 6 – May 31 (56 days); this window opens 14
     // days in and closes 11 days before the trial did.
     requestedWindow: { startDate: '2026-04-20', endDate: '2026-05-20' },

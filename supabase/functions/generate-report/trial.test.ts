@@ -178,6 +178,8 @@ function baseInput(over: Partial<ReportInput> = {}): ReportInput {
     vetVisits: [],
     feedingArrangements: [],
     conditions: [],
+    // CUL-875 — REQUIRED on ReportInput with no default (D3/C-10).
+    audience: { kind: 'owner', includeLookNotes: true },
     ...over,
   }
 }

@@ -40,6 +40,7 @@ import { updateLookNote } from '../../lib/looks';
 import { destructiveConfirm } from '../../lib/haptics';
 import { syncPendingLooks } from '../../lib/sync';
 import { unnamedWordsLine, type DescribedLook } from '../../lib/lookDisplay';
+import { LOOK_NOTE_CUE_UNNAMED } from '../../lib/lookCard';
 
 /** The shipped notes cap, the same 300 the log screen, the confirm sheet and the
  *  event editor all use. Named here rather than repeated as a literal so the look's
@@ -50,9 +51,13 @@ export const LOOK_NOTE_PLACEHOLDER = 'Say more — what did you see?';
 
 /** Where the note goes, said where the owner writes it (T&S). Both halves are
  *  facts about the note specifically: it is the free text that reaches the report
- *  she builds, and a shared link never carries it unless she says so. */
-export const LOOK_NOTE_CUE =
-  'Printed on the vet report you make · never on a shared link unless you choose it';
+ *  she builds, and a shared link never carries it unless she says so.
+ *
+ *  RE-EXPORTED FROM `lib/lookCard` SINCE CUL-875, not restated. This screen and the Home
+ *  card both carry a cue about the same column, and before N-6 they disagreed: this one
+ *  claimed the vet report while Home's said the note stayed in the record, and only one
+ *  of them was true at a time. One definition of the promise, two forms of address. */
+export const LOOK_NOTE_CUE = LOOK_NOTE_CUE_UNNAMED;
 
 export const LOOK_ABSENCE_LINE = 'You marked nothing unusual.';
 

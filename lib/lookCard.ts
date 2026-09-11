@@ -170,32 +170,54 @@ export const LOOK_NOTE_PLACEHOLDER = 'Say more — what did you see?';
 export const LOOK_NOTE_MAX_LENGTH = 300;
 
 /**
+ * The second half of the note's cue, shared by BOTH surfaces that carry one.
+ *
+ * There are two cues — the Home card's (pet-named) and the record/edit screens'
+ * (`LOOK_NOTE_CUE`, which has no pet name to hand) — and until CUL-875 they said
+ * different things about the same column: the record screen claimed the vet report while
+ * N-4b's Home cue said the note stayed in the record. One of them was false at any given
+ * moment, and which one changed with this PR. C-12's rule applies to a privacy
+ * disclosure at least as hard as it applies to a sync banner: the same fact told to the
+ * same owner on another surface must not use different words. So the clause that carries
+ * the actual promise lives here, once.
+ */
+const LOOK_NOTE_SHARED_CLAUSE = 'never on a shared link unless you choose it';
+
+/**
  * The cue under the open field, and it is a Trust & Safety requirement rather than a
  * nicety (T-22, §9).
  *
- * ── IT SAYS WHAT IS TRUE TODAY, AND ONLY THAT ────────────────────────────────
- * T-22 writes this cue as *Printed on the vet report you make · never on a shared link
- * unless you choose it*, on the assumption that Appendix G — the report's own list of the
- * owner's notes — exists. It does not: `generate-report` selects nothing from `looks`
- * (§10 gives Appendix G to N-6 / CUL-875, and that PR rides the held CUL-19 redeploy),
- * while GA is gated on N-4b and N-5 only. So the first clause was a promise the shipped
- * app does not keep, printed under the field at the exact moment it is asking an owner to
- * type something private — the highest-trust-cost line in the feature (the product
- * review).
+ * ── IT NAMES THE REPORT AGAIN, AS OF CUL-875 / N-6 ───────────────────────────
+ * N-4b shipped this as *Kept in {pet}'s record*, because T-22's own wording assumed an
+ * Appendix G that did not exist: `generate-report` selected nothing from `looks`, so
+ * *Printed on the vet report you make* was a promise the app did not keep, printed at the
+ * exact moment it was asking an owner to type something private. N-6 lands that appendix,
+ * so the clause comes back — in the same diff, because `guards/lookNotes.test.ts` binds
+ * the two in both directions and would otherwise stop the PR.
  *
- * What is true today is that the note stays in her record and reaches nothing else, and
- * that is what it says. The share-link clause STAYS because it is a promise about a
- * surface that does not exist yet in the other direction: §9 rule 4 requires any
- * unauthenticated render to exclude the note by construction, so it is a commitment rather
- * than a claim.
+ * ── IT LEADS WITH THE EXPOSURE, NOT THE REASSURANCE ──────────────────────────
+ * *Kept in {pet}'s record* is not carried forward in front of it. With the report clause
+ * present, an opening that says the note is kept in her record reads as "it stays here"
+ * and softens the disclosure that follows it — and this line's whole job is the
+ * disclosure. The pet is still named, inside the clause, where it identifies the document
+ * rather than reassuring about the column.
  *
- * `guards/lookNotes.test.ts` holds the two halves together: the moment `generate-report`
- * selects `looks.notes`, the guard requires this string to name the report — so N-6 cannot
- * land Appendix G without restoring the clause, and this PR cannot claim it early.
+ * ── AND IT LEADS THE DEPLOY, WHICH IS THE POINT OF KEYING THE GUARD ON SOURCE ─
+ * `generate-report` is held at v14 by CUL-19, so between this merge and that deploy the
+ * cue names a document that does not yet print the note. That asymmetry is deliberate and
+ * runs the safe way: this sentence is a WARNING, so over-warning costs an owner a
+ * sentence she chose not to write, while under-warning is a document that silently
+ * carries her words to a clinic. The client build and the function deploy are independent
+ * releases in either order, and only the over-warning is safe in both — which is exactly
+ * why the guard is keyed on what the SOURCE selects rather than on what production runs.
  */
 export function lookNoteCue(petName: string): string {
-  return `Kept in ${petName}’s record — never on a shared link unless you choose it`;
+  return `Printed on the vet report you make for ${petName} · ${LOOK_NOTE_SHARED_CLAUSE}`;
 }
+
+/** The same cue where the surface has no pet name in hand — the look's record screen and
+ *  the event editor. Same two facts, same second clause, no second wording. */
+export const LOOK_NOTE_CUE_UNNAMED = `Printed on the vet report you make · ${LOOK_NOTE_SHARED_CLAUSE}`;
 
 /**
  * Undo over a look that carries a note — the confirm, and the note NAMED (T-22, C-21).

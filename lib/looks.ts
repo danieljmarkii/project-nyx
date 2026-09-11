@@ -51,11 +51,9 @@ import { syncPendingEvents, syncPendingLooks } from './sync';
 import { uuid, localDayIndex, localDayIndexOf, dayKeyFromIndex } from './utils';
 import { wordsToLocalText, wordsFromLocalText } from './lookWordsCodec';
 import { LOOK_VOCABULARY, LOOK_VOCAB_VERSION, type LookSpecies } from '../constants/lookWords';
-import type { LookDayRow } from './lookDayCounts';
-
-/** The two outcomes (migration 064's CHECK). 'nothing_unusual' is the
- *  observed-absence row (L-6) — a real answer, never "no data". */
-export type LookOutcome = 'observed' | 'nothing_unusual';
+// `LookOutcome` is imported for THIS file's own uses; the `export { … } from` below is
+// what re-publishes it to callers. A re-export alone creates no local binding.
+import type { LookDayRow, LookOutcome } from './lookDayCounts';
 
 export interface InsertLookParams {
   petId: string;
@@ -262,6 +260,11 @@ export {
   absenceDaySet,
   answeredVomitDays,
   type LookDayRow,
+  // `LookOutcome` MOVED there too at CUL-875 / N-6, for the reason that file's header
+  // gives: it was this module's only import, and an extensionless specifier is what kept
+  // `generate-report` from sharing the counters instead of mirroring them. Re-exported
+  // here so every caller since N-2 is untouched — one definition, two import paths.
+  type LookOutcome,
 } from './lookDayCounts';
 
 /**

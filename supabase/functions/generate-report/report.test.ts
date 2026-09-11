@@ -108,6 +108,10 @@ function baseInput(overrides: Partial<ReportInput> = {}): ReportInput {
     vetVisits: [],
     feedingArrangements: [],
     conditions: [],
+    // CUL-875 — REQUIRED on ReportInput with no default (D3/C-10). The fixture default
+    // is the owner's own render with her notes on, which is the shipped app's only
+    // caller today; the share-link arm is exercised explicitly where it is tested.
+    audience: { kind: 'owner', includeLookNotes: true },
     ...overrides,
   }
 }
