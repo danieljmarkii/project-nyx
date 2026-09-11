@@ -545,6 +545,10 @@ describe('rundownToPlainText', () => {
       { key: 'weight', label: 'Weight', value: 'No weigh-ins logged', tap: null, empty: true },
     ],
     pastMedications: [],
+    // Nothing in the plain-text export reads `facts` — it is the derivation Get
+    // ready quotes (CUL-903) — so the fixture carries the empty shape rather than a
+    // populated one, which keeps this suite's subject the tiles.
+    facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [] },
   };
 
   it('renders a titled, denominator-carrying plain-text artifact', () => {

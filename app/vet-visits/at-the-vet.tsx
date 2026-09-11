@@ -15,12 +15,12 @@ import { captureVisitPaperwork, readPaperworkFor, rememberPaperwork } from '../.
 import {
   formatAppointmentWhen,
   formatWhereLine,
-  parseQuestions,
-  readAppointment,
+  parseAppointmentQuestions,
+  readAppointmentById,
   saveNotesDraft,
   setQuestionAsked,
-  type LocalVetAppointment,
-  type VisitQuestion,
+  type AppointmentDetail,
+  type AppointmentQuestion,
 } from '../../lib/vetVisits';
 
 /**
@@ -52,8 +52,8 @@ export default function AtTheVetScreen() {
   const { appointment: appointmentId } = useLocalSearchParams<{ appointment?: string }>();
   const pets = usePetStore((s) => s.pets);
 
-  const [appointment, setAppointment] = useState<LocalVetAppointment | null>(null);
-  const [questions, setQuestions] = useState<VisitQuestion[]>([]);
+  const [appointment, setAppointment] = useState<AppointmentDetail | null>(null);
+  const [questions, setQuestions] = useState<AppointmentQuestion[]>([]);
   const [draft, setDraft] = useState('');
   const [paperwork, setPaperwork] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,7 +97,7 @@ export default function AtTheVetScreen() {
     }
     try {
       const [row, groups] = await Promise.all([
-        readAppointment(appointmentId),
+        readAppointmentById(appointmentId),
         readPaperworkFor(appointmentId),
       ]);
       setAppointment(row);
@@ -105,7 +105,7 @@ export default function AtTheVetScreen() {
       if (row && !seeded.current) {
         seeded.current = true;
         setDraft(row.notes_draft ?? '');
-        setQuestions(parseQuestions(row.questions));
+        setQuestions(parseAppointmentQuestions(row.questions));
       }
       setFailed(false);
       setLoaded(true);
@@ -144,7 +144,7 @@ export default function AtTheVetScreen() {
     }, DRAFT_DEBOUNCE_MS);
   }
 
-  async function handleToggleQuestion(question: VisitQuestion) {
+  async function handleToggleQuestion(question: AppointmentQuestion) {
     if (!appointmentId) return;
     const asked = !question.asked_at;
     // Optimistic, then reconciled from the write's own return: the tick is a

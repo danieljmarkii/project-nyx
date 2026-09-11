@@ -16,6 +16,7 @@ import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard, RAIL_WIDTH, stripRenderable } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
+import { visibleFindings } from '../../lib/signalVisible';
 import { useSignalFold, type SignalFoldApi } from '../../hooks/useSignalFold';
 import { useLastEpisodeDates, type LastEpisodeDates } from '../../hooks/useLastEpisodeDates';
 import { useWatchingRows } from '../../hooks/useWatchingRows';
@@ -48,9 +49,7 @@ import {
   buildingSub,
   coverageCopy,
   isStoodDown,
-  isTrialResponse,
   staleIntro,
-  stoodDownExpired,
   chronicityLastEpisodeFallbackIso,
 } from '../../lib/signalCopy';
 import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
@@ -794,41 +793,18 @@ function AckLine({ petName }: { petName: string }) {
 }
 
 /**
- * The findings that will actually RENDER, in render order — the B-789 safety suppression
- * plus the server's rank.
+ * The findings that will actually RENDER — LIFTED to `lib/signalVisible.ts` (CUL-903).
  *
- * Extracted (CUL-601) because the arrival needs the same answer the stack does. It used
- * to live inside `LiveStack`, and the arrival's first cut counted `findings.length`
- * instead: on a not-eating cat whose ONLY finding is a suppressed `fewer_during_trial`
- * (the known CUL-527 residual), `displayState` still reads 'live' and the stack renders
- * EMPTY — so the moment played a gold wash and a success tap over a blank card, and
- * spent that pet's once-ever marker doing it. The one owner it fired for would have been
- * the one whose cat is refusing food.
+ * It was extracted here (CUL-601) because the arrival needs the same answer the stack
+ * does: the arrival's first cut counted `findings.length` instead, so on a not-eating cat
+ * whose ONLY finding is a suppressed `fewer_during_trial` the moment played a gold wash
+ * over a blank card and spent that pet's once-ever marker doing it. The one owner it fired
+ * for would have been the one whose cat is refusing food.
  *
- * One predicate, two callers — never a second copy of this rule (the diet-trial §5.3
- * lesson). The suppression's own reasoning stays at the call site below.
+ * VV-5's "Worth raising" is the third caller and it is not on Home, so the module moved
+ * rather than the rule being restated (the diet-trial §5.3 lesson; C-30's shape). The
+ * suppression's own reasoning stays at the call site below.
  */
-function visibleFindings(
-  findings: CachedFinding[],
-  suppressTrialResponse: boolean,
-  nowMs: number = Date.now(),
-): CachedFinding[] {
-  return [...findings]
-    .filter(
-      (f) =>
-        !(
-          suppressTrialResponse &&
-          isTrialResponse(f.finding) &&
-          f.finding.comparisonDirection === 'fewer_during_trial'
-        ),
-    )
-    // CUL-786: a stood-down line expires seven days after it was minted, even if the cache never
-    // regenerates (spec §8: "until … seven days pass"). The engine drops it on its own regen; this
-    // is the offline bound. It is the one clock read on this surface, and it can only REMOVE a
-    // line — never re-open a card (the fold spec's DF-5 forbids that direction).
-    .filter((f) => !(isStoodDown(f.finding) && stoodDownExpired(f.finding, nowMs)))
-    .sort((a, b) => a.rank - b.rank);
-}
 
 // CUL-786 — the labeled stand-down (spec §0 DF-9(a), §8 v1.1-a). One calm line in the slot the
 // chronicity card held: NO rail (the colour mark is the concern's; this is its absence stated),

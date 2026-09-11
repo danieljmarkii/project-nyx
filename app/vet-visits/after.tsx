@@ -43,7 +43,7 @@ import {
   logVetVisit,
   logVisitFromAppointment,
   readActiveCourses,
-  readAppointment,
+  readAppointmentById,
   readVisitConsequence,
   readVisitPrefill,
   readTrialVisitLink,
@@ -51,7 +51,7 @@ import {
   updateVisitDetails,
   VetVisitLinkRefused,
   type ActiveCourse,
-  type LocalVetAppointment,
+  type AppointmentDetail,
 } from '../../lib/vetVisits';
 
 /** Which sheet is up. At most ONE is ever mounted — see the CUL-662 note below. */
@@ -88,7 +88,7 @@ export default function AfterVisitScreen() {
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
 
-  const [appointment, setAppointment] = useState<LocalVetAppointment | null>(null);
+  const [appointment, setAppointment] = useState<AppointmentDetail | null>(null);
   // The pet this SCREEN is about. With an appointment it is the appointment's, full
   // stop. Without one (the cold "log a visit" door this screen replaces) it is the
   // active pet captured ONCE on the first non-null value and frozen after — never
@@ -157,7 +157,7 @@ export default function AfterVisitScreen() {
       return;
     }
     try {
-      const appt = appointmentId ? await readAppointment(appointmentId) : null;
+      const appt = appointmentId ? await readAppointmentById(appointmentId) : null;
       setAppointment(appt);
       const forPetId = appt?.pet_id ?? screenPetId;
       if (!forPetId) {

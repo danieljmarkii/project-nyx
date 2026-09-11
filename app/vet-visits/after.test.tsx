@@ -1,7 +1,7 @@
 import { Modal } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import AfterVisitScreen from './after';
-import type { ActiveCourse, LocalVetAppointment } from '../../lib/vetVisits';
+import type { ActiveCourse, AppointmentDetail } from '../../lib/vetVisits';
 
 // CUL-902 VV-4 — the after-visit screen's own wiring (§7 AC 7 and AC 11).
 //
@@ -16,13 +16,13 @@ import type { ActiveCourse, LocalVetAppointment } from '../../lib/vetVisits';
 //     pet. Here the pet comes from the appointment, and the store is driven
 //     mid-flight to prove it.
 
-type LogArgs = { appointment: Pick<LocalVetAppointment, 'id' | 'pet_id'>; visitedAt: string };
+type LogArgs = { appointment: Pick<AppointmentDetail, 'id' | 'pet_id'>; visitedAt: string };
 
 const mockLogFromAppointment = jest.fn(async (_input: LogArgs) => 'new-visit');
 const mockLinkCourse = jest.fn(async (_id: string, _visit: string) => true);
 const mockUpdateVisit = jest.fn(async () => undefined);
 const mockRepair = jest.fn(async (_petId: string) => 0);
-let mockAppointment: LocalVetAppointment | null = null;
+let mockAppointment: AppointmentDetail | null = null;
 let mockCourses: ActiveCourse[] = [];
 
 jest.mock('expo-router', () => ({
@@ -79,7 +79,7 @@ jest.mock('../../lib/vetVisits', () => {
   const actual = jest.requireActual('../../lib/vetVisits');
   return {
     ...actual,
-    readAppointment: jest.fn(async () => mockAppointment),
+    readAppointmentById: jest.fn(async () => mockAppointment),
     readActiveCourses: jest.fn(async () => mockCourses),
     readVisitPrefill: jest.fn(async () => ({ clinicName: null, vetName: null, suggestedDate: null })),
     readVisitConsequence: jest.fn(async () => ({ isLatest: true, isBeforeToday: false })),
@@ -107,7 +107,7 @@ jest.mock('../../store/petStore', () => ({
     (id ? pets.find((p) => p.id === id)?.name : null) || 'your pet',
 }));
 
-function appointment(over: Partial<LocalVetAppointment> = {}): LocalVetAppointment {
+function appointment(over: Partial<AppointmentDetail> = {}): AppointmentDetail {
   return {
     id: 'appt-1',
     // THE APPOINTMENT IS PET A'S, and every AC 11 assertion below turns on this one

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import AtTheVetScreen from './at-the-vet';
-import type { LocalVetAppointment, VisitQuestion } from '../../lib/vetVisits';
+import type { AppointmentDetail, AppointmentQuestion } from '../../lib/vetVisits';
 
 // CUL-902 VV-4 — "At the vet" (mock C1), §7 AC 6's client half.
 //
@@ -11,10 +11,10 @@ import type { LocalVetAppointment, VisitQuestion } from '../../lib/vetVisits';
 // whatever the debounce is still holding.
 
 const mockSaveDraft = jest.fn(async (_id: string, _draft: string) => undefined);
-const mockSetAsked = jest.fn(async (_id: string, _q: string, asked: boolean): Promise<VisitQuestion[]> => [
+const mockSetAsked = jest.fn(async (_id: string, _q: string, asked: boolean): Promise<AppointmentQuestion[]> => [
   { id: 'q1', text: 'The overnight pattern', source: 'record', source_ref: null, asked_at: asked ? 'T' : null },
 ]);
-let mockAppointment: LocalVetAppointment | null = null;
+let mockAppointment: AppointmentDetail | null = null;
 
 jest.mock('expo-router', () => ({
   Redirect: () => null,
@@ -46,7 +46,7 @@ jest.mock('../../lib/vetVisits', () => {
   const actual = jest.requireActual('../../lib/vetVisits');
   return {
     ...actual,
-    readAppointment: jest.fn(async () => mockAppointment),
+    readAppointmentById: jest.fn(async () => mockAppointment),
     saveNotesDraft: (id: string, draft: string) => mockSaveDraft(id, draft),
     setQuestionAsked: (id: string, q: string, asked: boolean) => mockSetAsked(id, q, asked),
   };
@@ -59,7 +59,7 @@ jest.mock('../../store/petStore', () => ({
     (id ? pets.find((p) => p.id === id)?.name : null) || 'your pet',
 }));
 
-function appointment(over: Partial<LocalVetAppointment> = {}): LocalVetAppointment {
+function appointment(over: Partial<AppointmentDetail> = {}): AppointmentDetail {
   return {
     id: 'appt-1',
     pet_id: 'pet-a',

@@ -11,7 +11,7 @@ import {
   formatVisitWeekday,
   formatWhereLine,
   localDateKey,
-  type LocalVetAppointment,
+  type AppointmentDetail,
   type LocalVetVisit,
   type VisitLinks,
 } from './vetVisits';
@@ -38,7 +38,7 @@ function visit(over: Partial<LocalVetVisit> = {}): LocalVetVisit {
   };
 }
 
-function appointment(over: Partial<LocalVetAppointment> = {}): LocalVetAppointment {
+function appointment(over: Partial<AppointmentDetail> = {}): AppointmentDetail {
   return {
     id: 'a1',
     pet_id: 'pet-a',

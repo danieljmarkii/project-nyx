@@ -9,8 +9,20 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() } }));
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn() },
+  useLocalSearchParams: () => ({}),
+}));
+// CUL-903 — this screen is now the rundown AND Get ready, so it reads the companion
+// flag. Mocked OFF here on purpose: this suite's subject is the shipped rundown's
+// tap→route mapping, which must keep working with the companion dark.
+jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
+jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
+// The env boundary. `lib/supabase` throws at IMPORT when the anon key is unset, and
+// this screen now reaches it (the Signal cache read Get ready quotes, and the trial
+// facts). Nothing here calls it — the flag is off above — so a bare stub is enough.
+jest.mock('../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../store/petStore', () => {
   const state = { activePet: { id: 'p1', name: 'Mochi' } };
   return {
@@ -18,6 +30,7 @@ jest.mock('../store/petStore', () => {
       (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
       { getState: () => state },
     ),
+    resolveRecordPetName: () => 'Mochi',
   };
 });
 jest.mock('../lib/rundown', () => ({
@@ -43,6 +56,7 @@ beforeEach(() => {
     petName: 'Mochi',
     generatedAtMs: 0,
     pastMedications: [],
+    facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [] },
     tiles: [
       tile('weight', 'Weight', { kind: 'weight' }),
       tile('meds', 'Current medications', { kind: 'meds' }),

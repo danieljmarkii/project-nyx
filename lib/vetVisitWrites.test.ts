@@ -59,16 +59,15 @@ import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import {
   askedSummary,
   logVisitFromAppointment,
-  parseQuestions,
+  parseAppointmentQuestions,
   readActiveCourses,
-  readAppointment,
+  readAppointmentById,
   readVetVisitDetail,
   readVisitConsequence,
   linkCourseToVisit,
   linkTrialToVisit,
   repairRefusedVisitLinks,
   saveNotesDraft,
-  serializeQuestions,
   setQuestionAsked,
   updateVisitDetails,
   visitIsForPet,
@@ -187,7 +186,7 @@ describe('the question ticks (AC 6)', () => {
     expect(next.find((q) => q.id === 'q1')?.asked_at).toBe('2026-09-16T15:04:00.000Z');
     // Re-read from the ROW, not from the return: the tick survives a relaunch only if
     // it is on disk.
-    const stored = parseQuestions(appointmentRow().questions as string);
+    const stored = parseAppointmentQuestions(appointmentRow().questions as string);
     expect(stored.find((q) => q.id === 'q1')?.asked_at).toBe('2026-09-16T15:04:00.000Z');
     expect(stored.find((q) => q.id === 'q2')?.asked_at).toBeNull();
   });
@@ -202,7 +201,7 @@ describe('the question ticks (AC 6)', () => {
   it('leaves every other question untouched', async () => {
     seedAppointment({ questions: QUESTIONS });
     await setQuestionAsked(APPT, 'q2', true);
-    const stored = parseQuestions(appointmentRow().questions as string);
+    const stored = parseAppointmentQuestions(appointmentRow().questions as string);
     expect(stored.map((q) => q.text)).toEqual(['The overnight pattern', 'The weight']);
     expect(stored.map((q) => !!q.asked_at)).toEqual([false, true]);
   });
@@ -214,7 +213,7 @@ describe('the question ticks (AC 6)', () => {
 
 describe('parseQuestions — the column is owner-controlled free text', () => {
   it('reads a well-formed array', () => {
-    expect(parseQuestions('[{"id":"q1","text":"Ask","source":"owner","asked_at":null}]'))
+    expect(parseAppointmentQuestions('[{"id":"q1","text":"Ask","source":"owner","asked_at":null}]'))
       .toEqual([{ id: 'q1', text: 'Ask', source: 'owner', source_ref: null, asked_at: null }]);
   });
 
@@ -223,18 +222,22 @@ describe('parseQuestions — the column is owner-controlled free text', () => {
     // replaces unparseable text with null. A reader that threw would take the notes
     // field beside it down — the one surface on this screen that must not fail.
     for (const raw of ['not json', '{"not":"an array"}', '[1,2,3]', '[{"no":"id"}]', '', null]) {
-      expect(parseQuestions(raw)).toEqual([]);
+      expect(parseAppointmentQuestions(raw)).toEqual([]);
     }
   });
 
-  it('round-trips through serialize, and stores NULL for an empty list', () => {
-    const qs = parseQuestions('[{"id":"q1","text":"Ask","source":"record","asked_at":null}]');
-    expect(parseQuestions(serializeQuestions(qs))).toEqual(qs);
-    expect(serializeQuestions([])).toBeNull();
+  it('round-trips through the shipped writer’s own serialisation', () => {
+    // `saveAppointmentQuestions` (VV-5) stringifies the list directly, so the round
+    // trip under test is `JSON.stringify` → `parseAppointmentQuestions` rather than a
+    // second serialiser of VV-4's own. One parser and one writer over one column: the
+    // convergence VV-5's header asked for, and the reason this no longer has a
+    // `serializeQuestions` to check.
+    const qs = parseAppointmentQuestions('[{"id":"q1","text":"Ask","source":"record","asked_at":null}]');
+    expect(parseAppointmentQuestions(JSON.stringify(qs))).toEqual(qs);
   });
 
   it('summarises as "Asked N of M", and says nothing at zero questions', () => {
-    const qs = parseQuestions(
+    const qs = parseAppointmentQuestions(
       '[{"id":"a","text":"x","source":"owner","asked_at":"2026-09-16T00:00:00.000Z"},' +
         '{"id":"b","text":"y","source":"owner","asked_at":null}]',
     );
@@ -253,7 +256,7 @@ describe('logVisitFromAppointment', () => {
     // the caller passes, so a caller cannot supply a pet and an appointment that
     // disagree — the store is not reachable from this function at all.
     seedAppointment();
-    const appt = await readAppointment(APPT);
+    const appt = await readAppointmentById(APPT);
     const id = await logVisitFromAppointment({
       appointment: appt!,
       visitedAt: '2026-09-16',
@@ -264,7 +267,7 @@ describe('logVisitFromAppointment', () => {
 
   it('marks the appointment attended in the SAME transaction', async () => {
     seedAppointment();
-    const appt = await readAppointment(APPT);
+    const appt = await readAppointmentById(APPT);
     const id = await logVisitFromAppointment({ appointment: appt!, visitedAt: '2026-09-16', newId: () => 'visit-1' });
 
     expect(mockWithTransactionAsync).toHaveBeenCalledTimes(1);
@@ -274,7 +277,7 @@ describe('logVisitFromAppointment', () => {
 
   it('MOVES the draft into the visit rather than copying it', async () => {
     seedAppointment({ notes_draft: 'Cerenia only if she vomits twice in a day.' });
-    const appt = await readAppointment(APPT);
+    const appt = await readAppointmentById(APPT);
     const id = await logVisitFromAppointment({ appointment: appt!, visitedAt: '2026-09-16', newId: () => 'visit-1' });
 
     expect(visitRow(id).notes).toBe('Cerenia only if she vomits twice in a day.');
@@ -285,7 +288,7 @@ describe('logVisitFromAppointment', () => {
 
   it('prefers the caller’s typed fields over the appointment’s', async () => {
     seedAppointment({ notes_draft: 'the in-room draft' });
-    const appt = await readAppointment(APPT);
+    const appt = await readAppointmentById(APPT);
     const id = await logVisitFromAppointment({
       appointment: appt!,
       visitedAt: '2026-09-16',
@@ -302,7 +305,7 @@ describe('logVisitFromAppointment', () => {
     // at, and an appointment still on Home asking whether the visit happened — with
     // the owner's notes now in a row they have no door to.
     seedAppointment();
-    const appt = await readAppointment(APPT);
+    const appt = await readAppointmentById(APPT);
     mockDb.prepare('DELETE FROM vet_appointments WHERE id = ?').run(APPT);
 
     await expect(
@@ -316,7 +319,7 @@ describe('logVisitFromAppointment', () => {
     // the UTC day, so every evening visit in the Americas is saved as tomorrow. This
     // function writes no date it did not receive.
     seedAppointment();
-    const appt = await readAppointment(APPT);
+    const appt = await readAppointmentById(APPT);
     const id = await logVisitFromAppointment({ appointment: appt!, visitedAt: '2026-09-16', newId: () => 'visit-1' });
     expect(visitRow(id).visited_at).toBe('2026-09-16');
   });

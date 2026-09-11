@@ -3,7 +3,7 @@ import { Camera, Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
-import type { VisitQuestion } from '../../lib/vetVisits';
+import type { AppointmentQuestion } from '../../lib/vetVisits';
 
 interface Props {
   /** The RECORD's pet, via `resolveRecordPetName(pets, appointment.pet_id)` — CUL-574. */
@@ -13,8 +13,8 @@ interface Props {
   where: string;
   draft: string;
   onChangeDraft: (next: string) => void;
-  questions: ReadonlyArray<VisitQuestion>;
-  onToggleQuestion: (question: VisitQuestion) => void;
+  questions: ReadonlyArray<AppointmentQuestion>;
+  onToggleQuestion: (question: AppointmentQuestion) => void;
   /** Documents already photographed against this appointment, for the row's count. */
   paperworkCount: number;
   onPhotographPaperwork: () => void;

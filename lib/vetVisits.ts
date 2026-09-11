@@ -39,84 +39,9 @@ export interface LocalVetAppointment {
   clinic_name: string | null;
   vet_name: string | null;
   reason: string | null;
-  /** The C1 in-room draft (CUL-902). TEXT locally, TEXT server-side. */
-  notes_draft: string | null;
-  /** `VisitQuestion[]` as JSON TEXT locally, JSONB server-side. */
-  questions: string | null;
   vet_visit_id: string | null;
   cancelled_at: string | null;
   deleted_at: string | null;
-}
-
-/**
- * One prepared question (migration 066's `questions` element shape).
- *
- * Authored before the visit (VV-5's *Add a question* and Get ready) and ticked
- * during it (C1). `asked_at` is an INSTANT, not a boolean, because the tick is a
- * thing that happened at a time — and because a boolean cannot be un-set without
- * losing the distinction between "never asked" and "un-ticked by mistake".
- *
- * The questions are never COPIED onto the visit at save (CUL-902, on the fly):
- * `vet_visits` has no column for them, and a copy would be the second store §5.1
- * forbids for the photo. The visit reaches them through the appointment that names
- * it (`vet_appointments.vet_visit_id`), which is the same link the visit already
- * uses for attendance.
- */
-export interface VisitQuestion {
-  id: string;
-  text: string;
-  /** 'record' — proposed from the record by Get ready; 'owner' — typed. */
-  source: 'record' | 'owner';
-  source_ref?: string | null;
-  asked_at: string | null;
-}
-
-/**
- * Parse the stored JSON text, defensively.
- *
- * Returns `[]` for anything that is not an array of question-shaped objects rather
- * than throwing: this column round-trips through JSONB and through a sync path that
- * already replaces unparseable text with null (`parseQuestionsForPush`), so a
- * malformed value is a thing the reader can meet. A screen that throws on it would
- * take the in-room notes field down with it, which is the one surface that must not
- * fail — the draft beside it is what the owner is typing.
- */
-export function parseQuestions(raw: string | null | undefined): VisitQuestion[] {
-  if (!raw) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    console.warn('[vetVisits] questions were not valid JSON — read as none');
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-  const out: VisitQuestion[] = [];
-  for (const item of parsed) {
-    if (!item || typeof item !== 'object') continue;
-    const q = item as Record<string, unknown>;
-    if (typeof q.id !== 'string' || typeof q.text !== 'string') continue;
-    out.push({
-      id: q.id,
-      text: q.text,
-      source: q.source === 'record' ? 'record' : 'owner',
-      source_ref: typeof q.source_ref === 'string' ? q.source_ref : null,
-      asked_at: typeof q.asked_at === 'string' ? q.asked_at : null,
-    });
-  }
-  return out;
-}
-
-/** The inverse. `null` for an empty list, so an untouched appointment stores NULL. */
-export function serializeQuestions(questions: ReadonlyArray<VisitQuestion>): string | null {
-  return questions.length > 0 ? JSON.stringify(questions) : null;
-}
-
-/** 'asked 3 of 4' — null below one question, where the ratio is noise (mock D3). */
-export function askedSummary(questions: ReadonlyArray<VisitQuestion>): string | null {
-  if (questions.length === 0) return null;
-  const asked = questions.filter((q) => !!q.asked_at).length;
-  return `Asked ${asked} of ${questions.length}`;
 }
 
 // ── "Time optional" (§8 VV-2 decide-on-the-fly; VV-1 left the mechanism here) ────
@@ -270,10 +195,26 @@ function formatClockTime(d: Date): string {
  * could be any of several, so the date takes over.
  */
 export function formatAppointmentWhen(scheduledAt: string, now: Date = new Date()): string {
+  const stem = formatAppointmentDay(scheduledAt, now);
+  if (!stem) return '';
+  return appointmentTimeKnown(scheduledAt)
+    ? `${stem} · ${formatClockTime(new Date(scheduledAt))}`
+    : stem;
+}
+
+/**
+ * The DAY half alone — 'Today', 'Tomorrow', 'Tuesday', 'Tue, Oct 28'.
+ *
+ * Exported because a sentence needs it without the clock time: the Home strip's
+ * after-the-day ask reads *"Did Tuesday's visit happen?"*, and built from the full
+ * `when` it came out as *"Did Tuesday · 3:00 pm's visit happen?"*. One composer for
+ * both, rather than a caller splitting the joined string back apart on its
+ * separator.
+ */
+export function formatAppointmentDay(scheduledAt: string, now: Date = new Date()): string {
   const d = new Date(scheduledAt);
   if (Number.isNaN(d.getTime())) return '';
-  const startOfToday = startOfLocalDay(now);
-  const days = Math.round((startOfLocalDay(d).getTime() - startOfToday.getTime()) / 86_400_000);
+  const days = localDayDelta(d, now);
   let stem: string;
   if (days === 0) stem = 'Today';
   else if (days === 1) stem = 'Tomorrow';
@@ -288,13 +229,33 @@ export function formatAppointmentWhen(scheduledAt: string, now: Date = new Date(
     const stamp = `${WEEKDAYS[d.getDay()].slice(0, 3)}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
     stem = d.getFullYear() === now.getFullYear() ? stamp : `${stamp}, ${d.getFullYear()}`;
   }
-  return appointmentTimeKnown(scheduledAt) ? `${stem} · ${formatClockTime(d)}` : stem;
+  return stem;
 }
 
 function startOfLocalDay(d: Date): Date {
   const out = new Date(d.getTime());
   out.setHours(0, 0, 0, 0);
   return out;
+}
+
+/**
+ * Whole LOCAL calendar days from `now`'s day to `when`'s day. Negative in the past.
+ *
+ * ONE definition, shared by the label above and by the Home strip's window
+ * (`resolveStripPhase`), and the sharing is the point rather than the tidiness: the
+ * strip renders "Vet visit on Tuesday" from the first and decides whether to render
+ * at all from the second. Two copies of this arithmetic could disagree on a DST
+ * boundary and put "Today" on a strip that had already left, or drop a strip whose
+ * own label still said tomorrow.
+ *
+ * `Math.round` over two local midnights, not a raw division: a DST transition inside
+ * the span makes the difference 23 or 25 hours, and rounding absorbs the hour. Both
+ * ends are normalised the same way, so the skip cancels.
+ */
+function localDayDelta(when: Date, now: Date): number {
+  return Math.round(
+    (startOfLocalDay(when).getTime() - startOfLocalDay(now).getTime()) / 86_400_000,
+  );
 }
 
 /** 'Riverside Animal Hospital · Dr. Chen · recheck' — whatever of the three exists. */
@@ -380,19 +341,25 @@ export interface AppointmentView {
   stamp: DayStamp | null;
   /** 'Tuesday · 3:00 pm' */
   when: string;
+  /** 'Tuesday' — the day half alone, for a sentence that cannot carry the clock. */
+  day: string;
   /** 'Riverside Animal Hospital · Dr. Chen · recheck' */
   where: string;
   /**
-   * The appointment's day is TODAY — the day its two doors mean anything (CUL-902).
+   * The appointment's day is TODAY — the day its two in-visit doors mean anything
+   * (CUL-902).
    *
-   * "At the vet" is a room the owner is not in yet, and "How did it go?" is a question
-   * about a thing that has not happened. Offering either on a recheck booked six weeks
-   * out is a mis-tap that CONSUMES the booking: the save marks the appointment
-   * attended, so it leaves Home and *Next* and there is no way back before VV-6's
-   * delete (CUL-939). `next` is unbounded into the future, so the doors are gated on
-   * this rather than on the list they sit in.
+   * "At the vet" is a room the owner is not in yet, and "How did it go?" is a
+   * question about a thing that has not happened. Offering either on a recheck booked
+   * six weeks out is a mis-tap that CONSUMES the booking: the save marks the
+   * appointment attended, so it leaves Home and *Next* and there is no way back
+   * before VV-6's delete (CUL-939). `next` is unbounded into the future, so the doors
+   * are gated on this rather than on the list they sit in.
    *
-   * *Get ready* is the door a future appointment wants, and it is VV-5's.
+   * Distinct from VV-5's strip window (`resolveStripPhase`), which spans five days
+   * either side: that one decides whether Home CARRIES the appointment, this one
+   * whether the visit's own doors are live. *Get ready* is the door a future
+   * appointment wants, and it is VV-5's.
    */
   isToday: boolean;
 }
@@ -452,16 +419,16 @@ export function buildAppointmentView(
     petId: appointment.pet_id,
     stamp: dayStampFromInstant(appointment.scheduled_at),
     when: formatAppointmentWhen(appointment.scheduled_at, now),
+    day: formatAppointmentDay(appointment.scheduled_at, now),
+    // Compared as LOCAL day keys. The stored value is an instant, so the day is the
+    // reading device's calendar day — the same rule `readVetVisitsHome`'s day split
+    // uses, and never a text compare of two ISO spellings (C-40).
+    isToday: localDateKey(new Date(appointment.scheduled_at)) === localDateKey(now),
     where: formatWhereLine({
       clinicName: appointment.clinic_name,
       vetName: appointment.vet_name,
       reason: appointment.reason,
     }),
-    // Compared as LOCAL day keys. The stored value is an instant, so the day is the
-    // reading device's calendar day — the same rule `readVetVisitsHome`'s day split
-    // uses, and never a text compare of two ISO spellings (C-40).
-    isToday: dayStampFromInstant(appointment.scheduled_at) !== null
-      && localDateKey(new Date(appointment.scheduled_at)) === localDateKey(now),
   };
 }
 
@@ -534,8 +501,20 @@ function lastVisitLine(last: VisitListRow, now: Date): string {
 const VISIT_COLUMNS =
   'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at';
 const APPOINTMENT_COLUMNS =
-  'id, pet_id, scheduled_at, clinic_name, vet_name, reason, notes_draft, questions, ' +
-  'vet_visit_id, cancelled_at, deleted_at';
+  'id, pet_id, scheduled_at, clinic_name, vet_name, reason, vet_visit_id, cancelled_at, deleted_at';
+
+/**
+ * What makes a booking LIVE: not deleted, not cancelled, and not already logged.
+ *
+ * Named once because two reads ask it — the Pet tab's (`readVetVisitsHome`, which
+ * needs every row) and Home's (`readHomeAppointment`, which needs at most one). They
+ * are two PROJECTIONS of one population, never two definitions of it: a booking that
+ * disappeared from Home because the visit was logged must be gone from the Pet tab's
+ * *Next* for exactly the same reason, and AC 3's "disappears when the visit is logged
+ * or the appointment is cancelled" is this clause and nothing else.
+ */
+const LIVE_APPOINTMENT_SQL =
+  'deleted_at IS NULL AND cancelled_at IS NULL AND vet_visit_id IS NULL';
 
 /**
  * Everything the card and the list need, for ONE pet.
@@ -562,10 +541,7 @@ export async function readVetVisitsHome(petId: string, now: Date = new Date()): 
   // today is still today's appointment at 5pm.
   const appointments = await db.getAllAsync<LocalVetAppointment>(
     `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
-      WHERE pet_id = ?
-        AND deleted_at IS NULL
-        AND cancelled_at IS NULL
-        AND vet_visit_id IS NULL
+      WHERE pet_id = ? AND ${LIVE_APPOINTMENT_SQL}
       ORDER BY scheduled_at ASC`,
     [petId],
   );
@@ -661,7 +637,7 @@ export interface VetVisitDetail {
   links: VisitLinks;
   /** The questions prepared for this visit, read back through the appointment that
    *  names it (CUL-902). Empty for a visit logged with no appointment behind it. */
-  questions: VisitQuestion[];
+  questions: AppointmentQuestion[];
   medications: Array<{ id: string; drugName: string; doseAmount: string | null; status: string }>;
   trials: Array<{ id: string; label: string; status: string }>;
   documents: Array<{ groupId: string; title: string | null; kind: string; documentDate: string | null }>;
@@ -720,7 +696,7 @@ export async function readVetVisitDetail(visitId: string): Promise<VetVisitDetai
 
   return {
     visit,
-    questions: parseQuestions(appointment[0]?.questions ?? null),
+    questions: parseAppointmentQuestions(appointment[0]?.questions ?? null),
     links: {
       medicationNames: medications.map((m) => m.drug_name),
       trialCount: trials.length,
@@ -886,6 +862,264 @@ export function localDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// ── The Home strip (CUL-903 VV-5; spec §4.1 A2 / A2b, mock A2 / A2b) ────────────
+
+/**
+ * How long before an appointment Home carries it — five days before, through the
+ * day of (six calendar days on screen).
+ *
+ * The PM ruled "fine anywhere between 3 and 7" (R-window), so this is one tunable
+ * constant rather than a number spread across a predicate and a label.
+ *
+ * It bounds the AFTER-the-day ask too, and deliberately the same number: the
+ * Designer's condition on this strip is that it asks once and leaves, "never
+ * furniture for a month". A booking whose day passed more than five days ago stops
+ * asking on Home and lives only in the visits list's *Waiting on you* bucket (VV-2),
+ * which is a surface the owner goes to rather than one that comes to them. The cost
+ * is stated: an owner who does not open the app for a week is never asked about that
+ * booking on Home. The row is not lost — it is on the list, which is what that bucket
+ * was built for.
+ */
+export const APPOINTMENT_WINDOW_DAYS = 5;
+
+/** `upcoming` — the visit is ahead or today. `after` — its day has passed (mock A2b). */
+export type StripPhase = 'upcoming' | 'after';
+
+/**
+ * Which face the strip wears for this booking, or null when Home should not carry
+ * it at all. Pure and exported so the window is testable without a database.
+ */
+export function resolveStripPhase(scheduledAt: string, now: Date = new Date()): StripPhase | null {
+  const d = new Date(scheduledAt);
+  if (Number.isNaN(d.getTime())) return null;
+  const delta = localDayDelta(d, now);
+  if (delta > APPOINTMENT_WINDOW_DAYS) return null;
+  if (delta >= 0) return 'upcoming';
+  return delta >= -APPOINTMENT_WINDOW_DAYS ? 'after' : null;
+}
+
+export interface HomeAppointment {
+  id: string;
+  petId: string;
+  phase: StripPhase;
+  view: AppointmentView;
+}
+
+/**
+ * The one booking Home should carry for this pet, or null.
+ *
+ * An UPCOMING booking always wins over a passed one. An owner with both is being
+ * asked "what is next" by a surface that has room for one answer, and a visit they
+ * are about to have outranks one they may not have had — the passed row keeps its
+ * place on the list either way.
+ *
+ * Instants are compared through `resolveStripPhase`, which PARSES both sides. Never
+ * a lexical comparison of the two ISO spellings: a local write produces
+ * `…T04:00:00.000Z` and PostgREST hands the same instant back as `…T04:00:00+00:00`,
+ * and the second sorts before the first at the exact-equality second — which here is
+ * local midnight, the no-time sentinel (C-40, and the bug VV-2's adversarial pass
+ * found in `readVetVisitsHome`).
+ */
+export async function readHomeAppointment(
+  petId: string,
+  now: Date = new Date(),
+): Promise<HomeAppointment | null> {
+  const rows = await getDb().getAllAsync<LocalVetAppointment>(
+    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
+      WHERE pet_id = ? AND ${LIVE_APPOINTMENT_SQL}
+      ORDER BY scheduled_at ASC`,
+    [petId],
+  );
+
+  const dated = rows
+    .map((a) => ({ a, phase: resolveStripPhase(a.scheduled_at, now) }))
+    .filter((r): r is { a: LocalVetAppointment; phase: StripPhase } => r.phase !== null);
+
+  // Ascending by `scheduled_at`, so the first `upcoming` is the soonest and the last
+  // `after` is the most recently passed — the one the owner is actually thinking about.
+  const upcoming = dated.find((r) => r.phase === 'upcoming');
+  const chosen = upcoming ?? [...dated].reverse().find((r) => r.phase === 'after');
+  if (!chosen) return null;
+
+  return {
+    id: chosen.a.id,
+    petId: chosen.a.pet_id,
+    phase: chosen.phase,
+    view: buildAppointmentView(chosen.a, now),
+  };
+}
+
+/**
+ * An appointment plus its questions.
+ *
+ * `questions` is off `LocalVetAppointment` deliberately: the card and the list never
+ * read it (`APPOINTMENT_COLUMNS` does not select it), and a column on the shared row
+ * type that half the reads do not populate is a field every caller has to remember is
+ * sometimes a lie. Get ready is the one surface that edits it, so it gets the wider
+ * shape.
+ */
+export interface AppointmentDetail extends LocalVetAppointment {
+  /** The raw JSON TEXT — parse with `parseAppointmentQuestions`. */
+  questions: string | null;
+  /**
+   * The C1 in-room draft (CUL-902), off `LocalVetAppointment` for the reason above:
+   * the card and the list never read it, and a column the narrow reads leave
+   * undefined is a field every caller has to remember is sometimes a lie. "At the
+   * vet" and "How did it go?" are the surfaces that edit it, and they read this shape.
+   */
+  notes_draft: string | null;
+}
+
+/** One appointment by id, for Get ready. Null for a missing, deleted or cancelled row. */
+export async function readAppointmentById(appointmentId: string): Promise<AppointmentDetail | null> {
+  const rows = await getDb().getAllAsync<AppointmentDetail>(
+    `SELECT ${APPOINTMENT_COLUMNS}, questions, notes_draft FROM vet_appointments
+      WHERE id = ? AND deleted_at IS NULL AND cancelled_at IS NULL LIMIT 1`,
+    [appointmentId],
+  );
+  return rows[0] ?? null;
+}
+
+// ── The owner's questions (spec §4.1 B1 "Your questions") ───────────────────────
+
+/**
+ * One prepared question. The shape migration 066 documents on the JSONB column:
+ * `[{id, text, source, source_ref, asked_at}]`.
+ *
+ * `source` is `'owner'` on everything v1 writes — the record-derived rows live in
+ * "Worth raising" and are DERIVED AT RENDER from their own sources, never copied in
+ * here. Copying one would make this column a second, staler home for a claim the
+ * record already owns (CUL-746: one population, one owner). The member exists so
+ * VV-4's ticks and a future v2 can tell them apart without a migration.
+ *
+ * `asked_at` is VV-4's — the tick in the exam room. Carried through this module
+ * untouched so an edit here can never erase one.
+ */
+export interface AppointmentQuestion {
+  id: string;
+  text: string;
+  source: 'owner' | 'record';
+  source_ref?: string | null;
+  asked_at?: string | null;
+}
+
+/**
+ * The per-question and per-list bounds, enforced AT ENTRY.
+ *
+ * `lib/sync.ts`'s `parseQuestionsForPush` already refuses a list too large for
+ * migration 066's `length(questions::text) <= 65536` CHECK — because a CHECK
+ * violation is a terminal `23514` that quarantines the whole appointment, losing the
+ * scheduled time and the in-room draft along with the questions. Its own header says
+ * what is missing: *"When the editor ships it should bound the list at ENTRY too,
+ * where the owner can see it happen — a silent drop here is a backstop, never the
+ * UX."* This is that bound, and the editor landed here rather than in VV-2.
+ *
+ * Both numbers come from the column's own documentation ("≤ a dozen strings") and
+ * from the control: the sheet is one line. Twelve questions of 280 characters is
+ * ~4 KB against a 60,000-character push bound, so the backstop stays unreachable
+ * from this door by a wide margin rather than by a hair.
+ */
+export const QUESTION_MAX_LENGTH = 280;
+export const QUESTION_LIST_MAX = 12;
+
+/**
+ * 'Asked 3 of 4' for the visit as written (CUL-902, mock D3) — null below one
+ * question, where the ratio is noise.
+ *
+ * Never "Asked 0 of 0": a score for something the owner never set out to do.
+ */
+export function askedSummary(questions: ReadonlyArray<AppointmentQuestion>): string | null {
+  if (questions.length === 0) return null;
+  const asked = questions.filter((q) => !!q.asked_at).length;
+  return `Asked ${asked} of ${questions.length}`;
+}
+
+/** The stored TEXT as a list. Anything not this module's shape is dropped, row by row. */
+export function parseAppointmentQuestions(raw: string | null | undefined): AppointmentQuestion[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: AppointmentQuestion[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const q = entry as Record<string, unknown>;
+    if (typeof q.id !== 'string' || typeof q.text !== 'string') continue;
+    if (q.text.trim().length === 0) continue;
+    out.push({
+      id: q.id,
+      text: q.text,
+      source: q.source === 'record' ? 'record' : 'owner',
+      source_ref: typeof q.source_ref === 'string' ? q.source_ref : null,
+      // Preserved rather than defaulted: VV-4 writes it, and this module must not be
+      // able to un-tick a question the owner ticked in the room.
+      asked_at: typeof q.asked_at === 'string' ? q.asked_at : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Write the list. Local-first with `synced = 0`; the queue pushes it.
+ *
+ * THROWS when the UPDATE matched no row. A local `UPDATE … WHERE id = ?` that matches
+ * nothing resolves `{ changes: 0 }` silently, and this surface is an editor over rows
+ * read from the same store — so a row deleted on another device between the read and
+ * the save would otherwise report a save that never happened (C-39, and the four
+ * by-id updates in `lib/db.ts` all throw for the same reason).
+ */
+export async function saveAppointmentQuestions(
+  appointmentId: string,
+  questions: AppointmentQuestion[],
+  now: Date = new Date(),
+): Promise<void> {
+  const res = await getDb().runAsync(
+    // `sync_attempts = 0, sync_error = NULL` is the B-398 write-path contract, and on
+    // THIS table it is the recovery path rather than hygiene: migration 066 puts two
+    // CHECKs on `questions`, and a CHECK violation is a terminal `23514` that
+    // quarantines the row — taking the scheduled time and the in-room draft with it.
+    // An owner-visible edit clearing the quarantine is the only way back in.
+    `UPDATE vet_appointments SET questions = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ? AND deleted_at IS NULL`,
+    [JSON.stringify(questions), now.toISOString(), appointmentId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`vet_appointments ${appointmentId}: questions update matched no row`);
+  }
+}
+
+/**
+ * Cancel the appointment — the strip's *It didn't* (mock A2b) and the visits list's
+ * own control.
+ *
+ * `COALESCE` so a second cancel is a no-op rather than a re-stamp: the timestamp
+ * answers "when did the owner say this did not happen", and answering it twice with
+ * the later of two taps would be the wrong answer. It also keeps `changes` at 1 on
+ * the repeat, so a zero here means one thing only — the row is gone.
+ */
+export async function cancelVetAppointment(
+  appointmentId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  const nowIso = now.toISOString();
+  const res = await getDb().runAsync(
+    // Clears the quarantine too (B-398). A cancel is the LAST edit an owner makes to
+    // an appointment, so if this one did not clear it, a row quarantined by an earlier
+    // bad push would stay quarantined forever — cancelled on this device and still
+    // upcoming on every other one.
+    `UPDATE vet_appointments SET cancelled_at = COALESCE(cancelled_at, ?), updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ? AND deleted_at IS NULL`,
+    [nowIso, nowIso, appointmentId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`vet_appointments ${appointmentId}: cancel matched no row`);
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════════════
 // VV-4 — the visit itself (CUL-902; spec §4.1 C1/D1/D2/D3)
 //
@@ -896,21 +1130,11 @@ export function localDateKey(d: Date): string {
 // app/vet-visits/ and components/vetvisits/ name no table at all.
 // ════════════════════════════════════════════════════════════════════════════════
 
-/** One appointment by id, live rows only. Null for a missing, cancelled or deleted one. */
-export async function readAppointment(appointmentId: string): Promise<LocalVetAppointment | null> {
-  const rows = await getDb().getAllAsync<LocalVetAppointment>(
-    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
-      WHERE id = ? AND deleted_at IS NULL AND cancelled_at IS NULL LIMIT 1`,
-    [appointmentId],
-  );
-  return rows[0] ?? null;
-}
-
 /** The appointment a visit was logged from, if there was one — the visit's route to
  *  its prepared questions (see `VisitQuestion`). Null for a visit logged cold. */
-export async function readAppointmentForVisit(visitId: string): Promise<LocalVetAppointment | null> {
-  const rows = await getDb().getAllAsync<LocalVetAppointment>(
-    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
+export async function readAppointmentForVisit(visitId: string): Promise<AppointmentDetail | null> {
+  const rows = await getDb().getAllAsync<AppointmentDetail>(
+    `SELECT ${APPOINTMENT_COLUMNS}, questions, notes_draft FROM vet_appointments
       WHERE vet_visit_id = ? AND deleted_at IS NULL LIMIT 1`,
     [visitId],
   );
@@ -949,36 +1173,31 @@ export async function saveNotesDraft(appointmentId: string, draft: string): Prom
 /**
  * Tick or un-tick a prepared question, returning the list as it now stands.
  *
- * Read-modify-write on the JSON column, which is safe here because the only writer
- * is the screen in the owner's hand; the alternative — a questions child table — was
- * ruled against in §5.1 for a list of a dozen strings nothing counts across visits.
+ * Read-modify-write on the JSON column, THROUGH VV-5's reader and writer rather than
+ * a second pair of its own. That is the whole convergence: `parseAppointmentQuestions`
+ * already preserves `asked_at` "so an edit here can never erase one", and
+ * `saveAppointmentQuestions` already carries the bound, the zero-row throw and the
+ * quarantine-clearing write. A second parse and a second UPDATE over one column would
+ * be exactly the "second, staler home" that module's header refuses.
  *
  * Un-ticking is supported and is not symmetry for its own sake: the tick is a
- * fingertip target in a room where the owner is holding an animal, and a mis-tap
- * that cannot be undone would leave the record asserting a question was asked.
+ * fingertip target in a room where the owner is holding an animal, and a mis-tap that
+ * cannot be undone would leave the record asserting a question was asked.
  */
 export async function setQuestionAsked(
   appointmentId: string,
   questionId: string,
   asked: boolean,
   now: Date = new Date(),
-): Promise<VisitQuestion[]> {
-  const appointment = await readAppointment(appointmentId);
+): Promise<AppointmentQuestion[]> {
+  const appointment = await readAppointmentById(appointmentId);
   if (!appointment) {
     throw new Error(`setQuestionAsked: no appointment row matched id ${appointmentId}`);
   }
-  const next = parseQuestions(appointment.questions).map((q) =>
+  const next = parseAppointmentQuestions(appointment.questions).map((q) =>
     q.id === questionId ? { ...q, asked_at: asked ? now.toISOString() : null } : q,
   );
-  const res = await getDb().runAsync(
-    `UPDATE vet_appointments
-        SET questions = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
-      WHERE id = ?`,
-    [serializeQuestions(next), now.toISOString(), appointmentId],
-  );
-  if (res.changes === 0) {
-    throw new Error(`setQuestionAsked: no appointment row matched id ${appointmentId}`);
-  }
+  await saveAppointmentQuestions(appointmentId, next, now);
   return next;
 }
 
@@ -1155,7 +1374,7 @@ export interface VisitFromAppointmentInput {
   /** The appointment ROW — `pet_id` is taken from here and never from the store's
    *  active pet (AC 11). Passing the row rather than an id is the point: a caller
    *  cannot supply a pet and an appointment that disagree. */
-  appointment: Pick<LocalVetAppointment, 'id' | 'pet_id' | 'clinic_name' | 'vet_name' | 'reason' | 'notes_draft'>;
+  appointment: Pick<AppointmentDetail, 'id' | 'pet_id' | 'clinic_name' | 'vet_name' | 'reason' | 'notes_draft'>;
   /** 'YYYY-MM-DD', the local calendar day of the visit (never `toISOString()` — the
    *  CUL-946 bug on the screen this replaces). */
   visitedAt: string;

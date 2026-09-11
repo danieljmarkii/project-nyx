@@ -198,6 +198,7 @@ describe('the appointment’s two doors belong to its own day', () => {
       petId: 'pet-a',
       stamp: { day: '28', month: 'Oct' },
       when: 'Wed, Oct 28',
+      day: 'Wed, Oct 28',
       where: 'Riverside Animal Hospital · recheck',
       isToday,
     };
@@ -241,6 +242,7 @@ describe('a booking whose day has passed', () => {
           petId: 'pet-a',
           stamp: { day: '8', month: 'Sep' },
           when: 'Mon, Sep 8',
+          day: 'Mon, Sep 8',
           where: 'Riverside Animal Hospital · recheck',
           isToday: false,
         },
@@ -261,7 +263,7 @@ describe('a booking whose day has passed', () => {
     mockHome = {
       next: null,
       awaiting: [
-        { id: 'a-past', petId: 'pet-a', stamp: null, when: 'Mon, Sep 8', where: '', isToday: false },
+        { id: 'a-past', petId: 'pet-a', stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '', isToday: false },
       ],
       visits: [],
     };

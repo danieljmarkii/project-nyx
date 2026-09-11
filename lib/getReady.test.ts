@@ -1,0 +1,774 @@
+// The env boundary: `lib/rundown` reaches `lib/supabase` through the analytics chain,
+// and that module throws at IMPORT when the anon key is unset. Nothing under test
+// calls it — `buildWorthRaising` is pure and takes every input — so a bare stub is
+// enough. Declared before the imports because `jest.mock` is hoisted anyway, and
+// writing it here keeps the reason next to the thing it explains.
+jest.mock('./supabase', () => ({ supabase: {} }));
+
+import { buildWorthRaising, WORTH_RAISING_CAP } from './getReady';
+import { medHistoryCutoffMs } from './rundown';
+import type { WorthRaisingInput } from './getReady';
+import type { CachedFinding, SignalFinding } from './signal';
+import type { Rundown, RundownTile } from './rundown';
+import type { MedicationCourse, MedicationCourseEnd } from './medicationHistory';
+import type { TrialStripModel } from './dietTrialCard';
+
+// "Worth raising" — the quoting rules, the cap, and the two never-say invariants
+// (CUL-903 VV-5; spec §7 AC 5).
+//
+// The subject here is not "does it render a list". It is the four things AC 5 makes
+// this module answerable for: every row is a VERBATIM quote of a sentence the app
+// already states, a safety finding leads and is never capped away, a quiet record
+// gets no section at all, and no row turns a decline into a taste.
+
+const DAY = 86_400_000;
+// C-29 on the TIME axis: anchored to the clock rather than to an absolute date, so
+// the 12-month course window is measured from the run rather than from a literal that
+// ages into a different answer on a calendar boundary.
+const NOW = Date.now();
+
+/** The drug-name cache, so a dose-derived course can be named (`resolveCourseName`). */
+const NAMES = new Map([['item-x', { generic: null, brand: 'Cerenia' }]]);
+
+const weighIn = (daysAgo: number) => ({
+  weightKg: 4.1,
+  occurredAt: new Date(NOW - daysAgo * DAY).toISOString(),
+});
+
+function tile(over: Partial<RundownTile> = {}): RundownTile {
+  return { key: 'weight', label: 'Weight', value: '4.0–4.2 kg', tap: null, ...over };
+}
+
+/**
+ * The QUIET default, and it is shaped the way `buildRundown` actually produces one
+ * (C-35: a fixture production cannot create is green over nothing).
+ *
+ * Specifically the weight half: a tile whose value is a RANGE always comes with
+ * readings behind it, and `empty` is set on exactly the branch that reads "No
+ * weigh-ins logged". The first cut of this file paired a range with `weighIns: []`,
+ * a combination the builder cannot emit — and it silently added a weight row to
+ * every case in the file, which is how the module's own gate turned out to be
+ * asking the readings while printing the tile.
+ */
+function rundown(over: Partial<Rundown> = {}): Rundown {
+  return {
+    petName: 'Mochi',
+    generatedAtMs: NOW,
+    tiles: [tile()],
+    pastMedications: [],
+    facts: {
+      courses: [],
+      medItemNames: NAMES,
+      lastVisitAt: null,
+      weighIns: [{ weightKg: 4.1, occurredAt: new Date(NOW - 5 * DAY).toISOString() }],
+    },
+    ...over,
+  };
+}
+
+function finding(over: Partial<CachedFinding> & { text: string; rank: number }): CachedFinding {
+  return {
+    rank: over.rank,
+    text: over.text,
+    finding:
+      over.finding ??
+      ({
+        type: 'reflection',
+        priorityClass: 'insight',
+        symptomType: 'vomit',
+        currentCount: 2,
+        priorCount: 5,
+        direction: 'improving',
+        windowDays: 30,
+      } satisfies SignalFinding),
+  };
+}
+
+const SAFETY = {
+  type: 'intake_decline',
+  priorityClass: 'safety',
+  trigger: 'consecutive_low',
+  species: 'cat',
+  daysBelowBaseline: 3,
+  refusedFoodLabel: null,
+  ratedMealsConsidered: 8,
+} satisfies SignalFinding;
+
+function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
+  return {
+    findings: [],
+    suppressTrialResponse: false,
+    trialStrip: null,
+    intakeDeclineHeadline: null,
+    rundown: rundown(),
+    nowMs: NOW,
+    ...over,
+  };
+}
+
+/**
+ * A course the way `deriveMedicationCourses` can actually emit one INTO
+ * `splitPastCourses().shown` — which is narrower than it looks, and the narrowness is
+ * the whole of the course row's design (C-35).
+ *
+ * `shown` excludes active courses, and for a REGIMEN `end.kind === 'ended'` ⟺
+ * `status ∈ {completed, stopped}` ⟺ `!isActive`. So a shown regimen ALWAYS carries an
+ * owner-recorded end, and the first cut's fixture — `source: 'regimen'`, `isActive:
+ * false`, `end: {kind:'none'}` — is a combination the derivation cannot produce. Two
+ * tests were green over it while the production row rendered for nobody.
+ *
+ * A dose-derived course is the only thing the H1 register can ever show as "No end
+ * recorded", so that is what this builds.
+ */
+function course(over: Partial<MedicationCourse> = {}): MedicationCourse {
+  const lastDose = new Date(NOW - 7 * DAY).toISOString();
+  return {
+    key: 'item:item-x',
+    source: 'doses',
+    regimenId: null,
+    medicationItemId: 'item-x',
+    drugName: null,
+    isActive: false,
+    tally: { given: 9, partial: 0, missed: 0, refused: 0, unrated: 0 },
+    dosesLogged: 9,
+    firstDoseIso: new Date(NOW - 40 * DAY).toISOString(),
+    lastDoseIso: lastDose,
+    firstDoseDay: new Date(NOW - 40 * DAY).toISOString().slice(0, 10),
+    lastDoseDay: lastDose.slice(0, 10),
+    startedAt: new Date(NOW - 40 * DAY).toISOString().slice(0, 10),
+    dosesPerDay: null,
+    scheduleNotes: null,
+    route: null,
+    doseAmount: null,
+    plannedDoses: null,
+    targetDurationDays: null,
+    runDays: null,
+    // The REAL union member. The first cut wrote `{ kind: 'no_end_recorded' }` behind
+    // an `as`, which is not a member at all — `end.kind !== 'ended'` happened to be
+    // true for it, so the test passed over a shape `deriveMedicationCourses` cannot
+    // produce. The cast is what hid it; `satisfies` is what would not have.
+    end: { kind: 'none', lastDoseIso: lastDose } satisfies MedicationCourseEnd,
+    ...over,
+  };
+}
+
+describe('a row is a QUOTE, never a new claim', () => {
+  it("renders the Signal's phrased sentence character-for-character", () => {
+    const text = 'Mochi has finished 2 of 8 meals since Sunday.';
+    const { rows } = buildWorthRaising(input({ findings: [finding({ text, rank: 1 })] }));
+    expect(rows).toHaveLength(1);
+    // Not `toContain`, not a regex: the Change Contract's count-anchored sentence is
+    // the unit, and re-wrapping it — "The overnight pattern — …" — would be this
+    // module making a claim the engine did not.
+    expect(rows[0].text).toBe(text);
+    expect(rows[0].sourceLabel).toBe('from the Signal');
+  });
+
+  it("quotes the trial strip's own header and line, not a re-phrasing", () => {
+    const strip: TrialStripModel = {
+      header: 'Diet trial · day 23 of 56',
+      line: 'Hydrolyzed · ends Oct 12 · 41 of 48 meals finished',
+      progressFraction: 0.41,
+      trialResponseLine: null,
+    };
+    const { rows } = buildWorthRaising(input({ trialStrip: strip }));
+    expect(rows[0].text).toBe(strip.header);
+    expect(rows[0].detail).toBe(strip.line);
+  });
+
+  it("quotes the course's H1 register — silence reads 'No end recorded', never 'completed'", () => {
+    const { rows } = buildWorthRaising(
+      input({ rundown: rundown({ facts: { courses: [course()], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
+    );
+    expect(rows[0].text).toContain('Cerenia');
+    expect(rows[0].text).toContain('9 doses');
+    expect(rows[0].detail).toBe('No end recorded');
+    expect(rows[0].sourceLabel).toBe('from the course');
+  });
+
+  it('never raises a course the owner DID end — that question is answered', () => {
+    // A REGIMEN, because only a regimen can carry an ending: `end.kind === 'ended'` is
+    // constructed from `status ∈ {completed, stopped}`, and a dose-derived course has no
+    // status at all. This is the shape `splitPastCourses().shown` is mostly full of.
+    const ended = course({
+      key: 'r1',
+      source: 'regimen',
+      regimenId: 'r1',
+      drugName: 'Prednisolone',
+      medicationItemId: null,
+      end: {
+        kind: 'ended',
+        status: 'completed',
+        endedAt: new Date(NOW - 5 * DAY).toISOString().slice(0, 10),
+      } satisfies MedicationCourseEnd,
+    });
+    const { rows } = buildWorthRaising(
+      input({ rundown: rundown({ facts: { courses: [ended], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe('a safety finding leads, and is never capped away', () => {
+  it('puts a safety finding above a benign one the engine ranked higher', () => {
+    // The engine already ranks safety first, so this only diverges if it ever did
+    // not — and AC 5's "a safety finding leads" is the requirement that wins there.
+    const { rows } = buildWorthRaising(
+      input({
+        findings: [
+          finding({ text: 'A benign observation.', rank: 1 }),
+          finding({ text: 'Mochi has finished 2 of 8 meals since Sunday.', rank: 2, finding: SAFETY }),
+        ],
+      }),
+    );
+    expect(rows[0].text).toBe('Mochi has finished 2 of 8 meals since Sunday.');
+    expect(rows[0].isSafety).toBe(true);
+  });
+
+  it('renders SIX safety findings even though the cap is four', () => {
+    // Principle 3: safety insights "always lead and are never dropped to honor a
+    // layout cap". The Signal's findings are unbounded server-side, so this is
+    // reachable rather than theoretical.
+    const six = Array.from({ length: 6 }, (_, i) =>
+      finding({ text: `Safety ${i}.`, rank: i + 1, finding: SAFETY }),
+    );
+    const { rows } = buildWorthRaising(input({ findings: six }));
+    expect(rows.filter((r) => r.isSafety)).toHaveLength(6);
+    expect(rows.length).toBeGreaterThan(WORTH_RAISING_CAP);
+  });
+
+  it('caps the OPTIONAL rows at four', () => {
+    const benign = Array.from({ length: 9 }, (_, i) => finding({ text: `Benign ${i}.`, rank: i + 1 }));
+    const { rows } = buildWorthRaising(input({ findings: benign }));
+    expect(rows).toHaveLength(WORTH_RAISING_CAP);
+  });
+
+  it('keeps the trial above a crowd of benign Signal findings', () => {
+    // The case this ordering exists for: a wedge owner at a RECHECK for the trial,
+    // whose Signal happens to carry four benign findings. Signal-first would render
+    // four symptom sentences and never mention the trial — at the appointment the
+    // trial is the subject of.
+    const benign = Array.from({ length: 4 }, (_, i) => finding({ text: `Benign ${i}.`, rank: i + 1 }));
+    const strip: TrialStripModel = {
+      header: 'Diet trial · day 23 of 56',
+      line: null,
+      progressFraction: 0.41,
+      trialResponseLine: null,
+    };
+    const { rows } = buildWorthRaising(input({ findings: benign, trialStrip: strip }));
+    expect(rows.map((r) => r.source)).toContain('trial');
+    expect(rows[0].source).toBe('trial');
+  });
+});
+
+describe('the adversarial counterexample the issue names', () => {
+  // "a record with a stood-down chronicity card AND a fresh intake decline → the
+  // decline leads, the stood-down card is quoted in its own stand-down wording, no
+  // count is re-derived, no row says picky."
+  const STOOD_DOWN = {
+    type: 'stood_down',
+    priorityClass: 'insight',
+    symptomType: 'vomit',
+    recencyDays: 14,
+    tier: 'standard',
+    lastEpisodeIso: new Date(NOW - 20 * DAY).toISOString(),
+    // Minted YESTERDAY, so `stoodDownExpired` (seven days) cannot quietly remove this
+    // row and make the assertion below true for the wrong reason.
+    stoodDownAt: new Date(NOW - 1 * DAY).toISOString(),
+    formerRank: 2,
+  } satisfies SignalFinding;
+
+  const standDownText = 'No vomiting logged for Mochi in 14 days.';
+  const declineText = 'Mochi has finished 2 of 8 meals since Sunday.';
+
+  const built = () =>
+    buildWorthRaising(
+      input({
+        findings: [
+          finding({ text: standDownText, rank: 1, finding: STOOD_DOWN }),
+          finding({ text: declineText, rank: 2, finding: SAFETY }),
+        ],
+      }),
+    );
+
+  it('the decline leads', () => {
+    expect(built().rows[0].text).toBe(declineText);
+  });
+
+  it("the stood-down card is quoted in its own stand-down wording", () => {
+    const standDown = built().rows.find((r) => r.text === standDownText);
+    expect(standDown).toBeDefined();
+    expect(standDown?.text).toBe(standDownText);
+  });
+
+  it('no row says picky, fussy or preference', () => {
+    for (const row of built().rows) {
+      expect(row.text).not.toMatch(/picky|fussy|preference/i);
+    }
+  });
+});
+
+describe('the preference screen — and its deliberate asymmetry', () => {
+  it('refuses a COMPOSED row that turns a decline into a taste', () => {
+    // Owner free-text reaches a composed row through the drug name. Dropping it is
+    // safe here and only here: an assembled row is never a safety statement.
+    const named = course({ drugName: 'Picky-Chew' });
+    const { rows } = buildWorthRaising(
+      input({ rundown: rundown({ facts: { courses: [named], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(5)] } }) }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('does NOT edit or drop a QUOTED Signal sentence, even one carrying the word', () => {
+    // The asymmetry is the whole design. AC 5 requires the Signal verbatim, and a
+    // silent drop here could remove a SAFETY statement from the list — the one
+    // outcome this module may not cause. A bad Signal string is a bug in
+    // `generate-signal/phrasing.ts`, and that is where it gets fixed.
+    const text = 'Mochi has been picky about 3 of 8 meals.';
+    const { rows } = buildWorthRaising(
+      input({ findings: [finding({ text, rank: 1, finding: SAFETY })] }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toBe(text);
+  });
+});
+
+describe('a quiet record gets NO section — and a failed read is not a quiet record', () => {
+  it('renders no rows at all when nothing is standing', () => {
+    const { rows, signalUnavailable } = buildWorthRaising(input({ findings: [] }));
+    expect(rows).toEqual([]);
+    expect(signalUnavailable).toBe(false);
+  });
+
+  it('flags an unreadable Signal cache rather than reporting an empty one', () => {
+    // `null` is "we could not look"; `[]` is "nothing standing". An owner who cannot
+    // tell them apart reads the first as the second and walks into the room reassured.
+    const { signalUnavailable } = buildWorthRaising(input({ findings: null }));
+    expect(signalUnavailable).toBe(true);
+  });
+
+  it('still builds the LOCAL rows when the Signal could not be read', () => {
+    // Offline, everything but the Signal came from SQLite and is complete.
+    const strip: TrialStripModel = {
+      header: 'Diet trial · day 23 of 56',
+      line: null,
+      progressFraction: 0.41,
+      trialResponseLine: null,
+    };
+    const { rows, signalUnavailable } = buildWorthRaising(input({ findings: null, trialStrip: strip }));
+    expect(signalUnavailable).toBe(true);
+    expect(rows.map((r) => r.source)).toEqual(['trial']);
+  });
+});
+
+describe('the weight gap — a DATE, never an invented duration', () => {
+  it("raises 'No weigh-ins logged' — the rundown's own sentence — when there are none", () => {
+    const { rows } = buildWorthRaising(
+      input({ rundown: rundown({ tiles: [tile({ value: 'No weigh-ins logged', empty: true })] }) }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toBe('No weigh-ins logged');
+    expect(rows[0].detail).toBeNull();
+  });
+
+  it('raises the gap when the vet’s own number is still the newest one', () => {
+    const lastVisitAt = new Date(NOW - 30 * DAY).toISOString().slice(0, 10);
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(60)] },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source).toBe('weight');
+    // THE CLAIM leads and the range supports it: read aloud, item four of *Worth
+    // raising* used to be "4.0–4.2 kg", a range over up to sixty readings, with the
+    // actual thing worth raising in fine print underneath.
+    expect(rows[0].text).toContain('Last weighed');
+    expect(rows[0].text).toContain('before the last visit');
+    expect(rows[0].detail).toContain('4.0–4.2 kg');
+  });
+
+  it('stays silent when the pet HAS been weighed since the last visit', () => {
+    const lastVisitAt = new Date(NOW - 30 * DAY).toISOString().slice(0, 10);
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(10)] },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('states no DURATION anywhere — a duration would inherit a window this page never opened', () => {
+    const lastVisitAt = new Date(NOW - 30 * DAY).toISOString().slice(0, 10);
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: { courses: [], medItemNames: NAMES, lastVisitAt, weighIns: [weighIn(94)] },
+        }),
+      }),
+    );
+    const printed = `${rows[0].text} ${rows[0].detail ?? ''}`;
+    // C-19: a record-anchored date is free; "no weigh-in in 94 days" is a duration,
+    // and there is no constant in this app that says how long is too long.
+    expect(printed).not.toMatch(/\b\d+\s*(days?|weeks?|months?)\b/i);
+  });
+
+  it('under-fires rather than over-claiming when there is no prior visit', () => {
+    // Gate 2 is answered against the record, and a first-time owner has no visit for
+    // it to be answered against. Silence is the direction this page may be wrong in.
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: { courses: [], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(400)] },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe('the B-789 suppression is inherited, not re-derived', () => {
+  // Only the three fields the suppression switches on are asserted; the rest of
+  // `TrialResponseFinding` is carried as the real shape requires it.
+  const TRIAL_RESPONSE = {
+    type: 'trial_response',
+    priorityClass: 'insight',
+    comparisonDirection: 'fewer_during_trial',
+  } as unknown as SignalFinding;
+
+  const reassuring = finding({ text: 'Vomiting: 0 in the trial’s 20 days · 20 in the 7 weeks before.', rank: 1, finding: TRIAL_RESPONSE });
+
+  it('withholds the reassuring trial card over a not-eating record, exactly as Home does', () => {
+    // The hazard: a cat refusing the prescribed diet from day 1 has uniform-low
+    // intake, so the relative-decline detector never fires. Home withholds this
+    // sentence; re-deriving "the leading findings" here would bring it back as a
+    // thing to RAISE WITH A VET, over a starving cat.
+    const { rows } = buildWorthRaising(input({ findings: [reassuring], suppressTrialResponse: true }));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('lets it through when the record shows no refusal', () => {
+    const { rows } = buildWorthRaising(input({ findings: [reassuring], suppressTrialResponse: false }));
+    expect(rows).toHaveLength(1);
+  });
+});
+
+// ── The adversarial pass's findings, each pinned (CUL-903, 2026-09-11) ────────────
+
+describe('the ordering keeps the Signal band above the two weakest rows', () => {
+  it('does not cap an Established correlation off the page to make room for a weight date', () => {
+    // The measured case: a wedge owner's record with a trial, an unterminated course
+    // and a weight gap. The first ordering gave three of four optional slots to the
+    // trial, the course and the weight, leaving ONE for the whole insight band — and a
+    // stand-down marker ranks at the top of that band, so the app's single most
+    // actionable sentence did not reach the page read aloud in the exam room.
+    const standDown = finding({
+      text: 'No vomiting logged for Mochi in 14 days.',
+      rank: 1,
+      finding: {
+        type: 'stood_down',
+        priorityClass: 'insight',
+        symptomType: 'vomit',
+        recencyDays: 14,
+        tier: 'standard',
+        lastEpisodeIso: new Date(NOW - 20 * DAY).toISOString(),
+        stoodDownAt: new Date(NOW - 1 * DAY).toISOString(),
+        formerRank: 1,
+      } satisfies SignalFinding,
+    });
+    const correlation = finding({
+      text: 'Chicken shows up before Mochi’s vomiting — 7 of 9 episodes.',
+      rank: 2,
+    });
+    const lastVisitAt = new Date(NOW - 40 * DAY).toISOString().slice(0, 10);
+
+    const { rows } = buildWorthRaising(
+      input({
+        findings: [
+          finding({ text: 'Mochi has finished 2 of 6 meals rated since Tuesday.', rank: 0, finding: SAFETY }),
+          standDown,
+          correlation,
+        ],
+        trialStrip: {
+          header: 'Hydrolyzed trial · day 23 of 56',
+          line: 'Royal Canin HP · ends Oct 12 · meals logged on 20 of 23 days',
+          progressFraction: 0.41,
+          trialResponseLine: null,
+        },
+        rundown: rundown({
+          facts: {
+            courses: [course()],
+            medItemNames: NAMES,
+            lastVisitAt,
+            weighIns: [weighIn(200)],
+          },
+        }),
+      }),
+    );
+
+    const texts = rows.map((r) => r.text);
+    expect(texts[0]).toContain('2 of 6 meals'); // safety still leads, above the cap
+    expect(texts).toContain(correlation.text);
+    // The stand-down stays too — the issue's own counterexample expects it, and its
+    // copy refuses to reassure. It is the WEIGHT row that yields.
+    expect(texts).toContain(standDown.text);
+    expect(rows.some((r) => r.source === 'weight')).toBe(false);
+  });
+});
+
+describe('the course row asks a question the record can actually answer', () => {
+  it('ignores a ONE-OFF PRN dose — the row’s question is fabricated about it', () => {
+    // One tablet given yesterday is a PRN dose, and *is she still meant to be on this?*
+    // is not a question the record is posing about it. The boundary is the course's own
+    // count, not a threshold over a window.
+    const oneOff = course({ dosesLogged: 1 });
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: { courses: [oneOff], medItemNames: NAMES, lastVisitAt: null, weighIns: [weighIn(5)] },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('does not let a one-off dose suppress the repeated run behind it', () => {
+    // An earlier cut took the FIRST match of any kind and returned null when it could
+    // not name it, so the row in front masked the one behind — while the rundown's
+    // past-meds block, printed directly below, named them both.
+    const oneOff = course({
+      key: 'item:unspecified',
+      medicationItemId: null,
+      dosesLogged: 1,
+      lastDoseIso: new Date(NOW - 1 * DAY).toISOString(),
+    });
+    const repeated = course({ dosesLogged: 9 });
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: {
+            courses: [oneOff, repeated],
+            medItemNames: NAMES,
+            lastVisitAt: null,
+            weighIns: [weighIn(5)],
+          },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toContain('Cerenia');
+    expect(rows[0].text).toContain('9 doses');
+  });
+});
+
+describe('the weight gate refuses a future "last visit"', () => {
+  it('stays silent when the last visit has not happened yet', () => {
+    // `facts.lastVisitAt` is `readLastVisitDate`'s unbounded MAX(visited_at), which
+    // CLAUDE.md names as undefended — and CUL-946 puts a tomorrow-dated row there for
+    // every visit logged after ~5pm PDT. Without the bound this printed
+    // "Last weighed <today> — before the last visit" over a pet weighed an hour ago.
+    const tomorrow = new Date(NOW + DAY).toISOString().slice(0, 10);
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: {
+            courses: [],
+            medItemNames: NAMES,
+            lastVisitAt: tomorrow,
+            weighIns: [weighIn(0)],
+          },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('still fires for a visit strictly before today', () => {
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          facts: {
+            courses: [],
+            medItemNames: NAMES,
+            lastVisitAt: new Date(NOW - 2 * DAY).toISOString().slice(0, 10),
+            weighIns: [weighIn(30)],
+          },
+        }),
+      }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source).toBe('weight');
+  });
+});
+
+describe('the screen no longer deletes a denominator', () => {
+  it('keeps the trial’s coverage line when the FOOD is named "the kibble she prefers"', () => {
+    // The blanket screen nulled the detail of any tripping row, so a real coverage
+    // denominator vanished over a word in a food name — silently, with no test.
+    const line = 'The kibble she prefers · ends Oct 12 · meals logged on 20 of 23 days';
+    const { rows } = buildWorthRaising(
+      input({
+        trialStrip: {
+          header: 'Hydrolyzed trial · day 23 of 56',
+          line,
+          progressFraction: 0.41,
+          trialResponseLine: null,
+        },
+      }),
+    );
+    expect(rows[0].detail).toBe(line);
+  });
+});
+
+describe('the course window runs on the RUNDOWN’s clock, not a fresh one', () => {
+  it('shows the same courses the block below it shows', () => {
+    // `splitPastCourses` windows at 12 months. Reading `Date.now()` here opened a SECOND
+    // window over the population the rundown block had already split, so Worth raising
+    // could disagree with the rows printed directly under it about which courses exist.
+    //
+    // The first version of this test could not see it: both clocks were `NOW` in every
+    // fixture, so the mutation that swapped them changed nothing. The two are separated
+    // here, and the course is placed in the gap between the two cutoffs — shown under
+    // the rundown's clock, folded under a fresh one.
+    const generatedAtMs = NOW - 30 * DAY;
+    const cutoffRundown = medHistoryCutoffMs(generatedAtMs);
+    const cutoffFresh = medHistoryCutoffMs(NOW);
+    expect(cutoffRundown).toBeLessThan(cutoffFresh); // the premise
+
+    const inTheGap = new Date((cutoffRundown + cutoffFresh) / 2).toISOString();
+    const borderline = course({ drugName: 'Prednisolone', lastDoseIso: inTheGap });
+
+    const { rows } = buildWorthRaising(
+      input({
+        nowMs: NOW,
+        rundown: rundown({
+          generatedAtMs,
+          facts: {
+            courses: [borderline],
+            medItemNames: NAMES,
+            lastVisitAt: null,
+            weighIns: [weighIn(5)],
+          },
+        }),
+      }),
+    );
+    expect(rows.map((r) => r.text)).toEqual([
+      expect.stringContaining('Prednisolone'),
+    ]);
+  });
+});
+
+// ── The RE-RUN's findings (CUL-903, 2026-09-11 — C-19's re-falsification) ─────────
+
+describe('the device’s OWN intake decline is a row, and survives with no network', () => {
+  const HEADLINE = 'Mochi has left most of their food for 3 days.';
+
+  it('renders it as a SAFETY row even when the Signal cache is unreachable', () => {
+    // The measured failure: a cat on day 12 of a hydrolyzed trial whose device holds
+    // `consecutive_low`, `daysBelowBaseline: 3` — the 48-hour feline hepatic-lipidosis
+    // window — with the cache offline. Worth raising rendered ONE row, the trial's day
+    // count, under a gap line asserting the local half of this page was complete.
+    //
+    // `resolveTrialStrip` discards the headline on purpose (on Home the Signal card
+    // above owns it). Get ready has no Signal card above it.
+    const { rows, signalUnavailable } = buildWorthRaising(
+      input({
+        findings: null,
+        intakeDeclineHeadline: HEADLINE,
+        trialStrip: {
+          header: 'Diet trial · day 12 of 42',
+          line: null,
+          progressFraction: 0.28,
+          trialResponseLine: null,
+        },
+      }),
+    );
+    expect(signalUnavailable).toBe(true);
+    expect(rows[0].text).toBe(HEADLINE);
+    expect(rows[0].isSafety).toBe(true);
+    expect(rows[0].source).toBe('intake');
+  });
+
+  it('keeps it above the cap, like any other safety row', () => {
+    const benign = Array.from({ length: 9 }, (_, i) => finding({ text: `Benign ${i}.`, rank: i + 1 }));
+    const { rows } = buildWorthRaising(input({ findings: benign, intakeDeclineHeadline: HEADLINE }));
+    expect(rows[0].text).toBe(HEADLINE);
+    expect(rows.length).toBeGreaterThan(WORTH_RAISING_CAP);
+  });
+
+  it('is absent when the device holds no decline', () => {
+    const { rows } = buildWorthRaising(input({ intakeDeclineHeadline: null }));
+    expect(rows.some((r) => r.source === 'intake')).toBe(false);
+  });
+});
+
+describe('at most ONE stand-down marker', () => {
+  it('does not spend two capped slots saying nothing happened', () => {
+    // `mergeStandDowns` ranks every marker at the TOP of the insight band, so a GI pet
+    // whose chronic vomiting AND chronic loose stool both quieted during the trial — the
+    // wedge case — pushed an Established correlation off a page where it has no second
+    // home. The rundown block has a tile for timing and none for a correlation.
+    const marker = (symptom: 'vomit' | 'diarrhea', rank: number) =>
+      finding({
+        text: `${symptom} has been quiet for 14 days. That isn't an all-clear.`,
+        rank,
+        finding: {
+          type: 'stood_down',
+          priorityClass: 'insight',
+          symptomType: symptom,
+          recencyDays: 14,
+          tier: 'standard',
+          lastEpisodeIso: new Date(NOW - 20 * DAY).toISOString(),
+          stoodDownAt: new Date(NOW - 1 * DAY).toISOString(),
+          formerRank: rank,
+        } satisfies SignalFinding,
+      });
+    const correlation = finding({
+      text: 'Vomiting has followed chicken on 5 of 7 days it was eaten.',
+      rank: 3,
+    });
+
+    const { rows } = buildWorthRaising(
+      input({
+        findings: [marker('vomit', 0), marker('diarrhea', 1), correlation],
+        trialStrip: {
+          header: 'Rabbit trial · day 23 of 56',
+          line: null,
+          progressFraction: 0.41,
+          trialResponseLine: null,
+        },
+      }),
+    );
+    expect(rows.filter((r) => r.text.includes("isn't an all-clear"))).toHaveLength(1);
+    expect(rows.map((r) => r.text)).toContain(correlation.text);
+  });
+});
+
+describe('one clock, everywhere in this module', () => {
+  it('judges "today" for the weight gate on the RUNDOWN’s clock, not the wall clock', () => {
+    // A third clock: the gate read `new Date()` while the sentence printed off
+    // `generatedAtMs`, so the CUL-946 bound could not be pinned by a fixture at all.
+    const generatedAtMs = NOW - 10 * DAY;
+    // Five days AFTER the rundown was built — the CUL-946 shape relative to the row's
+    // own clock — but still in the past on the wall clock.
+    const lastVisitAt = new Date(NOW - 5 * DAY).toISOString().slice(0, 10);
+    const { rows } = buildWorthRaising(
+      input({
+        rundown: rundown({
+          generatedAtMs,
+          facts: {
+            courses: [],
+            medItemNames: NAMES,
+            lastVisitAt,
+            weighIns: [weighIn(300)],
+          },
+        }),
+      }),
+    );
+    expect(rows.some((r) => r.source === 'weight')).toBe(false);
+  });
+});
