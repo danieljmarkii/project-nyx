@@ -64,6 +64,20 @@ function look(partial: {
   }
 }
 
+/** Vomit days as the caller passes them: day → the day's EARLIEST vomit instant. The
+ *  instant is what the calibration sentence uses to ask whether there was anything to
+ *  notice yet, so a fixture that only names days cannot exercise it. */
+function vomits(spec: Record<string, string> | string[]): Map<string, string> {
+  if (Array.isArray(spec)) return new Map(spec.map((d) => [d, `${d}T06:00:00Z`]));
+  return new Map(Object.entries(spec).map(([d, hour]) => [d, `${d}T${hour}:00Z`]));
+}
+
+/** Meals left, as the caller passes them: day → how many were rated and how many she
+ *  recorded as picked at or refused. */
+function mealsLeft(spec: Record<string, [number, number]>): Map<string, { left: number; rated: number }> {
+  return new Map(Object.entries(spec).map(([d, [left, rated]]) => [d, { left, rated }]));
+}
+
 function params(over: Partial<BuildNoticedParams> = {}): BuildNoticedParams {
   return {
     rows: [],
@@ -71,8 +85,8 @@ function params(over: Partial<BuildNoticedParams> = {}): BuildNoticedParams {
     endDayNum: dn('2026-09-15'),
     windowDays: 46,
     pullComplete: true,
-    vomitLocalDays: new Set<string>(),
-    mealLeftLocalDays: new Set<string>(),
+    vomitByDay: new Map<string, string>(),
+    mealLeftByDay: new Map<string, { left: number; rated: number }>(),
     hasRatedMeals: true,
     species: 'dog',
     sex: 'male',
@@ -233,7 +247,7 @@ Deno.test('the reconciliation clause fires when the counts really do not sum', (
     look({ day: '2026-09-12', words: ['subdued', 'lip_licking'] }),
   ])
   assert.ok(/add to more than the <span class="num">21<\/span> days answered/.test(html))
-  assert.ok(/a day can carry more than one word/.test(html))
+  assert.ok(/<span class="num">1<\/span> answered day carries more than one word/.test(html))
 })
 
 Deno.test('and is ABSENT when they do sum — a disclaimer that is wrong teaches a reader to skim', () => {
@@ -243,6 +257,7 @@ Deno.test('and is ABSENT when they do sum — a disclaimer that is wrong teaches
   // training a reader to skip it is not a cosmetic cost.
   const html = renderWithLooks([...quietRun(20, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })])
   assert.ok(!/add to more than/.test(html) && !/add to less than/.test(html))
+  assert.ok(!/do not partition/.test(html), 'and no partition warning either — there is nothing to warn about')
 })
 
 Deno.test('the under-count direction is named too — a day of only an activity word', () => {
@@ -280,7 +295,10 @@ Deno.test('the coverage BEFORE the first date is stated ONCE, not after every wo
   ])
   assert.ok(/first Sep 12/.test(html) && /first Sep 13/.test(html), 'each word keeps its own date')
   assert.equal((html.match(/She had been answering since/g) ?? []).length, 1, 'one baseline sentence')
-  assert.ok(/She had been answering since Aug 12, on <span class="num">30<\/span> of the days before the first of these \(Sep 12\)/.test(html))
+  assert.ok(
+    /She had been answering since Aug 12, on <span class="num">30<\/span> of the <span class="num">31<\/span> days before Sep 12, the earliest of those dates/.test(html),
+    'the numerator carries its denominator, and the date has an antecedent',
+  )
   assert.ok(!/days before it since/.test(html), 'and no per-word coverage parenthetical')
 })
 
@@ -289,7 +307,7 @@ Deno.test('when the pull may be truncated the clause becomes a FLOOR and names n
   // the record's first day is the C-19 failure.
   const rows = [...quietRun(30, '2026-09-10'), look({ day: '2026-09-12', words: ['subdued'] })]
   const html = renderWithLooks(rows, { lookRowsComplete: false })
-  assert.ok(/She had answered on at least <span class="num">30<\/span> days before the first of these/.test(html))
+  assert.ok(/She had answered on at least <span class="num">30<\/span> days before Sep 12, the earliest of those dates/.test(html))
   assert.ok(!/answering since/.test(html), 'no start date is claimed')
 })
 
@@ -337,8 +355,22 @@ Deno.test('a day whose only word this build cannot read is NOT called an activit
     look({ day: '2026-09-09', words: ['panting_at_rest_v2'] }),
   ])
   assert.ok(/this report cannot read what was recorded/.test(html))
-  assert.ok(!/carry only an activity word/.test(html), 'never an activity claim about an unknown word')
+  assert.ok(!/activity word/.test(html), 'never an activity claim about an unknown word')
   assert.ok(!/panting_at_rest_v2/.test(html), 'and never the raw key')
+})
+
+Deno.test('an unreadable day is said even when nothing else is odd about the record', () => {
+  // The hole this closes: `unreadableDays` was a member of the reconciliation clause's
+  // reason list, so it inherited that clause's gate. When the gate moved off the
+  // arithmetic and onto the multi-word and activity counts, a record whose only oddity
+  // was an unrecognised word fell through both and the document went silent about a gap
+  // in itself.
+  const html = renderWithLooks([
+    ...spreadRun(20, '2026-08-01', '2026-09-05'),
+    look({ day: '2026-09-08', words: ['panting_at_rest_v2'] }),
+  ])
+  assert.ok(/this report cannot read what was recorded/.test(html))
+  assert.ok(!/answered day carries more than one word/.test(html), 'and no reason that does not apply')
 })
 
 Deno.test('a row stored as an observation with no words at all is unreadable, not an activity', () => {
@@ -535,7 +567,7 @@ Deno.test('an unanswered vomit day is COUNTED and said — never scored as "noth
       endDayNum: dn('2026-09-05'),
       windowDays: 5,
       rows: [look({ day: '2026-09-01' })],
-      vomitLocalDays: new Set(['2026-09-01', '2026-09-03', '2026-09-04']),
+      vomitByDay: vomits(['2026-09-01', '2026-09-03', '2026-09-04']),
     }),
   )!
   assert.equal(n.strip.unansweredVomitDays, 2, 'Sep 3 and Sep 4 carry a vomit and no look')
@@ -734,7 +766,7 @@ Deno.test('an absence day that also carries a refused meal is NAMED — the disa
   const n = buildNoticed(
     params({
       rows: [look({ day: '2026-09-13' }), look({ day: '2026-09-14' }), look({ day: '2026-09-15' })],
-      mealLeftLocalDays: new Set(['2026-09-13', '2026-09-14']),
+      mealLeftByDay: mealsLeft({ '2026-09-13': [1, 2], '2026-09-14': [1, 2] }),
     }),
   )!
   assert.equal(n.intake.kind, 'disagreement')
@@ -786,7 +818,9 @@ Deno.test('the disagreement hangs off the ABSENCE claim, not off the end of the 
   const conflict = /<div class="noticed-conflict">([\s\S]*?)<\/div>/.exec(html)
   assert.ok(conflict !== null, 'the contradiction has its own line')
   assert.ok(/the owner marked nothing unusual/.test(conflict![1]), 'it names her claim')
-  assert.ok(/a meal she recorded as refused or picked at/.test(conflict![1]), 'and it names the record')
+  assert.ok(/recorded refused or picked at/.test(conflict![1]), 'and it names the record')
+  assert.ok(/every one of the <span class="num">1<\/span> meals rated on it/.test(conflict![1]),
+    'and it says HOW MANY — "a meal" described four refusals across 48 hours as one skipped supper')
   assert.ok(/Sep 5/.test(conflict![1]), 'and the day')
   const note = /<div class="noticed-note">([\s\S]*?)<\/div>/.exec(html)![1]
   assert.ok(!/refused or picked at/.test(note), 'and not buried in the note paragraph')
@@ -799,7 +833,7 @@ Deno.test('the calibration fact is printed when she marked nothing unusual on a 
   const n = buildNoticed(
     params({
       rows: [look({ day: '2026-09-01' }), look({ day: '2026-09-03' }), look({ day: '2026-09-05', words: ['subdued'] })],
-      vomitLocalDays: new Set(['2026-09-01', '2026-09-03', '2026-09-05', '2026-09-07']),
+      vomitByDay: vomits(['2026-09-01', '2026-09-03', '2026-09-05', '2026-09-07']),
     }),
   )!
   assert.equal(n.answeredVomitDays, 3, 'both sides count ANSWERED days (§6.11)')
@@ -820,7 +854,7 @@ Deno.test('a day with an OBSERVATION and a refused meal is not a disagreement �
   const n = buildNoticed(
     params({
       rows: [look({ day: '2026-09-13', words: ['subdued'] })],
-      mealLeftLocalDays: new Set(['2026-09-13']),
+      mealLeftByDay: mealsLeft({ '2026-09-13': [1, 2] }),
     }),
   )!
   assert.equal(n.intake.kind, 'none')

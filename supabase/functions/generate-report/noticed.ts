@@ -291,7 +291,15 @@ export type NoticedIntake =
   /** Absence days the owner marked *nothing unusual* on that ALSO carry a meal she
    *  recorded as picked at or refused. Dr. Chen §3: the disagreement is said, not
    *  hidden. */
-  | { kind: 'disagreement'; days: string[] }
+  | {
+      kind: 'disagreement'
+      days: string[]
+      /** Meals on those days she recorded as picked at or refused, and how many were
+       *  rated at all. Four of four across two days is complete anorexia; "a meal" reads
+       *  as one skipped supper (the cold read). */
+      left: number
+      rated: number
+    }
 
 export interface NoticedBlock {
   windowDays: number
@@ -372,23 +380,38 @@ export interface NoticedBlock {
   notesWithheld: number
   intake: NoticedIntake
   /**
-   * How often the owner marked *nothing unusual* on a day the record holds a vomit — and
-   * how many vomit days she answered at all. BOTH sides are answered days (§6.11's rule,
-   * which exists because counting one side over all vomit days scores every unanswered
-   * bad day as "nothing seen").
+   * THE CALIBRATION FACT — how much weight *marked nothing unusual on 32 of the 42* can
+   * carry. An owner who marks nothing unusual on the days her cat vomits is an owner
+   * whose quiet days mean something different, and before this printed it was derivable
+   * from the strip only by eye, mark by mark.
    *
-   * THE CALIBRATION FACT, and the cold read is what named it: it tells a reader how much
-   * weight *marked nothing unusual on 32 of the 42* can carry. An owner who marks nothing
-   * unusual on three of the four days her cat vomits is an owner whose quiet days mean
-   * something different, and until this printed, that was derivable from the strip only
-   * by eye, mark by mark.
+   * ── IT IS A PARTITION NOW, AND IT IS ORDERED ────────────────────────────────
+   * The first cut printed two numbers, and the second cold read caught both.
    *
-   * It ESCALATES ONLY. A zero here would read as "she caught every one", which is
-   * reassurance drawn from an absence, so the render prints this only when
-   * `absenceOnVomitDays > 0`.
+   * **The population.** *"On 2 of the 2 vomit days she answered…"* sat three lines above
+   * the strip's *"2 vomit days were not answered"* — one window-scoped, one strip-scoped,
+   * neither labelled, and 2 + 2 = 4 under a safety band saying six. A vet concluded two
+   * of six vomiting days went unobserved when the answer was four. So the whole window's
+   * vomit days are carried here (`vomitDaysInWindow`), split into answered and not, and
+   * the render states the partition rather than a fragment of it.
+   *
+   * **The ordering.** *"On 5 of the 5 vomit days she answered, she marked nothing
+   * unusual"* counted three days whose look was recorded HOURS BEFORE the episode — at
+   * 09:00 against a 22:15 vomit. There was nothing to notice yet, and the sentence
+   * invited "her quiet days are worthless". So a day counts only when a look was recorded
+   * at or after the day's earliest vomit, and the sentence says so.
+   *
+   * It ESCALATES ONLY: a zero would read as "she caught every one", which is reassurance
+   * drawn from an absence, so the render prints the calibration clause only above zero.
    */
   absenceOnVomitDays: number
+  /** Vomit days she answered AT OR AFTER the episode — the denominator the sentence
+   *  above uses, and the only one under which "she marked nothing unusual" is a miss. */
+  answeredAfterVomitDays: number
+  /** Vomit days she answered at all, whenever. */
   answeredVomitDays: number
+  /** Vomit days the record holds in the window — the population both halves partition. */
+  vomitDaysInWindow: number
   /** The local days IN THE WINDOW the record holds a vomit, sorted. The appendix marks
    *  its day headings from this; the strip draws its own 28-day slice of the same set, so
    *  a day marked in the appendix and a triangle on page 1 cannot disagree — and the
@@ -405,6 +428,17 @@ export interface NoticedBlock {
    * refused-meal contradiction lives (the cold read).
    */
   countsSum: number
+  /**
+   * Answered days carrying more than one of the words page 1 lists.
+   *
+   * The reconciliation clause used to be gated on `countsSum !== answeredDays`, and on a
+   * real record the two errors CANCELLED — one multi-word day over-counted, one
+   * activity-only day under-counted, 6 + 2 + 2 + 32 = exactly 42 — so the disclosure was
+   * suppressed precisely where the ambiguity still existed. A vet adds the four numbers,
+   * gets the denominator, and concludes the record is fully accounted for; it is not.
+   * Each reason is carried and stated on its own terms.
+   */
+  multiWordDays: number
   /** True when at least one word key in the window was outside the closed vocabulary. */
   hasUnknownWords: boolean
   /**
@@ -431,7 +465,15 @@ export interface NoticedBlock {
    *
    * Null when nothing was answered before, or when there is no concern word.
    */
-  baseline: { answeredDays: number; sinceDay: string | null; firstDay: string } | null
+  baseline: {
+    answeredDays: number
+    sinceDay: string | null
+    firstDay: string
+    /** Calendar days in the span the numerator runs over — so *94 of the days* becomes
+     *  *94 of the 94 days*, which is a far stronger anti-ascertainment fact than a bare
+     *  numerator manages to say (the cold read). Null when there is no start date. */
+    spanDays: number | null
+  } | null
 }
 
 // ── Day helpers (the report's own day-number arithmetic, local to this module) ──
@@ -499,10 +541,21 @@ export interface BuildNoticedParams {
    * OLDEST, which is the only thing this one clause reads.
    */
   pullComplete: boolean
-  /** Local days (same keying) a vomit was logged — the record's own rows, never a look. */
-  vomitLocalDays: ReadonlySet<string>
-  /** Local days carrying a meal the owner rated as picked at or refused. */
-  mealLeftLocalDays: ReadonlySet<string>
+  /**
+   * Local day → the EARLIEST vomit instant on it, from the record's own rows, never a
+   * look. The instant is what lets the calibration sentence ask whether there was
+   * anything to notice yet (see `absenceOnVomitDays`); the strip only needs the keys.
+   */
+  vomitByDay: ReadonlyMap<string, string>
+  /**
+   * Local day → how many meals were rated that day and how many she recorded as picked
+   * at or refused.
+   *
+   * The COUNTS, not just the days, because "those days carry a meal she recorded as
+   * refused" reads as one skipped meal when the record may hold four of four across two
+   * days — complete anorexia, described as an owner-consistency wobble (the cold read).
+   */
+  mealLeftByDay: ReadonlyMap<string, { left: number; rated: number }>
   /** Did the window hold ANY rated meal? False ⇒ the record is blind to intake. */
   hasRatedMeals: boolean
   species: string
@@ -525,11 +578,13 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
     endDayNum,
     windowDays,
     pullComplete,
-    vomitLocalDays,
-    mealLeftLocalDays,
+    vomitByDay,
+    mealLeftByDay,
     hasRatedMeals,
     audience,
   } = params
+  // The strip needs only the keys; the calibration needs the instants.
+  const vomitLocalDays = new Set(vomitByDay.keys())
 
   const species = lookSpeciesOf(params.species)
   const notesIncluded = lookNotesIncluded(audience)
@@ -708,8 +763,16 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
     intake = { kind: 'no_record' }
   } else {
     const absenceSet = absenceDaySet(windowRows)
-    const overlap = [...absenceSet].filter((d) => mealLeftLocalDays.has(d)).sort()
-    intake = overlap.length > 0 ? { kind: 'disagreement', days: overlap } : { kind: 'none' }
+    const overlap = [...absenceSet].filter((d) => (mealLeftByDay.get(d)?.left ?? 0) > 0).sort()
+    let left = 0
+    let rated = 0
+    for (const d of overlap) {
+      const detail = mealLeftByDay.get(d)
+      if (!detail) continue
+      left += detail.left
+      rated += detail.rated
+    }
+    intake = overlap.length > 0 ? { kind: 'disagreement', days: overlap, left, rated } : { kind: 'none' }
   }
 
   // THREE populations, counted apart. A day that is answered and is not an absence day is
@@ -737,10 +800,43 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
   // nothing unusual on N of the M*) is window-scoped (C-35: a gate's window is the window
   // of the claim it gates, never the convenient neighbour's).
   const windowAbsence = absenceDaySet(windowRows)
+  // The latest look on each day — what decides whether there was anything to notice yet.
+  const latestLookByDay = new Map<string, string>()
+  for (const r of windowRows) {
+    const prev = latestLookByDay.get(r.localDay)
+    if (prev === undefined || r.occurredAt > prev) latestLookByDay.set(r.localDay, r.occurredAt)
+  }
+  const vomitDaysInWindowList = [...vomitByDay.keys()].filter((d) => {
+    const num = localDayIndexOf(d)
+    return num !== null && num >= startDayNum && num <= endDayNum
+  })
+  const answeredSet = answeredDaySet(windowRows)
+  let answeredAfterVomit = 0
   let absenceOnVomitDays = 0
-  for (const day of windowAbsence) if (vomitLocalDays.has(day)) absenceOnVomitDays += 1
+  for (const day of vomitDaysInWindowList) {
+    if (!answeredSet.has(day)) continue
+    const latestLook = latestLookByDay.get(day)
+    const firstVomit = vomitByDay.get(day)
+    // A look recorded BEFORE the day's first vomit had nothing to notice. Comparing ISO
+    // instants directly is safe: both are UTC and the question is ordering, not calendar.
+    if (latestLook === undefined || firstVomit === undefined || latestLook < firstVomit) continue
+    answeredAfterVomit += 1
+    if (windowAbsence.has(day)) absenceOnVomitDays += 1
+  }
 
   const countsSum = absenceCount + concernWords.reduce((n, w) => n + w.dayCount, 0)
+  const listedKeys = new Set(concernWords.map((w) => w.key))
+  const wordsPerDay = new Map<string, Set<string>>()
+  for (const r of windowRows) {
+    let set = wordsPerDay.get(r.localDay)
+    if (!set) {
+      set = new Set<string>()
+      wordsPerDay.set(r.localDay, set)
+    }
+    for (const k of r.words) if (listedKeys.has(k)) set.add(k)
+  }
+  let multiWordDays = 0
+  for (const set of wordsPerDay.values()) if (set.size > 1) multiWordDays += 1
 
   // §6.5's spread guard, carried onto the surface where the encoding is a LENGTH. The
   // window is divided into four equal parts and the answered days must touch at least
@@ -766,10 +862,18 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
     (acc, w) => (acc === null || w.firstDay < acc.firstDay ? w : acc),
     null,
   )
-  const baseline =
-    earliest && earliest.priorCoverage
-      ? { ...earliest.priorCoverage, firstDay: earliest.firstDay }
-      : null
+  let baseline: NoticedBlock['baseline'] = null
+  if (earliest && earliest.priorCoverage) {
+    const { answeredDays: n, sinceDay } = earliest.priorCoverage
+    const from = sinceDay === null ? null : localDayIndexOf(sinceDay)
+    const to = localDayIndexOf(earliest.firstDay)
+    baseline = {
+      answeredDays: n,
+      sinceDay,
+      firstDay: earliest.firstDay,
+      spanDays: from !== null && to !== null ? to - from : null,
+    }
+  }
 
   return {
     windowDays,
@@ -779,13 +883,11 @@ export function buildNoticed(params: BuildNoticedParams): NoticedBlock | null {
     unreadableDays,
     windowTruncated,
     absenceOnVomitDays,
-    answeredVomitDays: answeredVomitDays(windowRows, vomitLocalDays),
-    vomitDays: [...vomitLocalDays]
-      .filter((d) => {
-        const num = localDayIndexOf(d)
-        return num !== null && num >= startDayNum && num <= endDayNum
-      })
-      .sort(),
+    answeredAfterVomitDays: answeredAfterVomit,
+    answeredVomitDays: answeredVomitDays(windowRows, vomitDaysInWindowList),
+    vomitDaysInWindow: vomitDaysInWindowList.length,
+    multiWordDays,
+    vomitDays: [...vomitDaysInWindowList].sort(),
     countsSum,
     baseline,
     concernWords,

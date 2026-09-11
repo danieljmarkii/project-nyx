@@ -4402,11 +4402,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // was not true). Closing it needs the look row to carry the zone it was written in,
   // which is a migration and its own issue; until then the legend says which entries are
   // placed by which clock, and no sentence here claims they agree.
-  const vomitLocalDays = new Set<string>()
+  // Day → the EARLIEST vomit instant on it. The instant is what lets the calibration
+  // sentence ask whether there was anything to notice yet: a look recorded at 09:00 on a
+  // day whose vomit came at 22:15 is not a miss, and counting it as one invited "her
+  // quiet days are worthless" over three of five days (the cold re-read).
+  const vomitByDay = new Map<string, string>()
   for (const e of windowEvents) {
     if (e.type !== 'vomit') continue
     const key = localDayKey(e.occurredAt, tz)
-    if (key !== null) vomitLocalDays.add(key)
+    if (key === null) continue
+    const prev = vomitByDay.get(key)
+    if (prev === undefined || e.occurredAt < prev) vomitByDay.set(key, e.occurredAt)
   }
   // The intake half of §5 honesty rule 12. `foodType === 'meal'` is THE report's own
   // qualifying predicate (it is what `ratedMealsInWindow` and page 1's completion rate
@@ -4414,11 +4420,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // population as the Intake section it points at — C-3, the predicate the neighbouring
   // sentence uses.
   const ratedWindowMeals = windowMeals.filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
-  const mealLeftLocalDays = new Set<string>()
+  // COUNTS, not just days: four of four meals refused across two days is complete
+  // anorexia, and "those days carry a meal she recorded as refused" describes it as one
+  // skipped supper.
+  const mealLeftByDay = new Map<string, { left: number; rated: number }>()
   for (const e of ratedWindowMeals) {
-    if (!leftMostOfIt(e.meal!.intakeRating as IntakeRating)) continue
     const key = localDayKey(e.occurredAt, tz)
-    if (key !== null) mealLeftLocalDays.add(key)
+    if (key === null) continue
+    const entry = mealLeftByDay.get(key) ?? { left: 0, rated: 0 }
+    entry.rated += 1
+    if (leftMostOfIt(e.meal!.intakeRating as IntakeRating)) entry.left += 1
+    mealLeftByDay.set(key, entry)
   }
   const noticed = buildNoticed({
     rows: input.lookRows ?? [],
@@ -4426,8 +4438,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     endDayNum,
     windowDays,
     pullComplete: input.lookRowsComplete ?? false,
-    vomitLocalDays,
-    mealLeftLocalDays,
+    vomitByDay,
+    mealLeftByDay,
     // "The intake record is empty for the window" (T-20's blind case) is a fact about
     // RATED meals, not about meal rows: a free-fed bowl and an unrated meal both leave
     // the record unable to say whether she ate, and `lib/analytics.ts`'s own words are

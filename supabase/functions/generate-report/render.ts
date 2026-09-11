@@ -3633,13 +3633,17 @@ function noticedFirstClause(w: NoticedWordCount): string {
 function noticedBaselineSentence(n: NoticedBlock): string {
   const b = n.baseline
   if (!b) return ''
-  const before = `before the first of these (${h(fmtDay(b.firstDay))})`
+  // "the first of these" had no antecedent — the nearest plural was the conflict line's
+  // dates — so the day is named. And the numerator gets its denominator: *94 of the 94
+  // days* is a far stronger anti-ascertainment fact than *94 of the days* (the cold read).
+  const before = `before ${h(fmtDay(b.firstDay))}, the earliest of those dates`
   if (b.sinceDay === null) {
     return ` She had answered on at least ${num(b.answeredDays)} days ${before}.`
   }
+  const denom = b.spanDays !== null && b.spanDays > 0 ? ` of the ${num(b.spanDays)}` : ' of the'
   return ` She had been answering since ${h(fmtDay(b.sinceDay))}, on ${num(
     b.answeredDays,
-  )} of the days ${before}.`
+  )}${denom} days ${before}.`
 }
 
 /**
@@ -3665,10 +3669,34 @@ function noticedAbsenceCaveat(n: NoticedBlock): string {
  * that exists to say what the record can and cannot support.
  */
 function noticedCalibrationSentence(n: NoticedBlock): string {
-  if (n.absenceOnVomitDays === 0 || n.answeredVomitDays === 0) return ''
-  return ` On ${num(n.absenceOnVomitDays)} of the ${num(n.answeredVomitDays)} vomit ${
-    n.answeredVomitDays === 1 ? 'day' : 'days'
-  } she answered, she marked nothing unusual.`
+  if (n.vomitDaysInWindow === 0) return ''
+  const total = n.vomitDaysInWindow
+  const answered = n.answeredVomitDays
+  const unanswered = total - answered
+  // THE WHOLE POPULATION, in one sentence. Printing only a fragment of it put "on 2 of
+  // the 2 vomit days she answered" three lines above the strip's "2 vomit days were not
+  // answered" — one window-scoped, one strip-scoped, 2 + 2 = 4 under a safety band saying
+  // six. A vet concluded two of six vomiting days went unobserved; the record said four.
+  let out =
+    ` The record holds ${num(total)} ${total === 1 ? 'day' : 'days'} with a vomit in this window` +
+    `: she answered ${num(answered)}` +
+    (unanswered > 0 ? `, and ${num(unanswered)} ${unanswered === 1 ? 'was' : 'were'} not answered` : '') +
+    `.`
+  // The miss, ORDERED. A look recorded hours BEFORE the episode had nothing to notice —
+  // three of five "misses" on the first artifact were 09:00 looks against evening vomits.
+  // Escalate-only: nothing prints at zero, because "she caught every one" is reassurance
+  // drawn from an absence.
+  if (n.absenceOnVomitDays > 0 && n.answeredAfterVomitDays > 0) {
+    // NEVER "1 of the 1". A single sample dressed as a ratio is a pattern generator
+    // (§6.11's own rule, and it reads as badly here as it does on Patterns), so at n=1 the
+    // fact is stated as a fact and nothing is divided.
+    out +=
+      n.answeredAfterVomitDays === 1
+        ? ` On the one she answered after the episode, she marked nothing unusual.`
+        : ` On ${num(n.absenceOnVomitDays)} of the ${num(n.answeredAfterVomitDays)} she answered` +
+          ` after the episode, she marked nothing unusual.`
+  }
+  return out
 }
 
 /**
@@ -3697,11 +3725,18 @@ function noticedDisagreementLine(snap: ReportSnapshot, n: NoticedBlock): string 
   const pointer = mealsAppendixVisible(snap) ? ` (appendix&nbsp;E)` : ''
   const dates = days.slice(0, 4).map((d) => h(fmtDay(d))).join(', ')
   const more = days.length > 4 ? `, and ${num(days.length - 4)} more` : ''
-  const plural = days.length === 1 ? 'day' : 'days'
-  const carries = days.length === 1 ? 'carries' : 'carry'
-  return `<div class="noticed-conflict"><b>On ${dates}${more}</b> the owner marked nothing unusual, and ${
-    days.length === 1 ? 'that day' : 'those days'
-  } ${carries} a meal she recorded as refused or picked at${pointer}. ${
+  // NAME THE MEALS. "those days carry a meal she recorded as refused" described four
+  // refusals across forty-eight hours — complete anorexia in a 7-year-old cat — as one
+  // skipped supper. The count is the escalation; the hedge belongs only where the record
+  // is actually mixed.
+  const { left, rated } = n.intake
+  const all = rated > 0 && left === rated
+  const meals = all
+    ? `<b>every one of the ${num(rated)} meals rated on ${days.length === 1 ? 'it' : 'them'}</b> is recorded refused or picked at`
+    : `${num(left)} of the ${num(rated)} meals rated on ${
+        days.length === 1 ? 'it' : 'them'
+      } ${left === 1 ? 'is' : 'are'} recorded refused or picked at`
+  return `<div class="noticed-conflict"><b>On ${dates}${more}</b> the owner marked nothing unusual, and ${meals}${pointer}. ${
     days.length === 1 ? 'The record and the day disagree' : 'The record and those days disagree'
   }; both are shown as logged.</div>`
 }
@@ -3746,15 +3781,27 @@ function noticedLine(snap: ReportSnapshot): string {
   // Printed unconditionally it was false on a real record (6 + 2 + 2 + 32 is exactly 42:
   // a double-counted multi-word day and an omitted activity-only day cancelled), and a
   // disclaimer that is wrong half the time teaches a reader to skim the small print.
+  // GATED ON THE REASONS, NOT ON THE SUM. On a real record the two errors CANCELLED —
+  // one multi-word day over-counting, one activity-only day under-counting, 6 + 2 + 2 + 32
+  // = exactly 42 — so the disclosure vanished precisely where the ambiguity still existed
+  // and a vet adding the four numbers concluded the record was fully accounted for.
   let reconcile = ''
-  if (n.countsSum !== n.answeredDays) {
+  if (n.multiWordDays > 0 || n.activityOnlyDays > 0) {
     const over = n.countsSum > n.answeredDays
     // EACH POPULATION IN ITS OWN WORDS. A day the owner spent reporting her dog was
     // bright and a day carrying a word this build cannot read are both absent from the
     // counts above, and they are not the same fact: one is her observation, the other is
     // the document admitting a gap in itself. Calling both "an activity" told a reader
     // four concerning days were good ones.
-    const reasons: string[] = ['a day can carry more than one word']
+    // Only the reasons that APPLY. Seeding the multi-word clause unconditionally made the
+    // sparse report attribute part of a one-day gap to multi-select on a record where no
+    // day carried two words.
+    const reasons: string[] = []
+    if (n.multiWordDays > 0) {
+      reasons.push(
+        `${num(n.multiWordDays)} answered ${n.multiWordDays === 1 ? 'day carries' : 'days carry'} more than one word`,
+      )
+    }
     if (n.activityOnlyDays > 0) {
       reasons.push(
         `${num(n.activityOnlyDays)} answered ${
@@ -3762,22 +3809,27 @@ function noticedLine(snap: ReportSnapshot): string {
         } only an activity word, which page 1 never lists`,
       )
     }
-    if (n.unreadableDays > 0) {
-      reasons.push(
-        `on ${num(n.unreadableDays)} answered ${
-          n.unreadableDays === 1 ? 'day' : 'days'
-        } this report cannot read what was recorded`,
-      )
-    }
     const tail = reasons.length > 1 ? `${reasons.slice(0, -1).join(', ')}, and ${reasons[reasons.length - 1]}` : reasons[0]
-    reconcile = `These counts ${over ? 'add to more' : 'add to less'} than the ${num(
-      n.answeredDays,
-    )} days answered: ${tail}.`
+    // The counts may add to EXACTLY the denominator and still not partition it — which is
+    // the case this gate exists for — so the sentence says they do not account for the
+    // days rather than claiming an arithmetic mismatch that may not be there.
+    const shape =
+      n.countsSum === n.answeredDays
+        ? `These counts do not partition the ${num(n.answeredDays)} days answered`
+        : `These counts ${over ? 'add to more' : 'add to less'} than the ${num(n.answeredDays)} days answered`
+    reconcile = `${shape}: ${tail}.`
   }
-  // The unreadable days are said even when the arithmetic happens to reconcile — a word
-  // the deployed function does not know is a gap in the document whatever the sum does.
-  const unreadableAlone =
-    n.countsSum === n.answeredDays && n.unreadableDays > 0
+  // ── The unreadable days are their OWN sentence, gated on their own count ────
+  //
+  // They were a member of the `reasons` list above, which made them dependent on that
+  // clause's gate — and when the gate moved off the arithmetic and onto the multi-word
+  // and activity counts, a record whose ONLY oddity was an unrecognised word fell through
+  // both: no multi-word day, no activity day, so no reconciliation clause, and the
+  // countsSum branch that used to catch it no longer applied. The document went silent
+  // about a gap in itself. A sentence about what this report cannot read belongs to
+  // nothing but its own count.
+  const unreadable =
+    n.unreadableDays > 0
       ? ` On ${num(n.unreadableDays)} answered ${
           n.unreadableDays === 1 ? 'day' : 'days'
         } this report cannot read what was recorded.`
@@ -3787,8 +3839,9 @@ function noticedLine(snap: ReportSnapshot): string {
     ? ` This report reached its row limit before the start of the window, so every count here is at least the number shown.`
     : ''
   const note =
-    `<div class="noticed-note">${reconcile}${unreadableAlone}${truncated}${noticedAbsenceCaveat(n)}` +
+    `<div class="noticed-note">${reconcile}${unreadable}${truncated}${noticedAbsenceCaveat(n)}` +
     `${noticedBaselineSentence(n)}${noticedCalibrationSentence(n)}${noticedBlindIntakeSentence(snap, n)} ` +
+    `The words are the owner's own, picked from a fixed list; they are counted nowhere else on this report. ` +
     `Every entry is listed in appendix&nbsp;${noticedAppendixLetter(snap)}.</div>`
   return `
     <div class="noticed-line">
@@ -3916,11 +3969,11 @@ function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
   // stops the row of ○ reading as "she was fine on the others".
   const vomCaption =
     s.unansweredVomitDays > 0
-      ? `<div class="ns-cap">${num(s.unansweredVomitDays)} vomit ${
-          s.unansweredVomitDays === 1 ? 'day was' : 'days were'
+      ? `<div class="ns-cap">Of the vomit days drawn here, ${num(s.unansweredVomitDays)} ${
+          s.unansweredVomitDays === 1 ? 'was' : 'were'
         } not answered &mdash; no observation was recorded for ${
           s.unansweredVomitDays === 1 ? 'it' : 'them'
-        }.</div>`
+        }. The whole window's count is above.</div>`
       : ''
   return `
       <div class="ns">
@@ -3934,7 +3987,7 @@ function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
           fmtRange(s.startDate, s.endDate),
         )} &middot; ${h(s.answeredDays)} of these ${h(s.days.length)} days answered</span></div>
         <div class="ns-row">${cells}</div>
-        <div class="ns-legend"><span class="ns-f">&#9679;</span> a concern recorded &nbsp; <span class="ns-o">&#9675;</span> answered, no concern recorded &nbsp; <span class="ns-n">&middot;</span> not answered &nbsp; <span class="ns-v">&#9650;</span> a vomit logged that day</div>
+        <div class="ns-legend"><span class="ns-key"><span class="ns-f">&#9679;</span> a concern recorded</span> <span class="ns-key"><span class="ns-o">&#9675;</span> answered, no concern recorded</span> <span class="ns-key"><span class="ns-n">&middot;</span> not answered</span> <span class="ns-key"><span class="ns-v ns-vi">&#9650;</span> a vomit logged that day</span></div>
         ${reconcile}
         ${vomCaption}
       </div>`
@@ -6994,7 +7047,16 @@ const STYLE = `
   .ns-vn{visibility:hidden;}
   .ns-o{font-size:10px;color:var(--muted);}
   .ns-f{font-size:10px;color:var(--ink);}
-  .ns-n{font-size:12px;color:var(--nub);}
+  /* --muted, not --nub. The mark that means NO OBSERVATION WAS RECORDED was the palest
+     thing on the page at 1.66:1 against white — on a thin record half the strip is this
+     glyph, and it photocopies to blank paper, which is also what a clipped render looks
+     like. This document is designed for the photocopy it becomes (the vomit mark was
+     sized up for the same reason). */
+  .ns-n{font-size:12px;color:var(--muted);}
+  /* Keep each legend key whole: the triangle was orphaning onto its own line above the
+     words it labels. */
+  .ns-key{white-space:nowrap;margin-right:10px;}
+  .ns-vi{display:inline;height:auto;font-size:9px;}
   .ns-legend{font-size:9.5px;color:var(--muted);margin-top:6px;line-height:1.5;}
   .ns-words{font-size:10.5px;color:var(--ink);margin-top:5px;line-height:1.45;}
   .ns-cap{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.45;}
@@ -7140,7 +7202,13 @@ const STYLE = `
     .page + .page{page-break-before:always;}
     thead{display:table-header-group;}
     /* Only ATOMIC units resist breaking — never a whole .sec (that fragments the page). */
-    tr,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard{page-break-inside:avoid;}
+    /* CUL-875 — the Noticed block joins this list. Measured at A4 it occupied y 853–1047
+       against a sheet boundary at 1039, so the strip's caption was pushed alone onto
+       sheet 2, detached from the row of glyphs it qualifies; a second condition or a
+       second safety flag brought the LEGEND within 6px of the same fold. A 28-cell glyph
+       row on one sheet with its key on the next is unreadable, and it survived only by
+       luck. (The cold re-read, which rendered to A4 rather than estimating.) */
+    tr,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard,.noticed-line,.noticed-graph,.noticed-conflict,.nb,.ns{page-break-inside:avoid;}
     .rule-brand,.wordmark,.foot .fbrand .fw .w,.hqr,.cmark{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
   @page{size:A4 portrait;margin:11mm;}

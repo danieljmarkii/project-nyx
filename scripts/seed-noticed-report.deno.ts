@@ -121,6 +121,11 @@ function look(day: string, words: string[], hour = '13:00', notes: string | null
 
 // The long quiet run before the window — the record that makes a change legible.
 for (const d of eachDay('2026-05-03', '2026-07-31')) look(d, [])
+// ONE CONCERN WORD FIRST MARKED BEFORE THE WINDOW. The cold re-read could not sign off
+// the "first marked …, before this window" branch because neither fixture exercised it —
+// every first date fell inside the window even though the record demonstrably reached
+// back to May. A branch no artifact renders is a branch no cold read has ever seen.
+look('2026-07-20', ['hiding'])
 
 // The window. 42 of 46 days answered; four never answered, one of them a vomit day.
 const UNANSWERED = new Set(['2026-08-11', '2026-08-19', '2026-09-08', '2026-09-14'])
