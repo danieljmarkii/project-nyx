@@ -76,7 +76,8 @@ Two contradictions fell out of the same pass and were fixed:
 - `guards/` — **20 suites, 258 tests, all pass**, including the byte ratchet.
 - `tsc --noEmit` — clean.
 - All five archived rows diffed byte-for-byte against `HEAD:CLAUDE.md`; **verbatim, nothing condensed**, as the archive's own contract requires.
-- `npm test` not run in full: **tests: N/A — the diff is markdown and one command file; no store, Edge Function or `lib/` code touched.** (Engineer lens signs off.)
+- Full suite, via the pre-commit hook — **378 suites, 8,162 tests, all pass.**
+- **tests: N/A — no test was *added*:** the diff is markdown and one command file; no store, Edge Function or `lib/` code touched, so there is no new logic to cover. (Engineer lens signs off on the exemption; the suite still ran green above.)
 
 ## Residuals
 
