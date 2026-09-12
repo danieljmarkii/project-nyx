@@ -1,0 +1,6 @@
+{
+  "min_commits_on_origin_main": 837,
+  "measured": "2026-09-12",
+  "measured_by": "git rev-list --count origin/main",
+  "why": "History only grows, so a static number below the true count catches every shallow, stale and partial clone. Bump it BY HAND in an ordinary PR when someone notices it drifting far behind; never from the grooming pass itself — a floor the pass can lower is not a floor (CUL-921, docs/workflow-retro-2026-09.md §2 F3)."
+}
