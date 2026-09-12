@@ -13,25 +13,29 @@ The backlog drifts from reality in a specific, recurring way: an item ships in t
 
 **That original drift is now largely solved, and the drift has moved.** Measured 2026-09-06 over the 26 PRs merged since the previous pass: every issue named in them was already `Done`. The claim protocol (CUL-624) plus `/wrap` step 4 are holding. What drifts *now* is `In Progress` (which means three different things), work that merged but was never deployed, and issues that closed carrying unfinished business. Steps 0–8 are ordered accordingly.
 
-## Step 0 — un-shallow the clone, before anything else
+## Step 0 — assert the evidence base, before anything else
 
 ```bash
-test -f .git/shallow && git fetch --unshallow
-git rev-list --count HEAD    # sanity: should be in the hundreds, not ~50
+bash scripts/groom/preflight.sh || exit $?
 ```
 
-**The repo arrives as a shallow clone.** Measured 2026-09-07: 51 commits reachable, bottoming out eight days back. Full history is 810. A status reconciliation over the shallow clone can only ever see the last week or so of shipping evidence, and — worse — it *looks* complete, because `git log | grep CUL-` returns plenty of hits. Nothing else in this procedure is trustworthy until this is done.
+**The repo arrives as a shallow clone.** Measured 2026-09-12: 50 commits reachable; full history is 837 (834 earlier the same day — the number moves with every merge, which is why the watermark below is a FLOOR and not an equality). A status reconciliation over the shallow clone can only ever see the last week or so of shipping evidence, and — worse — it *looks* complete, because `git log | grep CUL-` returns plenty of hits. Nothing else in this procedure is trustworthy until this passes.
+
+**This step used to be two lines, and one of them was `test -f .git/shallow && git fetch --unshallow` — which exits 1 whenever the clone is already complete, i.e. the success case** (CUL-921; retro §2 F3). Measured in both states: exit 0 while shallow, **exit 1 once healthy**. An unattended run that checked `$?` aborted precisely when nothing was wrong. It also ran no fetch at all on a complete clone, because `--unshallow` was the only fetch in it — so `origin/main` stayed as stale as the previous session left it.
+
+`preflight.sh` fetches unconditionally, then **asserts** two things and prints the value that failed: (a) no shallow boundary lies on `origin/main`'s history; (b) `git rev-list --count origin/main` ≥ the committed watermark in `scripts/groom/floor.json`. History only grows, so a static number catches every shallow, stale and partial clone. **Bump the watermark by hand in an ordinary PR; never from the pass** — a floor the pass can lower is not a floor.
+
+Exit codes, so an unattended caller can say *which* assertion failed: `0` sound · `2` no `origin/main` · `3` floor.json missing or unparseable · `4` `origin/main` truncated · `5` below the watermark. Proven by mutation in `guards/groomPreflight.test.ts`, including against the old two-line construct.
 
 ## The grooming pass — run in order
 
 1. **Reconcile status against MERGED work.** Build the evidence base once and intersect it, rather than eyeballing:
 
    ```bash
-   git fetch origin main
    git log --oneline origin/main | grep -oE 'CUL-[0-9]+' | sort -u
    ```
 
-   **`origin/main`, never `main`.** Nothing moves the local `main` branch — a fetch updates `origin/main` and leaves `main` frozen where the clone dropped it, and step 0's `--unshallow` makes it *deeper*, not *newer*. Measured 2026-09-12, both refs after step 0: `main` 806 commits / `origin/main` 834 → **26 `CUL` ids invisible**, including CUL-871 / CUL-873 and the whole `vet_visits` track. Silent, as ever: `git log main | grep CUL-` still returns 151 ids, so the pass reads complete. The fetch is load-bearing for the same reason — `origin/main` is only as fresh as the last one, and step 0 runs none on a clone that is already complete. _(Stopgap: CUL-921's `scripts/groom/preflight.sh` fetches unconditionally; drop the line when it lands.)_
+   **`origin/main`, never `main`.** Nothing moves the local `main` branch — a fetch updates `origin/main` and leaves `main` frozen where the clone dropped it, and un-shallowing makes it *deeper*, not *newer*. Measured 2026-09-12, both refs after step 0: `main` 806 commits / `origin/main` 834 → **26 `CUL` ids invisible**, including CUL-871 / CUL-873 and the whole `vet_visits` track. Silent, as ever: `git log main | grep CUL-` still returns 151 ids, so the pass reads complete. **The fetch this block used to carry is gone because step 0 now does it unconditionally** (CUL-921) — so step 0 is not optional, and a non-zero exit from it means stop rather than continue on a stale ref.
 
    Intersect that set against the open-state issues (`list_issues` with `state` `unstarted`, `backlog`, `started` — `fields: ["id"]` keeps it cheap). Anything in both is a candidate. Move a genuinely-shipped issue to `Done` (`save_issue` `state`), attach the PR if it isn't linked, and post a one-line outcome comment naming the PR. **Never close without a resolving reference.** Expect most hits to be legitimately open — a track umbrella, a device-QA pass, a watch item — so check what the commit actually did before closing anything.
 
@@ -43,15 +47,31 @@ git rev-list --count HEAD    # sanity: should be in the hundreds, not ~50
 
    | Shape | How to tell | Action |
    |---|---|---|
-   | Genuinely in flight | A claim comment whose branch is on `origin`, or an open PR | Leave it |
+   | Genuinely in flight | An open PR, **or** a claim comment whose branch tip is ≤14 days old | Leave it |
    | Work in review | An open PR referencing it | → `In Review` (step 2) |
-   | Abandoned claim | Claim comment names a branch; `git ls-remote origin <branch>` finds nothing; no PR | → `Todo`, with a comment naming the dead branch |
+   | Abandoned claim | Claim comment names a branch whose **tip commit is >14 days old**; no open or merged PR references the issue; no later comment releases the claim | → `Todo`, with a comment naming the branch **and its tip date** |
    | Blocked on the PM | Title/label says the remainder is a device pass, a dashboard toggle, a ruling | **Surface, don't sweep** — see below |
    | Never claimed, never started | No claim comment, no branch, no PR, weeks old | → `Todo`, with a comment saying what was verified |
 
-   **Read the claim comment, not the status** (`/kickoff` step 0 — `**Claimed** — branch …`): it names the branch and the UTC time, so `git ls-remote origin <branch>` plus the PR list settles it. Status alone names no branch and cannot distinguish any of these.
+   **Read the claim comment, not the status** (`/kickoff` step 0 — `**Claimed** — branch …`): it names the branch and the UTC time. Status alone names no branch and cannot distinguish any of these.
 
-   The **blocked-on-the-PM** row is a live convention collision, not a bug to fix silently: CUL-624 made `In Progress` mean *a session has claimed this*, and thirteen issues use it to mean *waiting on you*. Report it; let the PM rule.
+   **The abandoned-claim row used to test whether the branch still EXISTED, and so could never fire** (CUL-921; retro §2 F2). Measured 2026-09-12: **790 of 800 remote heads are `origin/claude/*`** — claim branches are never pruned, so `git ls-remote origin <branch>` always finds something and the row returned "not abandoned" for every issue on the board, indistinguishable from a clean one. This is the audit's most generalizable law: **a detector whose only evidence is the existence of a ref, a file or a label is not a detector.**
+
+   So judge the branch's **tip date**, which requires no fetch:
+
+   ```bash
+   git ls-remote origin "refs/heads/<branch>" | cut -f1     # the tip SHA, or empty
+   ```
+
+   Then read that SHA's committer date with `mcp__github__get_commit` — an API read, so it leaves the object store alone. The git-only fallback is `git fetch --depth=1 origin <branch> && git log -1 --format=%cI FETCH_HEAD`, and note the side effect: **a `--depth=1` fetch writes a new root into `.git/shallow`** while leaving `origin/main` whole, which is exactly why step 0's assertion (a) asks whether the boundary is on `origin/main` rather than whether `.git/shallow` exists.
+
+   **A missing ref is now the rarer signal, not the rule** — if `ls-remote` does come back empty, the branch was deleted by hand, which is still abandonment; say which of the two you found.
+
+   **Three rows, one population — read them in table order and stop at the first match.** The rows below "work in review" are not mutually exclusive on their face, and the wrong order sweeps a PM-blocked issue to `Todo`: CUL-425 has no claim comment and is weeks old (the *never claimed* row) and its own newest comment says "leaving **In Progress**, blocked on the PM UI action" (the *blocked-on-the-PM* row, which wins). Likewise CUL-847 carries a claim comment **and** a later comment releasing that claim while the issue waits on rulings — a released claim is not an abandoned one.
+
+   The **blocked-on-the-PM** row is a live convention collision, not a bug to fix silently: CUL-624 made `In Progress` mean *a session has claimed this*, and thirteen issues use it to mean *waiting on you*. Report it; let the PM rule. (CUL-923's `Needs PM` state is the structural fix.)
+
+   **Codifying these as typed predicates with their own mutation suite is CUL-926**, which also owns the general detector-liveness clause — *every detector must be shown to fire at least once against a real-board fixture*. This step is the corrected rule; that issue is where it stops being prose.
 
 5. **Verify against the TREE, never the issue text.** An issue's description is a snapshot of the day it was filed, and the fix may have landed under a different issue since. Before acting on any issue whose body names a file, symbol, or string, go read it:
 
