@@ -130,7 +130,7 @@ Disagreement is information. Surface it. Never resolve a persona conflict silent
 
 The original build sequence (steps 1–10) and the food-library track both finished in August 2026. **The live tracks are Linear projects** (team `Culprit`) — each carries its own status, summary, and PR-by-PR run order, so `list_projects` is the whole answer and `STATUS.md` § Current phase names the ones in flight.
 
-**A session's acceptance criteria come from its Linear issue** — the description plus its comments, newest comment wins — not from a phase in this file. `docs/nyx-technical-spec-v1_0.md` § Build Phases keeps the original MVP criteria as a historical reference.
+**A session's acceptance criteria come from its Linear issue** — the description plus its comments, newest comment wins — not from a phase in this file. `docs/nyx-technical-spec-v1_0.md` § MVP Feature Set and Acceptance Criteria keeps the original MVP criteria as a historical reference.
 
 ---
 

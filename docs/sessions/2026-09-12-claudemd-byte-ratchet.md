@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-12
 **Mode:** BUILD — Linear **CUL-920** (project *The workflow audit — the board, the queue, the ceremony*, milestone **W-A · The free wins**).
-**Outcome:** shipped via #839. CLAUDE.md **153,050 → 136,929 B** (−16,121 B, −10.5%), roughly 4,000 tokens off every turn of every session; `guards/claudeMdBudget.test.ts` keeps it there.
+**Outcome:** shipped via #839. CLAUDE.md **153,050 → 136,956 B** (−16,094 B, −10.5%), roughly 4,000 tokens off every turn of every session; `guards/claudeMdBudget.test.ts` keeps it there.
 
 ---
 
@@ -47,7 +47,7 @@ Nine further sites carried `build step` as idiom for a thing that no longer exis
 
 The guard's non-vacuity floor (C-36) was not ceremony, and it was proven rather than assumed.
 
-**Switching the reader from bytes to characters — `readFileSync(p, 'utf8').length` — loosens the real limit by 1,179 B and leaves BOTH verdict tests green.** 1,179 B sits inside the slack band, so the ratchet's own lower half cannot see it either. Only the non-vacuity test reds. Without it, the unit could change and nothing in the suite would say so.
+**Switching the reader from bytes to characters — `readFileSync(p, 'utf8').length` — loosens the real limit by 1,153 B and leaves BOTH verdict tests green.** 1,153 B sits inside the slack band, so the ratchet's own lower half cannot see it either. Only the non-vacuity test reds. Without it, the unit could change and nothing in the suite would say so.
 
 Four mutations, each reding the intended assertion, re-run after every later edit:
 
@@ -56,11 +56,17 @@ Four mutations, each reding the intended assertion, re-run after every later edi
 | `+1` byte to CLAUDE.md | ceiling |
 | `−3 KB` from CLAUDE.md | slack |
 | count characters, not bytes | non-vacuity |
-| read `STATUS.md` instead | non-vacuity |
+| read `STATUS.md` instead | non-vacuity **and** slack (`STATUS.md` is also >2 KB under the ceiling) |
 
-## One self-inflicted C-38
+## Two self-inflicted C-38s in the same sentence, and why the second one is the interesting one
 
-The guard's header first claimed the byte/char gap was "~4%". Measured: **0.86%, 1,179 B.** A comment asserting a number the code does not support is a cheque the code cannot cash — written inside a guard, whose entire job is to stop that. Caught by measuring a claim I had just made up rather than re-reading it, which is the only method that works on this class. The corrected version is also the *better* argument: at 1,179 B the mutation is invisible to both verdict tests, which is why the floor earns its place.
+The guard's header first claimed the byte/char gap was "~4%". Measured: 0.86%. **The correction was also wrong** — it said 1,179 B / 135,750 characters; the true figures are **1,153 B / 135,803 characters.** `code-reviewer` caught it.
+
+The reason is worth keeping, because it is not carelessness and it will recur:
+
+**I verified a JavaScript claim with a Python one-liner.** The comment describes what `manual.toString('utf8').length` computes in the guard — **UTF-16 code units**. Python's `len(b.decode())` counts **code points**. CLAUDE.md holds 26 astral characters (🌱 🧊 and friends), each one surrogate pair, so the two disagree by exactly 26. Both measurements were correct; only one of them was a measurement *of the claim*.
+
+The generalisable form: **a measurement taken in a different runtime than the claim is about is not a verification of that claim.** It is a second claim that happens to look similar, and it is most dangerous exactly here — inside a guard, where precision about a number is the entire deliverable, and where the first correction makes you feel you have already been careful. The guard's comment now states the unit explicitly and names the 26-character discrepancy, so the next reader cannot reproduce the mistake by reaching for the nearest tool.
 
 ## Deliberately not in scope
 
@@ -72,8 +78,22 @@ The guard's header first claimed the byte/char gap was "~4%". Measured: **0.86%,
 
 The existing state-file-hygiene rule is re-scoped from *"CLAUDE.md's Open Questions table"* to the whole file, and now names the guard. The retro (§4 Q4) identified that scoping as the 2026-07-19 error: the Open Questions table is 7.7% of the file, while § Code Conventions and the Read-These table grew unchecked to 42% of an always-loaded artifact. The check was pointed at the wrong section for the 55 days it existed.
 
+## The review
+
+`code-reviewer` returned **fix-before-merge** — no functional bug (no app code moved), but six live sites across four files still pointing at the retired build-step vocabulary, plus one pointer this PR's own replacement text invented, plus the numeric error above. All fixed on the second commit:
+
+- `.github/PULL_REQUEST_TEMPLATE.md` ×2 — `## Build step` / *"which criteria from technical-spec.md §Build Phases"*. **This is the one that mattered most:** it is what every PR author, human or agent, actually fills in, so a stale prompt there re-manufactures the drift on every future PR.
+- `.claude/commands/kickoff.md` ×2 — the explicit mirror of `/wrap`, which this PR had already fixed; the mirror was left behind.
+- `.claude/commands/handoff.md` and `docs/dev-handoff-runbook.md` — two more mirrored copies of CLAUDE.md's Manual QA bullet.
+- **`CLAUDE.md:133`, written by this PR** — the replacement text pointed at `docs/nyx-technical-spec-v1_0.md` § **Build Phases**, a heading that does not exist at any level. The real one is § MVP Feature Set and Acceptance Criteria. The bad pointer existed in the text being deleted and in the PR template, and was carried into the canonical replacement rather than fixed. *A rewrite inherits the errors of what it replaces unless the rewrite checks them.*
+
+Four of the six were **mirrored copies of lines this PR had already corrected in CLAUDE.md** — which is CLAUDE.md's own Documentation Update Protocol stated from the other side: *the duplicate is reliably the stale copy*. A pointer repair is not finished at the canonical site.
+
+The reviewer also confirmed, by re-running rather than reading: all four mutation claims, the byte-identical archive move (`md5` both sides), the v1.15/v1.42 gaps as the *only* gaps, and that both rules from the deleted § Build Sequence survive.
+
 ## Residuals
 
+- **Proposed Tier-2 edit, NOT written — `docs/personas.md:50`.** The Dir. of Engineering's mandate still reads *"Enforce the build sequence — do not skip ahead or start step N+1 before step N passes acceptance criteria."* That sequence is retired. It is a persona's mandate rather than a mirrored copy of a CLAUDE.md rule, so it is a Tier-2 change needing PM sign-off — and #829 already carries an open edit to that file, so writing it here would also invite a conflict. Suggested replacement: *"Enforce the issue's acceptance criteria — do not call a milestone done before its issues pass."*
 - **`docs/workflow-retro-2026-09.md` is unmerged** (#829). Every remaining issue in this project cites it as canonical.
 - The guard bounds **size, not value** — it cannot tell a session that deleted the right 3 KB from one that deleted the wrong 3 KB, and it says nothing about `docs/` or `.claude/`. A rule moved out of CLAUDE.md into a file a session still reads has not reduced what that session loads. Stated in the guard's header so the blind spot does not read as coverage.
 - The issue calls the new guard "the 15th"; the tree carries 19 guard test files. The retro measured 14 on 09-11 and five landed with the vet-visits track since. No claim of a count went into the code.

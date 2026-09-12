@@ -70,14 +70,16 @@ const MANUAL = 'CLAUDE.md';
 /**
  * The ceiling, in BYTES on disk (what `wc -c CLAUDE.md` reports) — not characters.
  * CLAUDE.md is dense with multi-byte UTF-8 (— § ✓ ⚠ …), so the two differ: measured
- * 2026-09-12, 136,929 B against 135,750 characters, a gap of 1,179 B.
+ * 2026-09-12, 136,956 B against 135,803 characters (JS `.length`, i.e. UTF-16 code
+ * units — NOT code points; this file holds 26 astral chars, so a code-point count
+ * disagrees by 26), a gap of 1,153 B.
  *
  * Set 2026-09-12 (CUL-920) to the size of the file once § Version History (14,662 B)
  * and § Build Sequence (2,770 B) were deleted and the pointers they dangled were
  * repaired — 153,050 B down to this. It is a RATCHET: lower it whenever a trim
  * lands, and never raise it.
  */
-const CEILING_BYTES = 136_929;
+const CEILING_BYTES = 136_956;
 
 /** How far below the ceiling the file may sit before the ceiling is stale. */
 const SLACK_BYTES = 2_048;
@@ -96,8 +98,8 @@ describe('CLAUDE.md byte ratchet (CUL-920)', () => {
   //
   // The second is the one that needs this assertion, and it was proven by mutation
   // rather than assumed: switching the reader to `readFileSync(p, 'utf8').length`
-  // loosens the real limit by 1,179 B, and BOTH verdict tests below stay GREEN —
-  // 1,179 B is inside SLACK_BYTES, so the ratchet's own lower half cannot see it
+  // loosens the real limit by 1,153 B, and BOTH verdict tests below stay GREEN —
+  // 1,153 B is inside SLACK_BYTES, so the ratchet's own lower half cannot see it
   // either. Without this test the unit could change and nothing would say so.
   it('measures the real CLAUDE.md, in bytes', () => {
     expect(fs.existsSync(manualPath)).toBe(true);

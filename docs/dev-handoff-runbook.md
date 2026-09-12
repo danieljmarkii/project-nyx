@@ -167,7 +167,7 @@ After the command sequence, emit a numbered on-device QA script the PM can run i
 - Start from a known state (e.g. "open Expo Go, reload with `r`")
 - List the specific taps and inputs to exercise the change (golden path first, then 1–2 edge cases)
 - Tell the PM **what to expect** at each step, so they can spot regressions without reading code
-- Tie back to acceptance criteria for the current build step — call out which criterion each check verifies
+- Tie back to the issue's acceptance criteria — call out which criterion each check verifies
 - Flag any check the PM cannot perform on-device (e.g. "verify in Supabase dashboard that `events.synced=1`")
 
 Format:

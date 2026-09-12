@@ -6,7 +6,7 @@ The version-history log that used to live in `CLAUDE.md`. **The log ends here, a
 
 **What continues this record: `git log --follow -p CLAUDE.md`.** Each version row was written in the same commit as the change it describes, so the commit log carries the same account with the diff attached — it is the complete history this file was always a lossy copy of.
 
-**This file is a snapshot, not a maintained record.** Known gaps, stated so they are not mistaken for completeness: **v1.15 and v1.42 were never archived**, and the rows below v1.44 are not in version order. Do not add rows here, and do not restore the section to `CLAUDE.md` — `guards/claudeMdBudget.test.ts` fails the build on the regrowth.
+**This file is a snapshot, not a maintained record.** Known defects, stated so they are not mistaken for completeness: **v1.15 and v1.42 were never archived**, the rows below v1.44 are not in version order, and **v1.24 appears twice** (byte-identical rows). Do not add rows here, and do not restore the section to `CLAUDE.md` — `guards/claudeMdBudget.test.ts` fails the build on the regrowth.
 
 | Version | Date | Summary |
 |---|---|---|

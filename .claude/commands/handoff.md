@@ -18,7 +18,7 @@ Emit **only** the Dev Handoff: the runtime command sequence + the Manual QA scri
    - Supabase **migration** → the SQL-Editor run step.
    - **Edge Function** → both deploy paths (CLI / dashboard paste).
 
-4. **Emit the Manual QA Script** in the required numbered format (CLAUDE.md / runbook): start from a known state, golden path first then 1–2 edge cases, tell the PM what to expect at each step, and tie each check back to the current build step's acceptance criteria. If the change is backend-only, the QA script is the curl/SQL/dashboard steps instead.
+4. **Emit the Manual QA Script** in the required numbered format (CLAUDE.md / runbook): start from a known state, golden path first then 1–2 edge cases, tell the PM what to expect at each step, and tie each check back to the issue's acceptance criteria. If the change is backend-only, the QA script is the curl/SQL/dashboard steps instead.
 
 ## Rules
 
