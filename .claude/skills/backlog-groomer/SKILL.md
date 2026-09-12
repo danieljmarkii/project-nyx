@@ -27,14 +27,17 @@ git rev-list --count HEAD    # sanity: should be in the hundreds, not ~50
 1. **Reconcile status against MERGED work.** Build the evidence base once and intersect it, rather than eyeballing:
 
    ```bash
-   git log --oneline main | grep -oE 'CUL-[0-9]+' | sort -u
+   git fetch origin main
+   git log --oneline origin/main | grep -oE 'CUL-[0-9]+' | sort -u
    ```
+
+   **`origin/main`, never `main`.** Nothing moves the local `main` branch — a fetch updates `origin/main` and leaves `main` frozen where the clone dropped it, and step 0's `--unshallow` makes it *deeper*, not *newer*. Measured 2026-09-12, both refs after step 0: `main` 806 commits / `origin/main` 834 → **26 `CUL` ids invisible**, including CUL-871 / CUL-873 and the whole `vet_visits` track. Silent, as ever: `git log main | grep CUL-` still returns 151 ids, so the pass reads complete. The fetch is load-bearing for the same reason — `origin/main` is only as fresh as the last one, and step 0 runs none on a clone that is already complete. _(Stopgap: CUL-921's `scripts/groom/preflight.sh` fetches unconditionally; drop the line when it lands.)_
 
    Intersect that set against the open-state issues (`list_issues` with `state` `unstarted`, `backlog`, `started` — `fields: ["id"]` keeps it cheap). Anything in both is a candidate. Move a genuinely-shipped issue to `Done` (`save_issue` `state`), attach the PR if it isn't linked, and post a one-line outcome comment naming the PR. **Never close without a resolving reference.** Expect most hits to be legitimately open — a track umbrella, a device-QA pass, a watch item — so check what the commit actually did before closing anything.
 
 2. **Reconcile against OPEN PRs too.** A merged-PR scan cannot see work that exists only in an unmerged branch, and this repo has a deep open-PR queue (30 as of 2026-09-06, oldest from July). `list_pull_requests` with `state: open`, then match each PR's `CUL-NNN` to its issue: an issue whose work is sitting in an open PR is **`In Review`**, not `In Progress` and not `Todo`. Two issues were mis-stated this way on 2026-09-06 (CUL-319 → #704, CUL-530 → #668).
 
-3. **Reconcile against the DEPLOY LEDGER.** Merged is not live. `supabase/functions/deploy-manifest.json` records which Edge Functions are `deployed` versus `pending`, and both standing holds (CUL-19 `generate-report`, CUL-557 the per-incident chain) gate real user-visible work. An issue whose fix merged but whose function is `pending` is **not done** — and a cluster of separate "redeploy X" issues usually means one command discharges several of them (CUL-780 ↔ CUL-795 on 2026-09-06). Note the ledger guard cannot see a stale `status`, only a changed fingerprint (CUL-700), so read it rather than trusting CI's silence.
+3. **Reconcile against the DEPLOY LEDGER.** Merged is not live. `git show origin/main:supabase/functions/deploy-manifest.json` — read it off the same ref as step 1, since the working tree is your own branch, not the record — says which Edge Functions are `deployed` versus `pending`, and both standing holds (CUL-19 `generate-report`, CUL-557 the per-incident chain) gate real user-visible work. An issue whose fix merged but whose function is `pending` is **not done** — and a cluster of separate "redeploy X" issues usually means one command discharges several of them (CUL-780 ↔ CUL-795 on 2026-09-06). Note the ledger guard cannot see a stale `status`, only a changed fingerprint (CUL-700), so read it rather than trusting CI's silence.
 
 4. **Fix stale in-flight issues — `In Progress` means three different things.** Sort every `In Progress` issue into one of these, and treat them differently:
 
