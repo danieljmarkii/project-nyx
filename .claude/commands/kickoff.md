@@ -47,9 +47,9 @@ Emit, in this order:
 - **Where we are** — phase + in-flight work, in 2–3 lines, from the Linear projects and the `In Progress` issues.
 - **Last shipped** — one line, with PR number(s), from the newest files in `docs/sessions/`.
 - **Blocked on / waiting on PM** — any blocking Open Question, plus anything on the `Waiting on PM` label that gates the recommended task. Name the `CUL-NNN`. If none, say "nothing blocking."
-- **Recommended first task** — the single concrete next step, naming the file/doc to open first and the build step it advances. If a PM Action Item is a prerequisite, say so.
+- **Recommended first task** — the single concrete next step, naming the file/doc to open first and the issue (`CUL-NNN`) it advances. If a PM Action Item is a prerequisite, say so.
 - **Alternates** — 1–2 other live tracks the PM could pick instead (parallel food track, a ready-to-decide open question).
 
-If running interactively with the PM present, end by asking the three Session Start questions from CLAUDE.md (build step? / decisions since last session? / scope change?). If non-interactive, skip the questions and proceed on what Linear says.
+If running interactively with the PM present, end by asking the three Session Start questions from CLAUDE.md (which track? / decisions since last session? / scope change?). If non-interactive, skip the questions and proceed on what Linear says.
 
 $ARGUMENTS

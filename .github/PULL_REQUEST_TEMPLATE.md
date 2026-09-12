@@ -4,9 +4,9 @@
 ## Linear issue(s)
 <!-- Reference each CUL-NNN this PR advances (e.g. "Fixes CUL-183", or a bare "CUL-183") so the GitHub↔Linear integration auto-links the PR and moves the issue's status on merge. Team Culprit. -->
 
-## Build step
-<!-- Which step/sub-step in the build sequence does this advance? -->
-Step — 
+## Project / milestone
+<!-- Which Linear project and milestone does this advance? -->
+— 
 
 ## Schema changes
 <!-- List any schema changes. None = write "None". Schema changes must be in their own PR. -->
@@ -19,5 +19,5 @@ Step —
 - [ ] 
 
 ## QA acceptance criteria
-<!-- Explicitly list which criteria from technical-spec.md §Build Phases pass or fail for this step -->
+<!-- Explicitly list which of the Linear issue's acceptance criteria (description + comments) pass or fail -->
 - [ ] 
