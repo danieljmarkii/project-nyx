@@ -4,6 +4,7 @@
 **Mode:** BUILD (CUL-921, milestone **W-A · The free wins** of *The workflow audit — the board, the queue, the ceremony*)
 **Outcome:** shipped via #840 — `scripts/groom/preflight.sh`, `scripts/groom/floor.json`, `guards/groomPreflight.test.ts`, and the corrected step 0 / step 1 / step 4 of `.claude/skills/backlog-groomer/SKILL.md`.
 **Also this session:** merged #829, so `docs/workflow-retro-2026-09.md` (the audit record this issue is scoped from) is now on `main`.
+**`STATUS.md`:** one row added. The audit's Linear project went live 2026-09-11 and the live-tracks table did not name it — a track start, which is one of the four conditions that warrants touching that file. CUL-921 also completes milestone **W-A · The free wins**.
 
 ---
 
