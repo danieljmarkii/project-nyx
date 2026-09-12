@@ -5,7 +5,7 @@
 
 ## Status
 
-**The current state lives in Linear** (team **Culprit**, `linear.app/projectnyx`) — live tracks are projects, work is issues, and anything needing you is on the **`Waiting on PM`** label. **[`STATUS.md`](./STATUS.md)** is a ~60-line **pointer card** that says which of those to open, names the live tracks, and names the standing holds; it is not a state store and it is not written to every session. The narrative of what happened is `docs/sessions/`, one file per session. Run `/kickoff` and it assembles all three.
+**The current state lives in Linear** (team **Culprit**, `linear.app/projectnyx`) — live tracks are projects, work is issues, and anything needing you is in the **`Needs PM`** state. **[`STATUS.md`](./STATUS.md)** is a ~60-line **pointer card** that says which of those to open, names the live tracks, and names the standing holds; it is not a state store and it is not written to every session. The narrative of what happened is `docs/sessions/`, one file per session. Run `/kickoff` and it assembles all three.
 
 **At a glance (2026-08-22):** shipping toward the **App Store** — the App Store Launch project (milestones M1–M6) is the dominant track. The original build sequence is complete end to end (steps 1–10, finished August 2026): the **vet report** has Phase 1 + the owner-facing MVP + authenticated photos live, with the public share link deliberately unshipped; the **AI Signal** shipped and was superseded by **Signals v2**, which GA'd 2026-08-20 alongside the Signal/Home uplift. The Daily Recap's DR-0…DR-7 are shipped. **Two standing holds gate multiple tracks: the `generate-report` redeploy (CUL-19) and the per-incident AI redeploy chain (CUL-557).** See `STATUS.md` for the routing table.
 
@@ -220,7 +220,7 @@ Single source of truth for every secret the project uses. Update this table inli
 
 **Columns:**
 - **Location** — exact mechanism (`.env.local`, `supabase secrets`, EAS env, EAS Secrets). If it lives in more than one place, list both.
-- **Provisioned?** — ✓ if set in that location and known working; ✗ or "needed" if not yet. When ✗, file a Linear issue on the `Waiting on PM` label.
+- **Provisioned?** — ✓ if set in that location and known working; ✗ or "needed" if not yet. When ✗, file a Linear issue in the `Needs PM` state.
 - **Notes** — public vs server-only, rotation cadence, anything non-obvious.
 
 ---
@@ -290,11 +290,11 @@ If destructive=`y`, the PR description also names the table(s) affected and the 
 
 **If running non-interactively (CI trigger, background agent, GitHub Action):** Skip the check-in. Read the Linear issue you were dispatched to — its description and comments are the spec — and `STATUS.md` § Current phase for the surrounding track.
 
-Before asking the three questions, surface the canonical state in the opening message — the live tracks and in-flight work from **Linear**, anything on the **`Waiting on PM`** label that gates the obvious next task, and any blocking Open Question — i.e. everything the PM would need to recap. `STATUS.md` gives you the routing; Linear gives you the answers. This lets the PM answer "no change" and move directly into work instead of recapping.
+Before asking the three questions, surface the canonical state in the opening message — the live tracks and in-flight work from **Linear**, anything in the **`Needs PM`** state that gates the obvious next task, and any blocking Open Question — i.e. everything the PM would need to recap. `STATUS.md` gives you the routing; Linear gives you the answers. This lets the PM answer "no change" and move directly into work instead of recapping.
 
 Then read the relevant docs for the confirmed track before writing any code.
 
-**Shortcut:** run `/kickoff` to auto-generate this orientation — it queries Linear (team Culprit) for the live projects, the in-flight issues and the `Waiting on PM` label, cross-reads `STATUS.md` + the newest `docs/sessions/` records, and proposes a concrete first task. It's the mirror of `/wrap`.
+**Shortcut:** run `/kickoff` to auto-generate this orientation — it queries Linear (team Culprit) for the live projects, the in-flight issues and the `Needs PM` queue, cross-reads `STATUS.md` + the newest `docs/sessions/` records, and proposes a concrete first task. It's the mirror of `/wrap`.
 
 ### Starting from a Linear issue (instituted 2026-08-16, CUL-528)
 
@@ -342,7 +342,7 @@ Before reporting a feature, sub-step, or PR as complete, run this checklist expl
 - [ ] **Adversarial review (mandatory for clinically- or statistically-load-bearing logic — correlation/detection engines, AI reads, escalation thresholds, anything feeding the vet report).** A bare ✓ is not sign-off. The relevant expert persona (Data Scientist / Biostatistician / Dr. Chen) must **state the concrete counterexample they tried to break it with, and why it held** — e.g. `Biostatistician: tried a daily staple + sporadic treat → staple correctly washes out (no false signal) ✓` or `Dr. Chen: tried the clear-foam-but-not-eaten-36h cat → escalates ✓`. If no one can name a falsification attempt, the logic has not been reviewed — say so and do not claim done. _Instituted 2026-05-30 after the AI Signal "nearest-preceding meal" attribution bug shipped under three ceremonial ✓s and was caught by the PM, not the experts. Catching this class of flaw is the experts' job, not the PM's._
 - [ ] **Future-self review** (for PRs introducing a *new* pattern, not just using an existing one): one-sentence answer to "would I still want this here in 12 months?" If the answer is uncertain, name the risk before merging.
 - [ ] Dev Handoff block emitted, including Manual QA Script
-- [ ] PM Action Items consolidated for any work only the PM can finish — **each filed in Linear with the `Waiting on PM` label**, not left as prose
+- [ ] PM Action Items consolidated for any work only the PM can finish — **each filed in Linear in the `Needs PM` state**, not left as prose
 - [ ] If this push completes a chunk: Next Session Kickoff prompts emitted
 
 If any box is unchecked, the work is not done — say so explicitly rather than claiming success.
@@ -461,7 +461,7 @@ Produce this summary automatically at the end of every session without being ask
 ### PM Action Items
 [Consolidated list of every action only the PM can take, deduplicated across the session. Examples: apply migration X; deploy Edge Function Y; provision secret Z; rule on open question W; run an on-device check.
 
-**Each one gets a Linear home before the wrap ends** — either a new issue (team Culprit, `Todo`, the **`Waiting on PM`** label, the single remaining step named in the first line) or a comment on the issue it belongs to. Then list them here as `CUL-NNN — <action>`, so the summary is a set of links rather than a second, drifting checklist. That drift is exactly what this section used to feed: 102 unchecked bullets accumulated in `STATUS.md` and roughly half of them were already done. If there are none, write "None."]
+**Each one gets a Linear home before the wrap ends** — either a new issue (team Culprit, state **`Needs PM`**, the single remaining step named in the first line) or a comment on the issue it belongs to. Then list them here as `CUL-NNN — <action>`, so the summary is a set of links rather than a second, drifting checklist. That drift is exactly what this section used to feed: 102 unchecked bullets accumulated in `STATUS.md` and roughly half of them were already done. If there are none, write "None."]
 
 ### Recommended Next Steps
 [Ordered list of what to tackle next session, with rationale for the ordering. **Explicitly surface parallelism + efficiencies** — which items are independent and can run concurrently (disjoint files / no logical dependency), which are gated on a PM/expert decision vs. ready-to-run, and any single decision that unblocks several tracks. Don't present a linear plan when the work can fan out.]
