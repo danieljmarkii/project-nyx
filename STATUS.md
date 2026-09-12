@@ -29,7 +29,7 @@ The rule behind the table (`CLAUDE.md` § Documentation Update Protocol): **read
 
 **Shipping toward the App Store.** The product is feature-complete for v1; the remaining work is submission mechanics, device verification, and two held deploys.
 
-The **Build Sequence** (`CLAUDE.md`) is done end to end: steps 1–8 complete; **step 9** (vet report) has Phase 1 + the owner-facing MVP + authenticated photos live, with the public share link (PR 6) deliberately unshipped; **step 10** (AI Signal) shipped and has since been superseded by Signals v2, which GA'd 2026-08-20.
+The original **build sequence** is done end to end — steps 1–10, finished August 2026 (`CLAUDE.md` § Where the Work Is Tracked): the **vet report** has Phase 1 + the owner-facing MVP + authenticated photos live, with the public share link (PR 6) deliberately unshipped; the **AI Signal** shipped and has since been superseded by Signals v2, which GA'd 2026-08-20.
 
 **Live tracks — read each project's own summary in Linear, not a copy here:**
 

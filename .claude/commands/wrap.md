@@ -23,7 +23,7 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
    Edit it **only** when one of these became untrue:
    - a **track started or ended** (a Linear project went live, or its work finished),
    - a **standing hold** changed (a held deploy ran, or a new cross-track hold appeared),
-   - the **Build Sequence phase** moved,
+   - the **build phase** moved (what § Current phase claims is shipped stopped being true),
    - a **pointer** is wrong (a doc moved, a convention changed).
 
    Everything else — what you built, what you decided, what broke, what is left — goes in your session record and on the touched issues. **If you are about to add a paragraph here describing this session's work, that paragraph is in the wrong file.** That single habit is what took this file to 239 KB and made it the repo's worst merge-conflict surface; a per-session write to a shared file is both.
@@ -52,7 +52,7 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
 6. **Emit the Dev Handoff** if anything was pushed this session — pull the exact runtime commands from `docs/dev-handoff-runbook.md` (default to Runtime B; the installed build and the traps are that file's § Current build state) and include the numbered **Manual QA Script** tied to acceptance criteria.
 
-7. **End with the Next Session Kickoff block — this is mandatory and always last.** Even if the session was inconclusive, produce a copy-pasteable recommended first prompt that names the build step, the file/doc to read first, and any PM Action Item that is a prerequisite. Include 1–2 alternate prompts if other tracks are live. This is the single most-relied-on output of the wrap — never skip or bury it.
+7. **End with the Next Session Kickoff block — this is mandatory and always last.** Even if the session was inconclusive, produce a copy-pasteable recommended first prompt that names the issue (`CUL-NNN`), the file/doc to read first, and any PM Action Item that is a prerequisite. Include 1–2 alternate prompts if other tracks are live. This is the single most-relied-on output of the wrap — never skip or bury it.
 
    **Surface efficiencies, not just a linear next step.** When two or more tracks are independent — *disjoint files, no logical dependency either direction* — say so explicitly and note they can run **concurrently as separate sessions/branches** (name any shared-file collision to expect — `STATUS.md` is no longer one of them for most sessions, since a wrap normally doesn't touch it). Flag any single decision that unblocks multiple tracks, any batchable work, and which items are **ready-to-run vs. gated on a PM/expert call**. The recommended prompt is still the best *single* next step; the alternates + a short "Parallel / efficiencies" note exist so the PM can fan work out instead of running a needlessly serial plan. Don't present a linear plan when the work can fan out.
 
@@ -62,7 +62,7 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 - **One PR per session.** The wrap's session record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — so a session ships as a single PR. Do **not** open a separate "record the merge" status PR afterward; writing the session record's PR reference post-merge is what spawns it (see Step 3). **The one legitimate exception:** if the session's work PR was already merged mid-session (e.g. you merged it yourself to unblock something), the branch is gone, so the status update is a small standalone follow-up PR. That's the exception, not the default. (This does not relax the separate rule that *schema* changes get their own PR — STATUS.md is not schema.)
 - **Do not arm a scheduled PR check-in at wrap.** See CLAUDE.md § Git Workflow → "PR check-ins". Wrapping is precisely when a session is *finished*; a check-in armed here polls an idle repo until morning at full context cost. If the session genuinely ended with sibling PRs still landing on `main`, arm **one** check-in ~90 minutes out and let it stop itself.
 - If nothing was pushed, say so plainly in the handoff and still produce the session record + Next Session Kickoff.
-- Do not mark the build step complete unless the DoD passes — if a box is unchecked, the wrap explicitly says "not done" and the Kickoff prompt points at finishing it.
+- Do not mark the issue complete unless the DoD passes — if a box is unchecked, the wrap explicitly says "not done" and the Kickoff prompt points at finishing it.
 - Keep `STATUS.md` a pointer card; the long story belongs in the Session Summary, the `docs/sessions/` record, and the touched issues' Linear comments.
 
 $ARGUMENTS
