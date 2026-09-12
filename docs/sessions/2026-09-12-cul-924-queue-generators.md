@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-12
 **Issue:** CUL-924 (milestone W-C · The queue, project *The workflow audit — the board, the queue, the ceremony*)
-**Mode:** BUILD · **Outcome:** shipped via #841
+**Mode:** BUILD · **Outcome:** shipped via #843
 
 ---
 
