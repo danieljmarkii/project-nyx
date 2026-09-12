@@ -82,7 +82,7 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 
 6. **Triage and label quick wins.** The `Quick Win` label is what the PM sorts by to find something grabbable; it goes stale as soon as new issues are filed, so re-derive it every pass over everything created since the last one.
 
-   **The definition (canonical, set 2026-08-29 — do not invent a second one):** *small **AND** grabbable today.* One focused session, ~1 PR, no schema/deploy chain, no pending PM/design/clinical ruling, not on either standing deploy hold, not a device/App-Store-Connect chore, not carrying `Waiting on PM`, and genuinely worth doing now.
+   **The definition (canonical, set 2026-08-29 — do not invent a second one):** *small **AND** grabbable today.* One focused session, ~1 PR, no schema/deploy chain, no pending PM/design/clinical ruling, not on either standing deploy hold, not a device/App-Store-Connect chore, not in `Needs PM`, and genuinely worth doing now.
 
    **You must read each candidate's description. Titles are not sufficient, and this is measured, not cautionary.** On 2026-09-07, 21 candidates were judged from their titles and then verified against their bodies: **10 of 21 failed** — and every disqualifier was invisible from the title. The recurring shapes:
 
@@ -93,9 +93,11 @@ Exit codes, so an unattended caller can say *which* assertion failed: `0` sound 
 
    A good positive signal is a body that names the fix shape *and* a precedent already in the tree ("the `pending` sibling of `escalationSurvivesFailure`", "as shipped for the sibling in #806"). Those are the ones that really are one session.
 
-   Apply with **`addLabels: ["Quick Win"]`** — never `labels`, which replaces the whole set and would silently strip `Waiting on PM` / `Legacy` / `Area: *` across the board.
+   Apply with **`addLabels: ["Quick Win"]`** — never `labels`, which replaces the whole set and would silently strip `Legacy` / `Area: *` across the board.
 
 7. **Audit recently-CLOSED issues for unfinished business.** Grooming has always looked only at open issues, which misses a failure mode the tracker creates: per CLAUDE.md v1.32, a `create_attachment` closes its issue on merge, so an issue can go `Done` still carrying open decisions. Scan issues closed since the last pass for a title or body naming something unresolved, and check whether a successor issue actually carries it. CUL-810 closed `Done` while its own title named four unruled decisions (D1 / D6 / DB-3 / DB-4) that neither successor mentions. **Flag; do not re-open and do not file a replacement** — whether they still need a home is the PM's call.
+
+   **The `Needs PM` half of this, which is the one that needs a detector.** The label this state replaced left an accidental audit trail — a closed issue kept carrying `Waiting on PM`, and a later pass could see it. A state vacates on close, so that evidence is gone by construction; nothing is left behind to notice. So read it off the transition instead: report every issue whose `stateHistory` shows **`Needs PM` → a completed state** (`Done` / `Canceled` / `Duplicate`) since the last pass, under *Closed while it still owed you*. Check whether the thing it owed the PM was actually ruled, or merely closed. This is exactly how CUL-719's five unruled calls were found — `Done`, with all five still open. Same handling as above: flag, do not re-open.
 
 8. **Re-evaluate aged priorities.** Any Urgent/High issue open across multiple sessions without progress is one of: (a) genuinely blocked — state the blocker in a comment; (b) mis-prioritized — lower its `priority` with a one-line why; (c) effectively dead — flag to the PM, don't silently cancel. Watch for a cluster that shares **one** blocker: most of the Urgent tier waits on the single Dr. Chen sitting CUL-583 exists to schedule.
 
@@ -149,6 +151,9 @@ Each grooming pass leaves an outcome issue carrying the calls it deliberately st
 ### Closed but unfinished
 - CUL-NNN — <what it closed still carrying, and whether a successor holds it>
 
+### Closed while it still owed you
+- CUL-NNN — `Needs PM` → <state> on <date>; owed <the ruling/check>; <ruled | never ruled>
+
 ### Blocks the Current Phase (<phase>)
 - CUL-NNN <title> — <why it's relevant now>
 
@@ -156,4 +161,4 @@ Each grooming pass leaves an outcome issue carrying the calls it deliberately st
 - <anything that's actually an Open Question, not a deferral>
 ```
 
-Apply the status / label / dedup edits directly in Linear via the MCP (`save_issue`) — reversible and cheap. Route anything in "Needs PM decision" to the PM and to CLAUDE.md → Open Questions.
+Apply the status / label / dedup edits directly in Linear via the MCP (`save_issue`) — reversible and cheap. Route anything in "Needs PM decision" to the PM by putting the issue **into the `Needs PM` state** (that is the queue; prose is not), and to CLAUDE.md → Open Questions if it is an unresolved decision rather than a deferral.
