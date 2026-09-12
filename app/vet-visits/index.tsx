@@ -163,7 +163,7 @@ export default function VetVisitsScreen() {
         // the others standing.
         //
         // Deliberately NOT inside the try above. The first draft let a failure on
-        // the second pet fall into the shared catch, which showed "Could not save"
+        // the second pet fall into the shared catch, which showed "That didn’t save"
         // over a save that had already committed for the first — and left the sheet
         // open, so the obvious retry wrote the first pet's appointment a second
         // time. A partial result is reported as a partial result.
@@ -204,7 +204,7 @@ export default function VetVisitsScreen() {
       console.warn('[vet-visits] save failed:', err);
       // Plain cause, one action, no error string from the exception (the
       // owner-facing copy guard).
-      Alert.alert('Could not save', 'Try that again in a moment.');
+      Alert.alert('That didn’t save', 'Try that again in a moment.');
     } finally {
       setSaving(false);
     }

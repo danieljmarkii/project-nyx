@@ -1,5 +1,5 @@
 import { getDb } from './db';
-import { uuid } from './utils';
+import { dayKeyToLocalDate, uuid } from './utils';
 
 // The vet-visit companion's read/write model (CUL-900, VV-2; spec §4.1 A1/E1/E2/E3/D3).
 //
@@ -629,6 +629,90 @@ export async function readVisitLinks(
     if (entry) entry.documentCount = d.n;
   }
 
+  return out;
+}
+
+// ── The History timeline row (CUL-904, VV-6; spec §4.1 History + AC 10) ─────────
+
+/**
+ * A visit as it appears in the History stream.
+ *
+ * NOT an `events` row, and that is the whole of AC 10: it carries no event_type, it
+ * is read from `vet_visits` rather than the timeline query, and nothing downstream
+ * of History ever sees it. It never enters the correlation engine, a count, a
+ * coverage line or a Patterns panel — a visit is a provenance anchor, never a
+ * source of numbers (CUL-746).
+ */
+export interface HistoryVisitRow {
+  id: string;
+  petId: string;
+  /** 'YYYY-MM-DD' — the calendar day the visit happened. */
+  visitedAt: string;
+  /**
+   * LOCAL-midnight epoch of `visitedAt`, so the row interleaves with events (which
+   * carry real `occurred_at` instants) at the foot of its own calendar day.
+   *
+   * The `BoundaryMarker.sortMs` convention verbatim (`lib/feedingArrangements.ts`),
+   * for the same reason and through the same primitive: `dayKeyToLocalDate` builds
+   * the instant from the key's PARTS. `new Date('2026-07-30')` would parse it as
+   * UTC midnight, which is the previous calendar day for every owner behind UTC —
+   * so a visit would sort into, and filter as, the wrong day west of Greenwich.
+   * The C-40 rule one level up: a bare calendar day and an instant are different
+   * things, and the conversion is done once, explicitly, in local terms.
+   */
+  sortMs: number;
+  /** The reason typed, or null. History renders the row without it — see the row. */
+  reason: string | null;
+  /** 'Riverside Animal Hospital · Dr. Chen'. Empty when neither was recorded. */
+  where: string;
+}
+
+/**
+ * Every live visit for one pet, newest first, ready to merge into History.
+ *
+ * UNBOUNDED by design, and filtered by the caller — the `getBoundaryMarkers`
+ * contract exactly. Two reasons it is not a bounded query:
+ *
+ *   1. `visited_at` is a calendar DATE and History's scope bounds are ISO
+ *      INSTANTS, so a SQL comparison between them is the C-40 trap in its purest
+ *      form: '2026-07-30' >= '2026-07-30T00:00:00.000Z' is FALSE as text, and the
+ *      row it silently drops is the one sitting exactly on the boundary. The two
+ *      sides are parsed and compared as instants, in JS, by the one caller.
+ *   2. The row count is a handful per pet over years — `readVetVisitsHome` already
+ *      reads them all for the Pet-tab card — so there is nothing to win by
+ *      bounding it and a correctness trap to lose.
+ *
+ * `deleted_at IS NULL` for the reason VV-1 shipped the column ahead of its control:
+ * every reader filters from the start, so the delete becomes shippable rather than
+ * needing a sweep first.
+ */
+export async function readVisitsForHistory(petId: string): Promise<HistoryVisitRow[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<LocalVetVisit>(
+    `SELECT ${VISIT_COLUMNS} FROM vet_visits
+      WHERE pet_id = ? AND deleted_at IS NULL
+      ORDER BY visited_at DESC, created_at DESC`,
+    [petId],
+  );
+
+  const out: HistoryVisitRow[] = [];
+  for (const v of rows) {
+    const day = dayKeyToLocalDate(v.visited_at);
+    // A malformed date is DROPPED rather than defaulted. A row with no usable day
+    // has no honest place in a chronological stream: sorted to the epoch it would
+    // sit silently at the bottom of the owner's whole history, and sorted to `now`
+    // it would claim to have happened today. Neither is a visit the owner can act
+    // on, and the Vet visits list still holds the row.
+    if (!day) continue;
+    out.push({
+      id: v.id,
+      petId: v.pet_id,
+      visitedAt: v.visited_at,
+      sortMs: day.getTime(),
+      reason: v.reason?.trim() || null,
+      where: formatWhereLine({ clinicName: v.clinic_name, vetName: v.vet_name }),
+    });
+  }
   return out;
 }
 

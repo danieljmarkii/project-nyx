@@ -309,7 +309,7 @@ describe('a partial "Also for" failure', () => {
     fireEvent.press(await screen.findByText('Add the next visit'));
     fireEvent.press(screen.getByText('Add the appointment'));
 
-    await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not save', expect.any(String)));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('That didn’t save', expect.any(String)));
     // Still open, with the owner's input — retrying is safe because nothing landed.
     expect(screen.getByText('Add the appointment')).toBeTruthy();
     alert.mockRestore();
