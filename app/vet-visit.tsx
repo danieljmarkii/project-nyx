@@ -120,6 +120,15 @@ export default function VetVisitModal() {
     // the same fall-through as the log paths, minus their refreshedNowPoint step,
     // which exists for a POINT time's occurred_at_source provenance; visited_at is
     // date-only and carries no source column (CUL-879).
+    //
+    // That fall-through is NOT a safe harbour, and this comment does not claim it
+    // is: `handleSave` serialises the default through `isoToDateOnly(toISOString())`,
+    // so in a negative-offset zone an evening visit stores TOMORROW while the field
+    // shows today — a future-dated visit reaching the record through the very
+    // default this guard falls back to. That is CUL-946 (Urgent, `Waiting on PM`,
+    // one line via `localDateKey`), deliberately not fixed here: it carries an open
+    // PM decision on whether it lands standalone or rides VV-4. This guard shuts the
+    // EXIF door; CUL-946 owns the wider one.
     const exifRaw = (asset.exif as Record<string, unknown> | undefined);
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
     const iso = typeof dateRaw === 'string' ? trustedPastExifIso(exifDateToISO(dateRaw)) : null;

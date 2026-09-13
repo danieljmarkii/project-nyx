@@ -12,8 +12,21 @@
 // sees. Proven by mutation against the pre-fix source: unwrapping the call makes
 // the future case red.
 //
-// Note the date picker already carries `maximumDate={new Date()}`, so EXIF is the
-// only way a future visit date can enter this screen at all.
+// KNOWN BLIND SPOT, stated because an undocumented one reads as coverage (C-41).
+// These three assertions read the date the owner SEES, not the date the screen
+// STORES, and on this screen those are different values: `handleSave` serialises
+// through `isoToDateOnly(visitedAt.toISOString())` — the UTC day — so in a
+// negative-offset zone an evening visit is written as TOMORROW while the field
+// above it shows today. That is CUL-946 (Urgent, `Waiting on PM`, its own
+// one-line fix via `localDateKey`), live on this screen and NOT what this suite
+// is about, but it means the rendered-date assertions below cannot be read as
+// proof that no future date reaches the record. They prove the EXIF door is shut.
+// The clock-default door is CUL-946's, and it is still open.
+//
+// So: `maximumDate={new Date()}` bounds the PICKER, and EXIF is now guarded — but
+// neither closes the serialisation. Do not restate "EXIF is the only way a future
+// visit date can enter this screen"; an earlier draft of this header did, and it
+// was false when written.
 
 const mockBack = jest.fn();
 jest.mock('expo-router', () => ({
