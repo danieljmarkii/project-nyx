@@ -197,6 +197,20 @@ describe('the 4th-state hint stays out of the other three states (CUL-472)', () 
     expect(utils.queryByText(HINT)).toBeNull();
   });
 
+  // The interactive fresh-toggle case, which the synced-pref tests above cannot
+  // reach: the undetermined branch of handleToggleDailySummary optimistically sets
+  // enabled=true so the primer does not rise over a switch that snapped back off.
+  // That is THIS device's unconfirmed intent, not the account's state, so the
+  // sentence "On for your account" is false for as long as the primer is open.
+  it('is absent while the primer is open on a device with nothing synced on', async () => {
+    mockEnsure.mockResolvedValue('undetermined');
+    mockRead.mockResolvedValue(false); // fresh device — nothing on for the account
+    const utils = await renderReady();
+    fireEvent(utils.getByLabelText('Daily summary'), 'valueChange', true);
+    await waitFor(() => utils.getByRole('button', { name: 'Turn on' })); // primer up
+    expect(utils.queryByText(HINT)).toBeNull();
+  });
+
   it('is absent once this device has granted — the switch is on and says so', async () => {
     mockEnsure.mockResolvedValue('granted');
     mockRead.mockResolvedValue(true);

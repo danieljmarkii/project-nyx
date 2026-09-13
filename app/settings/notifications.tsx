@@ -83,13 +83,22 @@ export default function NotificationsScreen() {
   // account-wide off).
   const switchOn = primerVisible || (permission === 'granted' && enabled);
 
-  // The fourth state (CUL-472). `undetermined` ONLY — a `denied` device already
-  // has its own banner, and stacking a second line under it would give the same
-  // owner two explanations for one off switch. Gated on `enabled` because the
-  // account half has to actually be on for the sentence to be true; this is the
-  // one line on the screen that reports a fact about ANOTHER device, so it is
-  // never shown on an assumption.
-  const enabledElsewhere = permission === 'undetermined' && enabled;
+  // The fourth state (CUL-472). Three conjuncts, each closing a different way of
+  // being false:
+  //   `undetermined` — a `denied` device already has its own banner, and stacking a
+  //     second line under it gives one owner two explanations for one off switch.
+  //   `enabled` — the account half has to actually be on. This is the one line on
+  //     the screen that reports a fact about ANOTHER device, so it is never shown
+  //     on an assumption.
+  //   `!primerVisible` — and `enabled` alone is not that fact. The undetermined
+  //     branch of handleToggleDailySummary sets it optimistically so the primer
+  //     does not rise over a switch that snapped back off, which means THIS
+  //     device's unconfirmed intent is indistinguishable from a synced pref for as
+  //     long as the sheet is up. `switchOn` already treats `primerVisible` as its
+  //     own higher-priority state for the same reason. Both primer exits reset
+  //     `enabled` (dismiss reverts it; confirm either grants or reverts), so the
+  //     window this closes is exactly the open sheet.
+  const enabledElsewhere = permission === 'undetermined' && enabled && !primerVisible;
 
   // On focus (not just mount): the owner may leave to iOS Settings and return, so
   // permission is re-read every time the screen surfaces. reconcile repairs drift
