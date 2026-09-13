@@ -11,9 +11,16 @@ import { ComingSoonLabel } from '../components/settings/ComingSoonLabel';
 import { OwnerNameRow } from '../components/profile/OwnerNameRow';
 import { DeleteAccountSheet } from '../components/profile/DeleteAccountSheet';
 import { supabase } from '../lib/supabase';
-import { buildSupportMailto, formatAppVersion } from '../lib/support';
+import { buildSupportMailto, formatAppVersion, formatJsBundle } from '../lib/support';
 import { showNoMailFallback } from '../lib/supportFallback';
-import { APP_VERSION, APP_BUILD, PLATFORM } from '../lib/appInfo';
+import {
+  APP_VERSION,
+  APP_BUILD,
+  PLATFORM,
+  JS_UPDATE_ID,
+  JS_CHANNEL,
+  JS_IS_EMBEDDED,
+} from '../lib/appInfo';
 import {
   SUPPORT_EMAIL,
   PRIVACY_POLICY_URL,
@@ -76,6 +83,8 @@ export default function SettingsScreen() {
       version: APP_VERSION,
       build: APP_BUILD,
       platform: PLATFORM,
+      // Unabbreviated here: triage matches this against an EAS update (CUL-690).
+      jsBundle: formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL),
     });
     try {
       const canOpen = await Linking.canOpenURL(url);
@@ -357,6 +366,14 @@ export default function SettingsScreen() {
         </Card>
 
         <Text style={styles.version}>Culprit v{formatAppVersion(APP_VERSION, APP_BUILD)}</Text>
+        {/* The JS bundle (CUL-690). The line above names the installed binary and
+            does not move on an OTA, so on its own it cannot answer "are these two
+            devices running the same code?". Its own line, quieter than the brand
+            line and abbreviated: this is a diagnostic an owner may read past, not
+            something they are being told. */}
+        <Text style={styles.jsBundle}>
+          {formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL, { abbreviate: true })}
+        </Text>
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -459,6 +476,12 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     marginTop: theme.space1,
+  },
+  jsBundle: {
+    textAlign: 'center',
+    fontFamily: theme.fontBody,
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
   },
   bottomPad: {
     height: theme.space4,

@@ -17,6 +17,7 @@
 // degrades to "Culprit v1.0.0" via formatAppVersion, never blank (§4.5).
 import Constants from 'expo-constants';
 import * as Application from 'expo-application';
+import * as Updates from 'expo-updates';
 import { Platform } from 'react-native';
 
 export const APP_VERSION =
@@ -31,3 +32,39 @@ export const APP_BUILD =
 // Diagnostic platform string for the support/feedback mailto (§D6/§D8) so triage
 // never starts with "what device / OS?". e.g. "ios 17.2" / "android 34".
 export const PLATFORM = `${Platform.OS} ${Platform.Version}`;
+
+// ── The JS bundle (CUL-690) ──────────────────────────────────────────────────
+//
+// Everything above describes the installed BINARY, and neither value moves on an
+// `eas update`. So two devices on different JS bundles report the same
+// "v1.0.0 (build 35)" — which made "is every device on the audited build?"
+// unanswerable, and meant an OTA-delivered bug was reported against a string that
+// cannot distinguish it from the build before it.
+//
+// Read defensively, and deliberately so: a diagnostic must never be able to break
+// the screen it is diagnosing. `expo-updates` module properties can throw where the
+// native module is absent (Expo Go, a bare dev client), and this module is imported
+// at the top of Settings — a module-scope throw there is a blank screen instead of a
+// missing line. The values above are read bare because expo-constants and
+// expo-application are always present; this one is not.
+function readUpdates(): { updateId: string | null; channel: string | null; embedded: boolean } {
+  try {
+    return {
+      updateId: Updates.updateId ?? null,
+      channel: Updates.channel ?? null,
+      // `false` on a throw-free read that simply does not know is fine: the
+      // formatter treats "not embedded and no id" as UNKNOWN rather than as
+      // embedded. Claiming "embedded" on a device we cannot read would be the same
+      // class of error the rest of this readout exists to remove.
+      embedded: Updates.isEmbeddedLaunch === true,
+    };
+  } catch {
+    return { updateId: null, channel: null, embedded: false };
+  }
+}
+
+const UPDATES = readUpdates();
+
+export const JS_UPDATE_ID = UPDATES.updateId;
+export const JS_CHANNEL = UPDATES.channel;
+export const JS_IS_EMBEDDED = UPDATES.embedded;
