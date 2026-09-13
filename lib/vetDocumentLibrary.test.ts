@@ -518,26 +518,26 @@ describe('restoreCountdownLabel', () => {
   });
 });
 
-// This label composes the SAME field read two different ways — the stem lexically
-// off the stored UTC text (`formatVetDocumentDate`), the countdown in LOCAL
-// calendar days (`daysLeftToRestore`) — so no single instant pins both halves in
-// every zone, and the local-component fixtures used above make the stem move
-// instead. (The seam is real, and cheap in practice; filed as B-640 rather than
-// fixed under a test-hygiene change.)
+// This label composes the SAME field twice, so both halves must read it the same
+// way. Until CUL-127 they did not: the stem came off the stored UTC text lexically
+// (`formatVetDocumentDate`) while the countdown indexed LOCAL calendar days
+// (`daysLeftToRestore`), and no single instant could pin both in every zone — which
+// is why this cluster used to sit on UTC literals at a shared time-of-day, pinning
+// the countdown's DIFFERENCE while leaving the stem un-exercised by construction.
 //
-// So this cluster stays on UTC literals AT THE SAME TIME OF DAY, which is
-// zone-invariant for a different reason than the ones above rather than by luck:
-// the stem is lexical, so it never moves at all; and two instants sharing a
-// time-of-day shift by the same offset in any zone, so the DIFFERENCE between
-// their local days — which is all the countdown reads — is preserved everywhere.
-// Keep `now` and every `deleted_at` here on the same time-of-day; 11:00Z against a
-// 12:00Z "now" is what broke the sibling assertions at UTC+12:45.
+// Now that both halves read local calendar days, the fixtures are built from local
+// components like the countdown's own (`localIso`), and the two boundary-hugging
+// cases below are the point of the describe rather than incidental to it: they are
+// the hours where a UTC stem and a local countdown part company, one in each
+// direction. They pass identically at UTC — the device zone IS the UTC day there,
+// so no fixture can separate the two readings — and it is the non-UTC CI job
+// (UTC+14 / +12:45 / −10) that holds this fix in place.
 describe('buildDeletedVetDocumentRow', () => {
-  const now = new Date('2026-07-26T12:00:00Z');
+  const now = NOW_LOCAL;
 
   it('states the window where the undo is', () => {
     const row = buildDeletedVetDocumentRow(
-      { ...cover({ title: 'Senior panel' }), deleted_at: '2026-07-24T12:00:00Z' },
+      { ...cover({ title: 'Senior panel' }), deleted_at: localIso(2026, 7, 24, 12) },
       now,
     );
     expect(row.title).toBe('Senior panel');
@@ -546,10 +546,33 @@ describe('buildDeletedVetDocumentRow', () => {
 
   it('carries the countdown for a document near the end of its window', () => {
     const row = buildDeletedVetDocumentRow(
-      { ...cover(), deleted_at: '2026-06-27T12:00:00Z' },
+      { ...cover(), deleted_at: localIso(2026, 6, 27, 12) },
       now,
     );
     expect(row.deletedLabel).toBe('Deleted Jun 27 · 1 day left');
+  });
+
+  // Deleted late in the evening: west of UTC the instant has already rolled into
+  // the next UTC day, so the old lexical stem said "Jul 25" beside a countdown that
+  // had correctly stayed on the 24th.
+  it('dates the stem by the owner’s evening, not the UTC day it has rolled into', () => {
+    const row = buildDeletedVetDocumentRow(
+      { ...cover(), deleted_at: localIso(2026, 7, 24, 23, 30) },
+      now,
+    );
+    expect(row.deletedLabel).toBe('Deleted Jul 24 · 28 days left');
+  });
+
+  // And the mirror, which is the half a one-sided fix would leave standing: east of
+  // UTC an early-morning delete has not yet reached that UTC day, so the old stem
+  // said "Jul 23". Both directions, or the guard only covers the hemisphere whose
+  // fixture someone happened to write.
+  it('dates the stem by the owner’s early morning, not the UTC day still behind it', () => {
+    const row = buildDeletedVetDocumentRow(
+      { ...cover(), deleted_at: localIso(2026, 7, 24, 0, 30) },
+      now,
+    );
+    expect(row.deletedLabel).toBe('Deleted Jul 24 · 28 days left');
   });
 });
 

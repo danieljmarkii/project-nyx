@@ -16,7 +16,7 @@
 // affordance forever).
 
 import { getDb } from './db';
-import { localDayIndex, localDayIndexOf } from './utils';
+import { dayKeyFromIndex, localDayIndex, localDayIndexOf } from './utils';
 import {
   VET_DOCUMENT_KINDS,
   VET_DOCUMENT_DEFAULT_KIND,
@@ -549,13 +549,31 @@ export function restoreCountdownLabel(deletedAtIso: string, now: Date = new Date
   return left === 1 ? '1 day left' : `${left} days left`;
 }
 
+// Both halves of this label read `deleted_at`, and they must read it the same way
+// (CUL-127). `deleted_at` is an INSTANT; `formatVetDocumentDate` hand-parses the
+// leading 'YYYY-MM-DD' lexically, which is right for the calendar-date columns it
+// was written for (`document_date`, `visited_at`) and wrong here — that stem is the
+// UTC day, while `restoreCountdownLabel` beside it counts LOCAL calendar days
+// (`localDayIndexOf`). For a delete late evening west of UTC, or early morning east
+// of it, the two disagree inside one string.
+//
+// So index the instant to a local day and hand the formatter the calendar-day key
+// it expects, rather than loosening the countdown: B-421 fixes the day boundary at
+// LOCAL midnight, and the countdown is the half that already honours it. Composed
+// from the existing pair rather than re-spelled — `dayKeyFromIndex` is the one
+// guarded inverse of `localDayIndexOf` (lib/utils.ts) and must stay a UTC read.
+function localDayStemOf(instantIso: string): string {
+  const index = localDayIndexOf(instantIso);
+  return index == null ? '' : dayKeyFromIndex(index);
+}
+
 export function buildDeletedVetDocumentRow(
   row: VetDocumentGroupRow & { deleted_at: string | null },
   now: Date = new Date(),
 ): DeletedVetDocumentRow {
   const base = buildVetLibraryRow(row, now);
   const deletedAt = row.deleted_at ?? '';
-  const when = formatVetDocumentDate(deletedAt, now);
+  const when = formatVetDocumentDate(localDayStemOf(deletedAt), now);
   return {
     ...base,
     deletedLabel: [
