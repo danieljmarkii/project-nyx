@@ -39,6 +39,16 @@ import { useSnackbarStore } from '../../store/snackbarStore';
 //   (c) permission denied at the OS level → the category is visibly inert with one
 //       honest line and a deep link to iOS Settings; reconcile cancels any orphan.
 //
+// …AND THE FOURTH, which is (a) carrying a synced pref (CUL-472): permission is
+// undetermined HERE while `enabled` arrived true from a device that DID grant it.
+// The switch must render OFF — a live-looking ON would fire the disable branch and
+// turn the summary off account-wide (LWW) for the phone that actually delivers it —
+// so it reads identically to a never-touched toggle. It is the only state where the
+// switch's position contradicts something the owner remembers doing, and the only
+// one where a plain OFF is true of the device and false of the account. It is not
+// an error and never renders as one: `notThisDeviceHint` says which of the two is
+// off, beside the control that fixes it.
+//
 // SAFETY GATE (D7 / clinical-guardrails G4 / Trust & Safety) SURVIVES THE UN-MOCK:
 // NO medication reminder appears here, armed or otherwise. Owner-configured med /
 // care reminders (B-227) are a separate, later build with their own safety
@@ -72,6 +82,23 @@ export default function NotificationsScreen() {
   // until it grants) and safe (a tap walks the primer → grant, never a silent
   // account-wide off).
   const switchOn = primerVisible || (permission === 'granted' && enabled);
+
+  // The fourth state (CUL-472). Three conjuncts, each closing a different way of
+  // being false:
+  //   `undetermined` — a `denied` device already has its own banner, and stacking a
+  //     second line under it gives one owner two explanations for one off switch.
+  //   `enabled` — the account half has to actually be on. This is the one line on
+  //     the screen that reports a fact about ANOTHER device, so it is never shown
+  //     on an assumption.
+  //   `!primerVisible` — and `enabled` alone is not that fact. The undetermined
+  //     branch of handleToggleDailySummary sets it optimistically so the primer
+  //     does not rise over a switch that snapped back off, which means THIS
+  //     device's unconfirmed intent is indistinguishable from a synced pref for as
+  //     long as the sheet is up. `switchOn` already treats `primerVisible` as its
+  //     own higher-priority state for the same reason. Both primer exits reset
+  //     `enabled` (dismiss reverts it; confirm either grants or reverts), so the
+  //     window this closes is exactly the open sheet.
+  const enabledElsewhere = permission === 'undetermined' && enabled && !primerVisible;
 
   // On focus (not just mount): the owner may leave to iOS Settings and return, so
   // permission is re-read every time the screen surfaces. reconcile repairs drift
@@ -310,6 +337,16 @@ export default function NotificationsScreen() {
             }
           />
 
+          {/* CUL-472 — why an off switch can be right. Informational register, not
+              the denied banner's: nothing is broken, nothing was lost, and the
+              control that resolves it is the one directly above. Inside the Card so
+              it reads as part of the row rather than a page-level notice. */}
+          {!loading && enabledElsewhere && (
+            <Text style={styles.elsewhereHint}>
+              On for your account — switch it on here to allow it on this phone too.
+            </Text>
+          )}
+
           {/* DR-6 — the warmth opt-in, revealed under Daily summary once it's on and
               only on a single-pet account. Default off: putting a pet's name on a
               lock screen is an involuntarily-public tradeoff, so the sublabel names
@@ -421,6 +458,16 @@ const styles = StyleSheet.create({
 
   // ── Intro framing (states a/b) + the relocated lock-screen privacy note (DR-4),
   //    which shares this exact tertiary register ──
+  elsewhereHint: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+    // Matches SettingsRow's own paddingHorizontal so the line sits under the
+    // label it explains rather than under the card's edge.
+    paddingHorizontal: theme.space2,
+    paddingBottom: theme.space1,
+  },
   intro: {
     fontFamily: theme.fontBody,
     fontSize: theme.textSM,

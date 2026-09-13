@@ -7,8 +7,16 @@ becomes something the engine, the report and every read surface can actually see
 Spec: `docs/nyx-event-taxonomy-requirements.md` §11 (D3), as hardened by the
 2026-08-27 product-team review on CUL-677 (T&S + Dir. Eng lenses).
 
-**Nothing here has been run against production except a dry run that rolled back.**
-The gates below are unmet as of 2026-08-28 and the swap is not due yet.
+> **RUN 2026-08-29 — COMPLETE. This directory is now a RECORD, not live tooling.**
+>
+> 33 of 34 candidates re-keyed, 1 held by ruling; all four gates met. The evidence is
+> in `run-log.md`. The swap was one-time and account-pinned, so it does not run again:
+> **treat every file here as a record of what was executed** and do not edit the SQL,
+> the emitter or `reviewed-ids.json` to make a point about them. The `b416-protein-backfill/`
+> precedent is the same shape one directory over — dated files, left as applied.
+>
+> Everything below is preserved in its pre-run tense, because the gates it describes are
+> the gates that were actually met. Read it as the plan that ran, not as instructions.
 
 ---
 
@@ -121,7 +129,7 @@ pending device write loses to last-write-wins. Different concern, both required.
 | `emitSwapSql.ts` | The pure emitter. Five safety properties, documented in its header. |
 | `emitSwapSql.test.ts` | Those properties, pinned in CI. Red-checked against a deliberately broken emitter. |
 | `emit.deno.ts` | CLI. Writes `swap.dry-run.sql` by default; `--live` / `--rollback`. |
-| `predict-export.sql` | §11 step 4 — the engine-input export for the predictor. |
+| `predict-export.sql` | §11 step 4 — the engine-input export for the predictor. Scoping note below. |
 | `predictChronicity.deno.ts` | Runs the **shipped** ⑦ detector to predict the swap's effect. |
 | `run-log.md` | Fill this in as you go. It is the record that the gates were met. |
 
@@ -129,6 +137,39 @@ Emitted `.sql` and `predict-input.json` are **gitignored on purpose**: the SQL i
 deterministic from `reviewed-ids.json` (so committing it adds nothing but a live-mode
 footgun sitting in the repo), and the export is a dump of the health record, which is
 well past "ids and counts only".
+
+### Scoping note — the shape to avoid in the NEXT script (CUL-734)
+
+`predict-export.sql` scopes each of its three subqueries — `pet`, `symptomRows`,
+`mealRows` — by repeating the same pair:
+
+```sql
+WHERE id = '<pet uuid>'
+  AND user_id = (SELECT id FROM auth.users WHERE email = '<owner>')
+```
+
+The **scoping is correct** (C-27: a service-role query names its subject by id paired
+with its owner) and it ran correctly. What is wrong is that the pair is a hand-maintained
+triplicate in *executable* SQL: retarget it at another pet, miss one of the three, and the
+output is a **silently mixed export** — pet metadata from one account, symptom rows from
+another. That is worse than the CUL-696 bug this pairing exists to fix, because the result
+is not empty and not obviously wrong; it is coherent-looking and internally inconsistent.
+
+The fix is to write the pair **exactly once** and join to it, which is how CUL-696 resolved
+the same shape:
+
+```sql
+WITH target_pet AS (
+  SELECT p.id FROM pets p
+   WHERE p.id = '<pet uuid>'
+     AND p.user_id = (SELECT id FROM auth.users WHERE email = '<owner>')
+)
+```
+
+It is written here rather than applied to the file because this directory is a record of a
+completed run (see the banner): editing executed SQL to improve it destroys the account of
+what actually ran, and buys nothing — a run that will not happen again cannot be
+mis-retargeted. **Any new script under `scripts/` starts from the CTE.**
 
 ---
 

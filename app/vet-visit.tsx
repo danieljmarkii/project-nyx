@@ -17,7 +17,7 @@ import { getDb } from '../lib/db';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { syncPendingVetVisits } from '../lib/sync';
-import { uuid, exifDateToISO } from '../lib/utils';
+import { uuid, exifDateToISO, trustedPastExifIso } from '../lib/utils';
 
 type Step = 'photo' | 'details' | 'complete';
 
@@ -110,14 +110,31 @@ export default function VetVisitModal() {
     setPhotoUri(asset.uri);
     setPhotoDims({ width: asset.width, height: asset.height });
 
+    // EXIF is a naive stamp from the camera's own clock, so a wrong clock can put
+    // it in the future — and here that stamp seeds BOTH the attachment's taken_at
+    // and the visit's DATE, which the vet-files chronology and the report's visit
+    // list then read. Guarded once, at the parse, the way every other photo path
+    // does it (app/log.tsx, components/log/SimpleEventConfirm.tsx, app/food-capture.tsx;
+    // lib/vetDocumentCapture.ts restates the rule for the document path). When the
+    // stamp is unusable nothing is seeded and the mount-time clock default stands —
+    // the same fall-through as the log paths, minus their refreshedNowPoint step,
+    // which exists for a POINT time's occurred_at_source provenance; visited_at is
+    // date-only and carries no source column (CUL-879).
+    //
+    // That fall-through is NOT a safe harbour, and this comment does not claim it
+    // is: `handleSave` serialises the default through `isoToDateOnly(toISOString())`,
+    // so in a negative-offset zone an evening visit stores TOMORROW while the field
+    // shows today — a future-dated visit reaching the record through the very
+    // default this guard falls back to. That is CUL-946 (Urgent, `Waiting on PM`,
+    // one line via `localDateKey`), deliberately not fixed here: it carries an open
+    // PM decision on whether it lands standalone or rides VV-4. This guard shuts the
+    // EXIF door; CUL-946 owns the wider one.
     const exifRaw = (asset.exif as Record<string, unknown> | undefined);
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
-    if (typeof dateRaw === 'string') {
-      const iso = exifDateToISO(dateRaw);
-      if (iso) {
-        setPhotoTakenAt(iso);
-        setVisitedAt(new Date(iso));
-      }
+    const iso = typeof dateRaw === 'string' ? trustedPastExifIso(exifDateToISO(dateRaw)) : null;
+    if (iso) {
+      setPhotoTakenAt(iso);
+      setVisitedAt(new Date(iso));
     }
   }
 
