@@ -45,6 +45,13 @@
 //  * Scanned source only: `.ts`/`.tsx` under the directories below, tests excluded.
 //    A flip inside an Edge Function is out of scope (server-side provenance is
 //    written by the client and carried, never re-derived).
+//  * The caller inventory matches the IDENTIFIER, so a renaming import
+//    (`import { sourceAfterPointEdit as flip }`) leaves that file out of the
+//    inventory — and if it also flips inline it escapes the detector's literal
+//    limit too, which is the one combination that clears both halves at once.
+//    Dormant today: every one of the seven call sites imports and calls the name
+//    directly. Listed rather than fixed because closing it means resolving import
+//    aliases, and a half-done resolution reads as coverage it does not have.
 
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
