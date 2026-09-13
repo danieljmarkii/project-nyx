@@ -3,8 +3,13 @@
 **Date:** 2026-09-13
 
 Shipped via #844. Twelve `Quick Win` candidates read in full, four built, four resolved as Linear
-reconciliation with no code, one new issue filed. Six commits on `claude/elegant-bohr-3k4tbg`,
-+443/−19 across nine files, all authored this session.
+reconciliation with no code, three new issues filed (CUL-956, CUL-957, CUL-958). Eight commits on
+`claude/elegant-bohr-3k4tbg`, all authored this session — six for the work, two for findings from
+the `code-reviewer` and `adversarial-reviewer` passes.
+
+Both review passes found something, and in both cases the defect was in a **claim** rather than in
+the logic: one predicate that asserted a fact it could not know, and one comment pair asserting a
+safety the code did not have. That is the shape worth remembering from this session.
 
 ---
 
@@ -205,6 +210,50 @@ Every new assertion proven by mutation against pre-fix source, not by reading th
 
 The last row is the one that matters: it proves the fix's test is not restating the two conjuncts
 that were already there.
+
+---
+
+## The adversarial pass, which failed the claim and passed the code
+
+Run for the DoD, because `visited_at` reaches the vet report and that is a literal trigger.
+
+**The code delta held.** Forty cases across UTC+14 → −11 with stamps 0–60000 ms old, all accepted:
+`exifDateToISO` parses the naive stamp as LOCAL and `.toISOString()` is a pure conversion of that
+same instant, so the zone interpreting the stamp is the zone answering `Date.now()` — the offset
+cancels structurally, not by luck. Sub-second truncation biases *earlier* (EXIF is second-granular,
+`.000` ms). Camera/phone skew and eastward travel can produce a false rejection, but in every
+reachable case the OLD code wrote a *future* date, so the change is never worse. "Strictly
+conservative" survived.
+
+**The claim did not.** `app/vet-visit.test.tsx`'s header said *"EXIF is the only way a future visit
+date can enter this screen at all."* False when written. `handleSave` serialises through
+`isoToDateOnly(visitedAt.toISOString())` — the **UTC** day — so in a negative-offset zone an evening
+visit stores TOMORROW while the field above shows today. Seven hours of twenty-four in Los Angeles,
+four in New York. That is **CUL-946**, Urgent, filed two days before this session, with
+`lib/getReady.ts:411` and a regression test in `lib/vetVisitWrites.test.ts` already naming it. The
+source comment made the matching error, presenting the clock-default fall-through as the safe
+harbour when it is the wider door.
+
+Both corrected in `c6ad8d5`. A guard's own suite is the worst possible place for a comment writing a
+cheque the code does not cash (C-38), and the suite's blind spot is now stated rather than implicit
+(C-41): its assertions read the date the owner *sees*, which on this screen is not the date stored.
+
+**CUL-946 deliberately not fixed**, despite being one line via `localDateKey`. It is on
+`Waiting on PM` with an open decision — land standalone, or let VV-4 carry it when it replaces the
+screen — and resolving that from a sweep is the exact move this session cut three issues for.
+
+**One correction back to the reviewer.** It argued the future date means the visit "cannot anchor the
+report's rung 1 at all", framing that as clinical cost. CUL-946 already measured this and corrected
+it in the other direction: the report is **not** affected (`report.ts:800` skips today- and
+future-dated visits explicitly). The real cost is the **rundown**, whose `MAX(visited_at)` has no
+upper bound, so the future row becomes "your last visit" and the since-visit diff reports that
+nothing changed — on the screen an owner opens to prepare for the appointment.
+
+**Two findings recorded rather than fixed.** `taken_at` is nullable so a rejected stamp yields an
+honest *unknown*, while `visited_at` is `NOT NULL` with no source column, so rejection substitutes a
+second assertion of equal confidence — one value, two different contracts, right for the attachment
+and under-powered for the visit. And `trustedPastExifIso` is one-sided: a dead-battery camera clock
+(`1970:01:01`) passes all four call sites. Inherited, not introduced; filed as CUL-958.
 
 ---
 
