@@ -54,15 +54,35 @@ export interface RemoteRow {
 // this device and never re-hydrated keeps the space form, so on a device whose
 // timezone isn't UTC its own updated_at parses hours off — and another device's
 // edit/delete to that row is wrongly judged "older" and skipped (the cross-device
-// delete-not-propagating bug). Normalize the space form to explicit UTC before
-// parsing so both sides compare on the same clock. (The app's writers now all use
-// toISOString(); this guard defends legacy/default rows. Two narrower offset-less
-// forms are out of scope — see B-056.)
+// delete-not-propagating bug). Normalize to explicit UTC before parsing so both
+// sides compare on the same clock. (The app's writers now all use toISOString();
+// this guard defends legacy/default rows.)
+//
+// CUL-356 widened this from the seconds-only space form to **every zone-less
+// datetime**, because the narrow test read as a whole-class guard while covering
+// one spelling of it. The other two are not hypothetical spellings of a solved
+// problem — they are the two ways this value legitimately arrives without a zone:
+//
+//   • a FRACTIONAL space form, 'YYYY-MM-DD HH:MM:SS.sss' — SQLite's
+//     strftime('%Y-%m-%d %H:%M:%f'), and how Postgres renders a bare `timestamp`;
+//   • a 'T' form with no Z and no offset, 'YYYY-MM-DDTHH:MM:SS[.ffffff]' — what
+//     PostgREST hands back for a column typed `timestamp` rather than `timestamptz`.
+//
+// Neither is reachable today (every writer emits Z or an offset), so this is
+// hardening, not a fix: the cost of being wrong is silent and permanent — an older
+// copy judged newer overwrites a newer one and LWW converges on the loss — and a
+// column mistyped in one migration is all it takes to reach it.
+//
+// The anchoring is what keeps this safe. `$` after the optional fraction means a
+// value already carrying 'Z' or '+HH:MM' / '-HH:MM' cannot match and is passed
+// through untouched — widening the match is exactly how a correct offset would
+// start being re-stamped as UTC. Seconds stay REQUIRED: 'YYYY-MM-DD HH:MM' is not
+// a form anything here writes, and Date.parse's handling of it is not specified,
+// so claiming it would be claiming more than this normalization can deliver.
 export function parseTs(ts: string | null | undefined): number | null {
   if (!ts) return null;
-  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(ts)
-    ? ts.replace(' ', 'T') + 'Z'
-    : ts;
+  const zoneless = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/.exec(ts);
+  const normalized = zoneless ? `${zoneless[1]}T${zoneless[2]}Z` : ts;
   const n = Date.parse(normalized);
   return Number.isNaN(n) ? null : n;
 }
