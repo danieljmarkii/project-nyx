@@ -127,6 +127,34 @@ describe('parseTs — timestamp format normalization', () => {
     expect(parseTs('2026-06-06T14:25:05.000Z')).toBe(Date.parse('2026-06-06T14:25:05.000Z'));
   });
 
+  // CUL-356. Same claim as the space form above, for the two other spellings this
+  // value can legitimately arrive in without a zone: SQLite's fractional
+  // strftime('%f') output, and a `timestamp`-typed (not `timestamptz`) column
+  // coming back through PostgREST. Both are asserted against the explicit-Z parse,
+  // so they only mean something in a non-UTC runner — the reading they must NOT get
+  // is "local", which is identical to UTC on a UTC runner.
+  it('treats a fractional-seconds zone-less form as UTC', () => {
+    expect(parseTs('2026-06-06 14:23:05.123')).toBe(Date.parse('2026-06-06T14:23:05.123Z'));
+    expect(parseTs('2026-06-06 14:23:05.123456')).toBe(Date.parse('2026-06-06T14:23:05.123Z'));
+  });
+
+  it('treats a T-separated form with no Z and no offset as UTC', () => {
+    expect(parseTs('2026-06-06T14:23:05')).toBe(Date.parse('2026-06-06T14:23:05Z'));
+    expect(parseTs('2026-06-06T14:23:05.500')).toBe(Date.parse('2026-06-06T14:23:05.500Z'));
+  });
+
+  // The other half of the widening, and the one worth guarding hardest: a value
+  // that already states its zone must pass through untouched. A match loose enough
+  // to catch the forms above, but not anchored past the fraction, would re-stamp a
+  // correct offset as UTC — turning a hardening change into the very failure it is
+  // meant to prevent, in the one case that is reachable today.
+  it('never re-stamps a value that already carries a zone', () => {
+    expect(parseTs('2026-06-06T14:23:05-07:00')).toBe(Date.parse('2026-06-06T21:23:05Z'));
+    expect(parseTs('2026-06-06T14:23:05+05:30')).toBe(Date.parse('2026-06-06T08:53:05Z'));
+    expect(parseTs('2026-06-06T14:23:05.250+02:00')).toBe(Date.parse('2026-06-06T12:23:05.250Z'));
+    expect(parseTs('2026-06-06T14:23:05Z')).toBe(Date.parse('2026-06-06T14:23:05Z'));
+  });
+
   it('returns null for empty / unparseable input', () => {
     expect(parseTs(null)).toBeNull();
     expect(parseTs(undefined)).toBeNull();

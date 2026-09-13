@@ -14,9 +14,16 @@ import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header, PrimaryButton, SectionLabel } from '../../components/ui';
 import { ChipGroup, ChipGroupOption } from '../../components/ui/ChipGroup';
-import { buildFeedbackSubject, buildSupportMailto } from '../../lib/support';
+import { buildFeedbackSubject, buildSupportMailto, formatJsBundle } from '../../lib/support';
 import { showNoMailFallback } from '../../lib/supportFallback';
-import { APP_VERSION, APP_BUILD, PLATFORM } from '../../lib/appInfo';
+import {
+  APP_VERSION,
+  APP_BUILD,
+  PLATFORM,
+  JS_UPDATE_ID,
+  JS_CHANNEL,
+  JS_IS_EMBEDDED,
+} from '../../lib/appInfo';
 import { SUPPORT_EMAIL } from '../../constants/links';
 
 // "Share feedback" — a lightweight in-app composer (spec §6 / §D8). Product
@@ -73,6 +80,9 @@ export default function FeedbackScreen() {
       version: APP_VERSION,
       build: APP_BUILD,
       platform: PLATFORM,
+      // Unabbreviated, like the support path: an OTA-delivered bug reported here
+      // was otherwise indistinguishable from the build before it (CUL-690).
+      jsBundle: formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL),
       subject: buildFeedbackSubject(categoryLabel),
       body: trimmed,
     });

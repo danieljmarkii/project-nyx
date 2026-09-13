@@ -7,6 +7,9 @@ import {
   type AllowlistFlagValues,
 } from '../lib/appConfig';
 import { useBetaOptInStore } from '../lib/betaFeatures';
+import { JS_UPDATE_ID, JS_CHANNEL, JS_IS_EMBEDDED } from '../lib/appInfo';
+import { formatAppVersion, formatJsBundle } from '../lib/support';
+import { APP_VERSION, APP_BUILD } from '../lib/appInfo';
 
 // Pins the B-747 fix at its fix SITE — the "You" screen's Beta-features row:
 //   • the row's visibility is an OR over the WHOLE registry (the shipped bug
@@ -110,5 +113,22 @@ describe('Settings — the Beta-features row gate (B-747)', () => {
     const { getByText, queryByText } = render(<SettingsScreen />);
     expect(getByText('Beta features')).toBeTruthy();
     expect(queryByText(/\d+ on/)).toBeNull();
+  });
+});
+
+// CUL-690 — the version foot names the JS bundle as well as the binary.
+//
+// This pins that the LINE MOUNTS, which is the half a pure test cannot see: the
+// screen previously rendered only the binary's version, so two devices on
+// different JS bundles read identically. What the line SAYS across the three
+// states (embedded / an update / unreadable) is pinned in lib/support.test.ts,
+// where the update id is a parameter rather than whatever the test runner
+// happens to report — including the abbreviation, which is invisible here
+// because a runner with no update reads "unknown" in both forms.
+describe('Settings — the version foot names the JS bundle (CUL-690)', () => {
+  it('renders the binary version and the JS bundle as two separate lines', () => {
+    const { getByText } = render(<SettingsScreen />);
+    getByText(`Culprit v${formatAppVersion(APP_VERSION, APP_BUILD)}`);
+    getByText(formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL, { abbreviate: true }));
   });
 });
