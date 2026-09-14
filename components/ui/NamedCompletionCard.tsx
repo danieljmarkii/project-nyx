@@ -12,7 +12,8 @@ import { updateEvent, getEventSource } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
-  timeEditPrompt, removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+  timeEditPrompt, removedNoticeCopy, undoGateCopy,
+  HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
@@ -250,37 +251,16 @@ export function NamedCompletionCard() {
     // control only ever renders over one. Same guard shape as handleSaveTime.
     if (!payload || payload.kind !== 'named') return;
 
-    // ── THE ATTACHMENT GATE (CUL-645) ─────────────────────────────────────────
+    // ── THE ATTACHMENT GATE (CUL-645, widened by CUL-869) ─────────────────────
     // Undo is one tap because the tap IS the destructive confirm (§5.6), and that
-    // holds for everything this card can remove EXCEPT a record carrying a photo.
-    // The event itself is re-loggable — the owner still knows what they saw — but
-    // the photo is of the thing itself, at 2am, and it does not exist anywhere
-    // else. No surface in the app exposes a soft-deleted event, so an accidental
-    // tap is the last time that photo is reachable.
-    //
-    // The dialog is not friction bought for its own sake, and it is deliberately
-    // NOT the generic "Are you sure?" the other three destructive actions use.
-    // After CUL-612's asymmetric hitSlop the mistouch mechanism is closed; what is
-    // left is a COMPREHENSION failure — an owner reversing a mis-logged event with
-    // no idea the photo goes too. So the body's job is to say the one thing they
-    // do not know. The extra tap is the price of delivering it, not the point.
-    // CUL-869 widens the gate from the photo to "anything this removal takes with it
-    // that the owner cannot make again". A look's NOTE is the second such thing, and
-    // it fails the same way: re-logging the look is easy, re-writing the sentence she
-    // typed at 2am about what she saw is not, and no surface in the app exposes a
-    // removed one. Composed rather than branched so a record carrying both would name
-    // both — a look has no photo affordance today, but a body that silently drops one
-    // of two facts is the defect this gate exists to prevent.
-    // Phrases are lower-case and the sentence capitalises its own first letter, so
-    // joining two never produces "…and The note…" mid-sentence.
-    const takesWithIt = [
-      payload.hasAttachment ? 'the photo you attached' : null,
-      payload.hasNote ? 'the note you wrote' : null,
-    ].filter((x): x is string => x !== null);
+    // holds for everything this card can remove EXCEPT a record carrying something
+    // the owner cannot make again. The full argument, and the wording, live in
+    // `lib/completionCard`'s `undoGateCopy` — moved there by CUL-964 when the R2
+    // in-sheet beat gained the same gate, because two copies of a safety string are
+    // two copies to keep in step.
+    const gate = undoGateCopy(payload);
 
-    if (takesWithIt.length > 0) {
-      const clause = takesWithIt.join(' and ');
-      const body = `${clause.charAt(0).toUpperCase()}${clause.slice(1)} will be removed with it.`;
+    if (gate) {
       // Hold the card open across the dialog. Without this the gate is worse than
       // no gate: this card never wired the dwell pause (only the chip-bearing meal
       // and dose cards did), so the 5s runs from the REVEAL and is not reset by the
@@ -291,8 +271,8 @@ export function NamedCompletionCard() {
       // pause has a ~20s ceiling by design); this is what makes it not happen.
       pauseDwell();
       Alert.alert(
-        'Remove this log?',
-        body,
+        gate.title,
+        gate.body,
         [
           { text: 'Keep it', style: 'cancel', onPress: resumeDwell },
           {

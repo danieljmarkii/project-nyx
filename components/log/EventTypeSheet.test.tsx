@@ -55,6 +55,7 @@ jest.mock('./SimpleEventConfirm', () => {
                 latest: null,
               },
               hasAttachment: false,
+              hasNote: false,
             })
           }
         >
@@ -76,6 +77,7 @@ jest.mock('./SimpleEventConfirm', () => {
                 latest: null,
               },
               hasAttachment: true,
+              hasNote: false,
             })
           }
         >
@@ -105,7 +107,11 @@ jest.mock('./SheetLogBeat', () => {
         <Text>{`beat:${tone}`}</Text>
         <Text>{`beat-title:${title}`}</Text>
         <Text>{`beat-pet:${petName}`}</Text>
-        <Text onPress={onDone}>stub-done</Text>
+        {/* CUL-964 — the beat now reports HOW it ended. Two doors rather than a
+            parameterised one, so every existing test keeps pressing the plain
+            dismissal and the shipped landing stays byte-identical. */}
+        <Text onPress={() => onDone(false)}>stub-done</Text>
+        <Text onPress={() => onDone(true)}>stub-done-undone</Text>
       </>
     ),
   };
@@ -116,7 +122,19 @@ import { Alert, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { EventTypeSheet } from './EventTypeSheet';
 import { usePetStore } from '../../store/petStore';
+import { useMomentStore } from '../../store/momentStore';
 import { PetAvatar } from '../pet/PetAvatar';
+
+// CUL-964 — a commit now hands the beat to the completion register, which arms a REAL
+// dwell timer. Cleared around EVERY case in this file, not just the first describe's:
+// the expansion block commits too, and a beat left armed there is a live handle after
+// the run and a dismissal that can land inside the next test.
+function resetMomentRegister() {
+  act(() => { useMomentStore.getState().hide(); });
+  useMomentStore.setState({ visible: false, payload: null, removed: false });
+}
+beforeEach(resetMomentRegister);
+afterEach(resetMomentRegister);
 
 function seedPets(count: number) {
   const pets =
@@ -274,6 +292,49 @@ describe('EventTypeSheet', () => {
       fireEvent.press(getByText('Vomit'));
       fireEvent.press(getByText('stub-logged'));
       fireEvent.press(getByText('stub-done'));
+      expect(router.push).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('hands the commit to the completion register — what makes Undo reachable at all', () => {
+      // The beat paints; the register OWNS the reversal (C-20/C-33). `undo()` refuses
+      // on `!payload`, so a sheet that showed the beat without this call would render
+      // an Undo control that silently does nothing — which is worse than the missing
+      // affordance this issue set out to fix.
+      const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      fireEvent.press(getByText('Vomit'));
+      fireEvent.press(getByText('stub-logged-with-photo'));
+      const { visible, payload } = useMomentStore.getState();
+      expect(visible).toBe(true);
+      expect(payload).toMatchObject({
+        kind: 'sheetBeat', eventId: 'e1', tone: 'calm', hasAttachment: true, hasNote: false,
+      });
+    });
+
+    it('hands the register back if the sheet is dismissed mid-beat', () => {
+      // A scrim tap during the beat closes the sheet at once (there is nothing left to
+      // guard once the write has landed). Without this the payload would sit `visible`
+      // with nothing painting it until its own timer ran out — a register that believes
+      // a beat is on screen when none is.
+      const { getByText, rerender } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+      fireEvent.press(getByText('Vomit'));
+      fireEvent.press(getByText('stub-logged'));
+      expect(useMomentStore.getState().visible).toBe(true);
+      rerender(<EventTypeSheet visible={false} onClose={jest.fn()} />);
+      expect(useMomentStore.getState().visible).toBe(false);
+    });
+
+    it('an UNDONE photographed vomit does not land — G5, the way it actually breaks', () => {
+      // A screen never shows a row that is no longer in the record (CUL-802 G5). The
+      // owner photographed the vomit, saw the beat, realised it was the wrong type and
+      // reversed it — and the shipped push would then have handed her the record of a
+      // row she just removed, with a per-incident read arriving over it. The sheet
+      // still closes: the log is gone, and there is nothing to stay open for.
+      const onClose = jest.fn();
+      const { getByText } = render(<EventTypeSheet visible onClose={onClose} />);
+      fireEvent.press(getByText('Vomit'));
+      fireEvent.press(getByText('stub-logged-with-photo'));
+      fireEvent.press(getByText('stub-done-undone'));
       expect(router.push).not.toHaveBeenCalled();
       expect(onClose).toHaveBeenCalledTimes(1);
     });

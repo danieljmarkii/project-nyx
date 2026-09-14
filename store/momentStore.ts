@@ -234,7 +234,29 @@ export interface LookPayload {
   hasNote?: boolean;
 }
 
-export type MomentPayload = NamedPayload | MealPayload | MedicationPayload | LookPayload;
+export interface SheetBeatPayload {
+  kind: 'sheetBeat';
+  // The R2 beat's own tone split — the same two values R1 carries, for the same
+  // reason: a symptom log is acknowledged, never congratulated (Principle 4). Read
+  // by playCommitHaptic, so the sheet's beat inherits §5.6 from the register
+  // instead of re-implementing it (it used to fire its own).
+  tone: MomentTone;
+  eventId: string;
+  // ISO UTC of the logged event's occurred_at. The value the beat's sentence was
+  // composed from at commit time, carried so this payload is the same shape as its
+  // four siblings and `patchOccurredAt` has something true to patch.
+  occurredAt: string;
+  // CUL-645 / CUL-869 — what this removal would take with it that the owner cannot
+  // make again. Same two fields, same meaning and the same absent-means-false, as on
+  // NamedPayload; the sheet confirm is the one path that can produce BOTH (it offers
+  // a photo and a note on the same screen), so the gate composes them rather than
+  // branching (`undoGateCopy`).
+  hasAttachment?: boolean;
+  hasNote?: boolean;
+}
+
+export type MomentPayload =
+  | NamedPayload | MealPayload | MedicationPayload | LookPayload | SheetBeatPayload;
 
 interface ShowOpts {
   delayMs?: number;
@@ -279,6 +301,22 @@ interface MomentState {
   // `LookCard` renders off `payload` + `removed`; the three root cards each gate on
   // their own kind, so nothing else paints.
   showLook: (payload: Omit<LookPayload, 'kind'>, opts?: ShowOpts) => void;
+  // The R2 IN-SHEET BEAT (CUL-964) — the log sheet's mint check, and the second
+  // presentation here that paints no root card. It cannot use one: every card in
+  // `components/ui/` is mounted at the app root, which renders UNDER the sheet's
+  // <Modal>, so `components/log/SheetLogBeat.tsx` draws it inside the sheet and
+  // reads `payload` + `removed` the way `LookCard` does (C-33 — what varies is who
+  // paints it, never who owns the reversal).
+  //
+  // WHY IT IS HERE AT ALL, having managed without for three PRs: the beat had no
+  // Undo, and at GA the sheet is the DEFAULT symptom path — so the register's house
+  // rule ("Undo renders unconditionally; an affordance that disappears on the records
+  // that need it most is not a safety net") was about to stop holding on the path most
+  // owners use. `undo()` refuses on `!payload`, so reaching the one shared reversal
+  // (C-20) means being a presentation of this store, not a component with its own
+  // soft-delete. It inherits the dwell clock, the pause, the staleness guard and the
+  // commit haptic with it — four rules the beat was re-deriving or missing.
+  showSheetBeat: (payload: Omit<SheetBeatPayload, 'kind'>, opts?: ShowOpts) => void;
   hide: () => void;
   // CUL-612 — reverse the log this card is announcing: soft-delete the event, drop
   // it from Today, and swap the card to its removal line for a short read.
@@ -394,6 +432,17 @@ const MEDICATION_DURATION_MS = 5000;
 // takes afterwards, so it is the whole reversal window an owner gets on this surface:
 // the same five seconds every other completion offers, no shorter for being quieter.
 export const LOOK_DWELL_MS = 5000;
+// The in-sheet beat's dwell (CUL-614's number, now owned here — CUL-964). It is the
+// ONE dwell in this store that is not the interactive 5s, and the reason is the
+// surface: this beat renders inside an RN <Modal>, so unlike the three bottom cards
+// — whose scrim is `pointerEvents="none"` and leaves Home live underneath — it holds
+// the owner's screen for as long as it stays. That is what keeps it under the ≤2s
+// earned-moment cap (`docs/design-system-migration-plan.md` §6) even now that it
+// carries a control to reach: 1800ms reads the record's sentence at a calm pace, and
+// an owner who wants longer TOUCHES the beat, which pauses the clock and then hands
+// back a full interactive window on release (TOUCH_RESET_DWELL_MS). PM-ruled
+// 2026-09-14 against raising the base.
+export const SHEET_BEAT_DWELL_MS = 1800;
 // Medication-card dwell once the B-157 double-dose note is riding along: the card now
 // carries a line of safety prose the owner has not seen before and cannot get back by
 // tapping (the note is passive by design; its durable home is the dose detail screen).
@@ -567,7 +616,11 @@ function playCommitHaptic(payload: MomentPayload) {
   // land on silence. The chips themselves tick — `selectChip` on every tap, at the
   // call site — so the gesture is heard; the commit is not.
   if (payload.kind === 'look') return;
-  if (payload.kind === 'named' && payload.tone === 'calm') commitSymptom();
+  // The two tone-bearing payloads, one rule. The R2 in-sheet beat used to fire this
+  // split itself, in its own useEffect — a duplicated safety rule with a test on only
+  // one of its two implementations, which is how two copies drift. CUL-964 deleted
+  // that copy by making the beat a presentation of this store.
+  if ((payload.kind === 'named' || payload.kind === 'sheetBeat') && payload.tone === 'calm') commitSymptom();
   else commitRoutine();
 }
 
@@ -621,6 +674,8 @@ export const useMomentStore = create<MomentState>((set) => ({
   showMedication: (payload, opts) =>
     present(set, { kind: 'medication', ...payload }, opts, MEDICATION_DURATION_MS),
   showLook: (payload, opts) => present(set, { kind: 'look', ...payload }, opts, LOOK_DWELL_MS),
+  showSheetBeat: (payload, opts) =>
+    present(set, { kind: 'sheetBeat', ...payload }, opts, SHEET_BEAT_DWELL_MS),
   hide: () => {
     clearTimers();
     set({ visible: false });
