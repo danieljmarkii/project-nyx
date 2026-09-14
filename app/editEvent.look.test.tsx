@@ -320,6 +320,14 @@ describe('the photo row', () => {
   it('is not offered on a look — `check_in` is hasPhoto: false (§5.2)', async () => {
     // A photo attached here would render as the record's hero regardless of the flag,
     // so the door has to be closed rather than the render gated.
+    //
+    // CUL-887 widened the gate under this test from `isLook` to the leaf contract
+    // (`hasPhoto`), which is why it still passes unchanged: a look reaches the same
+    // answer through the predicate every other leaf is now asked. The contract's own
+    // coverage — all twelve leaves, both affordances, and the evidence-vs-beg
+    // asymmetry — lives in `app/editEvent.leafContract.test.tsx`; this pair stays
+    // because N-3's claim is about the LOOK, and it should keep failing on its own
+    // terms if `check_in` ever loses that answer.
     const { queryByText } = await open();
     expect(queryByText('Photo')).toBeNull();
     expect(queryByText('Attach a photo')).toBeNull();
@@ -333,6 +341,8 @@ describe('the photo row', () => {
 });
 
 describe('the time control', () => {
+  // Same note as the photo row above: CUL-887 moved this gate to
+  // `confidenceModel`, and a look still lands on the same side of it.
   it('offers no Saw it / Found it on a look — witnessed by construction (§5.4)', async () => {
     const { queryByText } = await open();
     expect(queryByText('Saw it happen')).toBeNull();

@@ -78,30 +78,85 @@ export default function EditEventModal() {
   // flips to 'manual' the moment the user taps the time row.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
 
+  // Does the STORED row already carry a confidence its leaf says is unwritable? Only
+  // ever true for a row stamped before its leaf's gate existed. Seeded false and set
+  // by the mount read below, so the first frame shows the leaf's own answer: a
+  // renderer is the right level for a hydration-dependent predicate (C-12 — the
+  // value costs a frame here, not a one-shot destructive act), and the save re-reads
+  // the stored fields anyway, so a point moved inside that tick still cannot erase a
+  // window (`confidenceTouched` gates the write; the windowed-save test pins it).
+  const [storedContradictsLeaf, setStoredContradictsLeaf] = useState(false);
+
   // B-010 — editable witnessed/found confidence (QA Note 1: confidence wasn't
-  // editable after logging). Shown only for non-meal events; meals are always
-  // witnessed — and so is a weight check (you read the scale), so it uses the
-  // plain point picker too and never the Saw-it/Found-it control (B-197).
-  // Reconstructed from stored fields on mount (reconstructTimeControl).
-  // CUL-869 adds `!isLook`, and it is a second gate rather than a rewrite of this
-  // expression. A look's stored time-confidence is WITNESSED BY CONSTRUCTION (§5.4,
-  // taxonomy D10) — it is a perception at a moment the owner was there for, so there
-  // is nothing to have found and the Saw-it / Found-it control has no honest answer
-  // to offer. `insertLook` is where that value is written, and this screen still
-  // writes none: the branch below hands the save a witnessed form value that
-  // `confidenceUpdateForEdit` then discards, exactly as it does for a meal.
+  // editable after logging). Reconstructed from stored fields on mount
+  // (reconstructTimeControl).
   //
-  // The tempting refactor is to read `config.confidenceModel` instead of naming
-  // three types. It is wrong here: `cough` and `sneeze` carry the same model and DO
-  // get this control today, so that version would silently change two shipped types
-  // under an unrelated PR.
+  // CUL-887 — THE GATE IS THE LEAF CONTRACT, not a hand-listed set of types.
+  // `confidenceModel: 'witnessed'` marks a leaf on which the Saw-it / Found-it pair
+  // has no honest answer to offer, because the act is witnessed BY CONSTRUCTION: a
+  // meal is the bowl going down; a weight check is reading the scale; a dose is
+  // something you perform rather than discover (and a mis-classified administration
+  // time would degrade the timing the §6.4 double-dose check and the Signal
+  // confounder pass rely on); a look is a perception at a moment the owner was
+  // present for (daily-look §5.4); a cough is HEARD, never found later (taxonomy
+  // D10). On every one of those, a window claim is unwritable by construction — the
+  // B-448 leak class, closed by asking the contract. Both capture surfaces already
+  // ask it exactly this way (`app/log.tsx`, `components/log/SimpleEventConfirm.tsx`).
+  //
+  // This replaced `!config.hasFood && !isWeight && !isMedication && !isLook`, which
+  // was the same predicate spelled as four types and MISSING cough and sneeze: they
+  // carry the witnessed model and still got the control here, so the editor was the
+  // one door that could stamp a window claim on a leaf that declares it cannot hold
+  // one. Walked leaf by leaf the swap changes exactly those two and nothing else,
+  // and `app/editEvent.leafContract.test.tsx` walks the WHOLE of EVENT_TYPES rather
+  // than a sample, so a future leaf cannot land on the wrong side of it unnoticed.
+  //
+  // An UNKNOWN type (a future wave's leaf reaching this build) has no entry at all,
+  // so the optional chain yields undefined, the comparison is false, and the control
+  // SHOWS — today's generic behaviour, per the §8 degradation contract. That is the
+  // same posture `?? true` gives the photo gate below; it just falls out of the
+  // comparison here rather than needing a default.
+  //
+  // The save side is unchanged by any of this: on a witnessed leaf the branch below
+  // hands the save a witnessed form value that `confidenceUpdateForEdit` discards,
+  // exactly as it has always done for a meal.
   //
   // (The wording above avoids the column-name-colon-literal shape on purpose —
   // `lib/occurredAtConfidence.guard.test.ts` scans raw source and would read this
   // comment as a hardcoded write. Filed as CUL-885; a fourth instance of C-18's
   // comment-blanking rule, and the one whose remedy — allowlisting the file — the
   // guard's own text warns against.)
-  const showConfidenceControl = !config.hasFood && !isWeight && !isMedication && !isLook;
+  //
+  // — THE EXCEPTION, and it is the confidence half of the photo half's rule (CUL-887,
+  // found by the adversarial pass on this PR). Suppressing the control on a leaf
+  // suppresses the ability to MAKE the claim; it must not suppress the ability to SEE
+  // and correct one the record ALREADY HOLDS. Without `storedContradictsLeaf` below,
+  // a cough stamped windowed through this screen's own pre-CUL-887 control fell to
+  // the plain point picker — and that picker moves `occurred_at` without touching the
+  // bounds (`handlePointChange` deliberately does not mark the edit confidence-
+  // bearing, C-10), so one tap left the row's point sitting OUTSIDE its own retained
+  // window. Nothing rejects that: migration 012's CHECKs tie the bounds to the
+  // confidence and order them against each other, never against the point.
+  //
+  // It is worse than a stray control, for the same reason the photo one was: on a
+  // windowed row NO read surface renders `occurred_at` — `describeOccurredAt` renders
+  // the bounds — so the picker showed a value nothing displays and the owner's
+  // "correction" appeared to do nothing while moving ⑧'s span, onset and recency
+  // floor (`detectChronicity` reads the point with no confidence filter) and splitting
+  // the report's date from its time range.
+  //
+  // Measured zero in production, on both halves and on the `other` rows CUL-677's
+  // swap re-keyed (it ran 2026-08-29 and preserved every confidence — all witnessed),
+  // so this closes a state that was reachable but unpopulated. Reachability is the
+  // bar, not population: the swap is the shape of thing that creates it, and the
+  // taxonomy has more waves coming.
+  const leafIsWitnessedByConstruction = EVENT_TYPES[eventType]?.confidenceModel === 'witnessed';
+  const showConfidenceControl = !leafIsWitnessedByConstruction || storedContradictsLeaf;
+  // CUL-887 — the photo half of the same contract (§6/§7 hasPhoto). `?? true` is the
+  // §8 posture: an unknown leaf keeps today's generic offer. Read here beside its
+  // sibling so the two leaf-contract questions are asked in one place; what it gates
+  // is deliberately narrower than the section — see the Photo block below.
+  const offersPhoto = EVENT_TYPES[eventType]?.hasPhoto ?? true;
   // Seeds NULL, not 'saw' (B-527): an unclassified row must render with neither
   // segment selected, so the honest default before the reconstruct resolves is
   // "we don't know yet", never a borrowed witnessed claim. The reconstruct sets
@@ -294,6 +349,10 @@ export default function EditEventModal() {
       }
       if (seed.earliest) setEarliest(new Date(seed.earliest));
       if (seed.latest) setFoundLatest(new Date(seed.latest));
+      // A NULL confidence is not a contradiction — it is the absence of a claim, and
+      // 012's backfill is the PM's to make, not this screen's. Only a row that
+      // positively asserts a non-witnessed confidence re-opens the control.
+      if (stored.confidence && stored.confidence !== 'witnessed') setStoredContradictsLeaf(true);
     }).catch(console.error);
   }, [id]);
 
@@ -465,14 +524,39 @@ export default function EditEventModal() {
 
     setSaving(true);
     try {
-      // Meals/weight/doses don't show the confidence control — the event type
-      // itself carries the claim (you see yourself put the bowl down, read the
-      // scale, give the pill), so there is no affordance to touch and nothing
-      // for this edit to restate. Their branch's 'witnessed' is inert: with no
-      // control there is nothing to mark confidenceTouched, so the save below
-      // never reaches this value. What the row already holds is what it keeps —
-      // including a legacy NULL, which stays the PM's backfill to make (012),
-      // not something an unrelated edit does one row at a time.
+      // A witnessed-by-construction leaf shows no confidence control — the event
+      // type itself carries the claim (you see yourself put the bowl down, read
+      // the scale, give the pill, hear the cough), so there is no affordance to
+      // touch and nothing for this edit to restate. This branch's 'witnessed' is
+      // inert: with no control there is nothing to mark confidenceTouched, so the
+      // save below never reaches this value. What the row already holds is what it
+      // keeps — including a legacy NULL, which stays the PM's backfill to make
+      // (012), not something an unrelated edit does one row at a time.
+      //
+      // CUL-887 widened which leaves land here (cough and sneeze joined), and this
+      // inertness is what makes that safe to do RETROACTIVELY: a row already
+      // carrying a window claim is preserved by the save, never flattened to
+      // witnessed to match the leaf's new answer. Closing the door does not
+      // rewrite what came through it while it was open — the same posture the
+      // photo gate takes toward an existing attachment. The residue is that such a
+      // row can no longer be re-graded from this screen; production holds none
+      // (measured on the respiratory pair: every row witnessed, zero windowed), so
+      // the choice is between an unreachable correction on no rows and an open
+      // door on every row.
+      //
+      // — THIS TERNARY IS NOW EQUIVALENT BY CONSTRUCTION, and it stays anyway. Since
+      // the exception above, `showConfidenceControl` is false only when the stored
+      // confidence is witnessed or NULL; `reconstructTimeControl` maps those to 'saw'
+      // and null, never 'found' (lib/eventTimeEdit.ts:129/146); and `buildTimeFields`
+      // returns exactly this literal for every mode that is not 'found'. So both arms
+      // produce the same object, and deleting the branch changes no behaviour and reds
+      // no test — recorded here because a surviving mutant with no note reads as a
+      // coverage gap, and this one is a redundancy instead.
+      //
+      // It is kept as the belt for the case the exception exists to prevent: if a
+      // future change ever hides the control on a row that DOES hold a window, this
+      // is what stops the save reading a control the owner could not see. That is the
+      // same reasoning the guard's own inertness note below already carries.
       const tf = showConfidenceControl
         ? buildTimeFields()
         : { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
@@ -808,18 +892,33 @@ export default function EditEventModal() {
             </>
           )}
 
-          {/* Photo — never on a look (§5.2: a look is a perception, and there is
-              nothing to photograph; `check_in` is `hasPhoto: false`). Every capture
-              surface already gates on that flag — app/log.tsx, SimpleEventConfirm,
-              the record screen's hero — and this editor is the one door that did not,
-              so a look could be given a photo here and would then render it as the
-              record's hero, since `resolveEventPhotoDisplay` shows an EXISTING photo
-              regardless of the flag.
-              Gated on `isLook` rather than on `hasPhoto`, deliberately: cough and
-              sneeze are also `hasPhoto: false` and DO offer this row today, so the
-              tidier predicate would change two shipped types under this PR. That
-              wider gap is its own issue (CUL-887). */}
-          {isLook ? null : (
+          {/* Photo — the per-leaf affordance (§6/§7 hasPhoto, CUL-675), and the gate
+              suppresses the BEG, NEVER THE EVIDENCE. That is the contract stated
+              verbatim in constants/eventTypes.ts and encoded in
+              `resolveEventPhotoDisplay` as `!photoUri && offersPhoto`, and it is why
+              this condition is an OR rather than the flag alone: an existing photo
+              keeps its row on any leaf, and only "Attach a photo" disappears. Never
+              deleting or hiding an owner's photo to satisfy a flag is the point — the
+              record screen renders that photo as its hero either way, and an editor
+              that pretended it was not there would be the surface telling the lie.
+
+              CUL-887 replaced an `isLook` gate here. Four leaves declare
+              `hasPhoto: false` — meal, cough, sneeze, check_in — and this editor was
+              the one door offering the row on all four; the record screen
+              (`app/event/[id].tsx`) and both capture surfaces (`app/log.tsx`,
+              `components/log/SimpleEventConfirm.tsx`) already ask the contract. Meal
+              rides along deliberately rather than being carved out: its clinical
+              artifact is the food name, never a photo (Dr. Chen + Jordan, on-device
+              review), which is the same ruling the record screen already ships. A
+              fifth hand-listed set of types is exactly the drift `hasPerIncidentRead`
+              was extracted to end.
+
+              Measured before the door was closed: zero attachments exist in
+              production on any of the four (the only type carrying one is vomit), so
+              nothing is hidden by this today — the evidence branch is here for the
+              rows a future re-key can produce, not for a backlog it is papering
+              over. */}
+          {displayAttachmentUri || offersPhoto ? (
             <>
           <SectionLabel label="Photo" style={{ marginTop: theme.space3, marginBottom: 4 }} />
           {displayAttachmentUri ? (
@@ -837,7 +936,7 @@ export default function EditEventModal() {
             </TouchableOpacity>
           )}
             </>
-          )}
+          ) : null}
 
           {/* Food (meal events only) */}
           {config.hasFood ? (
@@ -1080,12 +1179,19 @@ export default function EditEventModal() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Fullscreen photo viewer */}
+      {/* Fullscreen photo viewer. `onReplace` is render-only-when-passed, and it
+          reopens the picker — the same door as the row above, so it takes the same
+          gate. Withholding it is what stops a `hasPhoto: false` leaf that already
+          carries a photo (the evidence branch above) from becoming a way back to
+          attaching another one: the owner can still SEE the photo, which is the
+          asymmetry the whole contract is built on. */}
       <PhotoViewer
         visible={photoViewerVisible}
         uris={[displayAttachmentUri ?? null]}
         onClose={() => setPhotoViewerVisible(false)}
-        onReplace={() => { setPhotoViewerVisible(false); handlePickPhoto(); }}
+        onReplace={
+          offersPhoto ? () => { setPhotoViewerVisible(false); handlePickPhoto(); } : undefined
+        }
       />
     </SafeAreaView>
   );
