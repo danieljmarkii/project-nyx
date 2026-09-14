@@ -33,7 +33,7 @@ What that bought, beyond the Undo:
 
 **G5 travels with the dismissal.** CUL-802 lands a photographed vomit/stool on its own record after the beat. An owner who reverses that log would have been handed the record of a row she just removed, with a per-incident read arriving over it. `onDone` now reports whether the reversal happened, rather than the host re-reading a register that has already moved on.
 
-## Three things the build got wrong first
+## Four things the build got wrong first
 
 **The staleness test was measuring the wrong guard.** The 15-mutant pass caught 14. The survivor was dropping the event-id half of the component's `mine` check — and it survived because the test that was supposed to cover it pressed Undo and asserted no reversal, which is true either way: the *store's* guard rejects the stale id, so the component's copy was never load-bearing in that scenario. The defect the component's half actually prevents is different and worse: `removed` is a flag on the register, not on a payload, so a beat reading it without checking whose removal it describes paints the removal line over a log that is still saved — the one unrecoverable lie a completion surface can tell. Retargeted at that, the mutant dies. The generalisable bit: **when two layers guard the same thing, a test that passes through both is proving the outer one.** Name the consequence only the inner one has.
 
@@ -41,7 +41,13 @@ What that bought, beyond the Undo:
 
 A mutant on that fix survived the first pass, too, and its shape is the useful part: making `releaseGate` skip clearing its flag left the "Keep it" test green, because cancelling re-arms the clock directly. The stale flag is invisible until the *next* gesture, where it swallows the release. A test for a flag has to outlive the branch that sets it.
 
+**The `armed` latch had no test, and the `code-reviewer` proved it by deleting the line.** All 21 tests stayed green without it — because every one of them went through a helper that shows the payload *before* rendering, which is the host's ordering and therefore the only ordering the suite ever produced. The latch exists for the opposite ordering, where the dismissal watcher cannot tell "the register is done with me" from "the register never took me" and fires `onDone` on the first frame, closing the sheet before a word is read. A test driven the wrong way round kills it, and a second mutant (setting the latch unconditionally) kills the condition too. **A helper that encodes the happy path makes every test in the file blind to the same thing** — the C-35 fixture lesson, arriving through a helper instead of a fixture.
+
+The same review flagged that `handleBeatDone` lacked the liveness guard its sibling `handleLogged` carries. It is masked today by React's batching — the dismissal unmounts the beat in the commit that resets the sheet — but "masked by scheduler behaviour nobody asserts" is not a guarantee, and the cost of being wrong is a `router.push` landing after the owner has left. Guard added, with its blind spot stated in the file rather than left to read as coverage (C-41).
+
 **The suite left a live timer.** Committing now arms a real dwell in `EventTypeSheet.test.tsx`, and the first cleanup hook was scoped to the first `describe` — while the taxonomy-expansion block commits too. Jest said so ("did not exit"), and the check that made it obvious was running the suite at HEAD first to confirm the warning was mine. A file-scoped hook, not a describe-scoped one.
+
+The `code-reviewer` pass is what caught the first two of those four, and the shape is worth keeping: both were **invariants with no coverage rather than broken code**. Nothing it found was failing — the handshake traces correctly on every reachable path today — which is exactly the class a build conversation is too anchored to see, and exactly what the mutation bar is for.
 
 ## Not in scope, and stated
 
@@ -52,4 +58,4 @@ No CLAUDE.md change: C-33 already carries this rule verbatim, and this PR is the
 ## Verification
 
 - 8,238 tests, 381 suites, green. `tsc --noEmit` clean. All 21 guards green with no new exemption — in particular `guards/reversePath.test.ts` (the reversal has one route), `guards/completionCard.test.ts`, `guards/homeWrites.test.ts` (no new write reaches Home's closure — the reversal's existing `home-write-ok` marker in the store covers it and nothing else moved), `guards/geistRollout.test.ts`, `guards/haptics.test.ts`.
-- **17 mutants, 17 caught**, listed on the PR: the control deleted, the register bypassed, the gate removed, the touch handlers dropped, the haptic re-added, Undo left live over the removal line, the id check dropped, the removed-flag flattened, the host's G5 skip removed, the commit not handed to the register, the register not handed back on dismiss, the dwell raised to 5s, the tone split narrowed, both halves of the note trim, the dialog's pause released by the finger lift, and the gate flag left stuck.
+- **19 mutants, 19 caught**, listed on the PR: the control deleted, the register bypassed, the gate removed, the touch handlers dropped, the haptic re-added, Undo left live over the removal line, the id check dropped, the removed-flag flattened, the host's G5 skip removed, the commit not handed to the register, the register not handed back on dismiss, the dwell raised to 5s, the tone split narrowed, both halves of the note trim, the dialog's pause released by the finger lift, the gate flag left stuck, the `armed` latch deleted, and the latch set unconditionally.

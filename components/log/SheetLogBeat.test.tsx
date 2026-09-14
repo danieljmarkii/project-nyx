@@ -337,6 +337,38 @@ describe('the confirm gate — what this removal takes with it (CUL-645 / CUL-86
 });
 
 describe('the dwell — the register owns the clock, the beat only reports the end', () => {
+  it('does not end the beat before the register has TAKEN it', () => {
+    // The `armed` latch, and the only case that exercises it. The dismissal watcher
+    // reads "the register is not showing my payload" — which is true both when the
+    // beat is over and when it never started, and the two failure modes are opposite:
+    // unlatched, a beat whose payload has not landed fires `onDone` on its first frame
+    // and closes the sheet before a word of the record is read.
+    //
+    // Every other test here goes through `showAndRender`, which shows first and
+    // renders second — the host's ordering, and the reason this branch is otherwise
+    // unreachable from the suite. Driven the wrong way round on purpose.
+    jest.useFakeTimers();
+    try {
+      const onDone = jest.fn();
+      render(
+        <SheetLogBeat tone="calm" title={SENTENCE} petName="Nyx" eventId="e1" onDone={onDone} />,
+      );
+      act(() => { jest.advanceTimersByTime(5000); });
+      expect(onDone).not.toHaveBeenCalled();
+      // The register takes it late; from here the beat behaves exactly as it always does.
+      act(() => {
+        useMomentStore.getState().showSheetBeat({
+          tone: 'calm', eventId: 'e1', occurredAt: '2026-09-14T17:33:00.000Z',
+        });
+      });
+      act(() => { jest.advanceTimersByTime(SHEET_BEAT_DWELL_MS + 50); });
+      expect(onDone).toHaveBeenCalledTimes(1);
+      expect(onDone).toHaveBeenCalledWith(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('calls onDone once, after the sentence has been readable, with removed=false', () => {
     jest.useFakeTimers();
     try {

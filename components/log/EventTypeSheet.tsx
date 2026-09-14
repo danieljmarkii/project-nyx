@@ -301,6 +301,15 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // over a record that is already on the stack — the same ordering the full-screen
   // path gets for free from replace().
   function handleBeatDone(removed: boolean) {
+    // The same liveness guard `handleLogged` carries, for the same reason and with the
+    // same ref. Today it is belt-and-braces: a dismissal that beats the register
+    // unmounts the beat in the commit that resets this sheet, so the watcher does not
+    // fire — but that rests on scheduler batching rather than on anything asserted, and
+    // the cost of being wrong is a `router.push` landing after the owner has left. It
+    // is deliberately NOT independently testable from here (the beat is unmounted in
+    // every path that would reach it), and saying so is the point: an undocumented
+    // blind spot reads as coverage.
+    if (!visibleRef.current) return;
     onClose();
     // G5 (CUL-802) — a screen never shows a row that is no longer in the record. The
     // push exists to land a photographed vomit/stool on its own record for the
