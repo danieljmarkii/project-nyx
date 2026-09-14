@@ -51,7 +51,7 @@ The original **build sequence** is done end to end — steps 1–10, finished Au
 
 Each gates more than one track, so they are named here rather than left to be rediscovered:
 
-- **`generate-report` is not deployed** — live is v13 (Jul 18) while `main` carries PR 7 and everything after it. **CUL-19** owns the deploy and the constraint that rides it (do not ship an app build carrying B-417 PR 6 to a device before it runs). Blocks the prod visibility of CUL-64, CUL-45, CUL-50, CUL-564, CUL-479.
+- **`generate-report` is not deployed** — live is **v14 (2026-07-30)**, verified against `list_edge_functions` 2026-09-14, while `main` carries PR 7 and everything after it. **CUL-19** owns the deploy and the constraint that rides it (do not ship an app build carrying B-417 PR 6 to a device before it runs). Blocks the prod visibility of CUL-64, CUL-45, CUL-50, CUL-564, CUL-479. **CUL-965 (Urgent) is open on a contradiction here:** CUL-557 names `generate-report` in its pre-cut deploy order while this hold forbids it, and two Urgent refusal-lane items (CUL-50, CUL-60) sit behind the hold. The 1.2.0 cut reads on that ruling.
 - **The per-incident AI functions owe a redeploy** — `analyze-vomit` / `analyze-stool` / `ask`, in that order, and the order is load-bearing. **CUL-557** owns it. Not under the `generate-report` hold.
 _(A third hold — `generate-signal`'s behaviour-changing redeploy behind a client build — was **cleared 2026-08-29**: the build shipped, the function deployed at v33, and W1's `other`-row swap ran the same day. See the deploy ledger and `docs/sessions/2026-08-29-event-taxonomy-w1-swap-run.md`.)_
 
