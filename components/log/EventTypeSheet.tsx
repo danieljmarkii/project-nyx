@@ -12,7 +12,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { EmptyState } from '../ui/EmptyState';
 import { usePetStore } from '../../store/petStore';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../../constants/eventTypes';
-import type { MomentTone } from '../../store/momentStore';
+import { useMomentStore, type MomentTone } from '../../store/momentStore';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import { GroupedEventGrid } from './EventTypePicker';
@@ -136,6 +136,10 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // clock, and a beat that re-derived mid-dwell could change its own words at local
   // midnight. Null only before the first commit of a given open.
   const [beatSentence, setBeatSentence] = useState<string | null>(null);
+  // CUL-964 — the row the beat is speaking for, so its Undo has a target the register
+  // can check itself against. Held beside the sentence and reset with it: the pair
+  // describes one commit, and a stale id here would point Undo at the previous log.
+  const [beatEventId, setBeatEventId] = useState<string | null>(null);
   // CUL-802 — the event id to land the owner on once the beat finishes, set only
   // for a PHOTOGRAPHED vomit/stool (the logs with a per-incident read on the way).
   // Null for everything else, which keeps the shipped "beat, then the sheet closes
@@ -164,7 +168,14 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     // — but a stray `true` surviving here would reopen the switcher over the grid on
     // the next open, and it belongs with the four resets it sits beside.
     if (!visible) {
-      setStage('grid'); setConfirm(null); setBeatSentence(null); setDraft(null);
+      setStage('grid'); setConfirm(null); setBeatSentence(null); setBeatEventId(null); setDraft(null);
+      // Hand the register back if this sheet left while its beat was still on screen
+      // — a scrim tap during the beat closes the sheet immediately (nothing to guard
+      // once the write has landed), and the payload would otherwise sit visible with
+      // nothing painting it until its own timer ran out. Narrowed to OUR payload: a
+      // card of any other kind belongs to a surface this sheet knows nothing about.
+      const moment = useMomentStore.getState();
+      if (moment.visible && moment.payload?.kind === 'sheetBeat') moment.hide();
       // Symmetry with the four above rather than a live fix — handleLogged writes
       // this field on every commit, and handleBeatDone only ever runs after one, so
       // no stale value can reach a push today. It resets with its siblings so that
@@ -243,7 +254,8 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   }
 
   function handleLogged(result: {
-    eventId: string; occurredAtIso: string; record: LoggedRecord; hasAttachment: boolean;
+    eventId: string; occurredAtIso: string; record: LoggedRecord;
+    hasAttachment: boolean; hasNote: boolean;
   }) {
     // If the sheet was dismissed while the write was in flight, don't resurface — the
     // event is written and will appear on Home; showing a beat on a hidden/reopened
@@ -265,6 +277,19 @@ export function EventTypeSheet({ visible, onClose }: Props) {
     setLandOnEventId(
       result.hasAttachment && confirm && hasPerIncidentRead(confirm.type) ? result.eventId : null,
     );
+    // CUL-964 — hand the commit to the completion register BEFORE the stage moves, so
+    // the beat's first frame already has its payload. The register owns the dwell, the
+    // touch pause, the staleness guard and the §5.6 commit haptic from here; what it
+    // buys is the Undo, which cannot exist without it (`undo()` refuses on `!payload`,
+    // and `reverseLoggedEvent` has exactly one route — C-20).
+    useMomentStore.getState().showSheetBeat({
+      tone,
+      eventId: result.eventId,
+      occurredAt: result.occurredAtIso,
+      hasAttachment: result.hasAttachment,
+      hasNote: result.hasNote,
+    });
+    setBeatEventId(result.eventId);
     setStage('done');
   }
 
@@ -275,9 +300,15 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // the host, so both land in the same commit and the modal dismiss animation plays
   // over a record that is already on the stack — the same ordering the full-screen
   // path gets for free from replace().
-  function handleBeatDone() {
+  function handleBeatDone(removed: boolean) {
     onClose();
-    if (landOnEventId) router.push(`/event/${landOnEventId}`);
+    // G5 (CUL-802) — a screen never shows a row that is no longer in the record. The
+    // push exists to land a photographed vomit/stool on its own record for the
+    // per-incident read; an owner who just reversed that log would be handed a record
+    // screen describing a row they removed, with a read arriving over it. `removed`
+    // travels from the beat rather than being re-read here: the register's `removed`
+    // flag survives the fade but its payload may already belong to another commit.
+    if (!removed && landOnEventId) router.push(`/event/${landOnEventId}`);
   }
 
   return (
@@ -465,10 +496,11 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                 pair cannot separate; gating on it keeps the beat's required title
                 honest without a fallback string that would re-open the bare-"Logged"
                 door this PR closes. */}
-            {stage === 'done' && beatSentence && confirm && (
+            {stage === 'done' && beatSentence && beatEventId && confirm && (
               <SheetLogBeat
                 tone={beatTone}
                 title={beatSentence}
+                eventId={beatEventId}
                 // The pet captured at grid→confirm, NOT a re-read active pet: this
                 // names the pet the row was actually written for, and the store's
                 // active pet can have moved on by now (the multi-pet queue-then-switch

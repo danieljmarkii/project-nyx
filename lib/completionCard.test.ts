@@ -13,7 +13,8 @@ jest.mock('./sync', () => ({
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
   timeEditPrompt, removedNoticeCopy,
-  HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, type LoggedRecord,
+  HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, HITSLOP_ACTION_SOLO, undoGateCopy,
+  type LoggedRecord,
 } from './completionCard';
 import { formatTime, describeOccurredAt } from './utils';
 
@@ -391,5 +392,66 @@ describe('HITSLOP_ACTION_LEFT / _RIGHT', () => {
     expect(HITSLOP_ACTION_LEFT.right).toBeLessThan(HITSLOP_ACTION_LEFT.left);
     expect(HITSLOP_ACTION_RIGHT.left).toBeLessThan(HITSLOP_ACTION_RIGHT.right);
     expect(HITSLOP_ACTION_LEFT.right + HITSLOP_ACTION_RIGHT.left).toBeLessThanOrEqual(8);
+  });
+});
+
+
+// CUL-964 — the R2 in-sheet beat's Undo has no sibling to face, so it takes an even
+// reach rather than the pair's yielded edge.
+describe('HITSLOP_ACTION_SOLO', () => {
+  it('is symmetric, and keeps the outward reach the pair gives up', () => {
+    expect(HITSLOP_ACTION_SOLO.left).toBe(HITSLOP_ACTION_SOLO.right);
+    expect(HITSLOP_ACTION_SOLO.top).toBe(HITSLOP_ACTION_SOLO.bottom);
+    // The point of the constant: the facing edge is NOT clipped, because there is
+    // nothing to collide with. Re-using HITSLOP_ACTION_LEFT here would hand a lone
+    // control a short side for a neighbour that does not exist.
+    expect(HITSLOP_ACTION_SOLO.right).toBeGreaterThan(HITSLOP_ACTION_LEFT.right);
+    expect(HITSLOP_ACTION_SOLO.right).toBe(HITSLOP_ACTION_LEFT.left);
+  });
+});
+
+// CUL-645, widened by CUL-869 and shared by CUL-964. Undo is one tap because the tap
+// IS the destructive confirm — except over a record carrying something the owner
+// cannot make again, where the dialog's job is to say the one thing they do not know.
+describe('undoGateCopy', () => {
+  it('returns NOTHING for a bare record — no friction bought for its own sake', () => {
+    expect(undoGateCopy({})).toBeNull();
+    expect(undoGateCopy({ hasAttachment: false, hasNote: false })).toBeNull();
+  });
+
+  it('names the photo', () => {
+    expect(undoGateCopy({ hasAttachment: true })).toEqual({
+      title: 'Remove this log?',
+      body: 'The photo you attached will be removed with it.',
+    });
+  });
+
+  it('names the note — the sentence she typed at 2am is not recreatable either', () => {
+    expect(undoGateCopy({ hasNote: true })?.body).toBe(
+      'The note you wrote will be removed with it.',
+    );
+  });
+
+  it('names BOTH when the record carries both, as one sentence', () => {
+    // Composed, never branched: the sheet confirm offers a photo and a note on the
+    // same screen, and a body that silently dropped one of two facts is the defect
+    // this gate exists to prevent. The join is what makes the phrases lower-case —
+    // the sentence capitalises its own first letter, so it can never read
+    // "…and The note…" mid-sentence.
+    expect(undoGateCopy({ hasAttachment: true, hasNote: true })?.body).toBe(
+      'The photo you attached and the note you wrote will be removed with it.',
+    );
+  });
+
+  it('never carries an exclamation mark or a reassurance (nyx-voice)', () => {
+    const bodies = [
+      undoGateCopy({ hasAttachment: true }),
+      undoGateCopy({ hasNote: true }),
+      undoGateCopy({ hasAttachment: true, hasNote: true }),
+    ];
+    for (const copy of bodies) {
+      expect(copy).not.toBeNull();
+      expect(`${copy?.title} ${copy?.body}`).not.toMatch(/!/);
+    }
   });
 });

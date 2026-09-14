@@ -28,9 +28,9 @@ import { reverseLoggedEvent } from '../lib/undoLog';
 import { forgetFlaggedFoodInTrial } from '../lib/trialContaminant';
 import {
   useMomentStore, whenMealCardVisible, whenMedicationCardVisible,
-  MEDICATION_FLAGGED_DURATION_MS, REMOVED_DURATION_MS,
+  MEDICATION_FLAGGED_DURATION_MS, REMOVED_DURATION_MS, SHEET_BEAT_DWELL_MS,
 } from './momentStore';
-import type { MealPayload, MedicationPayload, NamedPayload } from './momentStore';
+import type { MealPayload, MedicationPayload, NamedPayload, SheetBeatPayload } from './momentStore';
 
 function namedPayload(over: Partial<Omit<NamedPayload, 'kind'>> = {}): Omit<NamedPayload, 'kind'> {
   return {
@@ -39,6 +39,17 @@ function namedPayload(over: Partial<Omit<NamedPayload, 'kind'>> = {}): Omit<Name
     petId: 'p1',
     occurredAt: '2026-06-07T14:00:00.000Z',
     record: { kind: 'event', typeLabel: 'Vomit', confidence: 'witnessed', earliest: null, latest: null },
+    ...over,
+  };
+}
+
+function sheetBeatPayload(
+  over: Partial<Omit<SheetBeatPayload, 'kind'>> = {},
+): Omit<SheetBeatPayload, 'kind'> {
+  return {
+    tone: 'calm',
+    eventId: 's1',
+    occurredAt: '2026-09-14T17:33:00.000Z',
     ...over,
   };
 }
@@ -770,6 +781,22 @@ describe('the commit haptic (CUL-604 §5.6)', () => {
     expect(commitRoutine).not.toHaveBeenCalled();
   });
 
+  // CUL-964 — the R2 in-sheet beat is a presentation of this store now, so the split
+  // is enforced HERE for both registers. It used to play its own copy inside
+  // `components/log/SheetLogBeat.tsx`, which is the shape two safety rules drift in:
+  // one implementation had a test, the other did not.
+  it('a CALM sheet beat (symptom) takes the soft tap, on the sheet path too', () => {
+    useMomentStore.getState().showSheetBeat(sheetBeatPayload({ tone: 'calm' }));
+    expect(commitSymptom).toHaveBeenCalledTimes(1);
+    expect(commitRoutine).not.toHaveBeenCalled();
+  });
+
+  it('a CELEBRATE sheet beat takes the success pattern', () => {
+    useMomentStore.getState().showSheetBeat(sheetBeatPayload({ tone: 'celebrate' }));
+    expect(commitRoutine).toHaveBeenCalledTimes(1);
+    expect(commitSymptom).not.toHaveBeenCalled();
+  });
+
   it('meal and dose cards are routine commits', () => {
     useMomentStore.getState().showMeal(mealPayload());
     useMomentStore.getState().showMedication(medicationPayload());
@@ -792,6 +819,36 @@ describe('the commit haptic (CUL-604 §5.6)', () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'second' }));
     jest.advanceTimersByTime(1000);
     expect(commitRoutine).toHaveBeenCalledTimes(1);
+  });
+});
+
+// CUL-964 — the one dwell here that is not the interactive 5s, and the reason is the
+// SURFACE: this beat renders inside the sheet's <Modal>, so unlike the three bottom
+// cards it holds the owner's screen while it is up. PM-ruled 2026-09-14 against
+// raising the base; an owner who wants longer touches the beat and the pause hands
+// back a full window (see the dwell-pause block below).
+describe('the in-sheet beat dwell (CUL-964)', () => {
+  beforeEach(() => { jest.useFakeTimers(); useMomentStore.getState().hide(); });
+  afterEach(() => { useMomentStore.getState().hide(); jest.useRealTimers(); });
+
+  it('dismisses on its own shorter window, not the cards\' five seconds', () => {
+    useMomentStore.getState().showSheetBeat(sheetBeatPayload());
+    jest.advanceTimersByTime(SHEET_BEAT_DWELL_MS - 100);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(200);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('reverses through the ONE shared reversal, with no weight snapshot to restore', async () => {
+    // `previousSnapshotKg` is a NAMED-payload field — a weigh-in never reaches this
+    // register (the sheet routes weight to its own screen), so the second argument
+    // must stay `undefined` rather than being invented for a new payload kind.
+    jest.useRealTimers();
+    useMomentStore.getState().showSheetBeat(sheetBeatPayload({ eventId: 'sb-1' }));
+    const result = await useMomentStore.getState().undo('sb-1');
+    expect(result).toBe('removed');
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('sb-1', undefined);
+    expect(useMomentStore.getState().removed).toBe(true);
   });
 });
 

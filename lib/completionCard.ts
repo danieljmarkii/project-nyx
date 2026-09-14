@@ -277,3 +277,56 @@ export const HITSLOP_ACTION_LEFT = {
 export const HITSLOP_ACTION_RIGHT = {
   top: REACH, bottom: REACH, left: PAIR_GAP_HALF, right: REACH,
 } as const;
+
+
+/** The RIGHT member's geometry when it renders ALONE — the in-sheet beat's Undo,
+ *  which has no sibling to face (CUL-964).
+ *
+ *  Symmetric, deliberately, and not a re-use of HITSLOP_ACTION_LEFT: that constant
+ *  yields its right edge to a neighbour, and applying it here would hand the beat's
+ *  only control a clipped side for a Change time that is not on this surface and is
+ *  explicitly out of scope. C-5's rule is about two touchables facing each other;
+ *  with one there is nothing to collide with, so the reach is even on all four sides
+ *  and the 44pt floor is carried by `minHeight` at the call site, as on the cards. */
+export const HITSLOP_ACTION_SOLO = {
+  top: REACH, bottom: REACH, left: REACH, right: REACH,
+} as const;
+
+/** What the Undo confirm says, or `null` when this record needs no confirm.
+ *
+ * ── WHY A CONFIRM AT ALL (CUL-645, widened by CUL-869) ──────────────────────
+ * Undo is one tap because the tap IS the destructive confirm (§5.6), and that holds
+ * for everything a completion surface can remove EXCEPT a record carrying something
+ * the owner cannot make again. The event itself is re-loggable — they still know what
+ * they saw — but the photo is of the thing itself, at 2am, and the note is the
+ * sentence they wrote about it. No surface in the app exposes a soft-deleted event, so
+ * an accidental tap is the last time either is reachable.
+ *
+ * The dialog is not friction bought for its own sake. The mistouch mechanism is closed
+ * by the hitSlop geometry above; what is left is a COMPREHENSION failure — an owner
+ * reversing a mis-logged event with no idea the photo goes too. The body's job is to
+ * say the one thing they do not know, and the extra tap is the price of delivering it.
+ *
+ * COMPOSED, NEVER BRANCHED. A record carrying both names both: a body that silently
+ * drops one of two facts is the defect this gate exists to prevent. Phrases are
+ * lower-case and the sentence capitalises its own first letter, so joining two never
+ * produces "…and The note…" mid-sentence.
+ *
+ * It lives here, beside the removal line it leads to, because two surfaces now raise
+ * it — the R1 named card and the R2 in-sheet beat — and two copies of a safety string
+ * are two copies to keep in step.
+ */
+export function undoGateCopy(
+  record: { hasAttachment?: boolean; hasNote?: boolean },
+): { title: string; body: string } | null {
+  const takesWithIt = [
+    record.hasAttachment ? 'the photo you attached' : null,
+    record.hasNote ? 'the note you wrote' : null,
+  ].filter((x): x is string => x !== null);
+  if (takesWithIt.length === 0) return null;
+  const clause = takesWithIt.join(' and ');
+  return {
+    title: 'Remove this log?',
+    body: `${clause.charAt(0).toUpperCase()}${clause.slice(1)} will be removed with it.`,
+  };
+}
