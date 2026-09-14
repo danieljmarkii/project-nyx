@@ -27,7 +27,22 @@ jest.mock('../lib/storage', () => ({
   uploadPhoto: jest.fn(), compressForUpload: jest.fn(), persistCapture: jest.fn(), MAX_EDGE_PX: 1600,
 }));
 jest.mock('../lib/attachments', () => ({ detachOtherEventAttachments: jest.fn() }));
-jest.mock('@react-native-community/datetimepicker', () => ({ __esModule: true, default: () => null }));
+// Drivable: pressing it hands the screen the point in `mockMovedTo`, which is the
+// only way to exercise the plain picker the way an owner does.
+const mockMovedTo = { current: null as Date | null };
+jest.mock('@react-native-community/datetimepicker', () => {
+  const react = require('react');
+  const { Pressable, Text } = require('react-native');
+  return {
+    __esModule: true,
+    default: ({ onChange }: { onChange: (e: unknown, d?: Date) => void }) =>
+      react.createElement(
+        Pressable,
+        { onPress: () => onChange({}, mockMovedTo.current ?? undefined) },
+        react.createElement(Text, null, 'move-the-point'),
+      ),
+  };
+});
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
@@ -111,6 +126,7 @@ beforeEach(() => {
   alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   mockAttachment.current = null;
   mockStoredTime.current = { confidence: 'witnessed', earliest: null, latest: null };
+  mockMovedTo.current = null;
 });
 afterEach(() => alertSpy?.mockRestore());
 
@@ -144,6 +160,10 @@ describe('the photo affordance follows hasPhoto, on every leaf', () => {
 });
 
 describe('Saw it / Found it follows confidenceModel, on every leaf', () => {
+  // Every case here is a row whose stored confidence AGREES with its leaf, which is
+  // every row production can now create. The rows that disagree are the exception
+  // below, and they are the reason this walk states its precondition rather than
+  // reading as "the leaf decides, full stop".
   it.each(LEAVES)('%s', async (type) => {
     const { queryByText, queryAllByText } = await openAs(type);
     const witnessedByConstruction = EVENT_TYPES[type].confidenceModel === 'witnessed';
@@ -221,14 +241,29 @@ describe('closing the door does not rewrite what came through it', () => {
   // the editor's own pre-CUL-887 control, which is exactly the population this issue
   // exists because of. (Measured before shipping: zero such rows live. The test is
   // for the un-synced device and the household build behind this one.)
-  it('a windowed cough survives a save made with no confidence control on screen', async () => {
+  it('an untouched save on a witnessed cough writes no confidence', async () => {
+    // The common case: control hidden, nothing touched. `confidenceTouched` can only
+    // be set by the control's own handlers, so the save omits the key and preserves.
+    const { getByText, queryByText } = await openAs('cough');
+    expect(queryByText('Found it')).toBeNull();        // the door is shut
+
+    await act(async () => { fireEvent.press(getByText('Save')); });
+
+    const witnessedFields = mockUpdateEvent.mock.calls[0][1] as Record<string, unknown>;
+    expect('confidence' in witnessedFields).toBe(false);
+  });
+
+  it('a windowed cough survives an untouched save with the control ON screen', async () => {
+    // The exception's rows. The control is back (see the describe below), and B-448's
+    // rule still governs: only a TOUCHED control restates a confidence, so opening a
+    // windowed row to fix a note leaves its window exactly as it was.
     mockStoredTime.current = {
       confidence: 'window',
       earliest: '2026-03-15T02:00:00.000Z',
       latest: '2026-03-15T09:00:00.000Z',
     };
-    const { getByText, queryByText } = await openAs('cough');
-    expect(queryByText('Saw it happen')).toBeNull();   // the door is shut
+    const { getByText, findByText } = await openAs('cough');
+    await findByText('Found it');                      // the row keeps its own claim
 
     await act(async () => { fireEvent.press(getByText('Save')); });
 
@@ -237,6 +272,15 @@ describe('closing the door does not rewrite what came through it', () => {
     // Omitted entirely, not passed as witnessed: `updateEvent` preserves on absence,
     // and the key's PRESENCE with any value would be the row being re-graded.
     expect('confidence' in fields).toBe(false);
+    // And the point stays inside the window it is keeping. Asserted because the
+    // line above is true of a witnessed fixture too — on its own it proves "this
+    // screen never restates confidence on this leaf" (the right invariant) and
+    // nothing whatever about THIS row, so the fixture would be inert. Found by the
+    // adversarial pass, which mutated the fixture to `witnessed` and watched the
+    // case pass unchanged.
+    const at = Date.parse(fields.occurred_at as string);
+    expect(at).toBeGreaterThanOrEqual(Date.parse('2026-03-15T02:00:00.000Z'));
+    expect(at).toBeLessThanOrEqual(Date.parse('2026-03-15T09:00:00.000Z'));
   });
 
   it('and the leaf that still has the control can still assert one', async () => {
@@ -248,5 +292,83 @@ describe('closing the door does not rewrite what came through it', () => {
 
     const fields = mockUpdateEvent.mock.calls[0][1] as Record<string, unknown>;
     expect(fields.confidence).toMatchObject({ value: 'window' });
+  });
+});
+
+describe('a row that already contradicts its leaf keeps the control that can fix it', () => {
+  // The exception to the walk, and the confidence half of the photo half's rule:
+  // suppress the ability to MAKE the claim, never the ability to SEE and correct one
+  // the record already holds. Found by the adversarial pass on this PR — the first
+  // cut of the gate dropped such a row to the plain point picker, which moves
+  // `occurred_at` without touching the bounds, leaving the point outside its own
+  // window with nothing in the schema or on any screen to say so.
+  const WINDOWED = {
+    confidence: 'window',
+    earliest: '2026-03-15T02:00:00.000Z',
+    latest: '2026-03-15T09:00:00.000Z',
+  };
+
+  it('a windowed cough gets Saw it / Found it back', async () => {
+    mockStoredTime.current = WINDOWED;
+    const { findByText } = await openAs('cough');
+    expect(await findByText('Found it')).toBeTruthy();
+  });
+
+  it('and therefore never sees the plain point picker', async () => {
+    // The regression proper. `Change` is the plain picker's affordance; the Found-it
+    // panel has none, which is exactly why the pre-CUL-887 editor could not produce
+    // the drift. Its absence here is the drift being unreachable again.
+    mockStoredTime.current = WINDOWED;
+    const { findByText, queryAllByText } = await openAs('cough');
+    await findByText('Found it');
+    expect(queryAllByText('Change')).toHaveLength(0);
+  });
+
+  it('a witnessed cough is untouched by the exception', async () => {
+    // The other side: the exception must not re-open the door for the rows that
+    // actually exist. Without this, setting `storedContradictsLeaf` unconditionally
+    // would pass the two cases above and undo the whole issue.
+    mockStoredTime.current = { confidence: 'witnessed', earliest: null, latest: null };
+    const { queryByText, queryAllByText } = await openAs('cough');
+    expect(queryByText('Found it')).toBeNull();
+    expect(queryAllByText('Change').length).toBeGreaterThan(0);
+  });
+
+  it('a NULL confidence is an absence, not a contradiction', async () => {
+    // 149 legacy rows carry NULL. That is the lack of a claim, and 012's backfill is
+    // the PM's to make — a screen that read it as a contradiction would hand the
+    // Found-it control to every un-backfilled row on the leaf.
+    mockStoredTime.current = { confidence: null, earliest: null, latest: null };
+    const { queryByText } = await openAs('cough');
+    expect(queryByText('Found it')).toBeNull();
+  });
+});
+
+describe('moving the point is not a claim about how well the time is known', () => {
+  // C-10, pinned on this leaf because the natural-looking repair for the drift above
+  // is to mark `handlePointChange` confidence-bearing — which would convert the drift
+  // into the full B-448 leak (the save would then assert witnessed and null the
+  // bounds). The adversarial pass applied exactly that mutation and the suite was
+  // green, so this is the case that stops it.
+  it('a point edit on a NULL-confidence cough writes no confidence', async () => {
+    mockStoredTime.current = { confidence: null, earliest: null, latest: null };
+    mockMovedTo.current = new Date('2026-03-15T21:30:00.000Z');
+    const { getByText } = await openAs('cough');
+    fireEvent.press(getByText('Change'));
+    await act(async () => { fireEvent.press(getByText('move-the-point')); });
+    await act(async () => { fireEvent.press(getByText('Save')); });
+
+    const fields = mockUpdateEvent.mock.calls[0][1] as Record<string, unknown>;
+    expect(fields.occurred_at).toBe('2026-03-15T21:30:00.000Z');   // the edit landed
+    expect('confidence' in fields).toBe(false);                    // and claimed nothing
+    // The provenance DOES move, and that is the one thing a point edit asserts
+    // (C-10: correcting WHEN something happened is not a claim about how well the
+    // time is known).
+    //
+    // Stated honestly: this does NOT pin the save's `showConfidenceControl` branch.
+    // Deleting that branch leaves this file green — not because the assertion is
+    // weak, but because the exception above made the branch equivalent by
+    // construction. See the note at that branch for the proof.
+    expect(fields.occurred_at_source).toBe('manual');
   });
 });

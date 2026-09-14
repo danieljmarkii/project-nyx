@@ -70,6 +70,26 @@ Three comment blocks in `app/edit-event.tsx` documented the *old* narrow gates, 
 
 One behaviour change beyond the issue's two halves, called out in the PR so it is not discovered later: N-3 hid the photo block on a look entirely, and under the beg-vs-evidence shape a look holding a photo would now show it. Unobservable today (zero `check_in` attachments) and it aligns the editor with the record screen.
 
+## What the adversarial pass broke, and the correction it needed itself
+
+The `adversarial-reviewer` returned FAIL on the confidence half, and it was right. Claims 1, 2 and 4 held under every counterexample it built — the equivalence over all twelve leaves plus `skin_reaction` / `scratch` / four future-wave keys / missing / empty / prototype-chain params; the untouched windowed save preserving; the mount-time reconstruct leaking nothing. It broke the one layer over, **at the control the gate reveals**:
+
+hiding `TimeConfidenceField` on cough/sneeze swaps in the plain point picker, and that picker moves `occurred_at` without touching the bounds (`handlePointChange` deliberately does not mark the edit confidence-bearing, C-10). So on a cough already holding a window, one tap left the point 12.5 hours outside its own retained window. Nothing rejects it: migration 012's CHECKs tie the bounds to the confidence and order them against each other, never against the point. Reproduced here before believing it, and proven NEW by restoring the old predicate and watching the probe die on `Unable to find an element with text: Change` — a windowed row used to render the Found-it panel, which has no point picker.
+
+It is worse than a stray control for exactly the reason the photo one was. On a windowed row **no read surface renders `occurred_at`** — `describeOccurredAt` renders the bounds — so the picker was showing a value nothing displays, and the owner's correction would appear to do nothing while moving ⑦'s span, onset and recency floor (`detectChronicity` reads the point with no confidence filter) and splitting the report's date from its time range.
+
+**The fix is the confidence half of the photo half's rule.** Suppress the ability to MAKE the claim; never the ability to SEE and correct one the record already holds. A row whose stored confidence contradicts its leaf keeps the control — `storedContradictsLeaf`, set only on a positive non-witnessed value, because a NULL is an absence and 012's backfill is the PM's to make. PM-ruled A in session against two alternatives (render the range read-only; file and merge).
+
+**Its urgency premise was wrong, and that needed checking rather than accepting.** The report rested on CUL-677's `other`→cough/sneeze swap being "built, dry-run only, not yet run" and therefore about to create the population. It ran on 2026-08-29 (`scripts/w1-other-row-swap/run-log.md` line 3, *"RUN 2026-08-29. Complete. 33 of 34 candidates re-keyed"*), and the measurement the reviewer flagged INSUFFICIENT on came back clean: all 19 remaining live `other` rows are witnessed, zero windowed. So there is no pending creator and the population stays zero. Reachability was the bar the fix was made against, not population.
+
+It also named three weak spots in the suite, two of which were real:
+
+- **The windowed-cough fixture was inert.** `'confidence' in fields === false` is true for any stored value on that leaf, so the case proved the right invariant and nothing about that row. It now asserts the point stays inside the window it is keeping.
+- **The natural repair was unguarded.** Marking `handlePointChange` confidence-bearing is what a maintainer would reach for, and it converts the drift into the full window-erasing B-448 leak. The suite was green through it; a C-10 case now reds it.
+- **The third was not a test gap.** Deleting the save-side `showConfidenceControl` ternary still reds nothing — because the exception made it *equivalent by construction*: the control is hidden only for witnessed-or-NULL rows, `reconstructTimeControl` maps those to `'saw'`/`null` and never `'found'`, and `buildTimeFields` returns the identical literal for every non-`'found'` mode. The branch stays as the belt for the case the exception prevents, and both the branch and the test now say so — a surviving mutant with no note reads as coverage, and the first draft of that test comment claimed a proof it did not have, which is C-38's cheque-the-code-does-not-cash inside a test.
+
+Nine mutations across the session in total; the four on the fix red the drift's return, the exception firing unconditionally (which would undo the whole issue), NULL read as a contradiction, and the natural repair.
+
 ## Verification
 
-`tsc --noEmit` clean. Full suite green: 382 suites / 8241 tests. The editor suites also run green under all three CI zones (UTC+14 / +12:45 / −10) — checked locally rather than left to the `App (jest, non-UTC timezones)` job, since the fixtures carry a date.
+`tsc --noEmit` clean. Full suite green: 382 suites / 8249 tests. The editor suites also run green under all three CI zones (UTC+14 / +12:45 / −10) — checked locally rather than left to the `App (jest, non-UTC timezones)` job, since the fixtures carry a date.

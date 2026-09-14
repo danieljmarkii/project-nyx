@@ -78,6 +78,15 @@ export default function EditEventModal() {
   // flips to 'manual' the moment the user taps the time row.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
 
+  // Does the STORED row already carry a confidence its leaf says is unwritable? Only
+  // ever true for a row stamped before its leaf's gate existed. Seeded false and set
+  // by the mount read below, so the first frame shows the leaf's own answer: a
+  // renderer is the right level for a hydration-dependent predicate (C-12 — the
+  // value costs a frame here, not a one-shot destructive act), and the save re-reads
+  // the stored fields anyway, so a point moved inside that tick still cannot erase a
+  // window (`confidenceTouched` gates the write; the windowed-save test pins it).
+  const [storedContradictsLeaf, setStoredContradictsLeaf] = useState(false);
+
   // B-010 — editable witnessed/found confidence (QA Note 1: confidence wasn't
   // editable after logging). Reconstructed from stored fields on mount
   // (reconstructTimeControl).
@@ -117,7 +126,32 @@ export default function EditEventModal() {
   // comment as a hardcoded write. Filed as CUL-885; a fourth instance of C-18's
   // comment-blanking rule, and the one whose remedy — allowlisting the file — the
   // guard's own text warns against.)
-  const showConfidenceControl = EVENT_TYPES[eventType]?.confidenceModel !== 'witnessed';
+  //
+  // — THE EXCEPTION, and it is the confidence half of the photo half's rule (CUL-887,
+  // found by the adversarial pass on this PR). Suppressing the control on a leaf
+  // suppresses the ability to MAKE the claim; it must not suppress the ability to SEE
+  // and correct one the record ALREADY HOLDS. Without `storedContradictsLeaf` below,
+  // a cough stamped windowed through this screen's own pre-CUL-887 control fell to
+  // the plain point picker — and that picker moves `occurred_at` without touching the
+  // bounds (`handlePointChange` deliberately does not mark the edit confidence-
+  // bearing, C-10), so one tap left the row's point sitting OUTSIDE its own retained
+  // window. Nothing rejects that: migration 012's CHECKs tie the bounds to the
+  // confidence and order them against each other, never against the point.
+  //
+  // It is worse than a stray control, for the same reason the photo one was: on a
+  // windowed row NO read surface renders `occurred_at` — `describeOccurredAt` renders
+  // the bounds — so the picker showed a value nothing displays and the owner's
+  // "correction" appeared to do nothing while moving ⑧'s span, onset and recency
+  // floor (`detectChronicity` reads the point with no confidence filter) and splitting
+  // the report's date from its time range.
+  //
+  // Measured zero in production, on both halves and on the `other` rows CUL-677's
+  // swap re-keyed (it ran 2026-08-29 and preserved every confidence — all witnessed),
+  // so this closes a state that was reachable but unpopulated. Reachability is the
+  // bar, not population: the swap is the shape of thing that creates it, and the
+  // taxonomy has more waves coming.
+  const leafIsWitnessedByConstruction = EVENT_TYPES[eventType]?.confidenceModel === 'witnessed';
+  const showConfidenceControl = !leafIsWitnessedByConstruction || storedContradictsLeaf;
   // CUL-887 — the photo half of the same contract (§6/§7 hasPhoto). `?? true` is the
   // §8 posture: an unknown leaf keeps today's generic offer. Read here beside its
   // sibling so the two leaf-contract questions are asked in one place; what it gates
@@ -315,6 +349,10 @@ export default function EditEventModal() {
       }
       if (seed.earliest) setEarliest(new Date(seed.earliest));
       if (seed.latest) setFoundLatest(new Date(seed.latest));
+      // A NULL confidence is not a contradiction — it is the absence of a claim, and
+      // 012's backfill is the PM's to make, not this screen's. Only a row that
+      // positively asserts a non-witnessed confidence re-opens the control.
+      if (stored.confidence && stored.confidence !== 'witnessed') setStoredContradictsLeaf(true);
     }).catch(console.error);
   }, [id]);
 
@@ -505,6 +543,20 @@ export default function EditEventModal() {
       // (measured on the respiratory pair: every row witnessed, zero windowed), so
       // the choice is between an unreachable correction on no rows and an open
       // door on every row.
+      //
+      // — THIS TERNARY IS NOW EQUIVALENT BY CONSTRUCTION, and it stays anyway. Since
+      // the exception above, `showConfidenceControl` is false only when the stored
+      // confidence is witnessed or NULL; `reconstructTimeControl` maps those to 'saw'
+      // and null, never 'found' (lib/eventTimeEdit.ts:129/146); and `buildTimeFields`
+      // returns exactly this literal for every mode that is not 'found'. So both arms
+      // produce the same object, and deleting the branch changes no behaviour and reds
+      // no test — recorded here because a surviving mutant with no note reads as a
+      // coverage gap, and this one is a redundancy instead.
+      //
+      // It is kept as the belt for the case the exception exists to prevent: if a
+      // future change ever hides the control on a row that DOES hold a window, this
+      // is what stops the save reading a control the owner could not see. That is the
+      // same reasoning the guard's own inertness note below already carries.
       const tf = showConfidenceControl
         ? buildTimeFields()
         : { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
