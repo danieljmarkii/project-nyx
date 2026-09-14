@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-14
 
-CUL-964, one PR, Design Polish DP-4. PM-ruled at the plan gate: build it, before the 1.2.0 cut (CUL-559), and keep the dwell at 1800ms.
+Shipped via #848. CUL-964, one PR, Design Polish DP-4. PM-ruled at the plan gate: build it, before the 1.2.0 cut (CUL-559), and keep the dwell at 1800ms — a ruling the sibling CUL-960 session recorded independently the same hour (*"Before the cut — already in flight"*, #847), from the other side of the GA plan.
 
 ## What the defect actually was
 
