@@ -311,9 +311,19 @@
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">Culprit · design review · CUL-878 Vet visits · round 2 — one proposal</p>
+  <p class="eyebrow">Culprit · design review · CUL-878 Vet visits · round 3 — one proposal</p>
   <h1 class="title serif">The vet visit — before, during, after</h1>
+  <p class="lede"><b>Round 3 (CUL-952)</b> is additive: it draws the one screen the lifecycle was missing — <b>changing or removing a booked appointment</b> — and the second answer the <i>Waiting on you</i> row was asking for and not offering. Nothing from round 2 is retired; every frame below still stands. Round 2's own note follows.</p>
   <p class="lede">Round 2 applies the PM's reactions to round 1 and the nine isolated persona interviews as <b>one proposal</b>. The retired direction (A3, the Ask-only door) has left the page — git keeps round 1 at <b>4f4e6f1</b>. Every frame below is tagged: <b>current</b> is the proposal; a dashed box is an <b>option drawn for a later decision</b>, not the proposal. Real content throughout: Nyx, the PM's own cat, with a GI history, a hydrolyzed trial, a PRN antiemetic and an appointment on Tuesday.</p>
+
+  <div class="ledger">
+    <div class="ledger-h">Round 3 · CUL-952 — what was found, and what moved on the page</div>
+    <div class="ledger-row"><span class="ledger-who">PM · device</span><div><b>"Once a visit is scheduled it can never be edited. Why? What if I wanted to change the time, location.. etc"</b> Reached on the PM's own device, independently of the two review finds below. Honest answer: it was never specified — §4.1 E3 covers booking and §10 parks reminders; reschedule is in neither list. An omission, not a deferral. <span class="moved">E4 added: the appointment as an editable record, the shape <code>app/vet-visits/edit.tsx</code> already has for a visit.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Jordan · Sam</span><div><b>"Change the appointment" lands on a screen whose only control books a second one.</b> Found independently by both lenses on the VV-6 finish pass. The ⋯ item on Get ready pushes <code>/vet-visits</code>, where the only button is <i>Add</i> — so following the app's own instruction books a second appointment beside the one the owner meant to move, and Home then leads with whichever is earlier. <span class="moved">The <i>Change</i> door E1 already drew gains a destination; the ⋯ item points at it too.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Team · answer</span><div><b>A two-answer question must offer two answers.</b> <i>Waiting on you</i> says "log the visit to move it into Nyx's history" under a single door. The other answer — <i>It didn't</i> — exists only on Home, and only for five days; past that a booking the owner never attended is furniture in the list forever. <span class="moved">E5 added: the same <i>It didn't happen</i> verb the Home strip uses, in the list, with no window.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Correction</span><div><b>D2 said "starts from today"; the rule says it may not.</b> A stale frame, not a change: the vet report's window anchors <i>strictly before</i> today, so a report cut in the car park still runs to yesterday, and §4.1 D2 forbids the phrase outright. The build caught it — <code>components/vetvisits/VisitSavedMoment.tsx:24</code> has carried a note that this frame is superseded — but the page kept saying it. <span class="moved">D2's line now reads "starts from this visit", matching what ships.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Not drawn</span><div><b>A second upcoming booking is still invisible everywhere (CUL-970).</b> Its own issue, deliberately. Round 3 removes the cause most likely to mint one; it does not change what the list shows when two exist. <span class="moved">Nothing.</span></div></div>
+  </div>
 
   <div class="ledger">
     <div class="ledger-h">The reaction ledger — what each reaction ruled, and what moved on the page</div>
@@ -580,7 +590,7 @@
           <div class="saved-wrap">
             <div class="saved-check"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7B6C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
             <div class="saved-h">Saved to Nyx's visits</div>
-            <div class="saved-p">Your next vet report starts from today, and "since last visit" on Home resets.</div>
+            <div class="saved-p">Your next vet report starts from this visit, and "since last visit" on Home resets.</div>
             <div class="saved-offline">On this phone now — backs up when you're online</div>
             <div class="rowcard" style="width:100%;text-align:left">
               <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Cerenia</b><span>kept · linked to this visit</span></span><span class="done">Linked</span></div>
@@ -589,7 +599,7 @@
             <div class="btn-stack" style="width:100%"><div class="btn ghost">Done</div></div>
           </div>
         </div></div>
-        <div class="opt-cap"><span class="k">D2 · The saved moment <span class="tag cur">current</span></span><p>Names the pet, names what the save did to the rest of the app (the report window and the Home strip both move on a logged visit), and lists what was linked. Unchanged from round 1.</p></div>
+        <div class="opt-cap"><span class="k">D2 · The saved moment <span class="tag cur">current</span></span><p>Names the pet, names what the save did to the rest of the app (the report window and the Home strip both move on a logged visit), and lists what was linked. <b>Round 3 correction:</b> this frame read "starts from <i>today</i>" since round 1 — the report's window anchors strictly before today, so the shipped copy says "from this visit" and <code>VisitSavedMoment.tsx:24</code> already recorded the frame as superseded. The page now agrees with the rule.</p></div>
       </div>
 
       <div class="opt">
@@ -634,7 +644,7 @@
             <div class="visit"><div class="d"><b>14</b><span>Jan</span></div><div class="m"><b>Annual</b><span>Riverside</span></div><span class="chev">›</span></div>
           </div>
         </div></div>
-        <div class="opt-cap"><span class="k">E1 · The list <span class="tag cur">current</span></span><p>"Add" asks one thing first — already happened, or booked? The tags under a past visit are derived from the linked records, never typed. Unchanged.</p></div>
+        <div class="opt-cap"><span class="k">E1 · The list <span class="tag cur">current</span></span><p>"Add" asks one thing first — already happened, or booked? The tags under a past visit are derived from the linked records, never typed. <b>Round 3:</b> the <i>Change</i> door was drawn here in round 2 and shipped without a destination — it now opens E4. Otherwise unchanged.</p></div>
       </div>
 
       <div class="opt">
@@ -671,6 +681,50 @@
         <div class="opt-cap"><span class="k">E3 · Booking <span class="tag cur">current</span></span><p>Only the date is required; everything else prefills or waits. "Also for Juniper" renders only in a multi-pet account and books a second appointment row under the other pet (the Vet Files duplicate-on-add pattern) — each pet's Home shows its own. Reminders stay CUL-253's, which this sheet unblocks.</p></div>
       </div>
     </div>
+
+    <div class="rail rail-2" style="margin-top:34px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Vet visits</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="ph-pagetitle">Change this appointment</div>
+          <div class="ph-sub">Nyx</div>
+          <div class="field-row" style="margin-top:6px">
+            <div class="field"><div class="lab">When</div><div class="val">Tue, Sep 16</div></div>
+            <div class="field"><div class="lab">Time</div><div class="val">3:00 pm</div></div>
+          </div>
+          <div class="field"><div class="lab">Where</div><div class="val">Riverside Animal Hospital</div></div>
+          <div class="field"><div class="lab">Vet</div><div class="val">Dr. Chen</div></div>
+          <div class="field"><div class="lab">Reason</div><div class="val">Recheck</div></div>
+          <div class="btn-stack">
+            <div class="btn accent">Save changes</div>
+            <div class="btn quiet" style="color:var(--a-symptom-ink)">Remove this appointment</div>
+          </div>
+          <div class="barhint">Your questions and notes stay with it.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E4 · Change the appointment <span class="tag cur">current</span></span><p>The missing screen. Deliberately the <b>visit</b> edit's shape one directory over, not the booking sheet's: no <i>happened or booked?</i> chips (an appointment is not a visit) and no "Also for Juniper" (each pet's booking is its own row — an edit touches one). <i>Remove</i> writes <code>cancelled_at</code> through the one writer the Home strip already uses, and confirms with the strip's own words. The footnote is the thing an owner rescheduling actually wonders: the questions typed on Get ready ride the row.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title">Vet visits</span><span class="ph-x" style="color:var(--a-accent-ink);font-weight:600;font-size:13px">Add</span></div>
+          <div class="ph-pagetitle">Vet visits</div>
+          <div class="ph-sub">Nyx</div>
+          <div class="sec-label">Waiting on you</div>
+          <div class="appt">
+            <div class="date"><b>2</b><span>Sep</span></div>
+            <div class="main"><div class="t">Tuesday · 3:00 pm</div><div class="s">Riverside Animal Hospital · Dr. Chen · recheck</div>
+              <div class="doors"><span class="door ghost">Take notes</span><span class="door">How did it go?</span><span class="door">It didn’t happen</span><span class="door ghost">Change</span></div>
+            </div>
+          </div>
+          <div class="barhint" style="text-align:left;margin-top:2px">This day has passed. Log the visit to move it into Nyx’s history, or say it didn’t happen.</div>
+          <div class="sec-label" style="margin-top:8px">Past</div>
+          <div class="rowcard">
+            <div class="visit"><div class="d"><b>30</b><span>Jul</span></div><div class="m"><b>GI follow-up</b><span>Riverside · Dr. Chen</span></div><span class="chev">›</span></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E5 · Waiting on you <span class="tag cur">current</span></span><p>The row that was asking a two-answer question under one door. <i>It didn’t happen</i> is Home's <i>It didn’t</i> verb — one vocabulary, one writer, and here with <b>no five-day window</b>, so a booking missed by a week is still answerable. <i>Change</i> is on this row too rather than only on <i>Next</i>: the commonest reason a booking lands here is that the visit moved and nobody told the app, and remove-and-rebook would discard the prepared questions Get ready exists for. Four doors wrap; the two answers lead, because answering is what this section is asking for.</p></div>
+      </div>
+    </div>
   </section>
 
   <!-- ═══════════════ F · OPEN + NOT DRAWN ═══════════════ -->
@@ -687,5 +741,5 @@
     </div>
   </section>
 
-  <div class="foot"><b>Round 2 supersedes round 1</b> (git: <b>4f4e6f1</b>) as one proposal; the retired direction A3 has left the page. The spec that pairs with this page is <b>docs/nyx-vet-visits-requirements.md</b> (v1.0, build-ready; decision record in §0); the evidence is <b>docs/research/2026-09-vet-visit-companion-evidence.md</b>; the issue is <b>CUL-878</b>; the build track is the Linear project <b>Vet visits — the appointment companion</b>. Phone frames use the app's fixed tokens from <b>constants/theme.ts</b>; the page chrome is theme-aware.</div>
+  <div class="foot"><b>Round 3 is additive over round 2</b> (which superseded round 1, git <b>4f4e6f1</b>; the retired direction A3 left the page then). Round 3 adds E4 and E5 for <b>CUL-952</b> and retires nothing. The spec that pairs with this page is <b>docs/nyx-vet-visits-requirements.md</b> (v1.0, build-ready; decision record in §0); the evidence is <b>docs/research/2026-09-vet-visit-companion-evidence.md</b>; the issue is <b>CUL-878</b>; the build track is the Linear project <b>Vet visits — the appointment companion</b>. Phone frames use the app's fixed tokens from <b>constants/theme.ts</b>; the page chrome is theme-aware.</div>
 </div>
