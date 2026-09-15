@@ -312,7 +312,13 @@ function med(over: Partial<MedicationAdherence>): MedicationAdherence {
     elapsedDaysInWindow: 45,
     daysWithDose: 41,
     doseDays: [],
-    expectedDoses: 90,
+    prescribedDoses: 90,
+    lifetimeDosesLogged: 82,
+    windowDosesLogged: 82,
+    firstDoseDay: null,
+    lastDoseDay: null,
+    recordedEndDay: null,
+    courseEnded: false,
     givenDoses: 82,
     partialDoses: 0,
     missedDoses: 0,
@@ -744,9 +750,39 @@ Deno.test('medication with zero doses → "adherence not tracked", never complia
 Deno.test('tracked medication → adherence line with denominators + unconfirmed distinct', () => {
   const html = renderReport(base({ medications: [med({})] }))
   const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
-  assert.ok(text.includes('82 of 90 doses'), 'given/expected denominators')
+  // An ACTIVE course states the COUNT and names the plan without framing it as a ratio — "of N"
+  // mid-course reads as a countdown (B-618 D7), and that ruling is now shared by page 1 and the
+  // §4.4 cell through one predicate rather than being decided twice (CUL-976).
+  assert.ok(text.includes('82 doses logged; course under way, 90 prescribed'), 'count + plan, no mid-course ratio')
+  assert.ok(!/82 of 90/.test(text), 'no countdown framing on an active course')
   assert.ok(text.includes('41 of 45 days'), 'day denominator')
   assert.ok(text.includes('8 unconfirmed'), 'unconfirmed kept distinct (not folded into given)')
+})
+
+Deno.test('ENDED medication → the adherence ratio NAMES its basis (CUL-976)', () => {
+  const html = renderReport(
+    base({ medications: [med({ status: 'completed', endedAt: '2026-06-20', courseEnded: true })] }),
+  )
+  const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  // "of 90 prescribed", never a bare "of 90" the reader could take for the window's own
+  // expectation — the v15 artifact's "9 of 30" was exactly that unlabelled proration.
+  assert.ok(text.includes('82 of 90 prescribed doses logged'), 'prescription-denominated claim, basis named')
+})
+
+Deno.test('OVER-DELIVERED medication → the ratio is dropped, never "95 of 90" (CUL-976)', () => {
+  const html = renderReport(
+    base({
+      medications: [
+        med({ status: 'completed', endedAt: '2026-06-20', courseEnded: true, lifetimeDosesLogged: 95 }),
+      ],
+    }),
+  )
+  const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(!/95 of 90/.test(text), 'an over-delivered course never renders a >100% frame')
+  assert.ok(
+    text.includes('95 doses logged; more than the 90 prescribed'),
+    'the count is stated and the reason the frame is absent is named, not left to inference',
+  )
 })
 
 // ── §4 / B-040 verbatim free-fed string ────────────────────────────────────────────
@@ -2278,7 +2314,7 @@ Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data
 Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {
   const snap = base({
     medications: [
-      med({ drugName: 'Metronidazole', status: 'completed', endedAt: '2026-05-26', startedAt: '2026-05-12', adherenceState: 'not_tracked', givenDoses: 0, partialDoses: 0, daysWithDose: 0, unconfirmedDoses: 0, expectedDoses: null }),
+      med({ drugName: 'Metronidazole', status: 'completed', endedAt: '2026-05-26', startedAt: '2026-05-12', adherenceState: 'not_tracked', givenDoses: 0, partialDoses: 0, daysWithDose: 0, unconfirmedDoses: 0, windowDosesLogged: 0, lifetimeDosesLogged: 0, prescribedDoses: null }),
     ],
     symptoms: [aggregate({ type: 'vomit', count: 3 })],
   })
@@ -2436,7 +2472,10 @@ Deno.test('§3.8 orphan-dose — an unlinked OTC dose group renders on page 1 + 
   const html = renderReport(base({ unlinkedMedications: [unlinkedMed()] }))
   assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(html), 'the drug is named')
   // num() wraps counts in <span class="num">, so match through it.
-  assert.ok(/>3<\/span> doses given Jun 28/.test(html), 'the administered count + span render on page 1')
+  assert.ok(
+    />3<\/span> doses given in this window, Jun 28/.test(html),
+    'the administered count + span render on page 1, with the window named (CUL-976)',
+  )
   assert.ok(/no regimen configured/.test(html), 'page 1 states plainly there is no regimen')
   assert.ok(/owner-reported, OTC/.test(html), 'the OTC provenance is labelled')
   assert.ok(/No regimen configured/.test(html), 'Appendix D row states no regimen in the Regimen column')
@@ -3388,7 +3427,7 @@ Deno.test('B-532 — a snapshot with no halves renders no delta at all (never a 
 Deno.test('B-532 — Appendix D carries dose DATES and the unlogged-medication caveat', () => {
   const html = renderReport(
     base({
-      medications: [med({ doseDays: ['2026-06-05', '2026-07-02'], givenDoses: 2, daysWithDose: 2, expectedDoses: null, unconfirmedDoses: 0 })],
+      medications: [med({ doseDays: ['2026-06-05', '2026-07-02'], givenDoses: 2, windowDosesLogged: 2, lifetimeDosesLogged: 2, daysWithDose: 2, prescribedDoses: null, unconfirmedDoses: 0 })],
     }),
   )
   const t = plain(html)

@@ -28,6 +28,10 @@ import {
   type ReportDoseInput,
   type TimingFinding,
 } from './report.ts'
+// The CUL-976 cross-surface guards drive the REAL renderer and assert over its output, not over
+// the intermediate snapshot: "one adherence claim per drug per document" is a property of the
+// document, and a snapshot-level assertion cannot see a second claim a renderer prints.
+import { renderReport } from './render.ts'
 import type { FoodFormat } from '../generate-signal/detection.ts'
 // The Class-A key, imported so the parity assertion below compares against the REAL
 // read-path keying rather than a string literal that could drift from it.
@@ -1012,22 +1016,40 @@ Deno.test('§4.4 lifetime table — the mock §05 record derives all four course
   assert.equal(mh!.sinceDay, '2026-02-11') // earliest dated point
 })
 
-Deno.test('§4.4 lifetime table — reads lifetimeDoses, not the windowed doses (window-ignoring)', () => {
+Deno.test('§4.4 lifetime table — window-ignoring beside a windowed orphan section (same dose set)', () => {
   const rec = mockMedRecord()
+  // PRODUCTION SHAPE (CUL-976): `doses` is the lookback-trimmed slice of the SAME pull
+  // `lifetimeDoses` carries whole — index.ts maps one query into both. The previous version of
+  // this test passed `doses: []` beside a populated `lifetimeDoses` to "prove independence",
+  // which is a shape the function can never be handed, and it was asserting over it: the
+  // windowed orphan section came back empty because its input was empty, not because anything
+  // scoped it. A fixture production cannot create is green over nothing (C-35).
+  //
+  // Independence is now shown the way it actually matters — one dose set in, two different
+  // scopings out.
   const snap = assembleReport(baseInput({
     now: MED_NOW,
     medications: rec.medications,
     medicationItems: rec.medicationItems,
-    doses: [], // the windowed sections see nothing…
-    lifetimeDoses: rec.lifetimeDoses, // …but the lifetime table sees the whole record
+    doses: rec.lifetimeDoses,
+    lifetimeDoses: rec.lifetimeDoses,
   }))
   const mh = snap.medicationHistory!
   assert.equal(mh.entries.length, 4)
   // The Feb/Mar courses — entirely outside the 90-day window — still appear with their counts.
   assert.ok(mh.entries.some((e) => e.drugName === 'Metronidazole' && e.dosesLogged === 26 && e.ended))
   assert.ok(mh.entries.some((e) => e.drugName === 'Maropitant (Cerenia)' && e.dosesLogged === 1))
-  // The windowed orphan section reads `doses` (empty) — so it is empty, proving independence.
-  assert.equal(snap.unlinkedMedications.length, 0)
+
+  // …while the WINDOWED orphan section carries only the in-window ad-hoc drug. Cerenia's single
+  // Feb 11 dose is 175 days before MED_NOW and outside the 90-day window; Cetirizine's Jun 2–9
+  // doses are inside it. Both are ad-hoc, so only the window separates them — which is the
+  // scoping this test exists to pin.
+  assert.deepEqual(snap.unlinkedMedications.map((u) => u.drugName), ['Cetirizine HCl (Zyrtec)'])
+  assert.equal(snap.unlinkedMedications[0].administeredDoses, 3)
+  assert.ok(
+    mh.entries.some((e) => e.drugName === 'Maropitant (Cerenia)'),
+    'the out-of-window ad-hoc drug is absent from the windowed section but present lifetime',
+  )
 })
 
 Deno.test('§4.4 lifetime table — falls back to `doses` when `lifetimeDoses` is absent (older callers)', () => {
@@ -3065,4 +3087,272 @@ Deno.test('CUL-564 — assembleReport extracts a merged ⑤+L1 timing_story (bot
     !snap.correlation.timing.some((t) => t.kind === 'postprandial_timing' || t.kind === 'empty_stomach_timing'),
     'the lone ⑤/L1 cards are consumed by the merge — no double-render',
   )
+})
+
+// ── CUL-976 — one drug, one adherence claim, on the prescription ─────────────────────
+//
+// The v15 artifact told a vet two different things about whether one ear infection was
+// treated: "Adherence: 9 of 30 doses" in the page-5 clinical summary, and "28 of 28" in the
+// page-10 lifetime table, for the same drug on the same document. The tell that this was a
+// defect rather than two framings is that the in-window denominator (30) EXCEEDED the whole
+// prescription (28) — a subset cannot have a bigger denominator than its set.
+//
+// Two independent causes, and each of these tests fails on its own cause:
+//   • the NUMERATOR ran a private `medicationId === regimen.id` filter, so every dose logged
+//     before the owner created the regimen row (medication_id NULL forever) was invisible to
+//     page 1 while the shared attribution pass claimed it for the course; and
+//   • the DENOMINATOR was `dosesPerDay × elapsedDaysInWindow`, a proration of the report's own
+//     window printed bare, with no referent in the record at all.
+
+const ADHERENCE_CLAIM = /Adherence: <span class="num">(\d+)<\/span> of <span class="num">(\d+)<\/span> prescribed/g
+
+/** Every "N of M prescribed" claim in a rendered document, as [numerator, denominator] pairs. */
+function adherenceClaims(html: string): Array<[number, number]> {
+  return [...html.matchAll(ADHERENCE_CLAIM)].map((m) => [Number(m[1]), Number(m[2])])
+}
+
+/**
+ * The CUL-976 record, reproduced: a 28-dose otic course the owner began dosing on Jul 17 and
+ * only configured in the app on Jul 25. The 16 doses before that carry `medication_id = NULL`
+ * forever; the 12 after it are regimen-linked. 12 + 16 = 28 = the prescription.
+ */
+function lateConfiguredCourse(): {
+  medications: ReportMedicationInput[]
+  lifetimeDoses: ReportDoseInput[]
+  medicationItems: ReportMedicationItemInput[]
+} {
+  return {
+    medications: [{
+      id: 'reg-otic', medicationItemId: 'mi-otic', drugName: 'Motozol', doseAmount: '1 drop', route: 'otic',
+      dosesPerDay: 2, scheduleNotes: null, indication: 'Ear infection', prescribedBy: null,
+      startedAt: '2026-07-16', targetDurationDays: null, targetDurationDoses: 28,
+      status: 'completed', endedAt: '2026-08-09', isPrescription: true, strength: null,
+    }],
+    lifetimeDoses: [
+      // Jul 17–24, 2×/day, logged BEFORE the regimen row existed → medication_id NULL.
+      ...courseDoses(null, 'mi-otic', '2026-07-17', 8, 2),
+      // Jul 25–30, 2×/day, logged after the owner configured the regimen → linked.
+      ...courseDoses('reg-otic', 'mi-otic', '2026-07-25', 6, 2),
+      // …and then nothing, for the final ten days of a course recorded to Aug 9.
+    ],
+    medicationItems: [
+      { id: 'mi-otic', genericName: 'Metronidazole', brandName: 'Motozol', strength: null, route: 'otic', isPrescription: true },
+    ],
+  }
+}
+
+Deno.test('CUL-976 — pre-configuration doses count toward the course (numerator by DRUG, not by regimen link)', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+
+  // RED PRE-FIX: the old numerator saw only the 12 regimen-linked doses.
+  assert.equal(otic.lifetimeDosesLogged, 28, 'all 28 doses of the drug count, linked or not')
+  assert.equal(otic.prescribedDoses, 28)
+
+  // And they moved rather than being duplicated — the 16 pre-configuration doses are no longer
+  // reported to the vet as a separate "no regimen configured" drug while the lifetime table
+  // counts the same doses toward the prescription. One population, one home.
+  assert.equal(snap.unlinkedMedications.length, 0, 'no orphan group for a drug that has a regimen')
+
+  // The §4.4 lifetime table agrees, because it is the same derivation.
+  const entry = snap.medicationHistory!.entries.find((e) => e.drugName === 'Motozol')!
+  assert.equal(entry.dosesLogged, 28)
+  assert.equal(entry.plannedDoses, 28)
+})
+
+Deno.test('CUL-976 — the same dose is never counted twice across the partition', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  // Every live dose lands in exactly one section. Summing the windowed sections cannot exceed
+  // the record, and the orphan bucket is empty here, so the regimen owns all 28.
+  const orphanTotal = snap.unlinkedMedications.reduce((n, u) => n + u.totalDoses, 0)
+  const regimenLifetime = snap.medications.reduce((n, m) => n + m.lifetimeDosesLogged, 0)
+  assert.equal(regimenLifetime + orphanTotal, 28)
+})
+
+Deno.test('CUL-976 — a course whose dosing stops before its recorded end says so, with both dates', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.firstDoseDay, '2026-07-17')
+  assert.equal(otic.lastDoseDay, '2026-07-30')
+  assert.equal(otic.recordedEndDay, '2026-08-09')
+
+  const html = renderReport(snap)
+  const line = medLineFor(html, 'Motozol')
+  assert.ok(/Dosed Jul 17&ndash;Jul 30/.test(line), 'the dosing span is stated')
+  assert.ok(/the course is recorded to Aug 9/.test(line), 'the recorded end is stated beside it')
+  assert.ok(/no dose logged after Jul 30/.test(line), 'and the contrast is made explicit')
+  // No DURATION is computed from the two dates — a record-anchored date is free, a duration is
+  // guarded (C-19). The reader subtracts; the report does not editorialise the gap's size.
+  assert.ok(!/10 days/.test(line), 'the gap is not rendered as a computed duration')
+})
+
+Deno.test('CUL-976 — a course that merely went quiet renders NO dosing gap (H1: silence is not an ending)', () => {
+  const rec = lateConfiguredCourse()
+  // Same record, but the owner never ended the course — it is stale-active, the steady state.
+  rec.medications[0].status = 'active'
+  rec.medications[0].endedAt = null
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.recordedEndDay, null, 'no owner action ⇒ no recorded end')
+  assert.ok(!/Dosed Jul 17/.test(medLineFor(renderReport(snap), 'Motozol')), 'no gap claim without a recorded end')
+})
+
+/**
+ * The page-1 medication line for one drug, SLICED OUT of the document before matching.
+ *
+ * C-4's testing rule: never match across the document. A guard containing `.*` is not a guard —
+ * on this report it would happily bridge hundreds of characters from page 1 into Appendix D or
+ * the lifetime table and pass on a string the drug's own line never contained.
+ */
+function medLineFor(html: string, drugName: string): string {
+  // The page-1 line is a kv row: `<div class="kv"><span class="k">DRUG</span><span>…</span></div>`.
+  // Anchoring on the KEY span is what makes this page 1's line and not the drug's first mention
+  // anywhere in the document — the same name also appears in Appendix D and the lifetime table.
+  const anchor = `<span class="k">${drugName}</span>`
+  const start = html.indexOf(anchor)
+  assert.notEqual(start, -1, `page-1 medication line for ${drugName} not found`)
+  const end = html.indexOf('</div>', start)
+  assert.notEqual(end, -1, `page-1 medication line for ${drugName} is unterminated`)
+  return html.slice(start, end)
+}
+
+Deno.test('CUL-976 — PROPERTY: no adherence denominator ever exceeds the prescription', () => {
+  // The old denominator was `Math.round(dosesPerDay × elapsedDaysInWindow)`, so it grew with the
+  // REPORT's window and had no upper bound related to the drug at all. Generated across dose
+  // rates and window overlaps, that shape produces a denominator larger than the prescription in
+  // most of this space — which is exactly the "30 of a 28-dose course" the artifact printed.
+  //
+  // The assertion is over the RENDERED document, so it holds against any future renderer that
+  // reintroduces a second ratio, not merely against today's snapshot fields.
+  let claimsSeen = 0
+  let overDeliveredSeen = 0
+  for (const dosesPerDay of [1, 2, 3, 4]) {
+    for (const courseDays of [3, 7, 14, 30]) {
+      for (const startOffsetDays of [0, 20, 60]) {
+        for (const extraDoseDays of [0, 2]) {
+        // `extraDoseDays > 0` doses the course PAST its plan — the over-delivery shape, where a
+        // ratio would read "36 of 28". The prescription stays the plan; only the logging exceeds it.
+        const targetDoses = dosesPerDay * courseDays
+        const dosedDays = courseDays + extraDoseDays
+        const startedAt = addDayKey('2026-05-10', startOffsetDays)
+        const rec = {
+          medications: [{
+            id: 'reg-p', medicationItemId: 'mi-p', drugName: 'Probe', doseAmount: '1', route: 'oral',
+            dosesPerDay, scheduleNotes: null, indication: null, prescribedBy: null,
+            startedAt, targetDurationDays: null, targetDurationDoses: targetDoses,
+            status: 'completed', endedAt: addDayKey(startedAt, courseDays - 1),
+            isPrescription: true, strength: null,
+          } as ReportMedicationInput],
+          // Dosed to plan, every day of the course.
+          lifetimeDoses: courseDoses('reg-p', 'mi-p', startedAt, dosedDays, dosesPerDay),
+          medicationItems: [
+            { id: 'mi-p', genericName: 'Probe', brandName: null, strength: null, route: 'oral', isPrescription: true },
+          ],
+        }
+        const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+        const html = renderReport(snap)
+        for (const [numerator, denominator] of adherenceClaims(html)) {
+          claimsSeen++
+          assert.ok(
+            denominator <= targetDoses,
+            `denominator ${denominator} exceeds the ${targetDoses}-dose prescription ` +
+              `(dosesPerDay=${dosesPerDay}, courseDays=${courseDays}, startOffset=${startOffsetDays})`,
+          )
+          assert.ok(numerator <= denominator, `numerator ${numerator} exceeds its own denominator ${denominator}`)
+        }
+        if (extraDoseDays > 0) {
+          overDeliveredSeen++
+          assert.equal(
+            adherenceClaims(html).length,
+            0,
+            'an over-delivered course renders NO ratio — never "36 of 28"',
+          )
+        }
+        }
+      }
+    }
+  }
+  // NON-VACUITY FLOOR (C-36/C-38): a property test that matched nothing would pass over every
+  // shape above, including the defect. 4 × 4 × 3 combinations each render one claim.
+  assert.equal(claimsSeen, 48, 'every dosed-to-plan combination rendered exactly one adherence claim')
+  assert.equal(overDeliveredSeen, 48, 'and every over-delivered combination was exercised')
+})
+
+Deno.test('CUL-976 — CROSS-SURFACE: one drug yields exactly ONE adherence claim per document', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+
+  // The whole defect in one assertion: page 5 said "9 of 30" and page 10 said "28 of 28" about
+  // this drug. Both surfaces now render the same claim from the same derivation, so the document
+  // carries one ratio for it — and, being identical, one CLAIM however many times it is printed.
+  const claims = adherenceClaims(html)
+  assert.equal(claims.length, 1, 'exactly one prescription-denominated claim on the document')
+  assert.deepEqual(claims[0], [28, 28])
+
+  // And the lifetime table's own cell agrees with it, digit for digit. Sliced to the table's
+  // row before matching — never across the document (C-4).
+  const tableStart = html.indexOf('Medication history')
+  assert.notEqual(tableStart, -1)
+  const lifetimeTable = html.slice(tableStart)
+  assert.ok(/28<\/span> of <span class="num">28/.test(lifetimeTable), 'the lifetime cell states the same 28 of 28')
+
+  // The page-1 line carries no SECOND ratio of its own. The window clause is counts only.
+  const line = medLineFor(html, 'Motozol')
+  assert.equal(
+    (line.match(/ of <span class="num">/g) ?? []).length,
+    2,
+    'page 1 carries the prescription ratio and the day ratio, and no third "N of M" dose ratio',
+  )
+  assert.ok(!/of <span class="num">\d+<\/span> doses on/.test(line), 'the prorated dose ratio is gone')
+})
+
+Deno.test('CUL-976 — a course with no planned total states a COUNT, never an invented denominator', () => {
+  const rec = lateConfiguredCourse()
+  // An ongoing course with neither a dose target nor a day target — the PRN / open-ended shape.
+  rec.medications[0].targetDurationDoses = null
+  rec.medications[0].targetDurationDays = null
+  rec.medications[0].status = 'active'
+  rec.medications[0].endedAt = null
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.prescribedDoses, null, 'no prescription ⇒ no denominator')
+
+  const html = renderReport(snap)
+  assert.equal(adherenceClaims(html).length, 0, 'no ratio is invented for a course that has no plan')
+  const line = medLineFor(html, 'Motozol')
+  assert.ok(/28<\/span> doses logged; no planned total recorded/.test(line), 'the count is stated, with its limit named')
+})
+
+Deno.test('CUL-976 — a drug dosed only OUTSIDE the window states its course, not "not tracked"', () => {
+  const rec = lateConfiguredCourse()
+  // MED_NOW is 2026-08-04 and the window is 90 days, so push the whole course back beyond it.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-02-06'
+  rec.lifetimeDoses = [
+    ...courseDoses(null, 'mi-otic', '2026-01-11', 8, 2),
+    ...courseDoses('reg-otic', 'mi-otic', '2026-01-19', 6, 2),
+  ]
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  // The old basis was "zero doses IN THE WINDOW ⇒ not tracked", which reported a fully-dosed
+  // course as untracked purely because of where the report's window happened to fall.
+  assert.equal(otic.adherenceState, 'tracked')
+  assert.equal(otic.lifetimeDosesLogged, 28)
+  assert.equal(otic.windowDosesLogged, 0)
+})
+
+Deno.test('CUL-976 — a course with NO dose ever still reads "adherence not tracked" (§4 trap holds)', () => {
+  const rec = lateConfiguredCourse()
+  rec.lifetimeDoses = []
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: [] }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.adherenceState, 'not_tracked')
+  assert.equal(otic.lifetimeDosesLogged, 0)
+  const html = renderReport(snap)
+  assert.equal(adherenceClaims(html).length, 0, 'silence never becomes a ratio')
+  assert.ok(/Adherence not tracked/.test(medLineFor(html, 'Motozol')), 'and never reads as compliant')
 })

@@ -114,10 +114,17 @@ import { hasBile, hasFood, hasHair } from '../../../lib/vomitContents.ts'
 // `lib/medications.ts` + `lib/utils.ts`, both already in this bundle.
 import {
   deriveMedicationCourses,
+  type MedicationCourse,
   type MedicationHistoryRegimen,
   type CourseSource,
 } from '../../../lib/medicationHistory.ts'
-import type { AttributableDose } from '../../../lib/medications.ts'
+// CUL-976 — `attributeDoses` is the ONE dose→regimen attribution pass, and page 1 now reads it
+// instead of the private `medicationId === regimen.id` filter it used to run. That filter WAS the
+// bug this module's own header warns about ("a medication_id join counted ZERO"): a dose logged
+// before the owner created the regimen row carries `medication_id = NULL` forever, so page 1
+// could not see it while the §4.4 lifetime table — which goes through this same primitive — could.
+// One drug, two populations, two irreconcilable adherence figures on one document (C-4).
+import { attributeDoses, type AttributableDose, type DoseAttribution } from '../../../lib/medications.ts'
 // The diet-trial answer (B-417 PR 7). `trial.ts` is the seam onto `lib/dietTrial.ts`
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
@@ -1751,7 +1758,18 @@ export interface MedicationAdherence {
   status: string
   isSupplement: boolean
   overlapsWindow: boolean
-  /** 'not_tracked' when ZERO dose events fell in the window — NEVER read as "compliant" (spec §4 trap). */
+  /**
+   * 'not_tracked' when the course has ZERO attributed dose events ANYWHERE in the record —
+   * NEVER read as "compliant" (spec §4 trap).
+   *
+   * The basis changed with CUL-976, and widened rather than narrowed: it used to mean "zero doses
+   * in the WINDOW", which reported a fully-dosed course as untracked whenever the report's window
+   * happened to open after the dosing finished. The trap's intent is that silence must never read
+   * as compliance, and that still holds by construction — a course with no dose ever still lands
+   * here, and a course with doses outside the window states its count with its basis named rather
+   * than claiming anything about the window. `windowDosesLogged === 0` is what the render reads to
+   * say "no doses in this window"; it is a separate, weaker fact and is never an ending.
+   */
   adherenceState: 'tracked' | 'not_tracked'
   elapsedDaysInWindow: number
   daysWithDose: number
@@ -1766,7 +1784,56 @@ export interface MedicationAdherence {
    * administered one and does not put a date here (adversarial finding 4).
    */
   doseDays: string[]
-  expectedDoses: number | null
+  /**
+   * ── The CANONICAL adherence claim (CUL-976) ──────────────────────────────────────────
+   *
+   * The report used to state adherence against `Math.round(dosesPerDay × elapsedDaysInWindow)` —
+   * a denominator PRORATED to the report's own window, printed bare as "N of M doses" with
+   * nothing saying M was a proration. That is how one document came to say "9 of 30" on page 5
+   * and "28 of 28" on page 10 for the same drug, with the in-window denominator LARGER than the
+   * whole prescription — a subset with a bigger denominator than its set, which is unexplainable
+   * to a reader and reads as undertreated to a clinician who only gets to page 5.
+   *
+   * So there is now ONE denominator on this document, and it is the prescription: the course's
+   * own `target_duration_doses`, or `doses_per_day × target_duration_days`, via the shared
+   * `plannedDoses` (`lib/medicationHistory.ts`) that the §4.4 lifetime table already used. The
+   * window surfaces state COUNTS and DATES and no second ratio — two ratios over one drug is the
+   * shape that caused this (C-4: precedence is the only honest resolution, and the loser is
+   * deleted rather than kept alongside).
+   *
+   * `prescribedDoses` is null for an ongoing / PRN / target-less course. That is not a gap to
+   * fill with the old proration: there is no prescription to divide by, so the report states the
+   * count alone. Where the record cannot settle a question, the page does not answer it.
+   */
+  prescribedDoses: number | null
+  /** Administered (given + partial) across the WHOLE record — the canonical claim's numerator. */
+  lifetimeDosesLogged: number
+  /** Administered doses inside the report window. A count, never a ratio's numerator. */
+  windowDosesLogged: number
+  /**
+   * The first and last day an administered dose was logged, across the whole record — the
+   * DOSING span, which is not the course's recorded span and is the thing a clinician is
+   * actually asking about. Lifetime by construction: a window-scoped last dose would
+   * manufacture a gap out of the report's own boundary (C-35 — a predicate about the record
+   * takes the record).
+   */
+  firstDoseDay: string | null
+  lastDoseDay: string | null
+  /**
+   * The owner-recorded end date, and ONLY from an owner action (H1 — `status` completed/stopped).
+   * Paired with `lastDoseDay` this is the §3.8 dosing-gap statement: a course whose dosing stopped
+   * before its recorded end bears directly on whether an infection relapsed or was never cleared,
+   * and neither percentage on the old page conveyed it. Null whenever the course merely went
+   * quiet — silence is never an ending.
+   */
+  recordedEndDay: string | null
+  /**
+   * Whether the owner ENDED this course (H1: `status` completed/stopped) — the same register the
+   * §4.4 table's `ended` reads, from the same derivation. Distinct from `recordedEndDay != null`,
+   * which additionally requires a DATE: a course can be owner-completed with no end date recorded,
+   * and that is still ended. The ratio rule switches on this; the dosing-gap clause needs the date.
+   */
+  courseEnded: boolean
   givenDoses: number
   partialDoses: number
   missedDoses: number
@@ -3218,23 +3285,38 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const windowReadings = allReadings.filter((r) => inWindow(r.occurredAt))
   const weight = buildWeightSection(latestOverall, windowReadings, tz)
 
-  // ── Medication adherence (§3.8, B-117 §7) ────────────────────────────────────
-  const liveDoses = input.doses.filter((d) => !droppedEventIds.has(d.eventId))
+  // ── Medications (§3.8, B-117 §7, §4.4) ───────────────────────────────────────
+  // ONE attribution pass feeds every medication surface on the document (CUL-976) — page 1,
+  // Appendix D, the §3.8 orphan lines and the §4.4 lifetime table. Each surface scopes and
+  // phrases what it needs; none of them decides which doses belong to which drug.
+  const medPass = buildMedicationPass(input, droppedEventIds, tz)
+  // The lookback-trimmed live dose set, kept for the trial block's medication-overlap confounder
+  // (below), which reasons over the trial's own span rather than the whole record. The medication
+  // sections deliberately do NOT use this: attribution must see every dose a drug ever had, or a
+  // course configured after dosing began loses its early doses — the CUL-976 defect.
+  const windowLookbackDoses = input.doses.filter((d) => !droppedEventIds.has(d.eventId))
   const medications = input.medications.map((m) =>
-    buildMedicationAdherence(m, liveDoses, scope, tz),
+    buildMedicationAdherence(
+      m,
+      medPass.byRegimen.get(m.id) ?? [],
+      medPass.courseByRegimen.get(m.id) ?? null,
+      scope,
+      tz,
+    ),
   )
   // Ad-hoc / OTC doses that belong to no configured regimen — surfaced separately so a drug the
   // owner logged (but never set up as a regimen) is still reported, not silently dropped (§3.8).
+  // The set is the pass's OWN `unattributed` bucket, so this section and the regimen sections
+  // partition the record's doses instead of each filtering it independently.
   const unlinkedMedications = buildUnlinkedMedications(
-    liveDoses,
-    new Set(input.medications.map((m) => m.id)),
+    medPass.unattributed,
     input.medicationItems ?? [],
     scope,
     tz,
   )
   // §4.4 (D2) — the LIFETIME medication table, window-ignoring on purpose: derived over the
   // pet's whole record (all regimens + the untrimmed `lifetimeDoses`), not the scoped window.
-  const medicationHistory = buildMedicationHistory(input, droppedEventIds, tz)
+  const medicationHistory = buildMedicationHistory(input, medPass.courses, tz)
 
   // ── Diet / confounder summary (§3.8) ─────────────────────────────────────────
   // The trial this report DESCRIBES — active, or ended inside the window (B-417 §7).
@@ -3520,7 +3602,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // 1, the tile and the appendix" quietly stops being true.
         meals: windowMeals,
         eventsById: new Map(dedupedAll.map((e) => [e.id, e])),
-        doses: liveDoses,
+        doses: windowLookbackDoses,
         medicationItems: input.medicationItems ?? [],
         // Regimens AND the ad-hoc doses that belong to no regimen. The orphan-dose
         // gap (§3.8) is not a footnote here: a real owner's daily OTC antihistamine
@@ -4544,9 +4626,130 @@ function buildWeightSection(
   return { isEmpty, latest, trend }
 }
 
+/**
+ * ── The ONE medication pass for the whole document (CUL-976) ──────────────────────────
+ *
+ * Every medication surface on this report — the page-1 clinical-summary line, Appendix D's
+ * windowed dose table, the §3.8 orphan-dose lines and the §4.4 lifetime table — is built from
+ * this single pass, over the pet's WHOLE record.
+ *
+ * Before this, page 1 ran its own `dose.medicationId === regimen.id` filter, the orphan section
+ * ran a second one, and only the lifetime table went through the shared `attributeDoses`. The
+ * three disagreed exactly where it mattered: a dose logged before the owner created the regimen
+ * row carries `medication_id = NULL` forever (the one-tap path never sets it), so the shared
+ * pass's item+window fallback claimed it for the course while page 1 could not see it at all.
+ * One drug then carried two adherence figures 8 cm apart with opposite clinical answers.
+ *
+ * C-4's resolution is precedence, and precedence needs a single decision to be precedent OVER:
+ * `attributeDoses` is that decision, and every surface here now switches on it, so inverting it
+ * reds all of them together — which is the only proof the rule is shared rather than duplicated.
+ * `grouped` and `unattributed` partition every live dose exactly once, so the counts are taken by
+ * MOVING rows between sections rather than by re-counting them.
+ *
+ * Window scoping happens strictly AFTER attribution, in the consumers. Attribution asks "whose
+ * dose is this?", which the report's window has no business answering.
+ */
+interface MedicationPass {
+  /** Per-regimen attributed doses, in report shape. Keyed by `medications.id`. */
+  byRegimen: Map<string, ReportDoseInput[]>
+  /** Doses belonging to no loaded regimen — the §3.8 orphan population. */
+  unattributed: ReportDoseInput[]
+  /** Course-grain facts (planned doses, end register, spans) keyed by `medications.id`. */
+  courseByRegimen: Map<string, MedicationCourse>
+  /** Every derived course, regimen- and dose-derived alike — the §4.4 table's input. */
+  courses: MedicationCourse[]
+}
+
+function buildMedicationPass(
+  input: ReportInput,
+  droppedEventIds: Set<string>,
+  tz: string | null,
+): MedicationPass {
+  // The untrimmed dose set (window-ignoring); a caller without it falls back to the lookback-
+  // trimmed `doses` — narrower, never wrong. Then drop any dose whose parent event was collapsed
+  // as a duplicate. (Medication events never dedup — each gets a unique key in dedupeEvents — so
+  // this is a no-op in practice, but every dose path must be defined identically, §5.11, so a
+  // future dedup change can't diverge them.)
+  const sourceDoses = input.lifetimeDoses ?? input.doses
+  const liveDoses = sourceDoses.filter((d) => !droppedEventIds.has(d.eventId))
+
+  const regimens: MedicationHistoryRegimen[] = input.medications.map((m) => ({
+    id: m.id,
+    medication_item_id: m.medicationItemId,
+    drug_name: m.drugName,
+    dose_amount: m.doseAmount,
+    route: m.route,
+    doses_per_day: m.dosesPerDay,
+    schedule_notes: m.scheduleNotes,
+    started_at: m.startedAt,
+    target_duration_days: m.targetDurationDays,
+    target_duration_doses: m.targetDurationDoses ?? null,
+    status: m.status,
+    ended_at: m.endedAt,
+  }))
+
+  // Map into the shared derivation's input shape, keeping a back-reference to the report row.
+  // `attributeDoses` passes dose OBJECTS through into `grouped`/`unattributed`, so an identity
+  // Map recovers the report shape with no cast and no index arithmetic — and nothing here
+  // depends on the order the rows arrived in (CUL-975 reorders every pull).
+  //
+  // `deleted_at: null` is correct rather than lossy: index.ts pulls only non-deleted doses
+  // (soft-deleted parents are dropped in mapDoseRows) and the dedup drop is filtered above.
+  const srcOf = new Map<AttributableDose, ReportDoseInput>()
+  const attributable: AttributableDose[] = liveDoses.map((d) => {
+    const a: AttributableDose = {
+      medication_id: d.medicationId,
+      medication_item_id: d.medicationItemId,
+      adherence: d.adherence,
+      deleted_at: null,
+      occurred_at: d.occurredAt,
+    }
+    srcOf.set(a, d)
+    return a
+  })
+
+  // ONE attribution, ONE derivation, over the SAME two arrays — `deriveMedicationCourses`
+  // delegates to `attributeDoses` internally, so the partition below and the course facts are
+  // the same decision by construction, not two that happen to agree today.
+  const attribution: DoseAttribution = attributeDoses(regimens, attributable)
+  const courses = deriveMedicationCourses({ regimens, doses: attributable, timeZone: tz ?? undefined })
+
+  const toSrc = (list: readonly AttributableDose[]): ReportDoseInput[] => {
+    const out: ReportDoseInput[] = []
+    for (const a of list) {
+      const src = srcOf.get(a)
+      if (src) out.push(src)
+    }
+    return out
+  }
+
+  const byRegimen = new Map<string, ReportDoseInput[]>()
+  for (const [regimenId, doses] of attribution.grouped) byRegimen.set(regimenId, toSrc(doses))
+
+  const courseByRegimen = new Map<string, MedicationCourse>()
+  for (const c of courses) if (c.regimenId !== null) courseByRegimen.set(c.regimenId, c)
+
+  return {
+    byRegimen,
+    unattributed: toSrc(attribution.unattributed),
+    courseByRegimen,
+    courses,
+  }
+}
+
+/**
+ * Page 1 + Appendix D's per-regimen medication facts (§3.8, B-117 §7).
+ *
+ * `attributedDoses` are the doses the ONE shared attribution pass assigned to THIS regimen —
+ * explicit `medication_id` link first, then the item+window fallback — over the pet's whole
+ * record. This function no longer decides which doses belong here; it only scopes them
+ * (CUL-976). `course` is the same regimen's course-grain facts from the same pass, and is
+ * where the canonical prescription denominator comes from.
+ */
 function buildMedicationAdherence(
   m: ReportMedicationInput,
-  liveDoses: ReportDoseInput[],
+  attributedDoses: ReportDoseInput[],
+  course: MedicationCourse | null,
   scope: ReportScope,
   tz: string | null,
 ): MedicationAdherence {
@@ -4558,12 +4761,11 @@ function buildMedicationAdherence(
   const overlapsWindow = spanStart <= spanEnd
   const elapsedDaysInWindow = overlapsWindow ? spanEnd - spanStart + 1 : 0
 
-  // Doses linked to THIS regimen, administered in the window.
-  const regimenDoses = liveDoses.filter((d) => {
-    if (d.medicationId !== m.id) return false
+  const inWindow = (d: ReportDoseInput): boolean => {
     const dn = eventDayNumber(d.occurredAt, tz)
     return dn !== null && dn >= scope.startDayNum && dn <= scope.endDayNum
-  })
+  }
+
   let given = 0
   let partial = 0
   let missed = 0
@@ -4573,7 +4775,29 @@ function buildMedicationAdherence(
   // The same days as `doseDayNums`, as local day KEYS — Appendix D renders dates, and a day
   // number is only meaningful next to the scope that produced it (B-532).
   const doseDayKeys = new Set<string>()
-  for (const d of regimenDoses) {
+  // Administered-dose days across the WHOLE record, for the dosing span. Day keys are
+  // fixed-width 'YYYY-MM-DD', so a lexical min/max IS the chronological one with no instant
+  // parse (B-441-safe) — and it is order-independent, so it does not care which direction the
+  // row pull happened to arrive in (CUL-975 reorders every pull).
+  let firstDoseDay: string | null = null
+  let lastDoseDay: string | null = null
+  let lifetimeDosesLogged = 0
+
+  for (const d of attributedDoses) {
+    const administered = d.adherence === 'given' || d.adherence === 'partial'
+    // Days with an ADMINISTERED dose — given OR partial ONLY. An UNCONFIRMED dose
+    // (adherence null) is deliberately NOT counted here: bundling it as administered
+    // would overstate compliance for a critical drug (adversarial finding 4). It stays
+    // visible as unconfirmedDoses so the render can be honest about it.
+    if (administered) {
+      lifetimeDosesLogged++
+      const dk = localDayKey(d.occurredAt, tz)
+      if (dk !== null) {
+        if (firstDoseDay === null || dk < firstDoseDay) firstDoseDay = dk
+        if (lastDoseDay === null || dk > lastDoseDay) lastDoseDay = dk
+      }
+    }
+    if (!inWindow(d)) continue
     switch (d.adherence) {
       case 'given':
         given++
@@ -4591,11 +4815,7 @@ function buildMedicationAdherence(
         unconfirmed++
         break
     }
-    // Days with an ADMINISTERED dose — given OR partial ONLY. An UNCONFIRMED dose
-    // (adherence null) is deliberately NOT counted here: bundling it as administered
-    // would overstate compliance for a critical drug (adversarial finding 4). It stays
-    // visible as unconfirmedDoses so the render can be honest about it.
-    if (d.adherence === 'given' || d.adherence === 'partial') {
+    if (administered) {
       const dn = eventDayNumber(d.occurredAt, tz)
       if (dn !== null) doseDayNums.add(dn)
       const dk = localDayKey(d.occurredAt, tz)
@@ -4603,12 +4823,20 @@ function buildMedicationAdherence(
     }
   }
 
-  const expectedDoses =
-    m.dosesPerDay != null && overlapsWindow ? Math.round(m.dosesPerDay * elapsedDaysInWindow) : null
+  // A course with NO attributed dose anywhere in the record is "adherence not tracked", NEVER
+  // "compliant" (spec §4 trap) — baked into the state, not left to the renderer. Doses that fall
+  // outside the window no longer trip this: they are a real record of dosing, and reporting them
+  // as untracked is how the old window-scoped basis understated a completed course.
+  const adherenceState: 'tracked' | 'not_tracked' =
+    attributedDoses.length === 0 ? 'not_tracked' : 'tracked'
 
-  // A regimen with ZERO dose EVENTS in the window is "adherence not tracked", NEVER
-  // "compliant" (spec §4 trap) — baked into the state, not left to the renderer.
-  const adherenceState: 'tracked' | 'not_tracked' = regimenDoses.length === 0 ? 'not_tracked' : 'tracked'
+  // H1 — an ending reads SOLELY from an owner action. A course that merely went quiet has no
+  // recorded end, so it can never render a dosing GAP either: with nothing to be short of, the
+  // last dose is just the last dose.
+  const courseEnded = course != null && course.end.kind === 'ended'
+  const recordedEndDay = courseEnded && course !== null && course.end.kind === 'ended'
+    ? course.end.endedAt
+    : null
 
   return {
     regimenId: m.id,
@@ -4629,7 +4857,15 @@ function buildMedicationAdherence(
     elapsedDaysInWindow,
     daysWithDose: doseDayNums.size,
     doseDays: [...doseDayKeys].sort(),
-    expectedDoses,
+    // The ONE denominator on this document — the prescription, read from the shared course
+    // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.
+    prescribedDoses: course?.plannedDoses ?? null,
+    lifetimeDosesLogged,
+    windowDosesLogged: given + partial,
+    firstDoseDay,
+    lastDoseDay,
+    recordedEndDay,
+    courseEnded,
     givenDoses: given,
     partialDoses: partial,
     missedDoses: missed,
@@ -4641,22 +4877,26 @@ function buildMedicationAdherence(
 /**
  * §3.8 orphan-dose gap — doses the owner logged that belong to NO configured regimen, grouped by
  * drug so each reads as one line. A dose carries only `medicationItemId`; its name is resolved
- * through `items` (medication_items). A dose whose `medicationId` points at a regimen we DID load is
- * already counted under that regimen (buildMedicationAdherence) and is excluded here — no double
- * count. A dose whose `medicationId` points at a regimen we somehow did NOT load is treated as
- * unlinked (surfaced) rather than dropped, so nothing logged is silently lost. Counts mirror the
- * regimen path exactly (administered = given + partial; unconfirmed never bundled as given).
+ * through `items` (medication_items).
+ *
+ * `unattributedDoses` comes STRAIGHT from the shared attribution pass's `unattributed` bucket
+ * (CUL-976). That is what makes this a partition rather than two opinions: `grouped` and
+ * `unattributed` are produced by one pass over every dose, so a dose is counted under a regimen
+ * or here, never both and never neither, by construction. This function used to re-derive the
+ * split with its own `medicationId`-only filter, which meant a dose logged before its regimen
+ * row existed was filed HERE — reported to the vet as "no regimen configured" while the lifetime
+ * table counted the very same dose toward the prescription (C-4: two counts over one population
+ * that neither partition nor agree). Counts mirror the regimen path exactly (administered =
+ * given + partial; unconfirmed never bundled as given).
  */
 function buildUnlinkedMedications(
-  liveDoses: ReportDoseInput[],
-  regimenIds: Set<string>,
+  unattributedDoses: ReportDoseInput[],
   items: ReportMedicationItemInput[],
   scope: ReportScope,
   tz: string | null,
 ): UnlinkedMedicationGroup[] {
   const itemById = new Map(items.map((i) => [i.id, i]))
-  const orphan = liveDoses.filter((d) => {
-    if (d.medicationId !== null && regimenIds.has(d.medicationId)) return false
+  const orphan = unattributedDoses.filter((d) => {
     const dn = eventDayNumber(d.occurredAt, tz)
     return dn !== null && dn >= scope.startDayNum && dn <= scope.endDayNum
   })
@@ -4764,43 +5004,13 @@ function medicationItemName(item: ReportMedicationItemInput | null): string {
  */
 function buildMedicationHistory(
   input: ReportInput,
-  droppedEventIds: Set<string>,
+  courses: readonly MedicationCourse[],
   tz: string | null,
 ): MedicationHistoryTable | null {
-  // The untrimmed dose set (window-ignoring); a caller without it falls back to the lookback-
-  // trimmed `doses` — narrower, never wrong. Then drop any dose whose parent event was collapsed
-  // as a duplicate, exactly as `liveDoses` does. (Medication events never dedup — each gets a
-  // unique key in dedupeEvents — so this is a no-op in practice, but the two dose paths must be
-  // defined identically, §5.11, so a future dedup change can't diverge them.)
-  const sourceDoses = input.lifetimeDoses ?? input.doses
-  const liveDoses = sourceDoses.filter((d) => !droppedEventIds.has(d.eventId))
-
-  // Map into the shared derivation's input shape. A ReportDoseInput becomes an AttributableDose
-  // with `deleted_at: null` — index.ts pulls only non-deleted doses (soft-deleted parents are
-  // dropped in mapDoseRows) and the dedup drop is filtered above, so every dose here is live.
-  const regimens: MedicationHistoryRegimen[] = input.medications.map((m) => ({
-    id: m.id,
-    medication_item_id: m.medicationItemId,
-    drug_name: m.drugName,
-    dose_amount: m.doseAmount,
-    route: m.route,
-    doses_per_day: m.dosesPerDay,
-    schedule_notes: m.scheduleNotes,
-    started_at: m.startedAt,
-    target_duration_days: m.targetDurationDays,
-    target_duration_doses: m.targetDurationDoses ?? null,
-    status: m.status,
-    ended_at: m.endedAt,
-  }))
-  const doses: AttributableDose[] = liveDoses.map((d) => ({
-    medication_id: d.medicationId,
-    medication_item_id: d.medicationItemId,
-    adherence: d.adherence,
-    deleted_at: null,
-    occurred_at: d.occurredAt,
-  }))
-
-  const courses = deriveMedicationCourses({ regimens, doses, timeZone: tz ?? undefined })
+  // The courses come from `buildMedicationPass` — the document's ONE attribution + derivation
+  // (CUL-976). This table used to run its own copy of that derivation, which was correct but
+  // was the SECOND of three medication populations on the page; it now reads the same one page 1
+  // does, so the two can no longer disagree even in principle.
   if (courses.length === 0) return null
 
   const itemById = new Map((input.medicationItems ?? []).map((i) => [i.id, i]))
