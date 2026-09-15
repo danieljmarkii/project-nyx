@@ -479,6 +479,53 @@ const ALIASED_HOOK_RE = /\buseAllowlistFlag\s+as\s+\w+/;
  */
 const IMPORTS_NAMESPACE_RE = /(?:^|\n)\s*import\s+(?!type\s)[^;\n]*from\s+['"][^'"]*components\/vetvisits\//;
 
+/**
+ * Collapse the whitespace inside a braced import's specifier list, so a multi-line
+ * `import {\n  A,\n} from '…'` reads to `IMPORTS_NAMESPACE_RE` exactly as the
+ * single-line form does.
+ *
+ * MEASURED, not anticipated: `IMPORTS_NAMESPACE_RE` bounds its middle with
+ * `[^;\n]*`, so it cannot span a newline — and prettier breaks any import with more
+ * than one specifier across lines. CUL-952's `app/vet-visits/edit-appointment.tsx`
+ * imports `{ AppointmentEditBody, type AppointmentEditFields }`, delegates its
+ * drawing to the namespace exactly as the convention requires, and was reported as
+ * drawing elsewhere. A guard whose verdict depends on how prettier wrapped a line is
+ * reporting formatting, not delegation.
+ *
+ * The `\n` in the original bound is load-bearing for everything EXCEPT this, since
+ * it is what stops the match running from one statement into a later one — so the
+ * fix normalises the input rather than loosening the pattern. Only `{…}` runs are
+ * touched, and a brace list cannot contain a `;` or a quote, so this cannot join two
+ * statements together.
+ */
+function collapseBracedImports(src: string): string {
+  return src.replace(/import\s+\{([^}]*)\}\s*from/g, (_m, inner: string) => {
+    // PER-SPECIFIER type imports are dropped, and that is not tidiness — it closes a
+    // hole this very function opened. `IMPORTS_NAMESPACE_RE` guards the statement
+    // form with `(?!type\s)`, so `import type { X } from '…'` correctly fails the
+    // rule: it is erased at compile time and draws nothing. The INLINE form
+    // `import { type X } from '…'` is erased identically and was never guarded —
+    // it simply could not reach the regex before, because `[^;\n]*` cannot span a
+    // newline and prettier wraps it. Collapsing the newline handed it a match.
+    //
+    // Measured by `code-reviewer` with a working proof of concept: a screen that
+    // reads the flag, draws its vet-visit UI inline, and carries one multi-line
+    // type-only specifier from the namespace passed the delegation rule. Worse
+    // than the pre-existing single-line hole, which at least costs the author an
+    // unused VALUE import that lint would notice — a type-only specifier is
+    // ordinary, prettier-clean TypeScript.
+    const values = inner
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0 && !/^type\s/.test(t));
+    // A brace list with nothing left is normalised to the statement-level type-only
+    // form, so it is rejected by the `(?!type\s)` the pattern already carries rather
+    // than by a second rule that could drift from it. Emitting `import { } from`
+    // instead would MATCH, which is the bug.
+    return values.length === 0 ? 'import type {} from' : `import { ${values.join(', ')} } from`;
+  });
+}
+
 /** Repo-relative prefix of the namespace itself. */
 const NAMESPACE_PREFIX = 'components/vetvisits/';
 
@@ -504,7 +551,7 @@ const NAMESPACE_PREFIX = 'components/vetvisits/';
  */
 function drawsThroughNamespace(rel: string, src: string): boolean {
   if (rel.startsWith(NAMESPACE_PREFIX)) return true;
-  return IMPORTS_NAMESPACE_RE.test(src);
+  return IMPORTS_NAMESPACE_RE.test(collapseBracedImports(src));
 }
 
 /**
@@ -697,6 +744,36 @@ describe('the companion\'s consumers stay inside the namespace', () => {
       .filter((rel) => !(rel in DRAWS_ELSEWHERE_OK))
       .filter((rel) => !drawsThroughNamespace(rel, readCode(path.join(REPO_ROOT, rel))));
     expect(drawsElsewhere).toEqual([]);
+  });
+
+  it('the delegation detector reads both import shapes, and still refuses neither', () => {
+    // The detector is the part of this rule that can silently stop working, so it is
+    // driven directly rather than only through the repo scan — where a false
+    // NEGATIVE (a real leak read as delegation) is invisible until it ships.
+    //
+    // Proven in both directions, because only the pair is meaningful: loosening the
+    // pattern until every file passes would satisfy the positive cases alone.
+    const single = `import { A } from '../../components/vetvisits/A';`;
+    const multi = `import {\n  A,\n  type B,\n} from '../../components/vetvisits/A';`;
+    const typeOnly = `import type { A } from '../../components/vetvisits/A';`;
+    // The shape `code-reviewer` broke this with: erased at runtime exactly like the
+    // statement form, and reachable only because `collapseBracedImports` exists.
+    const inlineTypeOnly = `import {\n  type A,\n} from '../../components/vetvisits/A';`;
+    // A mixed list still DRAWS — one value specifier is enough.
+    const mixed = `import {\n  A,\n  type B,\n} from '../../components/vetvisits/A';`;
+    const none = `import { View } from 'react-native';\nimport { x } from '../../lib/vetVisits';`;
+
+    expect(drawsThroughNamespace('app/s.tsx', single)).toBe(true);
+    // The shape prettier produces for more than one specifier — and the one that
+    // was reported as a violation before `collapseBracedImports` existed.
+    expect(drawsThroughNamespace('app/s.tsx', multi)).toBe(true);
+    // A type-only import draws nothing at runtime, so it must NOT satisfy the rule:
+    // a screen whose only namespace reference is erased at compile time is drawing
+    // inline, which is the leak.
+    expect(drawsThroughNamespace('app/s.tsx', typeOnly)).toBe(false);
+    expect(drawsThroughNamespace('app/s.tsx', inlineTypeOnly)).toBe(false);
+    expect(drawsThroughNamespace('app/s.tsx', mixed)).toBe(true);
+    expect(drawsThroughNamespace('app/s.tsx', none)).toBe(false);
   });
 
   it('the draws-through-the-namespace exemption has no stale entries', () => {

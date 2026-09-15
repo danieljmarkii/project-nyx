@@ -9,7 +9,12 @@ import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import { usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
-import { cancelVetAppointment, readHomeAppointment, type HomeAppointment } from '../../lib/vetVisits';
+import {
+  cancelVetAppointment,
+  readHomeAppointment,
+  removeAppointmentCopy,
+  type HomeAppointment,
+} from '../../lib/vetVisits';
 import { hasAskedAboutAppointment, markAppointmentAsked } from '../../lib/appointmentAsked';
 
 // The moment (CUL-903 VV-5; spec §4.1 A2 / A2b, mock A2 / A2b).
@@ -122,14 +127,20 @@ export function AppointmentStrip() {
   };
 
   const onDidntHappen = () => {
+    // The copy moved to `lib/vetVisits` with CUL-952, when this stopped being the
+    // only door onto this write — the visits list and the appointment edit reach it
+    // too, and a destructive confirm that says three slightly different things about
+    // the same row is how an owner learns not to trust it.
+    //
+    // It also FIXES a line this file had wrong. *It didn't* only ever renders in the
+    // `after` phase, i.e. once the day has already passed — and the string said
+    // "upcoming visits" every single time, describing a booking that is by
+    // construction not upcoming. The shared helper branches that one word on the
+    // record instead of on which surface is asking.
+    const copy = removeAppointmentCopy(view.scheduledAt, activePet?.name ?? 'your pet');
     Alert.alert(
-      // 'Remove', not 'Cancel': the buttons below say Remove, and on iOS "Cancel"
-      // is also the word for backing out of the dialog — a title and a button using
-      // it for opposite meanings is the one place an owner cannot afford ambiguity.
-      'Remove this appointment?',
-      // Says what it does to the record, and what it does not. An owner who
-      // rescheduled rather than skipped needs to know the old row is going away.
-      `${view.when} will be removed from ${activePet?.name ?? 'your pet'}’s upcoming visits. Nothing else in the record changes.`,
+      copy.title,
+      copy.body,
       [
         { text: 'Keep it', style: 'cancel' },
         {
