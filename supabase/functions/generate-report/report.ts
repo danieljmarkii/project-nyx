@@ -653,6 +653,20 @@ export interface ReportInput {
    */
   lookRowsComplete?: boolean
   /**
+   * CUL-975 — the tables whose pull could NOT prove it read every matching row, named so
+   * the disclosure can say which part of the record is partial rather than "some data".
+   *
+   * `lookRowsComplete` above is the same idea for the one pull that had it first; this is
+   * the rest of the block, after the pull that did not have it printed a vet report with
+   * every event after Sep 7 missing and no sign anywhere that anything was absent.
+   *
+   * EMPTY ⇒ every pull reached the end of its result set. It is not defaulted for the
+   * caller: `generateReportForPet` always passes it, and where the shortfall could have
+   * cut the report's own WINDOW that caller refuses to render at all rather than
+   * disclosing (the PM's (a') ruling), so what arrives here is always the survivable kind.
+   */
+  incompletePulls?: string[]
+  /**
    * CUL-875 D3 / §9 rule 4 — who this render is for, and therefore whether the owner's
    * own sentences may appear on it.
    *
@@ -2267,6 +2281,8 @@ export interface ReportSnapshot {
   concurrentChanges: ConcurrentChange[]
   proteinTimeline: ProteinTimeline
   provenance: Provenance
+  /** CUL-975 — `ReportInput.incompletePulls`, carried through for the page-1 disclosure. */
+  incompletePulls: string[]
   /**
    * PR 7 — every photographed in-window incident, most-recent-first (Appendix E). `dataUri` is
    * populated by the index.ts I/O shell after assembly.
@@ -4479,6 +4495,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     concurrentChanges,
     proteinTimeline,
     provenance,
+    incompletePulls: input.incompletePulls ?? [],
     incidentPhotos,
     incidentPhotosAnalyzedNoRetained,
     noticed,
