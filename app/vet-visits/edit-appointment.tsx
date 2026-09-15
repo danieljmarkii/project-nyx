@@ -19,7 +19,7 @@ import {
   cancelVetAppointment,
   composeScheduledAt,
   decomposeScheduledAt,
-  readAppointmentById,
+  readEditableAppointment,
   removeAppointmentCopy,
   updateAppointmentDetails,
   type AppointmentDetail,
@@ -61,7 +61,11 @@ export default function EditAppointmentScreen() {
       return;
     }
     try {
-      const row = await readAppointmentById(appointmentId);
+      // The EDITABLE read, not `readAppointmentById`: one clause shared with
+      // `updateAppointmentDetails`, so "may I edit this" has a single answer rather
+      // than a laxer read plus a column check up here. It also keeps this screen from
+      // naming a column at all, which `guards/visitReaders.test.ts` enforces.
+      const row = await readEditableAppointment(appointmentId);
       setAppointment(row);
       if (row && !seeded.current) {
         const parts = decomposeScheduledAt(row.scheduled_at);
@@ -160,6 +164,10 @@ export default function EditAppointmentScreen() {
 
   // The RECORD's pet, never the active one (CUL-574 / AC 11).
   const petName = resolveRecordPetName(pets, appointment?.pet_id);
+  // The row's own day, for the picker floor. Derived in the render body from the
+  // appointment rather than mirrored into state — and never from `fields.day`, which
+  // moves as the owner picks (see `minimumDay` below).
+  const rowDay = appointment ? decomposeScheduledAt(appointment.scheduled_at)?.day ?? null : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -200,11 +208,18 @@ export default function EditAppointmentScreen() {
               onChangeField={(key, value) =>
                 setFields((prev) => (prev ? { ...prev, [key]: value } : prev))
               }
-              // The earlier of today and the row's own day. A live booking still
-              // cannot move into the past; a booking already sitting in *Waiting on
-              // you* keeps the date it has, because a floor of "today" would refuse
-              // to render that row's own current value.
-              minimumDay={earlierOf(startOfToday(), fields.day)}
+              // The earlier of today and THE ROW'S OWN day — read from
+              // `appointment.scheduled_at`, never from `fields.day`.
+              //
+              // Derived from `fields.day` this bound RATCHETS: the floor is
+              // recomputed on every render from the value the owner just picked, so
+              // on a passed booking (09-01, the *Waiting on you* case this bound
+              // exists for) picking 09-10 moves the floor to 09-10 and the picker
+              // then refuses 09-05 — a legitimate correction, blocked with no
+              // explanation, recoverable only by leaving the screen. Found by
+              // `code-reviewer`; the comment two lines down had always said "the
+              // honest bound depends on the ROW", and the code read state instead.
+              minimumDay={earlierOf(startOfToday(), rowDay ?? fields.day)}
               // Read off the ROW, not from state: what the owner prepared is a fact
               // about the record, and it is null for the first-time rescheduler who
               // has never opened Get ready.

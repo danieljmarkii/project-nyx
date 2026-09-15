@@ -1149,6 +1149,33 @@ export async function readAppointmentById(appointmentId: string): Promise<Appoin
   return rows[0] ?? null;
 }
 
+/**
+ * One booking by id that is still EDITABLE — the read scoped to exactly what
+ * `updateAppointmentDetails` will accept (CUL-952).
+ *
+ * `readAppointmentById` deliberately does not filter `vet_visit_id`: "Take notes"
+ * has to keep working on a booking whose visit was already logged. The edit screen
+ * is the opposite case — once a visit exists the booking is no longer a booking, and
+ * the write refuses it. Reading through that laxer function left the screen showing
+ * a normal editable form whose every Save threw, behind "That didn't save · Try that
+ * again in a moment": a dead end that reads as transient and never resolves.
+ *
+ * So the READ and the WRITE share one clause. A screen asking "may I edit this"
+ * gets one answer, rather than composing it from a laxer read plus a column check of
+ * its own — which is also why the check lives here and not there: `guards/visitReaders`
+ * makes this the one file the companion may name these columns in.
+ */
+export async function readEditableAppointment(
+  appointmentId: string,
+): Promise<AppointmentDetail | null> {
+  const rows = await getDb().getAllAsync<AppointmentDetail>(
+    `SELECT ${APPOINTMENT_COLUMNS}, questions, notes_draft FROM vet_appointments
+      WHERE id = ? AND ${LIVE_APPOINTMENT_SQL} LIMIT 1`,
+    [appointmentId],
+  );
+  return rows[0] ?? null;
+}
+
 // ── The owner's questions (spec §4.1 B1 "Your questions") ───────────────────────
 
 /**
@@ -1289,8 +1316,6 @@ export async function cancelVetAppointment(
   }
 }
 
-/** The fields the appointment edit writes. Optional per key, the `VisitDetailsPatch`
- *  rule: an omitted key leaves the column alone. */
 /**
  * What the edit screen promises survives a change — or null when there is nothing
  * to promise (CUL-952).
@@ -1356,6 +1381,8 @@ export function removeAppointmentCopy(
   };
 }
 
+/** The fields the appointment edit writes. Optional per key, the `VisitDetailsPatch`
+ *  rule: an omitted key leaves the column alone. */
 export interface AppointmentDetailsPatch {
   /** The composed instant — always through `composeScheduledAt`, never a raw ISO. */
   scheduledAt?: string;

@@ -62,6 +62,7 @@ import {
   parseAppointmentQuestions,
   readActiveCourses,
   readAppointmentById,
+  readEditableAppointment,
   readVetVisitDetail,
   readVisitConsequence,
   linkCourseToVisit,
@@ -358,6 +359,37 @@ describe('updateVisitDetails', () => {
     seedVisit('gone', { deleted_at: '2026-09-17T00:00:00.000Z' });
     await expect(updateVisitDetails('gone', { notes: 'x' })).rejects.toThrow();
     await expect(updateVisitDetails('never', { notes: 'x' })).rejects.toThrow();
+  });
+});
+
+describe('readEditableAppointment (CUL-952)', () => {
+  it('returns a live booking', async () => {
+    seedAppointment();
+    expect(await readEditableAppointment(APPT)).not.toBeNull();
+  });
+
+  it('refuses exactly what the WRITE refuses — one clause, two callers', async () => {
+    // The point of this reader is that it cannot drift from
+    // `updateAppointmentDetails`. Each case below is a row the write throws on, so
+    // the screen must never render an editable form over it.
+    for (const over of [
+      { vet_visit_id: 'v-logged' },
+      { cancelled_at: '2026-09-17T00:00:00.000Z' },
+      { deleted_at: '2026-09-17T00:00:00.000Z' },
+    ]) {
+      mockDb.prepare('DELETE FROM vet_appointments').run();
+      seedAppointment(over);
+      expect(await readEditableAppointment(APPT)).toBeNull();
+      await expect(updateAppointmentDetails(APPT, { reason: 'x' })).rejects.toThrow();
+    }
+  });
+
+  it('differs from readAppointmentById on the logged case, deliberately', async () => {
+    // `readAppointmentById` stays lax so "Take notes" keeps working on a booking
+    // whose visit was logged. If these two ever agree, one of them has lost its job.
+    seedAppointment({ vet_visit_id: 'v-logged' });
+    expect(await readAppointmentById(APPT)).not.toBeNull();
+    expect(await readEditableAppointment(APPT)).toBeNull();
   });
 });
 

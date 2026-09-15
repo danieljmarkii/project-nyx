@@ -60,9 +60,12 @@ jest.mock('../../lib/vetVisits', () => {
   const actual = jest.requireActual('../../lib/vetVisits');
   return {
     ...actual,
-    readAppointmentById: jest.fn(async () => {
+    // The screen reads through the EDITABLE reader, whose SQL carries
+    // LIVE_APPOINTMENT_SQL — so a row with `vet_visit_id` set resolves to null here
+    // exactly as it would against the real database.
+    readEditableAppointment: jest.fn(async () => {
       if (mockReadThrows) throw new Error('db down');
-      return mockRow;
+      return mockRow && mockRow.vet_visit_id === null ? mockRow : null;
     }),
     updateAppointmentDetails: (id: string, patch: unknown) => mockUpdate(id, patch),
     cancelVetAppointment: (id: string) => mockCancel(id),
@@ -218,6 +221,27 @@ describe('the date bound', () => {
     expect(min.getTime()).toBe(today.getTime());
   });
 
+  it('does not RATCHET the floor as the owner picks — the row’s day, not the last pick', async () => {
+    // Derived from `fields.day`, the floor moves to whatever was just chosen: on a
+    // booking from 7 days ago, picking 3 days ago makes the picker refuse 5 days
+    // ago — a legitimate correction, blocked with no explanation, recoverable only
+    // by leaving the screen. Found by `code-reviewer`, not by a failing test.
+    const original = dayOut(-7);
+    mockRow = row({ scheduled_at: composeScheduledAt(original, null) });
+    render(<EditAppointmentScreen />);
+    await screen.findByText('Change this appointment');
+    fireEvent.press(screen.getByText(/^\w+day,/));
+
+    // The owner picks a date that is still in the past, then reconsiders.
+    const firstPick = dayOut(-3);
+    fireEvent(screen.getByTestId('picker'), 'pickerPick', {}, firstPick);
+
+    const min = new Date(screen.getByTestId('picker').props.pickerMin as string);
+    // Still the ROW's day. Ratcheted, this would be `firstPick` and the earlier
+    // correction would be unreachable.
+    expect(min.getTime()).toBe(original.getTime());
+  });
+
   it('floors a PASSED booking at its own day, so the row can still be corrected', async () => {
     // A floor of "today" would refuse to render this row's own current value — and
     // this is the row most likely to be edited, because it sits in *Waiting on you*
@@ -264,6 +288,19 @@ describe('removing', () => {
 });
 
 describe('the three states below "has a row"', () => {
+  it('refuses to edit a booking whose visit has already been logged', async () => {
+    // `readAppointmentById` filters deleted and cancelled but NOT `vet_visit_id` —
+    // "Take notes" needs a logged booking to keep working. `updateAppointmentDetails`
+    // refuses it, so before this the screen rendered a normal editable form whose
+    // every Save threw behind "That didn't save · Try that again in a moment": a dead
+    // end that reads as transient and never resolves.
+    mockRow = row({ vet_visit_id: 'v-logged' });
+    render(<EditAppointmentScreen />);
+    expect(await screen.findByText('This appointment is no longer on the record.')).toBeTruthy();
+    expect(screen.queryByText('Save changes')).toBeNull();
+    expect(screen.queryByText('Remove this appointment')).toBeNull();
+  });
+
   it('says so when the row is gone, rather than showing an empty form', async () => {
     // G5 — a screen never shows a row that is no longer in the record.
     // `readAppointmentById` filters cancelled and deleted, so this is what an owner

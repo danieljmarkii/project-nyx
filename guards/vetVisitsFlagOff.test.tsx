@@ -499,7 +499,31 @@ const IMPORTS_NAMESPACE_RE = /(?:^|\n)\s*import\s+(?!type\s)[^;\n]*from\s+['"][^
  * statements together.
  */
 function collapseBracedImports(src: string): string {
-  return src.replace(/import\s+\{[^}]*\}\s*from/g, (m) => m.replace(/\s+/g, ' '));
+  return src.replace(/import\s+\{([^}]*)\}\s*from/g, (_m, inner: string) => {
+    // PER-SPECIFIER type imports are dropped, and that is not tidiness — it closes a
+    // hole this very function opened. `IMPORTS_NAMESPACE_RE` guards the statement
+    // form with `(?!type\s)`, so `import type { X } from '…'` correctly fails the
+    // rule: it is erased at compile time and draws nothing. The INLINE form
+    // `import { type X } from '…'` is erased identically and was never guarded —
+    // it simply could not reach the regex before, because `[^;\n]*` cannot span a
+    // newline and prettier wraps it. Collapsing the newline handed it a match.
+    //
+    // Measured by `code-reviewer` with a working proof of concept: a screen that
+    // reads the flag, draws its vet-visit UI inline, and carries one multi-line
+    // type-only specifier from the namespace passed the delegation rule. Worse
+    // than the pre-existing single-line hole, which at least costs the author an
+    // unused VALUE import that lint would notice — a type-only specifier is
+    // ordinary, prettier-clean TypeScript.
+    const values = inner
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0 && !/^type\s/.test(t));
+    // A brace list with nothing left is normalised to the statement-level type-only
+    // form, so it is rejected by the `(?!type\s)` the pattern already carries rather
+    // than by a second rule that could drift from it. Emitting `import { } from`
+    // instead would MATCH, which is the bug.
+    return values.length === 0 ? 'import type {} from' : `import { ${values.join(', ')} } from`;
+  });
 }
 
 /** Repo-relative prefix of the namespace itself. */
@@ -732,6 +756,11 @@ describe('the companion\'s consumers stay inside the namespace', () => {
     const single = `import { A } from '../../components/vetvisits/A';`;
     const multi = `import {\n  A,\n  type B,\n} from '../../components/vetvisits/A';`;
     const typeOnly = `import type { A } from '../../components/vetvisits/A';`;
+    // The shape `code-reviewer` broke this with: erased at runtime exactly like the
+    // statement form, and reachable only because `collapseBracedImports` exists.
+    const inlineTypeOnly = `import {\n  type A,\n} from '../../components/vetvisits/A';`;
+    // A mixed list still DRAWS — one value specifier is enough.
+    const mixed = `import {\n  A,\n  type B,\n} from '../../components/vetvisits/A';`;
     const none = `import { View } from 'react-native';\nimport { x } from '../../lib/vetVisits';`;
 
     expect(drawsThroughNamespace('app/s.tsx', single)).toBe(true);
@@ -742,6 +771,8 @@ describe('the companion\'s consumers stay inside the namespace', () => {
     // a screen whose only namespace reference is erased at compile time is drawing
     // inline, which is the leak.
     expect(drawsThroughNamespace('app/s.tsx', typeOnly)).toBe(false);
+    expect(drawsThroughNamespace('app/s.tsx', inlineTypeOnly)).toBe(false);
+    expect(drawsThroughNamespace('app/s.tsx', mixed)).toBe(true);
     expect(drawsThroughNamespace('app/s.tsx', none)).toBe(false);
   });
 
