@@ -5272,7 +5272,7 @@ function medicationLine(m: MedicationAdherence): string {
             m.windowDosesLogged === 1 ? '' : 's'
           } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days; ${extras.join(', ')}.`
 
-  return `${regimen}. ${adherenceClaim(m)}${dosingSpanClause(m)} ${windowClause}`
+  return `${regimen}. ${adherenceClaim(m)} ${windowClause}`
 }
 
 /**
@@ -5281,29 +5281,32 @@ function medicationLine(m: MedicationAdherence): string {
  * The denominator is the course's own planned total — `target_duration_doses`, or
  * `doses_per_day × target_duration_days` — never a figure prorated to the report's window. The
  * prorated one is what let page 5 say "9 of 30" while page 10 said "28 of 28" for the same drug,
- * with the in-window denominator exceeding the whole prescription. It also names its basis in
- * words ("of 28 prescribed"), so the ratio cannot be read against some other denominator.
+ * with the in-window denominator exceeding the whole prescription. It names its basis in words
+ * ("of 28 prescribed"), so the ratio cannot be read against some other denominator.
  *
  * With no planned total the course is ongoing / PRN / target-less and there is nothing to divide
  * by, so the report states the count and stops. That is the honest shape, not a degraded one: a
  * pace invented from the window is a denominator the prescription never had.
+ *
+ * ── The claim NAMES ITS SCOPE, and carries no qualifiers (CUL-994) ───────────────────
+ *
+ * "across the whole course" is load-bearing, not padding. This numerator is record-scoped and
+ * every qualifier on this line — `partial`, `refused`, `missed`, `unconfirmed` — is WINDOW-scoped,
+ * in the window clause that follows. Two populations in one paragraph must each say which they
+ * are (C-37), and the alternative tried first (record-scoped qualifiers in a parenthetical beside
+ * the claim) failed a second falsification pass three ways: `partial` is INSIDE this numerator
+ * while `missed` / `refused` are DISJOINT from it, so one unmarked parenthetical mixed a subset
+ * with its complement; on the modal report, where the window covers the course, the two sets
+ * printed the same integers one clause apart and read as different findings; and the §4.4 cell
+ * renders the same numerator bare, so the qualifier half applied to one of the two surfaces the
+ * shared predicate exists to keep in step.
+ *
+ * So the claim states the scope of the number it makes and nothing else. Naming the qualifiers
+ * beside a record-scoped numerator without re-creating that ambiguity is CUL-994's problem, and
+ * it is a copy decision rather than a code one.
  */
 function adherenceClaim(m: MedicationAdherence): string {
   const n = num(m.lifetimeDosesLogged)
-  const noun = `dose${m.lifetimeDosesLogged === 1 ? '' : 's'}`
-  // The qualifiers are counted over the SAME population as the numerator (§ lifetime*, report.ts).
-  // Beside a record-scoped claim, the window's counts describe a different set of doses and are
-  // not available to qualify it — a course whose every dose was partial, or refused before the
-  // window opened, otherwise reads as delivered with the qualifier nowhere on the page.
-  const q: string[] = []
-  if (m.lifetimePartialDoses) q.push(`${m.lifetimePartialDoses} partial`)
-  if (m.lifetimeUnconfirmedDoses) q.push(`${m.lifetimeUnconfirmedDoses} unconfirmed`)
-  if (m.lifetimeRefusedDoses) q.push(`${m.lifetimeRefusedDoses} refused`)
-  if (m.lifetimeMissedDoses) q.push(`${m.lifetimeMissedDoses} missed`)
-  // No "none recorded as refused" here: over the record that claim belongs to the qualifier set
-  // only when there is a record to make it over, and the window clause already carries the
-  // window's version. An absence stated twice over two populations is how this went wrong.
-  const quals = q.length ? ` (${q.join(', ')})` : ''
   if (
     statesPrescriptionRatio({
       courseEnded: m.courseEnded,
@@ -5311,7 +5314,12 @@ function adherenceClaim(m: MedicationAdherence): string {
       dosesLogged: m.lifetimeDosesLogged,
     })
   ) {
-    return `Adherence: ${n} of ${num(m.prescribedDoses!)} prescribed ${noun} logged${quals}.`
+    // The noun agrees with the DENOMINATOR it sits beside, not the numerator: "1 of 28 prescribed
+    // doses logged", never "1 of 28 prescribed dose logged".
+    const planned = m.prescribedDoses!
+    return `Adherence: ${n} of ${num(planned)} prescribed dose${
+      planned === 1 ? '' : 's'
+    } logged across the whole course.`
   }
   // No ratio is available, so the count is stated with the REASON the frame is absent — an empty
   // return with several causes makes the reader guess, and they guess "undertreated" (C-37).
@@ -5324,46 +5332,7 @@ function adherenceClaim(m: MedicationAdherence): string {
       : m.lifetimeDosesLogged > m.prescribedDoses
         ? `more than the ${num(m.prescribedDoses)} prescribed`
         : `course under way, ${num(m.prescribedDoses)} prescribed`
-  return `Adherence: ${n} ${noun} logged${quals}; ${why}.`
-}
-
-/**
- * The §3.8 dosing-gap statement — a course whose dosing STOPPED BEFORE its recorded end.
- *
- * Neither percentage on the old page conveyed the shape a clinician actually acts on. "28 of 28"
- * reads as a course taken to completion; the record behind it was 28 doses over fourteen days and
- * then nothing for the final ten of a course running to Aug 9 — which is exactly the difference
- * between an infection that relapsed and one that was never cleared.
- *
- * Both dates are printed and no duration is: a record-anchored DATE is free, a DURATION inherits
- * a floor or must be disclosed beside its span (C-19). The reader subtracts. There is no
- * threshold and no verdict — the two spans are stated and differ, or nothing is stated at all.
- *
- * `recordedEndDay` is set only by an owner action (H1), so a course that merely went quiet can
- * never render a gap: with no recorded end there is nothing for the dosing to fall short of.
- */
-function dosingSpanClause(m: MedicationAdherence): string {
-  if (m.recordedEndDay === null || m.lastLoggedDoseDay === null || m.firstDoseDay === null) return ''
-  // The gap is measured over EVERY logged row, not the administered ones, because that is what
-  // the sentence claims. Keyed on administered days it said "no dose logged after Jul 25" over a
-  // course whose last ten rows were refusals logged after Jul 25 — false on its face, and it
-  // converts a refusal into an owner having stopped. The refusals are stated by the qualifiers
-  // instead, where they read as what they are.
-  if (m.lastLoggedDoseDay >= m.recordedEndDay) return ''
-  // A record showing the prescription fully delivered cannot also assert that dosing stopped
-  // short of it. `ended_at` is written as TODAY's date when the owner taps End (endRegimen, via
-  // app/(tabs)/profile.tsx and app/vet-visits/after.tsx), so it is the day they got round to it,
-  // not the day the course ended — on a complete course that administrative lag is the ONLY
-  // thing this clause would be describing, and it would sit beside "28 of 28 prescribed doses
-  // logged" contradicting it in the same breath. Where the record cannot distinguish the artifact
-  // from the finding, the page does not answer (C-4 rule 4).
-  if (m.prescribedDoses != null && m.lifetimeDosesLogged >= m.prescribedDoses) return ''
-  const last = m.lastLoggedDoseDay
-  const span =
-    m.firstDoseDay === last ? `on ${h(fmtDay(last))}` : `${h(fmtDay(m.firstDoseDay))}&ndash;${h(fmtDay(last))}`
-  return ` Dosed ${span}; the course is recorded to ${h(
-    fmtDay(m.recordedEndDay),
-  )}, with no dose logged after ${h(fmtDay(last))}.`
+  return `Adherence: ${n} dose${m.lifetimeDosesLogged === 1 ? '' : 's'} logged across the whole course; ${why}.`
 }
 
 /** Date range for an unlinked-dose group — "on Jul 10" for a single day, else "Jul 2 – Jul 10". */

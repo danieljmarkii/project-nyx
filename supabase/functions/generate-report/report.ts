@@ -1808,24 +1808,6 @@ export interface MedicationAdherence {
   prescribedDoses: number | null
   /** Administered (given + partial) across the WHOLE record — the canonical claim's numerator. */
   lifetimeDosesLogged: number
-  /**
-   * The record-scoped qualifiers that travel WITH `lifetimeDosesLogged` (CUL-976 adversarial pass).
-   *
-   * The window-scoped `partialDoses` / `refusedDoses` / `unconfirmedDoses` / `missedDoses` below
-   * describe a different population, and the first version of this change put them in the same
-   * paragraph as a record-scoped numerator with nothing marking the seam. Three failures came out
-   * of that one seam: a course whose every dose was PARTIAL read "28 of 28 prescribed doses
-   * logged" with the word "partial" nowhere on the document; a course refused 28 times before the
-   * window opened read "none recorded as refused"; and both reframed a disease signal as
-   * compliance. A qualifier is only true of the population it was counted over — so the claim
-   * carries its own (C-37: the sentence holding both says which is which).
-   */
-  lifetimePartialDoses: number
-  lifetimeRefusedDoses: number
-  lifetimeMissedDoses: number
-  lifetimeUnconfirmedDoses: number
-  /** Any dose EVENT anywhere in the record, whatever its adherence. */
-  lifetimeDosesTotal: number
   /** Administered doses inside the report window. A count, never a ratio's numerator. */
   windowDosesLogged: number
   /**
@@ -1838,34 +1820,6 @@ export interface MedicationAdherence {
    * the page under a phrase that reads as nothing-to-see.
    */
   windowDosesTotal: number
-  /**
-   * The first and last day an administered dose was logged, across the whole record — the
-   * DOSING span, which is not the course's recorded span and is the thing a clinician is
-   * actually asking about. Lifetime by construction: a window-scoped last dose would
-   * manufacture a gap out of the report's own boundary (C-35 — a predicate about the record
-   * takes the record).
-   */
-  firstDoseDay: string | null
-  lastDoseDay: string | null
-  /**
-   * The last day ANY dose row was logged, whatever its adherence — the predicate the dosing-gap
-   * copy actually claims (CUL-976 adversarial pass).
-   *
-   * `lastDoseDay` is administered-only, and the clause built on it said "no dose LOGGED after
-   * Jul 25" over a course whose final ten rows were REFUSALS logged after Jul 25. That is false
-   * on its face, and it converts a refusal — which the intake-is-not-preference invariant calls
-   * a disease signal that must never be softened — into an owner having stopped. A gap is a gap
-   * in the RECORD, so it is measured over every row the record holds.
-   */
-  lastLoggedDoseDay: string | null
-  /**
-   * The owner-recorded end date, and ONLY from an owner action (H1 — `status` completed/stopped).
-   * Paired with `lastDoseDay` this is the §3.8 dosing-gap statement: a course whose dosing stopped
-   * before its recorded end bears directly on whether an infection relapsed or was never cleared,
-   * and neither percentage on the old page conveyed it. Null whenever the course merely went
-   * quiet — silence is never an ending.
-   */
-  recordedEndDay: string | null
   /**
    * Whether the owner ENDED this course (H1: `status` completed/stopped) — the same register the
    * §4.4 table's `ended` reads, from the same derivation. Distinct from `recordedEndDay != null`,
@@ -4825,51 +4779,15 @@ function buildMedicationAdherence(
   // fixed-width 'YYYY-MM-DD', so a lexical min/max IS the chronological one with no instant
   // parse (B-441-safe) — and it is order-independent, so it does not care which direction the
   // row pull happened to arrive in (CUL-975 reorders every pull).
-  let firstDoseDay: string | null = null
-  let lastDoseDay: string | null = null
-  let lastLoggedDoseDay: string | null = null
   let lifetimeDosesLogged = 0
-  let lifetimePartial = 0
-  let lifetimeRefused = 0
-  let lifetimeMissed = 0
-  let lifetimeUnconfirmed = 0
 
   for (const d of attributedDoses) {
     const administered = d.adherence === 'given' || d.adherence === 'partial'
-    // Record-scoped qualifiers, counted over the SAME population as `lifetimeDosesLogged` so the
-    // sentence that states them cannot describe one population with another's numbers.
-    switch (d.adherence) {
-      case 'given':
-        break
-      case 'partial':
-        lifetimePartial++
-        break
-      case 'missed':
-        lifetimeMissed++
-        break
-      case 'refused':
-        lifetimeRefused++
-        break
-      default:
-        lifetimeUnconfirmed++
-        break
-    }
-    const loggedDay = localDayKey(d.occurredAt, tz)
-    if (loggedDay !== null && (lastLoggedDoseDay === null || loggedDay > lastLoggedDoseDay)) {
-      lastLoggedDoseDay = loggedDay
-    }
     // Days with an ADMINISTERED dose — given OR partial ONLY. An UNCONFIRMED dose
     // (adherence null) is deliberately NOT counted here: bundling it as administered
     // would overstate compliance for a critical drug (adversarial finding 4). It stays
     // visible as unconfirmedDoses so the render can be honest about it.
-    if (administered) {
-      lifetimeDosesLogged++
-      const dk = localDayKey(d.occurredAt, tz)
-      if (dk !== null) {
-        if (firstDoseDay === null || dk < firstDoseDay) firstDoseDay = dk
-        if (lastDoseDay === null || dk > lastDoseDay) lastDoseDay = dk
-      }
-    }
+    if (administered) lifetimeDosesLogged++
     if (!inWindow(d)) continue
     switch (d.adherence) {
       case 'given':
@@ -4907,7 +4825,6 @@ function buildMedicationAdherence(
   // recorded end, so it can never render a dosing GAP either: with nothing to be short of, the
   // last dose is just the last dose.
   const courseEnded = course?.end.kind === 'ended'
-  const recordedEndDay = course?.end.kind === 'ended' ? course.end.endedAt : null
 
   return {
     regimenId: m.id,
@@ -4932,17 +4849,8 @@ function buildMedicationAdherence(
     // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.
     prescribedDoses: course?.plannedDoses ?? null,
     lifetimeDosesLogged,
-    lifetimePartialDoses: lifetimePartial,
-    lifetimeRefusedDoses: lifetimeRefused,
-    lifetimeMissedDoses: lifetimeMissed,
-    lifetimeUnconfirmedDoses: lifetimeUnconfirmed,
-    lifetimeDosesTotal: attributedDoses.length,
     windowDosesLogged: given + partial,
     windowDosesTotal: given + partial + missed + refused + unconfirmed,
-    firstDoseDay,
-    lastDoseDay,
-    lastLoggedDoseDay,
-    recordedEndDay,
     courseEnded: courseEnded === true,
     givenDoses: given,
     partialDoses: partial,

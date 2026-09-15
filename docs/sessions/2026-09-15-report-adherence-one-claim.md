@@ -139,6 +139,35 @@ The record cannot say which. So the page does not answer (C-4 rule 4), and the c
 
 A note on the CUL-991 filing that generalises: **the B-514 non-UTC CI job cannot catch a zone bug in a zone-blind function.** `doseDayPrefix` consults no zone, so its output is byte-identical under every `TZ` — and the two boundary fixtures added this session pass under all of them and therefore measure nothing about zones. The fixtures that would catch it are instants whose UTC day differs from their local day, not a different process clock. A CI job named for a hazard is not coverage of that hazard.
 
+## The second falsification pass, and the stopping rule
+
+The re-review on the fixed tree returned **FAIL again** — four new defects, all caused by the round-1 fixes, two of them reassuring-direction. Verified independently against the real renderer before acting:
+
+```
+28-DAY plan at 1×/day, double-dosed, stopped after 14 days:
+  "Adherence: 28 of 28 prescribed doses logged."   ← the 15-day hole is DELETED
+
+one given dose, then twenty refusals:
+  "1 of 28 prescribed dose logged (20 refused). Dosed Jul 17–Jul 27…"
+                                                   ← claims 10 days of therapy over 1 dose
+
+16 given + 12 partial + 14 missed:
+  "28 of 28 … (12 partial, 14 missed). In this window: … 12 partial, …, 10 missed."
+                                                   ← partial is INSIDE the 28, missed is OUTSIDE
+```
+
+The first is the sharpest, and it is a lesson about the shape of my own ruling. Suppressing the gap on a fully-delivered course is right for a **dose**-denominated plan, where 28 doses delivered against a 28-dose target genuinely cannot distinguish an early stop from a late End tap. It is **wrong** for a **days**-denominated plan, because the plan states the length in days and the record therefore *can* settle it. The predicate I wrote keyed on the count alone while its own comment argued only the dose-denominated case — **the code was broader than its stated reasoning**, which is C-38's cheque in the one place I had just finished writing about C-38.
+
+### Why the session stopped rather than fixing them
+
+Round 1: five defects caused by the fix. Round 2: four caused by round 1's fix. That is the non-convergence C-4 names by measurement, and its ruling is to stop patching and put it to the PM.
+
+The useful signal was **where** the findings clustered. The core — one attribution pass, the prescription denominator, the window naming, the boundary fix — was attacked twice and held both times. Every repeated finding lived in the two *additive* pieces: the dosing-gap clause (the issue's step 3, whose premise had already failed on the motivating record) and the qualifier parenthetical added in round 1.
+
+**PM ruled: split.** The core ships; both additive pieces move to **CUL-994** with the design work already done for them — the pace-consistency predicate (`spanDays >= ceil(prescribedDoses / dosesPerDay)`, which keeps the reference record silent and lets the 15-day hole speak), and the subset-vs-disjoint problem that makes the qualifier a copy decision rather than a code one.
+
+One thing the removal could not simply drop: the claim is record-scoped and the qualifiers beside it are window-scoped, which is the round-1 defect in miniature. So the claim **names its own scope in words** — *"28 of 28 prescribed doses logged across the whole course"* — and the window clause keeps its `In this window:` prefix. Nothing on the page now states two populations without saying which is which, and nothing states a fact the record cannot support.
+
 ## Verification
 
 Every guard proven by mutation, not by reading:
