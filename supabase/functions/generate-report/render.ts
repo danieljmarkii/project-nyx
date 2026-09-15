@@ -5251,15 +5251,26 @@ function medicationLine(m: MedicationAdherence): string {
   extras.push(m.refusedDoses ? `${m.refusedDoses} refused` : 'none recorded as refused')
   if (m.missedDoses) extras.push(`${m.missedDoses} missed`)
 
-  // The window clause states COUNTS and never a ratio (CUL-976). "0 doses in this window" is a
-  // real and useful fact beside a course whose dosing is stated above, and is not the §4 trap's
-  // silence — the adherence claim has already been made, on the prescription.
+  // The window clause states COUNTS and never a ratio (CUL-976), in THREE registers, because
+  // "nothing administered" and "nothing logged" are different facts and conflating them fails in
+  // both directions:
+  //
+  //   • An EMPTY window says only that, and carries no extras at all. "None recorded as refused"
+  //     over zero doses is a claim about nothing that reads as a claim about the course — the
+  //     same absence-as-fact the cold-read round 13 comment above forbids, one branch over.
+  //   • A window holding ONLY missed / refused / unconfirmed doses says "no doses administered".
+  //     Saying "no doses logged" there would contradict the refusal printed in the same sentence,
+  //     and bury the most clinically loaded rows on the page under a phrase that reads as
+  //     nothing-to-see. A refused dose of a critical drug is the opposite of nothing to see.
+  //   • Otherwise the administered count and its day denominator, as before.
   const windowClause =
-    m.windowDosesLogged === 0
-      ? `No doses logged in this report's window; ${extras.join(', ')}.`
-      : `In this window: ${num(m.windowDosesLogged)} dose${
-          m.windowDosesLogged === 1 ? '' : 's'
-        } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days; ${extras.join(', ')}.`
+    m.windowDosesTotal === 0
+      ? `No doses logged in this report's window.`
+      : m.windowDosesLogged === 0
+        ? `In this window: no doses administered; ${extras.join(', ')}.`
+        : `In this window: ${num(m.windowDosesLogged)} dose${
+            m.windowDosesLogged === 1 ? '' : 's'
+          } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days; ${extras.join(', ')}.`
 
   return `${regimen}. ${adherenceClaim(m)}${dosingSpanClause(m)} ${windowClause}`
 }
@@ -5280,6 +5291,19 @@ function medicationLine(m: MedicationAdherence): string {
 function adherenceClaim(m: MedicationAdherence): string {
   const n = num(m.lifetimeDosesLogged)
   const noun = `dose${m.lifetimeDosesLogged === 1 ? '' : 's'}`
+  // The qualifiers are counted over the SAME population as the numerator (§ lifetime*, report.ts).
+  // Beside a record-scoped claim, the window's counts describe a different set of doses and are
+  // not available to qualify it — a course whose every dose was partial, or refused before the
+  // window opened, otherwise reads as delivered with the qualifier nowhere on the page.
+  const q: string[] = []
+  if (m.lifetimePartialDoses) q.push(`${m.lifetimePartialDoses} partial`)
+  if (m.lifetimeUnconfirmedDoses) q.push(`${m.lifetimeUnconfirmedDoses} unconfirmed`)
+  if (m.lifetimeRefusedDoses) q.push(`${m.lifetimeRefusedDoses} refused`)
+  if (m.lifetimeMissedDoses) q.push(`${m.lifetimeMissedDoses} missed`)
+  // No "none recorded as refused" here: over the record that claim belongs to the qualifier set
+  // only when there is a record to make it over, and the window clause already carries the
+  // window's version. An absence stated twice over two populations is how this went wrong.
+  const quals = q.length ? ` (${q.join(', ')})` : ''
   if (
     statesPrescriptionRatio({
       courseEnded: m.courseEnded,
@@ -5287,17 +5311,20 @@ function adherenceClaim(m: MedicationAdherence): string {
       dosesLogged: m.lifetimeDosesLogged,
     })
   ) {
-    return `Adherence: ${n} of ${num(m.prescribedDoses!)} prescribed ${noun} logged.`
+    return `Adherence: ${n} of ${num(m.prescribedDoses!)} prescribed ${noun} logged${quals}.`
   }
   // No ratio is available, so the count is stated with the REASON the frame is absent — an empty
   // return with several causes makes the reader guess, and they guess "undertreated" (C-37).
+  // Over-delivery is named BEFORE the under-way case, so a mid-course record that has already
+  // passed its plan says so rather than reading "course under way, 28 prescribed" beside a count
+  // of 45 and leaving the reader to notice.
   const why =
     m.prescribedDoses == null
       ? 'no planned total recorded for this course'
-      : !m.courseEnded
-        ? `course under way, ${num(m.prescribedDoses)} prescribed`
-        : `more than the ${num(m.prescribedDoses)} prescribed`
-  return `Adherence: ${n} ${noun} logged; ${why}.`
+      : m.lifetimeDosesLogged > m.prescribedDoses
+        ? `more than the ${num(m.prescribedDoses)} prescribed`
+        : `course under way, ${num(m.prescribedDoses)} prescribed`
+  return `Adherence: ${n} ${noun} logged${quals}; ${why}.`
 }
 
 /**
@@ -5316,15 +5343,27 @@ function adherenceClaim(m: MedicationAdherence): string {
  * never render a gap: with no recorded end there is nothing for the dosing to fall short of.
  */
 function dosingSpanClause(m: MedicationAdherence): string {
-  if (m.recordedEndDay === null || m.lastDoseDay === null || m.firstDoseDay === null) return ''
-  if (m.lastDoseDay >= m.recordedEndDay) return ''
+  if (m.recordedEndDay === null || m.lastLoggedDoseDay === null || m.firstDoseDay === null) return ''
+  // The gap is measured over EVERY logged row, not the administered ones, because that is what
+  // the sentence claims. Keyed on administered days it said "no dose logged after Jul 25" over a
+  // course whose last ten rows were refusals logged after Jul 25 — false on its face, and it
+  // converts a refusal into an owner having stopped. The refusals are stated by the qualifiers
+  // instead, where they read as what they are.
+  if (m.lastLoggedDoseDay >= m.recordedEndDay) return ''
+  // A record showing the prescription fully delivered cannot also assert that dosing stopped
+  // short of it. `ended_at` is written as TODAY's date when the owner taps End (endRegimen, via
+  // app/(tabs)/profile.tsx and app/vet-visits/after.tsx), so it is the day they got round to it,
+  // not the day the course ended — on a complete course that administrative lag is the ONLY
+  // thing this clause would be describing, and it would sit beside "28 of 28 prescribed doses
+  // logged" contradicting it in the same breath. Where the record cannot distinguish the artifact
+  // from the finding, the page does not answer (C-4 rule 4).
+  if (m.prescribedDoses != null && m.lifetimeDosesLogged >= m.prescribedDoses) return ''
+  const last = m.lastLoggedDoseDay
   const span =
-    m.firstDoseDay === m.lastDoseDay
-      ? `on ${h(fmtDay(m.lastDoseDay))}`
-      : `${h(fmtDay(m.firstDoseDay))}&ndash;${h(fmtDay(m.lastDoseDay))}`
+    m.firstDoseDay === last ? `on ${h(fmtDay(last))}` : `${h(fmtDay(m.firstDoseDay))}&ndash;${h(fmtDay(last))}`
   return ` Dosed ${span}; the course is recorded to ${h(
     fmtDay(m.recordedEndDay),
-  )}, with no dose logged after ${h(fmtDay(m.lastDoseDay))}.`
+  )}, with no dose logged after ${h(fmtDay(last))}.`
 }
 
 /** Date range for an unlinked-dose group — "on Jul 10" for a single day, else "Jul 2 – Jul 10". */

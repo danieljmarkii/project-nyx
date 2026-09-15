@@ -3173,10 +3173,24 @@ Deno.test('CUL-976 — the same dose is never counted twice across the partition
 
 Deno.test('CUL-976 — a course whose dosing stops before its recorded end says so, with both dates', () => {
   const rec = lateConfiguredCourse()
+  // DAYS-denominated, so the shortfall is unambiguous: 24 days × 2/day = 48 planned, 28 delivered.
+  //
+  // The dose-denominated variant deliberately does NOT render this clause, and that is a finding
+  // rather than a limitation. On the record that motivated this issue, `target_duration_doses` is
+  // 28 and the dosing ran Jul 17–30 — 14 days at 2×/day, which is EXACTLY 28. The course was
+  // delivered precisely as the dose target specifies. So "dosing stopped ten days early" asserts
+  // that the Aug 9 end date is the prescription and the 28 falls short, when the record equally
+  // supports that 28 IS the prescription and Aug 9 is simply when the owner tapped End (which is
+  // what `endRegimen` writes: today's local day). The record holds two inconsistent statements of
+  // the course length and cannot say which is the plan — so the page does not answer (C-4 rule 4).
+  rec.medications[0].targetDurationDoses = null
+  rec.medications[0].targetDurationDays = 24
   const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
   const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.prescribedDoses, 48)
+  assert.equal(otic.lifetimeDosesLogged, 28)
   assert.equal(otic.firstDoseDay, '2026-07-17')
-  assert.equal(otic.lastDoseDay, '2026-07-30')
+  assert.equal(otic.lastLoggedDoseDay, '2026-07-30')
   assert.equal(otic.recordedEndDay, '2026-08-09')
 
   const html = renderReport(snap)
@@ -3355,4 +3369,141 @@ Deno.test('CUL-976 — a course with NO dose ever still reads "adherence not tra
   const html = renderReport(snap)
   assert.equal(adherenceClaims(html).length, 0, 'silence never becomes a ratio')
   assert.ok(/Adherence not tracked/.test(medLineFor(html, 'Motozol')), 'and never reads as compliant')
+})
+
+Deno.test('CUL-976 — a window holding ONLY missed/refused doses never reads "no doses logged"', () => {
+  const rec = lateConfiguredCourse()
+  // The course ran to plan before the window, and the two doses that fall INSIDE the window were
+  // both refused. `windowDosesLogged` counts administered (given + partial) only, so it is 0 —
+  // but dose events were logged, and they are the most clinically loaded rows on the page.
+  // The window is the 90 days ending MED_NOW (2026-08-04), so it opens ~May 7. The regimen spans
+  // it, the administered doses all fall BEFORE it, and only the two refusals land inside.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = [
+    ...courseDoses('reg-otic', 'mi-otic', '2026-01-11', 13, 2),
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-29', 1, 2, 'refused'),
+  ]
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.windowDosesLogged, 0, 'nothing administered in the window')
+  assert.equal(otic.refusedDoses, 2, '…but two refusals were logged in it')
+
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  // "No doses logged … ; 2 refused" is self-contradicting, and it buries a refusal — the exact
+  // absence-as-fact this file's own "none recorded as refused" comment forbids, eleven lines up.
+  assert.ok(!/No doses logged in this report's window/.test(line), 'refusals are dose events; the window is not empty')
+  assert.ok(/no doses administered/.test(line), 'the honest form distinguishes logged from administered')
+  assert.ok(/2 refused/.test(line), 'and the refusals stay visible')
+})
+
+Deno.test('CUL-976 — a window with NO dose event at all claims nothing about refusals', () => {
+  const rec = lateConfiguredCourse()
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-01-11', 13, 2) // all before the window
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  assert.ok(/No doses logged in this report's window/.test(line), 'an empty window says so')
+  // "none recorded as refused" over ZERO doses is a claim about nothing, read as a claim about
+  // the course. Absence of evidence is not evidence here either.
+  assert.ok(!/none recorded as refused/.test(line), 'no refusal claim over an empty window')
+})
+
+// ── CUL-976 follow-up: the adversarial pass ──────────────────────────────────────────
+//
+// The `adversarial-reviewer` broke the first version of this fix in five shapes, and they share
+// ONE root cause: the adherence claim became RECORD-scoped while every qualifier beside it stayed
+// WINDOW-scoped, in the same paragraph, with nothing saying which was which. C-37 names exactly
+// that — a sentence holding both must say which is which — and the failures below are what it
+// costs when it does not. The second cluster is the dosing-gap clause, whose predicate said
+// "administered" while its copy said "logged".
+
+Deno.test('CUL-976 adv — an ALL-PARTIAL course never reads as fully delivered', () => {
+  const rec = lateConfiguredCourse()
+  // Every dose was spat out / half-taken. `dosesTowardTarget` counts partial as therapy delivered
+  // (B-618 D1, ratified), so the numerator is 28 — correct. But "28 of 28 prescribed doses logged"
+  // with the word "partial" nowhere on the document reads as a verified complete course.
+  // Dosing sits BEFORE the window (the regimen still overlaps it, so the line still renders), so
+  // the window clause — where "28 partial" used to live — has nothing to say. That is the shape
+  // where the qualifier vanished from the document entirely.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-01-11', 14, 2, 'partial')
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  assert.ok(ADHERENCE_CLAIM.test(line) || /of <span class="num">28<\/span> prescribed/.test(line), 'the numerator counts partials (D1)')
+  assert.ok(/28 partial/.test(line), 'the partial qualifier rides with the claim it qualifies')
+})
+
+Deno.test('CUL-976 adv — refusals OUTSIDE the window are never reported as "none refused"', () => {
+  const rec = lateConfiguredCourse()
+  // The whole course was refused, before the window opened. The numerator is the record (0 of 28);
+  // "none recorded as refused" was the WINDOW's. Two populations, one sentence, and the document
+  // said no refusals over a record of 28 — reframing a disease signal as owner non-adherence.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-01-11', 14, 2, 'refused')
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  assert.ok(/>0<\/span> of <span class="num">28<\/span> prescribed/.test(line), 'the numerator is record-scoped')
+  assert.ok(/28 refused/.test(line), 'and so are the refusals beside it')
+  assert.ok(!/none recorded as refused/.test(line), 'never "none refused" over a record of 28 refusals')
+})
+
+Deno.test('CUL-976 adv — a fully-delivered course never asserts a dosing gap (late End tap)', () => {
+  const rec = lateConfiguredCourse()
+  // `endRegimen` writes TODAY's local day (app/(tabs)/profile.tsx, app/vet-visits/after.tsx), so
+  // `ended_at` is when the owner got round to tapping End — not when the course ended. Every one
+  // of the 28 prescribed doses was given; the owner tapped End eight days later.
+  rec.medications[0].endedAt = '2026-08-07'
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  assert.ok(/>28<\/span> of <span class="num">28<\/span> prescribed/.test(line), 'the record shows full delivery')
+  assert.ok(
+    !/no dose logged after/.test(line),
+    'a record showing full delivery cannot also assert that dosing stopped short',
+  )
+})
+
+Deno.test('CUL-976 adv — a REFUSED tail is not reported as dosing stopping', () => {
+  const rec = lateConfiguredCourse()
+  // 18 given, then the cat refuses every dose to the end. The clause keyed on ADMINISTERED days
+  // while its copy said "logged", so it claimed nothing was logged after Jul 26 — over ten
+  // refusals logged after it. A refusal is a disease signal and must never be softened into an
+  // owner having stopped (the intake-is-not-preference invariant, on the vet's page).
+  rec.lifetimeDoses = [
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-17', 9, 2),
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-26', 5, 2, 'refused'),
+  ]
+  rec.medications[0].endedAt = '2026-07-31'
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  assert.ok(/10 refused/.test(line), 'the refusals are stated')
+  assert.ok(
+    !/no dose logged after Jul 25/.test(line),
+    'doses WERE logged after the last administered one — they were refused',
+  )
+})
+
+Deno.test('CUL-976 adv — refusals running to the recorded end suppress the gap clause entirely', () => {
+  const rec = lateConfiguredCourse()
+  // The sibling test above pins what the clause SAYS; this pins when it may speak at all. Here the
+  // refusals run right up to the recorded end, so there is no gap in the record to describe — the
+  // owner kept offering the drug to the last day and the cat kept refusing it. Keyed on
+  // ADMINISTERED days the clause still fires and reports dosing as having stopped on Jul 25,
+  // which is the refusal re-told as an owner stopping.
+  rec.lifetimeDoses = [
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-17', 9, 2),
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-26', 6, 2, 'refused'),
+  ]
+  rec.medications[0].endedAt = '2026-07-31'
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.lastDoseDay, '2026-07-25', 'the last ADMINISTERED dose is well before the end')
+  assert.equal(otic.lastLoggedDoseDay, '2026-07-31', '…but the record runs to the end date')
+
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  assert.ok(!/no dose logged after/.test(line), 'no gap: the record reaches the recorded end')
+  assert.ok(/12 refused/.test(line), 'the refusals carry the story instead, as what they are')
 })

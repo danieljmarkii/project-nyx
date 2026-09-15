@@ -314,9 +314,16 @@ function med(over: Partial<MedicationAdherence>): MedicationAdherence {
     doseDays: [],
     prescribedDoses: 90,
     lifetimeDosesLogged: 82,
+    lifetimePartialDoses: 0,
+    lifetimeRefusedDoses: 0,
+    lifetimeMissedDoses: 0,
+    lifetimeUnconfirmedDoses: 8,
+    lifetimeDosesTotal: 90,
     windowDosesLogged: 82,
+    windowDosesTotal: 90,
     firstDoseDay: null,
     lastDoseDay: null,
+    lastLoggedDoseDay: null,
     recordedEndDay: null,
     courseEnded: false,
     givenDoses: 82,
@@ -753,7 +760,12 @@ Deno.test('tracked medication → adherence line with denominators + unconfirmed
   // An ACTIVE course states the COUNT and names the plan without framing it as a ratio — "of N"
   // mid-course reads as a countdown (B-618 D7), and that ruling is now shared by page 1 and the
   // §4.4 cell through one predicate rather than being decided twice (CUL-976).
-  assert.ok(text.includes('82 doses logged; course under way, 90 prescribed'), 'count + plan, no mid-course ratio')
+  // The unconfirmed doses ride WITH the record-scoped count, not only in the window clause
+  // (CUL-976 adversarial pass) — a qualifier is only true of the population it was counted over.
+  assert.ok(
+    text.includes('82 doses logged (8 unconfirmed); course under way, 90 prescribed'),
+    'count + its own qualifiers + plan, no mid-course ratio',
+  )
   assert.ok(!/82 of 90/.test(text), 'no countdown framing on an active course')
   assert.ok(text.includes('41 of 45 days'), 'day denominator')
   assert.ok(text.includes('8 unconfirmed'), 'unconfirmed kept distinct (not folded into given)')
@@ -766,7 +778,10 @@ Deno.test('ENDED medication → the adherence ratio NAMES its basis (CUL-976)', 
   const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
   // "of 90 prescribed", never a bare "of 90" the reader could take for the window's own
   // expectation — the v15 artifact's "9 of 30" was exactly that unlabelled proration.
-  assert.ok(text.includes('82 of 90 prescribed doses logged'), 'prescription-denominated claim, basis named')
+  assert.ok(
+    text.includes('82 of 90 prescribed doses logged (8 unconfirmed)'),
+    'prescription-denominated claim, basis named, qualified over its own population',
+  )
 })
 
 Deno.test('OVER-DELIVERED medication → the ratio is dropped, never "95 of 90" (CUL-976)', () => {
@@ -780,7 +795,7 @@ Deno.test('OVER-DELIVERED medication → the ratio is dropped, never "95 of 90" 
   const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
   assert.ok(!/95 of 90/.test(text), 'an over-delivered course never renders a >100% frame')
   assert.ok(
-    text.includes('95 doses logged; more than the 90 prescribed'),
+    text.includes('95 doses logged (8 unconfirmed); more than the 90 prescribed'),
     'the count is stated and the reason the frame is absent is named, not left to inference',
   )
 })

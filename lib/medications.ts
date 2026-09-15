@@ -1383,6 +1383,25 @@ export function mapDoseRowsToAttributable(rows: DoseEmbedRow[] | null | undefine
 // spellings that break a lexical BOUND differ only from index 10 onward, so they cannot reach
 // this prefix. An absent instant ('' — an unreachable missing embed) sorts below every date and
 // stays unattributed, exactly as before.
+//
+// ── KNOWN BLIND SPOT: this is the UTC day, and the bounds are LOCAL dates (CUL-991) ──────
+//
+// `occurred_at` is a UTC instant; `started_at` / `ended_at` are Postgres DATEs standing for the
+// OWNER'S calendar days. Slicing the instant yields its UTC day, so for any owner not at UTC+0
+// the two disagree near midnight: behind UTC an evening dose reads one day LATE (a 21:00
+// New York dose on the final day is evicted from its own course), ahead of UTC a morning dose
+// reads one day EARLY. Measured: a once-daily bedtime pill with perfect adherence renders as a
+// short course PLUS a phantom "no regimen configured" line for the same drug.
+//
+// That predates this function and is NOT what the day-prefix change fixed — the prefix fixed a
+// string-WIDTH bug that dropped the final day in every zone, UTC included. The zone fix needs a
+// `timeZone` parameter threaded through `attributeDoses`, which moves dose counts on every
+// on-device surface for every non-UTC owner, so it is CUL-991 rather than a rider here.
+//
+// Note for whoever takes it: the B-514 non-UTC CI job CANNOT catch this. This function consults
+// no zone at all, so its results are byte-identical under every `TZ`. The fixtures it needs are
+// instants whose UTC day differs from their local day (a 21:30-in-New-York dose), not a different
+// process clock.
 function doseDayPrefix(occurredAt: string): string {
   return occurredAt.slice(0, 10);
 }
