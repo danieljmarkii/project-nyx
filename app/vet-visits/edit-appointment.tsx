@@ -15,6 +15,7 @@ import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import {
+  appointmentPrepNote,
   cancelVetAppointment,
   composeScheduledAt,
   decomposeScheduledAt,
@@ -204,6 +205,10 @@ export default function EditAppointmentScreen() {
               // you* keeps the date it has, because a floor of "today" would refuse
               // to render that row's own current value.
               minimumDay={earlierOf(startOfToday(), fields.day)}
+              // Read off the ROW, not from state: what the owner prepared is a fact
+              // about the record, and it is null for the first-time rescheduler who
+              // has never opened Get ready.
+              prepNote={appointmentPrepNote(appointment.questions, appointment.notes_draft)}
               saving={saving}
               onSave={handleSave}
               onRemove={handleRemove}

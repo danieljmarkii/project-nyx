@@ -132,6 +132,30 @@ describe('seeding from the record', () => {
   });
 });
 
+describe('what survives the change', () => {
+  it('says nothing at all when the row holds no prep', async () => {
+    // A first-time rescheduler has never opened Get ready. Naming questions and
+    // notes to her sends her looking for artifacts that do not exist.
+    mockRow = row({ questions: null, notes_draft: null });
+    render(<EditAppointmentScreen />);
+    await screen.findByText('Change this appointment');
+    expect(screen.queryByText(/stays? with it/)).toBeNull();
+  });
+
+  it('names what she actually prepared, above Save and away from Remove', async () => {
+    mockRow = row({
+      questions: JSON.stringify([
+        { id: 'q1', text: 'The overnight pattern', source: 'owner' },
+        { id: 'q2', text: 'The weight', source: 'owner' },
+      ]),
+      notes_draft: null,
+    });
+    render(<EditAppointmentScreen />);
+    await screen.findByText('Change this appointment');
+    expect(screen.getByText('Your 2 questions for this visit stay with it.')).toBeTruthy();
+  });
+});
+
 describe('saving', () => {
   it('writes the four columns it owns, through the composer', async () => {
     render(<EditAppointmentScreen />);

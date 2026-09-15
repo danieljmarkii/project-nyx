@@ -13,6 +13,7 @@ import {
   formatVisitWeekday,
   formatWhereLine,
   localDateKey,
+  appointmentPrepNote,
   removeAppointmentCopy,
   type AppointmentDetail,
   type LocalVetVisit,
@@ -471,6 +472,45 @@ describe('decomposeScheduledAt — the inverse of composeScheduledAt (CUL-952)',
   it('refuses an unparseable instant rather than inventing a day', () => {
     expect(decomposeScheduledAt('not-an-instant')).toBeNull();
     expect(decomposeScheduledAt('')).toBeNull();
+  });
+});
+
+describe('appointmentPrepNote (CUL-952)', () => {
+  const q = (n: number) =>
+    JSON.stringify(
+      Array.from({ length: n }, (_, i) => ({ id: `q${i}`, text: `question ${i}`, source: 'owner' })),
+    );
+
+  it('says NOTHING for a row with no prep — the first-time rescheduler', () => {
+    // The unconditional version named two artifacts an owner who has never opened
+    // Get ready has never seen, sending her looking for notes that do not exist.
+    expect(appointmentPrepNote(null, null)).toBeNull();
+    expect(appointmentPrepNote('[]', '')).toBeNull();
+    // Whitespace is not a draft.
+    expect(appointmentPrepNote(null, '   ')).toBeNull();
+  });
+
+  it('counts the questions, and agrees with itself about number', () => {
+    expect(appointmentPrepNote(q(1), null)).toBe('Your question for this visit stays with it.');
+    expect(appointmentPrepNote(q(4), null)).toBe('Your 4 questions for this visit stay with it.');
+  });
+
+  it('names notes alone, and both together', () => {
+    expect(appointmentPrepNote(null, 'ask about the weight')).toBe(
+      'Your notes for this visit stay with it.',
+    );
+    expect(appointmentPrepNote(q(2), 'ask about the weight')).toBe(
+      'Your questions and notes for this visit stay with it.',
+    );
+  });
+
+  it('survives a questions column that is not valid JSON', () => {
+    // The column is owner-controlled free text as far as this reader is concerned,
+    // and a crash here would take down the whole edit screen.
+    expect(appointmentPrepNote('{not json', null)).toBeNull();
+    expect(appointmentPrepNote('{not json', 'a draft')).toBe(
+      'Your notes for this visit stay with it.',
+    );
   });
 });
 

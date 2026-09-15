@@ -31,6 +31,12 @@ interface Props {
    * bound depends on the row (see the note on the picker below).
    */
   minimumDay: Date;
+  /**
+   * What survives the change — `appointmentPrepNote`'s output, or null when the row
+   * holds no questions and no draft, in which case the screen says nothing rather
+   * than naming artifacts this owner has never seen.
+   */
+  prepNote: string | null;
   saving: boolean;
   onSave: () => void;
   onRemove: () => void;
@@ -60,6 +66,7 @@ export function AppointmentEditBody({
   fields,
   onChangeField,
   minimumDay,
+  prepNote,
   saving,
   onSave,
   onRemove,
@@ -179,15 +186,20 @@ export function AppointmentEditBody({
         containerStyle={styles.field}
       />
 
-      <PrimaryButton label="Save changes" onPress={onSave} loading={saving} style={styles.save} />
+      {/* ABOVE Save, not between Save and Remove. Below, it sat one divider from
+          *Remove this appointment*, and scanning the foot of the screen gave
+          "Remove this appointment · your questions and notes stay with it" — a
+          promise that removal is safe, which is the opposite of true: a cancel
+          stamps `cancelled_at`, `readAppointmentById` filters cancelled rows, and
+          the prep becomes unreachable. Here it captions the form and the Save
+          beneath it, which is what it is actually about.
 
-      {/* Says what survives the change, because it is the thing an owner rescheduling
-          actually wonders and the one consequence they cannot see from here. True by
-          construction: `updateAppointmentDetails` writes four columns and never
-          touches `questions` or `notes_draft`. */}
-      <ThemedText style={styles.footnote}>
-        Your questions and notes stay with it.
-      </ThemedText>
+          True by construction: `updateAppointmentDetails` writes four columns and
+          never touches `questions` or `notes_draft` — asserted in
+          `lib/vetVisitWrites.test.ts`. */}
+      {prepNote ? <ThemedText style={styles.footnote}>{prepNote}</ThemedText> : null}
+
+      <PrimaryButton label="Save changes" onPress={onSave} loading={saving} style={styles.save} />
 
       {/* The destructive control, separated by a rule and set apart from Save — not
           a peer of it. It carries a confirm rather than a way back (C-21: confirm

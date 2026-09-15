@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../constants/theme';
 import { Header, PrimaryButton } from '../components/ui';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
@@ -194,9 +194,26 @@ export default function RundownScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- petId is the intended trigger; the subject is read fresh inside
   }, [petId, wantsGetReady, appointmentId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // ON FOCUS, not on mount (CUL-952). `load`'s deps are `[petId, wantsGetReady,
+  // appointmentId]`, and none of them change when a screen pushed FROM here pops —
+  // this one stays mounted underneath. That was harmless while every door from here
+  // was read-only, and stopped being harmless the moment ⋯ *Change the appointment*
+  // got a real destination: the owner moved Tuesday to next Tuesday, tapped Save,
+  // and landed back on a page whose eyebrow still read "TUESDAY · 3:00 PM" — which
+  // reads as "it didn't save", so the obvious next move is to do it again.
+  //
+  // It fixes the removal case in the same hook, and that one is a G5 violation
+  // rather than a cosmetic staleness: `load` already resolves a cancelled row to
+  // `setGetReady(null)` and falls back to the plain rundown, so re-reading is what
+  // stops this screen rendering a title, a questions block and a ⋯ menu for an
+  // appointment that is no longer on the record. The visits list and the Home strip
+  // have always used this hook; the door named in CUL-952's title was the one that
+  // did not.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   // Consume the one-shot once there is something to open the sheet over, then strip
   // the param so a re-focus reads a clean URL rather than relying on the ref alone.

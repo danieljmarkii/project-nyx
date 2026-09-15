@@ -1291,6 +1291,33 @@ export async function cancelVetAppointment(
 
 /** The fields the appointment edit writes. Optional per key, the `VisitDetailsPatch`
  *  rule: an omitted key leaves the column alone. */
+/**
+ * What the edit screen promises survives a change — or null when there is nothing
+ * to promise (CUL-952).
+ *
+ * CONDITIONAL, because the unconditional version named two artifacts a first-time
+ * rescheduler has never seen. An owner who has never opened Get ready has no
+ * questions and no draft, and "Your questions and notes stay with it" sends her
+ * looking for notes that do not exist — answering a question she was not asking and
+ * raising one she was.
+ *
+ * SPECIFIC for the same reason the rest of this app's copy is: "your 4 questions"
+ * is a thing she remembers typing; "your questions" is a category.
+ */
+export function appointmentPrepNote(
+  questions: string | null,
+  notesDraft: string | null,
+): string | null {
+  const count = parseAppointmentQuestions(questions).length;
+  const hasNotes = (notesDraft ?? '').trim().length > 0;
+  if (count === 0 && !hasNotes) return null;
+  if (count > 0 && hasNotes) return 'Your questions and notes for this visit stay with it.';
+  if (hasNotes) return 'Your notes for this visit stay with it.';
+  return count === 1
+    ? 'Your question for this visit stays with it.'
+    : `Your ${count} questions for this visit stay with it.`;
+}
+
 /** The two strings the remove confirm shows. */
 export interface RemoveAppointmentCopy {
   title: string;
