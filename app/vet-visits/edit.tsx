@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -16,9 +16,11 @@ import {
   clampVisitDate,
   localDateKey,
   readVetVisitDetail,
+  readVisitConsequence,
   updateVisitDetails,
   type LocalVetVisit,
 } from '../../lib/vetVisits';
+import { visitAnchorsAnything } from '../../lib/vetVisitPlan';
 
 // Editing a visit (CUL-902 VV-4; mock D3's ⋯ *Edit*).
 //
@@ -43,6 +45,16 @@ export default function EditVisitScreen() {
   // Seeded once. A re-focus must never overwrite an edit in progress — the
   // half-typed correction is the thing this screen exists to protect.
   const seeded = useRef(false);
+  // Whether the visit, AT THE DATE CURRENTLY IN THE PICKER, anchors the report
+  // window and Home. `null` until the record has answered — and that third state is
+  // load-bearing rather than tidiness: the note is a claim about the owner's data,
+  // so an unanswered read renders nothing rather than a guess (C-12).
+  //
+  // Keyed on the CANDIDATE date, not the stored one, because the note is about what
+  // the save would do. Moving a March visit past April's genuinely does move the
+  // window, and a note gated on the row as stored would stay silent for exactly that
+  // edit.
+  const [anchors, setAnchors] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     if (!enabled || !visitId) {
@@ -86,6 +98,28 @@ export default function EditVisitScreen() {
       load();
     }, [load]),
   );
+
+  // Re-asked whenever the picker moves, because the answer depends on the date
+  // being saved rather than the one on file. Cheap (one COUNT), and the picker
+  // commits a date at a time, not a keystroke at a time.
+  const candidateDay = fields ? localDateKey(fields.visitedAt) : null;
+  useEffect(() => {
+    if (!visit || !candidateDay) return;
+    let live = true;
+    readVisitConsequence({ id: visit.id, pet_id: visit.pet_id, visited_at: candidateDay })
+      .then((c) => {
+        if (live) setAnchors(visitAnchorsAnything(c));
+      })
+      .catch((err) => {
+        // A failed read must not become a claim in either direction. Left at its
+        // previous answer, or at null on first load, so the note stays absent
+        // rather than asserting something the record did not confirm.
+        console.warn('[vet-visit-edit] consequence read failed:', err);
+      });
+    return () => {
+      live = false;
+    };
+  }, [visit, candidateDay]);
 
   async function handleSave() {
     if (!visitId || !fields || saving) return;
@@ -153,6 +187,7 @@ export default function EditVisitScreen() {
               }
               saving={saving}
               onSave={handleSave}
+              movesReportWindow={anchors === true}
             />
           </ScrollView>
         </KeyboardAvoidingView>

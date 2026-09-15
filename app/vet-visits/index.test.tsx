@@ -416,6 +416,46 @@ describe('a booking whose day has passed', () => {
   });
 });
 
+describe('an "Also for" success (CUL-953 item 4)', () => {
+  it('confirms the second pet BY NAME — the list it returns to cannot show it', async () => {
+    // The asymmetry this closes: the failure path named the pet, the success path
+    // said nothing at all. And nothing is the one outcome the owner cannot verify
+    // for themselves here — the sheet closes onto a list scoped to the OTHER pet,
+    // where the new appointment is invisible by definition. An owner who flipped a
+    // switch promising a second booking was shown no evidence it happened.
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockBook.mockImplementation(async () => 'new-appointment');
+
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Add the next visit'));
+    fireEvent(screen.getByLabelText('Also book this appointment for Juniper'), 'valueChange', true);
+    fireEvent.press(screen.getByText('Add the appointment'));
+
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(alert.mock.calls[0][0]).toBe('Saved');
+    // The NAME, not a count: in a two-pet household it is the only cue that says
+    // which booking this was.
+    expect(String(alert.mock.calls[0][1])).toContain('Juniper');
+    alert.mockRestore();
+  });
+
+  it('stays silent when no second pet was asked for', async () => {
+    // The other direction, and it matters as much: a confirmation on every ordinary
+    // single-pet booking would be a dialog between the owner and the thing they
+    // just did. The alert exists for the invisible half only.
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockBook.mockImplementation(async () => 'new-appointment');
+
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Add the next visit'));
+    fireEvent.press(screen.getByText('Add the appointment'));
+
+    await waitFor(() => expect(screen.queryByText('Add the appointment')).toBeNull());
+    expect(alert).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+});
+
 describe('a partial "Also for" failure', () => {
   it('reports what did NOT save, and does not re-offer the row that did', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);

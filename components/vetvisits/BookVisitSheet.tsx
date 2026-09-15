@@ -364,21 +364,29 @@ export function BookVisitSheet({
 
             {/* Says what the save does elsewhere in the app, in the tense it is
                 true in — and ONLY what is true today.
-                
-                Mock E3 reads "Shows on Home five days before. No reminder yet",
-                and the frame is drawn in a world where the Home strip (A2, VV-5)
-                exists. It does not exist yet. An owner who books Tuesday's recheck,
-                reads that sentence, then watches Home for five days and sees
-                nothing concludes the save failed — which is worse than saying
-                nothing at all. The line returns, verbatim, with the strip.
-                
-                The `happened` half stays, because it is true now and it is the one
+
+                Mock E3's line — "Shows on Home five days before. No reminder yet"
+                — was WITHHELD while the Home strip (A2, VV-5) did not exist, on the
+                reasoning that an owner who books Tuesday's recheck, reads it, then
+                watches Home for five days and sees nothing concludes the save
+                failed. The note that withheld it said it would return, verbatim,
+                with the strip. VV-5 shipped the strip and the copy did not follow,
+                which left the last thing an owner reads before booking describing
+                only what the app WON'T do (CUL-953 item 2).
+
+                Returned verbatim. The "five" is the strip's own
+                `APPOINTMENT_WINDOW_DAYS`, spelled as a word because that is how the
+                sentence reads — and pinned to the constant by a test rather than
+                interpolated, so widening the window reds a check that names this
+                line instead of silently leaving it wrong.
+
+                The `happened` half is unchanged — true then, true now, and the one
                 consequence of this save the owner cannot see: a logged visit moves
                 the vet report's window. Never "from today" — the report's rung 1 is
                 strictly before today (§4.1 D2, AC 9). */}
             <ThemedText style={styles.footnote}>
               {isBooked
-                ? 'No reminder yet — that is its own step.'
+                ? 'Shows on Home five days before. No reminder yet.'
                 : 'Your next vet report starts from this visit.'}
             </ThemedText>
           </ScrollView>
