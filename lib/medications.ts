@@ -1369,6 +1369,43 @@ export function mapDoseRowsToAttributable(rows: DoseEmbedRow[] | null | undefine
   });
 }
 
+// A dose instant's calendar-day prefix, for comparison against a regimen's DATE bounds.
+//
+// Both window bounds are Postgres DATE columns ('YYYY-MM-DD'); `occurred_at` is a full ISO
+// instant. Comparing them raw compares strings of different WIDTHS, which is right at the
+// lower bound by accident (a longer string sharing a prefix sorts after the bare date, so a
+// dose on the start day counts) and WRONG at the upper bound for the same reason: every dose
+// on the final day sorts after `ended_at` and was dropped (CUL-976). Slicing to the day makes
+// both bounds fixed-width and inclusive, so the two are symmetric rather than accidentally
+// opposite.
+//
+// Fixed-width day keys are also the one text comparison C-40 permits: the `+00:00` vs `.000Z`
+// spellings that break a lexical BOUND differ only from index 10 onward, so they cannot reach
+// this prefix. An absent instant ('' — an unreachable missing embed) sorts below every date and
+// stays unattributed, exactly as before.
+//
+// ── KNOWN BLIND SPOT: this is the UTC day, and the bounds are LOCAL dates (CUL-991) ──────
+//
+// `occurred_at` is a UTC instant; `started_at` / `ended_at` are Postgres DATEs standing for the
+// OWNER'S calendar days. Slicing the instant yields its UTC day, so for any owner not at UTC+0
+// the two disagree near midnight: behind UTC an evening dose reads one day LATE (a 21:00
+// New York dose on the final day is evicted from its own course), ahead of UTC a morning dose
+// reads one day EARLY. Measured: a once-daily bedtime pill with perfect adherence renders as a
+// short course PLUS a phantom "no regimen configured" line for the same drug.
+//
+// That predates this function and is NOT what the day-prefix change fixed — the prefix fixed a
+// string-WIDTH bug that dropped the final day in every zone, UTC included. The zone fix needs a
+// `timeZone` parameter threaded through `attributeDoses`, which moves dose counts on every
+// on-device surface for every non-UTC owner, so it is CUL-991 rather than a rider here.
+//
+// Note for whoever takes it: the B-514 non-UTC CI job CANNOT catch this. This function consults
+// no zone at all, so its results are byte-identical under every `TZ`. The fixtures it needs are
+// instants whose UTC day differs from their local day (a 21:30-in-New-York dose), not a different
+// process clock.
+function doseDayPrefix(occurredAt: string): string {
+  return occurredAt.slice(0, 10);
+}
+
 function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
   switch (adherence) {
     case 'given': t.given++; break;
@@ -1474,10 +1511,11 @@ export function attributeDoses(
       continue;
     }
     let best: RegimenWindow | null = null;
+    const doseDay = doseDayPrefix(d.occurred_at);
     for (const reg of regimens) {
       if (reg.medication_item_id !== d.medication_item_id) continue;
-      if (d.occurred_at < reg.started_at) continue;               // before this regimen began
-      if (reg.ended_at && d.occurred_at > reg.ended_at) continue; // after it ended
+      if (doseDay < reg.started_at) continue;               // before this regimen began
+      if (reg.ended_at && doseDay > reg.ended_at) continue; // after it ended (INCLUSIVE of the end day)
       if (!best || reg.started_at > best.started_at) best = reg;
     }
     if (!best) {
