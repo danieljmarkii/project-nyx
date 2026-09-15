@@ -79,7 +79,7 @@ const MANUAL = 'CLAUDE.md';
  * repaired — 153,050 B down to this. It is a RATCHET: lower it whenever a trim
  * lands, and never raise it.
  */
-const CEILING_BYTES = 136_956;
+const CEILING_BYTES = 136_728;
 
 /** How far below the ceiling the file may sit before the ceiling is stale. */
 const SLACK_BYTES = 2_048;
