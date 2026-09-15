@@ -52,4 +52,4 @@ CUL-812 / CUL-539 is the one that mattered. On the pre-deploy code the outer cat
 
 `ask` is next and now unblocked by the ordering gate. `generate-signal` still waits on the build (CUL-794). The extract pair can ride any later train. `delete-account` stays held.
 
-Shipped via #851.
+Shipped via #852.
