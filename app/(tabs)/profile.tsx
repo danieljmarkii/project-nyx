@@ -18,6 +18,7 @@ import { Divider } from '../../components/ui/Divider';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload, getPublicUrl, getSignedUrls } from '../../lib/storage';
+import { failureCode } from '../../lib/uploadDiagnostics';
 import { VetFilesCard } from '../../components/vetfiles/VetFilesCard';
 import { VET_FILES_ENTRY_ENABLED } from '../../lib/vetFilesEntry';
 import { VetVisitsCard } from '../../components/vetvisits/VetVisitsCard';
@@ -807,6 +808,11 @@ export default function ProfileScreen() {
     if (result.canceled || !result.assets[0] || !activePet) return;
     const localUri = result.assets[0].uri;
     setPhotoUploading(true);
+    // Which of the three things this handler does actually failed. The catch
+    // spans all of them and used to log "photo upload failed" for every one —
+    // including the case where the upload SUCCEEDED and only the pets row
+    // update did not, which sends whoever debugs it straight to Storage.
+    let stage: 'compress' | 'upload' | 'link' = 'compress';
     try {
       const storagePath = `${activePet.id}/profile.jpg`;
       // Compress + EXIF/GPS-strip before upload. `exif: false` above only drops
@@ -814,8 +820,10 @@ export default function ProfileScreen() {
       // of a camera-roll photo would still carry its GPS metadata to storage.
       // compressForUpload re-encodes to a stripped JPEG (privacy-hardening sweep).
       const uploadUri = await compressForUpload(localUri);
+      stage = 'upload';
       await uploadPhoto(PET_PHOTO_BUCKET, storagePath, uploadUri);
 
+      stage = 'link';
       const { error } = await supabase
         .from('pets')
         .update({ photo_path: storagePath })
@@ -824,10 +832,26 @@ export default function ProfileScreen() {
       if (error) throw error;
       updatePet({ photo_path: storagePath });
     } catch (e) {
-      console.error('[Profile] photo upload failed:', e);
+      // nyx-pet-photos holds zero objects and carries a standing "uploads fail
+      // with 42501" open question, so the FIRST real upload in this product's
+      // life is also the first exercise of 047's bucket limits. Logging the bare
+      // error made 42501, a dropped connection and a rejected object one
+      // indistinguishable blob, and the likely misdiagnosis of any of them is
+      // "the 42501 bug is back" (CUL-193 / B-584). The stage plus the code is
+      // what makes that answerable on first contact instead of by elimination.
+      console.error(`[Profile] pet photo failed at ${stage}:`, failureCode(e), e);
       // The cause (missing bucket, RLS, dropped connection) belongs in the log
       // above, never in the alert — naming storage internals to an owner on one
       // of their first actions in the app is unactionable (B-399).
+      //
+      // Deliberately NOT branched for a rejected object, though CUL-193 proposed
+      // it: 047 caps the bucket at 10 MiB with a MIME allowlist, and every byte
+      // reaching it has been through compressForUpload, which re-encodes to JPEG
+      // at a 1600px longest edge — a few hundred KB. uploadPhoto then declares
+      // `image/jpeg` itself. So 413 and 415 are states the pipeline cannot
+      // produce, and a "that photo is too large" branch would be copy an owner
+      // can never see, kept honest by nothing. If the compression step is ever
+      // relaxed, this is the comment that says to add it back.
       Alert.alert("Couldn't save the photo", 'Check your connection and try again.');
     } finally {
       setPhotoUploading(false);
