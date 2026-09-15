@@ -93,7 +93,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-const field = () => screen.getByLabelText('Notes from Nyx’s visit');
+const field = () => screen.getByLabelText('Notes for Nyx’s visit');
 
 describe('the draft autosave (AC 6)', () => {
   it('writes what was typed, once the keystrokes settle', async () => {
@@ -210,5 +210,52 @@ describe('the paperwork door', () => {
     // The pointer is what lets the D1 save link a photo taken before the visit row
     // existed. Losing it costs the link, never the document.
     await waitFor(() => expect(rememberPaperwork).toHaveBeenCalledWith('appt-1', 'group-1'));
+  });
+});
+
+describe('the finish door is gated, and the notes are not (CUL-966)', () => {
+  // ANCHORED TO `Date.now()`, NEVER AN ABSOLUTE DATE. The gate is judged against the
+  // real clock, so a fixture pinned to a literal would pass or fail by calendar
+  // drift rather than by a change to the code (C-29, the time axis).
+  function daysFromNow(n: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    d.setHours(15, 0, 0, 0);
+    return d.toISOString();
+  }
+
+  async function mount(scheduledAt: string) {
+    mockAppointment = appointment({ scheduled_at: scheduledAt });
+    render(<AtTheVetScreen />);
+    await act(async () => { jest.advanceTimersByTime(0); });
+  }
+
+  it('offers no finish door on a visit that has not happened yet', async () => {
+    // "Done" routes to "How did it go?", whose save marks the booking attended and
+    // moves the vet report's window with no way back before VV-6's delete. Opening
+    // the notes six weeks early must not put that one tap away. The control is
+    // ABSENT rather than `disabled`: before the visit no finish control exists, and
+    // `disabled` would claim one does (C-7).
+    await mount(daysFromNow(42));
+    expect(screen.queryByLabelText('Finish the visit')).toBeNull();
+  });
+
+  it('offers the finish door on the day', async () => {
+    await mount(daysFromNow(0));
+    expect(screen.getByLabelText('Finish the visit')).toBeTruthy();
+  });
+
+  it('still offers it once the day has passed — the visit is unlogged, not gone', async () => {
+    // The list's *Waiting on you* bucket reaches the notes now too, and an owner
+    // there has a visit to finish. `isToday` would have been the wrong predicate.
+    await mount(daysFromNow(-3));
+    expect(screen.getByLabelText('Finish the visit')).toBeTruthy();
+  });
+
+  it('takes notes at any distance — the field is the point', async () => {
+    await mount(daysFromNow(42));
+    fireEvent.changeText(field(), 'Ask about the limp');
+    await act(async () => { jest.advanceTimersByTime(1000); });
+    expect(mockSaveDraft).toHaveBeenCalledWith('appt-1', 'Ask about the limp');
   });
 });

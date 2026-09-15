@@ -182,8 +182,18 @@ export function AppointmentStrip() {
                 // The ask is spent either way: *Yes* hands off to the capture screen,
                 // and if the owner backs out of that without saving, Home has already
                 // asked once. The visit is still bookable from the Pet tab.
+                //
+                // THE APPOINTMENT RIDES THE ROUTE (CUL-949). This pushed a bare
+                // `/vet-visit`, which flag-on redirects to `/vet-visits/after` with no
+                // param — so the likeliest path through the whole feature arrived
+                // blank: the notes typed before and during the visit were dropped
+                // (`after.tsx` seeds them from `appt.notes_draft`), clinic and reason
+                // were unfilled, and `logVisitFromAppointment` never ran, leaving the
+                // booking in *Waiting on you* after the visit was logged — with
+                // Home's single ask already spent. The list's own door (index.tsx)
+                // always did this correctly; this one now matches it.
                 await dismissAsk();
-                router.push('/vet-visit');
+                router.push({ pathname: '/vet-visits/after', params: { appointment: id } });
               }}
             />
             <Door label="It didn’t" onPress={onDidntHappen} />

@@ -122,6 +122,7 @@ jest.mock('../lib/rundown', () => {
 });
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { buildRundown } from '../lib/rundown';
 import { supabase } from '../lib/supabase';
 import RundownScreen from './rundown';
@@ -218,6 +219,33 @@ describe('AC 4 — the rundown is byte-identical in both modes', () => {
     const plain = render(<RundownScreen />);
     expect(await plain.findByText(/Share the rundown/)).toBeTruthy();
     expect(plain.queryByText(/Get ready for/)).toBeNull();
+  });
+});
+
+describe('the notes door (CUL-966)', () => {
+  it('opens the notes for THIS appointment — the door §4.1 C1 always specified', async () => {
+    // Get ready is where the questions are typed, and they become ticks on the notes
+    // screen. Until this, Get ready could not reach that screen: the only route in
+    // the app was the visits list, on the appointment's own day. So the page that
+    // collects the questions could not open the page that answers them.
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    fireEvent.press(await r.findByText('Take notes'));
+    expect(router.push).toHaveBeenCalledWith('/vet-visits/at-the-vet?appointment=appt-1');
+  });
+
+  it('is absent on the plain rundown, which has no appointment to take notes for', async () => {
+    params.current = {};
+    const r = render(<RundownScreen />);
+    await r.findByText(/Share the rundown/);
+    expect(r.queryByText('Take notes')).toBeNull();
+  });
+
+  it('leaves the report the single primary — the notes door is secondary (R-share)', async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    expect(await r.findByText('Send the vet report')).toBeTruthy();
+    expect(r.getByText('Take notes')).toBeTruthy();
   });
 });
 
