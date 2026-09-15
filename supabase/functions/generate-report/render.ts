@@ -5234,11 +5234,11 @@ function medicationLine(m: MedicationAdherence): string {
     .join(' &middot; ')
 
   if (m.adherenceState === 'not_tracked') {
-    // §4 trap — a zero-dose drug is not "compliant".
-    return `${regimen}. <b>Adherence not tracked</b> — no doses logged in this window.`
+    // §4 trap — a zero-dose drug is not "compliant". Note the claim is over the RECORD now, not
+    // the window (CUL-976): a course whose dosing all fell outside the window used to land here
+    // and read as untracked, which is a stronger and falser statement than the record supports.
+    return `${regimen}. <b>Adherence not tracked</b> — no doses logged against this regimen.`
   }
-  const administered = m.givenDoses + m.partialDoses
-  const expected = m.expectedDoses != null ? ` of ${num(m.expectedDoses)}` : ''
   const extras: string[] = []
   if (m.partialDoses) extras.push(`${m.partialDoses} partial`)
   if (m.unconfirmedDoses) extras.push(`${m.unconfirmedDoses} unconfirmed`)
@@ -5250,9 +5250,89 @@ function medicationLine(m: MedicationAdherence): string {
   // "given"). Same rule, one surface behind.
   extras.push(m.refusedDoses ? `${m.refusedDoses} refused` : 'none recorded as refused')
   if (m.missedDoses) extras.push(`${m.missedDoses} missed`)
-  return `${regimen}. Adherence: ${num(administered)}${expected} dose${administered === 1 ? '' : 's'} on ${num(
-    m.daysWithDose,
-  )} of ${num(m.elapsedDaysInWindow)} days; ${extras.join(', ')}.`
+
+  // The window clause states COUNTS and never a ratio (CUL-976), in THREE registers, because
+  // "nothing administered" and "nothing logged" are different facts and conflating them fails in
+  // both directions:
+  //
+  //   • An EMPTY window says only that, and carries no extras at all. "None recorded as refused"
+  //     over zero doses is a claim about nothing that reads as a claim about the course — the
+  //     same absence-as-fact the cold-read round 13 comment above forbids, one branch over.
+  //   • A window holding ONLY missed / refused / unconfirmed doses says "no doses administered".
+  //     Saying "no doses logged" there would contradict the refusal printed in the same sentence,
+  //     and bury the most clinically loaded rows on the page under a phrase that reads as
+  //     nothing-to-see. A refused dose of a critical drug is the opposite of nothing to see.
+  //   • Otherwise the administered count and its day denominator, as before.
+  const windowClause =
+    m.windowDosesTotal === 0
+      ? `No doses logged in this report's window.`
+      : m.windowDosesLogged === 0
+        ? `In this window: no doses administered; ${extras.join(', ')}.`
+        : `In this window: ${num(m.windowDosesLogged)} dose${
+            m.windowDosesLogged === 1 ? '' : 's'
+          } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course; ${extras.join(', ')}.`
+
+  return `${regimen}. ${adherenceClaim(m)} ${windowClause}`
+}
+
+/**
+ * The document's ONE adherence claim for a drug (CUL-976), stated against the PRESCRIPTION.
+ *
+ * The denominator is the course's own planned total — `target_duration_doses`, or
+ * `doses_per_day × target_duration_days` — never a figure prorated to the report's window. The
+ * prorated one is what let page 5 say "9 of 30" while page 10 said "28 of 28" for the same drug,
+ * with the in-window denominator exceeding the whole prescription. It names its basis in words
+ * ("of 28 prescribed"), so the ratio cannot be read against some other denominator.
+ *
+ * With no planned total the course is ongoing / PRN / target-less and there is nothing to divide
+ * by, so the report states the count and stops. That is the honest shape, not a degraded one: a
+ * pace invented from the window is a denominator the prescription never had.
+ *
+ * ── The claim NAMES ITS SCOPE, and carries no qualifiers (CUL-994) ───────────────────
+ *
+ * "across the whole course" is load-bearing, not padding. This numerator is record-scoped and
+ * every qualifier on this line — `partial`, `refused`, `missed`, `unconfirmed` — is WINDOW-scoped,
+ * in the window clause that follows. Two populations in one paragraph must each say which they
+ * are (C-37), and the alternative tried first (record-scoped qualifiers in a parenthetical beside
+ * the claim) failed a second falsification pass three ways: `partial` is INSIDE this numerator
+ * while `missed` / `refused` are DISJOINT from it, so one unmarked parenthetical mixed a subset
+ * with its complement; on the modal report, where the window covers the course, the two sets
+ * printed the same integers one clause apart and read as different findings; and the §4.4 cell
+ * renders the same numerator bare, so the qualifier half applied to one of the two surfaces the
+ * shared predicate exists to keep in step.
+ *
+ * So the claim states the scope of the number it makes and nothing else. Naming the qualifiers
+ * beside a record-scoped numerator without re-creating that ambiguity is CUL-994's problem, and
+ * it is a copy decision rather than a code one.
+ */
+function adherenceClaim(m: MedicationAdherence): string {
+  const n = num(m.lifetimeDosesLogged)
+  if (
+    statesPrescriptionRatio({
+      courseEnded: m.courseEnded,
+      plannedDoses: m.prescribedDoses,
+      dosesLogged: m.lifetimeDosesLogged,
+    })
+  ) {
+    // The noun agrees with the DENOMINATOR it sits beside, not the numerator: "1 of 28 prescribed
+    // doses logged", never "1 of 28 prescribed dose logged".
+    const planned = m.prescribedDoses!
+    return `Adherence: ${n} of ${num(planned)} prescribed dose${
+      planned === 1 ? '' : 's'
+    } administered across the whole course.`
+  }
+  // No ratio is available, so the count is stated with the REASON the frame is absent — an empty
+  // return with several causes makes the reader guess, and they guess "undertreated" (C-37).
+  // Over-delivery is named BEFORE the under-way case, so a mid-course record that has already
+  // passed its plan says so rather than reading "course under way, 28 prescribed" beside a count
+  // of 45 and leaving the reader to notice.
+  const why =
+    m.prescribedDoses == null
+      ? 'no planned total recorded for this course'
+      : m.lifetimeDosesLogged > m.prescribedDoses
+        ? `more than the ${num(m.prescribedDoses)} prescribed`
+        : `course under way, ${num(m.prescribedDoses)} prescribed`
+  return `Adherence: ${n} dose${m.lifetimeDosesLogged === 1 ? '' : 's'} administered across the whole course; ${why}.`
 }
 
 /** Date range for an unlinked-dose group — "on Jul 10" for a single day, else "Jul 2 – Jul 10". */
@@ -5270,10 +5350,17 @@ function unlinkedMedLine(u: UnlinkedMedicationGroup): string {
     .join(' &middot; ')
   const prefix = meta ? `${meta}. ` : ''
   const span = unlinkedSpan(u)
+  // "in this window" is load-bearing, not padding (CUL-976). This line is window-scoped and the
+  // §4.4 lifetime table beside it is not, so the same OTC drug legitimately reads "10 doses,
+  // Aug 1–Sep 5" here and a Jul 1 start there. Unnamed, those are two irreconcilable facts about
+  // one drug — the same population mismatch as the regimen figures, in a different dress. The
+  // dates alone do not disclose it: a reader cannot tell a short span from a clipped one.
   const head =
     u.administeredDoses > 0
-      ? `${num(u.administeredDoses)} dose${u.administeredDoses === 1 ? '' : 's'} given ${span}`
-      : `${num(u.totalDoses)} dose${u.totalDoses === 1 ? '' : 's'} logged ${span}`
+      ? `${num(u.administeredDoses)} dose${
+          u.administeredDoses === 1 ? '' : 's'
+        } given in this window, ${span}`
+      : `${num(u.totalDoses)} dose${u.totalDoses === 1 ? '' : 's'} logged in this window, ${span}`
   const extras: string[] = []
   if (u.partialDoses) extras.push(`${num(u.partialDoses)} partial`)
   if (u.unconfirmedDoses) extras.push(`${num(u.unconfirmedDoses)} unconfirmed`)
@@ -6634,16 +6721,29 @@ function medicationAppendix(snap: ReportSnapshot): string {
       ]
         .filter(Boolean)
         .join(', ')
-      const logged =
-        m.adherenceState === 'not_tracked'
-          ? '0'
-          : `${num(m.givenDoses + m.partialDoses)}${m.expectedDoses != null ? ` / ${m.expectedDoses}` : ''}`
+      // A COUNT, never a ratio (CUL-976). This cell used to print the window-prorated "9 / 30",
+      // which made it the document's THIRD adherence figure and its second basis. The table is
+      // the windowed dose-level detail; the one adherence claim is stated on page 1 against the
+      // prescription, and this column now says how many of those doses landed in the window.
+      const logged = m.adherenceState === 'not_tracked' ? '0' : num(m.windowDosesLogged)
+      // THE SAME THREE REGISTERS PAGE 1 CARRIES (CUL-976 pass 3). This cell had two, and the
+      // missing one was the empty window — where every extra it prints is a count of zero over a
+      // population the window does not contain. On a course refused in its entirety BEFORE the
+      // window, that rendered "None recorded as refused" as the only sentence about refusal
+      // anywhere on the document, over a record of 28 refusals.
+      //
+      // It became reachable when `adherenceState` moved to a record basis: the row no longer
+      // takes the not_tracked branch, so it fell through to extras counted over a window holding
+      // nothing. Page 1's register was added in the same change and this sibling was not — the
+      // C-4 rule 1 shape, with the accusing side left broken.
       const adherence =
         m.adherenceState === 'not_tracked'
-          ? '<b>Adherence not tracked</b> — no doses logged; never read as given.'
-          : `Logged on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days.${
-              m.unconfirmedDoses ? ` ${num(m.unconfirmedDoses)} unconfirmed.` : ''
-            }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
+          ? '<b>Adherence not tracked</b> — no doses logged against this regimen; never read as given.'
+          : m.windowDosesTotal === 0
+            ? 'No doses logged in this window; this drug&rsquo;s doses fall outside it (the lifetime table above carries them).'
+            : `Logged on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course in this window.${
+                m.unconfirmedDoses ? ` ${num(m.unconfirmedDoses)} unconfirmed.` : ''
+              }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(
@@ -6687,7 +6787,7 @@ function medicationAppendix(snap: ReportSnapshot): string {
     ' <b>This lists only what the owner entered in Culprit.</b> A medication prescribed elsewhere and never logged does not appear here, and its absence is not evidence it was not given — worth confirming against the clinic record, particularly for anti-inflammatories and antipruritics, which suppress the signs a diet trial is measuring.'
   const sub = !hasAny
     ? `No prescription medication is recorded in this window. Over-the-counter supplements, if any, are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
-    : `Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
+    : `Doses are owner-logged, and this table is scoped to the report window &mdash; page&nbsp;1&rsquo;s adherence line counts the whole course, so a drug dosed before this window shows a lower count here than the number stated there. With no dose logged against a regimen at all it reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
   return `
   <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
   <p class="appx-sub">${sub}</p>
@@ -6790,16 +6890,40 @@ function medHistoryCourse(e: MedicationHistoryEntry): string {
 }
 
 /**
- * The Doses-logged cell. H4: the count is `dosesLogged` (given + partial), never re-summed. "of N
- * planned" shows ONLY for an ENDED course with a plan it did not exceed — a retrospective delivered-
- * vs-planned fact; an ACTIVE course shows the bare count (its plan is already in the Course cell, and
- * "of N" mid-course would read as a countdown — B-618 D7). Over-delivered ⇒ drop the frame (never "30 of 28").
+ * ── May this course state a delivered-vs-prescribed RATIO at all? ────────────────────
+ *
+ * ONE predicate, switched on by BOTH surfaces that can print such a ratio — the page-1
+ * adherence claim and the §4.4 lifetime cell (CUL-976). Inverting it moves both, which is the
+ * only proof the rule is shared rather than duplicated (C-4).
+ *
+ * It exists because making page 1 state the prescription denominator handed that surface a
+ * question the lifetime cell had already answered, and answering it a second time re-created
+ * this issue's own defect in a new place: page 1 would have printed "30 of 28" on an
+ * over-delivered course while the cell beside it printed "30", and "26 of 28" mid-course where
+ * B-618 D7 rules that a ratio reads as a countdown. Three conditions, all pre-existing rulings:
+ *
+ *   • ENDED — a retrospective delivered-vs-planned fact. An ACTIVE course shows the bare count;
+ *     its plan is already in the Course cell, and "of N" mid-course reads as a countdown (D7).
+ *   • A PLAN EXISTS — nothing to divide by otherwise, and a window proration is not a substitute.
+ *   • NOT OVER-DELIVERED — never "30 of 28"; an owner can log more than was prescribed.
  */
+function statesPrescriptionRatio(x: {
+  courseEnded: boolean
+  plannedDoses: number | null
+  dosesLogged: number
+}): boolean {
+  return x.courseEnded && x.plannedDoses != null && x.dosesLogged <= x.plannedDoses
+}
+
+/** The Doses-logged cell. H4: the count is `dosesLogged` (given + partial), never re-summed. */
 function medHistoryDoses(e: MedicationHistoryEntry): string {
-  if (e.ended && e.plannedDoses != null && e.dosesLogged <= e.plannedDoses) {
-    return `${num(e.dosesLogged)} of ${num(e.plannedDoses)}`
-  }
-  return num(e.dosesLogged)
+  return statesPrescriptionRatio({
+    courseEnded: e.ended,
+    plannedDoses: e.plannedDoses,
+    dosesLogged: e.dosesLogged,
+  })
+    ? `${num(e.dosesLogged)} of ${num(e.plannedDoses!)}`
+    : num(e.dosesLogged)
 }
 
 /**
