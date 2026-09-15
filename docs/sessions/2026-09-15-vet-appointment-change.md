@@ -64,4 +64,5 @@ Every new assertion proven by mutation. One **equivalent** mutant (`startOfLocal
 - **CUL-985** — the Pet-tab card shows the empty state over a live unanswered booking.
 - **CUL-986** — the *Waiting on you* note's placement and subset; "Optional" vs "not set".
 - **CUL-987** (`Waiting on PM`) — three decisions batched: the Home door, what the remove confirm promises, the multi-pet line.
+- **CUL-988** (`Waiting on PM`) — the on-device pass. Merged before it ran, on the PM's explicit instruction; the DoD box it covers is the one that stayed open.
 - **CUL-970** — commented, not touched. This removes the cause most likely to mint a second booking; it does not change what the list shows when two exist.
