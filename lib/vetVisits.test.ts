@@ -6,12 +6,14 @@ import {
   buildVisitListRow,
   composeScheduledAt,
   dayStampFromDate,
+  decomposeScheduledAt,
   derivePlanTags,
   formatAppointmentWhen,
   formatVisitDate,
   formatVisitWeekday,
   formatWhereLine,
   localDateKey,
+  removeAppointmentCopy,
   type AppointmentDetail,
   type LocalVetVisit,
   type VisitLinks,
@@ -399,6 +401,109 @@ describe('the appointment view', () => {
 describe('localDateKey', () => {
   it('is the LOCAL day, zero-padded', () => {
     expect(localDateKey(new Date(2026, 0, 5, 23, 30))).toBe('2026-01-05');
+  });
+});
+
+describe('decomposeScheduledAt — the inverse of composeScheduledAt (CUL-952)', () => {
+  // A PROPERTY over the cross product, not an example list. The B-414 lesson: an
+  // example list is what let a canonicalizer ship a broken key under a docstring
+  // claiming idempotence, so the round trip is asserted over every combination
+  // rather than over the three someone thought of.
+  const DAYS = [
+    new Date(2026, 0, 1),    // new year
+    new Date(2026, 2, 8),    // US spring-forward Sunday
+    new Date(2026, 8, 16),   // an ordinary Wednesday
+    new Date(2026, 9, 25),   // EU fall-back Sunday
+    new Date(2026, 11, 31),  // new year's eve
+    new Date(2027, 1, 28),   // a February end
+  ];
+  const TIMES: Array<Date | null> = [
+    null,                              // the no-time sentinel
+    new Date(2026, 0, 1, 0, 1),        // the nudged edge compose itself produces
+    new Date(2026, 0, 1, 9, 0),        // a clinic morning
+    new Date(2026, 0, 1, 12, 0),       // noon, the sentinel that was rejected
+    new Date(2026, 0, 1, 15, 30),      // an ordinary afternoon slot
+    new Date(2026, 0, 1, 23, 59),      // the last minute of the day
+  ];
+
+  it('round-trips every day × time back to the same instant', () => {
+    for (const day of DAYS) {
+      for (const time of TIMES) {
+        const iso = composeScheduledAt(day, time);
+        const parts = decomposeScheduledAt(iso);
+        expect(parts).not.toBeNull();
+        // Drive the REAL composer on what decompose handed back, rather than
+        // re-deriving the rule in the test — a test that restates production logic
+        // to check it is a tautology with fixtures (C-34).
+        expect(composeScheduledAt(parts!.day, parts!.time)).toBe(iso);
+      }
+    }
+  });
+
+  it('gives back NO TIME for a booking that was given none', () => {
+    for (const day of DAYS) {
+      const parts = decomposeScheduledAt(composeScheduledAt(day, null));
+      // THE WHOLE POINT. The obvious seed — `time: new Date(scheduled_at)` — is a
+      // real Date at local midnight here, indistinguishable at the picker from a
+      // chosen one.
+      expect(parts!.time).toBeNull();
+    }
+  });
+
+  it('shows what the naive seed would have cost: an invented clock time', () => {
+    // Not a test of production code but of the TRAP, so the reason the null exists
+    // is written down in a form that fails if compose ever stops nudging. Feed the
+    // raw instant back as a non-null time and the sentinel is destroyed.
+    const iso = composeScheduledAt(new Date(2026, 8, 16), null);
+    const naive = composeScheduledAt(new Date(iso), new Date(iso));
+    expect(naive).not.toBe(iso);
+    // 00:01 — an owner who changed only the clinic name would start seeing
+    // "12:01 am" on Home, the Pet-tab card and Get ready.
+    expect(new Date(naive).getMinutes()).toBe(1);
+  });
+
+  // MEASURED BLIND SPOT, stated rather than left to be rediscovered: replacing
+  // `startOfLocalDay(d)` with `new Date(y, m, d)` inside `decomposeScheduledAt`
+  // survives every test here. That is an EQUIVALENT mutant, not a gap —
+  // `composeScheduledAt` re-derives from the day's y/m/d and throws away its clock
+  // component, so nothing downstream can observe the difference. An undocumented
+  // survivor reads as missing coverage (C-38/C-41).
+  it('refuses an unparseable instant rather than inventing a day', () => {
+    expect(decomposeScheduledAt('not-an-instant')).toBeNull();
+    expect(decomposeScheduledAt('')).toBeNull();
+  });
+});
+
+describe('removeAppointmentCopy (CUL-952)', () => {
+  const NOW = new Date(2026, 8, 16, 10, 0);
+
+  it('says "upcoming visits" for a booking still ahead', () => {
+    const iso = composeScheduledAt(new Date(2026, 9, 28), new Date(2026, 9, 28, 15, 0));
+    const copy = removeAppointmentCopy(iso, 'Nyx', NOW);
+    expect(copy.title).toBe('Remove this appointment?');
+    expect(copy.body).toContain('Nyx’s upcoming visits');
+    expect(copy.body).toContain('Nothing else in the record changes.');
+  });
+
+  it('drops "upcoming" once the day has passed — the *Waiting on you* case', () => {
+    const iso = composeScheduledAt(new Date(2026, 8, 8), new Date(2026, 8, 8, 15, 0));
+    const copy = removeAppointmentCopy(iso, 'Nyx', NOW);
+    // The row this control is most used on: the day passed and the visit never
+    // happened, so calling it "upcoming" would be false on the one surface still
+    // able to answer the question.
+    expect(copy.body).toContain('Nyx’s visits');
+    expect(copy.body).not.toContain('upcoming');
+  });
+
+  it('never says "Cancel" — the word iOS also uses for backing out of the dialog', () => {
+    const iso = composeScheduledAt(new Date(2026, 9, 28), null);
+    const copy = removeAppointmentCopy(iso, 'Nyx', NOW);
+    expect(`${copy.title} ${copy.body}`.toLowerCase()).not.toContain('cancel');
+  });
+
+  it('names the pet it was given, never a generic stand-in', () => {
+    const iso = composeScheduledAt(new Date(2026, 9, 28), null);
+    expect(removeAppointmentCopy(iso, 'Juniper', NOW).body).toContain('Juniper’s');
   });
 });
 

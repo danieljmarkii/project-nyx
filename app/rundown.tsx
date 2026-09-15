@@ -363,7 +363,15 @@ export default function RundownScreen() {
             onCopyAsText={onCopyAsText}
             onChangeAppointment={() => {
               setMenuOpen(false);
-              router.push('/vet-visits');
+              // The appointment ITSELF, not the list (CUL-952). This pushed
+              // `/vet-visits`, where the only control is *Add* — so a menu item
+              // named *Change the appointment* booked a SECOND appointment beside
+              // the one the owner meant to move, and Home then led with whichever
+              // was earlier. The id rides the route, so the screen never asks the
+              // store which appointment this is (AC 11).
+              router.push(
+                `/vet-visits/edit-appointment?appointment=${getReady.appointment.id}`,
+              );
             }}
           />
           <AddQuestionSheet

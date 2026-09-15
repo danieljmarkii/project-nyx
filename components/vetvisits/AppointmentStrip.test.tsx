@@ -77,6 +77,14 @@ function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
     view: {
       id: 'appt-1',
       petId: 'p1',
+      // Today at 3pm, matching `isToday` below. Anchored to now rather than a
+      // literal date (C-29); the strip itself never reads this, but the confirm
+      // copy shared with the visits list and the edit screen does.
+      scheduledAt: (() => {
+        const d = new Date();
+        d.setHours(15, 0, 0, 0);
+        return d.toISOString();
+      })(),
       stamp: { day: '16', month: 'Sep' },
       when: 'Tuesday · 3:00 pm',
       day: 'Tuesday',
@@ -225,7 +233,11 @@ describe('*It didn’t* — Home’s one write, and it is confirmed first', () =
     // C-21: exactly one safety net, and for a write with no undo it is the confirm.
     // It says what leaves the record AND what stays — an owner who rescheduled rather
     // than skipped needs to know the old row is going away.
-    expect(body).toMatch(/upcoming visits/);
+    // NOT "upcoming visits" — this door only renders once the day has PASSED, and
+    // the string said "upcoming" on every one of them until CUL-952 moved the copy
+    // into `removeAppointmentCopy`, which branches that word on the record.
+    expect(body).toMatch(/’s visits/);
+    expect(body).not.toMatch(/upcoming/);
     expect(body).toMatch(/Nothing else in the record changes/);
     // Nothing written yet.
     expect(cancelVetAppointment).not.toHaveBeenCalled();

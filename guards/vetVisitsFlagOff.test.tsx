@@ -479,6 +479,29 @@ const ALIASED_HOOK_RE = /\buseAllowlistFlag\s+as\s+\w+/;
  */
 const IMPORTS_NAMESPACE_RE = /(?:^|\n)\s*import\s+(?!type\s)[^;\n]*from\s+['"][^'"]*components\/vetvisits\//;
 
+/**
+ * Collapse the whitespace inside a braced import's specifier list, so a multi-line
+ * `import {\n  A,\n} from '…'` reads to `IMPORTS_NAMESPACE_RE` exactly as the
+ * single-line form does.
+ *
+ * MEASURED, not anticipated: `IMPORTS_NAMESPACE_RE` bounds its middle with
+ * `[^;\n]*`, so it cannot span a newline — and prettier breaks any import with more
+ * than one specifier across lines. CUL-952's `app/vet-visits/edit-appointment.tsx`
+ * imports `{ AppointmentEditBody, type AppointmentEditFields }`, delegates its
+ * drawing to the namespace exactly as the convention requires, and was reported as
+ * drawing elsewhere. A guard whose verdict depends on how prettier wrapped a line is
+ * reporting formatting, not delegation.
+ *
+ * The `\n` in the original bound is load-bearing for everything EXCEPT this, since
+ * it is what stops the match running from one statement into a later one — so the
+ * fix normalises the input rather than loosening the pattern. Only `{…}` runs are
+ * touched, and a brace list cannot contain a `;` or a quote, so this cannot join two
+ * statements together.
+ */
+function collapseBracedImports(src: string): string {
+  return src.replace(/import\s+\{[^}]*\}\s*from/g, (m) => m.replace(/\s+/g, ' '));
+}
+
 /** Repo-relative prefix of the namespace itself. */
 const NAMESPACE_PREFIX = 'components/vetvisits/';
 
@@ -504,7 +527,7 @@ const NAMESPACE_PREFIX = 'components/vetvisits/';
  */
 function drawsThroughNamespace(rel: string, src: string): boolean {
   if (rel.startsWith(NAMESPACE_PREFIX)) return true;
-  return IMPORTS_NAMESPACE_RE.test(src);
+  return IMPORTS_NAMESPACE_RE.test(collapseBracedImports(src));
 }
 
 /**
@@ -697,6 +720,29 @@ describe('the companion\'s consumers stay inside the namespace', () => {
       .filter((rel) => !(rel in DRAWS_ELSEWHERE_OK))
       .filter((rel) => !drawsThroughNamespace(rel, readCode(path.join(REPO_ROOT, rel))));
     expect(drawsElsewhere).toEqual([]);
+  });
+
+  it('the delegation detector reads both import shapes, and still refuses neither', () => {
+    // The detector is the part of this rule that can silently stop working, so it is
+    // driven directly rather than only through the repo scan — where a false
+    // NEGATIVE (a real leak read as delegation) is invisible until it ships.
+    //
+    // Proven in both directions, because only the pair is meaningful: loosening the
+    // pattern until every file passes would satisfy the positive cases alone.
+    const single = `import { A } from '../../components/vetvisits/A';`;
+    const multi = `import {\n  A,\n  type B,\n} from '../../components/vetvisits/A';`;
+    const typeOnly = `import type { A } from '../../components/vetvisits/A';`;
+    const none = `import { View } from 'react-native';\nimport { x } from '../../lib/vetVisits';`;
+
+    expect(drawsThroughNamespace('app/s.tsx', single)).toBe(true);
+    // The shape prettier produces for more than one specifier — and the one that
+    // was reported as a violation before `collapseBracedImports` existed.
+    expect(drawsThroughNamespace('app/s.tsx', multi)).toBe(true);
+    // A type-only import draws nothing at runtime, so it must NOT satisfy the rule:
+    // a screen whose only namespace reference is erased at compile time is drawing
+    // inline, which is the leak.
+    expect(drawsThroughNamespace('app/s.tsx', typeOnly)).toBe(false);
+    expect(drawsThroughNamespace('app/s.tsx', none)).toBe(false);
   });
 
   it('the draws-through-the-namespace exemption has no stale entries', () => {

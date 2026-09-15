@@ -17,10 +17,13 @@ import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import {
   bookVetAppointment,
+  cancelVetAppointment,
   EMPTY_VET_VISITS_HOME,
   logVetVisit,
   readVetVisitsHome,
   readVisitPrefill,
+  removeAppointmentCopy,
+  type AppointmentView,
   type VetVisitsHome,
   type VisitPrefill,
 } from '../../lib/vetVisits';
@@ -210,6 +213,39 @@ export default function VetVisitsScreen() {
     }
   }
 
+  /**
+   * The second answer (CUL-952). *Waiting on you* asked "did this happen?" and
+   * offered only *How did it go?* — the other answer lived on Home, and only for
+   * five days, so a booking missed by a week was furniture in this bucket forever,
+   * telling the owner to log a visit that never happened.
+   *
+   * The confirm's words come from `removeAppointmentCopy`, shared with the Home
+   * strip and the edit screen; the `Alert` is here because this namespace is where
+   * the screen lives.
+   */
+  function confirmDidntHappen(appt: AppointmentView) {
+    const copy = removeAppointmentCopy(appt.scheduledAt, petName);
+    Alert.alert(copy.title, copy.body, [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Remove it',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await cancelVetAppointment(appt.id);
+            syncPendingVetAppointments().catch(console.error);
+            await load();
+          } catch (err) {
+            console.warn('[vet-visits] cancel failed:', err);
+            // Never silent: the row stays put, so the owner can see it is still
+            // there and try again (the Home strip's shape).
+            Alert.alert('Couldn\u2019t remove it', 'The appointment is still here \u2014 try again.');
+          }
+        },
+      },
+    ]);
+  }
+
   // A dark feature is dark on every door, including a deep link. No chrome, no
   // title, nothing that names a feature the account is not in — the owner lands
   // where the entry point would have been. A `<Redirect>` rather than an effect,
@@ -310,6 +346,13 @@ export default function VetVisitsScreen() {
                     ? () => router.push(`/vet-visits/after?appointment=${home.next?.id}`)
                     : undefined
                 }
+                // Round 2 of the mock drew this door and the build shipped it with
+                // nowhere to go (CUL-952). No *It didn't happen* here: on a booking
+                // still ahead the app has not asked anything yet, so there is no
+                // question to answer — moving it is what a future booking wants.
+                onChange={() =>
+                  router.push(`/vet-visits/edit-appointment?appointment=${home.next?.id}`)
+                }
               />
             </View>
           ) : null}
@@ -335,11 +378,22 @@ export default function VetVisitsScreen() {
                     petName={petName}
                     onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
                     onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${appt.id}`)}
+                    onDidntHappen={() => confirmDidntHappen(appt)}
+                    // *Change* is here too, not only under *Next*, because the
+                    // commonest reason a booking lands in this bucket is that the
+                    // visit MOVED and nobody told the app. Without it the only
+                    // recovery is remove-and-rebook, which discards the questions
+                    // the owner prepared on Get ready — the thing that screen
+                    // exists for.
+                    onChange={() =>
+                      router.push(`/vet-visits/edit-appointment?appointment=${appt.id}`)
+                    }
                   />
                 </View>
               ))}
               <ThemedText style={styles.awaitingNote}>
-                This day has passed. Log the visit to move it into {petName}’s history.
+                This day has passed. Log the visit to move it into {petName}’s history, or
+                say it didn’t happen.
               </ThemedText>
             </View>
           ) : null}
