@@ -75,15 +75,37 @@ This is C-4 — *slice the object under test* — inside a guard whose entire su
 
 Also worth recording: one mutation in the first pass **silently failed to apply** (a `perl` anchor that matched nothing) and the guard reported green. A mutation that does not change the source is not a proof, so a mutation run now checks the file actually changed before reading the verdict.
 
+## What the two reviews found, and why the adversarial one was the one that mattered
+
+Both mandated reviews ran on the first commit. Between them they returned one **fix-before-merge** and one **FAIL**, and the headline finding was the same defect.
+
+**`fetchAll` could return `complete: true` with a live row missing.** One concurrent soft-delete plus one concurrent insert below the cursor, on a multi-page pull: the delete shifts the offset space up and skips a row, the insert restores the number the delete took away, and `rows.length >= total` certifies the pull. Reproduced on the shipped reader — 1,057 rows, delete at rank 200, insert at rank 800 — losing an event at newest-first index 500, about 85 days back and **inside** a 90-day window, with `incompletePulls` empty so no disclosure rendered at all.
+
+That is CUL-975's own failure class, at a smaller scale, inside the fix for it. **A number that can be made whole by a different row is not a proof that no row is missing.** The fix is one row of deliberate page overlap plus a continuity check: every page after the first starts one offset back, and the row it starts on must be one already seen. Completeness now rests on three independent facts instead of one.
+
+Worth being precise about the other half, because I checked it rather than accepting it: `code-reviewer` reported the **insert-alone** case as the same bug, on the evidence that the inserted row is absent while `complete` is true. That one is not a defect. Driven against the real reader for a head insert, a mid-list backdated insert, and two backdated inserts inside the final partial window, **no row that existed when the count was taken is ever missing** — the absent row is one created after the read began, on a document that is a snapshot as of the request, behind a client that flushes its queues first. The empirical observation was right and the diagnosis was wrong, and the two are separable only by running it.
+
+Three further findings, each the same shape — **inverting the truncation direction moved a number nobody re-checked**:
+
+- **`eventsSinceIso` still carried the floor the query ASKED for.** That used to equal the floor it reached, because truncation kept the oldest rows. `report.ts` derives `countIsFloor` from it, so a truncated pull could print a trial-crop symptom count as a *total* over days it never read. Now `reachedLookbackIso`, a pure predicate with its own test.
+- **The trailing probe can 416.** PostgREST answers `PGRST103` when a `.range()` lower bound passes the end, which a mid-pull delete produces; `rowsOrThrow` made that fatal, so the benign race the (a′) ruling chose to *render through* became a hard 500 and no report at all.
+- **The disclosure copy was false in the one case `events` can reach it.** "Anything missing is older than what is shown" describes an old-end drop; a seam skip lands mid-record with 556 older rows still on the page. And `events` orders by when an incident *occurred*, not when it was recorded, so a backdated row logged minutes ago is among the first to go.
+
+The copy also had the wrong *frame*. For `feeding_arrangements`, `medications`, `conditions` and `diet_trials` a shortfall is not an under-count — it is a **missing confounder**, and a missing confounder makes a finding read *more* confident (a dropped shared-bowl arrangement un-caps a correlation's tier). "Treat counts as minimums" is a counting frame on a non-counting harm, so the sentence now names both directions.
+
+**The generalisation.** Every one of these survived my own adversarial read, the mutation pass, and a full guard suite — because they are failures of the *premise*, not of the code. A completeness check has to be falsified by someone who did not design it. That is what the DoD's adversarial line is for, and this is the clearest return it has produced.
+
+**One rendered change to expect at the cold read**, flagged so it is not read as a regression: adding `ORDER BY` flips `input.events` from insertion order to `occurred_at DESC`, and Appendix A's *type-block* order follows group-insertion order. Which type-block leads changes; rows within each block were already ascending and still are. Every other consumer sorts internally or takes a min/max.
+
 ## Definition of Done
 
 - [x] Acceptance criteria from CUL-975's description and its one comment, listed in the PR against the issue's own DoD
 - [x] Diff scanned against the anti-pattern lists — none introduced
 - [x] `tsc --noEmit` clean; lint clean
-- [x] **Tests**: 8,292 jest + 1,601 deno green. The acceptance fixture was run RED against a restored bare pull; the guard was proven by three mutations on the real tree
+- [x] **Tests**: 8,296 jest + 1,604 deno green. The acceptance fixture was run RED against a restored bare pull; the guard was proven by three mutations on the real tree
 - [x] No new secret
 - [x] Persona sign-off — below
-- [x] Adversarial review — below
+- [x] **Adversarial review.** `Biostatistician: ported fetchAll into a PostgREST-modelling harness — insert-at-head race de-dupes losslessly ✓, lone delete across a seam reports incomplete ✓, the newest 500 rows unreachable by any race ✓, windowStartFloorMs bound + MIN over rows correct ✓, all 11 order/de-dupe keys verified unique against the migrations ✓; but ONE delete plus ONE backdated insert mid-pull returned complete:true with an in-window row silently missing (1,057-row repro) ✗, and the disclosure sentence was false in the only case the events pull reaches it ✗.` Both fixed and re-proven: the compensated race now reports incomplete (mutation-proven — dropping either half of the overlap reds it), and the copy no longer makes a claim about where the loss sits.
 - [x] Future-self review: `fetchAll` is a new pattern in this file. In twelve months I would still want it, and specifically the advance-by-received stride, because it is the part that stays correct when someone changes a project setting nobody in the repo can see. The risk to name: it is offset paging, which is racy across pages by construction; if a heavier account ever makes multi-page pulls routine, keyset pagination on `(occurred_at, id)` is the upgrade, and the known-limit note in `fetchAll`'s header is where that starts.
 - [x] Dev Handoff — backend-only; the verification is the post-deploy report check
 - [x] PM Action Items — below

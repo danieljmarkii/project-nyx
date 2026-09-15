@@ -1185,14 +1185,21 @@ function signalmentBlock(snap: ReportSnapshot): string {
  * careful reader cannot derive from the page has to be ON the page, beside the range it
  * qualifies — which is where the cherry-pick guard already sits, in the same register.
  *
- * WHAT IT DOES NOT SAY, and the reason. It never claims the window is complete. Under the
- * PM's (a') ruling the shortfall that could have cut the WINDOW does not render at all —
- * `generateReportForPet` refuses — so anything that reaches this line is a shortfall off
- * the old end. But "off the old end" is only window-safe for the pulls the window filters;
- * `medications` and `conditions` carry no date bound, so a truncated one of those can be
- * missing something in-window. The sentence therefore states what is true of every case —
- * the rows read are the most recently recorded, and the counts are minimums — rather than
- * a reassurance that holds for the common case and not the rest.
+ * WHAT IT DOES NOT SAY, and the reason. An earlier draft read "the rows that were read are
+ * the most recently recorded, so anything missing is older than what is shown". The
+ * `adversarial-reviewer` falsified both halves in the one case `events` can actually reach
+ * this line: the shortfall there is a row SKIPPED AT A PAGE SEAM, not dropped off the old
+ * end — measured with 556 older rows still on the page — and `events` is ordered by when an
+ * incident OCCURRED, not by when it was recorded, so a backdated row logged minutes ago is
+ * among the first to go. A disclosure that points the reader away from the window is worse
+ * than none: it is a second false claim standing where the first one was.
+ *
+ * It also does not say "counts are minimums" and stop there. For `feeding_arrangements`,
+ * `medications`, `conditions` and `diet_trials` a shortfall is not an under-count at all —
+ * it is a MISSING CONFOUNDER, and a missing confounder makes a finding read more confident
+ * than the record supports (a dropped shared-bowl arrangement un-caps a correlation's tier).
+ * So the sentence names both directions: fewer than there were, and less context than there
+ * was.
  *
  * PRESENT-ONLY, like every other disclosure on this page: an empty list renders NOTHING,
  * never "the full record was read". A clean bill of health nobody asked for is the
@@ -1205,9 +1212,9 @@ function truncationDisclosure(snap: ReportSnapshot): string {
   // could not label is the absence this whole issue is about.
   const nouns = snap.incompletePulls.map((t) => TRUNCATION_NOUNS[t] ?? t)
   return `
-  <div class="cherry"><b>Partial record.</b> Not every row on file could be read for this report (${h(
+  <div class="cherry"><b>Partial record.</b> Some of this pet's ${h(
     joinList(nouns),
-  )}). The rows that were read are the most recently recorded, so anything missing is older than what is shown. Treat counts below as minimums.</div>`
+  )} could not be read for this report. Treat the counts below as minimums, and note that context which would qualify a finding may be missing too.</div>`
 }
 
 /** The clinical noun for each table a pull can come up short on (CUL-975). */

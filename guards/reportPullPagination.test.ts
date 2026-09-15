@@ -31,6 +31,14 @@
 // `.from('…')` chain in this directory. It also says nothing about `max-rows` itself: the
 // deployed function cannot observe that setting, which is the whole reason completeness
 // has to be earned from a count rather than inferred from a page's fullness.
+//
+// AND ONE MORE, because an undocumented blind spot reads as coverage (C-38). `sourceFiles()`
+// is a NON-RECURSIVE `readdirSync`, so a `.ts` file added inside a future subdirectory of
+// `generate-report/` escapes the scan entirely. The directory is flat today and every
+// sibling function is flat too, so recursing now would be a guess about a shape nobody has
+// proposed — but the first PR that nests a file here owes this line a `withFileTypes` walk,
+// and the non-vacuity floor below (which counts sites two independent ways over the SAME
+// file list) will not notice, because both counts read the same directory.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -129,6 +137,16 @@ function isPaged(s: Site): boolean {
   );
 }
 
+/**
+ * The columns that make "newest-first" mean anything on these tables.
+ *
+ * Deliberately a short allow-list rather than a shape test: the point of the first ordering
+ * term is that a row's position in it tracks TIME, and no regex can tell that about a column
+ * name. A new pull ordering on something else adds it here with a reason, which is the
+ * conversation this list exists to force.
+ */
+const TIME_COLUMNS = ['occurred_at', 'created_at', 'started_at', 'visited_at', 'local_day'];
+
 /** A site that returns AT MOST ONE ROW cannot truncate. */
 function isSingleRow(s: Site): boolean {
   return /\.maybeSingle\(\)/.test(s.chain);
@@ -189,6 +207,12 @@ describe('CUL-975 — every generate-report pull paginates or carries an ordered
     expect(orders.length).toBeGreaterThanOrEqual(2);
     expect(orders[orders.length - 1]).toBe('id');
     expect(s.chain).toMatch(/\.order\('id',\s*\{\s*ascending:\s*false/);
+    // And the FIRST term is a time column. Without this the assertion above is satisfied by
+    // `.order('severity').order('id')` — total, deterministic, and newest-first in no sense
+    // at all, which quietly gives up the half of the ordering that makes a residual
+    // shortfall drop the OLDEST rows. (`adversarial-reviewer`, this PR.)
+    expect(TIME_COLUMNS).toContain(orders[0]);
+    expect(s.chain).toMatch(new RegExp(`\\.order\\('${orders[0]}',\\s*\\{\\s*ascending:\\s*false`));
   });
 });
 
@@ -199,15 +223,55 @@ describe('CUL-975 — the reader itself', () => {
     // The one line that makes the reader correct at a server ceiling it cannot observe.
     // A fixed `from += PULL_PAGE` skips every row between what was asked for and what a
     // capped response returned, silently, forever.
-    expect(src).toMatch(/from \+= batch\.length/);
+    // `start + batch.length`, not `from + PULL_PAGE`: `start` is where the page was actually
+    // requested (one row back, for the continuity check) and `batch.length` is what came
+    // back, so the cursor lands exactly past what was read at whatever size the server chose.
+    expect(src).toMatch(/from = start \+ batch\.length/);
     expect(src).not.toMatch(/from \+= PULL_PAGE/);
+    expect(src).not.toMatch(/start \+ PULL_PAGE\b(?!\s*-\s*1)/);
+  });
+
+  it('takes the count from PAGE 0 only — the one request its rows came from', () => {
+    // A later page's count is a different instant, so measuring completeness against it
+    // compares a snapshot to rows that were never in it. The first draft read the first
+    // NON-NULL count from any page while its own comment claimed otherwise.
+    expect(src).toMatch(/if \(p === 0 && typeof res\.count === 'number'\) total = res\.count/);
+    expect(src).not.toMatch(/if \(total === null && typeof res\.count === 'number'\)/);
   });
 
   it('earns completeness from the COUNT, never from a short page', () => {
     // `rows.length < PULL_PAGE` is the inference the looks pull's own comment warns
     // against, and it is exactly what a lowered `max-rows` defeats.
-    expect(src).toMatch(/complete: !hitCeiling && total !== null && rows\.length >= total/);
+    expect(src).toMatch(/complete: !hitCeiling && !shifted && total !== null && rows\.length >= total/);
     expect(src).not.toMatch(/complete:\s*rows\.length\s*<\s*PULL_PAGE/);
+  });
+
+  it('pages OVERLAP by a row, and a page starting on an unseen row is not certified', () => {
+    // The count alone cannot see a skip: a concurrent delete skips a row while a concurrent
+    // insert restores the number, so `rows.length >= total` certified a pull that was
+    // missing a live in-window event (measured, 1,057 rows, before this existed). The
+    // one-row overlap is what makes the shift observable, and both halves of it are pinned
+    // here because either one alone is inert.
+    expect(src).toMatch(/const start = p === 0 \? 0 : from - 1/);
+    expect(src).toMatch(/if \(p > 0 && batch\.length > 0 && !seen\.has\(keyOf\(batch\[0\]\)\)\) shifted = true/);
+    expect(src).toMatch(/complete: !hitCeiling && !shifted &&/);
+  });
+
+  it('the floor a count is spoken over is the one the pull REACHED', () => {
+    // `lookbackIso` is what the query asked for; after CUL-975 inverted the truncation
+    // direction those are two different numbers on an incomplete pull, and `countIsFloor`
+    // downstream reads this one.
+    expect(src).toMatch(/eventsSinceIso: reachedLookbackIso\(/);
+    expect(src).not.toMatch(/eventsSinceIso: lookbackIso/);
+  });
+
+  it('a page range error that means "the set shrank" stops the loop instead of 500ing', () => {
+    // PostgREST answers 416 / PGRST103 when a `.range()` lower bound is past the end, which
+    // a mid-pull delete can produce on the trailing probe. `rowsOrThrow` makes every error
+    // fatal, so without this the benign race the (a′) ruling chose to RENDER through became
+    // a hard 500 and no report at all.
+    expect(src).toMatch(/PGRST103/);
+    expect(src).toMatch(/if \(isRangeNotSatisfiable\(res\.error\)\) break/);
   });
 
   it('the page ceiling and an absent count both read as INCOMPLETE', () => {

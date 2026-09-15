@@ -149,8 +149,13 @@ export const PULL_PAGE = 500
 
 /**
  * The most pages `fetchAll` will request for ONE pull — a ceiling on work, not a
- * statement about the record. At the 500-row page above that is 20,000 rows, roughly
- * eight years of the heaviest record we have measured (~7 events a day).
+ * statement about the record. It bounds `PULL_MAX_PAGES x min(PULL_PAGE, the server's own
+ * page)`, NOT `x PULL_PAGE`: at the default ceiling that is 20,000 rows, roughly eight
+ * years of the heaviest record we have measured (~7 events a day), but under a `max-rows`
+ * of 25 it is 1,000 — and a record above it then reports incomplete, which on a window-
+ * cutting shortfall means (a') refuses and the owner gets no report. That is the fail-safe
+ * direction and it is also a cliff, so a deliberately low `max-rows` is a decision about
+ * this function whether or not anyone setting it knows that.
  *
  * It exists because an Edge Function has a wall clock and a 256 MB isolate, and a loop
  * with no ceiling turns a runaway query into a timeout with no diagnosis. Reaching it is
@@ -440,8 +445,16 @@ function rowsOrThrow<T>(res: { data: unknown; error: { message: string } | null 
  *  reads. `count` is present because every page below is built with `count: 'exact'`. */
 interface PullPage {
   data: unknown
-  error: { message: string } | null
+  error: { message: string; code?: string } | null
   count?: number | null
+}
+
+/** PostgREST's "Requested range not satisfiable" — returned when a `.range()`'s lower bound
+ *  is past the end of the result set. On a paged read that means the set SHRANK under the
+ *  cursor, which is a short read, not a fault: the loop stops and the count comparison
+ *  below reports the pull incomplete. Everything else still throws. */
+function isRangeNotSatisfiable(err: { message: string; code?: string } | null): boolean {
+  return err !== null && (err.code === 'PGRST103' || /range not satisfiable/i.test(err.message))
 }
 
 /** A pull that knows whether it read everything. `complete` is EARNED (see below); a
@@ -449,6 +462,31 @@ interface PullPage {
 export interface Pull<T> {
   rows: T[]
   complete: boolean
+}
+
+/**
+ * How far back the `events` pull ACTUALLY reached — the floor a count may be spoken over.
+ *
+ * `lookbackIso` is the floor the query ASKED for. Before CUL-975 the two were the same
+ * number, because a truncated pull kept the OLDEST rows and therefore still reached the
+ * bottom of its own window. Inverting the truncation direction split them: an incomplete
+ * pull now reaches only as far back as its oldest row.
+ *
+ * `report.ts` derives `countIsFloor` from this, for the sentence whose whole purpose is that
+ * a trial-crop count is never "an incomplete answer wearing a complete one's clothes". Hand
+ * it the requested floor and that count prints as a TOTAL over days nothing was read from —
+ * a 300-day elimination trial cropped to 249 days, reporting "2 symptom events" over 129
+ * days the pull never saw. (`adversarial-reviewer`, CUL-975.)
+ */
+export function reachedLookbackIso(lookbackIso: string, complete: boolean, oldestPulledMs: number): string {
+  // Complete ⇒ the pull reached its own floor. No rows ⇒ nothing to narrow to, and that case
+  // is refused upstream anyway when it matters.
+  if (complete || !Number.isFinite(oldestPulledMs)) return lookbackIso
+  // Never widen: the query was bounded at `lookbackIso`, so a row cannot predate it, but a
+  // clock or a fixture that says otherwise must not push the claimed reach further back.
+  const asked = Date.parse(lookbackIso)
+  if (Number.isNaN(asked)) return lookbackIso
+  return new Date(Math.max(asked, oldestPulledMs)).toISOString()
 }
 
 /**
@@ -490,13 +528,39 @@ export interface Pull<T> {
  * (a') ruling on CUL-975 — refuse only where the report's own WINDOW could have been cut,
  * disclose otherwise.
  *
- * KNOWN LIMIT, stated rather than implied (C-38). Offset paging over a moving table is
- * racy across pages, and no ordering fixes that. An INSERT during a multi-page pull shifts
- * a newest-first list down by one and re-serves a row the previous page already returned;
- * `keyOf` de-duplicates it, so that case is lossless. A DELETE shifts the other way and can
- * skip one row at a page seam — the count then disagrees, the pull reports itself
- * incomplete, and the (a') decision handles it. Neither can reach a single-page record,
- * where the count and the rows come from one request.
+ * WHAT A MULTI-PAGE PULL GUARANTEES, measured rather than reasoned. Two earlier versions
+ * of this paragraph were wrong in the same way — they described what the author expected
+ * the loop to do — so each clause below is a harness result against this reader.
+ *
+ *   • INSERT during the pull: every row that existed at the count's instant is returned,
+ *     and `complete` is true. A head insert shifts the list down and re-serves a row the
+ *     previous page already gave us; `keyOf` drops the duplicate and the stride still
+ *     advances by the full batch, so the window keeps descending. The new row is NOT
+ *     included — it did not exist when the count was taken, and this document is a snapshot
+ *     as of the request (the client flushes its queues before calling). Verified for a head
+ *     insert, a mid-list backdated insert, and two backdated inserts landing inside the
+ *     final partial window.
+ *
+ *   • DELETE during the pull: the list shifts UP under the cursor, so an offset the loop
+ *     has already passed now holds a row it never requested. The overlap check sees that
+ *     directly — the overlapped row is unseen — and the pull reports INCOMPLETE. This is the
+ *     case a count cannot catch on its own: an `adversarial-reviewer` harness showed one
+ *     soft-delete PLUS one backdated insert returning `complete: true` with a live in-window
+ *     row absent, because the insert restored the number the delete took away. A number that
+ *     can be made whole by a different row is not a proof that no row is missing.
+ *
+ * So completeness now rests on three independent things, and all three must hold: the loop
+ * reached the end of the set (not the page ceiling), no page began on a row it had not
+ * already seen, and the rows in hand account for page 0's count.
+ *
+ * Neither race can reach a single-page record, where the count and the rows come from one
+ * request. Keyset pagination on `(occurred_at, id)` would make the offset space irrelevant
+ * altogether and is the upgrade if multi-page pulls ever stop being the exception.
+ *
+ * COST, stated because it is a deliberate trade: `count: 'exact'` rides every page although
+ * only page 0's is read, and each page after the first re-reads one row. Keeping the count
+ * on one builder function is what makes each call site a single readable chain; the
+ * alternative threads a page index through eleven of them to save a counted index scan.
  *
  * @param table   the table name, for the error message `rowsOrThrow` raises
  * @param keyOf   a PRIMARY-KEY-unique key per row — the de-dupe above; a non-unique key
@@ -516,14 +580,35 @@ export async function fetchAll<T>(
   // cannot mislead: a loop that falls out of its bounds has not read to the end.
   let hitCeiling = true
 
+  // Set when the offset space moved under the cursor — see the continuity check below.
+  let shifted = false
+
   let from = 0
   for (let p = 0; p < PULL_MAX_PAGES; p++) {
-    const res = await page(from, from + PULL_PAGE - 1)
+    // ONE ROW OF DELIBERATE OVERLAP on every page after the first, and it is the whole of
+    // the continuity check below. It costs one duplicate per page, which `keyOf` absorbs.
+    const start = p === 0 ? 0 : from - 1
+    const res = await page(start, start + PULL_PAGE - 1)
+    if (isRangeNotSatisfiable(res.error)) break
     const batch = rowsOrThrow<T>(res, table)
-    // Page 0's count, and only page 0's: it is the one taken in the same request as the
-    // rows below it. A later page's count is a different instant and would make a
-    // concurrent write look like a truncation.
-    if (total === null && typeof res.count === 'number') total = res.count
+    // PAGE 0'S COUNT, AND ONLY PAGE 0'S — enforced by the `p === 0`, not merely intended.
+    // It is the count taken in the same request as page 0's rows, so for a single-page
+    // record the two are one consistent snapshot. A later page's count is a different
+    // instant, and measuring completeness against it compares a snapshot to rows that were
+    // never in it. Page 0 returning no count leaves `total` null ⇒ incomplete, which is the
+    // direction that cannot mislead.
+    if (p === 0 && typeof res.count === 'number') total = res.count
+
+    // THE CONTINUITY CHECK. The overlapped row is one we have already returned — unless
+    // rows were REMOVED above the cursor, in which case everything shifted up and the row
+    // now sitting at this offset is one we never requested. That is a skip, and without
+    // this it is invisible: a concurrent delete skips a row while a concurrent insert
+    // restores the count, so `rows.length >= total` certifies a pull that is missing a live
+    // row. Measured on the shipped reader before this existed — one soft-delete plus one
+    // backdated insert during a 1,057-row pull returned `complete: true` with an in-window
+    // event absent and no disclosure anywhere. That is CUL-975's own failure class, and a
+    // count alone cannot see it because the count was made whole by a different row.
+    if (p > 0 && batch.length > 0 && !seen.has(keyOf(batch[0]))) shifted = true
 
     for (const row of batch) {
       const key = keyOf(row)
@@ -538,7 +623,7 @@ export async function fetchAll<T>(
       hitCeiling = false
       break
     }
-    from += batch.length
+    from = start + batch.length
     if (total !== null && rows.length >= total) {
       hitCeiling = false
       break
@@ -548,7 +633,7 @@ export async function fetchAll<T>(
   // ABSENT MEANS UNKNOWN MEANS INCOMPLETE — the `lookRowsComplete` rule, the direction
   // that cannot mislead. Every page here requests the count, so an absent one is an
   // anomaly, and an anomaly must not read as a clean bill of health.
-  return { rows, complete: !hitCeiling && total !== null && rows.length >= total }
+  return { rows, complete: !hitCeiling && !shifted && total !== null && rows.length >= total }
 }
 
 // ── Pure DB → ReportInput mappers (exported for offline deno tests) ────────────
@@ -1419,9 +1504,10 @@ export async function generateReportForPet(
   // Failing closed on BOTH was the issue's own recommendation and was not taken, for a
   // measured reason: the shipped client maps every error to one generic line with a retry
   // button (`app/report.tsx`), so a refusal is indistinguishable from a network fault —
-  // and the likeliest trigger of an incomplete pull is now a concurrent write during
-  // generation, where nothing is actually missing. Refusing there would hand an owner at
-  // a clinic no report at all, to protect them from a document that was correct.
+  // and the likeliest trigger of an incomplete pull is now a row being DELETED during
+  // generation, which skips at most one row and always the oldest of the window in flight
+  // (see `fetchAll`). Refusing there would hand an owner at a clinic no report at all, to
+  // protect them from one whose window was intact.
   const incompletePulls = (
     [
       ['events', eventsPull.complete],
@@ -1454,6 +1540,17 @@ export async function generateReportForPet(
   //
   // MIN over the rows rather than "the last one", so the test does not depend on the
   // driver preserving the ORDER BY it was given.
+  //
+  // THE ASYMMETRY THIS TEST CANNOT RESOLVE, stated because it is a cliff rather than a bug
+  // (`adversarial-reviewer`). It cannot tell "the pull was cut at day 40" from "the record
+  // simply starts at day 40" — so any pet whose oldest in-window event falls after the
+  // window start refuses on ANY events-pull incompleteness, with nothing actually missing.
+  // What keeps that off the common path is that a single-page pull takes its count and its
+  // rows from one request and is therefore exact, so the spurious case needs >500 events AND
+  // a record starting inside the window AND a race. The systemic version is worth naming:
+  // if PostgREST ever stopped returning a count, every pull would report incomplete and that
+  // population would get a permanent 503 behind the client's one generic line. Fail-closed,
+  // and undiagnosable from the client — which is what the console.error above is for.
   let oldestPulledMs = Infinity
   for (const row of eventsPull.rows) {
     const t = Date.parse(row.occurred_at)
@@ -1504,7 +1601,15 @@ export async function generateReportForPet(
     attachments: mapAttachmentRows(attachmentsPull.rows),
     // B-613 — how far back `events` actually reaches, so assembly can tell "nothing was
     // logged in the cropped trial days" apart from "the cropped days were never pulled".
-    eventsSinceIso: lookbackIso,
+    //
+    // CUL-975 MADE THIS TWO DIFFERENT NUMBERS. It used to be safe to pass the floor the
+    // query ASKED for, because a truncated pull kept the OLDEST rows and therefore still
+    // reached it. Now truncation drops the oldest, so an incomplete pull reaches only as far
+    // back as its oldest row — and `report.ts` derives `countIsFloor` from this field for
+    // exactly the sentence that must not be "an incomplete answer wearing a complete one's
+    // clothes". Passing the requested floor here would print a trial-crop count as a TOTAL
+    // over days the pull never read. (`adversarial-reviewer`, this PR.)
+    eventsSinceIso: reachedLookbackIso(lookbackIso, eventsPull.complete, oldestPulledMs),
     lookRows,
     // EARNED, never assumed — see `lookRowsComplete` above. Counted on the RAW rows,
     // before `mapLookRows` drops soft-deleted parents: it is the QUERY that was capped,

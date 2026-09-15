@@ -30,6 +30,7 @@ import {
   computeLookbackIso,
   generateReportForPet,
   fetchAll,
+  reachedLookbackIso,
   PULL_PAGE,
   PULL_MAX_PAGES,
 } from './index.ts'
@@ -895,8 +896,9 @@ Deno.test('fetchAll: a server cap BELOW the page size is survived, not mistaken 
     ['r195', 'r196', 'r197', 'r198', 'r199', 'r200', 'r201', 'r202', 'r203', 'r204'],
     'no hole at the seam a fixed stride would have opened',
   )
-  // The stride followed the server, not the constant.
-  assert.deepEqual(server.ranges[1][0], 200)
+  // The stride followed the server, not the constant — offset 199 rather than 200 because
+  // every page after the first overlaps the previous one by a row (the continuity check).
+  assert.deepEqual(server.ranges[1][0], 199)
 })
 
 Deno.test('fetchAll: the page boundary, at exactly PULL_PAGE and at PULL_PAGE + 1', async () => {
@@ -931,25 +933,118 @@ Deno.test('fetchAll: the page CEILING reports incomplete, never a clean read', a
   // claim that they are all of them is not, and that distinction is the whole issue.
   const rows = numberedRows(PULL_MAX_PAGES * 10 + 5)
   const pull = await fetchAll<{ id: string }>('events', (r) => r.id, pagingServer(rows, 10).page)
-  assert.equal(pull.rows.length, PULL_MAX_PAGES * 10)
   assert.equal(pull.complete, false)
+  // It holds real rows and stopped short of the set. The exact count is not pinned: every
+  // page after the first re-reads one row, so the number encodes the overlap's arithmetic
+  // rather than the property under test. The floor keeps the assertion non-vacuous.
+  assert.ok(pull.rows.length > PULL_MAX_PAGES * 5, 'it really read, rather than bailing early')
+  assert.ok(pull.rows.length < rows.length, 'and it did not reach the end')
 })
 
-Deno.test('fetchAll: a row re-served across a page seam is de-duped, not double-counted', async () => {
-  // An INSERT during a multi-page pull shifts a newest-first list down by one, so the next
-  // page re-serves a row the previous page already returned. Undeduped, that is a symptom
-  // counted twice on a clinical document. `keyOf` is the primary key for this reason.
-  const rows = numberedRows(120)
-  let served = 0
-  const page = (from: number, to: number) => {
-    served++
-    // Page 2 overlaps page 1 by one row, as a head insert makes it.
-    const shift = served === 1 ? 0 : 1
-    const start = Math.max(0, from - shift)
-    return Promise.resolve({ data: rows.slice(start, Math.min(to + 1 - shift, rows.length)), error: null, count: rows.length })
-  }
-  const pull = await fetchAll<{ id: string }>('events', (r) => r.id, page)
-  assert.equal(new Set(pull.rows.map((r) => r.id)).size, pull.rows.length, 'no duplicates survive')
+// ── The moving table ─────────────────────────────────────────────────────────
+//
+// THE FIRST VERSION OF THIS BLOCK WAS ONE TEST AND IT MEASURED NOTHING. It built 120 rows
+// against a 500-row page, so `fetchAll` issued exactly ONE page call and the shift branch
+// it was written to exercise was dead code — the de-dupe assertion passed whether or not
+// `keyOf` did anything. Found by `code-reviewer`, and it is the C-35 failure in its purest
+// form: the fixture could not produce the situation the test was named after. Anything
+// below that claims something about paging uses MORE THAN `PULL_PAGE` rows, and the
+// assertion on page count is what keeps it honest.
+
+/** Drives the real reader against a list that MUTATES between page requests. `mutate` is
+ *  applied once, just before the second page is served — the seam where offset paging is
+ *  vulnerable. Returns what the pull got, plus which originals it failed to return. */
+async function pullAcrossAMutation(
+  originals: { id: string }[],
+  mutate: (list: { id: string }[]) => { id: string }[],
+) {
+  let list = [...originals]
+  let pages = 0
+  const pull = await fetchAll<{ id: string }>('events', (r) => r.id, (from, to) => {
+    pages++
+    if (pages === 2) list = mutate(list)
+    return Promise.resolve({ data: list.slice(from, to + 1), error: null, count: originals.length })
+  })
+  const got = new Set(pull.rows.map((r) => r.id))
+  return { pull, pages, missingOriginals: originals.map((o) => o.id).filter((id) => !got.has(id)) }
+}
+
+/** 505 rows against a 500-row page: two real page calls, with the seam in the middle. */
+const MOVING = numberedRows(505)
+
+Deno.test('fetchAll: an INSERT mid-pull loses NO row that existed when the count was taken', async () => {
+  // The three shapes an insert can take in a newest-first list. A head insert is the one
+  // that shifts everything and re-serves a row the previous page already returned; the
+  // de-dupe drops the duplicate while the stride still advances by the full batch, so the
+  // window keeps descending and every original below it is reached.
+  //
+  // The new row is NOT in the result, and that is correct rather than tolerated: it did not
+  // exist when the count was taken, and this document is a snapshot as of the request (the
+  // client flushes its queues before calling). What would be a defect is an ORIGINAL going
+  // missing, which is what `missingOriginals` is here to catch.
+  const head = await pullAcrossAMutation(MOVING, (l) => [{ id: 'inserted' }, ...l])
+  assert.equal(head.pages, 2, 'the fixture really spans a page seam')
+  assert.deepEqual(head.missingOriginals, [])
+  assert.equal(head.pull.complete, true)
+  assert.equal(head.pull.rows.length, 505)
+
+  // A BACKDATED insert lands mid-list instead, and two of them can land inside the final
+  // partial window — the shape most likely to push an original past the last slot.
+  const mid = await pullAcrossAMutation(MOVING, (l) => [...l.slice(0, 300), { id: 'back' }, ...l.slice(300)])
+  assert.deepEqual(mid.missingOriginals, [])
+
+  const twoLate = await pullAcrossAMutation(MOVING, (l) => [
+    ...l.slice(0, 501),
+    { id: 'b1' },
+    { id: 'b2' },
+    ...l.slice(501),
+  ])
+  assert.deepEqual(twoLate.missingOriginals, [], 'nothing falls off the end of the last window')
+})
+
+Deno.test('fetchAll: a DELETE mid-pull is DETECTED — the overlap sees the shift a count cannot', async () => {
+  // A delete above the cursor shifts the list UP, so the offset the loop has already passed
+  // now holds a row it never requested. The one-row overlap sees that directly: the
+  // overlapped row is unseen.
+  //
+  // WHY A COUNT IS NOT ENOUGH, and this is the hole an `adversarial-reviewer` harness found
+  // in the first version of this reader. Pair the delete with an insert below the seam and
+  // the count is restored by a DIFFERENT row, so `rows.length >= total` certified a pull
+  // that was missing a live in-window event, with no disclosure anywhere — CUL-975's own
+  // failure class at a smaller scale. Measured on the shipped reader: 1,057 rows, one
+  // soft-delete at rank 200, one backdated insert at rank 800, `complete: true`, `o00500`
+  // gone. Both shapes are below, and the compensated one is the one that matters.
+  const del = await pullAcrossAMutation(MOVING, (l) => l.filter((r) => r.id !== 'r200'))
+  assert.ok(del.pages >= 2, 'the fixture really spans a page seam')
+  assert.equal(del.pull.complete, false, 'the shortfall is declared, never swallowed')
+  // And the overlap does not merely FLAG the shift, it recovers the row the shift exposed.
+  assert.deepEqual(del.missingOriginals, [])
+
+  // The compensated race: a delete ABOVE the cursor and an insert BELOW it, so the count
+  // comes out whole while a row was skipped. Pre-overlap this returned complete:true with a
+  // live row missing.
+  //
+  // BOTH SIDES OF THE CURSOR ARE LOAD-BEARING and the first draft of this fixture got it
+  // wrong — it put the insert at index 480, above the seam at 500, where it simply undid
+  // the delete's shift before the seam was reached. Nothing was skipped and `complete: true`
+  // was the correct answer, so the test failed for the right reason. The insert has to land
+  // past the cursor (index 502 of a 504-row post-delete list) for the shift to survive to
+  // the seam, which is exactly the geometry of the measured 1,057-row repro: delete at rank
+  // 200, insert at rank 800, cursor at 500.
+  const compensated = await pullAcrossAMutation(MOVING, (l) => {
+    const afterDelete = l.filter((r) => r.id !== 'r200')
+    return [...afterDelete.slice(0, 502), { id: 'backdated' }, ...afterDelete.slice(502)]
+  })
+  assert.equal(compensated.pull.rows.length >= MOVING.length, true, 'the count was made whole')
+  assert.equal(compensated.pull.complete, false, 'and it is STILL not certified')
+  assert.deepEqual(compensated.missingOriginals, [])
+})
+
+Deno.test('fetchAll: no duplicate survives a re-served seam', async () => {
+  // The de-dupe itself, on a fixture that can actually produce a duplicate — which the
+  // 120-row version could not.
+  const { pull } = await pullAcrossAMutation(MOVING, (l) => [{ id: 'inserted' }, ...l])
+  assert.equal(new Set(pull.rows.map((r) => r.id)).size, pull.rows.length)
 })
 
 Deno.test('fetchAll: a query error still THROWS, named by table (no silent false-clean report)', async () => {
@@ -1107,4 +1202,23 @@ Deno.test('generateReportForPet: a COMPLETE record carries no disclosure at all'
   const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
   assert.equal(res.status, 200)
   assert.ok(!(res.body.html as string).includes('Partial record.'))
+})
+
+Deno.test('reachedLookbackIso: an INCOMPLETE pull reports the floor it REACHED, not the one it asked for', () => {
+  const asked = '2026-01-01T00:00:00.000Z'
+  const oldest = Date.parse('2026-04-01T00:00:00.000Z')
+
+  // Complete ⇒ the pull reached its own floor, so the asked-for floor is the truth.
+  assert.equal(reachedLookbackIso(asked, true, oldest), asked)
+
+  // Incomplete ⇒ it only reached its oldest row, and saying otherwise is what lets a
+  // trial-crop count print as a total over days nothing was read from.
+  assert.equal(reachedLookbackIso(asked, false, oldest), '2026-04-01T00:00:00.000Z')
+
+  // No rows at all ⇒ nothing to narrow to. (This case is refused upstream when it matters.)
+  assert.equal(reachedLookbackIso(asked, false, Infinity), asked)
+
+  // And it NEVER widens: a row that somehow predates the query's own bound cannot push the
+  // claimed reach further back than the query went.
+  assert.equal(reachedLookbackIso(asked, false, Date.parse('2025-06-01T00:00:00.000Z')), asked)
 })
