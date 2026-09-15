@@ -102,7 +102,7 @@ The copy also had the wrong *frame*. For `feeding_arrangements`, `medications`, 
 - [x] Acceptance criteria from CUL-975's description and its one comment, listed in the PR against the issue's own DoD
 - [x] Diff scanned against the anti-pattern lists — none introduced
 - [x] `tsc --noEmit` clean; lint clean
-- [x] **Tests**: 8,296 jest + 1,604 deno green. The acceptance fixture was run RED against a restored bare pull; the guard was proven by three mutations on the real tree
+- [x] **Tests**: 8,343 jest + 1,604 deno green on the merged head, and green in all three CI timezones (Kiritimati / Chatham / Honolulu). The acceptance fixture was run RED against a restored bare pull; the guard was proven by three mutations on the real tree
 - [x] No new secret
 - [x] Persona sign-off — below
 - [x] **Adversarial review.** `Biostatistician: ported fetchAll into a PostgREST-modelling harness — insert-at-head race de-dupes losslessly ✓, lone delete across a seam reports incomplete ✓, the newest 500 rows unreachable by any race ✓, windowStartFloorMs bound + MIN over rows correct ✓, all 11 order/de-dupe keys verified unique against the migrations ✓; but ONE delete plus ONE backdated insert mid-pull returned complete:true with an in-window row silently missing (1,057-row repro) ✗, and the disclosure sentence was false in the only case the events pull reaches it ✗.` Both fixed and re-proven: the compensated race now reports incomplete (mutation-proven — dropping either half of the overlap reds it), and the copy no longer makes a claim about where the loss sits.
@@ -110,6 +110,14 @@ The copy also had the wrong *frame*. For `feeding_arrangements`, `medications`, 
 - [x] Dev Handoff — backend-only; the verification is the post-deploy report check
 - [x] PM Action Items — below
 - [x] Next Session Kickoff — in the wrap
+
+## The close-out, because two things about it are worth keeping
+
+**CI did not run for two pushes, and the reason was not CI.** The first commit's run went green; the next two pushes produced no workflow run at all for roughly fifteen minutes. The cause was that `main` had moved under the branch (#851, CUL-952, merged mid-session) and the PR was sitting `mergeable_state: dirty` — GitHub defers `synchronize` runs on a conflicted PR. So the absence of a check is not always a slow queue; **check `mergeable_state` before concluding CI is lagging.**
+
+Because the checks could not be relied on, all three CI jobs were reproduced locally before pushing the merge: `tsc --noEmit`, the full jest suite, and the full suite under each of the three CI timezones. CI then agreed.
+
+**The conflict was `STATUS.md`, and it was the predictable one.** Both sides edited the Vet visits row — theirs marking CUL-952 cleared (four blockers became three), mine adding the new Vet report track. Resolved on meaning rather than by picking a side: their row, which is the newer fact about that track, plus my new row. This is the file CLAUDE.md names as the repo's worst conflict surface, and a wrap that adds a *track* to it is exactly the case where the edit is legitimate.
 
 ## PM Action Items
 
