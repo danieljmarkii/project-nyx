@@ -29,6 +29,9 @@ import {
   embedIncidentPhotos,
   computeLookbackIso,
   generateReportForPet,
+  fetchAll,
+  PULL_PAGE,
+  PULL_MAX_PAGES,
 } from './index.ts'
 import {
   assembleReport,
@@ -371,10 +374,10 @@ Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared
 })
 
 Deno.test('mapVetVisitRows / mapConditionRows: straight field renames', () => {
-  const v = mapVetVisitRows([{ visited_at: '2026-05-01', clinic_name: 'Vets', vet_name: 'Chen', reason: 'GI' }])
+  const v = mapVetVisitRows([{ id: 'vv1', visited_at: '2026-05-01', clinic_name: 'Vets', vet_name: 'Chen', reason: 'GI' }])
   assert.equal(v[0].visitedAt, '2026-05-01')
   assert.equal(v[0].clinicName, 'Vets')
-  const c = mapConditionRows([{ condition_name: 'IBD', status: 'active', diagnosed_at: '2025-01-01' }])
+  const c = mapConditionRows([{ id: 'c1', condition_name: 'IBD', status: 'active', diagnosed_at: '2025-01-01' }])
   assert.equal(c[0].conditionName, 'IBD')
   assert.equal(c[0].diagnosedAt, '2025-01-01')
 })
@@ -497,8 +500,8 @@ Deno.test('integration: mapped rows assemble + render to HTML naming the pet', (
 // ── generateReportForPet: ownership guard via injected fake client ────────────
 
 // Minimal fake matching the subset of the supabase-js chainable query builder the
-// shell uses: .from().select().eq().maybeSingle()/.is().gte()/.order().limit(). Each
-// table resolves to a canned { data } (or { data: null } for an unowned pet).
+// shell uses: .from().select().eq().maybeSingle()/.is().gte()/.order().limit()/.range().
+// Each table resolves to a canned { data } (or { data: null } for an unowned pet).
 //
 // EVERY CHAINABLE METHOD THE SHELL CALLS HAS TO BE HERE, and that is not a formality:
 // `.order()` / `.limit()` arrived with the CUL-875 look pull, and until they were added
@@ -507,21 +510,75 @@ Deno.test('integration: mapped rows assemble + render to HTML naming the pet', (
 // through a DIFFERENT throw. A fake that is missing a method fails loudly here, which is
 // the good case; the bad case is a fake that swallows one and lets a test claim to have
 // exercised a query shape it never built.
-function fakeClient(tables: Record<string, unknown>) {
+//
+// ── CUL-975: THE FAKE NOW MODELS THE SERVER, NOT JUST THE BUILDER ────────────
+//
+// A fake that resolves less than the real API makes the caller's use of the dropped half
+// unassertable (C-39), and the half that was dropped here is the whole of this issue: the
+// old fake ignored `.range()` and returned the entire canned list to any query, so a pull
+// with no paging looked identical to a pull with paging, and the `max-rows` cap that
+// truncated a real vet report could not be expressed at all. So this one:
+//
+//   • SLICES on `.range(from, to)`, so a reader that does not advance is visibly short;
+//   • CAPS each page at `serverMaxRows` — PostgREST's `max-rows`, the setting the Edge
+//     Function cannot observe. THE CAP IS THE DEFECT. With it set below a page size, a
+//     reader that trusts a short page to mean "the end" stops on page one;
+//   • returns `count` ONLY when the query asked for it with `{ count: 'exact' }`, so a
+//     pull that forgets the option is measured as what it is — a pull that cannot know
+//     whether it read everything — rather than silently inheriting the fake's generosity.
+//
+// `serverMaxRows` defaults to 1000, the PostgREST default and the value that was live
+// when the report on the PM's own cat lost every event after Sep 7.
+interface FakeTable {
+  single?: unknown
+  list?: unknown[]
+  error?: { message: string }
+}
+
+function fakeClient(tables: Record<string, FakeTable | undefined>, serverMaxRows = 1000) {
   const builder = (table: string) => {
-    const result = tables[table] as { single?: unknown; list?: unknown; error?: { message: string } } | undefined
+    const result = tables[table]
     const err = result?.error ?? null
+    const list = (result?.list ?? []) as unknown[]
     const chain: Record<string, unknown> = {}
+    let wantsCount = false
+    let from = 0
+    // Absent `.range()` is the UNBOUNDED query — which is what the server caps, and what
+    // every pull in this function used to be. Modelling it as "the whole list" would erase
+    // the defect from the harness.
+    let to = serverMaxRows - 1
+
     const ret = () => chain
-    chain.select = ret
+    chain.select = (_cols?: unknown, opts?: { count?: string }) => {
+      if (opts?.count === 'exact') wantsCount = true
+      return chain
+    }
     chain.eq = ret
     chain.is = ret
     chain.gte = ret
+    chain.in = ret
     chain.order = ret
-    chain.limit = ret
+    chain.limit = (n: number) => {
+      to = Math.min(to, n - 1)
+      return chain
+    }
+    chain.range = (f: number, t: number) => {
+      from = f
+      to = t
+      return chain
+    }
     chain.maybeSingle = () => Promise.resolve({ data: result?.single ?? null, error: err })
-    chain.then = (onF: (v: { data: unknown; error: unknown }) => unknown) =>
-      Promise.resolve({ data: result?.list ?? [], error: err }).then(onF)
+    chain.then = (onF: (v: { data: unknown; error: unknown; count: number | null }) => unknown) => {
+      // The server never returns more than `max-rows` in one response, whatever was asked
+      // for. This one line is the entire CUL-975 defect, and it is why a fixed-stride
+      // reader is unsound and an advance-by-what-you-received reader is not.
+      const end = Math.min(to + 1, from + serverMaxRows)
+      return Promise.resolve({
+        data: err ? null : list.slice(from, end),
+        error: err,
+        count: wantsCount ? list.length : null,
+      }).then(onF)
+    }
     return chain
   }
   return { from: builder } as unknown as Parameters<typeof generateReportForPet>[0]
@@ -646,8 +703,8 @@ Deno.test('generateReportForPet: no display name → owner falls back to the cal
 
 Deno.test('mapAttachmentRows: renames fields, defaults null mime + missing sort_order to 0', () => {
   const out = mapAttachmentRows([
-    { event_id: 'e1', storage_path: 'pet/e1.jpg', mime_type: 'image/jpeg', sort_order: 2 },
-    { event_id: 'e2', storage_path: 'pet/e2.jpg', mime_type: null, sort_order: null },
+    { id: 'a1', event_id: 'e1', storage_path: 'pet/e1.jpg', mime_type: 'image/jpeg', sort_order: 2 },
+    { id: 'a2', event_id: 'e2', storage_path: 'pet/e2.jpg', mime_type: null, sort_order: null },
   ])
   assert.deepEqual(out, [
     { eventId: 'e1', storagePath: 'pet/e1.jpg', mimeType: 'image/jpeg', sortOrder: 2 },
@@ -770,4 +827,284 @@ Deno.test('embedIncidentPhotos: empty manifest is a no-op (no Storage calls)', a
   const stats = await embedIncidentPhotos(client, [])
   assert.deepEqual(stats, { total: 0, embedded: 0, omitted: 0 })
   assert.equal(calls.length, 0)
+})
+
+
+// ── CUL-975: the paginating reader ───────────────────────────────────────────
+//
+// THE DEFECT, in one paragraph, because every fixture below is shaped by it. Every pull
+// in this function was bare — no `.order()`, no `.limit()`, no `.range()` — so PostgREST
+// capped it at the project's `max-rows` (then 1000) and, with no ORDER BY, Postgres
+// returned physical order, which on an append-only table is insertion order. The cap kept
+// the OLDEST 1,000 rows and dropped the NEWEST. On the PM's own cat, the vet report
+// generated the day before a real appointment held 1,000 of 1,057 events and contained
+// nothing after Sep 7: a cough that happened the previous day printed as ten days old.
+//
+// `server` below IS that cap. A reader that only works when it is generous is a reader
+// that only works on a record small enough not to matter.
+
+/** A canned table of `n` rows, keyed `r0…r{n-1}` — the shape `fetchAll` de-dupes on. */
+function numberedRows(n: number): { id: string }[] {
+  return Array.from({ length: n }, (_, i) => ({ id: `r${i}` }))
+}
+
+/** A server that caps every response at `maxRows`, counts the requests it served, and
+ *  answers `count: 'exact'` only when asked. The one-table half of `fakeClient`, so a
+ *  `fetchAll` test drives the same model the end-to-end tests do. */
+function pagingServer(rows: { id: string }[], maxRows: number, opts: { withCount?: boolean } = {}) {
+  const ranges: [number, number][] = []
+  const page = (from: number, to: number) => {
+    ranges.push([from, to])
+    const end = Math.min(to + 1, from + maxRows)
+    return Promise.resolve({
+      data: rows.slice(from, end),
+      error: null,
+      count: opts.withCount === false ? null : rows.length,
+    })
+  }
+  return { page, ranges }
+}
+
+Deno.test('fetchAll: reads PAST the server cap — the 1,057-row record that broke the report', async () => {
+  const rows = numberedRows(1057)
+  const server = pagingServer(rows, 1000)
+  const pull = await fetchAll<{ id: string }>('events', (r) => r.id, server.page)
+
+  assert.equal(pull.rows.length, 1057, 'every row, not the cap')
+  assert.equal(pull.complete, true)
+  // THE ROWS THAT WENT MISSING IN PRODUCTION. Asserting the length alone would pass on a
+  // reader that returned the wrong 1,057 rows; these are the newest, which is the half the
+  // cap actually ate and the half a clinician acts on.
+  assert.ok(pull.rows.some((r) => r.id === 'r1056'), 'the newest row is present')
+  assert.ok(pull.rows.some((r) => r.id === 'r1000'), 'the first row past the old cap is present')
+})
+
+Deno.test('fetchAll: a server cap BELOW the page size is survived, not mistaken for the end', async () => {
+  // The hazard the looks pull's comment names and cannot check: this function cannot
+  // observe `max-rows`. A fixed-stride reader asks for 0–499, is handed 200, advances to
+  // 500 and skips rows 200–499 forever; a reader that stops on a short page stops here on
+  // page one. Advancing by what was RECEIVED is what makes both impossible.
+  const rows = numberedRows(650)
+  const server = pagingServer(rows, 200)
+  const pull = await fetchAll<{ id: string }>('events', (r) => r.id, server.page)
+
+  assert.equal(pull.rows.length, 650)
+  assert.equal(pull.complete, true)
+  assert.deepEqual(
+    pull.rows.map((r) => r.id).slice(195, 205),
+    ['r195', 'r196', 'r197', 'r198', 'r199', 'r200', 'r201', 'r202', 'r203', 'r204'],
+    'no hole at the seam a fixed stride would have opened',
+  )
+  // The stride followed the server, not the constant.
+  assert.deepEqual(server.ranges[1][0], 200)
+})
+
+Deno.test('fetchAll: the page boundary, at exactly PULL_PAGE and at PULL_PAGE + 1', async () => {
+  // Off-by-one at the boundary is the classic pagination failure and both edges need
+  // pinning: at exactly one page the loop must not stop believing there is more, and at
+  // one row over it must not stop believing there is not.
+  for (const n of [PULL_PAGE - 1, PULL_PAGE, PULL_PAGE + 1, PULL_PAGE * 2, PULL_PAGE * 2 + 1]) {
+    const pull = await fetchAll<{ id: string }>('events', (r) => r.id, pagingServer(numberedRows(n), 1000).page)
+    assert.equal(pull.rows.length, n, `n=${n}`)
+    assert.equal(pull.complete, true, `n=${n}`)
+  }
+})
+
+Deno.test('fetchAll: an empty table is COMPLETE, not unknown', async () => {
+  const pull = await fetchAll<{ id: string }>('conditions', (r) => r.id, pagingServer([], 1000).page)
+  assert.deepEqual(pull.rows, [])
+  assert.equal(pull.complete, true)
+})
+
+Deno.test('fetchAll: NO count ⇒ incomplete — absent means unknown means the direction that cannot mislead', async () => {
+  // A full read, with every row in hand, still reports itself incomplete when the server
+  // did not answer "how many are there?". This is the `lookRowsComplete` rule: completeness
+  // is EARNED. Inferring it from a short page is exactly what a lowered cap defeats.
+  const server = pagingServer(numberedRows(30), 1000, { withCount: false })
+  const pull = await fetchAll<{ id: string }>('events', (r) => r.id, server.page)
+  assert.equal(pull.rows.length, 30, 'it read everything')
+  assert.equal(pull.complete, false, 'and still refuses to claim it')
+})
+
+Deno.test('fetchAll: the page CEILING reports incomplete, never a clean read', async () => {
+  // A record past PULL_MAX_PAGES x the server's page. The rows it holds are real; the
+  // claim that they are all of them is not, and that distinction is the whole issue.
+  const rows = numberedRows(PULL_MAX_PAGES * 10 + 5)
+  const pull = await fetchAll<{ id: string }>('events', (r) => r.id, pagingServer(rows, 10).page)
+  assert.equal(pull.rows.length, PULL_MAX_PAGES * 10)
+  assert.equal(pull.complete, false)
+})
+
+Deno.test('fetchAll: a row re-served across a page seam is de-duped, not double-counted', async () => {
+  // An INSERT during a multi-page pull shifts a newest-first list down by one, so the next
+  // page re-serves a row the previous page already returned. Undeduped, that is a symptom
+  // counted twice on a clinical document. `keyOf` is the primary key for this reason.
+  const rows = numberedRows(120)
+  let served = 0
+  const page = (from: number, to: number) => {
+    served++
+    // Page 2 overlaps page 1 by one row, as a head insert makes it.
+    const shift = served === 1 ? 0 : 1
+    const start = Math.max(0, from - shift)
+    return Promise.resolve({ data: rows.slice(start, Math.min(to + 1 - shift, rows.length)), error: null, count: rows.length })
+  }
+  const pull = await fetchAll<{ id: string }>('events', (r) => r.id, page)
+  assert.equal(new Set(pull.rows.map((r) => r.id)).size, pull.rows.length, 'no duplicates survive')
+})
+
+Deno.test('fetchAll: a query error still THROWS, named by table (no silent false-clean report)', async () => {
+  await assert.rejects(
+    () =>
+      fetchAll<{ id: string }>('events', (r) => r.id, () =>
+        Promise.resolve({ data: null, error: { message: 'statement timeout' }, count: null })),
+    /events read failed: statement timeout/,
+  )
+})
+
+// ── CUL-975: end to end, on the record's real shape ──────────────────────────
+
+const HOUR_MS = 3_600_000
+
+/** One `events` row, in the raw select's shape. */
+function eventRow(id: string, type: string, atMs: number) {
+  const at = new Date(atMs).toISOString()
+  return {
+    id,
+    event_type: type,
+    occurred_at: at,
+    occurred_at_confidence: 'witnessed',
+    occurred_at_earliest: null,
+    occurred_at_latest: null,
+    severity: type === 'meal' ? null : 2,
+    notes: null,
+    created_at: at,
+    meals: null,
+  }
+}
+
+/**
+ * THE RECORD CUL-975 WAS MEASURED ON, in the composition it actually has: 1,057 live
+ * events in the lookback, overwhelmingly meals, with the symptom signal in the last days.
+ * Returned in INSERTION order (oldest first), which on this append-only table is physical
+ * order — the order a bare pull comes back in, and therefore the order the cap truncated.
+ *
+ * TWO THINGS ABOUT THIS FIXTURE ARE LOAD-BEARING (C-35: a shape production never creates
+ * is green over nothing). The first draft was 1,057 coughs an hour apart; entries within
+ * three hours CHAIN INTO ONE BOUT, so the whole record assembled into a single episode and
+ * no count on the page moved whether the reader paged or not. The real record logs ~7
+ * events a day across types, so the meals are four hours apart and the vomits — the rows
+ * the cap ate in production — are four hours apart too, which is outside the bout window
+ * and counts as 57 separate entries.
+ */
+function realRecordShapeRows(): ReturnType<typeof eventRow>[] {
+  const meals = Array.from({ length: 1000 }, (_, i) =>
+    eventRow(`m${i}`, 'meal', NOW_MS - 180 * 24 * HOUR_MS + i * 4 * HOUR_MS),
+  )
+  // The newest 57 — the exact count that went missing from the PM's report — over the
+  // last 9.5 days, so every one of them is inside the 90-day window the report scopes to.
+  const vomits = Array.from({ length: 57 }, (_, i) =>
+    eventRow(`v${i}`, 'vomit', NOW_MS - 57 * 4 * HOUR_MS + i * 4 * HOUR_MS),
+  )
+  return [...meals, ...vomits]
+}
+
+/** `n` recent symptom events, FOUR hours apart — outside the three-hour bout window, so
+ *  they count as n entries rather than assembling into one episode. Newest last. */
+function symptomRows(n: number, endMs: number, type = 'vomit') {
+  return Array.from({ length: n }, (_, i) => eventRow(`ev${i}`, type, endMs - (n - 1 - i) * 4 * HOUR_MS))
+}
+
+const PET_TABLES = {
+  pets: { single: { id: 'p1', name: 'Nyx', species: 'cat', breed: null, sex: 'female', date_of_birth: '2020-01-01', weight_kg: '4.2' } },
+  user_profiles: { single: { display_name: 'Jordan', timezone: 'UTC' } },
+  vet_visits: { list: [] },
+  diet_trials: { list: [] },
+  event_ai_analysis: { list: [] },
+  weight_checks: { list: [] },
+  medication_administrations: { list: [] },
+  medications: { list: [] },
+  feeding_arrangements: { list: [] },
+  conditions: { list: [] },
+}
+
+Deno.test('generateReportForPet: 1,057 events under a 1,000-row cap — the NEWEST ones reach the report', async () => {
+  // THE ACCEPTANCE TEST, and it is the production incident with the numbers kept. 1,057
+  // live events, a server capping at 1,000, and the 57 newest being vomits from the last
+  // nine days — the ones a vet is about to act on.
+  //
+  // PRE-FIX THIS FAILS, and on the right thing: the bare pull took the oldest 1,000 rows,
+  // which here are ALL MEALS, so the report printed a pet with no vomiting at all while the
+  // record held 57 episodes ending the day it was generated. (Verified red by restoring the
+  // bare pull, per C-18: a guard that has only ever been green has not been tested.)
+  const client = fakeClient({ ...PET_TABLES, events: { list: realRecordShapeRows() } }, 1000)
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
+
+  assert.equal(res.status, 200)
+  const html = res.body.html as string
+  // Page 1's headline, counting the rows the cap used to eat. Asserting the string the
+  // clinician reads rather than a bare "57 appears somewhere" — the number has to be
+  // attached to the sign for the assertion to mean what it says.
+  assert.ok(
+    html.includes('vomiting (<span class="num">57</span> logged)'),
+    'page 1 counts all 57 vomits, not the zero a truncated pull produced',
+  )
+})
+
+Deno.test('generateReportForPet: (a′) REFUSES when the shortfall could have cut the window', async () => {
+  // A server capping at one row per response, so 500 recent events exhaust the page
+  // ceiling: the pull is incomplete AND its oldest row is inside the window, so every
+  // page-1 count would be a query artifact. There is no sentence that repairs that, so the
+  // report does not render. PM ruling (a′), 2026-09-15.
+  const rows = symptomRows(500, NOW_MS)
+  const client = fakeClient({ ...PET_TABLES, events: { list: rows } }, 1)
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
+
+  assert.equal(res.status, 503)
+  assert.equal(res.body.error, 'record_incomplete')
+  assert.equal(res.body.html, undefined, 'a short record is never rendered')
+})
+
+Deno.test('generateReportForPet: (a′) DISCLOSES when the window is covered but another pull fell short', async () => {
+  // The other arm, and the one the PM's ruling bought: a pull that came up short somewhere
+  // that cannot have touched the window still produces a report — with a page-1 line
+  // naming what was partial. `medications` is uncapped by date, so its shortfall is the
+  // survivable kind; the events pull here is complete.
+  const meds = Array.from({ length: PULL_MAX_PAGES * 2 + 3 }, (_, i) => ({
+    id: `m${i}`,
+    medication_item_id: null,
+    drug_name: 'Prednisolone',
+    dose_amount: null,
+    route: null,
+    doses_per_day: null,
+    schedule_notes: null,
+    indication: null,
+    prescribed_by: null,
+    started_at: '2026-06-01T00:00:00Z',
+    target_duration_days: null,
+    target_duration_doses: null,
+    status: 'active',
+    ended_at: null,
+    medication_items: null,
+  }))
+  const client = fakeClient(
+    { ...PET_TABLES, events: { list: symptomRows(5, NOW_MS) }, medications: { list: meds } },
+    2,
+  )
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
+
+  assert.equal(res.status, 200, 'the report still renders')
+  const html = res.body.html as string
+  assert.ok(html.includes('Partial record.'), 'and says so on page 1')
+  assert.ok(html.includes('medication courses'), 'naming WHICH part of the record is partial')
+  assert.ok(!html.includes('logged events'), 'and not naming a pull that was complete')
+})
+
+Deno.test('generateReportForPet: a COMPLETE record carries no disclosure at all', async () => {
+  // Present-only, like every other disclosure on this page. "The full record was read" is
+  // a clean bill of health nobody asked for, and it is the one sentence a reader would
+  // trust without being able to check it.
+  const client = fakeClient({ ...PET_TABLES, events: { list: symptomRows(12, NOW_MS) } }, 1000)
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
+  assert.equal(res.status, 200)
+  assert.ok(!(res.body.html as string).includes('Partial record.'))
 })

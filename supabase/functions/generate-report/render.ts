@@ -1172,7 +1172,63 @@ function signalmentBlock(snap: ReportSnapshot): string {
       <div class="days">${num(scope.windowDays)}&nbsp;days &middot; ${num(snap.atAGlance.loggedDays)}&nbsp;days with a log</div>
       <div class="basis">${h(scopeBasisLabel(scope))}</div>
     </div>
-  </div>${cherryPickDisclosure(snap)}`
+  </div>${cherryPickDisclosure(snap)}${truncationDisclosure(snap)}`
+}
+
+/**
+ * CUL-975 — the record this report could not fully read, said on page 1.
+ *
+ * WHY IT IS HERE AND NOT IN A FOOTNOTE. The defect that produced this function was
+ * undetectable by reading the document: a capped pull dropped every event after a date,
+ * and every number on the page agreed with every other number because they all derived
+ * from the same short set. Nothing contradicted anything. A completeness fact that a
+ * careful reader cannot derive from the page has to be ON the page, beside the range it
+ * qualifies — which is where the cherry-pick guard already sits, in the same register.
+ *
+ * WHAT IT DOES NOT SAY, and the reason. It never claims the window is complete. Under the
+ * PM's (a') ruling the shortfall that could have cut the WINDOW does not render at all —
+ * `generateReportForPet` refuses — so anything that reaches this line is a shortfall off
+ * the old end. But "off the old end" is only window-safe for the pulls the window filters;
+ * `medications` and `conditions` carry no date bound, so a truncated one of those can be
+ * missing something in-window. The sentence therefore states what is true of every case —
+ * the rows read are the most recently recorded, and the counts are minimums — rather than
+ * a reassurance that holds for the common case and not the rest.
+ *
+ * PRESENT-ONLY, like every other disclosure on this page: an empty list renders NOTHING,
+ * never "the full record was read". A clean bill of health nobody asked for is the
+ * B-494 / G2 failure, and here it would also be the one sentence a reader would trust.
+ */
+function truncationDisclosure(snap: ReportSnapshot): string {
+  if (snap.incompletePulls.length === 0) return ''
+  // Table names are OUR vocabulary, not a clinician's. An unmapped table falls back to
+  // its own name rather than being dropped: a disclosure that silently omits what it
+  // could not label is the absence this whole issue is about.
+  const nouns = snap.incompletePulls.map((t) => TRUNCATION_NOUNS[t] ?? t)
+  return `
+  <div class="cherry"><b>Partial record.</b> Not every row on file could be read for this report (${h(
+    joinList(nouns),
+  )}). The rows that were read are the most recently recorded, so anything missing is older than what is shown. Treat counts below as minimums.</div>`
+}
+
+/** The clinical noun for each table a pull can come up short on (CUL-975). */
+const TRUNCATION_NOUNS: Record<string, string> = {
+  events: 'logged events',
+  event_ai_analysis: 'photo analyses',
+  event_attachments: 'photos',
+  weight_checks: 'weigh-ins',
+  medication_administrations: 'medication doses',
+  medications: 'medication courses',
+  medication_items: 'medication names',
+  feeding_arrangements: 'feeding arrangements',
+  conditions: 'recorded conditions',
+  diet_trials: 'diet trials',
+  vet_visits: 'vet visits',
+}
+
+/** "a", "a and b", "a, b and c" — a list a clinician reads as a sentence. */
+function joinList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
 
 /** §6 cherry-pick guard — only on a custom window with out-of-window events. */

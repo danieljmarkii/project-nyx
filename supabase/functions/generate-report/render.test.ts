@@ -163,6 +163,10 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
 
 function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
   return {
+    // CUL-975 — the default is the COMPLETE record, so every existing assertion in this
+    // file keeps describing a report with no truncation disclosure on it; the tests that
+    // want the disclosure override it and say so.
+    incompletePulls: [],
     generatedAt: '2026-07-02T12:00:00Z',
     timezone: 'America/New_York',
     scope: {
