@@ -47,6 +47,7 @@ const NO_LINKS = { medicationNames: [], trialCount: 0, documentCount: 0, hasNext
 function renderCard(model: ReturnType<typeof buildVetVisitsCardModel>, handlers = {}) {
   const props = {
     onOpen: jest.fn(),
+    onTakeNotes: jest.fn(),
     onBook: jest.fn(),
     onLogPast: jest.fn(),
     ...handlers,
@@ -131,5 +132,36 @@ describe('the populated card', () => {
     expect(
       screen.getByLabelText('Wednesday · 3:00 pm, Riverside Animal Hospital · Dr. Chen · recheck'),
     ).toBeTruthy();
+  });
+});
+
+describe('the notes door (CUL-966)', () => {
+  const booked = buildVetVisitsCardModel(
+    { next: buildAppointmentView(appointment, NOW), awaiting: [], visits: [] },
+    NOW,
+  );
+
+  it('carries the notes door for the next appointment, with its OWN id', () => {
+    // The Pet tab is the only surface that reaches a booking at booking distance:
+    // Home's strip spans five days and Get ready is reached through it. Without this
+    // the notes sit four taps behind *Open visits*, which is what the PM hit.
+    const props = renderCard(booked);
+    fireEvent.press(screen.getByText('Take notes'));
+    expect(props.onTakeNotes).toHaveBeenCalledTimes(1);
+    expect(props.onTakeNotes).toHaveBeenCalledWith('a1');
+  });
+
+  it('never offers "How did it go?" here — that door is gated and is the list\'s', () => {
+    renderCard(booked);
+    expect(screen.queryByText('How did it go?')).toBeNull();
+  });
+
+  it('renders no notes door when there is no next appointment', () => {
+    const pastOnly = buildVetVisitsCardModel(
+      { next: null, awaiting: [], visits: [buildVisitListRow(visit, NO_LINKS, NOW)] },
+      NOW,
+    );
+    renderCard(pastOnly);
+    expect(screen.queryByText('Take notes')).toBeNull();
   });
 });

@@ -3,14 +3,32 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
-  /** Opens "At the vet" — absent once the appointment's day has passed. */
+  /**
+   * Opens the notes screen. Present from the moment the booking exists (CUL-966) —
+   * this door has no window and no phase.
+   */
   onAtTheVet?: () => void;
-  onHowDidItGo: () => void;
+  /**
+   * Opens "How did it go?". Optional because the two doors are gated SEPARATELY and
+   * this is the one that is gated: see the header note.
+   */
+  onHowDidItGo?: () => void;
   /** Named in both labels, so a multi-pet list never leaves "which pet" to position. */
   petName: string;
 }
 
-// The two doors under a booked appointment (CUL-902 VV-4).
+// The two doors under a booked appointment (CUL-902 VV-4; re-gated CUL-966).
+//
+// THE TWO DOORS ARE GATED SEPARATELY, AND THE ASYMMETRY IS THE POINT. Until CUL-966
+// both were withheld together until the appointment's own day, and the reason given
+// was a mis-tap on a recheck booked six weeks out. That reason only ever described
+// *How did it go?*, which writes a `vet_visits` row, marks the booking attended and
+// moves the vet report's window with no way back before VV-6's delete. *Take notes*
+// writes a draft on a row that already exists and is harmless at any distance — and
+// withholding it was the defect: the PM wanted to start jotting days in advance and
+// the app opened the field on the morning of. So notes are ungated and the finish
+// door keeps its gate, which is why BOTH props are optional and neither implies the
+// other.
 //
 // A SEPARATE COMPONENT, not props on `AppointmentBlock`, because that block is ONE
 // `accessible` node on purpose — it reads "Tuesday · 3:00 pm, Riverside Animal
@@ -31,20 +49,22 @@ export function AppointmentActions({ onAtTheVet, onHowDidItGo, petName }: Props)
           onPress={onAtTheVet}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Take notes at ${petName}’s visit`}
+          accessibilityLabel={`Take notes for ${petName}’s visit`}
         >
-          <ThemedText style={styles.actionLabel}>At the vet</ThemedText>
+          <ThemedText style={styles.actionLabel}>Take notes</ThemedText>
         </TouchableOpacity>
       ) : null}
-      <TouchableOpacity
-        style={styles.action}
-        onPress={onHowDidItGo}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={`Log how ${petName}’s visit went`}
-      >
-        <ThemedText style={styles.actionLabel}>How did it go?</ThemedText>
-      </TouchableOpacity>
+      {onHowDidItGo ? (
+        <TouchableOpacity
+          style={styles.action}
+          onPress={onHowDidItGo}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Log how ${petName}’s visit went`}
+        >
+          <ThemedText style={styles.actionLabel}>How did it go?</ThemedText>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }

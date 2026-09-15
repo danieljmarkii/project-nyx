@@ -13,6 +13,7 @@ import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import { captureVisitPaperwork, readPaperworkFor, rememberPaperwork } from '../../lib/visitPaperwork';
 import {
+  appointmentDayReached,
   formatAppointmentWhen,
   formatWhereLine,
   parseAppointmentQuestions,
@@ -34,7 +35,19 @@ import {
  */
 const DRAFT_DEBOUNCE_MS = 600;
 
-// "At the vet" (CUL-902 VV-4; mock C1) — the in-room surface.
+// The visit's notes (CUL-902 VV-4; mock C1), open from booking (CUL-966).
+//
+// WHAT CUL-966 CHANGED HERE IS ONE CONTROL, NOT THE SCREEN. The doors into this
+// route lost their day gate, so the first reader of this screen is now an owner
+// whose visit is six weeks away. Everything the screen DOES is fine at that
+// distance — the draft, the ticks and the paperwork all write to an appointment
+// that already exists — with one exception: *Done* routes to "How did it go?",
+// whose save marks the booking attended and moves the vet report's window, with no
+// way back before VV-6's delete. That is the same hazard `AppointmentActions` gates,
+// arriving by a second path, so it takes the same answer: the control is ABSENT
+// until the appointment's day is reached, never rendered `disabled` (C-7 — a
+// disabled control claims one exists and is unavailable, and before the visit none
+// does). The back chevron flushes the draft, so leaving early loses nothing.
 //
 // THE APPOINTMENT IS A PARAM, NOT A PATH SEGMENT. `app/vet-visits/[id].tsx` already
 // owns that segment for a VISIT id, and this screen is about an APPOINTMENT — two
@@ -201,7 +214,7 @@ export default function AtTheVetScreen() {
           else router.replace('/vet-visits');
         }}
         right={
-          appointment ? (
+          appointment && appointmentDayReached(appointment.scheduled_at) ? (
             <TouchableOpacity
               onPress={() => {
                 void flushDraft();

@@ -1,4 +1,5 @@
 import {
+  appointmentDayReached,
   appointmentTimeKnown,
   buildAppointmentView,
   buildVetVisitsCardModel,
@@ -398,5 +399,51 @@ describe('the appointment view', () => {
 describe('localDateKey', () => {
   it('is the LOCAL day, zero-padded', () => {
     expect(localDateKey(new Date(2026, 0, 5, 23, 30))).toBe('2026-01-05');
+  });
+});
+
+describe('appointmentDayReached (CUL-966)', () => {
+  // The predicate behind the one control the notes screen may NOT offer early:
+  // *Done* routes to "How did it go?", whose save marks the booking attended and
+  // moves the vet report's window with no way back before VV-6's delete. Now that
+  // the notes open at booking, this is what keeps that tap out of reach.
+  //
+  // Every instant here is built from LOCAL components — the CI matrix runs this at
+  // UTC+14, UTC+12:45 and UTC−10, and a UTC literal answers a different question in
+  // each (C-29).
+  const NOW = new Date(2026, 8, 15, 12, 0);
+
+  it('is false while the visit is still ahead', () => {
+    expect(appointmentDayReached(new Date(2026, 9, 27, 15, 0).toISOString(), NOW)).toBe(false);
+  });
+
+  it('is TRUE all day on the day, from the first minute', () => {
+    // An 8am appointment is "reached" at 00:01, and a 5pm one is still reached at
+    // 9am — the owner walks in before the hour, and the screen is the reason they
+    // are holding the phone. The question is the DAY, never the clock.
+    expect(appointmentDayReached(new Date(2026, 8, 15, 17, 0).toISOString(), NOW)).toBe(true);
+    expect(appointmentDayReached(new Date(2026, 8, 15, 8, 0).toISOString(), NOW)).toBe(true);
+  });
+
+  it('stays true once the day has passed — a booking with no visit logged still finishes', () => {
+    // This is where `isToday` would have been wrong: the list's *Waiting on you*
+    // bucket is exactly the owner who has a visit left to log.
+    expect(appointmentDayReached(new Date(2026, 8, 11, 15, 0).toISOString(), NOW)).toBe(true);
+  });
+
+  it('is false on an unreadable timestamp — the gated control fails CLOSED', () => {
+    expect(appointmentDayReached('not a date', NOW)).toBe(false);
+  });
+
+  it('compares DAY KEYS, not two spellings of an instant (C-40)', () => {
+    // A local write produces `…T04:00:00.000Z` and PostgREST hands the same instant
+    // back as `…T04:00:00+00:00`; '+' sorts before '.', so a lexical compare of the
+    // raw strings drops a row at the exact-equality second. Both spellings of one
+    // instant must answer identically here.
+    const instant = new Date(2026, 8, 15, 9, 30);
+    const withMillis = instant.toISOString();
+    const withOffset = withMillis.replace('.000Z', '+00:00');
+    expect(withOffset).not.toBe(withMillis);
+    expect(appointmentDayReached(withOffset, NOW)).toBe(appointmentDayReached(withMillis, NOW));
   });
 });

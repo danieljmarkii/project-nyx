@@ -21,13 +21,22 @@ interface Props {
   capturing: boolean;
 }
 
-// "At the vet" (mock C1) — the in-room surface.
+// The visit's notes (mock C1) — open from the moment the visit is booked.
 //
 // THE DESIGN CONSTRAINT IS THE ROOM, not the screen. Jordan is holding a dog and Sam
 // has two carriers, so v1 is one plain-text field, a list of ticks, and one door for
 // the paperwork. No toolbar, no rich text (G4: "bolding is probably not happening if
 // we're jotting notes in the room"), no mic (G5 — the microphone is not in the
 // submission binary at all).
+//
+// EVERY STRING HERE IS DATED, AND THAT USED TO BE FINE. This shipped as "At the vet",
+// reachable only on the appointment's own day, so it could say *What the vet said*
+// and *finish the visit when you're out* and be true. CUL-966 opened it at booking
+// (PM: "I have wanted to start jotting down notes days in advance"), which makes an
+// owner six weeks out the first reader of every one of those lines. So the copy is
+// now anchored to the VISIT, which exists the whole time, rather than to the room,
+// which is one afternoon of it — the field is still the same field, and the
+// placeholder is what tells the owner it serves both moments.
 //
 // Nothing here confirms a save, and that is deliberate: the standing line under the
 // field says the field is saving, so a per-keystroke "Saved" would be chrome flashing
@@ -38,25 +47,34 @@ export function AtTheVetBody({
 }: Props) {
   return (
     <View>
-      <ThemedText style={styles.pageTitle}>At the vet</ThemedText>
+      {/* The pet is NAMED in the title, so the sub-line carries only the appointment
+          (the `GetReadyTitle` shape). A record screen says whose record it is
+          (CUL-660) and says it once. */}
+      <ThemedText style={styles.pageTitle}>Notes for {petName}’s visit</ThemedText>
       <ThemedText style={styles.pageSub}>
-        {[petName, when, where].filter(Boolean).join(' · ')}
+        {[when, where].filter(Boolean).join(' · ')}
       </ThemedText>
 
       <View style={styles.block}>
-        <SectionLabel label="What the vet said" header style={styles.sectionLabel} />
+        <SectionLabel label="Notes" header style={styles.sectionLabel} />
         <TextInput
           style={styles.notes}
           value={draft}
           onChangeText={onChangeDraft}
           multiline
           textAlignVertical="top"
-          placeholder="Type as you go — or after, in the car."
+          // The placeholder does the work the section label used to: it names BOTH
+          // moments this field serves, which is the whole of what changed when the
+          // screen stopped being the day's.
+          placeholder="Start now, add to it at the vet."
           placeholderTextColor={theme.colorTextTertiary}
-          accessibilityLabel={`Notes from ${petName}’s visit`}
+          accessibilityLabel={`Notes for ${petName}’s visit`}
         />
+        {/* Says what happens to the words, not when the owner is done with them:
+            "finish the visit when you're out" was a true instruction on the day and
+            a confusing one six weeks before it. */}
         <ThemedText style={styles.savingLine}>
-          Saved as you type · finish the visit when you’re out
+          Saved as you type · kept with this visit
         </ThemedText>
       </View>
 

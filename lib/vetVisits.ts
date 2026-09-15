@@ -946,6 +946,27 @@ export function localDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Has the appointment's DAY arrived (today, or already passed)?
+ *
+ * The notes surface is reachable from the moment a booking exists (CUL-966), which
+ * puts a second control in reach that must NOT be: "Done" on that screen routes to
+ * "How did it go?", and that save marks the appointment attended and moves the vet
+ * report's window with no way back before VV-6's delete. `isToday` is the wrong
+ * predicate for it — a booking whose day passed with no visit logged (the list's
+ * *Waiting on you* bucket) still wants the finish door — so this asks the wider
+ * question the control actually depends on.
+ *
+ * Both sides go through `localDateKey`, so the comparison is two 'YYYY-MM-DD' keys
+ * built by one function and not two spellings of an instant (C-40): a fixed-width
+ * day key compares as text, an ISO timestamp does not.
+ */
+export function appointmentDayReached(scheduledAt: string, now: Date = new Date()): boolean {
+  const d = new Date(scheduledAt);
+  if (Number.isNaN(d.getTime())) return false;
+  return localDateKey(d) <= localDateKey(now);
+}
+
 // ── The Home strip (CUL-903 VV-5; spec §4.1 A2 / A2b, mock A2 / A2b) ────────────
 
 /**

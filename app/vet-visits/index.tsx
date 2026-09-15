@@ -289,22 +289,28 @@ export default function VetVisitsScreen() {
             <View style={styles.section}>
               <SectionLabel label="Next" header />
               <AppointmentBlock appointment={home.next} style={styles.nextBlock} />
-              {/* ON THE DAY ONLY. `next` reaches weeks into the future, and both
-                  doors are about a visit that is happening or has just happened — so
-                  on a recheck booked six weeks out they are a mis-tap that consumes
-                  the booking (the save marks it attended, and there is no way back
-                  before VV-6's delete). A future appointment's door is *Get ready*,
-                  which is VV-5's; until then the block states and does not act.
+              {/* THE GATE SPLITS (CUL-966). It used to withhold BOTH doors until the
+                  appointment's own day, for a reason that only ever described one of
+                  them: *How did it go?* on a recheck booked six weeks out is a
+                  mis-tap that consumes the booking (the save marks it attended, and
+                  there is no way back before VV-6's delete). *Take notes* writes a
+                  draft on a row that already exists and is harmless at any distance
+                  — and withholding it was the defect the PM hit on device: the app
+                  opened the notes field on the morning of a visit people prepare for
+                  over weeks. So notes are always here and the finish door keeps the
+                  gate that was always its own.
 
                   The appointment's OWN id and pet ride the route (AC 11) — the
                   screens it opens never ask the store which pet this is. */}
-              {home.next.isToday ? (
-                <AppointmentActions
-                  petName={petName}
-                  onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
-                  onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${home.next?.id}`)}
-                />
-              ) : null}
+              <AppointmentActions
+                petName={petName}
+                onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
+                onHowDidItGo={
+                  home.next.isToday
+                    ? () => router.push(`/vet-visits/after?appointment=${home.next?.id}`)
+                    : undefined
+                }
+              />
             </View>
           ) : null}
 
@@ -319,12 +325,15 @@ export default function VetVisitsScreen() {
               {home.awaiting.map((appt) => (
                 <View key={appt.id}>
                   <AppointmentBlock appointment={appt} style={styles.nextBlock} />
-                  {/* No *At the vet* here: the day has passed, and a door into the
-                      in-room notes surface would be offering the owner a room they
-                      have left. The draft they typed there is not lost — it seeds
-                      the notes field on the screen this opens. */}
+                  {/* Notes are here too (CUL-966: no gate means no gate). The first
+                      draft withheld them on the reasoning that the day has passed and
+                      this would offer "a room they have left" — but the owner reading
+                      this row has not logged the visit yet, and what they remember of
+                      it is exactly what this field is for. It is also lossless either
+                      way: the draft seeds the notes on the screen beside it. */}
                   <AppointmentActions
                     petName={petName}
+                    onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
                     onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${appt.id}`)}
                   />
                 </View>

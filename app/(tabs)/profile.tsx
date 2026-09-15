@@ -1557,6 +1557,7 @@ export default function ProfileScreen() {
             // surface inside it can reach for `activePet` on its own (CUL-574).
             petName={activePet.name}
             onOpen={() => router.push('/vet-visits')}
+            onTakeNotes={(id) => router.push(`/vet-visits/at-the-vet?appointment=${id}`)}
             onBook={() => router.push('/vet-visits?add=booked')}
             onLogPast={() => router.push('/vet-visits?add=happened')}
             style={styles.sectionGap}

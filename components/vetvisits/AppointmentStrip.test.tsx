@@ -192,11 +192,21 @@ describe('after the day — one ask, then gone', () => {
     expect(r.toJSON()).toBeNull();
   });
 
-  it('*Yes* spends the ask and opens the capture screen', async () => {
+  it('*Yes* spends the ask and opens the capture screen CARRYING the appointment', async () => {
+    // CUL-949. This pushed a bare `/vet-visit` and the after-screen arrived blank:
+    // the notes typed before and in the room were dropped, clinic and reason were
+    // unfilled, and the booking was never retired — so it kept saying "log the
+    // visit" after the owner had, with Home's single ask already spent. The param
+    // is the whole fix, and it is what makes it the same door the list offers.
     mockHome.current = homeAppointment('after');
     const r = render(<AppointmentStrip />);
     fireEvent.press(await r.findByText('Yes — how did it go?'));
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/vet-visit'));
+    await waitFor(() =>
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: '/vet-visits/after',
+        params: { appointment: 'appt-1' },
+      }),
+    );
     // Spent either way: if the owner backs out of the capture screen without saving,
     // Home has already asked once.
     expect(markAppointmentAsked).toHaveBeenCalledWith('appt-1', expect.any(String));
