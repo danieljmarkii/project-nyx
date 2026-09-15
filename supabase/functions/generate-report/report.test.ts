@@ -3296,7 +3296,7 @@ Deno.test('CUL-976 — a course with no planned total states a COUNT, never an i
   assert.equal(adherenceClaims(html).length, 0, 'no ratio is invented for a course that has no plan')
   const line = medLineFor(html, 'Motozol')
   assert.ok(
-    /28<\/span> doses logged across the whole course; no planned total recorded/.test(line),
+    /28<\/span> doses administered across the whole course; no planned total recorded/.test(line),
     'the count is stated, with its scope and its limit named',
   )
 })
@@ -3391,7 +3391,7 @@ Deno.test('CUL-976 adv — refusals OUTSIDE the window are never reported as "no
   const line = medLineFor(renderReport(snap), 'Motozol')
   // The numerator is record-scoped and SAYS so, and 0 of 28 is itself the accusing statement.
   assert.ok(
-    />0<\/span> of <span class="num">28<\/span> prescribed doses logged across the whole course/.test(line),
+    />0<\/span> of <span class="num">28<\/span> prescribed doses administered across the whole course/.test(line),
     'the numerator is record-scoped and names its scope',
   )
   // The refusal COUNT is not on this line (CUL-994 owns naming it beside a record-scoped
@@ -3399,4 +3399,96 @@ Deno.test('CUL-976 adv — refusals OUTSIDE the window are never reported as "no
   // document claiming an absence it cannot support: "none recorded as refused" over a record of
   // 28 refusals. The empty-window register carries no extras at all, so it cannot.
   assert.ok(!/none recorded as refused/.test(line), 'never an unscoped refusal absence over a record of 28 refusals')
+})
+
+// ── CUL-976 pass 3 — the sibling branch, and three strings the reduction left stale ──
+//
+// The third falsification pass found that fixing page 1's empty-window register and NOT
+// Appendix D's left the document asserting an absence it cannot support. That is C-4 rule 1
+// verbatim — "when you close a defect on one branch of a two-branch surface, check the sibling
+// before closing the issue, and fix the accusing side first" — and this session had just
+// finished writing that rule into `docs/engineering-lessons.md` before doing it.
+
+Deno.test('CUL-976 p3 — Appendix D never claims "none refused" over a record of refusals', () => {
+  const rec = lateConfiguredCourse()
+  // Every dose refused, all of them before the window opened. `adherenceState` is record-based
+  // (so page 1 states "0 of 28"), which means Appendix D's row no longer takes the not_tracked
+  // branch — and its else branch printed the window's zero refusals as an unscoped absence.
+  rec.medications[0].startedAt = '2026-01-10'
+  rec.medications[0].endedAt = '2026-07-30'
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-01-11', 14, 2, 'refused')
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+
+  // The whole-document form of the assertion, because the defect was that ONE sentence about
+  // refusal existed anywhere on the page and it was the false one.
+  assert.ok(
+    !/None recorded as refused/.test(html),
+    'no unscoped refusal absence anywhere on a document whose record is 28 refusals',
+  )
+
+  const appx = html.slice(html.indexOf('Appendix D'))
+  const row = appx.slice(appx.indexOf('Motozol'), appx.indexOf('Motozol') + 700)
+  assert.ok(/No doses logged in this window/.test(row), 'the empty-window row says only that')
+})
+
+Deno.test('CUL-976 p3 — Appendix D still names its refusals when the window HAS doses', () => {
+  const rec = lateConfiguredCourse()
+  rec.lifetimeDoses = [
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-17', 9, 2),
+    ...courseDoses('reg-otic', 'mi-otic', '2026-07-26', 5, 2, 'refused'),
+  ]
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+  const appx = html.slice(html.indexOf('Appendix D'))
+  const row = appx.slice(appx.indexOf('Motozol'), appx.indexOf('Motozol') + 700)
+  // The register that CAN support the claim keeps it — this is a narrowing, not a deletion.
+  assert.ok(/>10<\/span> refused/.test(row), 'a window holding refusals still states them')
+})
+
+Deno.test('CUL-976 p3 — Appendix D does not tell the reader page 1 is computed from its rows', () => {
+  const rec = lateConfiguredCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+  // Page 1's numerator is record-scoped; this table is window-scoped. The sub-head said they
+  // were the same population, which is the one sentence on the document that instructs a reader
+  // to make exactly the conflation "across the whole course" exists to prevent.
+  assert.ok(
+    !/page-1 adherence line is computed from these entries/.test(html),
+    'the stale cross-reference is gone',
+  )
+})
+
+Deno.test('CUL-976 p3 — the record claim says ADMINISTERED, and means it consistently', () => {
+  const rec = lateConfiguredCourse()
+  rec.medications[0].targetDurationDoses = null
+  rec.medications[0].targetDurationDays = null
+  rec.medications[0].status = 'active'
+  rec.medications[0].endedAt = null
+  rec.lifetimeDoses = courseDoses('reg-otic', 'mi-otic', '2026-07-17', 14, 2, 'refused')
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const line = medLineFor(renderReport(snap), 'Motozol')
+  // `lifetimeDosesLogged` is given+partial — therapy DELIVERED (B-618 D1). Calling it "logged"
+  // put two senses of the word in one paragraph: the window clause's "no doses logged" means no
+  // dose EVENT, and 28 refusals are 28 events. "administered" is the word that is true of both
+  // the number and the reader's reading of it.
+  assert.ok(/0<\/span> doses administered across the whole course/.test(line), 'the record claim says administered')
+  assert.ok(/28 refused/.test(line), 'and the refusals are visible in the window clause')
+})
+
+Deno.test('CUL-976 p3 — "adherence not tracked" is scoped to the regimen, not to the record', () => {
+  const rec = lateConfiguredCourse()
+  // A FREE-TEXT regimen (no medication_item_id) cannot be reached by the item+window fallback —
+  // `lib/medications.ts` names this as the residual gap B-153 could not close. The doses land in
+  // the orphan bucket, so page 1 carries both lines, and an absolute "no doses logged" beside an
+  // orphan line reading "28 doses given in this window" is a flat contradiction about one drug.
+  rec.medications[0].medicationItemId = null
+  // Every dose unlinked: pass 1 attributes an explicitly-linked dose by `medication_id` whatever
+  // the regimen's item, so a linked dose would reach even this regimen and mask the gap.
+  rec.lifetimeDoses = courseDoses(null, 'mi-otic', '2026-07-17', 14, 2)
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: rec.lifetimeDoses }))
+  const html = renderReport(snap)
+  const line = medLineFor(html, 'Motozol')
+  assert.ok(/no doses logged against this regimen/.test(line), 'the claim is scoped to what it can see')
+  assert.ok(!/<b>Adherence not tracked<\/b> &mdash; no doses logged\./.test(line), 'never an absolute absence')
 })

@@ -751,10 +751,12 @@ Deno.test('tracked medication → adherence line with denominators + unconfirmed
   // An ACTIVE course states the COUNT and names the plan without framing it as a ratio — "of N"
   // mid-course reads as a countdown (B-618 D7), and that ruling is now shared by page 1 and the
   // §4.4 cell through one predicate rather than being decided twice (CUL-976).
-  // The unconfirmed doses ride WITH the record-scoped count, not only in the window clause
-  // (CUL-976 adversarial pass) — a qualifier is only true of the population it was counted over.
+  // `8 unconfirmed` is asserted off the WINDOW clause, which is where every qualifier lives now:
+  // the record-scoped parenthetical that once carried them was removed with CUL-994. Kept because
+  // "unconfirmed is never folded into given" is the B-156 G1 fail-safe and must stay visible
+  // somewhere on the line.
   assert.ok(
-    text.includes('82 doses logged across the whole course; course under way, 90 prescribed'),
+    text.includes('82 doses administered across the whole course; course under way, 90 prescribed'),
     'count + the scope it was counted over + the plan, and no mid-course ratio',
   )
   assert.ok(!/82 of 90/.test(text), 'no countdown framing on an active course')
@@ -772,7 +774,7 @@ Deno.test('ENDED medication → the adherence ratio NAMES its basis (CUL-976)', 
   // The claim names BOTH its denominator's basis and its numerator's scope. The window-scoped
   // qualifiers stay in the window clause, where their prefix says which population they describe.
   assert.ok(
-    text.includes('82 of 90 prescribed doses logged across the whole course'),
+    text.includes('82 of 90 prescribed doses administered across the whole course'),
     'prescription-denominated claim, basis named, scope named',
   )
 })
@@ -788,7 +790,7 @@ Deno.test('OVER-DELIVERED medication → the ratio is dropped, never "95 of 90" 
   const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
   assert.ok(!/95 of 90/.test(text), 'an over-delivered course never renders a >100% frame')
   assert.ok(
-    text.includes('95 doses logged across the whole course; more than the 90 prescribed'),
+    text.includes('95 doses administered across the whole course; more than the 90 prescribed'),
     'the count is stated and the reason the frame is absent is named, not left to inference',
   )
 })

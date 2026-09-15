@@ -1822,9 +1822,9 @@ export interface MedicationAdherence {
   windowDosesTotal: number
   /**
    * Whether the owner ENDED this course (H1: `status` completed/stopped) — the same register the
-   * §4.4 table's `ended` reads, from the same derivation. Distinct from `recordedEndDay != null`,
-   * which additionally requires a DATE: a course can be owner-completed with no end date recorded,
-   * and that is still ended. The ratio rule switches on this; the dosing-gap clause needs the date.
+   * §4.4 table's `ended` reads, from the same derivation, so a course that merely went quiet can
+   * never be read as finished. `statesPrescriptionRatio` switches on it: a delivered-vs-planned
+   * ratio is a retrospective fact, and mid-course it reads as a countdown (B-618 D7).
    */
   courseEnded: boolean
   givenDoses: number

@@ -5237,7 +5237,7 @@ function medicationLine(m: MedicationAdherence): string {
     // §4 trap — a zero-dose drug is not "compliant". Note the claim is over the RECORD now, not
     // the window (CUL-976): a course whose dosing all fell outside the window used to land here
     // and read as untracked, which is a stronger and falser statement than the record supports.
-    return `${regimen}. <b>Adherence not tracked</b> — no doses logged.`
+    return `${regimen}. <b>Adherence not tracked</b> — no doses logged against this regimen.`
   }
   const extras: string[] = []
   if (m.partialDoses) extras.push(`${m.partialDoses} partial`)
@@ -5270,7 +5270,7 @@ function medicationLine(m: MedicationAdherence): string {
         ? `In this window: no doses administered; ${extras.join(', ')}.`
         : `In this window: ${num(m.windowDosesLogged)} dose${
             m.windowDosesLogged === 1 ? '' : 's'
-          } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days; ${extras.join(', ')}.`
+          } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course; ${extras.join(', ')}.`
 
   return `${regimen}. ${adherenceClaim(m)} ${windowClause}`
 }
@@ -5319,7 +5319,7 @@ function adherenceClaim(m: MedicationAdherence): string {
     const planned = m.prescribedDoses!
     return `Adherence: ${n} of ${num(planned)} prescribed dose${
       planned === 1 ? '' : 's'
-    } logged across the whole course.`
+    } administered across the whole course.`
   }
   // No ratio is available, so the count is stated with the REASON the frame is absent — an empty
   // return with several causes makes the reader guess, and they guess "undertreated" (C-37).
@@ -5332,7 +5332,7 @@ function adherenceClaim(m: MedicationAdherence): string {
       : m.lifetimeDosesLogged > m.prescribedDoses
         ? `more than the ${num(m.prescribedDoses)} prescribed`
         : `course under way, ${num(m.prescribedDoses)} prescribed`
-  return `Adherence: ${n} dose${m.lifetimeDosesLogged === 1 ? '' : 's'} logged across the whole course; ${why}.`
+  return `Adherence: ${n} dose${m.lifetimeDosesLogged === 1 ? '' : 's'} administered across the whole course; ${why}.`
 }
 
 /** Date range for an unlinked-dose group — "on Jul 10" for a single day, else "Jul 2 – Jul 10". */
@@ -6726,12 +6726,24 @@ function medicationAppendix(snap: ReportSnapshot): string {
       // the windowed dose-level detail; the one adherence claim is stated on page 1 against the
       // prescription, and this column now says how many of those doses landed in the window.
       const logged = m.adherenceState === 'not_tracked' ? '0' : num(m.windowDosesLogged)
+      // THE SAME THREE REGISTERS PAGE 1 CARRIES (CUL-976 pass 3). This cell had two, and the
+      // missing one was the empty window — where every extra it prints is a count of zero over a
+      // population the window does not contain. On a course refused in its entirety BEFORE the
+      // window, that rendered "None recorded as refused" as the only sentence about refusal
+      // anywhere on the document, over a record of 28 refusals.
+      //
+      // It became reachable when `adherenceState` moved to a record basis: the row no longer
+      // takes the not_tracked branch, so it fell through to extras counted over a window holding
+      // nothing. Page 1's register was added in the same change and this sibling was not — the
+      // C-4 rule 1 shape, with the accusing side left broken.
       const adherence =
         m.adherenceState === 'not_tracked'
-          ? '<b>Adherence not tracked</b> — no doses logged; never read as given.'
-          : `Logged on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days in this window.${
-              m.unconfirmedDoses ? ` ${num(m.unconfirmedDoses)} unconfirmed.` : ''
-            }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
+          ? '<b>Adherence not tracked</b> — no doses logged against this regimen; never read as given.'
+          : m.windowDosesTotal === 0
+            ? 'No doses logged in this window; this drug&rsquo;s doses fall outside it (the lifetime table above carries them).'
+            : `Logged on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course in this window.${
+                m.unconfirmedDoses ? ` ${num(m.unconfirmedDoses)} unconfirmed.` : ''
+              }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(
@@ -6775,7 +6787,7 @@ function medicationAppendix(snap: ReportSnapshot): string {
     ' <b>This lists only what the owner entered in Culprit.</b> A medication prescribed elsewhere and never logged does not appear here, and its absence is not evidence it was not given — worth confirming against the clinic record, particularly for anti-inflammatories and antipruritics, which suppress the signs a diet trial is measuring.'
   const sub = !hasAny
     ? `No prescription medication is recorded in this window. Over-the-counter supplements, if any, are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
-    : `Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
+    : `Doses are owner-logged, and this table is scoped to the report window &mdash; page&nbsp;1&rsquo;s adherence line counts the whole course, so a drug dosed before this window shows a lower count here than the number stated there. With no dose logged against a regimen at all it reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
   return `
   <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
   <p class="appx-sub">${sub}</p>

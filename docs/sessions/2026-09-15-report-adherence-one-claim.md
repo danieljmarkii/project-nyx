@@ -168,6 +168,35 @@ The useful signal was **where** the findings clustered. The core — one attribu
 
 One thing the removal could not simply drop: the claim is record-scoped and the qualifiers beside it are window-scoped, which is the round-1 defect in miniature. So the claim **names its own scope in words** — *"28 of 28 prescribed doses logged across the whole course"* — and the window clause keeps its `In this window:` prefix. Nothing on the page now states two populations without saying which is which, and nothing states a fact the record cannot support.
 
+## Pass 3, and the rule this session wrote and then broke
+
+The third falsification pass, on the reduced diff, returned **DO-NOT-SHIP**. The core held under a 36-document sweep plus ten hand-built records — page 1 and the §4.4 cell never disagree, and both the numerator and the ratio predicate red their guards under mutation. But **Appendix D, which the split never touched, still carried both halves of the original defect**, and one of them was newly reachable from this session's own change.
+
+On a course refused in its entirety before the window opened:
+
+```
+page 1      "Adherence: 0 of 28 prescribed doses administered across the whole course.
+             No doses logged in this report's window."          ← correct
+Appendix D  "Logged on 0 of 85 days in this window. None recorded as refused."
+```
+
+A whole-document scan for `refus` returned **exactly one hit**: *"None recorded as refused."* Twenty-eight refusals of a prescription antibiotic, and the only sentence about refusal anywhere on the vet's document says there were none.
+
+Proven by mutation rather than by reading: reverting `adherenceState` to its old window basis makes the cell take the `not_tracked` branch and the false absence unreachable. So it was reachable *because* of this session's widening — `tracked` now needs only a dose somewhere in the record, while Appendix D's extras are still counted in the window.
+
+**This is C-4 rule 1, and this session had written that rule into this repo's lessons file about two hours earlier.** *"When you close a defect on one branch of a two-branch surface, check the sibling before closing the issue — and fix the accusing side first, because that is the one that costs a person."* Page 1 got the empty-window register in round 1. Its sibling in Appendix D did not, and the sibling is the accusing one.
+
+Knowing a rule, writing it down, and citing it in a commit message are three things that do not add up to applying it. The mechanism that caught this was not knowledge; it was a fresh reader with no stake in the change, run a third time on a diff that had already passed twice.
+
+Four more from the same pass, all render-layer:
+
+- **Appendix D's sub-head still said *"the page-1 adherence line is computed from these entries"***, which stopped being true the moment page 1 became record-scoped. It was the one sentence on the document explicitly instructing the reader to make the conflation *"across the whole course"* was added to prevent.
+- **`logged` carried two senses in one paragraph** — the record claim meant *administered* (`given + partial`, B-618 D1) while the window clause meant *any dose event*. So 28 refusals rendered as *"0 doses logged"*. The claim now says **administered**, which is true of the number and of the reading.
+- **`not_tracked` had become absolute.** *"No doses logged"* is false wherever attribution misses a real dose, and the residual free-text-regimen gap `lib/medications.ts` documents is exactly such a place: page 1 would carry *"no doses logged"* two centimetres from an orphan line reading *"28 doses given in this window"* for the same drug. It is now scoped: *"no doses logged against this regimen."*
+- **The day ratio's new scope label named the wrong denominator.** `elapsedDaysInWindow` is the regimen's span inside the window, not the window, so *"in this window: … on 14 of 14 days"* asserted a window that was 14 days long. It now says *"of the course"*.
+
+And two comments that outlived what they described: `courseEnded`'s docstring still referenced the deleted `recordedEndDay` and the deleted gap clause, and a test comment justified an assertion by a rule the split had removed. Both are C-38's cheque, and both were found by the reviewer rather than by the session that wrote them.
+
 ## Verification
 
 Every guard proven by mutation, not by reading:
