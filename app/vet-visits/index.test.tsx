@@ -191,7 +191,7 @@ describe('AC 2 — booking', () => {
   });
 });
 
-describe('the appointment’s two doors belong to its own day', () => {
+describe('the two doors are gated SEPARATELY (CUL-966)', () => {
   function nextAppt(isToday: boolean) {
     return {
       id: 'a-next',
@@ -207,20 +207,32 @@ describe('the appointment’s two doors belong to its own day', () => {
   it('offers both doors on the day', async () => {
     mockHome = { next: nextAppt(true), awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
-    expect(await screen.findByText('At the vet')).toBeTruthy();
+    expect(await screen.findByText('Take notes')).toBeTruthy();
     expect(screen.getByText('How did it go?')).toBeTruthy();
   });
 
-  it('offers NEITHER on a booking weeks out — the mis-tap consumed the booking', async () => {
-    // "How did it go?" on a recheck six weeks away is a question about a thing that
-    // has not happened, and answering it marks the appointment attended: it leaves
-    // Home and *Next* with no way back before VV-6's delete (CUL-939). A future
-    // appointment's door is *Get ready*, which is VV-5's; until then the block states
-    // and does not act.
+  it('offers the NOTES on a booking weeks out — that is the whole of CUL-966', async () => {
+    // The PM's device report: "Notes needs to open WHEN THE VISIT IS SCHEDULED."
+    // Before this, a visit booked six weeks out had no notes field anywhere in the
+    // app until the morning of — which is the moment people have stopped preparing,
+    // not started.
     mockHome = { next: nextAppt(false), awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
     await screen.findByText('Wed, Oct 28');
-    expect(screen.queryByText('At the vet')).toBeNull();
+    expect(screen.getByText('Take notes')).toBeTruthy();
+  });
+
+  it('withholds "How did it go?" on a booking weeks out — the mis-tap consumes the booking', async () => {
+    // THE HALF OF THE OLD GATE THAT MUST SURVIVE, and the reason the gate split
+    // rather than went. "How did it go?" on a recheck six weeks away is a question
+    // about a thing that has not happened, and answering it writes a `vet_visits`
+    // row, marks the appointment attended and moves the vet report's window — with
+    // no way back before VV-6's delete (CUL-939). Proven by mutation: drop the
+    // `isToday` condition on `onHowDidItGo` in index.tsx and this reds while the
+    // notes test above stays green, which is the asymmetry in one line.
+    mockHome = { next: nextAppt(false), awaiting: [], visits: [] };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Wed, Oct 28');
     expect(screen.queryByText('How did it go?')).toBeNull();
   });
 

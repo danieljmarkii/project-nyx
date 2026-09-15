@@ -319,6 +319,19 @@ export default function RundownScreen() {
               // report, and the text share sits under ⋯ as *Copy as text*.
               <>
                 <PrimaryButton label="Send the vet report" onPress={() => router.push('/report')} />
+                {/* The door Get ready was always specified to have (spec §4.1 C1:
+                    the notes are "opened from Get ready") and never got, which is
+                    half of CUL-966 — the questions typed on THIS page become ticks
+                    on a screen this page could not reach. Secondary, because the
+                    single primary here is the report (R-share, nine lenses). */}
+                <PrimaryButton
+                  label="Take notes"
+                  onPress={() =>
+                    router.push(`/vet-visits/at-the-vet?appointment=${getReady.appointment.id}`)
+                  }
+                  variant="secondary"
+                  style={styles.saveBtn}
+                />
                 <Text style={styles.barHint}>
                   The report is the clinical record. This page is your quick answer.
                 </Text>
