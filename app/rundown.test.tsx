@@ -12,7 +12,17 @@ jest.mock('react-native-safe-area-context', () => {
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => ({}),
+  // The screen re-reads on FOCUS (CUL-952), so the mock has to provide the hook.
+  // The registered callback is kept so a test can fire a re-focus explicitly —
+  // without that, "it re-reads when you come back" is untestable and the stale-date
+  // defect this replaced would be invisible again.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const { useEffect } = require('react');
+    focusCb.current = cb;
+    useEffect(() => cb(), [cb]);
+  },
 }));
+const focusCb: { current: null | (() => void | (() => void))} = { current: null };
 // CUL-903 — this screen is now the rundown AND Get ready, so it reads the companion
 // flag. Mocked OFF here on purpose: this suite's subject is the shipped rundown's
 // tap→route mapping, which must keep working with the companion dark.

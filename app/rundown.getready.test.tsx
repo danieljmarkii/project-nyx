@@ -21,7 +21,17 @@ const params: { current: Record<string, string> } = { current: {} };
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => params.current,
+  // The screen re-reads on FOCUS (CUL-952), so the mock has to provide the hook.
+  // The registered callback is kept so a test can fire a re-focus explicitly —
+  // without that, "it re-reads when you come back" is untestable and the stale-date
+  // defect this replaced would be invisible again.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const { useEffect } = require('react');
+    focusCb.current = cb;
+    useEffect(() => cb(), [cb]);
+  },
 }));
+const focusCb: { current: null | (() => void | (() => void))} = { current: null };
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => true }));
 jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
@@ -108,7 +118,14 @@ jest.mock('../lib/vetVisits', () => {
     // for a pure function is a rule re-derived in the test file (C-34). Only the two
     // functions that touch the database are replaced.
     ...actual,
-    readAppointmentById: jest.fn(async (id: string) => mockAppointments[id] ?? mockAppointment),
+    // `in`, not `??`: an override of `null` is how this fixture says "the read finds
+    // nothing" (a cancelled or deleted row), and `null ?? mockAppointment` would
+    // hand back the appointment instead — a removal test that silently asserted the
+    // opposite of what it claimed. Caught by the test failing, which is the only
+    // reason the distinction is written down here.
+    readAppointmentById: jest.fn(async (id: string) =>
+      id in mockAppointments ? mockAppointments[id] : mockAppointment,
+    ),
     saveAppointmentQuestions: jest.fn(async () => undefined),
   };
 });
@@ -388,5 +405,69 @@ describe('a Signal that has never been generated is not "nothing standing"', () 
     expect(r.getByText('Your questions')).toBeTruthy();
     expect(r.queryByText(/Signal couldn’t be read/)).toBeNull();
     expect(r.queryByText(/nothing to raise/i)).toBeNull();
+  });
+});
+
+// ── CUL-952 — Get ready re-reads after the edit it now launches ────────────────
+//
+// This screen is the one ⋯ *Change the appointment* opens the editor FROM, and it
+// stays mounted underneath while that screen is pushed. Its load was keyed
+// `[petId, wantsGetReady, appointmentId]` — none of which change when the pushed
+// screen pops — so before CUL-952 gave that menu item a destination the staleness
+// was unreachable, and the moment it had one the headline path ended on the old
+// date. Found by `pm-feature-review`, not by a failing test, which is why the test
+// exists now.
+
+describe('re-reading after the edit this screen launches (CUL-952)', () => {
+  /** Re-enter the screen the way returning from a pushed route does. */
+  async function refocus() {
+    await act(async () => {
+      focusCb.current?.();
+    });
+  }
+
+  it('shows the MOVED day after the owner changes the appointment and comes back', async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+
+    const movedTo = new Date(Date.now() + 9 * 86_400_000);
+    movedTo.setHours(9, 30, 0, 0);
+    const before = r.getByText(/Get ready for/).parent;
+    expect(before).toBeTruthy();
+
+    // The clinic moved it. The edit screen wrote the row; this screen is underneath.
+    mockAppointments['appt-1'] = {
+      ...mockAppointment,
+      scheduled_at: movedTo.toISOString(),
+      clinic_name: 'Bayside Veterinary',
+    };
+    await refocus();
+
+    // The eyebrow and the sub-line are the appointment's OWN composed strings, so
+    // this asserts the screen re-read rather than that a formatter ran.
+    await waitFor(() => expect(r.getByText(/Bayside Veterinary/)).toBeTruthy());
+    expect(r.queryByText(/Riverside Animal Hospital/)).toBeNull();
+    delete mockAppointments['appt-1'];
+  });
+
+  it('drops the Get-ready chrome once the appointment has been removed (G5)', async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await waitFor(() => expect(r.getByText(/Get ready for/)).toBeTruthy());
+
+    // `cancelVetAppointment` stamps `cancelled_at`, and `readAppointmentById`
+    // filters cancelled rows — so this is what the real read returns afterwards.
+    mockAppointments['appt-1'] = null;
+    await refocus();
+
+    // A screen never shows a row that is no longer in the record. Without the
+    // re-read this page kept its title, its questions block and a ⋯ whose *Change
+    // the appointment* pushed a screen reading "no longer on the record".
+    await waitFor(() => expect(r.queryByText(/Get ready for/)).toBeNull());
+    // It does not go blank: `load` resolves a missing appointment to the plain
+    // rundown, which is the honest fallback rather than an error.
+    expect(r.getByTestId('rundown-block')).toBeTruthy();
+    delete mockAppointments['appt-1'];
   });
 });

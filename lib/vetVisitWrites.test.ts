@@ -62,6 +62,7 @@ import {
   parseAppointmentQuestions,
   readActiveCourses,
   readAppointmentById,
+  readEditableAppointment,
   readVetVisitDetail,
   readVisitConsequence,
   linkCourseToVisit,
@@ -69,6 +70,7 @@ import {
   repairRefusedVisitLinks,
   saveNotesDraft,
   setQuestionAsked,
+  updateAppointmentDetails,
   updateVisitDetails,
   visitIsForPet,
 } from './vetVisits';
@@ -357,6 +359,125 @@ describe('updateVisitDetails', () => {
     seedVisit('gone', { deleted_at: '2026-09-17T00:00:00.000Z' });
     await expect(updateVisitDetails('gone', { notes: 'x' })).rejects.toThrow();
     await expect(updateVisitDetails('never', { notes: 'x' })).rejects.toThrow();
+  });
+});
+
+describe('readEditableAppointment (CUL-952)', () => {
+  it('returns a live booking', async () => {
+    seedAppointment();
+    expect(await readEditableAppointment(APPT)).not.toBeNull();
+  });
+
+  it('refuses exactly what the WRITE refuses — one clause, two callers', async () => {
+    // The point of this reader is that it cannot drift from
+    // `updateAppointmentDetails`. Each case below is a row the write throws on, so
+    // the screen must never render an editable form over it.
+    for (const over of [
+      { vet_visit_id: 'v-logged' },
+      { cancelled_at: '2026-09-17T00:00:00.000Z' },
+      { deleted_at: '2026-09-17T00:00:00.000Z' },
+    ]) {
+      mockDb.prepare('DELETE FROM vet_appointments').run();
+      seedAppointment(over);
+      expect(await readEditableAppointment(APPT)).toBeNull();
+      await expect(updateAppointmentDetails(APPT, { reason: 'x' })).rejects.toThrow();
+    }
+  });
+
+  it('differs from readAppointmentById on the logged case, deliberately', async () => {
+    // `readAppointmentById` stays lax so "Take notes" keeps working on a booking
+    // whose visit was logged. If these two ever agree, one of them has lost its job.
+    seedAppointment({ vet_visit_id: 'v-logged' });
+    expect(await readAppointmentById(APPT)).not.toBeNull();
+    expect(await readEditableAppointment(APPT)).toBeNull();
+  });
+});
+
+// ── CUL-952 — changing a booked appointment ────────────────────────────────────
+
+describe('updateAppointmentDetails (CUL-952)', () => {
+  it('writes only the keys it was given, and moves updated_at', async () => {
+    seedAppointment();
+    const before = appointmentRow();
+
+    await updateAppointmentDetails(APPT, { reason: 'Recheck — GI' });
+
+    expect(appointmentRow().reason).toBe('Recheck — GI');
+    // An omitted key is "not describing this column", never "clear it" (C-10).
+    expect(appointmentRow().clinic_name).toBe('Riverside Animal Hospital');
+    expect(appointmentRow().vet_name).toBe('Dr. Chen');
+    expect(appointmentRow().scheduled_at).toBe(before.scheduled_at);
+    // `updated_at` MOVES on every re-queueing mutation — `syncQueue.test.ts` scans
+    // for this, and a push marks the VERSION it sent (C-23), so a write that left
+    // the column alone could be stranded at `synced = 1`.
+    expect(appointmentRow().updated_at).not.toBe(before.updated_at);
+    expect(appointmentRow().synced).toBe(0);
+  });
+
+  it('clears the quarantine pair, so a row a bad push parked re-arms on an edit', async () => {
+    seedAppointment();
+    mockDb.prepare(`UPDATE vet_appointments SET sync_attempts = 9, sync_error = 'boom' WHERE id = ?`).run(APPT);
+
+    await updateAppointmentDetails(APPT, { clinicName: 'Bayside Veterinary' });
+
+    expect(appointmentRow().sync_attempts).toBe(0);
+    expect(appointmentRow().sync_error).toBeNull();
+  });
+
+  it('CLEARS a column when the key is present and blank', async () => {
+    seedAppointment();
+    await updateAppointmentDetails(APPT, { vetName: '   ' });
+    // `trimOrNull`: whitespace is not a vet's name.
+    expect(appointmentRow().vet_name).toBeNull();
+  });
+
+  it('writes NOTHING — not even updated_at — for an empty patch', async () => {
+    seedAppointment();
+    const before = appointmentRow();
+    await updateAppointmentDetails(APPT, {});
+    expect(appointmentRow()).toEqual(before);
+  });
+
+  it('throws rather than writing when the row is not a LIVE booking', async () => {
+    // The race this guards is real and not hypothetical: this screen stays open
+    // while another device logs the visit against the same booking or cancels it.
+    // A bare-id UPDATE would write the owner's reschedule onto a row that is no
+    // longer a booking — resurrecting it into *Next* with a new date, after the
+    // visit it represents already happened.
+    seedAppointment({ vet_visit_id: 'v-logged' });
+    await expect(updateAppointmentDetails(APPT, { reason: 'x' })).rejects.toThrow();
+    expect(appointmentRow().reason).toBe('recheck');
+  });
+
+  it('throws for a cancelled, deleted or missing row', async () => {
+    seedAppointment({ cancelled_at: '2026-09-17T00:00:00.000Z' });
+    await expect(updateAppointmentDetails(APPT, { reason: 'x' })).rejects.toThrow();
+
+    mockDb.prepare('DELETE FROM vet_appointments').run();
+    seedAppointment({ deleted_at: '2026-09-17T00:00:00.000Z' });
+    await expect(updateAppointmentDetails(APPT, { reason: 'x' })).rejects.toThrow();
+
+    await expect(updateAppointmentDetails('never', { reason: 'x' })).rejects.toThrow();
+  });
+
+  it('never touches the questions or the in-room draft — what the screen promises', async () => {
+    // The edit screen's footnote says "Your questions and notes stay with it", and
+    // that is a claim about THIS function, not about the screen.
+    seedAppointment({
+      questions: '[{"id":"q1","text":"The overnight pattern","source":"owner"}]',
+      notes_draft: 'ask about the weight',
+    });
+
+    await updateAppointmentDetails(APPT, {
+      scheduledAt: '2026-10-28T22:00:00.000Z',
+      clinicName: 'Bayside Veterinary',
+      vetName: 'Dr. Patel',
+      reason: 'rescheduled recheck',
+    });
+
+    expect(appointmentRow().questions).toBe('[{"id":"q1","text":"The overnight pattern","source":"owner"}]');
+    expect(appointmentRow().notes_draft).toBe('ask about the weight');
+    expect(appointmentRow().scheduled_at).toBe('2026-10-28T22:00:00.000Z');
   });
 });
 

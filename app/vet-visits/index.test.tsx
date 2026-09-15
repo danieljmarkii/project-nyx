@@ -17,6 +17,7 @@ type BookArgs = { petId: string; scheduledAt: string };
 type LogArgs = { petId: string; visitedAt: string };
 const mockBook = jest.fn(async (_input: BookArgs) => 'new-appointment');
 const mockLog = jest.fn(async (_input: LogArgs) => 'new-visit');
+const mockCancel = jest.fn(async (_id: string) => undefined);
 let mockHome: VetVisitsHome = { next: null, awaiting: [], visits: [] };
 
 jest.mock('expo-router', () => ({
@@ -64,6 +65,7 @@ jest.mock('../../lib/vetVisits', () => {
     // defers the reference to call time, which is the only time it is defined.
     bookVetAppointment: (input: BookArgs) => mockBook(input),
     logVetVisit: (input: LogArgs) => mockLog(input),
+    cancelVetAppointment: (id: string) => mockCancel(id),
   };
 });
 
@@ -196,6 +198,13 @@ describe('the two doors are gated SEPARATELY (CUL-966)', () => {
     return {
       id: 'a-next',
       petId: 'pet-a',
+      // A REAL instant, and one the caller could actually hand over: the confirm
+      // copy re-derives "has this day passed" from it, so a fixture carrying a
+      // placeholder would be green over a branch production never takes (C-35).
+      // Anchored to `Date.now()` rather than pinned to a literal date, because a
+      // fixture judged against a rolling window fails on a calendar boundary
+      // instead of on a change (C-29).
+      scheduledAt: instantDaysOut(isToday ? 0 : 42),
       stamp: { day: '28', month: 'Oct' },
       when: 'Wed, Oct 28',
       day: 'Wed, Oct 28',
@@ -244,6 +253,127 @@ describe('the two doors are gated SEPARATELY (CUL-966)', () => {
   });
 });
 
+// ── CUL-952 — the appointment can be changed, and a passed one answered ────────
+
+describe('changing a booked appointment (CUL-952)', () => {
+  function nextIn(days: number) {
+    return {
+      id: 'a-next',
+      petId: 'pet-a',
+      scheduledAt: instantDaysOut(days),
+      stamp: { day: '28', month: 'Oct' },
+      when: 'Wed, Oct 28',
+      day: 'Wed, Oct 28',
+      where: 'Riverside Animal Hospital · recheck',
+      isToday: days === 0,
+    };
+  }
+
+  it('offers Change under Next, pointed at the APPOINTMENT and not the list', async () => {
+    const { router } = require('expo-router');
+    mockHome = { next: nextIn(42), awaiting: [], visits: [] };
+    render(<VetVisitsScreen />);
+
+    fireEvent.press(await screen.findByText('Change'));
+    // The whole defect in one assertion: this used to reach `/vet-visits`, where
+    // the only control is *Add*, so following the app's own instruction booked a
+    // SECOND appointment beside the one the owner meant to move.
+    expect(router.push).toHaveBeenCalledWith('/vet-visits/edit-appointment?appointment=a-next');
+  });
+
+  it('does NOT offer "It didn’t happen" on a booking still ahead', async () => {
+    mockHome = { next: nextIn(42), awaiting: [], visits: [] };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Wed, Oct 28');
+    // The app has not asked anything yet, so there is no question to answer. The
+    // door for a future booking is *Change*.
+    expect(screen.queryByText('It didn’t happen')).toBeNull();
+  });
+
+  it('offers BOTH answers on a booking whose day has passed', async () => {
+    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Wed, Oct 28');
+
+    // The section asked a two-answer question and offered one answer; the other
+    // lived on Home, and only for five days.
+    expect(screen.getByText('How did it go?')).toBeTruthy();
+    expect(screen.getByText('It didn’t happen')).toBeTruthy();
+    // And a way to correct it, because the commonest reason a booking lands here
+    // is that the visit MOVED and nobody told the app.
+    expect(screen.getByText('Change')).toBeTruthy();
+  });
+
+  it('says so in the note under the bucket, not only in the buttons', async () => {
+    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Wed, Oct 28');
+    expect(screen.getByText(/or\s+say it didn’t happen/)).toBeTruthy();
+  });
+
+  it('confirms before removing, and writes nothing until the confirm is taken', async () => {
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    render(<VetVisitsScreen />);
+
+    fireEvent.press(await screen.findByText('It didn’t happen'));
+
+    expect(spy).toHaveBeenCalled();
+    const [title, body] = spy.mock.calls[0];
+    expect(title).toBe('Remove this appointment?');
+    // The day has passed, so the copy must not call it "upcoming".
+    expect(body).not.toMatch(/upcoming/);
+    expect(body).toMatch(/Nothing else in the record changes/);
+    // C-21: exactly one safety net, and for a write with no undo it is the confirm.
+    expect(mockCancel).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('cancels the appointment once the confirm is taken', async () => {
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      (buttons ?? []).find((b) => b.text === 'Remove it')?.onPress?.();
+    });
+    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    render(<VetVisitsScreen />);
+
+    fireEvent.press(await screen.findByText('It didn’t happen'));
+
+    await waitFor(() => expect(mockCancel).toHaveBeenCalledWith('a-next'));
+    spy.mockRestore();
+  });
+
+  it('says it plainly when the remove fails, and leaves the row on screen', async () => {
+    mockCancel.mockRejectedValueOnce(new Error('offline'));
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      (buttons ?? []).find((b) => b.text === 'Remove it')?.onPress?.();
+    });
+    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    render(<VetVisitsScreen />);
+
+    fireEvent.press(await screen.findByText('It didn’t happen'));
+
+    // Never a silent failure: the second Alert is the one that says so, and it
+    // carries no string lifted off the exception (the owner-facing copy guard).
+    await waitFor(() => expect(spy.mock.calls.length).toBe(2));
+    const [failTitle, failBody] = spy.mock.calls[1];
+    expect(failTitle).toBe('Couldn’t remove it');
+    expect(failBody).not.toMatch(/offline/);
+    expect(screen.getByText('Wed, Oct 28')).toBeTruthy();
+    spy.mockRestore();
+  });
+});
+
+/**
+ * An instant `days` from now at 3pm local, for a fixture that needs a real
+ * `scheduled_at`. Local components, never a UTC literal (C-29).
+ */
+function instantDaysOut(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(15, 0, 0, 0);
+  return d.toISOString();
+}
+
 describe('a booking whose day has passed', () => {
   it('is rendered, not hidden — with the day it needs and what to do about it', async () => {
     mockHome = {
@@ -252,6 +382,7 @@ describe('a booking whose day has passed', () => {
         {
           id: 'a-past',
           petId: 'pet-a',
+          scheduledAt: instantDaysOut(-7),
           stamp: { day: '8', month: 'Sep' },
           when: 'Mon, Sep 8',
           day: 'Mon, Sep 8',
@@ -275,7 +406,7 @@ describe('a booking whose day has passed', () => {
     mockHome = {
       next: null,
       awaiting: [
-        { id: 'a-past', petId: 'pet-a', stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '', isToday: false },
+        { id: 'a-past', petId: 'pet-a', scheduledAt: instantDaysOut(-7), stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '', isToday: false },
       ],
       visits: [],
     };
