@@ -239,6 +239,51 @@ Worse, and the part worth carrying: **the card's own test mock was stubbing the 
 ---
 
 
+### §C-42 — A read capped by a setting the code cannot see earns completeness from a count (CUL-975)
+
+**Date:** 2026-09-15 · **PR:** #853 · **Guard:** `guards/reportPullPagination.test.ts`
+
+The PM generated his own cat's vet report for an appointment the next morning. It was titled **Jul 26 – Sep 15** and contained no event after **Sep 7**.
+
+```
+live events in the 180-day lookback ...... 1,057
+  occurred_at <  2026-09-08T00:00:00Z .... 1,000   ← on the document
+  occurred_at >= 2026-09-08T00:00:00Z ....    57   ← silently absent
+```
+
+Every pull in `generate-report` was a bare select — no `.order()`, no `.limit()`, no `.range()`. PostgREST caps an unbounded select at the project's `max-rows` (then 1,000), and with no `ORDER BY` Postgres returns rows in physical order, which on an append-only table is insertion order. The cap kept the **oldest** thousand and discarded the **newest** fifty-seven. A cough from the previous day printed as ten days old; a vomit from three days earlier printed as eight.
+
+**Three properties of the failure, and each one generalises past this file.**
+
+It **failed toward reassurance**, on the artifact a clinician acts on. It was **unfalsifiable from the document** — every number agreed with every other number, because they all derived from the same short set, so no amount of careful reading recovers what the page never mentions. And it **targeted the best users**: truncation begins at row 1,001, so the most diligent owner got the most wrong report, which is exactly why no fixture and no test account had shown it in the months it was live.
+
+**The part that is really the lesson: the file already knew.** `LOOK_PULL_CAP`'s comment documents the hazard by name — *"Below Supabase's default PostgREST `max-rows` (1000) ON PURPOSE"* — and the dose pull's comment recorded it as a **KNOWN LIMIT** *"shared with every pull here"*. The looks pull was then hardened with `count: 'exact'`, a newest-first `.order()` and a `.limit()`. So the knowledge was present, correct, written down, and applied to one table out of eleven — and the one it was applied to was the one that could not reach the cap for two and a half years, while the ten left bare included the one that crosses it first. **A comment records what one person knew at one site. It cannot enumerate the other sites and cannot notice a new one.** That is the whole argument for turning it into a guard.
+
+**The reader.** `fetchAll` pages to the end of each result set. Two decisions carry it:
+
+1. **It advances by the rows RECEIVED, never by the page size.** This is what makes it sound at a server ceiling the deployed function cannot observe. A fixed stride asks for 0–499, is handed 200 by a capped server, advances to 500, and skips rows 200–499 forever. Advancing by the received count costs round trips and loses nothing — and it dissolves the constraint the issue's plan worried about ("`PAGE` must be at or below `max-rows`") from a correctness requirement into a performance preference.
+2. **Completeness comes from `count: 'exact'`, never from a short page.** The count is taken on **page 0**, the same request that returns page 0's rows, so for any record that fits in one page the count and the rows are one consistent snapshot. A page ceiling and an absent count both read as incomplete: absent means unknown means incomplete.
+
+**The ordering needed a tiebreaker, and this is the half most likely to be skipped.** The issue specified `.order('occurred_at', { ascending: false })` — the direction, which makes a residual drop land on the oldest rows. But `occurred_at` is **not unique** (this record logs ~7 events a day and meal one-taps land on the same second), and under a non-total sort Postgres may return tied rows in a different order per page, which repeats some and skips others **at every page seam**. Every table here has `id UUID PRIMARY KEY`, so every pull ends `, id DESC`. Six of the eleven have no `occurred_at` at all — it lives on the parent event, which is why those pulls cannot be `.gte`-bounded — so they order by `created_at DESC` and each says in place that "newest-first" there means most recently *logged*, not most recent incident. **Restating a true safety claim over a different column is the false half of a true sentence.**
+
+**Scope is wider than the issue's list.** `vet_visits` and `diet_trials` sat in the *first* `Promise.all` and are the scope cascade's rungs 1 and 2: truncating them does not shorten a count, it **moves the report's window**.
+
+**The (a′) ruling, and why the obvious answer was refined.** The issue recommended failing closed on any incomplete pull. Two measurements moved it. First, once the ordering lands, a shortfall drops the *oldest* rows, so the likeliest trigger becomes a write landing mid-pull — the count and the pages are taken at different instants, and no ordering fixes that. Second, `app/report.tsx` maps **every** error to one hardcoded line with a retry button, so a refusal is indistinguishable from a network fault and the retry does not work. Failing closed everywhere would hand an owner at a clinic no report at all to protect them from one that was correct. So: refuse (503) only when the `events` pull is incomplete **and** its oldest pulled row is inside the window — where every page-1 count is a query artifact and no sentence repairs it — and otherwise disclose. **This was not invented: `noticed.ts`'s `windowTruncated` already makes exactly that distinction for the look pull.** The disclosure never claims the window is complete, because the date-unbounded pulls can be short in-window; it states what is true of every case.
+
+**Two things nearly went green over nothing, and both were caught by execution rather than by reading.**
+
+The acceptance fixture's first draft was 1,057 coughs an hour apart. Entries within three hours **chain into one bout**, so the whole record assembled into a single episode and no count moved whether the reader paged or not — it would have passed identically against the bare pull. Rebuilt on the record's real composition (~1,000 meals plus the 57 newest vomits, all four hours apart). C-35, met rather than recalled.
+
+The **guard's own chain extractor** took a fixed 2,000-character slice from `.from(`, which read past the dose pull into the regimen pull beside it in the same `Promise.all` — so deleting `count: 'exact'` from the dose query left the guard **green on the neighbour's copy**. It is now bounded at the next `.from('`. This is C-4 (*slice the object under test*) inside a guard whose entire subject is a number derived from a query's edge, and only one of four mutations found it.
+
+**A third, about mutation runs.** One mutation in the first pass silently failed to apply — a `perl` anchor that matched nothing — and the guard reported green, which reads exactly like a proof. **A mutation that did not change the source is not a proof.** Check the file actually changed before reading the verdict.
+
+**What this did NOT fix.** `generate-signal` has the same bare pull feeding `detection.ts` (`index.ts:804`), and `ask` has fourteen `.from(` sites with two `.limit(1)`. Filed as CUL-989, Urgent. Raising `max-rows` 1,000 → 5,000 bought headroom for every current account and moved the cliff rather than removing it.
+
+**The residual, stated because an undocumented blind spot reads as coverage (C-38).** Offset paging over a moving table is racy across pages and no ordering fixes it. An INSERT during a multi-page pull is lossless (the de-dupe by primary key absorbs the re-served row); a DELETE can skip one row at a seam, the count then disagrees, and the pull reports itself incomplete. Neither can reach a single-page record. Keyset pagination on `(occurred_at, id)` is the upgrade if multi-page pulls ever become routine.
+
+---
+
 ## R — Read-These table, full notes
 
 The original rows, verbatim. Each spec named here is itself canonical; these are CLAUDE.md's binding notes about it as they stood when compacted.
