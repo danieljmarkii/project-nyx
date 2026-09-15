@@ -102,18 +102,31 @@ export default function EditVisitScreen() {
   // Re-asked whenever the picker moves, because the answer depends on the date
   // being saved rather than the one on file. Cheap (one COUNT), and the picker
   // commits a date at a time, not a keystroke at a time.
+  //
+  // `visit` is in the dependencies as the whole object, so this also re-asks on
+  // every focus — which is wanted rather than tolerated: another device can sync a
+  // NEWER visit for this pet while the screen is backgrounded, and that changes
+  // `isLatest` without anything on this screen moving.
   const candidateDay = fields ? localDateKey(fields.visitedAt) : null;
   useEffect(() => {
     if (!visit || !candidateDay) return;
     let live = true;
+    // CLEARED BEFORE THE ASK, not only on failure. The answer is per-DATE, so the
+    // moment the question changes the previous answer is about a date the owner has
+    // moved away from — and keeping it on screen while the new read is in flight is
+    // the original false claim, just briefly. Sub-frame against a local COUNT, and
+    // silence is the right thing to show for a day nothing has answered for yet
+    // (C-12, reapplied when the QUESTION changes rather than only on first load).
+    setAnchors(null);
     readVisitConsequence({ id: visit.id, pet_id: visit.pet_id, visited_at: candidateDay })
       .then((c) => {
         if (live) setAnchors(visitAnchorsAnything(c));
       })
       .catch((err) => {
-        // A failed read must not become a claim in either direction. Left at its
-        // previous answer, or at null on first load, so the note stays absent
-        // rather than asserting something the record did not confirm.
+        // Nothing to clear — the reset above already did it, and a failed read
+        // simply leaves it cleared. That is the whole point of resetting on the
+        // QUESTION rather than on the answer: the error path needs no rule of its
+        // own, so there is no second place for the two to disagree.
         console.warn('[vet-visit-edit] consequence read failed:', err);
       });
     return () => {
