@@ -4290,8 +4290,20 @@ function trialIntakeTile(snap: ReportSnapshot, intake: SafetyFlag | undefined): 
       `Consecutive days below intake baseline<br/>a health signal, not preference`,
     )
   }
+  // AND THE TRIAL CELL ONLY TAKES THE SLOT WHEN IT IS MOST OF THE PICTURE (adversarial pass,
+  // executed). "No floor" is right for the descriptive LINE and is the wrong argument for a RANKED
+  // CELL, and the counterexample is unpleasant: a cat picking at her food for eight weeks — 4 of
+  // 59 rated meals fully eaten — starts a trial four days ago and eats the first four servings.
+  // The headline printed "4 / 4 Trial-diet meals fully eaten" and the 4-of-59 survived only inside
+  // the 11px note below it. That is C-4's rule broken in its own words: the reassuring branch
+  // outranked the accusing one. So the trial subset earns the slot when it covers at least half
+  // the window's rated meals — where it IS the window's picture — and otherwise the window cell
+  // leads and the per-format line below carries the trial detail in full. Integer arithmetic, not
+  // a share, so no boundary rounds the wrong way.
   const ti = trialDietIntake(snap)
-  if (ti && ti.ratedMeals > 0) {
+  const mcAll = snap.diet.mealCompletion
+  const coversMost = ti !== null && (mcAll === null || ti.ratedMeals * 2 >= mcAll.ratedMeals)
+  if (ti && ti.ratedMeals > 0 && coversMost) {
     // "FULLY EATEN", NEVER "FINISHED", AND THE TWO ARE NOT THE SAME BAR. Page 1 counts
     // `intakeRating === 'all'`; `lib/dietTrial.feedingWasFinished` — the predicate behind the
     // trial block's "38 of 38 left unfinished" — counts most-OR-all. They disagree by exactly the
@@ -4341,9 +4353,16 @@ function trialIntakeTile(snap: ReportSnapshot, intake: SafetyFlag | undefined): 
  * correctly four pages later — so nothing here waits on a detector, a floor or a model. It is a
  * count with a denominator. CUL-60's refusal floors are not consulted and not touched.
  *
- * A format with no RATED meals is dropped rather than printed at zero: "0 rated meals" is a fact
- * about the owner's tapping, and beside a format that was eaten it reads as a format that was
- * never offered. The single-format trial therefore renders one entry, never an empty second.
+ * A FORMAT THE RECORD SAW IS ALWAYS NAMED, even with nothing rated — and the first cut dropped it
+ * (adversarial pass, executed). The reasoning for dropping was that "0 rated meals" reads as a
+ * format never offered; what it actually produced was worse in the direction that matters. Two
+ * formats, the owner logs all twelve wet servings and rates none of them, and the block printed
+ * "dry — 23 rated meals: ate it all ×23" and nothing else, over a headline cell reading 23 / 23 —
+ * a LOGGING GAP rendered as a perfect intake ratio, with the wet half (the exact question this
+ * block exists to answer) absent from page 1 entirely. That is "didn't log ⇒ didn't happen",
+ * landing in the slot that used to say "record coverage — not intake". The offered count is known,
+ * so the row states it as the record fact it is: "12 servings offered, none rated". A format the
+ * record never saw at all (no feedings, no ratings) is still dropped — there is nothing to say.
  *
  * The span is the trial's EVIDENCE range, because that is the range `trial.ts` classifies over —
  * not the coverage range the tile beside it names, which is clipped at both ends. The two are
@@ -4351,9 +4370,14 @@ function trialIntakeTile(snap: ReportSnapshot, intake: SafetyFlag | undefined): 
  */
 interface TrialFormatIntake {
   label: string
+  /** In-range feedings this row permitted — servings OFFERED, rated or not. */
+  feedings: number
   ratedMeals: number
   fullyEaten: number
   breakdown: Array<{ rating: string; count: number }>
+  /** The row's own permission dates, rendered only when two rows share a label. */
+  from: string
+  until: string | null
 }
 
 interface TrialDietIntake {
@@ -4368,18 +4392,36 @@ interface TrialDietIntake {
 function trialDietIntake(snap: ReportSnapshot): TrialDietIntake | null {
   const t = snap.trial
   if (!t) return null
-  const formats: TrialFormatIntake[] = t.permittedFoods
-    .filter((f) => f.role === 'primary_diet')
+  // ONE ROW PER PERMISSION KEY. Two `diet_trial_foods` rows can carry the same food, role and
+  // start date, and `trial.ts` reads its per-row map BY that key — so a duplicate pair would take
+  // the same ratings twice and this block would print a total LARGER than the window's rated
+  // meals. Migration 040's UNIQUE constraint makes that unreachable from the database today; the
+  // guard is here because the partition sentence below is the only check on the ratio and it
+  // fails quiet in that direction (adversarial pass).
+  const seenKey = new Set<string>()
+  const rows = t.permittedFoods.filter((f) => {
+    if (f.role !== 'primary_diet') return false
+    const key = `${f.label}|${f.allowedFrom}|${f.allowedUntil ?? ''}`
+    if (seenKey.has(key)) return false
+    seenKey.add(key)
+    return true
+  })
+  const formats: TrialFormatIntake[] = rows
     .map((f) => ({
       label: f.label,
+      feedings: f.feedings,
       ratedMeals: f.intakeRatings.length,
       // `=== 'all'`, the predicate page 1's "N of M rated meals fully eaten" uses — NOT
       // `feedingWasFinished`, which counts most-or-all and would score eleven "ate most" servings
       // of a never-finished diet as finished.
       fullyEaten: f.intakeRatings.filter((r) => r === 'all').length,
       breakdown: intakeBreakdownOf(f.intakeRatings),
+      from: f.allowedFrom,
+      until: f.allowedUntil,
     }))
-    .filter((f) => f.ratedMeals > 0)
+    // A format the record never saw is dropped. A format it DID see is kept even with nothing
+    // rated — see the row renderer, where that is the whole point.
+    .filter((f) => f.ratedMeals > 0 || f.feedings > 0)
   if (formats.length === 0) return null
   return {
     formats,
@@ -4419,6 +4461,14 @@ function intakeLine(snap: ReportSnapshot): string {
   const sentences: string[] = []
 
   if (ti) {
+    // TWO ROWS OF ONE FOOD ARE TWO PERMISSIONS, NOT TWO FORMATS (adversarial pass). Migration 040's
+    // own remove-then-re-add workflow produces a second `diet_trial_foods` row with the same label
+    // and a later `allowed_from`, and the first cut rendered them as two identically-named formats
+    // with different numbers and no dates — while the Allowed list two inches below disambiguated
+    // them correctly. Dates are added only where a label actually repeats, so the ordinary
+    // wet-and-dry pair stays clean.
+    const labelCounts = new Map<string, number>()
+    for (const f of ti.formats) labelCounts.set(f.label, (labelCounts.get(f.label) ?? 0) + 1)
     const items = ti.formats.map((f) => {
       // THE DISTRIBUTION IS THE LINE, AND THE DERIVED COUNT CAME OFF IT (Dr. Chen, cold read).
       //
@@ -4434,10 +4484,23 @@ function intakeLine(snap: ReportSnapshot): string {
       // NO EMPHASIS THAT VARIES WITH THE VALUE, either. Bolding the row that reads badly is a
       // verdict rendered in typography, and this line is forbidden one; the cold read's "bold the
       // count, not the brand" is answered by bolding neither.
+      const dates =
+        (labelCounts.get(f.label) ?? 0) > 1
+          ? ` (${h(f.until ? fmtRange(f.from, f.until) : `from ${fmtDay(f.from)}`)})`
+          : ''
+      const name = `${h(f.label)}${dates}`
+      // OFFERED BUT NEVER RATED IS A FACT ABOUT THE RECORD, and it is stated rather than dropped.
+      // "None rated" is the owner's tapping; it is never "none eaten", and the sentence must not
+      // let a reader take the second from the first.
+      if (f.ratedMeals === 0) {
+        return `${name} &mdash; ${num(f.feedings)} serving${
+          f.feedings === 1 ? '' : 's'
+        } offered, none rated`
+      }
       const tally = f.breakdown
         .map((b) => `${h(intakeLabel(b.rating).toLowerCase())} &times;${num(b.count)}`)
         .join(' &middot; ')
-      return `${h(f.label)} &mdash; ${num(f.ratedMeals)} rated meal${
+      return `${name} &mdash; ${num(f.ratedMeals)} rated meal${
         f.ratedMeals === 1 ? '' : 's'
       }: ${tally}`
     })
@@ -4489,11 +4552,23 @@ function intakeLine(snap: ReportSnapshot): string {
   // and "these are 38 of the 38 rated meals" back to back. It is spelled out rather than leaning
   // on "those": a pronoun here binds to whichever plural rendered last, which is the refusal
   // count on one branch and nothing at all on another.
+  // …AND IT NAMES BOTH REASONS THE REST ARE NOT HERE (adversarial pass, executed). It read "cover
+  // 20 of the 32 rated meals in this window", whose plain reading is that the other twelve were
+  // OTHER FOODS — and on an ended trial whose diet the owner kept offering, those twelve were the
+  // SAME food, picked at, excluded because the counted span closes when the trial does. So page 1
+  // printed "20 / 20 fully eaten" for that format with the declining servings described as
+  // something else. C-37's tell exactly: the span reached outside the window and the accusing
+  // count did not. The sentence now names the span first and both causes without asserting which
+  // applies to any row — the record cannot settle that, and a page must not answer what it cannot
+  // (C-4). Which rows those are is in appendix E, by food.
+  const outside = mc && ti ? mc.ratedMeals - ti.ratedMeals : 0
   const partition =
-    ti && mc && ti.ratedMeals < mc.ratedMeals
-      ? `The per-format counts above cover ${num(ti.ratedMeals)} of the ${num(
-          mc.ratedMeals,
-        )} rated meals in this window. `
+    ti && mc && outside > 0
+      ? outside === 1
+        ? `These counts are over ${h(ti.span)}; the window&rsquo;s one other rated meal falls outside that span or was another food. `
+        : `These counts are over ${h(ti.span)}; the window&rsquo;s other ${num(
+            outside,
+          )} rated meals fall outside that span or were other foods. `
       : ''
   // THE GRAZER'S QUALIFIER, COMPOSED WITH THE COUNT RATHER THAN REPLACING IT (Sam's lens; the
   // B-532 round-7 resolution of R2-3). "0 fully eaten" over a cat with a bowl down all day is a

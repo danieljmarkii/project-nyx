@@ -5385,16 +5385,19 @@ Deno.test('CUL-980 — page 1 states the trial diet per FORMAT, with denominator
 
 Deno.test('CUL-980 — the per-format counts name their share of page 1s rated meals (C-3)', () => {
   const t = plain(renderReport(withTrialIntake()))
+  // THE SPAN LEADS AND BOTH CAUSES ARE NAMED. "Cover 33 of the 34" reads as "the other one was a
+  // different food" — and on an ended trial whose diet kept being offered, the excluded rows are
+  // the SAME food, dropped because the counted span closes when the trial does.
   assert.ok(
-    /The per-format counts above cover 33 of the 34 rated meals in this window/.test(t),
-    'the partition is stated as arithmetic against the number page 1 already prints',
+    /These counts are over .+; the window's one other rated meal falls outside that span or was another food/.test(t),
+    'the partition names the span first and both causes, asserting neither of any row',
   )
-  // AND IT SAYS NOTHING ABOUT WHAT THE REST WERE. That set mixes meals outside the trial's dated
-  // range with meals off its list, and the record cannot settle which per row (CUL-746).
-  assert.ok(!/not matched to the trial diet.{0,40}rated meals in this window/s.test(t))
+  const several = plain(renderReport(withTrialIntake({}, { ratedMeals: 37, finishedMeals: 21 })))
+  assert.ok(/the window's other 4 rated meals fall outside that span or were other foods/.test(several), 'and agrees in number')
+  assert.ok(!/cover 33 of the 34/.test(t), 'and never the form that implies the rest were other foods')
   // At equality the clause is absent rather than restating a denominator just read.
   const whole = plain(renderReport(withTrialIntake({}, { ratedMeals: 33, finishedMeals: 21 })))
-  assert.ok(!/per-format counts above cover/.test(whole), 'nothing to reconcile, nothing said')
+  assert.ok(!/fall outside that span/.test(whole), 'nothing to reconcile, nothing said')
   assert.ok(/Trial diet by format, /.test(whole), 'the formats themselves still render')
 })
 
@@ -5481,8 +5484,8 @@ Deno.test('CUL-980 — a single-format trial renders ONE entry, never an empty s
   assert.ok(!/recorded as refused/.test(one), 'no sentence that says only what the tally just said')
   assert.ok(!/Dentastix — /.test(one), 'a permitted treat is not a format of the trial diet')
   assert.ok(!/· +—/.test(one), 'no empty second entry')
-  // A format with no RATED meals is dropped, not printed at zero: "0 rated meals" is a fact about
-  // the owner's tapping, and beside a format that was eaten it reads as one never offered.
+  // A FORMAT THE RECORD SAW IS NAMED EVEN WITH NOTHING RATED. Dropping it turned a logging gap
+  // into a perfect ratio: the wet half vanished from page 1 while the cell above read 21 / 21.
   const unrated = sliceIntakeLine(
     renderReport(
       withTrialIntake({
@@ -5495,7 +5498,22 @@ Deno.test('CUL-980 — a single-format trial renders ONE entry, never an empty s
       }),
     ),
   )
-  assert.ok(!/Purina HA — wet/.test(unrated), 'an unrated format is absent, not zeroed')
+  assert.ok(/Purina HA — wet — 6 servings offered, none rated/.test(unrated), 'the offered count is the record fact')
+  assert.ok(!/none eaten/.test(unrated), 'and never reads as intake')
+  // A format the record never saw at all is still dropped — there is nothing to say about it.
+  const neverFed = sliceIntakeLine(
+    renderReport(
+      withTrialIntake({
+        trial: twoFormatTrial({
+          permittedFoods: [
+            { label: 'Purina HA — dry', role: 'primary_diet', allowedFrom: '2026-06-01', allowedUntil: null, feedings: 21, intakeRatings: Array(21).fill('all'), addedAfterStart: false, endedBeforeWindowEnd: false, proteins: ['soy'], panelRead: true },
+            { label: 'Purina HA — pouch', role: 'primary_diet', allowedFrom: '2026-06-01', allowedUntil: null, feedings: 0, intakeRatings: [], addedAfterStart: false, endedBeforeWindowEnd: false, proteins: ['soy'], panelRead: true },
+          ],
+        }),
+      }),
+    ),
+  )
+  assert.ok(!/pouch/.test(neverFed), 'a format with no feedings and no ratings is absent')
 })
 
 Deno.test('CUL-980 — the headline row spends the intake slot, and the weight cell only when it has a number', () => {
@@ -5741,4 +5759,63 @@ Deno.test('CUL-980 — a refusal outside the trial formats says so, and one insi
   assert.ok(/refused ×1/.test(inside), 'the tally shows it')
   assert.ok(/1 of the 34 rated meals in this window is recorded as refused\./.test(inside), 'the window-scoped sentence still renders')
   assert.ok(!/not one of the formats above/.test(inside), 'but never claims it was another food')
+})
+
+Deno.test('CUL-980 — a small trial subset never evicts the window intake cell from the headline', () => {
+  // THE ADVERSARIAL PASS'S COUNTEREXAMPLE, EXECUTED. A cat picking at her food for eight weeks —
+  // 4 of 59 rated meals fully eaten — starts a trial four days ago and eats the first four
+  // servings. The trial subset is reassuring and the window is not, and the reassuring one was
+  // taking the headline cell (C-4: the reassuring branch outranking the accusing one).
+  const tiny = twoFormatTrial({
+    permittedFoods: [
+      {
+        label: 'Purina HA — dry', role: 'primary_diet', allowedFrom: '2026-06-28', allowedUntil: null,
+        feedings: 4, intakeRatings: Array(4).fill('all'),
+        addedAfterStart: false, endedBeforeWindowEnd: false, proteins: ['soy'], panelRead: true,
+      },
+    ],
+  })
+  const html = renderReport(withTrialIntake({ trial: tiny }, { ratedMeals: 59, finishedMeals: 4, intakeMode: 'picked' }))
+  const t = plain(html)
+  assert.ok(/4 \/ 59/.test(t.replace(/\s+/g, ' ')) || /Meals fully eaten \(rated meals only\)/.test(t), 'the window cell leads')
+  assert.ok(!/Trial-diet meals fully eaten/.test(t), 'the four-meal subset does not take the headline')
+  // AND THE TRIAL DETAIL IS NOT LOST — it is stated in full on the line below, which has no floor.
+  assert.ok(/Purina HA — dry — 4 rated meals: ate it all ×4/.test(t), 'the per-format line still carries it')
+
+  // At half the window's rated meals the trial subset IS the window's picture and takes the slot.
+  const half = plain(renderReport(withTrialIntake({ trial: tiny }, { ratedMeals: 8, finishedMeals: 4 })))
+  assert.ok(/Trial-diet meals fully eaten/.test(half), 'at half or more it earns the cell')
+})
+
+Deno.test('CUL-980 — two permissions of one food are dated apart, and a duplicate key is counted once', () => {
+  // Migration 040's own remove-then-re-add workflow: same food, withdrawn, permitted again later.
+  // Rendered without dates these were two identically-named "formats" with different numbers.
+  const readded = sliceIntakeLine(
+    renderReport(
+      withTrialIntake({
+        trial: twoFormatTrial({
+          permittedFoods: [
+            { label: 'Purina HA — dry', role: 'primary_diet', allowedFrom: '2026-06-01', allowedUntil: '2026-06-10', feedings: 9, intakeRatings: Array(9).fill('all'), addedAfterStart: false, endedBeforeWindowEnd: true, proteins: ['soy'], panelRead: true },
+            { label: 'Purina HA — dry', role: 'primary_diet', allowedFrom: '2026-06-20', allowedUntil: null, feedings: 8, intakeRatings: Array(8).fill('most'), addedAfterStart: true, endedBeforeWindowEnd: false, proteins: ['soy'], panelRead: true },
+          ],
+        }),
+      }),
+    ),
+  )
+  assert.ok(/Purina HA — dry \(/.test(readded), 'a repeated label carries its own dates')
+  assert.equal(readded.split('Purina HA — dry').length - 1, 2, 'both permissions render')
+  assert.ok(/ate it all ×9/.test(readded) && /ate most ×8/.test(readded), 'each with its own ratings')
+  // The ordinary wet-and-dry pair does NOT gain dates — they disambiguate themselves.
+  assert.ok(!/Purina HA — wet \(/.test(sliceIntakeLine(renderReport(withTrialIntake()))))
+
+  // A DUPLICATE PERMISSION KEY IS COUNTED ONCE. `trial.ts` reads its per-row map by key, so an
+  // identical pair would take the same ratings twice and print a total LARGER than the window's
+  // rated meals — where the partition sentence fails quiet rather than catching it. Migration
+  // 040's UNIQUE constraint makes this unreachable from the database; the guard is cheap.
+  const dupRow = { label: 'Purina HA — dry', role: 'primary_diet' as const, allowedFrom: '2026-06-01', allowedUntil: null, feedings: 21, intakeRatings: Array(21).fill('all'), addedAfterStart: false, endedBeforeWindowEnd: false, proteins: ['soy'], panelRead: true }
+  const duped = sliceIntakeLine(
+    renderReport(withTrialIntake({ trial: twoFormatTrial({ permittedFoods: [dupRow, { ...dupRow }] }) })),
+  )
+  assert.equal(duped.split('Purina HA — dry').length - 1, 1, 'the duplicate is dropped, not double-counted')
+  assert.ok(/21 rated meals/.test(duped) && !/42 rated meals/.test(duped))
 })
