@@ -5317,9 +5317,13 @@ function regimenDates(m: MedicationAdherence): string {
     // What the doses actually covered is the span sentence's to say (`dosingSpan`, CUL-994
     // Part 2), beside this clause.
     const verb = m.status === 'completed' ? ' (end recorded by owner)' : ' (stopped by owner)'
-    return `${h(fmtDay(m.startedAt))} &ndash; ${h(fmtDay(m.endedAt))}${verb}`
+    // Year-stamped (C-19): a regimen's dates are RECORD-scoped — an old completed course is a
+    // valid historical confounder and the meds pull is deliberately unbounded — so a year-less
+    // pair printed a year-long course as "Jun 20 – Jun 25" and a 2025 course as this year's
+    // (adversarial round 2). `fmtRange` stamps the year once per range, never per date.
+    return `${h(fmtRange(m.startedAt.slice(0, 10), m.endedAt.slice(0, 10)))}${verb}`
   }
-  return `since ${h(fmtDay(m.startedAt))}`
+  return `since ${h(fmtDayYear(m.startedAt.slice(0, 10)))}`
 }
 
 /**
@@ -5402,62 +5406,75 @@ function medicationLine(m: MedicationAdherence): string {
 }
 
 /**
- * The dosing SPAN (CUL-994 Part 2, after adversarial round 3 and the R-11 cold read): what the
- * administered doses of an owner-ended, planned, paced course actually covered, stated as
- * DENSITY + SPAN beside the plan's own arithmetic, so a vet can see a tail hole, an interior
- * hole or a faster-than-prescribed pace without the page adjudicating any of them.
+ * The dosing SPAN (CUL-994 Part 2, after adversarial rounds 3 and 4 and two cold reads): what
+ * the administered doses of an owner-ended, planned, paced course actually covered, stated as
+ * DENSITY + SPAN beside the plan's own arithmetic, so a vet can see a hole, a crammed course
+ * or a faster-than-prescribed pace without the page adjudicating any of them.
  *
- *   "Those doses fell on 14 of the 14 days from Jul 17 to Jul 30 (28 doses at 1×/day take
- *    28 days); the course's recorded end is Aug 14."
+ *   "The 28 administered doses fell on all 14 days, Jul 17 – Jul 30, 2026 (28 prescribed
+ *    doses at 1×/day take 28 days)."
+ *   "The 20 administered doses fell on 10 of the 29 days from Jul 1 to Jul 29, 2026 (28
+ *    prescribed doses at 1×/day take 28 days)."
  *
- * The day count is stated AS A RATIO OVER THE SPAN, not as a bare number beside a date range:
- * the second cold read found that "fell on 10 days, Jul 1 – Jul 29 (28 doses at 1×/day take 28
- * days)" read as a course that ran roughly its prescribed length, because the 29-day span
- * matched the 28-day need and the discriminating "10 days" read as a gloss on the range. "10 of
- * the 29 days from Jul 1 to Jul 29" is the same two facts with the hole in the numerator's
- * face — and the sentence's power is otherwise inverse to the clinical risk: a crammed course
- * is loud (14 days against 28) and an interrupted one silent (29 against 28).
+ * Every noun names its population, because the sentence sits beside `adherenceClaim`, whose
+ * nearest plural noun is the PRESCRIBED set: a bare "Those doses" was readable as "the 28
+ * prescribed doses fell on 10 days", an over-dosing story where the truth was under-delivery
+ * (round 4). So: "The N administered doses" — the claim's numerator, same population, the
+ * three fields with one writer each in report.ts (`lifetimeFirstDoseDay` / `lifetimeLastDoseDay`
+ * / `lifetimeDoseDayCount`, inside `if (administered)`) — and the parenthetical says whether
+ * its N is the plan ("28 prescribed doses") or the record ("40 doses … 28 were prescribed").
+ * The word "logged" never appears in it.
  *
- * "Those doses" binds to the adherence claim printed just before it, which is the same
- * population (administered, whole record) — one population, both endpoints and the day count
- * (`lifetimeFirstDoseDay` / `lifetimeLastDoseDay` / `lifetimeDoseDayCount`, one writer each in
- * report.ts, inside `if (administered)`). The word "logged" never appears in it. Two dates and
- * no duration (C-19); the parenthetical is arithmetic the record carries, not a verdict.
+ * THE RATIO PRINTS ONLY WHEN THERE ARE HOLES. Its denominator is the span between the first
+ * and last administered day, so it can only ever show what lies BETWEEN them: contiguous
+ * dosing reads "N of N" whatever sits outside, and round 4 found that a full-looking fraction
+ * in front of a ten-day tail (the CUL-976 reference record: 28 doses over 14 days, End tapped
+ * ten days later) read as 100% where the previous bare-count form had read as what it was. So
+ * a course dosed on every day of its span says so in words — "on all 14 days" — and the ratio
+ * appears only where it measures something: "10 of the 29 days". What lies outside the span is
+ * carried by the dates, and the regimen's own recorded dates sit two clauses earlier on the
+ * same line; the sentence does not restate the recorded end (round 4's nit: the same date twice
+ * in two framings). The plan's arithmetic is the honest yardstick for a tail — `endRegimen`
+ * writes TODAY's local day when the owner taps End, so a recorded end is when they got round
+ * to it, and R-2's ruling stands: the page does not call a late tap an early stop.
  *
- * WHY IT ALWAYS RENDERS on that class of course, and why the earlier shapes did not survive:
+ * WHY IT ALWAYS RENDERS on that class of course (both adversarial rounds agree the always-
+ * render shape is safer than the suppression it replaced): the stated predicate — withhold
+ * when `count ≥ plan AND span ≥ ceil(plan / dosesPerDay)` — failed in both directions under
+ * falsification. A ONE-dose shortfall over the full prescribed length re-armed the sentence
+ * and read as a ten-day abandonment; ONE linked dose logged after the End tap moved the last
+ * endpoint past the end and deleted the sentence over a fifteen-day hole; a first–last range
+ * printed ten dosing days with a nineteen-day hole between them as a 29-day span; and the cold
+ * read found the silence itself misleading — a "28 of 28" beside an unexplained "14 of 25
+ * days" resolved the record's ambiguity in the reassuring direction by omission. A count
+ * condition is a cliff, and two endpoints cannot carry density. The day count carries it; the
+ * need is printed rather than tested.
  *
- *   • R-2's version was suppressed wherever the record showed full delivery, because
- *     `endRegimen` writes TODAY's local day when the owner taps End and two bare dates
- *     ("dosed Jul 17 – Jul 30", "end Aug 9") read as an early stop that might be a late tap.
- *     The cold read then found the silence itself misleading: a "28 of 28" beside an
- *     unexplained "14 of 25 days" resolved the same ambiguity in the reassuring direction by
- *     omission. Stating the plan's need ("28 doses at 2×/day take 14 days") beside the 14
- *     dosing days is the positive fact the record does hold, and it needs no suppression.
- *   • The stated predicate (withhold when `count ≥ plan AND span ≥ ceil(plan / dosesPerDay)`)
- *     failed in both directions under falsification: a ONE-dose shortfall over the full
- *     prescribed length re-armed the sentence and read as a ten-day abandonment; ONE linked
- *     dose logged after the End tap moved the last endpoint past the end and deleted the
- *     sentence over a fifteen-day hole; and a first–last range printed ten dosing days with a
- *     nineteen-day hole between them as a 29-day span. All three are the same defect: two
- *     endpoints cannot carry density, and a count condition is a cliff. The day count carries
- *     the density; the need is printed rather than tested.
+ * DATES CARRY THEIR YEAR (C-19). These are record-scoped — the meds pull is unbounded and
+ * `lifetimeDoses` untrimmed — while every other date on this line was window-bounded, and
+ * year-less they printed a year-long course as "from Jun 21 to Jun 20" and a 2025 course
+ * inside this year's window (round 4). The year is stamped once per range (`fmtRange`'s rule),
+ * never per date.
  *
- * THE NEED is exact for any pace, not `ceil(N / r)`: N doses at r per day occupy
+ * THE NEED is exact for any pace the column can hold: N doses at r per day occupy
  * `floor((N − 1) / r) + 1` days (28 at 2 → 14; 28 at 1 → 28; 10 at 0.5 → 19, every other day),
- * and the ceiling form over-demands a day on every fractional pace. N is the LARGER of the
- * doses administered and the doses planned (CUL-994's worked row 3, its delivered divisor):
- * the arithmetic is about the doses that exist, and the prescribed divisor made the bar easier
- * to clear the more a course was over-counted — the reassuring direction.
+ * computed in hundredths because `doses_per_day` is NUMERIC(4,2) and IEEE doubles understated
+ * the need by a day on 367 of the two-decimal paces (round 4 — every one in the reassuring
+ * direction). N is the LARGER of the doses administered and the doses planned (CUL-994's
+ * worked row 3, its delivered divisor): the arithmetic is about the doses that exist, and the
+ * prescribed divisor made the bar easier to clear the more a course was over-counted.
  *
  * WHAT STAYS SILENT, and why (C-4 rule 4 — where the record cannot settle it the page does not
  * answer): no owner-recorded end (H1: silence never becomes an ending); no planned total; no
  * daily pace (PRN — an as-needed course measured against a schedule is a category error, and
- * without a need to print beside them the two dates would be R-2's bare gap again); nothing
+ * without a need to print beside them the dates would be R-2's bare gap again); nothing
  * administered (the claim's "0 of N" already says it).
  *
- * KNOWN BLIND SPOT, stated rather than implied: a day count cannot tell WHERE the holes are.
- * "14 days, Jul 17 – Aug 9" says the dosing was sparse over a 24-day span; it does not say
- * whether the missing days were the middle or the end. Appendix D lists the dose dates.
+ * KNOWN BLIND SPOTS, stated rather than implied: a day count cannot tell WHERE the holes are
+ * (Appendix D lists the dates, and CUL-1013 is the guard that column lacks); a dose linked to a
+ * regimen but logged outside its recorded span reaches here undisclosed (CUL-992, both ends);
+ * and an under-LOGGED course reads as a sparse dosing pattern — the "only what the owner
+ * entered" caveat lives on §4.4's subhead.
  */
 function dosingSpan(m: MedicationAdherence): string {
   if (!m.courseEnded || !m.endedAt) return ''
@@ -5466,24 +5483,43 @@ function dosingSpan(m: MedicationAdherence): string {
   const first = m.lifetimeFirstDoseDay
   const last = m.lifetimeLastDoseDay
   const days = m.lifetimeDoseDayCount
-  if (!first || !last || days < 1 || m.lifetimeDosesLogged < 1) return ''
-  const n = Math.max(m.lifetimeDosesLogged, m.prescribedDoses)
+  const given = m.lifetimeDosesLogged
+  if (!first || !last || days < 1 || given < 1) return ''
+  const n = Math.max(given, m.prescribedDoses)
   const need = dosingDaysFor(n, m.dosesPerDay)
   const rate = h(String(m.dosesPerDay))
-  const needBit = `(${num(n)} dose${n === 1 ? '' : 's'} at ${rate}×/day take${n === 1 ? 's' : ''} ${num(need)} day${
-    need === 1 ? '' : 's'
-  })`
-  // `endedAt` is a DATE; sliced defensively so an instant could never print as a time.
-  const endBit = `; the course&rsquo;s recorded end is ${h(fmtDay(m.endedAt.slice(0, 10)))}.`
-  if (m.lifetimeDosesLogged === 1) return ` That dose was administered on ${h(fmtDay(first))} ${needBit}${endBit}`
-  if (days === 1) return ` Those doses all fell on ${h(fmtDay(first))} ${needBit}${endBit}`
+  const needBit =
+    given > m.prescribedDoses
+      ? `(${num(n)} doses at ${rate}×/day take ${num(need)} day${need === 1 ? '' : 's'}; ${num(m.prescribedDoses)} ${
+          m.prescribedDoses === 1 ? 'was' : 'were'
+        } prescribed)`
+      : `(${num(n)} prescribed dose${n === 1 ? '' : 's'} at ${rate}×/day take${n === 1 ? 's' : ''} ${num(need)} day${
+          need === 1 ? '' : 's'
+        })`
+  if (given === 1) return ` That dose was administered on ${h(fmtDayYear(first))} ${needBit}.`
+  const subject = `The ${num(given)} administered doses`
+  if (days === 1) return ` ${subject} all fell on ${h(fmtDayYear(first))} ${needBit}.`
   const span = daysBetweenDayKeys(first, last) + 1
-  return ` Those doses fell on ${num(days)} of the ${num(span)} days from ${h(fmtDay(first))} to ${h(fmtDay(last))} ${needBit}${endBit}`
+  if (days >= span) return ` ${subject} fell on all ${num(days)} days, ${h(fmtRange(first, last))} ${needBit}.`
+  return ` ${subject} fell on ${num(days)} of the ${num(span)} days ${h(fmtSpanFromTo(first, last))} ${needBit}.`
 }
 
-/** The days N doses at `perDay` occupy when given at that pace — exact for fractional paces too. */
+/** "from Mon D to Mon D, YYYY" (one year) or "from Mon D, YYYY to Mon D, YYYY" — the year once per pair (C-19). */
+function fmtSpanFromTo(a: string, b: string): string {
+  const pa = dayParts(a)
+  const pb = dayParts(b)
+  if (pa && pb && pa.y === pb.y) return `from ${fmtDay(a)} to ${fmtDay(b)}, ${pb.y}`
+  return `from ${fmtDayYear(a)} to ${fmtDayYear(b)}`
+}
+
+/**
+ * The days N doses at `perDay` occupy when given at that pace. Computed in HUNDREDTHS —
+ * `doses_per_day` is NUMERIC(4,2) — so a two-decimal pace never loses a day to a double's
+ * rounding (7 / 0.14 is 49.999… in IEEE and exactly 50 in the record).
+ */
 function dosingDaysFor(n: number, perDay: number): number {
-  return Math.floor((n - 1) / perDay) + 1
+  const perDayHundredths = Math.round(perDay * 100)
+  return Math.floor(((n - 1) * 100) / perDayHundredths) + 1
 }
 
 /**

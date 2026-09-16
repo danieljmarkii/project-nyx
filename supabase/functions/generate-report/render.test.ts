@@ -2348,7 +2348,7 @@ Deno.test('cold-read coherence — a completed/stopped medication carries its en
   // The end date appears (not a bare "since May 12" that reads as still-active), on BOTH surfaces.
   // CUL-982 item 1 — "end recorded by owner", never "course complete": the status is the End tap,
   // and not "ended by owner" either, which a vet reads as "the owner stopped the drug".
-  assert.ok(/May 12 &ndash; May 26 \(end recorded by owner\)/.test(html), 'completed course shows its date span + "end recorded by owner"')
+  assert.ok(/May 12 – May 26, 2026 \(end recorded by owner\)/.test(html), 'completed course shows its date span, year-stamped, + "end recorded by owner"')
   assert.ok(!/course complete/.test(html), '"course complete" is never printed — the status says nothing about doses')
   assert.ok(!/Metronidazole.*since <span class="num">May 12/.test(html), 'the ended course does not read "since May 12" as if still active')
 })
@@ -4883,7 +4883,7 @@ Deno.test('CUL-634 — Appendix A counts every row without a witnessed time, inc
 // ── CUL-982 item 1: the status verb ──
 Deno.test('CUL-982 item 1 — a stopped course reads "stopped by owner"; neither status ever reads "complete"', () => {
   const html = renderReport(base({ medications: [med({ status: 'stopped', endedAt: '2026-05-26', startedAt: '2026-05-12', courseEnded: true, lifetimeFirstDoseDay: '2026-05-12', lifetimeLastDoseDay: '2026-05-26', lifetimeDoseDayCount: 15 })] }))
-  assert.ok(/May 12 &ndash; May 26 \(stopped by owner\)/.test(html))
+  assert.ok(/May 12 – May 26, 2026 \(stopped by owner\)/.test(html))
   assert.ok(!/complete/.test(html.slice(html.indexOf('Metronidazole'), html.indexOf('Metronidazole') + 600)), 'no "complete" beside the course')
 })
 
@@ -4902,27 +4902,27 @@ function endedCourse(over: Partial<MedicationAdherence> = {}): MedicationAdheren
 }
 /** The span sentence as plain text, or null when the line carries none. */
 function spanSentence(html: string): string | null {
-  const m = /(?:Those doses(?: all)? fell on|That dose was administered on)[\s\S]*?recorded end is [A-Z][a-z]{2} \d+\./.exec(html)
+  const m = /(?:The <span class="num">\d+<\/span> administered doses(?: all)? fell on|That dose was administered on)[\s\S]*?\)\./.exec(html)
   return m ? m[0].replace(/<[^>]+>/g, '').replace(/&ndash;/g, '–').replace(/&rsquo;/g, '’') : null
 }
 
-Deno.test('CUL-994 Part 2 — CUL-976\'s reference record states the positive fact instead of going silent: 14 dosing days beside the 14 days 28 doses at 2×/day take', () => {
+Deno.test('CUL-994 Part 2 — CUL-976\'s reference record states the positive fact instead of going silent: contiguous dosing reads "on all 14 days", never a self-referential "14 of the 14" (adversarial round 4)', () => {
   const html = renderReport(base({ medications: [endedCourse()] }))
   assert.equal(
     spanSentence(html),
-    'Those doses fell on 14 of the 14 days from Jul 17 to Jul 30 (28 doses at 2×/day take 14 days); the course’s recorded end is Aug 9.',
+    'The 28 administered doses fell on all 14 days, Jul 17 – Jul 30, 2026 (28 prescribed doses at 2×/day take 14 days).',
   )
-  assert.ok(/Jul 16 &ndash; Aug 9 \(end recorded by owner\)/.test(html), 'the status verb says the END was RECORDED')
+  assert.ok(/Jul 16 – Aug 9, 2026 \(end recorded by owner\)/.test(html), 'the status verb says the END was RECORDED, year-stamped')
   assert.ok(/Adherence: <span class="num">28<\/span> of <span class="num">28<\/span> prescribed doses administered across the whole course\./.test(html))
   // Placed beside the status verb, after the one adherence claim, before the window clause.
   const line = html.slice(html.indexOf('Motozol'), html.indexOf('In this window'))
-  assert.ok(/\(end recorded by owner\)\. Adherence: .*? Those doses fell on/.test(line), 'the span follows the adherence claim on the same line')
+  assert.ok(/\(end recorded by owner\)\. Adherence: .*? The <span class="num">28<\/span> administered doses fell on/.test(line), 'the span follows the adherence claim on the same line, naming its population')
 })
 
 Deno.test('CUL-994 Part 2 — a DAYS-denominated plan dosed in half its days: 14 dosing days beside the 28 days 28 doses at 1×/day take (RED under the count-only suppression)', () => {
   const html = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, endedAt: '2026-08-14' })] }))
   const sentence = spanSentence(html)
-  assert.equal(sentence, 'Those doses fell on 14 of the 14 days from Jul 17 to Jul 30 (28 doses at 1×/day take 28 days); the course’s recorded end is Aug 14.')
+  assert.equal(sentence, 'The 28 administered doses fell on all 14 days, Jul 17 – Jul 30, 2026 (28 prescribed doses at 1×/day take 28 days).')
   assert.ok(!/logged/.test(sentence!), '"logged" never appears in the span sentence — it says "administered"')
 })
 
@@ -4930,7 +4930,7 @@ Deno.test('CUL-994 Part 2 — over-delivered at a faster pace: the need is compu
   // 40 logged vs 28 planned at 2×/day, on 15 days Jul 17–31. ceil(28 / 2) would have said 14 and let
   // the crammed course read as at pace; 40 doses at 2×/day take 20 days, which is the arithmetic.
   const html = renderReport(base({ medications: [endedCourse({ lifetimeDosesLogged: 40, lifetimeLastDoseDay: '2026-07-31', lifetimeDoseDayCount: 15, givenDoses: 40, windowDosesLogged: 40, windowDosesTotal: 40, daysWithDose: 15 })] }))
-  assert.equal(spanSentence(html), 'Those doses fell on 15 of the 15 days from Jul 17 to Jul 31 (40 doses at 2×/day take 20 days); the course’s recorded end is Aug 9.')
+  assert.equal(spanSentence(html), 'The 40 administered doses fell on all 15 days, Jul 17 – Jul 31, 2026 (40 doses at 2×/day take 20 days; 28 were prescribed).')
   assert.ok(/more than the <span class="num">28<\/span> prescribed/.test(html), 'the over-delivery itself is still stated by the adherence claim')
 })
 
@@ -4938,28 +4938,28 @@ Deno.test('CUL-994 Part 2 — adversarial round 3, break 3: a ONE-dose shortfall
   // 27 of 28 at 2×/day on all 14 days, End tapped Aug 9: the old predicate re-armed on any shortfall and
   // read as a ten-day abandonment. The need is the PLAN's (28 doses take 14 days) and the record shows 14.
   const html = renderReport(base({ medications: [endedCourse({ lifetimeDosesLogged: 27, givenDoses: 27, windowDosesLogged: 27, windowDosesTotal: 27 })] }))
-  assert.equal(spanSentence(html), 'Those doses fell on 14 of the 14 days from Jul 17 to Jul 30 (28 doses at 2×/day take 14 days); the course’s recorded end is Aug 9.')
+  assert.equal(spanSentence(html), 'The 27 administered doses fell on all 14 days, Jul 17 – Jul 30, 2026 (28 prescribed doses at 2×/day take 14 days).')
 })
 
 Deno.test('CUL-994 Part 2 — adversarial round 3, break 1: one linked dose logged AFTER the End tap cannot hide a fifteen-day hole', () => {
   // 28 doses front-loaded Jul 17–25 (9 days) + one linked dose Aug 12 → last endpoint past the end. The
   // old early return ("dosing reached the end") deleted the sentence; the day count carries the hole.
   const html = renderReport(base({ medications: [endedCourse({ lifetimeDosesLogged: 29, lifetimeLastDoseDay: '2026-08-12', lifetimeDoseDayCount: 10, givenDoses: 29, windowDosesLogged: 29, windowDosesTotal: 29, daysWithDose: 10 })] }))
-  assert.equal(spanSentence(html), 'Those doses fell on 10 of the 27 days from Jul 17 to Aug 12 (29 doses at 2×/day take 15 days); the course’s recorded end is Aug 9.')
+  assert.equal(spanSentence(html), 'The 29 administered doses fell on 10 of the 27 days from Jul 17 to Aug 12, 2026 (29 doses at 2×/day take 15 days; 28 were prescribed).')
 })
 
 Deno.test('CUL-994 Part 2 — adversarial round 3, break 2 + cold read round 2: an interior hole is visible as a ratio over the span, never hidden inside a first–last range', () => {
   // 1×/day, 28 planned; 10 doses Jul 1–5, nothing Jul 6–24, 10 doses Jul 25–29; End Aug 9. Ten dosing
   // days over a 29-day span used to print as "Doses administered Jul 1 – Jul 29".
   const html = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, lifetimeDosesLogged: 20, lifetimeFirstDoseDay: '2026-07-01', lifetimeLastDoseDay: '2026-07-29', lifetimeDoseDayCount: 10, givenDoses: 20, windowDosesLogged: 20, windowDosesTotal: 20, daysWithDose: 10 })] }))
-  assert.equal(spanSentence(html), 'Those doses fell on 10 of the 29 days from Jul 1 to Jul 29 (28 doses at 1×/day take 28 days); the course’s recorded end is Aug 9.')
+  assert.equal(spanSentence(html), 'The 20 administered doses fell on 10 of the 29 days from Jul 1 to Jul 29, 2026 (28 prescribed doses at 1×/day take 28 days).')
 })
 
 Deno.test('CUL-994 Part 2 — the need is exact on a fractional pace: every-other-day dosing is not a false gap', () => {
   // 0.5×/day × 20 days = 10 planned, given Jul 1, 3, …, 19 (10 days over a 19-day span). ceil(10 / 0.5)
   // = 20 would have demanded a day the pace never uses; floor((10 − 1) / 0.5) + 1 = 19.
   const html = renderReport(base({ medications: [endedCourse({ dosesPerDay: 0.5, prescribedDoses: 10, lifetimeDosesLogged: 10, lifetimeFirstDoseDay: '2026-07-01', lifetimeLastDoseDay: '2026-07-19', lifetimeDoseDayCount: 10, endedAt: '2026-07-20', givenDoses: 10, windowDosesLogged: 10, windowDosesTotal: 10, daysWithDose: 10 })] }))
-  assert.equal(spanSentence(html), 'Those doses fell on 10 of the 19 days from Jul 1 to Jul 19 (10 doses at 0.5×/day take 19 days); the course’s recorded end is Jul 20.')
+  assert.equal(spanSentence(html), 'The 10 administered doses fell on 10 of the 19 days from Jul 1 to Jul 19, 2026 (10 prescribed doses at 0.5×/day take 19 days).')
 })
 
 Deno.test('CUL-994 Part 2 — both endpoints come from the ADMINISTERED population: one dose then twenty refusals prints one day, never a span to the last refusal', () => {
@@ -4971,12 +4971,12 @@ Deno.test('CUL-994 Part 2 — both endpoints come from the ADMINISTERED populati
       })],
     }),
   )
-  assert.equal(spanSentence(html), 'That dose was administered on Jul 17 (28 doses at 2×/day take 14 days); the course’s recorded end is Aug 9.')
+  assert.equal(spanSentence(html), 'That dose was administered on Jul 17, 2026 (28 prescribed doses at 2×/day take 14 days).')
   assert.ok(!/no dose logged after/.test(html), 'the removed version\'s false clause never returns (refusals WERE logged after)')
   assert.ok(/20 refused/.test(html), 'the refusals are still stated in the window clause')
   // Several doses on ONE day.
   const oneDay = renderReport(base({ medications: [endedCourse({ lifetimeDosesLogged: 3, lifetimeLastDoseDay: '2026-07-17', lifetimeDoseDayCount: 1, givenDoses: 3, windowDosesLogged: 3, windowDosesTotal: 3, daysWithDose: 1 })] }))
-  assert.equal(spanSentence(oneDay), 'Those doses all fell on Jul 17 (28 doses at 2×/day take 14 days); the course’s recorded end is Aug 9.')
+  assert.equal(spanSentence(oneDay), 'The 3 administered doses all fell on Jul 17, 2026 (28 prescribed doses at 2×/day take 14 days).')
 })
 
 Deno.test('CUL-994 Part 2 — no plan, no sentence: the record cannot tell an early stop from a late End tap', () => {
@@ -5012,7 +5012,7 @@ Deno.test('CUL-994 Part 2 — nothing administered, no sentence: "0 of N" alread
 
 Deno.test('CUL-994 Part 2 — dosing that reaches or passes the recorded end still states its density (the old "not a gap" early return is gone)', () => {
   const onEnd = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, lifetimeDosesLogged: 5, lifetimeLastDoseDay: '2026-08-09', lifetimeDoseDayCount: 5, givenDoses: 5, windowDosesLogged: 5, windowDosesTotal: 5, daysWithDose: 5 })] }))
-  assert.equal(spanSentence(onEnd), 'Those doses fell on 5 of the 24 days from Jul 17 to Aug 9 (28 doses at 1×/day take 28 days); the course’s recorded end is Aug 9.')
+  assert.equal(spanSentence(onEnd), 'The 5 administered doses fell on 5 of the 24 days from Jul 17 to Aug 9, 2026 (28 prescribed doses at 1×/day take 28 days).')
 })
 
 // ── The other R-11 cold-read items in this pass's regions ──
@@ -5087,3 +5087,34 @@ Deno.test('R-11 cold read round 2 — Appendix D prints the route the way page 1
   assert.ok(!/>otic,/.test(html) && !/by otic/.test(html), 'no raw "otic" anywhere')
   assert.ok((html.match(/in the ear/g) ?? []).length >= 2, 'page 1 and Appendix D agree')
 })
+
+Deno.test('CUL-994 Part 2 — adversarial round 4: record-scoped dates carry their year, so a 2025 course never reads as inside this year\'s window and a year-long course never runs backwards', () => {
+  const html = renderReport(base({ medications: [endedCourse({ startedAt: '2025-05-01', endedAt: '2026-04-10', lifetimeFirstDoseDay: '2025-05-10', lifetimeLastDoseDay: '2025-05-23', lifetimeDoseDayCount: 14, windowDosesLogged: 0, windowDosesTotal: 0, daysWithDose: 0, elapsedDaysInWindow: 8 })] }))
+  assert.equal(spanSentence(html), 'The 28 administered doses fell on all 14 days, May 10 – May 23, 2025 (28 prescribed doses at 2×/day take 14 days).')
+  assert.ok(/May 1, 2025 – Apr 10, 2026 \(end recorded by owner\)/.test(html), 'the regimen dates stamp both years')
+  const yearLong = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, prescribedDoses: 365, lifetimeDosesLogged: 305, startedAt: '2025-06-20', endedAt: '2026-06-25', lifetimeFirstDoseDay: '2025-06-21', lifetimeLastDoseDay: '2026-06-20', lifetimeDoseDayCount: 305, elapsedDaysInWindow: 84, windowDosesLogged: 79, windowDosesTotal: 79, daysWithDose: 79, givenDoses: 79 })] }))
+  assert.equal(spanSentence(yearLong), 'The 305 administered doses fell on 305 of the 365 days from Jun 21, 2025 to Jun 20, 2026 (365 prescribed doses at 1×/day take 365 days).')
+  assert.ok(/Jun 20, 2025 – Jun 25, 2026 \(end recorded by owner\)/.test(yearLong))
+  // An ACTIVE regimen's start is record-scoped too (the meds pull is unbounded), so "since" carries its year.
+  const active = renderReport(base({ medications: [med({ startedAt: '2025-11-14', endedAt: null, status: 'active', courseEnded: false })] }))
+  assert.ok(/Metronidazole<\/span><span>[^]*?since Nov 14, 2025\. Adherence:/.test(active), 'an active course started last year says so')
+})
+
+Deno.test('CUL-994 Part 2 — adversarial round 4: the need is exact on every two-decimal pace (7 / 0.14 is 50 in the record, not 49.999…)', () => {
+  // 8 doses at 0.14×/day occupy floor(700 / 14) + 1 = 51 days; IEEE floor(7 / 0.14) + 1 said 50.
+  const html = renderReport(base({ medications: [endedCourse({ dosesPerDay: 0.14, prescribedDoses: 8, lifetimeDosesLogged: 8, startedAt: '2026-04-30', endedAt: '2026-06-21', lifetimeFirstDoseDay: '2026-05-01', lifetimeLastDoseDay: '2026-06-20', lifetimeDoseDayCount: 8, elapsedDaysInWindow: 53, windowDosesLogged: 8, windowDosesTotal: 8, daysWithDose: 8, givenDoses: 8 })] }))
+  assert.equal(
+    spanSentence(html),
+    'The 8 administered doses fell on 8 of the 51 days from May 1 to Jun 20, 2026 (8 prescribed doses at 0.14×/day take 51 days).',
+    'exact rational arithmetic',
+  )
+})
+
+Deno.test('CUL-994 Part 2 — adversarial round 4: the sentence never restates the recorded end, and its nouns name their populations', () => {
+  const html = renderReport(base({ medications: [endedCourse()] }))
+  const line = html.slice(html.indexOf('Motozol'), html.indexOf('In this window'))
+  assert.equal((line.match(/Aug 9/g) ?? []).length, 1, 'the end date prints once, in the regimen clause')
+  assert.ok(!/Those doses/.test(line), 'no bare demonstrative that could bind to the prescribed set')
+  assert.ok(/administered doses fell on/.test(line) && /prescribed doses at/.test(line), 'both populations named')
+})
+
