@@ -2758,6 +2758,7 @@ Deno.test('B-704 TG-5 — editing the stored target never moves a report NUMBER 
       treats: s.diet.treats,
       humanFood: { count: s.diet.humanFood.count, days: s.diet.humanFood.days },
       previousDiet: null,
+      medicationVehicles: null,
       proteinExposureTally: s.provenance.proteinExposureTally,
       proteinTimelineTotal: s.proteinTimeline.totalFeedings,
       totalByProtein: s.proteinTimeline.totalByProtein,
@@ -3596,4 +3597,59 @@ Deno.test('R-13 item 2 — no trial, or no pre-trial meal, derives nothing rathe
     }),
   )
   assert.equal(noPrior.diet.previousDiet, null, 'a pull that saw no pre-trial meal claims nothing')
+})
+
+// ── R-13 item 3 (CUL-852) — the vehicle reaches the snapshot, and the tally is not widened ──
+
+Deno.test('R-13 item 3 — a dose paired to a feeding names that feeding as the vehicle', () => {
+  idSeq = 0
+  const pocket = mealEvent('2026-06-10', { label: 'Greenies Pill Pocket', foodType: 'treat', format: 'treat' })
+  const plain = mealEvent('2026-06-11', { label: 'Tiki Cat Tuna' })
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [pocket, plain],
+      doses: [
+        { eventId: 'd1', occurredAt: at('2026-06-10', '13:00:00'), medicationId: null, medicationItemId: 'mi-1', adherence: 'given', doseAmount: null, pairedEventId: pocket.id },
+      ],
+    }),
+  )
+  const veh = snap.diet.medicationVehicles
+  assert.ok(veh, 'the paired feeding surfaces as a vehicle')
+  assert.deepEqual(veh.labels, ['Greenies Pill Pocket (Treat)'])
+  assert.equal(veh.feedings, 1, 'only the paired feeding, not every meal that day')
+  // A treat IS an off-diet exposure on a no-trial report, so this one is already in the set
+  // the tally counts — reported, not added.
+  assert.equal(veh.countedInTally, 1)
+})
+
+Deno.test('R-13 item 3 — reporting the tally membership does not change it', () => {
+  idSeq = 0
+  const build = (pair: boolean) => {
+    idSeq = 0
+    const m = mealEvent('2026-06-11', { label: 'Tiki Cat Tuna' })
+    return assembleReport(
+      baseInput({
+        now: '2026-07-02T12:00:00Z',
+        events: [m],
+        doses: pair
+          ? [{ eventId: 'd1', occurredAt: at('2026-06-11', '13:00:00'), medicationId: null, medicationItemId: 'mi-1', adherence: 'given', doseAmount: null, pairedEventId: m.id }]
+          : [],
+      }),
+    )
+  }
+  const withVehicle = build(true)
+  const without = build(false)
+  // A plain MEAL is not an off-diet exposure, so pairing a dose to it must not make one.
+  assert.equal(withVehicle.diet.medicationVehicles?.countedInTally, 0, 'a meal vehicle is not in the tally')
+  assert.deepEqual(
+    withVehicle.provenance.proteinExposureTally,
+    without.provenance.proteinExposureTally,
+    'the antigen tally is byte-identical with and without the pairing',
+  )
+  assert.equal(
+    withVehicle.provenance.confounders.length,
+    without.provenance.confounders.length,
+    'and the off-diet member set is unchanged',
+  )
 })

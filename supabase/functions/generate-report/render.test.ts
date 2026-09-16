@@ -236,6 +236,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       treats: { count: 0, distinctItems: 0 },
       humanFood: { count: 0, days: 0, items: [] },
       previousDiet: null,
+      medicationVehicles: null,
     },
     medications: [],
     unlinkedMedications: [],
@@ -253,6 +254,8 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       hasUnknown: false,
       totalFeedings: 0,
       incompleteFeedings: 0,
+      humanFoodFeedings: 0,
+      incompleteHumanFoodFeedings: 0,
     },
     provenance: {
       ownerReported: true,
@@ -631,8 +634,8 @@ Deno.test('#7/#8 meals-only Appendix E — grouped meal foods render WITHOUT an 
         freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
         mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.107, intakeMode: 'some' },
         mealItems: [
-          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
-          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', proteinSet: pset(['salmon']), count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'most', intakeBreakdown: [{ rating: 'most', count: 10 }] },
+          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: null, count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
+          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', proteinSet: pset(['salmon']), format: null, count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'most', intakeBreakdown: [{ rating: 'most', count: 10 }] },
         ],
       },
     }),
@@ -662,12 +665,13 @@ Deno.test('#7/#8 — meals appendix E renders the grouped meal foods even with N
         intakeNotDirectlyObserved: true,
         mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.1, intakeMode: 'some' },
         mealItems: [
-          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
-          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', proteinSet: pset(['turkey']), count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 10 }] },
+          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: null, count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
+          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', proteinSet: pset(['turkey']), format: null, count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 10 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -825,6 +829,7 @@ Deno.test('free-fed arrangement → verbatim "Intake not directly observed"', ()
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -1175,6 +1180,7 @@ function cleanTrialSnap(household: Household, over: Partial<NonNullable<ReportSn
       treats: { count: 0, distinctItems: 0 },
       humanFood: { count: 0, days: 0, items: [] },
       previousDiet: null,
+      medicationVehicles: null,
     },
     trial: trialBlockFixture({
       startedAt: DUCK_TRIAL.startedAt,
@@ -1431,6 +1437,7 @@ Deno.test('diet/meds render an active trial, the human-food confounder line, and
         treats: { count: 7, distinctItems: 2 },
         humanFood: { count: 3, days: 3, items: [{ date: '2026-05-19', label: 'Roast chicken' }] },
         previousDiet: null,
+        medicationVehicles: null,
       },
       correlation: {
         established: [
@@ -1606,6 +1613,7 @@ Deno.test('A2 — an active trial + a free-fed bowl: the bowl shows in Appendix 
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -1637,6 +1645,7 @@ Deno.test('A4 — a no-trial report frames human food as a general confounder, n
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 2, days: 2, items: [{ date: '2026-06-01', label: 'Toast' }, { date: '2026-06-05', label: 'Rotisserie chicken' }] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -1671,6 +1680,7 @@ Deno.test('A6 — repeated human-food items render distinct, not verbatim-repeat
           ],
         },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -1998,6 +2008,7 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
       treats: { count: 340, distinctItems: 29 },
       humanFood: { count: 6, days: 4, items: [] },
       previousDiet: null,
+      medicationVehicles: null,
     },
     ...over,
   })
@@ -2199,6 +2210,8 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
         hasUnknown: true,
         totalFeedings: 7,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
       },
     }),
   )
@@ -2231,6 +2244,8 @@ Deno.test('B-444 — every protein band carries a texture; solid fill is reserve
         hasUnknown: true,
         totalFeedings: 9,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
       },
     }),
   )
@@ -2484,6 +2499,8 @@ Deno.test('B-497 — an off-diet week that was logged but clean draws a measured
         hasUnknown: false,
         totalFeedings: 3,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
       },
     }),
   )
@@ -2506,6 +2523,8 @@ Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data
         hasUnknown: false,
         totalFeedings: 3,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
       },
     }),
   )
@@ -2730,6 +2749,7 @@ Deno.test('B-351 §9 — the trial diet\'s OWN off-trial protein leads page 1, n
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -2755,6 +2775,7 @@ Deno.test('B-351 §9 — a CLEAN trial diet gets no page-1 line at all (there is
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -2778,6 +2799,7 @@ function proteinDiet(over: Partial<import('./report.ts').DietSummary>): import('
     treats: { count: 0, distinctItems: 0 },
     humanFood: { count: 0, days: 0, items: [] },
     previousDiet: null,
+    medicationVehicles: null,
     ...over,
   }
 }
@@ -2925,11 +2947,12 @@ Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else o
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Marketing Duck', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
+          { foodLabel: 'Marketing Duck', primaryProtein: 'duck', proteinSet: pset(['duck']), format: null, count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -2953,11 +2976,12 @@ Deno.test('B-351 D10 — a genuinely READ single-protein panel DOES earn the com
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Real Duck', primaryProtein: 'duck', proteinSet: pset(['duck'], { complete: true }), count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
+          { foodLabel: 'Real Duck', primaryProtein: 'duck', proteinSet: pset(['duck'], { complete: true }), format: null, count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -2975,11 +2999,12 @@ Deno.test('B-351 §9 condition 2 — the primary renders first and in bold, seco
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Duck Dinner', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken', 'salmon'], { complete: true }), count: 4, firstDate: '2026-06-01', lastDate: '2026-06-04', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 4 }] },
+          { foodLabel: 'Duck Dinner', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken', 'salmon'], { complete: true }), format: null, count: 4, firstDate: '2026-06-01', lastDate: '2026-06-04', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 4 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -2996,11 +3021,12 @@ Deno.test('B-351 — an empty set says the reading is missing, never that the fo
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Unknown Food', primaryProtein: null, proteinSet: pset([]), count: 3, firstDate: '2026-06-01', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 3 }] },
+          { foodLabel: 'Unknown Food', primaryProtein: null, proteinSet: pset([]), format: null, count: 3, firstDate: '2026-06-01', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 3 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3024,6 +3050,7 @@ Deno.test('B-351 — the off-trial `*` is defined on the sheet where it appears,
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3049,6 +3076,8 @@ Deno.test('B-351 D10 — an under-counted protein tally is disclosed as a FLOOR'
         hasUnknown: false,
         totalFeedings: 4,
         incompleteFeedings: 2,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
       },
       provenance: {
         ...base({}).provenance,
@@ -3079,6 +3108,8 @@ Deno.test('B-351 §9 — the exposure chart states that one feeding can fill sev
         hasUnknown: false,
         totalFeedings: 3,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
       },
     }),
   )
@@ -3101,6 +3132,7 @@ Deno.test('B-351 §9 — appendix C\'s protein column carries the whole set, mar
         treats: { count: 1, distinctItems: 1 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
       provenance: {
         ...base({}).provenance,
@@ -3145,6 +3177,7 @@ Deno.test('B-351 — a food whose OWN PRIMARY is off-trial marks cleanly, withou
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3177,6 +3210,7 @@ Deno.test('B-351 — a continuously-available off-trial protein reaches PAGE 1, 
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3204,6 +3238,7 @@ Deno.test('B-351 D10 — page 1 distinguishes an UNREAD trial panel from a clean
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3221,6 +3256,7 @@ Deno.test('B-351 D10 — page 1 distinguishes an UNREAD trial panel from a clean
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3240,12 +3276,13 @@ Deno.test('B-351 — duplicate library rows under one label do not inherit each 
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 2 }] },
-          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), format: null, count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 2 }] },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), format: null, count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3265,11 +3302,12 @@ Deno.test('B-351 — owner-entered food labels and protein keys are HTML-escaped
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
+          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), format: null, count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
       provenance: {
         ...base({}).provenance,
@@ -3309,6 +3347,7 @@ function breachedTrialSnap() {
       treats: { count: 0, distinctItems: 0 },
       humanFood: { count: 0, days: 0, items: [] },
       previousDiet: null,
+      medicationVehicles: null,
     },
     proteinTimeline: {
       weekStartDates: ['2026-06-01'],
@@ -3321,6 +3360,8 @@ function breachedTrialSnap() {
       hasUnknown: false,
       totalFeedings: 7,
       incompleteFeedings: 0,
+      humanFoodFeedings: 0,
+      incompleteHumanFoodFeedings: 0,
     },
   })
 }
@@ -3362,6 +3403,7 @@ Deno.test('B-351 — a CLEAN trial keeps the headline unqualified', () => {
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3408,6 +3450,7 @@ Deno.test('B-351 — the trial-diet parenthetical stops asserting composition wh
             treats: { count: 0, distinctItems: 0 },
             humanFood: { count: 0, days: 0, items: [] },
             previousDiet: null,
+            medicationVehicles: null,
           },
         }),
       ),
@@ -3444,6 +3487,7 @@ Deno.test('B-351 — a trial food with NO designated main protein says the check
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3472,6 +3516,7 @@ Deno.test('B-351 — a SINGLE-protein trial food with no main protein stays sile
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3555,6 +3600,7 @@ Deno.test('B-532 — Appendix E states EVERY intake rating, never the mode alone
             foodLabel: "Hill's z/d",
             primaryProtein: 'chicken',
             proteinSet: pset(['chicken']),
+            format: null,
             count: 38,
             firstDate: '2026-06-01',
             lastDate: '2026-06-19',
@@ -3568,6 +3614,7 @@ Deno.test('B-532 — Appendix E states EVERY intake rating, never the mode alone
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
         previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -5612,6 +5659,7 @@ function mealItem(o: Partial<DietSummary['mealItems'][number]> = {}): DietSummar
     foodLabel: o.foodLabel ?? 'Tiki Cat Tuna',
     primaryProtein: o.primaryProtein ?? 'tuna',
     proteinSet: o.proteinSet ?? pset(['tuna']),
+    format: o.format ?? null,
     count: o.count ?? 12,
     firstDate: o.firstDate ?? '2026-06-01',
     lastDate: o.lastDate ?? '2026-07-01',
@@ -5742,4 +5790,146 @@ Deno.test('R-13 item 2 — with nothing derivable the row keeps its honest negat
   const b = base()
   const html = renderReport(base({ diet: { ...b.diet, previousDiet: null } }))
   assert.equal(text(appendixBRow(html, 'Previous diet')).trim(), 'Not recorded.')
+})
+
+// ── R-13 item 3 (CUL-852) — the WSAVA "Food used to give medication" row ───────────────
+
+Deno.test('R-13 item 3 — the vehicle is named, and the row says whether the tally counts it', () => {
+  const b = base()
+  const counted = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: { labels: ['Greenies Pill Pocket'], feedings: 12, countedInTally: 12 } } }),
+  )
+  const c = text(appendixBRow(counted, 'Food used to give medication'))
+  assert.ok(/Greenies Pill Pocket/.test(c), 'the vehicle is named')
+  assert.ok(/12 feedings carried a dose/.test(c), 'and how often it was used')
+  assert.ok(/Counted among the off-diet exposures/.test(c), 'the tally question is answered')
+
+  const uncounted = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: { labels: ['Tiki Cat Tuna'], feedings: 4, countedInTally: 0 } } }),
+  )
+  const u = text(appendixBRow(uncounted, 'Food used to give medication'))
+  assert.ok(/Not counted among the off-diet exposures/.test(u), 'and answered the other way when it is not')
+  assert.ok(/does not describe them/.test(u), 'with what that means for the tally')
+
+  const mixed = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: { labels: ['Pill Pocket', 'Tiki Cat Tuna'], feedings: 10, countedInTally: 3 } } }),
+  )
+  const m = text(appendixBRow(mixed, 'Food used to give medication'))
+  assert.ok(/3 of these are counted/.test(m), 'a split population states its split (C-4)')
+})
+
+Deno.test('R-13 item 3 — an absence distinguishes "no dose in food" from "no medication"', () => {
+  const b = base()
+  const withMeds = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: null }, medications: [med({})], unlinkedMedications: [] }),
+  )
+  assert.ok(
+    /no dose in this window was logged as given in food/.test(text(appendixBRow(withMeds, 'Food used to give medication'))),
+    'a medicated pet with no vehicle says which absence this is',
+  )
+  const noMeds = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: null }, medications: [], unlinkedMedications: [] }),
+  )
+  assert.equal(text(appendixBRow(noMeds, 'Food used to give medication')).trim(), 'Not recorded.')
+})
+
+// ── R-13 item 4 (CUL-292) — "list not read" is the wrong claim about home food ─────────
+//
+// Home-prepared food has no ingredient panel to read, so marking it "list not read" reports
+// a capture failure where none occurred, and counting it in the floor disclosure's numerator
+// inflates a figure that exists to say how much of the PACKAGED record went unread.
+
+const conf = (o: Partial<ConfounderExposure> & { eventId: string }): ConfounderExposure => ({
+  occurredAt: '2026-06-01T12:00:00Z',
+  dayKey: '2026-06-01',
+  foodLabel: 'Treat A',
+  primaryProtein: 'chicken',
+  proteinSet: pset(['chicken']),
+  format: 'treat',
+  foodType: 'treat',
+  note: null,
+  ...o,
+})
+
+/** Appendix C's rendered rows, as cell text. */
+function appendixCRows(html: string): string[][] {
+  const start = html.indexOf('Appendix C —')
+  assert.ok(start > -1, 'appendix C renders')
+  const body = html.slice(html.indexOf('<tbody>', start), html.indexOf('</tbody>', start))
+  return [...body.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) =>
+    [...m[1].matchAll(/<td[^>]*>([^]*?)<\/td>/g)].map((c) => text(c[1]).replace(/\s+/g, ' ').trim()),
+  )
+}
+
+Deno.test('R-13 item 4 — a home-food row says its ingredients were not recorded, not that a list went unread', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        confounders: [
+          conf({ eventId: 'h1', foodLabel: 'Ground beef', primaryProtein: 'beef', proteinSet: pset(['beef']), format: 'human_food', foodType: 'meal' }),
+          conf({ eventId: 't1', foodLabel: 'Jerky Treat', proteinSet: pset(['chicken']), format: 'treat', foodType: 'treat' }),
+        ],
+      },
+    }),
+  )
+  const rows = appendixCRows(html)
+  const home = rows.find((r) => r.some((c) => /Ground beef/.test(c)))
+  const packaged = rows.find((r) => r.some((c) => /Jerky Treat/.test(c)))
+  assert.ok(home && packaged, 'both rows render')
+  assert.ok(!home.some((c) => /list not read/.test(c)), 'home food is not marked as an unread panel')
+  assert.ok(home.some((c) => /ingredients not recorded/i.test(c)), 'it says what is actually missing')
+  // And the packaged row is untouched — the wording is category-specific, not a blanket
+  // softening of the incompleteness marker.
+  assert.ok(packaged.some((c) => /list not read/.test(c)), 'a packaged food still says its panel went unread')
+})
+
+Deno.test('R-13 item 4 — the floor disclosure counts packaged feedings, and states home food separately', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        confounders: [
+          conf({ eventId: 'h1', foodLabel: 'Ground beef', primaryProtein: 'beef', proteinSet: pset(['beef']), format: 'human_food', foodType: 'meal' }),
+          conf({ eventId: 'h2', foodLabel: 'Rice', primaryProtein: 'rice', proteinSet: pset(['rice']), format: 'human_food', foodType: 'meal' }),
+          conf({ eventId: 't1', foodLabel: 'Jerky', proteinSet: pset(['chicken']), format: 'treat', foodType: 'treat' }),
+          conf({ eventId: 't2', foodLabel: 'Biscuit', proteinSet: pset(['wheat'], { complete: true }), format: 'treat', foodType: 'treat' }),
+        ],
+        proteinExposureTally: { chicken: 1, beef: 1, rice: 1, wheat: 1 },
+      },
+      proteinTimeline: {
+        ...b.proteinTimeline,
+        proteins: ['chicken'],
+        totalFeedings: 4,
+        incompleteFeedings: 3,
+        humanFoodFeedings: 2,
+        incompleteHumanFoodFeedings: 2,
+      },
+    }),
+  )
+  const t = text(html).replace(/&nbsp;/g, ' ')
+  // 1 of the 2 PACKAGED feedings went unread — never 3 of 4, which reads as a record three
+  // quarters unverified when two of those rows never had a panel to verify.
+  assert.ok(/1 of 2 packaged off-diet feeding/.test(t), `packaged ratio; got: ${t.slice(t.indexOf('A floor, not a total'), t.indexOf('A floor, not a total') + 400)}`)
+  assert.ok(!/3 of 4 off-diet feeding/.test(t), 'home food is out of the numerator and the denominator')
+  assert.ok(/2 home-prepared feeding/.test(t), 'and is stated separately rather than dropped')
+})
+
+Deno.test('R-13 item 4 — an all-home-food record makes no packaged claim at all', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        confounders: [conf({ eventId: 'h1', foodLabel: 'Ground beef', primaryProtein: 'beef', proteinSet: pset(['beef']), format: 'human_food', foodType: 'meal' })],
+        proteinExposureTally: { beef: 1 },
+      },
+      proteinTimeline: { ...b.proteinTimeline, proteins: ['beef'], totalFeedings: 1, incompleteFeedings: 1, humanFoodFeedings: 1, incompleteHumanFoodFeedings: 1 },
+    }),
+  )
+  const t = text(html).replace(/&nbsp;/g, ' ')
+  assert.ok(!/packaged off-diet feeding/.test(t), 'no packaged ratio over a record with no packaged food')
+  assert.ok(/1 home-prepared feeding/.test(t), 'the home-food limitation still stands')
 })

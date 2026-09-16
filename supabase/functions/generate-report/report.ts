@@ -1776,6 +1776,8 @@ export interface DietSummary {
      */
     intakeBreakdown: Array<{ rating: IntakeRating; count: number }>
     proteinSet: ProteinSetView
+    /** CUL-292 — decides WHICH incompleteness marker is true of this row, nothing else. */
+    format: FoodFormat | null
   }>
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
@@ -1802,6 +1804,30 @@ export interface DietSummary {
     /** Local day keys of the first and last pre-trial meal the pull could see. */
     firstDay: string
     lastDay: string
+  } | null
+  /**
+   * The WSAVA "Food used to give medication" row (CUL-852) — null when no dose in the
+   * window was logged as riding inside a food.
+   *
+   * `isMedicationVehicle` has existed since B-156, computed inside `buildDetectionInput`
+   * from each dose's `pairedEventId` and reaching only the correlation engine. Appendix B
+   * had no row for it, so a field the standard diet form asks for was computed on every
+   * report and printed on none. It matters clinically because a pill vehicle is a food the
+   * animal eats on a schedule the PRESCRIPTION sets, which is exactly the shape that breaks
+   * an elimination trial without ever looking like a treat.
+   */
+  medicationVehicles: {
+    /** Distinct food labels used to carry a dose, most-used first. */
+    labels: string[]
+    /** Feedings that carried a dose. */
+    feedings: number
+    /**
+     * How many of those feedings the OFF-DIET member set already holds — i.e. how many
+     * reach appendix C and the protein tally. Counted, never widened: membership is
+     * decided by `confounderFeedings` and nowhere else, and this exists so the row can
+     * SAY which, the way the oral-route disclosure names its own exclusion.
+     */
+    countedInTally: number
   } | null
 }
 
@@ -2290,6 +2316,18 @@ export interface ProteinTimeline {
   totalByProtein: Record<string, number>
   hasUnknown: boolean
   totalFeedings: number
+  /**
+   * The HOME-PREPARED subset of `totalFeedings` / `incompleteFeedings` (CUL-292).
+   *
+   * Home food has no ingredient panel, so "the list was never read" reports a capture
+   * failure that never happened, and folding these rows into the floor disclosure's
+   * numerator inflates a figure whose whole job is to say how much of the PACKAGED record
+   * went unverified. The two counts partition one population and the render states each
+   * against its own denominator (C-3, C-4); neither is dropped, because a home-cooked diet
+   * really is a protein blind spot — it is a different one.
+   */
+  humanFoodFeedings: number
+  incompleteHumanFoodFeedings: number
   /** Off-diet feedings whose food's protein set may NOT be read as complete (D10).
    *  > 0 ⇒ the tally is a floor and the render must disclose it. */
   incompleteFeedings: number
@@ -3579,6 +3617,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     {
       foodLabel: string | null
       primaryProtein: string | null
+      format: FoodFormat | null
       count: number
       firstDate: string | null
       lastDate: string | null
@@ -3611,6 +3650,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     } else {
       mealGroups.set(key, {
         foodLabel: mealFoodLabel(m),
+        // The first member's format, on the same footing as its protein set above: the group
+        // key is food identity, so every member is the same food (CUL-292 needs it only to
+        // pick which incompleteness marker is TRUE of the row).
+        format: m.format ?? null,
         // A junk sentinel ("null"/"unknown") is not a protein — null it so no consumer prints it.
         primaryProtein: canonicalizeProtein(m.primaryProtein) ? m.primaryProtein : null,
         count: 1,
@@ -3630,6 +3673,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     .map((g) => ({
       foodLabel: g.foodLabel,
       primaryProtein: g.primaryProtein,
+      format: g.format,
       count: g.count,
       firstDate: g.firstDate,
       lastDate: g.lastDate,
@@ -3768,19 +3812,6 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     return { labels, feedings, firstDay, lastDay }
   })()
 
-  const diet: DietSummary = {
-    trialTargetProtein: trialProteinTarget,
-    trialProteinProvenance,
-    trialProteinMismatch,
-    trial,
-    freeFed,
-    intakeNotDirectlyObserved: freeFed.length > 0,
-    mealCompletion,
-    mealItems,
-    treats: { count: treatFeedings.length, distinctItems: treatItemIds.size },
-    humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
-    previousDiet,
-  }
 
   // ── Detection reuse (§7 / §8.5) ──────────────────────────────────────────────
   const detInput = buildDetectionInput(input, scope, windowEvents, droppedEventIds)
@@ -4127,6 +4158,55 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       permittedLaterFrom: x?.permittedLaterFrom ?? null,
     }
   })
+  // CUL-852 — the WSAVA "Food used to give medication" row.
+  //
+  // THE TALLY IS NOT WIDENED HERE. Whether a vehicle feeding's protein reaches the antigen
+  // tally is decided by `confounderFeedings` above and nowhere else; this counts how many of
+  // them that set ALREADY holds, so the row can say which. Same discipline as the oral-route
+  // disclosure one block over, where naming the exclusion is what stops the tally reading as
+  // complete — and the reason the diet summary is assembled here rather than upstream: two
+  // definitions of "counted" is how a page and its appendix come to disagree (C-4).
+  const medicationVehicles = ((): DietSummary['medicationVehicles'] => {
+    const paired = new Set<string>()
+    for (const d of input.doses) {
+      // Mirrors `buildDetectionInput`: a dose on a de-duplicated twin is not a second dose.
+      if (droppedEventIds.has(d.eventId)) continue
+      if (d.pairedEventId) paired.add(d.pairedEventId)
+    }
+    if (paired.size === 0) return null
+    const inTally = new Set(confounderFeedings.map((e) => e.id))
+    const counts = new Map<string, number>()
+    let feedings = 0
+    let countedInTally = 0
+    for (const e of windowMeals) {
+      if (!paired.has(e.id)) continue
+      feedings++
+      if (inTally.has(e.id)) countedInTally++
+      const label = mealFoodLabel(e.meal!)
+      if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+    }
+    if (feedings === 0) return null
+    const labels = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([label]) => label)
+    return { labels, feedings, countedInTally }
+  })()
+
+  const diet: DietSummary = {
+    trialTargetProtein: trialProteinTarget,
+    trialProteinProvenance,
+    trialProteinMismatch,
+    trial,
+    freeFed,
+    intakeNotDirectlyObserved: freeFed.length > 0,
+    mealCompletion,
+    mealItems,
+    treats: { count: treatFeedings.length, distinctItems: treatItemIds.size },
+    humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
+    previousDiet,
+    medicationVehicles,
+  }
+
   // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"
   // are one antigen for the vet weighing exposures. Feedings with no usable protein are
   // counted separately and disclosed in the render — never a "null ×N" tally line, never
@@ -4146,7 +4226,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const proteinExposureTally: Record<string, number> = {}
   let proteinUnknownCount = 0
   let incompleteFeedings = 0
+  let humanFoodFeedingsInTally = 0
+  let incompleteHumanFoodFeedings = 0
   for (const c of confounders) {
+    if (c.format === 'human_food') humanFoodFeedingsInTally++
     if (c.proteinSet.proteins.length === 0) {
       // NOT counted as an unread panel: a feeding with no captured protein at all
       // (often no food row at all — a bare human-food log) is already disclosed as
@@ -4157,7 +4240,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       proteinUnknownCount++
       continue
     }
-    if (!c.proteinSet.complete) incompleteFeedings++
+    if (!c.proteinSet.complete) {
+      incompleteFeedings++
+      if (c.format === 'human_food') incompleteHumanFoodFeedings++
+    }
     for (const key of c.proteinSet.proteins) {
       proteinExposureTally[key] = (proteinExposureTally[key] ?? 0) + 1
     }
@@ -4211,6 +4297,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     hasUnknown: proteinUnknownCount > 0,
     totalFeedings: confounders.length,
     incompleteFeedings,
+    humanFoodFeedings: humanFoodFeedingsInTally,
+    incompleteHumanFoodFeedings,
   }
 
   // ── Intake appendix (B-213) — recent rated meals, ONLY when an intake flag fired ─────
