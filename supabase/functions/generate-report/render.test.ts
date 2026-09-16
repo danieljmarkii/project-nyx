@@ -31,6 +31,9 @@ import type {
   ConfounderExposure,
   IncidentPhoto,
   ProteinSetView,
+  DietSummary,
+  IntakeLogEntry,
+  IntakeRating,
 } from './report.ts'
 
 /**
@@ -234,6 +237,8 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       mealItems: [],
       treats: { count: 0, distinctItems: 0 },
       humanFood: { count: 0, days: 0, items: [] },
+      previousDiet: null,
+      medicationVehicles: null,
     },
     medications: [],
     unlinkedMedications: [],
@@ -251,12 +256,17 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       hasUnknown: false,
       totalFeedings: 0,
       incompleteFeedings: 0,
+      humanFoodFeedings: 0,
+      incompleteHumanFoodFeedings: 0,
+      packagedReadable: 0,
+      packagedUnread: 0,
     },
     provenance: {
       ownerReported: true,
       totalSymptomIncidents: 0,
       estimatedOrWindowCount: 0,
       deletedExcluded: true,
+      uncategorisedObservations: 0,
       symptomLog: [],
       intakeLog: [],
       intakeLogHiddenOlder: 0,
@@ -266,7 +276,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       conditions: [],
     },
     incidentPhotos: [],
-    incidentPhotosAnalyzedNoRetained: 0,
+    incidentPhotosRemoved: [],
     // CUL-875 — null is the shape of "this account never answered", which is every
     // pre-N-6 fixture. The Noticed cases build their own block.
     noticed: null,
@@ -342,6 +352,7 @@ function logEntry(over: Partial<SymptomLogEntry> & { type: string; occurredAt: s
     occurredAtEarliest: over.occurredAtEarliest ?? null,
     occurredAtLatest: over.occurredAtLatest ?? null,
     loggedAt: over.loggedAt ?? over.occurredAt,
+    photoRemoved: over.photoRemoved ?? false,
     severity: over.severity ?? null,
     notes: over.notes ?? null,
     dupCount: over.dupCount ?? 1,
@@ -535,7 +546,7 @@ Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread 
     base({
       safetyFlags: [flag],
       provenance: {
-        ownerReported: true, totalSymptomIncidents: 0, estimatedOrWindowCount: 0, deletedExcluded: true,
+        ownerReported: true, totalSymptomIncidents: 0, estimatedOrWindowCount: 0, deletedExcluded: true, uncategorisedObservations: 0,
         symptomLog: [],
         intakeLogScope: 'intake_flag',
         intakeLog: [
@@ -593,6 +604,7 @@ Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last
         totalSymptomIncidents: 0,
         estimatedOrWindowCount: 0,
         deletedExcluded: true,
+        uncategorisedObservations: 0,
         symptomLog: [],
         intakeLogScope: 'intake_flag',
         intakeLog: [
@@ -628,10 +640,10 @@ Deno.test('#7/#8 meals-only Appendix E — grouped meal foods render WITHOUT an 
       diet: {
         ...base().diet,
         freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
-        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.107, intakeMode: 'some' },
+        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.107, intakeBreakdown: [{ rating: 'all', count: 3 }, { rating: 'some', count: 25 }] },
         mealItems: [
-          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
-          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', proteinSet: pset(['salmon']), count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'most', intakeBreakdown: [{ rating: 'most', count: 10 }] },
+          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: null, count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeBreakdown: [{ rating: 'some', count: 18 }] },
+          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', proteinSet: pset(['salmon']), format: null, count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeBreakdown: [{ rating: 'most', count: 10 }] },
         ],
       },
     }),
@@ -642,7 +654,12 @@ Deno.test('#7/#8 meals-only Appendix E — grouped meal foods render WITHOUT an 
   assert.ok(/&times;<span class="num">18<\/span>/.test(html), 'per-food feeding count shown')
   assert.ok(/Ate some/.test(text) && /Ate most/.test(text), 'typical intake per food')
   // Page-1 feeding line names the foods + cites the RIGHT appendix (not the old "appendix A").
-  assert.ok(/Also fed as meals:/.test(text) && /itemised in appendix&nbsp;E/.test(html), 'page-1 feeding line names foods + cites appendix E')
+  // CUL-643 — the pointer no longer promises itemisation (appendix E groups by food); the
+  // assertion's intent is unchanged, that page 1 names the foods AND cites the appendix.
+  assert.ok(
+    /Also fed as meals:/.test(text) && /grouped by food in appendix&nbsp;E/.test(html),
+    'page-1 feeding line names foods + cites appendix E',
+  )
   assert.ok(!/per-meal in appendix&nbsp;A/.test(html), 'the bogus appendix-A citation is gone')
 })
 
@@ -654,13 +671,15 @@ Deno.test('#7/#8 — meals appendix E renders the grouped meal foods even with N
         trial: null,
         freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-05-01', activeUntil: null , isShared: false }],
         intakeNotDirectlyObserved: true,
-        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.1, intakeMode: 'some' },
+        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.1, intakeBreakdown: [{ rating: 'all', count: 3 }, { rating: 'some', count: 25 }] },
         mealItems: [
-          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
-          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', proteinSet: pset(['turkey']), count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 10 }] },
+          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: null, count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeBreakdown: [{ rating: 'some', count: 18 }] },
+          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', proteinSet: pset(['turkey']), format: null, count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeBreakdown: [{ rating: 'some', count: 10 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -817,6 +836,8 @@ Deno.test('free-fed arrangement → verbatim "Intake not directly observed"', ()
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -833,6 +854,7 @@ Deno.test('severity never reaches the report — no column, no x/5, no "Severity
         totalSymptomIncidents: 2,
         estimatedOrWindowCount: 0,
         deletedExcluded: true,
+        uncategorisedObservations: 0,
         symptomLog: [
           logEntry({ type: 'vomit', occurredAt: '2026-06-01T14:00:00Z', severity: null }),
           logEntry({ type: 'diarrhea', occurredAt: '2026-06-02T12:00:00Z', severity: 3 }),
@@ -863,6 +885,7 @@ Deno.test('B-010 — windowed event renders a time RANGE, estimated an ~time, ne
         totalSymptomIncidents: 2,
         estimatedOrWindowCount: 2,
         deletedExcluded: true,
+        uncategorisedObservations: 0,
         symptomLog: [
           logEntry({
             type: 'vomit',
@@ -1178,6 +1201,8 @@ function cleanTrialSnap(household: Household, over: Partial<NonNullable<ReportSn
       mealItems: [],
       treats: { count: 0, distinctItems: 0 },
       humanFood: { count: 0, days: 0, items: [] },
+      previousDiet: null,
+      medicationVehicles: null,
     },
     trial: trialBlockFixture({
       startedAt: DUCK_TRIAL.startedAt,
@@ -1429,10 +1454,12 @@ Deno.test('diet/meds render an active trial, the human-food confounder line, and
         },
         freeFed: [],
         intakeNotDirectlyObserved: false,
-        mealCompletion: { ratedMeals: 80, finishedMeals: 78, rate: 0.975, intakeMode: 'all' },
+        mealCompletion: { ratedMeals: 80, finishedMeals: 78, rate: 0.975, intakeBreakdown: [{ rating: 'all', count: 78 }, { rating: 'some', count: 2 }] },
         mealItems: [],
         treats: { count: 7, distinctItems: 2 },
         humanFood: { count: 3, days: 3, items: [{ date: '2026-05-19', label: 'Roast chicken' }] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
       correlation: {
         established: [
@@ -1607,6 +1634,8 @@ Deno.test('A2 — an active trial + a free-fed bowl: the bowl shows in Appendix 
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -1637,6 +1666,8 @@ Deno.test('A4 — a no-trial report frames human food as a general confounder, n
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 2, days: 2, items: [{ date: '2026-06-01', label: 'Toast' }, { date: '2026-06-05', label: 'Rotisserie chicken' }] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -1670,6 +1701,8 @@ Deno.test('A6 — repeated human-food items render distinct, not verbatim-repeat
             { date: '2026-06-04', label: 'Rice' },
           ],
         },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -1711,6 +1744,7 @@ Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with 
         totalSymptomIncidents: 0,
         estimatedOrWindowCount: 0,
         deletedExcluded: true,
+        uncategorisedObservations: 0,
         symptomLog: [],
         intakeLog: [],
         intakeLogHiddenOlder: 0,
@@ -1996,6 +2030,8 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
       mealItems: [],
       treats: { count: 340, distinctItems: 29 },
       humanFood: { count: 6, days: 4, items: [] },
+      previousDiet: null,
+      medicationVehicles: null,
     },
     ...over,
   })
@@ -2036,7 +2072,7 @@ Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
     diet: {
       ...base().diet,
       trial: { foodLabel: 'Hydrolyzed', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-01', targetDurationDays: 56, vetName: null },
-      mealCompletion: { ratedMeals: 50, finishedMeals: 48, rate: 0.96, intakeMode: 'all' },
+      mealCompletion: { ratedMeals: 50, finishedMeals: 48, rate: 0.96, intakeBreakdown: [{ rating: 'all', count: 48 }, { rating: 'some', count: 2 }] },
       mealItems: [],
     },
     atAGlance: { ...base().atAGlance, trialDaysLogged: 38, primarySymptom: { type: 'vomit', count: 5 }, totalSymptomIncidents: 5 },
@@ -2060,7 +2096,7 @@ Deno.test('R2-3 — a free-fed grazer with NO decline flag gets a descriptive fe
       ...base().diet,
       freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
       intakeNotDirectlyObserved: true,
-      mealCompletion: { ratedMeals: 25, finishedMeals: 0, rate: 0, intakeMode: 'some' },
+      mealCompletion: { ratedMeals: 25, finishedMeals: 0, rate: 0, intakeBreakdown: [{ rating: 'some', count: 25 }] },
       mealItems: [],
     },
     safetyFlags: [],
@@ -2101,7 +2137,7 @@ Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (
       ...base().diet,
       freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
       intakeNotDirectlyObserved: true,
-      mealCompletion: { ratedMeals: 25, finishedMeals: 5, rate: 0.2, intakeMode: 'some' },
+      mealCompletion: { ratedMeals: 25, finishedMeals: 5, rate: 0.2, intakeBreakdown: [{ rating: 'all', count: 5 }, { rating: 'some', count: 20 }] },
       mealItems: [],
     },
     safetyFlags: [flag],
@@ -2785,6 +2821,10 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
         hasUnknown: true,
         totalFeedings: 7,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -2817,6 +2857,10 @@ Deno.test('B-444 — every protein band carries a texture; solid fill is reserve
         hasUnknown: true,
         totalFeedings: 9,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -3070,6 +3114,10 @@ Deno.test('B-497 — an off-diet week that was logged but clean draws a measured
         hasUnknown: false,
         totalFeedings: 3,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -3092,6 +3140,10 @@ Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data
         hasUnknown: false,
         totalFeedings: 3,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -3213,7 +3265,7 @@ Deno.test('PR7 render — the removed-photo divergence is DISCLOSED in Appendix 
   const html = renderReport(
     base({
       incidentPhotos: [photo({ eventId: 'v1', occurredAt: '2026-06-20T14:00:00Z', dataUri: PNG_1PX })],
-      incidentPhotosAnalyzedNoRetained: 3,
+      incidentPhotosRemoved: [{ eventId: 'rm0', type: 'vomit', occurredAt: '2026-06-10T12:00:00Z' }, { eventId: 'rm1', type: 'vomit', occurredAt: '2026-06-11T12:00:00Z' }, { eventId: 'rm2', type: 'vomit', occurredAt: '2026-06-12T12:00:00Z' }],
     }),
   )
   assert.ok(html.includes('Appendix E — Incident photos'))
@@ -3223,7 +3275,7 @@ Deno.test('PR7 render — the removed-photo divergence is DISCLOSED in Appendix 
 })
 
 Deno.test('PR7 render — Appendix E STILL renders (disclosure only, no grid) when every photo was removed', () => {
-  const html = renderReport(base({ incidentPhotos: [], incidentPhotosAnalyzedNoRetained: 2 }))
+  const html = renderReport(base({ incidentPhotos: [], incidentPhotosRemoved: [{ eventId: 'rm0', type: 'vomit', occurredAt: '2026-06-10T12:00:00Z' }, { eventId: 'rm1', type: 'vomit', occurredAt: '2026-06-11T12:00:00Z' }] }))
   assert.ok(html.includes('Appendix E — Incident photos'), 'the section renders to reconcile the phenotype counts')
   assert.ok(/No photographed incident in this window still has a retained photo/.test(html))
   assert.ok(!html.includes('<div class="phgrid">'), 'no empty photo grid element when there are no cards')
@@ -3315,6 +3367,8 @@ Deno.test('B-351 §9 — the trial diet\'s OWN off-trial protein leads page 1, n
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3339,6 +3393,8 @@ Deno.test('B-351 §9 — a CLEAN trial diet gets no page-1 line at all (there is
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3361,6 +3417,8 @@ function proteinDiet(over: Partial<import('./report.ts').DietSummary>): import('
     mealItems: [],
     treats: { count: 0, distinctItems: 0 },
     humanFood: { count: 0, days: 0, items: [] },
+    previousDiet: null,
+    medicationVehicles: null,
     ...over,
   }
 }
@@ -3508,10 +3566,12 @@ Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else o
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Marketing Duck', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
+          { foodLabel: 'Marketing Duck', primaryProtein: 'duck', proteinSet: pset(['duck']), format: null, count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeBreakdown: [{ rating: 'all', count: 12 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3535,10 +3595,12 @@ Deno.test('B-351 D10 — a genuinely READ single-protein panel DOES earn the com
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Real Duck', primaryProtein: 'duck', proteinSet: pset(['duck'], { complete: true }), count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
+          { foodLabel: 'Real Duck', primaryProtein: 'duck', proteinSet: pset(['duck'], { complete: true }), format: null, count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeBreakdown: [{ rating: 'all', count: 12 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3556,10 +3618,12 @@ Deno.test('B-351 §9 condition 2 — the primary renders first and in bold, seco
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Duck Dinner', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken', 'salmon'], { complete: true }), count: 4, firstDate: '2026-06-01', lastDate: '2026-06-04', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 4 }] },
+          { foodLabel: 'Duck Dinner', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken', 'salmon'], { complete: true }), format: null, count: 4, firstDate: '2026-06-01', lastDate: '2026-06-04', intakeBreakdown: [{ rating: 'all', count: 4 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3576,10 +3640,12 @@ Deno.test('B-351 — an empty set says the reading is missing, never that the fo
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Unknown Food', primaryProtein: null, proteinSet: pset([]), count: 3, firstDate: '2026-06-01', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 3 }] },
+          { foodLabel: 'Unknown Food', primaryProtein: null, proteinSet: pset([]), format: null, count: 3, firstDate: '2026-06-01', lastDate: '2026-06-03', intakeBreakdown: [{ rating: 'all', count: 3 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3602,6 +3668,8 @@ Deno.test('B-351 — the off-trial `*` is defined on the sheet where it appears,
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3627,6 +3695,10 @@ Deno.test('B-351 D10 — an under-counted protein tally is disclosed as a FLOOR'
         hasUnknown: false,
         totalFeedings: 4,
         incompleteFeedings: 2,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
+        packagedReadable: 4,
+        packagedUnread: 2,
       },
       provenance: {
         ...base({}).provenance,
@@ -3657,6 +3729,10 @@ Deno.test('B-351 §9 — the exposure chart states that one feeding can fill sev
         hasUnknown: false,
         totalFeedings: 3,
         incompleteFeedings: 0,
+        humanFoodFeedings: 0,
+        incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -3678,6 +3754,8 @@ Deno.test('B-351 §9 — appendix C\'s protein column carries the whole set, mar
         mealItems: [],
         treats: { count: 1, distinctItems: 1 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
       provenance: {
         ...base({}).provenance,
@@ -3721,6 +3799,8 @@ Deno.test('B-351 — a food whose OWN PRIMARY is off-trial marks cleanly, withou
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3752,6 +3832,8 @@ Deno.test('B-351 — a continuously-available off-trial protein reaches PAGE 1, 
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3778,6 +3860,8 @@ Deno.test('B-351 D10 — page 1 distinguishes an UNREAD trial panel from a clean
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3794,6 +3878,8 @@ Deno.test('B-351 D10 — page 1 distinguishes an UNREAD trial panel from a clean
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3813,11 +3899,13 @@ Deno.test('B-351 — duplicate library rows under one label do not inherit each 
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 2 }] },
-          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), format: null, count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeBreakdown: [{ rating: 'all', count: 2 }] },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), format: null, count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeBreakdown: [{ rating: 'all', count: 1 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3837,10 +3925,12 @@ Deno.test('B-351 — owner-entered food labels and protein keys are HTML-escaped
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
+          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), format: null, count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeBreakdown: [{ rating: 'all', count: 1 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
       provenance: {
         ...base({}).provenance,
@@ -3879,6 +3969,8 @@ function breachedTrialSnap() {
       mealItems: [],
       treats: { count: 0, distinctItems: 0 },
       humanFood: { count: 0, days: 0, items: [] },
+      previousDiet: null,
+      medicationVehicles: null,
     },
     proteinTimeline: {
       weekStartDates: ['2026-06-01'],
@@ -3891,6 +3983,10 @@ function breachedTrialSnap() {
       hasUnknown: false,
       totalFeedings: 7,
       incompleteFeedings: 0,
+      humanFoodFeedings: 0,
+      incompleteHumanFoodFeedings: 0,
+      packagedReadable: 0,
+      packagedUnread: 0,
     },
   })
 }
@@ -3931,6 +4027,8 @@ Deno.test('B-351 — a CLEAN trial keeps the headline unqualified', () => {
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -3976,6 +4074,8 @@ Deno.test('B-351 — the trial-diet parenthetical stops asserting composition wh
             mealItems: [],
             treats: { count: 0, distinctItems: 0 },
             humanFood: { count: 0, days: 0, items: [] },
+            previousDiet: null,
+            medicationVehicles: null,
           },
         }),
       ),
@@ -4011,6 +4111,8 @@ Deno.test('B-351 — a trial food with NO designated main protein says the check
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -4038,6 +4140,8 @@ Deno.test('B-351 — a SINGLE-protein trial food with no main protein stays sile
         mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -4115,16 +4219,16 @@ Deno.test('B-532 — Appendix E states EVERY intake rating, never the mode alone
         trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
-        mealCompletion: { ratedMeals: 38, finishedMeals: 0, rate: 0, intakeMode: 'refused' },
+        mealCompletion: { ratedMeals: 38, finishedMeals: 0, rate: 0, intakeBreakdown: [{ rating: 'refused', count: 38 }] },
         mealItems: [
           {
             foodLabel: "Hill's z/d",
             primaryProtein: 'chicken',
             proteinSet: pset(['chicken']),
+            format: null,
             count: 38,
             firstDate: '2026-06-01',
             lastDate: '2026-06-19',
-            intakeMode: 'refused',
             intakeBreakdown: [
               { rating: 'some', count: 4 },
               { rating: 'refused', count: 34 },
@@ -4133,6 +4237,8 @@ Deno.test('B-532 — Appendix E states EVERY intake rating, never the mode alone
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
+        previousDiet: null,
+        medicationVehicles: null,
       },
     }),
   )
@@ -5662,8 +5768,22 @@ Deno.test('CUL-634 — Appendix A counts every row without a witnessed time, inc
   assert.ok(/<td><span class="num">~10:00<\/span> <span class="conf">unspecified<\/span><\/td>/.test(single), 'the unspecified row is tagged in the table and drawn approximate, not only defined in the legend')
   const clean = renderReport(base({ provenance: { ...base().provenance, symptomLog: [rows[0]], totalSymptomIncidents: 1 } }))
   assert.ok(!/events below carr/.test(clean), 'an all-witnessed log carries no count')
-  // The gloss is gated on the classes the rows USE: an all-witnessed log defines one tag, not five.
-  assert.ok(/Time tags: <span class="conf">seen<\/span> witnessed\. For photographed/.test(clean), 'only the tag in use is glossed')
+  // The gloss is gated on the classes the rows USE. R-11 took that from five definitions to
+  // one over an all-witnessed column; R-13 item 9 takes it to none, because a column with a
+  // single value is decoration and the chips go too — so the gloss that defined them would be
+  // a legend for a mark the sheet no longer prints. The FACT is kept as a sentence, which is
+  // what makes the bare times safe to read as exact. See `allTimesWitnessed` for why this is
+  // scoped to `seen` and to no other uniform class.
+  assert.ok(!/Time tags:/.test(clean), 'an all-witnessed column glosses no tag, because it prints none')
+  assert.ok(/Every time below was witnessed by the owner\./.test(clean), 'it states the fact once instead')
+  // Scoped to appendix A's own table: the closing "How to read" legend still DEFINES the tag
+  // vocabulary for the report as a whole, which is correct — it is the document's glossary,
+  // not a claim about this column.
+  const cleanBody = clean.slice(clean.indexOf('<tbody>', clean.indexOf('Appendix A — Symptom event log')))
+  assert.ok(
+    !/class="conf">seen</.test(cleanBody.slice(0, cleanBody.indexOf('</tbody>'))),
+    'and no row carries the chip',
+  )
   assert.ok(!/unspecified<\/span> no confidence recorded/.test(clean.slice(0, clean.indexOf('How to read this report'))), 'no definition of a tag the column never shows')
   const empty = renderReport(base())
   assert.ok(!/Time tags:/.test(empty), 'no gloss over an empty log')
@@ -5907,6 +6027,1034 @@ Deno.test('CUL-994 Part 2 — adversarial round 4: the sentence never restates t
   assert.equal((line.match(/Aug 9/g) ?? []).length, 1, 'the end date prints once, in the regimen clause')
   assert.ok(!/Those doses/.test(line), 'no bare demonstrative that could bind to the prescribed set')
   assert.ok(/administered doses fell on/.test(line) && /prescribed doses at/.test(line), 'both populations named')
+})
+
+
+// ── R-3 (CUL-977) — Appendix A's LOGGED column carries a date across a day boundary ────
+//
+// The column exists to show the LOGGING DELAY, and it rendered a bare `HH:MM`. On the real
+// v15 artifact that printed `Aug 19 · ~07:02–17:40 range · logged 09:04` for a row logged
+// on Aug 21, so the window appeared to close eight and a half hours after the row was
+// created. The cold read filed it as a blocking data-integrity finding against the RANGE
+// convention, which is one of the best things the document does.
+
+const CHI = 'America/Chicago'
+
+/**
+ * A local wall-clock time in a named zone → the UTC instant it names (B-514 / C-29).
+ *
+ * "Is the logged day the same local day as the occurred day?" is a LOCAL-day question, and
+ * a bare UTC literal cannot state one: `2026-08-20T02:00:00Z` is Aug 19 in Chicago and
+ * Aug 20 in London. Written as local components the fixture says what it means, and the
+ * render is handed the zone explicitly, so neither depends on the host's TZ.
+ *
+ * Two passes, because the first correction can itself cross a DST transition.
+ */
+function atLocal(tz: string, day: string, hhmm: string): string {
+  const [y, mo, d] = day.split('-').map(Number)
+  const [hh, mi] = hhmm.split(':').map(Number)
+  const target = Date.UTC(y, mo - 1, d, hh, mi)
+  let ms = target
+  for (let i = 0; i < 2; i++) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(ms))
+    const g = (t: string): number => Number(parts.find((p) => p.type === t)!.value)
+    ms += target - Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second'))
+  }
+  return new Date(ms).toISOString()
+}
+
+/** Appendix A's rows as cell text: [date, type, occurred, logged, note]. */
+function appendixARows(html: string): string[][] {
+  const start = html.indexOf('Appendix A — Symptom event log')
+  assert.ok(start > -1, 'appendix A renders')
+  const body = html.slice(html.indexOf('<tbody>', start), html.indexOf('</tbody>', start))
+  return [...body.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) =>
+    [...m[1].matchAll(/<td[^>]*>([^]*?)<\/td>/g)].map((c) => text(c[1]).replace(/\s+/g, ' ').trim()),
+  )
+}
+
+/** An August-window report in Chicago, so the local-day question has a stated zone. */
+function chicagoReport(rows: SymptomLogEntry[], scopeOver: Record<string, unknown> = {}): string {
+  const b = base()
+  return renderReport(
+    base({
+      timezone: CHI,
+      scope: { ...b.scope, startDate: '2026-07-20', endDate: '2026-08-31', ...scopeOver },
+      provenance: { ...b.provenance, symptomLog: rows, totalSymptomIncidents: rows.length },
+    }),
+  )
+}
+
+Deno.test('R-3 — a row logged on a DIFFERENT local day prints that day in the LOGGED cell', () => {
+  const rows = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-08-19', '17:40'),
+        loggedAt: atLocal(CHI, '2026-08-21', '09:04'),
+      }),
+    ]),
+  )
+  assert.equal(rows[0][0], 'Aug 19', 'the Date column is the event day')
+  assert.equal(rows[0][3], 'Aug 21, 09:04', 'the LOGGED cell names the day it was recorded')
+})
+
+Deno.test('R-3 — a row logged the SAME local day stays a bare time, so the common row gains no noise', () => {
+  const rows = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-08-19', '19:54'),
+        loggedAt: atLocal(CHI, '2026-08-19', '20:11'),
+      }),
+    ]),
+  )
+  assert.equal(rows[0][3], '20:11', 'no date on a same-day row')
+})
+
+Deno.test('R-3 — the local day is judged in the OWNER\'s zone, not UTC', () => {
+  // 23:30 Chicago on Aug 19 is 04:30 UTC on Aug 20: same local day, different UTC day. A
+  // UTC comparison would print a date here and claim a delay the record does not hold.
+  const sameLocal = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-08-19', '21:00'),
+        loggedAt: atLocal(CHI, '2026-08-19', '23:30'),
+      }),
+    ]),
+  )
+  assert.equal(sameLocal[0][3], '23:30', 'one Chicago day that straddles UTC midnight is still one day')
+  // And the mirror: 00:20 Chicago on Aug 20 is 05:20 UTC the same day, a DIFFERENT local day
+  // from an event at 21:00 on Aug 19 — so the date must print.
+  const crossLocal = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-08-19', '21:00'),
+        loggedAt: atLocal(CHI, '2026-08-20', '00:20'),
+      }),
+    ]),
+  )
+  assert.equal(crossLocal[0][3], 'Aug 20, 00:20', 'twenty minutes later is a new local day and says so')
+})
+
+Deno.test('R-3 — the Aug 19 row from the v15 artifact, verbatim: the window no longer closes after it was logged', () => {
+  // The record, exactly as production holds it (CUL-977's table). These are the stored UTC
+  // instants; the LOCAL-day question they pose is answered by the zone handed to the render.
+  const rows = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: '2026-08-19T22:40:00Z',
+        occurredAtConfidence: 'window',
+        occurredAtEarliest: '2026-08-19T12:02:00Z',
+        occurredAtLatest: '2026-08-19T22:40:00Z',
+        loggedAt: '2026-08-21T14:04:00Z',
+      }),
+    ]),
+  )
+  assert.equal(rows[0][0], 'Aug 19')
+  assert.equal(rows[0][2], '~07:02–17:40 range', 'the window renders unchanged')
+  assert.equal(rows[0][3], 'Aug 21, 09:04', 'two days later, and the page now says so')
+})
+
+Deno.test('R-3 — a logged day outside the window\'s YEAR carries the year (C-19)', () => {
+  // Logging can postdate the window end, so this cell is one of the few whose date is not
+  // bounded by the letterhead range. `fmtLocalDayScoped` stamps the year when it differs.
+  const rows = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-12-30', '18:00'),
+        loggedAt: atLocal(CHI, '2027-01-02', '08:15'),
+      }),
+    ], { startDate: '2026-11-01', endDate: '2026-12-31' }),
+  )
+  assert.equal(rows[0][3], 'Jan 2, 2027, 08:15', 'a cross-year log day is never bare')
+})
+
+Deno.test('R-3 — Appendix A\'s preamble says what LOGGED means and that a gap is information', () => {
+  const html = chicagoReport([
+    logEntry({ type: 'vomit', occurredAt: atLocal(CHI, '2026-08-19', '17:40'), loggedAt: atLocal(CHI, '2026-08-21', '09:04') }),
+  ])
+  const sub = text(html.slice(html.indexOf('Appendix A — Symptom event log'), html.indexOf('<table>', html.indexOf('Appendix A — Symptom event log'))))
+  assert.ok(/when the owner recorded/i.test(sub), 'the column is defined')
+  assert.ok(/different day/i.test(sub), 'the date rule is stated')
+  assert.ok(/is itself information|is information/i.test(sub), 'the gap is named as signal, not error')
+})
+
+// ── R-4 (CUL-978) — a negative may not render while the same document says its opposite ──
+//
+// Two sites, one shape: a negative assertion printed from an empty table, with no check
+// against facts the report already renders elsewhere. On the v15 artifact p9 said "Active
+// conditions: None recorded" over a patient whose own p5 medication row read "for Ear
+// infection", and "Supplements: None recorded" over three other pages calling her
+// antihistamine a supplement. Both lines were true of the table they read and false of the
+// document they sat in.
+
+/** The `<td>` of the Appendix B row whose `<th>` is `label`. */
+function appendixBRow(html: string, label: string): string {
+  const start = html.indexOf('Appendix B — Diet history')
+  assert.ok(start > -1, 'appendix B renders')
+  const body = html.slice(start, html.indexOf('</table>', start))
+  const m = new RegExp(`<tr><th[^>]*>${label}</th><td>([^]*?)</td></tr>`).exec(body)
+  assert.ok(m, `appendix B has a "${label}" row`)
+  return m![1]
+}
+
+Deno.test('R-4 site 1 — an empty conditions table beside a medication that names an indication says so', () => {
+  const html = renderReport(
+    base({ medications: [med({ drugName: 'Motozol', indication: 'Ear infection', isSupplement: false })] }),
+  )
+  const cell = text(appendixBRow(html, 'Active conditions'))
+  assert.ok(!/^None recorded\.$/.test(cell.trim()), 'not the bare negative')
+  assert.ok(/Ear infection/.test(cell), 'the indication the medication record names is quoted')
+  assert.ok(/Motozol/.test(cell), 'and the drug it came from, so the vet can find it')
+  // NEVER SYNTHESISED: an indication is what the owner typed against a drug, not a
+  // diagnosis, so it is never promoted into the conditions list as if entered there.
+  assert.ok(!/^Ear infection/.test(cell.trim()), 'the indication is not printed as a condition row')
+})
+
+Deno.test('R-4 site 1 — a genuinely quiet record still gets a clean, calm negative', () => {
+  const html = renderReport(base({ medications: [med({ indication: null })], unlinkedMedications: [] }))
+  const cell = text(appendixBRow(html, 'Active conditions')).trim()
+  assert.ok(/^None entered/.test(cell), 'the quiet record is not made noisy')
+  assert.ok(!/indication/i.test(cell), 'no tension is invented where there is none')
+  // The claim is about the RECORD, not about the world.
+  assert.ok(/not evidence/.test(cell), 'and it says what its own silence does not prove')
+})
+
+Deno.test('R-4 site 2 — a supplement carried only as an UNLINKED dose group reaches the supplements row', () => {
+  // The real mechanism behind the v15 contradiction: `supps` read `snap.medications` only,
+  // so an OTC supplement dosed with no configured regimen — which is what an owner-bought
+  // antihistamine is — rendered on three other pages and never here.
+  const html = renderReport(base({ medications: [], unlinkedMedications: [unlinkedMed()] }))
+  const cell = text(appendixBRow(html, 'Supplements'))
+  assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(cell), 'the supplement the rest of the report names is named here')
+  assert.ok(!/None recorded/.test(cell), 'and the negative does not render over it')
+})
+
+Deno.test('R-4 site 2 — a supplement named only in the concurrent-change list still blocks the negative', () => {
+  const html = renderReport(
+    base({
+      medications: [],
+      unlinkedMedications: [],
+      concurrentChanges: [
+        // R-14 widened this type under the branch: no end at all, so no end bucket, and
+        // `endIsDeclared` is false because there is nothing for the record to have declared.
+        // Irrelevant to what this test asserts (the supplement's NAME blocking the negative),
+        // which is why it is the neutral pair rather than the drawing one.
+        {
+          kind: 'supplement', label: 'Cetirizine HCl (Zyrtec)', startDate: '2026-05-09',
+          bucketIndex: 1, ongoing: false, endInWindow: null, endBucketIndex: null,
+          endIsDeclared: false,
+        },
+      ],
+    }),
+  )
+  const cell = text(appendixBRow(html, 'Supplements'))
+  assert.ok(!/^None recorded/.test(cell.trim()), 'a supplement the document names anywhere blocks the bare negative')
+  assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(cell), 'and the row points at it')
+})
+
+Deno.test('R-4 site 2 — the reconciliation sits WITH the negative, not a page later in appendix D', () => {
+  const html = renderReport(base({ medications: [], unlinkedMedications: [], concurrentChanges: [] }))
+  const cell = text(appendixBRow(html, 'Supplements')).trim()
+  assert.ok(/^None recorded/.test(cell), 'a truly quiet record still gets the calm negative')
+  assert.ok(/taken as food|with a meal/i.test(cell), 'the appendix D reconciliation is inlined at the claim')
+  assert.ok(/not evidence/.test(cell), 'the claim is about the record')
+  // And it is genuinely EARLIER than appendix D's copy of it, which is what the cold read
+  // had to read twice.
+  const dIdx = html.indexOf('Appendix D — Medication log')
+  const bIdx = html.indexOf('Appendix B — Diet history')
+  assert.ok(bIdx > -1 && dIdx > bIdx, 'appendix B precedes appendix D on the sheet')
+})
+
+// ── R-4 item 3 — the class sweep, and the one site it leaves pinned ──────────────────
+//
+// Every negative in `render.ts` was walked against the question "is there any other surface
+// on this document that could contradict it?" (37 sites). The two CUL-978 names were the
+// only ones that could, and the rest fall into three groups: a field absence nothing else
+// on the page states (sex / neuter / breed / owner / a bowl with no recorded start); a
+// negative already cross-checked by an earlier pass (`medicationOverlapLine` names the scope
+// it examined, after adversarial pass 5); and a negative computed from the SAME set as the
+// surface that could contradict it (page 1's "No fully-eaten meal" and appendix E's intake
+// breakdown both read the window's rated meals; appendix B's treat count is a superset of
+// appendix C's treat rows, so a zero there forces a zero here).
+//
+// NO GUARD FILE. The blunt detector for this class — "a negative string needs a cross-check"
+// — would need an exemption at 35 of 37 sites, and an exemption applied thirty-five times is
+// a scope error rather than an exemption (C-33). C-32's rule bites the same way: a registry
+// entry has to be earned, and thirty-five entries recording that someone thought about a
+// string is not a guard. The behaviour is pinned where it is load-bearing instead.
+
+Deno.test('R-4 sweep — page 1\'s medication negative already reads ALL THREE sources, and stays that way', () => {
+  // This is the site appendix B's supplements row should have looked like: it checks
+  // regimen meds, regimen supplements AND unlinked dose groups before claiming none. Pinned
+  // because dropping any one of the three reproduces the CUL-978 bug one page earlier.
+  const quiet = renderReport(base({ medications: [], unlinkedMedications: [], concurrentChanges: [] }))
+  assert.ok(/None logged in this window/.test(quiet), 'a truly quiet record still gets the negative')
+
+  const cases: Array<{ label: string; over: Partial<ReportSnapshot> }> = [
+    { label: 'a regimen medication', over: { medications: [med({ drugName: 'Metronidazole', isSupplement: false })] } },
+    { label: 'a regimen supplement', over: { medications: [med({ drugName: 'Omega-3', isSupplement: true })] } },
+    { label: 'an unlinked OTC group', over: { unlinkedMedications: [unlinkedMed()] } },
+  ]
+  for (const { label, over } of cases) {
+    const html = renderReport(base({ medications: [], unlinkedMedications: [], concurrentChanges: [], ...over }))
+    assert.ok(
+      !/None logged in this window/.test(html),
+      `${label} must suppress page 1's medication negative`,
+    )
+  }
+})
+
+// ── R-13 item 1 (CUL-643) — appendix E's pointers describe what appendix E holds ───────
+//
+// Page 1 and appendix B said "itemised in appendix E" at five sites, four of which render
+// on any one report. Appendix E itemises nothing: it prints a grouped row per FOOD, and
+// only when a reduced-intake flag fired does a second table list individual meals — a
+// capped, filtered subset, never the whole log. R-15 brief 5 was unruled at build time, so
+// this takes its stated fallback (option b, the honest direction): the word goes, the
+// pointer says what is actually there, and the per-meal times are named as living in the
+// app. Provisional; option (a), a real per-meal table, is still open on CUL-643.
+
+/** A grouped meal-item row for a diet fixture. */
+function mealItem(o: Partial<DietSummary['mealItems'][number]> = {}): DietSummary['mealItems'][number] {
+  return {
+    foodLabel: o.foodLabel ?? 'Tiki Cat Tuna',
+    primaryProtein: o.primaryProtein ?? 'tuna',
+    proteinSet: o.proteinSet ?? pset(['tuna']),
+    format: o.format ?? null,
+    count: o.count ?? 12,
+    firstDate: o.firstDate ?? '2026-06-01',
+    lastDate: o.lastDate ?? '2026-07-01',
+    intakeBreakdown: o.intakeBreakdown ?? [{ rating: 'all', count: 12 }],
+  }
+}
+
+const intakeRow = (over: Partial<IntakeLogEntry> = {}): IntakeLogEntry => ({
+  eventId: over.eventId ?? 'm1',
+  occurredAt: over.occurredAt ?? '2026-07-01T12:00:00Z',
+  foodLabel: over.foodLabel ?? 'Tiki Cat Tuna',
+  intakeRating: over.intakeRating ?? 'some',
+  isLastFullMeal: over.isLastFullMeal ?? false,
+  pinned: over.pinned ?? false,
+})
+
+/** Every clause on the report that points the reader at appendix E. */
+function appendixEPointers(html: string): string[] {
+  // `&nbsp;` survives tag-stripping and its own semicolon would end a clause, so the
+  // entities come out before the sentence split.
+  const t = text(html).replace(/&nbsp;/g, ' ').replace(/&mdash;/g, '-').replace(/&[a-z]+;/g, ' ')
+  return [...t.matchAll(/[^.;)]*appendix E[^.;)]*/g)].map((m) => m[0].trim())
+}
+
+/** Does appendix E actually list individual meals with a Time column? */
+function appendixEHasPerMealTable(html: string): boolean {
+  const i = html.indexOf('Appendix E — Meals &amp; intake')
+  if (i < 0) return false
+  return /<th style="width:58px">Time<\/th>/.test(html.slice(i))
+}
+
+Deno.test('R-13 item 1 — no pointer promises itemisation, and every one matches the appendix it points at', () => {
+  const b = base()
+  const grouped = base({
+    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeBreakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }] } },
+    provenance: { ...b.provenance, intakeLog: [], intakeLogScope: null, intakeLogHiddenOlder: 0 },
+  })
+  const unfinished = base({
+    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeBreakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }] } },
+    provenance: {
+      ...b.provenance,
+      intakeLog: [intakeRow({ intakeRating: 'picked' })],
+      intakeLogScope: 'unfinished',
+      intakeLogHiddenOlder: 0,
+    },
+  })
+  const flagged = base({
+    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeBreakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }] } },
+    provenance: {
+      ...b.provenance,
+      intakeLog: [intakeRow({ intakeRating: 'all', isLastFullMeal: true })],
+      intakeLogScope: 'intake_flag',
+      intakeLogHiddenOlder: 0,
+    },
+  })
+
+  for (const [name, snap] of [['grouped only', grouped], ['not-fully-eaten list', unfinished], ['intake-flag list', flagged]] as Array<[string, ReportSnapshot]>) {
+    const html = renderReport(snap)
+    const pointers = appendixEPointers(html)
+    assert.ok(pointers.length > 0, `${name}: the report points at appendix E`)
+    assert.ok(!/itemised in appendix/i.test(text(html)), `${name}: nothing claims itemisation`)
+
+    const hasPerMeal = appendixEHasPerMealTable(html)
+    for (const p of pointers) {
+      // A pointer may only promise dates and times where the per-meal table renders.
+      if (/by date and time/.test(p)) {
+        assert.ok(hasPerMeal, `${name}: "${p}" promises times the appendix does not print`)
+      }
+    }
+    if (!hasPerMeal) {
+      assert.ok(
+        pointers.every((p) => !/by date and time/.test(p)),
+        `${name}: a grouped-only appendix promises no per-meal times`,
+      )
+    }
+    // And the appendix says where the individual meal times DO live, since the promise no
+    // longer implies they are on the page.
+    assert.ok(/in the Culprit app/.test(text(html)), `${name}: the report says where per-meal times live`)
+  }
+})
+
+Deno.test('R-13 item 1 — the pointer is ONE string, so the promises cannot drift apart', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeBreakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }] } },
+      provenance: { ...b.provenance, intakeLog: [intakeRow()], intakeLogScope: 'unfinished', intakeLogHiddenOlder: 0 },
+    }),
+  )
+  // Every clause pointing at appendix E for the MEAL record carries the same description of
+  // it. (The legend's separate note about the page-1 fully-eaten line is not a meal pointer.)
+  const described = appendixEPointers(html).filter((p) => /grouped by food/.test(p))
+  assert.ok(described.length >= 3, `at least three sites describe the appendix (got ${described.length})`)
+  // Cut the legend's trailing "(meals & intake)" label, which is the sheet name rather
+  // than part of the description.
+  const shapes = new Set(described.map((p) => p.slice(p.indexOf('grouped by food')).split(' (')[0].trim()))
+  assert.equal(shapes.size, 1, `one description, reused: ${[...shapes].join(' || ')}`)
+  // And no site anywhere claims the capped second table is complete.
+  const t = text(html).replace(/&nbsp;/g, ' ')
+  assert.ok(!/lists each meal/.test(t), 'no pointer claims the capped list is exhaustive')
+})
+
+// ── R-13 item 2 (CUL-851) — appendix B's Previous-diet row renders the derivation ──────
+
+Deno.test('R-13 item 2 — the Previous diet row states its derivation and its span', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        previousDiet: { labels: ['Tiki Cat Tuna', 'Fancy Feast Salmon'], feedings: 38, firstDay: '2026-05-02', lastDay: '2026-05-11' },
+      },
+    }),
+  )
+  const cell = text(appendixBRow(html, 'Previous diet'))
+  assert.ok(!/^Not recorded\.$/.test(cell.trim()), 'not the hardcoded negative')
+  assert.ok(/Tiki Cat Tuna/.test(cell) && /Fancy Feast Salmon/.test(cell), 'the foods are named')
+  assert.ok(/meal log/i.test(cell), 'the row says where the answer came from')
+  assert.ok(/May 11/.test(cell) && /May 2/.test(cell), 'and the span it read')
+  assert.ok(/2026/.test(cell), 'the pair carries its year once (C-19) — these dates precede the window')
+  // NOT presented as an entered field: the appendix sub-head promises that uncaptured
+  // fields are marked rather than guessed, so a derived value has to say it is derived.
+  assert.ok(/not an entered|Not entered/i.test(cell), 'the derivation is not passed off as a captured field')
+})
+
+Deno.test('R-13 item 2 — with nothing derivable the row keeps its honest negative', () => {
+  const b = base()
+  const html = renderReport(base({ diet: { ...b.diet, previousDiet: null } }))
+  assert.equal(text(appendixBRow(html, 'Previous diet')).trim(), 'Not recorded.')
+})
+
+// ── R-13 item 3 (CUL-852) — the WSAVA "Food used to give medication" row ───────────────
+
+Deno.test('R-13 item 3 — the vehicle is named, and the row says whether the tally counts it', () => {
+  const b = base()
+  const counted = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: { labels: ['Greenies Pill Pocket'], feedings: 12, countedInTally: 12 } } }),
+  )
+  const c = text(appendixBRow(counted, 'Food used to give medication'))
+  assert.ok(/Greenies Pill Pocket/.test(c), 'the vehicle is named')
+  assert.ok(/12 feedings carried a dose/.test(c), 'and how often it was used')
+  assert.ok(/Counted among the off-diet exposures/.test(c), 'the tally question is answered')
+
+  const uncounted = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: { labels: ['Tiki Cat Tuna'], feedings: 4, countedInTally: 0 } } }),
+  )
+  const u = text(appendixBRow(uncounted, 'Food used to give medication'))
+  assert.ok(/Not counted among the off-diet exposures/.test(u), 'and answered the other way when it is not')
+  assert.ok(/does not describe them/.test(u), 'with what that means for the tally')
+
+  const mixed = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: { labels: ['Pill Pocket', 'Tiki Cat Tuna'], feedings: 10, countedInTally: 3 } } }),
+  )
+  const m = text(appendixBRow(mixed, 'Food used to give medication'))
+  assert.ok(/3 of these are counted/.test(m), 'a split population states its split (C-4)')
+  // …and agrees with itself at one.
+  const single = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: { labels: ['Pill Pocket', 'Tiki Cat Tuna'], feedings: 4, countedInTally: 1 } } }),
+  )
+  assert.ok(/1 of these is counted/.test(text(appendixBRow(single, 'Food used to give medication'))), 'singular agreement')
+})
+
+Deno.test('R-13 item 3 — an absence distinguishes "no dose in food" from "no medication"', () => {
+  const b = base()
+  const withMeds = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: null }, medications: [med({})], unlinkedMedications: [] }),
+  )
+  assert.ok(
+    /no dose in this window was logged as given in food/.test(text(appendixBRow(withMeds, 'Food used to give medication'))),
+    'a medicated pet with no vehicle says which absence this is',
+  )
+  const noMeds = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: null }, medications: [], unlinkedMedications: [] }),
+  )
+  assert.equal(text(appendixBRow(noMeds, 'Food used to give medication')).trim(), 'Not recorded.')
+})
+
+// ── R-13 item 4 (CUL-292) — "list not read" is the wrong claim about home food ─────────
+//
+// Home-prepared food has no ingredient panel to read, so marking it "list not read" reports
+// a capture failure where none occurred, and counting it in the floor disclosure's numerator
+// inflates a figure that exists to say how much of the PACKAGED record went unread.
+
+const conf = (o: Partial<ConfounderExposure> & { eventId: string }): ConfounderExposure => ({
+  occurredAt: '2026-06-01T12:00:00Z',
+  dayKey: '2026-06-01',
+  foodLabel: 'Treat A',
+  primaryProtein: 'chicken',
+  proteinSet: pset(['chicken']),
+  format: 'treat',
+  foodType: 'treat',
+  note: null,
+  ...o,
+})
+
+/** Appendix C's rendered rows, as cell text. */
+function appendixCRows(html: string): string[][] {
+  const start = html.indexOf('Appendix C —')
+  assert.ok(start > -1, 'appendix C renders')
+  const body = html.slice(html.indexOf('<tbody>', start), html.indexOf('</tbody>', start))
+  return [...body.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) =>
+    [...m[1].matchAll(/<td[^>]*>([^]*?)<\/td>/g)].map((c) => text(c[1]).replace(/\s+/g, ' ').trim()),
+  )
+}
+
+Deno.test('R-13 item 4 — a home-food row says its ingredients were not recorded, not that a list went unread', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        confounders: [
+          conf({ eventId: 'h1', foodLabel: 'Ground beef', primaryProtein: 'beef', proteinSet: pset(['beef']), format: 'human_food', foodType: 'meal' }),
+          conf({ eventId: 't1', foodLabel: 'Jerky Treat', proteinSet: pset(['chicken']), format: 'treat', foodType: 'treat' }),
+        ],
+      },
+    }),
+  )
+  const rows = appendixCRows(html)
+  const home = rows.find((r) => r.some((c) => /Ground beef/.test(c)))
+  const packaged = rows.find((r) => r.some((c) => /Jerky Treat/.test(c)))
+  assert.ok(home && packaged, 'both rows render')
+  assert.ok(!home.some((c) => /list not read/.test(c)), 'home food is not marked as an unread panel')
+  assert.ok(home.some((c) => /ingredients not recorded/i.test(c)), 'it says what is actually missing')
+  // And the packaged row is untouched — the wording is category-specific, not a blanket
+  // softening of the incompleteness marker.
+  assert.ok(packaged.some((c) => /list not read/.test(c)), 'a packaged food still says its panel went unread')
+})
+
+Deno.test('R-13 item 4 — the floor disclosure counts packaged feedings, and states home food separately', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        confounders: [
+          conf({ eventId: 'h1', foodLabel: 'Ground beef', primaryProtein: 'beef', proteinSet: pset(['beef']), format: 'human_food', foodType: 'meal' }),
+          conf({ eventId: 'h2', foodLabel: 'Rice', primaryProtein: 'rice', proteinSet: pset(['rice']), format: 'human_food', foodType: 'meal' }),
+          conf({ eventId: 't1', foodLabel: 'Jerky', proteinSet: pset(['chicken']), format: 'treat', foodType: 'treat' }),
+          conf({ eventId: 't2', foodLabel: 'Biscuit', proteinSet: pset(['wheat'], { complete: true }), format: 'treat', foodType: 'treat' }),
+        ],
+        proteinExposureTally: { chicken: 1, beef: 1, rice: 1, wheat: 1 },
+      },
+      proteinTimeline: {
+        ...b.proteinTimeline,
+        proteins: ['chicken'],
+        totalFeedings: 4,
+        incompleteFeedings: 3,
+        humanFoodFeedings: 2,
+        incompleteHumanFoodFeedings: 2,
+        packagedReadable: 2,
+        packagedUnread: 1,
+      },
+    }),
+  )
+  const t = text(html).replace(/&nbsp;/g, ' ')
+  // 1 of the 2 PACKAGED feedings went unread — never 3 of 4, which reads as a record three
+  // quarters unverified when two of those rows never had a panel to verify.
+  assert.ok(/1 of 2 packaged off-diet feeding/.test(t), `packaged ratio; got: ${t.slice(t.indexOf('A floor, not a total'), t.indexOf('A floor, not a total') + 400)}`)
+  assert.ok(!/3 of 4 off-diet feeding/.test(t), 'home food is out of the numerator and the denominator')
+  assert.ok(/2 home-prepared feeding/.test(t), 'and is stated separately rather than dropped')
+})
+
+Deno.test('R-13 item 4 — an all-home-food record makes no packaged claim at all', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        confounders: [conf({ eventId: 'h1', foodLabel: 'Ground beef', primaryProtein: 'beef', proteinSet: pset(['beef']), format: 'human_food', foodType: 'meal' })],
+        proteinExposureTally: { beef: 1 },
+      },
+      proteinTimeline: { ...b.proteinTimeline, proteins: ['beef'], totalFeedings: 1, incompleteFeedings: 1, humanFoodFeedings: 1, incompleteHumanFoodFeedings: 1, packagedReadable: 0, packagedUnread: 0 },
+    }),
+  )
+  const t = text(html).replace(/&nbsp;/g, ' ')
+  assert.ok(!/packaged off-diet feeding/.test(t), 'no packaged ratio over a record with no packaged food')
+  assert.ok(/1 home-prepared feeding/.test(t), 'the home-food limitation still stands')
+})
+
+// ── R-13 item 5 (CUL-497) — a tie is not a dash, and the dash is reserved for no data ──
+//
+// STATE OF THE DEFECT ON MAIN, MEASURED RATHER THAN INHERITED. CUL-497 describes two
+// mechanisms and B-532 has since fixed one: appendix E's cell renders the full
+// `intakeBreakdown`, not the mode, so ninety rated meals can no longer collapse to one
+// em-dash — that dash now fires only on an empty breakdown, which IS no data. Round 7
+// likewise restored the "N of M fully eaten" figure to the free-fed branch. What remains is
+// the third: on a TIE the page-1 adverb is silently dropped, so a reader cannot tell "the
+// record is evenly split" from "nobody computed one", and the two surfaces describe the same
+// rating multiset at different densities with nothing tying them together.
+
+const intakeSet = (b: Array<{ rating: IntakeRating; count: number }>) => b
+
+
+Deno.test('R-13 item 5 — a tie renders the SPLIT, and never picks the calmer side', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        freeFed: [{ foodLabel: 'Dry bowl', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-04-03', activeUntil: null, isShared: false }],
+        mealItems: [mealItem({ count: 12, intakeBreakdown: intakeSet([{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }]) })],
+        mealCompletion: { ratedMeals: 12, finishedMeals: 6, rate: 0.5, intakeBreakdown: intakeSet([{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }]) },
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/ratings:/.test(t), 'the tie is itemised rather than summarised')
+  assert.ok(/Ate it all/i.test(t) && /Refused/i.test(t), 'both ratings are shown')
+  assert.ok(!/typically/.test(t), 'no side is picked')
+  assert.ok(/6 of 12 fully eaten/.test(t), 'and the count still prints')
+})
+
+Deno.test('R-13 item 5 — a strict plurality still reads "typically", unchanged', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        freeFed: [{ foodLabel: 'Dry bowl', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-04-03', activeUntil: null, isShared: false }],
+        mealItems: [mealItem({ count: 12, intakeBreakdown: intakeSet([{ rating: 'all', count: 9 }, { rating: 'some', count: 3 }]) })],
+        mealCompletion: { ratedMeals: 12, finishedMeals: 9, rate: 0.75, intakeBreakdown: intakeSet([{ rating: 'all', count: 9 }, { rating: 'some', count: 3 }]) },
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/typically "ate it all"/i.test(t), 'a real plurality keeps the adverb')
+  assert.ok(!/ratings:/.test(t), 'and is not itemised')
+})
+
+Deno.test('R-13 item 5 — the dash is reserved for genuinely no data, on both surfaces', () => {
+  const b = base()
+  // A food with meals logged but NONE rated: the one state that honestly has no intake.
+  const noData = renderReport(
+    base({ diet: { ...b.diet, mealItems: [mealItem({ count: 4, intakeBreakdown: [] })], mealCompletion: null } }),
+  )
+  const cells = appendixEMealRows(noData)
+  assert.equal(cells[0][4], '—', 'an unrated food renders the dash')
+
+  // A tie over the SAME surface must not.
+  const tie = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        mealItems: [mealItem({ count: 12, intakeBreakdown: intakeSet([{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }]) })],
+        mealCompletion: { ratedMeals: 12, finishedMeals: 6, rate: 0.5, intakeBreakdown: intakeSet([{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }]) },
+      },
+    }),
+  )
+  const tieCell = appendixEMealRows(tie)[0][4]
+  assert.ok(tieCell !== '—', 'a tie is never the dash')
+  assert.ok(/Ate it all ×6/.test(tieCell) && /Refused ×6/.test(tieCell), 'it shows every rating')
+})
+
+Deno.test('R-13 item 5 — ONE predicate: the two surfaces never disagree about the same ratings', () => {
+  const b = base()
+  const cases: Array<{ breakdown: Array<{ rating: IntakeRating; count: number }>; finished: number }> = [
+    { breakdown: [{ rating: 'all', count: 9 }, { rating: 'some', count: 3 }], finished: 9 },
+    { breakdown: [{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }], finished: 6 },
+    { breakdown: [{ rating: 'some', count: 4 }, { rating: 'picked', count: 4 }, { rating: 'refused', count: 4 }], finished: 0 },
+    { breakdown: [{ rating: 'refused', count: 12 }], finished: 0 },
+  ]
+  for (const { breakdown, finished } of cases) {
+    const total = breakdown.reduce((a, x) => a + x.count, 0)
+    const html = renderReport(
+      base({
+        diet: {
+          ...b.diet,
+          freeFed: [{ foodLabel: 'Dry bowl', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-04-03', activeUntil: null, isShared: false }],
+          mealItems: [mealItem({ count: total, intakeBreakdown: breakdown })],
+          mealCompletion: { ratedMeals: total, finishedMeals: finished, rate: finished / total, intakeBreakdown: breakdown },
+        },
+      }),
+    )
+    const t = plain(html)
+    const top = Math.max(...breakdown.map((x) => x.count))
+    const tied = breakdown.filter((x) => x.count === top)
+    if (tied.length > 1 || top < 2) {
+      assert.ok(/ratings:/.test(t), `a tie of ${tied.length} (top ${top}) should itemise`)
+      assert.ok(!/typically/.test(t), 'and pick no side')
+      // AND ACCOUNT FOR EVERY MEAL — the itemised clause is the whole breakdown, not the
+      // tied subset, so a rating can never be dropped from the sentence that summarises it.
+      for (const x of breakdown) {
+        assert.ok(
+          new RegExp(`${intakeLabelFor(x.rating)}" ×${x.count}`, 'i').test(t),
+          `page 1 names ${x.rating} ×${x.count}`,
+        )
+      }
+    } else {
+      assert.ok(
+        new RegExp(`typically "${intakeLabelFor(tied[0].rating)}"`, 'i').test(t),
+        `a plurality should name ${tied[0].rating}`,
+      )
+    }
+    // Appendix E shows every rating whatever page 1 said, so the two can be reconciled.
+    const cell = appendixEMealRows(html)[0][4]
+    for (const x of breakdown) {
+      assert.ok(cell.includes(`×${x.count}`), `appendix E carries the ${x.rating} count`)
+    }
+  }
+})
+
+/** Appendix E's grouped meal rows, as cell text. */
+function appendixEMealRows(html: string): string[][] {
+  const start = html.indexOf('Appendix E — Meals &amp; intake')
+  assert.ok(start > -1, 'appendix E renders')
+  const body = html.slice(html.indexOf('<tbody>', start), html.indexOf('</tbody>', start))
+  return [...body.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) =>
+    [...m[1].matchAll(/<td[^>]*>([^]*?)<\/td>/g)].map((c) => plain(c[1]).replace(/\s+/g, ' ').trim()),
+  )
+}
+
+/** The owner-facing label for a rating, as the report prints it. */
+function intakeLabelFor(r: IntakeRating): string {
+  return { all: 'Ate it all', most: 'Ate most', some: 'Ate some', picked: 'Picked at it', refused: 'Refused' }[r]
+}
+
+// ── R-13 item 6 (CUL-634) — the owner-removed photo is named, not just counted ─────────
+//
+// The photos appendix disclosed "1 further incident was photographed and read but its photo
+// is no longer retained" without saying WHICH, while that incident's appendix A row showed a
+// full photo read with no marker at all. A vet cross-checking "N reads but fewer photos" had
+// a count on one sheet, an unmarked row on another, and no way to join them.
+
+Deno.test('R-13 item 6 — the appendix A row whose photo was removed says so', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        totalSymptomIncidents: 2,
+        symptomLog: [
+          logEntry({
+            eventId: 'gone',
+            type: 'vomit',
+            occurredAt: '2026-06-20T14:00:00Z',
+            photoRemoved: true,
+            phenotype: { kind: 'vomit', status: 'completed', colour: 'yellow', contentsCategory: 'bile', consistency: 'foamy', bloodPresent: null, foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
+          }),
+          logEntry({
+            eventId: 'kept',
+            type: 'vomit',
+            occurredAt: '2026-06-21T14:00:00Z',
+            phenotype: { kind: 'vomit', status: 'completed', colour: 'yellow', contentsCategory: 'bile', consistency: 'foamy', bloodPresent: null, foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
+          }),
+        ],
+      },
+      incidentPhotosRemoved: [{ eventId: 'gone', type: 'vomit', occurredAt: '2026-06-20T14:00:00Z' }],
+    }),
+  )
+  const rows = appendixARows(html)
+  const gone = rows.find((r) => r[0] === 'Jun 20')
+  const kept = rows.find((r) => r[0] === 'Jun 21')
+  assert.ok(gone && kept, 'both rows render')
+  assert.ok(/no longer retained/i.test(gone.join(' ')), 'the removed-photo row is marked')
+  assert.ok(!/no longer retained/i.test(kept.join(' ')), 'a retained photo adds no marker')
+})
+
+Deno.test('R-13 item 6 — the photos appendix NAMES the removed incidents, and its count is their count', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      incidentPhotos: [
+        {
+          eventId: 'kept', type: 'vomit', occurredAt: '2026-06-21T14:00:00Z', dataUri: 'data:image/jpeg;base64,AAAA',
+          storagePath: 'pet/kept/1.jpg', occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null,
+          notes: null, safety: null,
+          phenotype: { kind: 'vomit', status: 'completed', colour: 'yellow', contentsCategory: 'bile', consistency: 'foamy', bloodPresent: null, foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
+        },
+      ],
+      incidentPhotosRemoved: [
+        { eventId: 'g1', type: 'vomit', occurredAt: '2026-06-20T14:00:00Z' },
+        { eventId: 'g2', type: 'diarrhea', occurredAt: '2026-06-12T09:00:00Z' },
+      ],
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/2 further incidents/.test(t), 'the count still leads')
+  assert.ok(/Jun 20/.test(t) && /Jun 12/.test(t), 'and each one is dated, so a vet can join it to appendix A')
+  // The types use the report's own clinical labels, so the disclosure reads in the same
+  // vocabulary as the appendix A rows a vet is about to join it to.
+  assert.ok(/Vomiting Jun 20/.test(t), 'the vomiting incident, by its report label')
+  assert.ok(/Loose stool Jun 12/.test(t), 'and the loose stool by its own')
+})
+
+Deno.test('R-13 item 6 — no removed photo, no disclosure and no marker', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: { ...b.provenance, totalSymptomIncidents: 1, symptomLog: [logEntry({ type: 'vomit', occurredAt: '2026-06-21T14:00:00Z' })] },
+      incidentPhotosRemoved: [],
+    }),
+  )
+  assert.ok(!/no longer retained/i.test(plain(html)), 'a quiet record gains nothing')
+})
+
+// ── R-13 items 7 + 8 — the empty appendix D, and the un-lettered table's address ───────
+
+Deno.test('R-13 item 7 — an empty appendix D is the sentence, with no table around it', () => {
+  const html = renderReport(base({ medications: [], unlinkedMedications: [] }))
+  const start = html.indexOf('Appendix D — Medication log')
+  assert.ok(start > -1, 'appendix D still renders')
+  const section = html.slice(start, html.indexOf('</section>', start))
+  assert.ok(!/<table>/.test(section), 'no five-column header over an empty body')
+  assert.ok(!/colspan="5"/.test(section), 'and no placeholder row')
+  // The sentence and its caveat survive: the absence is what a vet needs told, and the
+  // B-494 rule is that a zone the report teaches a reader to scan may not let its own
+  // silence stand as a finding.
+  const t = plain(section)
+  assert.ok(/No prescription medication is recorded in this window/.test(t))
+  assert.ok(/This lists only what the owner entered in Culprit/.test(t))
+  // Said ONCE — the sub-head and the placeholder row used to carry the same sentence.
+  assert.equal((t.match(/No prescription medication is recorded in this window/g) ?? []).length, 1)
+})
+
+Deno.test('R-13 item 7 — a populated appendix D still gets its table', () => {
+  const html = renderReport(base({ medications: [med({})] }))
+  const start = html.indexOf('Appendix D — Medication log')
+  const section = html.slice(start, html.indexOf('</section>', start))
+  assert.ok(/<table>/.test(section) && /Doses logged/.test(section), 'the table is untouched where there is data')
+})
+
+Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table sits', () => {
+  const html = renderReport(
+    base({
+      medicationHistory: { entries: [mhEntry({ drugName: 'Metronidazole' })], sinceDay: '2026-04-01' },
+    }),
+  )
+  const divider = plain(html.slice(html.indexOf('End of clinical summary'), html.indexOf('Appendix A —')))
+  assert.ok(/medication history \(lifetime\)/.test(divider), 'the table is still named in the contents line')
+  assert.ok(/un-lettered/.test(divider), 'and the reader is told it carries no letter')
+  assert.ok(/before D|with D|D's sheet/.test(divider), 'and where to find it')
+})
+
+// ── R-13 item 9 (Dr. Chen) — a uniform confidence column, collapsed only where it is SAFE ──
+//
+// On the clean fixture appendix A prints `seen` seventeen times: a column with one value
+// carries no information, and principle 6 calls that decoration on the document's most
+// scanned sheet. But the issue's default — "when every row shares one tag, say it once and
+// drop the per-row tag" — is unsafe as stated, because a BARE time reads as an exact one.
+// That default reading is true of a uniform `seen` column and false of every other: a record
+// logged entirely before B-010 is uniformly `unspecified`, and dropping its tags would turn a
+// column of times nobody vouched for into a column of witnessed minutes. So the collapse is
+// scoped to `seen`, the one class whose fallback reading is correct.
+
+function appendixASection(html: string): string {
+  const i = html.indexOf('Appendix A — Symptom event log')
+  return html.slice(i, html.indexOf('</table>', i))
+}
+
+const seenRow = (day: string) => logEntry({ eventId: `e${day}`, type: 'vomit', occurredAt: `2026-06-${day}T14:00:00Z`, occurredAtConfidence: 'witnessed' })
+
+Deno.test('R-13 item 9 — an all-witnessed column says it once and drops seventeen chips', () => {
+  const b = base()
+  const rows = ['10', '11', '12'].map(seenRow)
+  const html = renderReport(
+    base({ provenance: { ...b.provenance, symptomLog: rows, totalSymptomIncidents: rows.length } }),
+  )
+  const section = appendixASection(html)
+  const body = section.slice(section.indexOf('<tbody>'))
+  assert.equal((body.match(/class="conf">seen</g) ?? []).length, 0, 'no per-row chip')
+  const pre = plain(section.slice(0, section.indexOf('<table>')))
+  assert.ok(/every time below was witnessed/i.test(pre), 'the preamble states it once instead')
+  // And the tag gloss goes with the tags — a legend for a chip the sheet no longer prints is
+  // the dangling reference this document keeps paying for.
+  assert.ok(!/Time tags:/.test(pre), 'no vocabulary note for a vocabulary with nothing in it')
+})
+
+Deno.test('R-13 item 9 — a uniformly UNSPECIFIED column keeps every chip', () => {
+  // The falsification that scoped this: these times were never vouched for, and a bare
+  // column of them reads as witnessed. Silence here is the reassuring direction.
+  const b = base()
+  // `logEntry` defaults the confidence with `??`, so a null has to be applied after it —
+  // which is the shape a pre-B-010 row actually has.
+  const rows = ['10', '11', '12'].map((d) => ({
+    ...logEntry({ eventId: `u${d}`, type: 'vomit', occurredAt: `2026-06-${d}T14:00:00Z` }),
+    occurredAtConfidence: null,
+  }))
+  const html = renderReport(
+    base({ provenance: { ...b.provenance, symptomLog: rows, totalSymptomIncidents: rows.length } }),
+  )
+  const section = appendixASection(html)
+  const body = section.slice(section.indexOf('<tbody>'))
+  assert.equal((body.match(/class="conf">unspecified</g) ?? []).length, 3, 'every row keeps its tag')
+  assert.ok(/Time tags:/.test(plain(section)), 'and the gloss that defines it')
+})
+
+Deno.test('R-13 item 9 — a MIXED column keeps every chip, including the witnessed ones', () => {
+  const b = base()
+  const rows = [
+    seenRow('10'),
+    logEntry({ eventId: 'est', type: 'vomit', occurredAt: '2026-06-11T14:00:00Z', occurredAtConfidence: 'estimated' }),
+    seenRow('12'),
+  ]
+  const html = renderReport(
+    base({ provenance: { ...b.provenance, symptomLog: rows, totalSymptomIncidents: rows.length } }),
+  )
+  const body = appendixASection(html).slice(appendixASection(html).indexOf('<tbody>'))
+  assert.equal((body.match(/class="conf">seen</g) ?? []).length, 2, 'the witnessed rows keep their tag')
+  assert.equal((body.match(/class="conf">est</g) ?? []).length, 1, 'so the estimated one is visible BY CONTRAST')
+})
+
+Deno.test('R-13 item 1 — no report points at appendix E when appendix E does not render', () => {
+  // The dangling-reference class this document keeps paying for, asserted as an EMPTY SET
+  // (C-32): every call site of `mealsAppendixPointer` is gated today, and this is what reds
+  // if a future one is not. The helper itself cannot refuse — a caller would print "Meals
+  // are ." — so the guard lives here, over the rendered document.
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: { ...b.diet, mealItems: [], mealCompletion: null },
+      provenance: { ...b.provenance, intakeLog: [], intakeLogScope: null, intakeLogHiddenOlder: 0 },
+    }),
+  )
+  assert.ok(!/Appendix E — Meals/.test(html), 'the appendix is genuinely absent on this record')
+  assert.ok(!/grouped by food in appendix/.test(plain(html)), 'and nothing points a reader at it')
+  // The letterhead's own range must not advertise an E either.
+  assert.ok(!/appendices A&ndash;E/.test(html), 'the orient line stops at the last appendix that renders')
+})
+
+Deno.test('R-3 — across a window that spans New Year, the row\'s two dates agree about the year', () => {
+  // THE PAIRING HAZARD `fmtLocalDayScoped`'s own header warns about: it stamps against the
+  // WINDOW's year, and appendix A's Date column is always bare. On a 90-day window opened in
+  // November — which the fallback cascade produces every winter — an event in the earlier
+  // year got a bare "Dec 15" beside a stamped "Dec 17, 2025", and the bare one inherits the
+  // window's 2026. Read literally that is again a row logged before it happened.
+  const rows = appendixARows(
+    chicagoReport(
+      [
+        logEntry({
+          type: 'vomit',
+          occurredAt: atLocal(CHI, '2025-12-15', '19:00'),
+          loggedAt: atLocal(CHI, '2025-12-17', '08:30'),
+        }),
+      ],
+      { startDate: '2025-11-20', endDate: '2026-02-18' },
+    ),
+  )
+  assert.equal(rows[0][0], 'Dec 15', 'the Date column is bare, as it always has been')
+  assert.equal(rows[0][3], 'Dec 17, 08:30', 'so its partner must not stamp a year the pair does not need')
+})
+
+Deno.test('R-3 — a log that crosses into the next year still stamps it', () => {
+  // The case CUL-977 point 3 actually raises: logging postdates the window end. Here the two
+  // dates genuinely disagree about the year, so the year is what disambiguates them — and the
+  // stamped later date implies the bare earlier one, correctly.
+  const rows = appendixARows(
+    chicagoReport(
+      [
+        logEntry({
+          type: 'vomit',
+          occurredAt: atLocal(CHI, '2026-12-30', '18:00'),
+          loggedAt: atLocal(CHI, '2027-01-02', '08:15'),
+        }),
+      ],
+      { startDate: '2026-11-01', endDate: '2026-12-31' },
+    ),
+  )
+  assert.equal(rows[0][0], 'Dec 30')
+  assert.equal(rows[0][3], 'Jan 2, 2027, 08:15')
+})
+
+// ── Adversarial review, findings 2 + 9 — the home-food marker's other two branches ──────
+
+Deno.test('CUL-292 — a home food NEVER gets the "nothing else on the label" all-clear', () => {
+  // `kind` reached only the incomplete branch, so a home food whose panel text the owner DID
+  // capture printed the D10 all-clear on appendix B while appendix C, on the next sheet, said
+  // the same feedings have "no ingredient panel at all". One document, two opposite claims
+  // about one food, and appendix B took the reassuring side — which render.ts's own rule
+  // ("no negative form except the one D10 licenses") exists to forbid.
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        mealItems: [
+          mealItem({
+            foodLabel: 'Deli chicken breast',
+            primaryProtein: 'chicken',
+            proteinSet: pset(['chicken'], { complete: true }),
+            format: 'human_food',
+            count: 3,
+          }),
+        ],
+      },
+    }),
+  )
+  const row = text(appendixBRow(html, 'Proteins in the diet'))
+  assert.ok(/Deli chicken breast/.test(row), 'the food is named')
+  assert.ok(!/nothing else on the label/.test(row), 'no label claim over a food that has no label')
+  assert.ok(/nothing else recorded/.test(row), 'the true claim is about the record instead')
+})
+
+Deno.test('CUL-292 — a packaged food with a read panel keeps the label claim', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        mealItems: [mealItem({ foodLabel: 'Acme Duck', proteinSet: pset(['duck'], { complete: true }), format: 'dry_kibble' })],
+      },
+    }),
+  )
+  assert.ok(/nothing else on the label/.test(text(appendixBRow(html, 'Proteins in the diet'))))
+})
+
+Deno.test('CUL-292 — the home-food legend does not render over rows that show no marker', () => {
+  // The gate asked for `!complete`, but `proteinSetCell` returns an EMPTY cell when no protein
+  // was captured at all — so a bare table-scrap log produced the legend defining a marker the
+  // sheet never printed. That is the dangling reference the gate's own comment cites.
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        confounders: [
+          conf({ eventId: 'h1', foodLabel: 'Chicken off my plate', primaryProtein: null, proteinSet: pset([]), format: 'human_food', foodType: 'other' }),
+        ],
+      },
+    }),
+  )
+  const i = html.indexOf('Appendix C —')
+  const sub = text(html.slice(i, html.indexOf('</p>', html.indexOf('appx-sub', i))))
+  assert.ok(!/Home-prepared food has no panel/.test(sub), 'no legend for a marker no row carries')
 })
 
 // ── CUL-981 — the vomit colour tally ──────────────────────────────────────────

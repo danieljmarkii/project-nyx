@@ -72,6 +72,9 @@ import type {
   NoticedBlock,
   NoticedWordCount,
 } from './report.ts'
+// The ONE intake predicate (CUL-497) — a value import, because both surfaces on this page
+// have to reach the same verdict about the same ratings.
+import { summariseIntake } from './report.ts'
 // The ONE change predicate (R-14): the chart's marker set, the marker legend's gate and
 // "Reading the trend"'s count all switch on it, so they cannot disagree about how many
 // changes overlap the window.
@@ -1082,7 +1085,7 @@ function offTrialFootnote(targetProtein: string | null): string {
  * read off the view unconditionally because the marker is only meaningful on a sheet
  * that defines it — an unexplained asterisk on page 1 is worse than none.
  */
-function proteinSetPhrase(v: ProteinSetView, markOffTrial: boolean): string {
+function proteinSetPhrase(v: ProteinSetView, markOffTrial: boolean, kind: PanelKind = 'packaged'): string {
   const off = new Set(markOffTrial ? v.offTrial : [])
   const star = (p: string): string => (off.has(p) ? '<b>*</b>' : '')
   const mark = (p: string): string => `${h(capProtein(p))}${star(p)}`
@@ -1099,9 +1102,20 @@ function proteinSetPhrase(v: ProteinSetView, markOffTrial: boolean): string {
     // The one branch that must never imply the set is everything. Secondaries still
     // render — they are real, captured exposures — but the qualifier travels with them.
     const alsoBit = rest.length ? `, also ${rest.map(mark).join(', ')}` : ''
-    return `${head}${alsoBit} <span class="rnote">&middot; ingredient list not captured</span>`
+    return `${head}${alsoBit} <span class="rnote">&middot; ${
+      kind === 'home' ? 'home food &mdash; other ingredients not recorded' : 'ingredient list not captured'
+    }</span>`
   }
-  if (rest.length === 0) return `${head} <span class="rnote">&middot; nothing else on the label</span>`
+  // THE COMPLETE BRANCH READS `kind` TOO (adversarial review). D10 licenses exactly one
+  // negative form, "nothing else on the label", and it is a claim about a LABEL — false of a
+  // home food whether or not the owner typed out what went in. Ignoring `kind` here put that
+  // all-clear on appendix B over a food appendix C simultaneously called "no ingredient panel
+  // at all": one document, two opposite claims, with the reassuring one on the earlier sheet.
+  if (rest.length === 0) {
+    return `${head} <span class="rnote">&middot; ${
+      kind === 'home' ? 'nothing else recorded' : 'nothing else on the label'
+    }</span>`
+  }
   return `${head}, also ${rest.map(mark).join(', ')}`
 }
 
@@ -1190,11 +1204,27 @@ const PROTEIN_READ_CAVEAT =
  * the highest-information mark on the sheet — and it was getting the weakest possible
  * treatment. `Beef*…` is not a sentence a vet parses at speed.
  */
-function proteinSetCell(v: ProteinSetView, markOffTrial: boolean): string {
+function proteinSetCell(v: ProteinSetView, markOffTrial: boolean, kind: PanelKind = 'packaged'): string {
   const off = new Set(markOffTrial ? v.offTrial : [])
   if (v.proteins.length === 0) return ''
   const list = v.proteins.map((p) => `${h(capProtein(p))}${off.has(p) ? '*' : ''}`).join(', ')
-  return v.complete ? list : `${list} <span class="rnote">&middot; list not read</span>`
+  return v.complete ? list : `${list} <span class="rnote">&middot; ${incompleteMarker(kind)}</span>`
+}
+
+/**
+ * Whether a food HAS an ingredient panel (CUL-292).
+ *
+ * "List not read" is a statement about a capture failure, and home-prepared food has no list
+ * to read: rotisserie chicken off the owner's own plate was marked as though someone had
+ * failed to photograph a label that does not exist. The marker is the highest-information
+ * mark on appendix C's sheet, so applying it where it is false spends the reader's attention
+ * on a gap the app could never close — and hides the real one, which is that a home meal's
+ * seasoning, stock and fat are recorded nowhere.
+ */
+type PanelKind = 'packaged' | 'home'
+
+function incompleteMarker(kind: PanelKind): string {
+  return kind === 'home' ? 'home food &mdash; other ingredients not recorded' : 'list not read'
 }
 
 function proteinTimelineSection(snap: ReportSnapshot): string {
@@ -5653,10 +5683,26 @@ function dietMeds(snap: ReportSnapshot): string {
     // meals are explicitly "also". Composition is the guard, as it is on the B-494 band; a
     // number a clinician can check beats an adverb they cannot.
     //
-    // A NULL MODE STAYS NULL. `strictPluralityIntake` returns null on a tie precisely so the
-    // report never picks a side, and defaulting it to "ate it all" here would invent the
-    // reassuring reading — the same defect one line up, committed by the fix for it.
-    const modeBit = mc && mc.intakeMode ? `, typically &ldquo;${h(intakeLabel(mc.intakeMode).toLowerCase())}&rdquo;` : ''
+    // A TIE IS SAID, NOT SWALLOWED (CUL-497). The predecessor read a mode that was null on
+    // BOTH a tie and an empty set, and rendered silence for both — so an evenly split record
+    // was indistinguishable from one nobody had summarised, on the one page-1 intake clause
+    // a vet reads for texture. `summariseIntake` separates the two, and the tie renders as
+    // the split: it picks no side (breaking it toward the calmer rating would manufacture
+    // reassurance the intake floor forbids) and it carries more than the adverb could.
+    const intake = mc ? summariseIntake(mc.intakeBreakdown) : { kind: 'none' as const }
+    const modeBit =
+      intake.kind === 'typical'
+        ? `, typically &ldquo;${h(intakeLabel(intake.rating).toLowerCase())}&rdquo;`
+        : intake.kind === 'itemised'
+          ? // EVERY rating, with its count — never a summary that deletes one. "Split between
+            // A and B" read as an exhaustive partition and dropped the untied ratings, which
+            // on a real spread meant two refusals vanished from page 1 under a sentence
+            // claiming to account for the set. This is the same list appendix E prints, so
+            // the two surfaces are now literally identical on a record of one food.
+            `, ratings: ${intake.ratings
+              .map((t) => `&ldquo;${h(intakeLabel(t.rating).toLowerCase())}&rdquo; &times;${num(t.count)}`)
+              .join(' &middot; ')}`
+          : ''
     const typically = mc ? `${modeBit} &mdash; ${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} fully eaten` : ''
     // #8 — NAME the foods fed as meals (e.g. a wet diet) on page 1, not just a bare "N discrete
     // meals": the first real artifact left Nyx's wet food unnamed and cited a non-existent appendix.
@@ -5664,7 +5710,7 @@ function dietMeds(snap: ReportSnapshot): string {
     const mealsBit = mc
       ? ` Also fed as meals: ${mealNames} (${num(mc.ratedMeals)} meal${
           mc.ratedMeals === 1 ? '' : 's'
-        }${typically}; itemised in appendix&nbsp;E).`
+        }${typically}; ${mealsAppendixPointer(snap)}).`
       : ''
     feedBits.push(`Primarily free-fed: ${freeFedLabels}. <b>Intake not directly observed.</b>${mealsBit}`)
   } else {
@@ -5672,7 +5718,9 @@ function dietMeds(snap: ReportSnapshot): string {
       feedBits.push(
         `${num(d.mealCompletion.finishedMeals)} of ${num(
           d.mealCompletion.ratedMeals,
-        )} rated meals fully eaten (owner-observed; treats + free-fed excluded). Meals itemised in appendix&nbsp;E.`,
+        )} rated meals fully eaten (owner-observed; treats + free-fed excluded). Meals are ${mealsAppendixPointer(
+          snap,
+        )}.`,
       )
     }
     if (isFreeFed) {
@@ -6274,6 +6322,46 @@ function mealsAppendixVisible(snap: ReportSnapshot): boolean {
 }
 
 /**
+ * What appendix E actually holds, in the ONE phrase every pointer to it uses (CUL-643).
+ *
+ * Page 1 and appendix B said "itemised in appendix E" at five sites, four of them rendering
+ * on any given report. Appendix E itemises nothing. Its first table is GROUPED — one row per
+ * food, with a feeding count and a date span — and the second table, which does list
+ * individual meals with their times, renders only when a reduced-intake flag fired or the
+ * record holds meals the owner did not finish, is capped at the most recent N, and is
+ * filtered to one population. So the document promised a meal-by-meal list three or four
+ * times and delivered a summary, on the appendix a vet turns to precisely to check a page-1
+ * figure. The meal TIMES exist — the not-fully-eaten table prints them.
+ *
+ * R-15 brief 5 rules the shape and was unruled at build time, so this is the fallback that
+ * issue names: the honest direction, provisional. The word goes, the pointer describes the
+ * grouping it actually points at, and appendix E says where the per-meal times do live.
+ * Option (a) — a real per-meal table, most-recent-N with the older count disclosed — stays
+ * open on CUL-643 and would replace this phrase, not add to it.
+ *
+ * ONE STRING, READ BY EVERY SITE, is the load-bearing part rather than the wording. The
+ * promise and the appendix drifted apart because four sites each spelled the promise out,
+ * and nothing tied any of them to what the appendix rendered. Derived here from the same two
+ * predicates the appendix branches on, so a future change to appendix E's shape cannot leave
+ * a stale promise behind on page 1.
+ */
+function mealsAppendixPointer(snap: ReportSnapshot): string {
+  const grouped = 'grouped by food in appendix&nbsp;E'
+  if (!mealsAppendixVisible(snap) || snap.provenance.intakeLog.length === 0) return grouped
+  // The second table's population is named, never generalised: "the rated meals" would be
+  // false of the `unfinished` scope, which is precisely the rows the first table's own
+  // ratings are filtered AGAINST.
+  //
+  // "the most recent" is load-bearing, not padding: the second table is capped at N and
+  // discloses the omitted count itself, so a pointer saying it lists "each" such meal
+  // contradicts the appendix's own disclosure — the same over-promise as "itemised", one
+  // clause smaller. The phrase is true whether or not the cap bit.
+  return snap.provenance.intakeLogScope === 'unfinished'
+    ? `${grouped}, which also lists the most recent meals recorded as not fully eaten, by date and time`
+    : `${grouped}, which also lists the most recent rated meals, by date and time`
+}
+
+/**
  * Incident-photo appendix (PR 7). Renders whenever any in-window incident was photographed.
  * Lettering: it is the LAST lettered appendix, after the (conditional) meals appendix — so it is
  * 'F' when meals render and 'E' when they don't (the meals-appendix 'E' cross-references, all
@@ -6288,7 +6376,7 @@ function mealsAppendixVisible(snap: ReportSnapshot): boolean {
  * page 1 / Appendix A — vet-report-cold-read finding, PR 7).
  */
 function hasIncidentPhotos(snap: ReportSnapshot): boolean {
-  return snap.incidentPhotos.length > 0 || snap.incidentPhotosAnalyzedNoRetained > 0
+  return snap.incidentPhotos.length > 0 || snap.incidentPhotosRemoved.length > 0
 }
 function photosAppendixLetter(snap: ReportSnapshot): string {
   return mealsAppendixVisible(snap) ? 'F' : 'E'
@@ -6333,8 +6421,15 @@ function appendixDivider(snap: ReportSnapshot): string {
   // The lifetime medication-history table (§4.4) is un-lettered by design (one table, not a second
   // appendix — D2) but it renders between C and D, so name it in the map where it sits, or a reader
   // scanning the contents line never learns it exists (cold-read scannability nit).
+  // …AND SAY WHERE IT IS (R-13 item 8). Every other entry on this line is addressed by a
+  // letter, so an entry without one sent a reader hunting for "appendix" something that does
+  // not exist — the dangling-reference failure this document keeps paying for. It is
+  // deliberately un-lettered (one table, not a second appendix — D2), which makes its
+  // position the only address it has.
   const medHistBit =
-    snap.medicationHistory && snap.medicationHistory.entries.length > 0 ? ' &middot; medication history (lifetime)' : ''
+    snap.medicationHistory && snap.medicationHistory.entries.length > 0
+      ? ' &middot; medication history (lifetime) &mdash; un-lettered, immediately before D'
+      : ''
   return `
   <div class="divider">
     <span class="k">End of clinical summary</span>
@@ -6342,8 +6437,35 @@ function appendixDivider(snap: ReportSnapshot): string {
   </div>`
 }
 
+/**
+ * Is EVERY row below a witnessed time (R-13 item 9, Dr. Chen)?
+ *
+ * A column with one value carries no information, and on the clean fixture this one prints
+ * `seen` seventeen times — decoration on the sheet a vet scans hardest, which principle 6
+ * rules out. So a uniform column states itself once in the preamble and drops the chips.
+ *
+ * SCOPED TO `seen`, AND THAT SCOPE IS THE WHOLE RULING. The obvious rule — "when every row
+ * shares a tag, say it once" — is unsafe for every other class, because a BARE time reads as
+ * an exact one. That default reading is true of a witnessed column and false of the rest: a
+ * record logged entirely before B-010 is uniformly `unspecified`, and dropping its tags would
+ * turn a column of times nobody vouched for into a column of witnessed minutes — silence in
+ * the reassuring direction, on the convention the report's own "Why a range and not a time"
+ * note asks the reader to trust. A uniform `est` column fails the same way.
+ *
+ * So the chips go only where their absence says something true, and a MIXED column keeps all
+ * of them, including the witnessed ones: there the tag on a `seen` row is what makes the one
+ * `est` row visible by contrast, which is what the July cold read valued about the column.
+ */
+function allTimesWitnessed(snap: ReportSnapshot): boolean {
+  const log = snap.provenance.symptomLog
+  return log.length > 0 && log.every((e) => timeConfidence(e) === 'seen')
+}
+
 function appendixA(snap: ReportSnapshot): string {
-  const rows = snap.provenance.symptomLog.map((e) => symptomLogRow(e, snap.timezone)).join('')
+  const uniformSeen = allTimesWitnessed(snap)
+  const rows = snap.provenance.symptomLog
+    .map((e) => symptomLogRow(e, snap.timezone, uniformSeen))
+    .join('')
   const count = snap.provenance.symptomLog.length
   // Counted over the rows below with the predicate that tags them (`timeConfidence`), never
   // read off the snapshot: every row that is not `seen` — an estimate, a window, a one-sided
@@ -6369,18 +6491,39 @@ function appendixA(snap: ReportSnapshot): string {
     ['bound', 'a bare &ldquo;before&rdquo; or &ldquo;after&rdquo; time is one known bound and carries no tag'],
     ['unspecified', '<span class="conf">unspecified</span> no confidence recorded'],
   ]
-  const glossBit =
-    count > 0
+  const glossBit = uniformSeen
+    ? // The tags are gone, so their vocabulary note goes with them — a legend for a chip the
+      // sheet no longer prints is the dangling reference this document keeps paying for. The
+      // FACT the column carried is kept, as a sentence, because it is the thing that makes a
+      // bare time safe to read as exact.
+      ' Every time below was witnessed by the owner.'
+    : count > 0
       ? ` Time tags: ${glossEntries
           .filter(([k]) => present.has(k))
           .map(([, text]) => text)
           .join(' &middot; ')}.`
       : ''
+  // R-15 brief 7(b) — SAID WHERE THE OVER-CLAIM IS. This preamble opens "Every symptom event
+  // in the window, in order", and that is false while an `other` row exists: the allow-list
+  // has eight leaves and `other` is not one, so the row reaches no count and no table. A
+  // count, never the content — the notes are un-normalised owner text, and putting them in
+  // front of a clinician is CUL-848's question rather than this ruling's.
+  const uncat = snap.provenance.uncategorisedObservations
+  const uncatBit =
+    uncat > 0
+      ? ` ${num(uncat)} further observation${uncat === 1 ? '' : 's'} in this window ${
+          uncat === 1 ? 'was' : 'were'
+        } logged under a type this report does not categorise, so ${
+          uncat === 1 ? 'it is' : 'they are'
+        } in none of the counts above and none of the rows below; what the owner wrote ${
+          uncat === 1 ? 'for it' : 'for them'
+        } is in the Culprit app.`
+      : ''
   return `
 <section class="page">
   ${appendixDivider(snap)}
   <p class="appx-title serif">Appendix A — Symptom event log</p>
-  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed.${estBit}${glossBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
+  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed. &ldquo;Logged&rdquo; is when the owner recorded it, and carries a date whenever that fell on a different day from the event; a gap between the two is expected and is itself information, since the longer it is, the more of the reported time is recall.${estBit}${glossBit}${uncatBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
   <table>
     <caption>${num(count)} symptom event${count === 1 ? '' : 's'} &middot; ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}</caption>
     <thead>
@@ -6388,7 +6531,7 @@ function appendixA(snap: ReportSnapshot): string {
         <th style="width:64px">Date</th>
         <th>Type</th>
         <th style="width:140px">Occurred (owner-reported)</th>
-        <th style="width:58px">Logged</th>
+        <th style="width:92px">Logged</th>
         <th>Owner note &amp; photo findings</th>
       </tr>
     </thead>
@@ -6443,18 +6586,78 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
   return `${h(stateWord)} — not clear enough to read`
 }
 
-function symptomLogRow(e: SymptomLogEntry, tz: string | null): string {
+function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = false): string {
   const dateCell = fmtLocalDay(e.occurredAt, tz)
-  const occCell = occurredCell(e, tz)
-  const loggedCell = fmtLocalTime(e.loggedAt, tz)
+  const occCell = occurredCell(e, tz, uniformSeen)
+  const logged = loggedCell(e, tz)
   const dup = e.dupCount > 1 ? ` <span class="conf">${e.dupCount} logs</span>` : ''
   let noteCell = e.notes ? h(e.notes) : ''
   if (e.phenotype) {
-    noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype)}</span>`
+    // CUL-634 — the read outlives the image, so a row can show a complete photo analysis
+    // over a photo that no longer exists. Said HERE, beside the findings it qualifies,
+    // rather than only as a count on the photos sheet: the findings are what a vet acts on.
+    const gone = e.photoRemoved ? ` <span class="conf">photo no longer retained</span>` : ''
+    noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype)}${gone}</span>`
   }
   return `<tr><td class="num">${h(dateCell)}</td><td>${h(symptomLabel(e.type))}</td><td>${occCell}${dup}</td><td class="num">${h(
-    loggedCell,
+    logged,
   )}</td><td>${noteCell || '&mdash;'}</td></tr>`
+}
+
+/**
+ * Appendix A's LOGGED cell (CUL-977) — the moment the OWNER recorded the event, carrying its
+ * DATE whenever that falls on a different local day from the event itself.
+ *
+ * The pair (OCCURRED, LOGGED) exists to show the logging DELAY, because that is what tells a
+ * clinician how much of a reported minute is observation and how much is recall — the report
+ * argues this itself in "Why a range and not a time". A bare `HH:MM` cannot say "two days
+ * later", so on the v15 artifact a window of ~07:02–17:40 on Aug 19, recorded at 09:04 on
+ * Aug 21, printed as `logged 09:04` beside it: read off the page, the window closed eight and
+ * a half hours AFTER the row was created. The cold read did not read that as a missing date.
+ * It read it as a record contradicting itself, and filed a blocking data-integrity finding
+ * against the RANGE convention — the one this appendix most needs trusted.
+ *
+ * C-19 is why this is cheap: a date anchored to the record is free, and only a DURATION would
+ * need the detection engine's floors. Nothing here claims a duration; the two dates sit side
+ * by side and the reader does their own arithmetic.
+ *
+ * Two rules hold it honest:
+ *
+ *  • BOTH DAYS ARE PARSED, never compared as text (C-40). A locally-written row and a
+ *    PostgREST-hydrated one are two spellings of one instant (`…T04:00:00.000Z` vs
+ *    `…T04:00:00+00:00`), and a day boundary is exactly where these rows sit.
+ *    `localDayKeyOf` takes both through `Date.parse` and an `Intl` zone format, so the
+ *    comparison is between derived local day keys and never between the stored strings.
+ *
+ *  • THE DAY IS THE OWNER'S, not UTC. 23:30 in Chicago is 04:30 UTC the next day: judged in
+ *    UTC, an event and its log twenty minutes apart would claim a day's delay, and a genuine
+ *    cross-midnight delay would hide. The anchor is `occurredAt` — the same value the row's
+ *    own Date column prints — so this cell can never contradict the cell beside it.
+ *
+ * THE YEAR IS DECIDED ONCE FOR THE PAIR, and the pair is this ROW — not the window. C-19
+ * needs a year here because this is one of the few dates on the page the letterhead range
+ * does not bound: logging can postdate the window end, so a January log of a December event
+ * must say which January. The obvious source, `fmtLocalDayScoped`, stamps against the
+ * WINDOW's year, and its own header warns that a conditional year is worse than none once
+ * two dates share a sentence. This row has two: the Date column, which is always bare.
+ *
+ * On a window that spans New Year — which the 90-day fallback produces every winter — that
+ * combination prints `Dec 15` beside `Dec 17, 2025`, and the bare one inherits the window's
+ * 2026. Read literally, the row is again logged before it happened: the exact failure this
+ * whole change exists to remove, re-introduced by the fix for it one column over.
+ *
+ * So the year is stamped when the two LOCAL YEARS of this row differ, and never otherwise.
+ * That keeps the pair internally consistent at every window shape, and still answers C-19's
+ * question, because a stamped later date implies the bare earlier one.
+ */
+function loggedCell(e: SymptomLogEntry, tz: string | null): string {
+  const time = fmtLocalTime(e.loggedAt, tz)
+  const occDay = localDayKeyOf(e.occurredAt, tz)
+  const logDay = localDayKeyOf(e.loggedAt, tz)
+  if (logDay === occDay) return time
+  return logDay.slice(0, 4) === occDay.slice(0, 4)
+    ? `${fmtLocalDay(e.loggedAt, tz)}, ${time}`
+    : `${fmtDayYear(logDay)}, ${time}`
 }
 
 /**
@@ -6486,7 +6689,7 @@ function timeConfidence(e: SymptomLogEntry): 'seen' | 'est' | 'range' | 'bound' 
 }
 
 /** B-010 occurred cell — witnessed=exact+seen, estimated=~time+est, window=range+range. */
-function occurredCell(e: SymptomLogEntry, tz: string | null): string {
+function occurredCell(e: SymptomLogEntry, tz: string | null, uniformSeen = false): string {
   switch (timeConfidence(e)) {
     case 'bound':
       // One-sided window — the "Sometime before/after" capture mode records a single bound
@@ -6502,7 +6705,11 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
     case 'est':
       return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">est</span>`
     case 'seen':
-      return `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">seen</span>`
+      // R-13 item 9 — the chip is dropped only when EVERY row is witnessed, and the preamble
+      // then states it once. See `allTimesWitnessed` for why no other class may do this.
+      return uniformSeen
+        ? num(fmtLocalTime(e.occurredAt, tz))
+        : `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">seen</span>`
     case 'unspecified':
       // null confidence (legacy rows logged before B-010) — tag it explicitly. A bare time in a
       // column of tagged rows reads as MORE certain than a witnessed one, the reassuring
@@ -6547,7 +6754,7 @@ function mealsAppendix(snap: ReportSnapshot): string {
   return `
 <section class="page">
   <p class="appx-title serif">Appendix E — Meals &amp; intake</p>
-  <p class="appx-sub">The meals the owner logged in this window — the food fed as discrete meals, distinct from free-fed food and treats (which appear in appendix&nbsp;C). &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; Free-fed food is not directly observed and is not rated, so it does not appear here.</p>
+  <p class="appx-sub">The meals the owner logged in this window — the food fed as discrete meals, distinct from free-fed food and treats (which appear in appendix&nbsp;C). &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; Free-fed food is not directly observed and is not rated, so it does not appear here. Meals are grouped by food below; the time of each individual meal is in the Culprit app.</p>
   ${
     // The intake table can be a sheet tall, so it is never the anchor: measured on the
     // `refused` fixture, wrapping it whole pushed it to a fresh sheet and cost a page. Its
@@ -6579,8 +6786,11 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
       //
       // Below-baseline ratings carry weight, matching `intakeLogRow` one table down, so
       // the concerning share reads at a glance without becoming a score or a verdict.
+      // THE DASH IS THE PREDICATE'S `none` AND NOTHING ELSE (CUL-497). Written as a length
+      // check it was correct today and one refactor away from meaning "no honest typical"
+      // again, which is how this cell came to stand for ninety rated meals.
       const typical =
-        i.intakeBreakdown.length > 0
+        summariseIntake(i.intakeBreakdown).kind !== 'none'
           ? i.intakeBreakdown
               .map((b) => {
                 const cell = `${h(intakeLabel(b.rating))} &times;${num(b.count)}`
@@ -6596,6 +6806,7 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
       return `<tr><td>${i.foodLabel ? h(i.foodLabel) : '&mdash;'}</td><td>${proteinSetCell(
         i.proteinSet,
         markOffTrial,
+        i.format === 'human_food' ? 'home' : 'packaged',
       )}</td><td class="c num">${feedings}</td><td class="num">${span}</td><td>${typical}</td></tr>`
     })
     .join('')
@@ -6716,14 +6927,22 @@ function incidentPhotosAppendix(snap: ReportSnapshot): string {
       : ''
   // The analysis↔attachment divergence disclosure (cold-read fix): reconciles a vet's "N reads but
   // fewer photos?" cross-check without dropping the reads (which remain in Appendix A).
-  const removed = snap.incidentPhotosAnalyzedNoRetained
+  // CUL-634 — NAME THEM. The count alone gave a vet "1 further incident" here and an
+  // unmarked full photo read on appendix A, with no way to join the two — so the
+  // cross-check this sentence exists to enable was the one thing it did not support. The
+  // dates and types come from the same list the number does, so they cannot disagree.
+  const removedList = snap.incidentPhotosRemoved
+  const removed = removedList.length
+  const removedNames = joinList(
+    removedList.map((r) => `${h(symptomLabel(r.type))} ${h(fmtLocalDay(r.occurredAt, snap.timezone))}`),
+  )
   const removedNote =
     removed > 0
       ? ` ${num(removed)} further incident${removed === 1 ? ' was' : 's were'} photographed and read but ${
           removed === 1 ? 'its' : 'their'
-        } photo is no longer retained (removed by the owner); the read${removed === 1 ? '' : 's'} ${
-          removed === 1 ? 'remains' : 'remain'
-        } in appendix&nbsp;A.`
+        } photo is no longer retained (removed by the owner): ${removedNames}. The read${
+          removed === 1 ? '' : 's'
+        } ${removed === 1 ? 'remains' : 'remain'} in appendix&nbsp;A, marked there.`
       : ''
   const lead =
     n > 0
@@ -7134,6 +7353,7 @@ function confounderRowHtml(
   return `<tr><td>${item}</td><td>${h(confCategoryLabel(r.category))}</td>${why}<td>${proteinSetCell(
     r.proteinSet,
     markOffTrial,
+    r.category === 'human' ? 'home' : 'packaged',
   )}</td><td class="c num">${feedings}</td><td class="num">${span}</td></tr>`
 }
 
@@ -7151,6 +7371,16 @@ function offDietAppendix(snap: ReportSnapshot): string {
 
   // Aggregate-first (R2-1): LEAD with the protein/product tally — the useful antigen picture the
   // first artifact buried at the very end — then the grouped exposure rows below it.
+  // CUL-292 — gated like every other legend line on this document (the B-599 rule): a
+  // definition for a marker the sheet does not carry sends a reader hunting for it.
+  // `proteins.length > 0` is load-bearing, not belt-and-braces: `proteinSetCell` renders an
+  // EMPTY cell when nothing was captured, so a bare table-scrap log carries no marker for this
+  // sentence to define — the dangling reference the gate exists to prevent, via the gate.
+  const homeMarkerNote = snap.provenance.confounders.some(
+    (c) => c.format === 'human_food' && !c.proteinSet.complete && c.proteinSet.proteins.length > 0,
+  )
+    ? ' Home-prepared food has no panel to read at all, so those rows say what is missing instead: the proteins shown are the ones the owner recorded.'
+    : ''
   const tally = Object.entries(snap.provenance.proteinExposureTally)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     // Title-cased like the chart legend and the protein column — mixed casing for the
@@ -7263,13 +7493,47 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // reassurance-on-absence the per-food gate exists to stop, just harder to see. Same
   // framing the diet-trial spec's G2 ruling settled on: disclose the floor, never let
   // a low count read as a clean record.
-  const incomplete = snap.proteinTimeline.incompleteFeedings
-  if (tally && incomplete > 0) {
-    tallyParts.push(
-      `<b>A floor, not a total:</b> ${num(incomplete)} of ${num(
-        snap.proteinTimeline.totalFeedings,
-      )} off-diet feeding${snap.proteinTimeline.totalFeedings === 1 ? '' : 's'} involved a food whose ingredient panel was never captured (marked &ldquo;list not read&rdquo; below), so proteins beyond the one on the front of the pack would not appear in this tally.`,
+  //
+  // TWO COUNTS OVER ONE POPULATION, PARTITIONED (CUL-292; C-3, C-4). The ratio is a claim
+  // about the PACKAGED record — how much of it nobody read — and home food was in both its
+  // halves, where "the panel was never captured" is false: there is no panel. Counting it
+  // there turned a record of two unread bags into "3 of 4 feedings unverified" and read as
+  // a far worse capture rate than the record has. Each count now states itself against its
+  // own denominator, and the home-food blind spot is named rather than folded away: it is a
+  // real limitation, just a different one.
+  //
+  // Both numbers come from `proteinTimeline` rather than from subtraction here: the ratio is
+  // over the feedings that HAD a panel to read, and deriving its denominator as
+  // "total minus home food" quietly re-admitted the no-protein feedings the numerator skips.
+  const pt = snap.proteinTimeline
+  const packagedTotal = pt.packagedReadable
+  const packagedIncomplete = pt.packagedUnread
+  const floorParts: string[] = []
+  if (packagedIncomplete > 0 && packagedTotal > 0) {
+    // "packaged" is PRESENT-ONLY: it exists to separate these feedings from the home-prepared
+    // ones, so on a record with none it distinguishes nothing and is four letters a vet has
+    // to read past on a 60-second scan. The rest of the sentence is unchanged either way.
+    const noun = pt.humanFoodFeedings > 0 ? 'packaged off-diet feeding' : 'off-diet feeding'
+    floorParts.push(
+      `${num(packagedIncomplete)} of ${num(packagedTotal)} ${noun}${
+        packagedTotal === 1 ? '' : 's'
+      } involved a food whose ingredient panel was never captured (marked &ldquo;list not read&rdquo; below), so proteins beyond the one on the front of the pack would not appear in this tally.`,
     )
+  }
+  if (pt.humanFoodFeedings > 0) {
+    floorParts.push(
+      `${num(pt.humanFoodFeedings)} home-prepared feeding${
+        pt.humanFoodFeedings === 1 ? ' has' : 's have'
+      } no ingredient panel at all &mdash; the proteins shown are what the owner recorded, and seasoning, stock and cooking fat are not.`,
+    )
+  }
+  // NOT GATED ON THE TALLY. The block used to hang off a non-empty `tally`, so on the one
+  // record where the protein blind spot is TOTAL — everything fed off-diet is home food, or
+  // carries no captured protein, so there is nothing to tally — the report disclosed it
+  // nowhere at all. A disclosure that disappears exactly when its subject is everything is
+  // the failure class this whole pass is about.
+  if (floorParts.length > 0) {
+    tallyParts.push(`<b>A floor, not a total:</b> ${floorParts.join(' ')}`)
   }
   if (hasTrial && freeFedProteins.length) {
     // DON'T POINT AT A PARAGRAPH THAT ISN'T THERE. `tally` is empty when no exposure
@@ -7386,7 +7650,7 @@ function offDietAppendix(snap: ReportSnapshot): string {
         ? `Treats &amp; table food ${antigenScope}`
         : 'Treats &amp; table food'
   }</p>
-  <p class="appx-sub">${subtitle} Repeated items are grouped (with a feeding count and date span); human food is listed feeding-by-feeding. Protein shows the full set read from the label, most prominent first; &ldquo;list not read&rdquo; marks a food whose ingredient panel was never captured, so its set may be incomplete.</p>
+  <p class="appx-sub">${subtitle} Repeated items are grouped (with a feeding count and date span); human food is listed feeding-by-feeding. Protein shows the full set read from the label, most prominent first; &ldquo;list not read&rdquo; marks a food whose ingredient panel was never captured, so its set may be incomplete.${homeMarkerNote}</p>
   ${tallyBit}
   <table>
     <caption>${
@@ -7426,13 +7690,93 @@ function offDietAppendix(snap: ReportSnapshot): string {
   ${daggerFootnote}`
 }
 
+/**
+ * The house shape for a negative on this report (CUL-978): a claim about the RECORD, with
+ * what its own silence does not prove, in that order.
+ *
+ * There is a real difference between "None recorded" — a claim about the world — and
+ * "nothing was entered in this table", which is what every one of these lines actually
+ * means. The report is otherwise scrupulous about it (appendix D's preamble spells it out
+ * at length), and the two lines below were the exceptions: on the v15 artifact p9 told a
+ * vet there were no active conditions and no supplements, while p5 named an ear-infection
+ * medication and pp2/4/5 called the same patient's antihistamine a supplement.
+ *
+ * WORDED ONCE, not per site, so a later edit to one cannot drift it from the other — which
+ * is exactly how two lines written to the same rule ended up disagreeing about what a
+ * negative asserts.
+ */
+function recordSilence(head: string, whatTheRecordHolds: string, worldClaim: string): string {
+  return `${head} &mdash; ${whatTheRecordHolds}, which is not evidence ${worldClaim}.`
+}
+
+/**
+ * Every supplement THIS DOCUMENT names (CUL-978, site 2).
+ *
+ * The v15 contradiction was not bad data and not a wording problem: appendix B's row read
+ * `snap.medications` ALONE, and an over-the-counter supplement dosed with no configured
+ * regimen — which is what an owner-bought antihistamine is — lives in
+ * `snap.unlinkedMedications`. So the drug rendered on three other pages and the row beneath
+ * them said none was recorded. A negative is only as true as the set it was computed over,
+ * and this one was computed over a third of it.
+ *
+ * All three places the report can name a supplement are read, deduped by name:
+ *   • a regimen supplement overlapping the window (the original set);
+ *   • an unlinked OTC dose group (the Zyrtec case);
+ *   • a `supplement` concurrent change — derived from the same medications, so ordinarily
+ *     redundant, and read anyway: this function's whole job is that the row cannot be
+ *     contradicted by the document around it, and a derivation that disagrees with its
+ *     own source is precisely the case a set-union would otherwise miss.
+ */
+function supplementsNamedOnReport(snap: ReportSnapshot): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const push = (name: string, detail: string): void => {
+    const key = name.trim().toLowerCase()
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    out.push(`${h(name)}${detail}`)
+  }
+  for (const m of snap.medications) {
+    // Window-scoped like every other medication view (page-1 `dietMeds` and appendix D both
+    // filter on `overlapsWindow`) — the meds pull is deliberately unbounded for the
+    // concurrent-change logic, so without this guard a supplement stopped years ago would
+    // render here as a live entry while page 1 correctly omits it (code-review find).
+    if (m.isSupplement && m.overlapsWindow) push(m.drugName, ` (started ${h(fmtDay(m.startedAt))})`)
+  }
+  for (const u of snap.unlinkedMedications) {
+    // No regimen means no start date to state — the honest anchor is the first dose logged,
+    // and saying which it is stops the date reading as a prescribed start.
+    if (u.isSupplement) push(u.drugName, ` (no regimen recorded; doses logged from ${h(fmtDay(u.firstDate))})`)
+  }
+  for (const c of snap.concurrentChanges) {
+    if (c.kind === 'supplement') push(c.label, ' (named among the concurrent changes on page&nbsp;1)')
+  }
+  return out
+}
+
+/**
+ * The treated indications the medication record names (CUL-978, site 1).
+ *
+ * Read from the medications the report itself prints, so the row can never contradict a
+ * page the reader has already passed. Deduped on the indication, since two drugs for one
+ * problem are one tension, not two.
+ */
+function indicationsNamedOnReport(snap: ReportSnapshot): Array<{ indication: string; drug: string }> {
+  const out: Array<{ indication: string; drug: string }> = []
+  const seen = new Set<string>()
+  for (const m of snap.medications) {
+    const ind = m.indication?.trim()
+    if (!ind || !m.overlapsWindow) continue
+    const key = ind.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ indication: ind, drug: m.drugName })
+  }
+  return out
+}
+
 function dietHistoryAppendix(snap: ReportSnapshot): string {
   const d = snap.diet
-  // Window-scoped like every other medication view (page-1 dietMeds + appendix D both
-  // filter on overlapsWindow) — the meds pull is deliberately unbounded for the
-  // concurrent-change logic, so without this guard a supplement stopped years ago would
-  // render here as a live entry while page 1 correctly omits it (code-review find).
-  const supps = snap.medications.filter((m) => m.isSupplement && m.overlapsWindow)
   // "NONE RECORDED" IS ABOUT THE LOG, AND ON A TRIAL REPORT IT IS LOAD-BEARING (B-532,
   // cold-read finding). Appendix D goes to real trouble to say a medication's absence is not
   // evidence it was not given; these three rows carried no such caveat at the point of claim —
@@ -7442,9 +7786,21 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   // well-logged artifact renders "65 this window"). The caveat is attached where the claim is,
   // not left to the page-1 blind-spot line four sheets away.
   const NOT_LOGGED = 'None recorded &mdash; nothing of this kind was logged in this window, which is not evidence none was fed.'
-  const suppBit = supps.length
-    ? supps.map((m) => `${h(m.drugName)} (started ${h(fmtDay(m.startedAt))})`).join('; ')
-    : NOT_LOGGED
+  // CUL-978 site 2 — every supplement the DOCUMENT names, not just the regimen ones this
+  // row used to read. `supps` is kept as the window-scoped guard it always was and is now
+  // one of three inputs (see `supplementsNamedOnReport`).
+  const namedSupps = supplementsNamedOnReport(snap)
+  const suppBit = namedSupps.length
+    ? namedSupps.join('; ')
+    : // AND THE RECONCILIATION SITS HERE, not a page later. It already existed, in appendix
+      // D's preamble — which is on the NEXT sheet, so the cold read met the contradiction
+      // first and the resolution second, and reported reading both twice. Same words,
+      // earlier position: the clause that resolves a negative belongs at the negative.
+      `${recordSilence(
+        'None recorded',
+        'no supplement was logged in this window',
+        'none was given',
+      )} A supplement given with a meal may have been logged as food instead; those appear in the diet rows above and in appendix&nbsp;C.`
   // B-499 — "Dates in appendix C" only resolves on a NON-trial report, where appendix C
   // IS the treats & table-food table and every treat is a dated row. On a trial report
   // appendix C lists OFF-DIET exposures only, so a PERMITTED treat has no dated row there:
@@ -7465,7 +7821,9 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   const mealsBit = d.mealItems.length
     ? `${num(mealTotal)} logged meal${mealTotal === 1 ? '' : 's'} across ${num(d.mealItems.length)} food${
         d.mealItems.length === 1 ? '' : 's'
-      }: ${distinctLabels(d.mealItems.map((i) => ({ label: i.foodLabel })), 4)}. Itemised in appendix&nbsp;E.`
+      }: ${distinctLabels(d.mealItems.map((i) => ({ label: i.foodLabel })), 4)}. These are ${mealsAppendixPointer(
+        snap,
+      )}.`
     : 'None logged as discrete meals in this window.'
   const humanBit = d.humanFood.count
     ? `${num(d.humanFood.days)} day${d.humanFood.days === 1 ? '' : 's'} (${distinctLabels(d.humanFood.items, 6)}).`
@@ -7499,9 +7857,9 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   // logged as meals), deduped by label, in that order — off-diet treats carry their
   // own set in appendix C's protein column, one row down the same sheet. Primary
   // bold, secondaries subordinate, D10 qualifier inline.
-  const dietFoods: Array<{ label: string; role: string; set: ProteinSetView }> = []
+  const dietFoods: Array<{ label: string; role: string; set: ProteinSetView; kind: PanelKind }> = []
   const seenFood = new Set<string>()
-  const pushFood = (label: string | null, role: string, set: ProteinSetView): void => {
+  const pushFood = (label: string | null, role: string, set: ProteinSetView, kind: PanelKind = 'packaged'): void => {
     const name = label?.trim() || null
     // No label means no row a vet could act on — the set still counts everywhere it is
     // aggregated, it just cannot be attributed to a named bag here.
@@ -7515,17 +7873,19 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
     const key = `${name.toLowerCase()}||${set.proteins.join(',')}|${set.complete ? 'c' : 'i'}`
     if (seenFood.has(key)) return
     seenFood.add(key)
-    dietFoods.push({ label: name, role, set })
+    dietFoods.push({ label: name, role, set, kind })
   }
   if (d.trial) pushFood(d.trial.foodLabel, 'trial diet', d.trial.proteinSet)
   for (const f of d.freeFed) pushFood(f.foodLabel, 'free-fed', f.proteinSet)
-  for (const m of d.mealItems) pushFood(m.foodLabel, 'fed as meals', m.proteinSet)
+  for (const m of d.mealItems) {
+    pushFood(m.foodLabel, 'fed as meals', m.proteinSet, m.format === 'human_food' ? 'home' : 'packaged')
+  }
   const proteinRows = dietFoods
     .map(
       (f) =>
         `<div class="ptrow"><span class="ptfood">${h(f.label)} <span class="rnote">(${h(
           f.role,
-        )})</span></span><span class="ptset">${proteinSetPhrase(f.set, true)}</span></div>`,
+        )})</span></span><span class="ptset">${proteinSetPhrase(f.set, true, f.kind)}</span></div>`,
     )
     .join('')
   const anyIncomplete = dietFoods.some((f) => !f.set.complete)
@@ -7542,9 +7902,62 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
       // "stated only when the diet block happens to be populated".
       `No named diet food in this window to read a protein set from. <span class="rnote">${PROTEIN_PROVENANCE_NOTE}</span>`
 
+  // CUL-978 site 1 — the negative is cross-checked against the indications the report
+  // already prints. NEVER SYNTHESISED INTO A ROW: an indication is what the owner typed
+  // against a drug, not a diagnosis the owner entered as history, and promoting one would
+  // invent clinical history nobody recorded. Name the tension; let the vet resolve it.
+  const indications = indicationsNamedOnReport(snap)
+  // CUL-851 — DERIVED, and saying so. The row is not "not recorded" on a record whose own
+  // meal log answers the question; nor is it presented as an entered field, because the
+  // sub-head above promises that uncaptured fields are marked rather than guessed. The span
+  // takes its year ONCE for the pair (C-19): these dates precede the window, so the
+  // letterhead's range does not bound them and a bare "May 11" could be any year.
+  const prev = d.previousDiet
+  const prevDietBit = prev
+    ? `Not entered as a field. Derived from the meal log: ${distinctLabels(
+        prev.labels.map((label) => ({ label })),
+        4,
+      )}, fed as meals ${
+        prev.firstDay === prev.lastDay ? `on ${h(fmtDayYear(prev.lastDay))}` : h(fmtSpanFromTo(prev.firstDay, prev.lastDay))
+      } (${num(prev.feedings)} meal${prev.feedings === 1 ? '' : 's'}). This is what the record holds, and the log may not reach the whole of it.`
+    : 'Not recorded.'
+
+  // CUL-852 — the WSAVA vehicle row. The row SAYS whether these feedings are counted as
+  // off-diet exposures rather than leaving the reader to assume either way: a pill vehicle
+  // is a food the animal eats on the prescription's schedule, so a vet reading the antigen
+  // tally needs to know whether it is inside that number. Nothing here widens the tally —
+  // `countedInTally` is a count of what the off-diet member set already holds.
+  const veh = d.medicationVehicles
+  const vehicleBit = veh
+    ? `${distinctLabels(
+        veh.labels.map((label) => ({ label })),
+        4,
+      )} (${num(veh.feedings)} feeding${veh.feedings === 1 ? '' : 's'} carried a dose). ${
+        veh.countedInTally === 0
+          ? 'Not counted among the off-diet exposures in appendix&nbsp;C, so the protein tally there does not describe them.'
+          : veh.countedInTally === veh.feedings
+            ? 'Counted among the off-diet exposures in appendix&nbsp;C.'
+            : `${num(veh.countedInTally)} of these ${
+                veh.countedInTally === 1 ? 'is' : 'are'
+              } counted among the off-diet exposures in appendix&nbsp;C; the rest are not, so the protein tally there does not describe those.`
+      }`
+    : // An absence here means different things depending on whether there was anything to
+      // give, and the vet is reading this row to decide whether a pill vehicle is in play.
+      snap.medications.length > 0 || snap.unlinkedMedications.length > 0
+      ? 'Not recorded &mdash; no dose in this window was logged as given in food.'
+      : 'Not recorded.'
+
   const condBit = snap.provenance.conditions.length
     ? snap.provenance.conditions.map((c) => `${h(c.name)} (${h(c.status)})`).join('; ')
-    : 'None recorded.'
+    : indications.length
+      ? `${recordSilence(
+          'None entered',
+          'no condition has been recorded in Culprit',
+          'there is none',
+        )} <b>The medication record names a treated indication this list does not carry:</b> ${indications
+          .map((i) => `${h(i.indication)} (${h(i.drug)})`)
+          .join('; ')}. An indication is what the owner entered against a drug, not a diagnosis, so it is shown here rather than listed above as a condition.`
+      : recordSilence('None entered', 'no condition has been recorded in Culprit', 'there is none')
   const weightBit = snap.weight.isEmpty
     ? 'No home weigh-ins recorded. Body-condition score and caloric adequacy not assessed in this record.'
     : `${
@@ -7560,12 +7973,13 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
       <tr><th style="width:180px">Primary diet</th><td>${primaryDiet}</td></tr>
       <tr><th>Proteins in the diet</th><td>${proteinsBit}</td></tr>
       <tr><th>Meals logged</th><td>${mealsBit}</td></tr>
-      <tr><th>Previous diet</th><td>Not recorded.</td></tr>
+      <tr><th>Previous diet</th><td>${prevDietBit}</td></tr>
       <tr><th>Amount &amp; schedule</th><td>Not recorded in structured form (per-meal quantities are owner-entered free text${
-        d.mealItems.length > 0 ? '; meals are itemised in appendix&nbsp;E' : ''
+        d.mealItems.length > 0 ? '; the meals themselves are in the Meals-logged row above and in appendix&nbsp;E' : ''
       }).</td></tr>
       <tr><th>Treats</th><td>${treatBit}</td></tr>
       <tr><th>Human food</th><td>${humanBit}</td></tr>
+      <tr><th>Food used to give medication</th><td>${vehicleBit}</td></tr>
       <tr><th>Supplements</th><td>${suppBit}</td></tr>
       <tr><th>Active conditions</th><td>${condBit}</td></tr>
       <tr><th>Nutritional status</th><td>${weightBit}</td></tr>
@@ -7652,13 +8066,22 @@ function medicationAppendix(snap: ReportSnapshot): string {
   const sub = !hasAny
     ? `No prescription medication is recorded in this window. Over-the-counter supplements, if any, are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
     : `Doses are owner-logged, and this table is scoped to the report window &mdash; page&nbsp;1&rsquo;s adherence line counts the whole course, so a drug dosed before this window shows a lower count here than the number stated there. With no dose logged against a regimen at all it reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
-  return `
-  <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
-  <p class="appx-sub">${sub}</p>
+  // AN EMPTY APPENDIX D IS THE SENTENCE (R-13 item 7). With nothing to list it drew a
+  // five-column header, one placeholder row repeating the sub-head's own sentence, and the
+  // footer — the tail most likely to open a near-blank sheet on a printed report, and a
+  // table that tells a reader to scan columns holding nothing. The absence is not dropped:
+  // the sub-head states it, with the "only what the owner entered" caveat B-494 requires,
+  // and now states it exactly once.
+  const table = hasAny
+    ? `
   <table>
     <thead><tr><th>Medication</th><th style="width:150px">Regimen</th><th class="c" style="width:74px">Doses logged</th><th style="width:132px">Dose dates</th><th>Adherence</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="5">No prescription medication is recorded in this window.</td></tr>`}</tbody>
+    <tbody>${rows}</tbody>
   </table>`
+    : ''
+  return `
+  <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
+  <p class="appx-sub">${sub}</p>${table}`
 }
 
 /**
@@ -7888,16 +8311,20 @@ function appendixF(snap: ReportSnapshot): string {
       // report that does not carry it is the same dangling-reference defect B-599 is about,
       // re-entered through the legend.
       snap.provenance.intakeLogScope === 'intake_flag'
-        ? ' When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal), and the meals behind it are in appendix&nbsp;E (meals &amp; intake).'
+        ? ` When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal); the meals behind it are ${mealsAppendixPointer(
+            snap,
+          )} (meals &amp; intake).`
         : snap.provenance.intakeLogScope === 'unfinished'
-          ? ' Appendix&nbsp;E carries the intake recorded against every food, and lists each meal the owner did not record as fully eaten. A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal.'
+          ? ` The intake recorded against every food is ${mealsAppendixPointer(
+              snap,
+            )} (meals &amp; intake). A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal.`
           : snap.diet.mealItems.length > 0
           ? // The same defect as the safety-flag entry, on the one axis where it is
             // worst: "none was raised in this window" told a cold reader the app had
             // examined intake and found nothing, on a cat refusing nearly every bowl.
             // Intake is not preference — refusal is frequently a disease signal — so the
             // legend may state what the line DEPENDS ON and must not certify its absence.
-            ' The meals the owner logged are itemised in appendix&nbsp;E (meals &amp; intake). A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal &mdash; read the logged ratings in appendix&nbsp;E.'
+            ` The meals the owner logged are ${mealsAppendixPointer(snap)} (meals &amp; intake). A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal &mdash; read the logged ratings in appendix&nbsp;E.`
           : ' When a reduced-intake flag is raised, page&nbsp;1 adds the time since the last <b>fully-eaten</b> meal and a meals appendix lists the rated meals behind it; no meals were logged in this window.'
     } For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
     <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
