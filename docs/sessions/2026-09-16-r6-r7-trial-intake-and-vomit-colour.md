@@ -121,6 +121,54 @@ the coverage cell is demoted and not restored on any branch when the weight cell
 (a real trade-off, flagged for Designer/PM sign-off — the fact survives in the trial block's
 *"Meals logged on N of N days"*), and an unguarded write loop in the dev fixture script.
 
+## The re-run, which is the part that matters
+
+C-19 says a safety surface re-runs its falsification pass after every correction. It was run, on
+the fixed tree, before the merge — and it returned **FAIL** again, with four breaks. **Two had
+been introduced by the previous round of fixes**, and one was the same defect those fixes had just
+repaired in a neighbouring sentence and left standing in this one, on the fix's own motivating
+record. That is the whole argument for the rule, executed.
+
+1. **The dedupe I added to stop a double-count dropped a genuinely different row** — the worst
+   defect in either round. It keyed on `label|allowedFrom|allowedUntil`, and I justified it in a
+   code comment by citing migration 040's UNIQUE as making duplicates unreachable. That constraint
+   is `(diet_trial_id, food_item_id, role, allowed_from)` — **it does not include the label**, and
+   `lib/dietTrial.ts` documents duplicate library rows for one bag as routine (four such groups in
+   a 59-row library). So a trial can legally hold two `primary_diet` rows sharing a label and a
+   start date with disjoint ratings, `trial.ts` keys its counts by `foodItemId` which the render
+   type does not carry, and the sort puts the *smaller* row — typically the newer bag, i.e. the
+   refusals — first in line to be dropped. Executed: 21 eaten kept, 12 refused discarded, a
+   `21 / 21` headline and three false sentences over a cat refusing a third of her prescription
+   diet. The rows are merged now. **A comment citing a constraint is a claim; this one was
+   checkable in one grep and I did not check it.**
+2. **The exoneration clause could never be true.** *"None of them was one of the formats above"*
+   fired on `ti.refused === 0`, which is a fact about the counted subset, not the record — false on
+   an ended trial still being refused, on a format added mid-trial and refused before its row
+   opened, and on a merged duplicate. It cannot be gated either: the only condition under which the
+   inference holds also stops the sentence rendering. Deleted. Its test had **encoded the false
+   inference as intended behaviour**, which is why nothing could catch it.
+3. **The half-rule made the trial's own figure vanish.** Below the half-line the window cell leads,
+   and the derived fraction was designed to live *once*, on the tile — so a trial diet at 0 of 12
+   fully eaten inside a 40-meal window printed a `28 / 40` headline with its own number nowhere on
+   page 1. R-6's founding complaint, restored by R-6's own fix. The line carries it whenever the
+   cell does not. The share also admitted `1 / 1` into the most prominent cell on the page, against
+   §6.11's own rule, so it gained a floor.
+4. **The partition enumerated two causes where there are three.** A format added mid-trial and fed
+   before its row opened is *inside* the span and *is* the same food, and rung 1 drops it anyway.
+   Every enumeration fails this way, because the exclusion set is whatever the classifier rejects.
+   It states the **inclusion** rule now — in the span, and on the list on the day — and stops.
+
+Held on re-run: the colour tally's own denominator at N=1, N=0 and with fewer legible colours than
+legible reads; `black_coffee_ground` costing the vet nothing (appendix A renders the raw enum by a
+different path, so page 1 *gained* a colour word and the stronger term is untouched); the
+per-format sum never exceeding the window's rated meals; and no affirmative line on an all-eaten
+record.
+
+Two residuals recorded rather than fixed: the `ti ≤ mc` invariant has no guard, only a sentence
+that goes quiet when it is violated; and `feedings` counts treats while `intakeRatings` is
+meal-only, so a `primary_diet` row whose food is mis-typed as a treat could render "N servings
+offered, none rated" over a record holding ratings.
+
 ## Three things worth carrying forward
 
 - **"No floor" is a property of a sentence, not of a surface.** A descriptive line and a ranked

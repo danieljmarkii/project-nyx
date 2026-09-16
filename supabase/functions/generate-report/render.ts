@@ -4302,8 +4302,12 @@ function trialIntakeTile(snap: ReportSnapshot, intake: SafetyFlag | undefined): 
   // a share, so no boundary rounds the wrong way.
   const ti = trialDietIntake(snap)
   const mcAll = snap.diet.mealCompletion
-  const coversMost = ti !== null && (mcAll === null || ti.ratedMeals * 2 >= mcAll.ratedMeals)
-  if (ti && ti.ratedMeals > 0 && coversMost) {
+  // AND NEVER AT n=1 (adversarial re-run). `ti=1, mc=2` cleared the share test and printed
+  // "1 / 1 Trial-diet meals fully eaten" in the most prominent cell on the page, over a record
+  // whose only other rated meal was refused. §6.11's rule — a single sample dressed as a ratio
+  // reads as a rate — was enforced in the refusal sentence below and not in the cell it sits
+  // under. A share is not a floor; this is the floor.
+  if (ti && ti.ratedMeals > 0 && trialCellEarnsTheSlot(ti, mcAll)) {
     // "FULLY EATEN", NEVER "FINISHED", AND THE TWO ARE NOT THE SAME BAR. Page 1 counts
     // `intakeRating === 'all'`; `lib/dietTrial.feedingWasFinished` — the predicate behind the
     // trial block's "38 of 38 left unfinished" — counts most-OR-all. They disagree by exactly the
@@ -4319,7 +4323,16 @@ function trialIntakeTile(snap: ReportSnapshot, intake: SafetyFlag | undefined): 
       // reconciles them wrongly on a record holding both gets an arithmetic contradiction. Naming
       // the owner's own word here makes this cell checkable against the distribution below it.
       // The two bars themselves are CUL-1023, not this PR's to unify.
-      `Trial-diet meals fully eaten &middot; ${h(ti.span)}<br/>rated trial-diet meals marked &ldquo;ate it all&rdquo; &mdash; each format below`,
+      // AND IT DISCLOSES WHAT IT DID NOT COUNT (adversarial re-run). The line below started naming
+      // offered-but-unrated formats; this cell still divided rated by rated, so the commit's own
+      // example — 23 dry rated, 12 wet offered and none rated — printed a flawless "23 / 23" while
+      // a third of the servings had no rating at all. The fix named the shortfall in prose and
+      // left the number that caused the complaint untouched. The count does not move (inventing a
+      // denominator from unrated servings would assert they went uneaten); what moves is that the
+      // cell stops implying the rated set is the whole of it.
+      `Trial-diet meals fully eaten &middot; ${h(ti.span)}<br/>rated trial-diet meals marked &ldquo;ate it all&rdquo;${
+        ti.unrated > 0 ? ` &mdash; ${num(ti.unrated)} more offered, unrated` : ''
+      } &mdash; each format below`,
     )
   }
   if (snap.diet.mealCompletion) {
@@ -4337,6 +4350,25 @@ function trialIntakeTile(snap: ReportSnapshot, intake: SafetyFlag | undefined): 
     return tile('—', '', `A normally-eaten food was refused<br/>a health signal — see the flags above`)
   }
   return tile('—', '', `No rated meals in this window`)
+}
+
+/**
+ * Does the trial-diet cell earn the headline slot? ONE derivation, asked by the tile and by the
+ * line under it — never mirrored, because the line's job is to carry the figure the tile drops.
+ *
+ * Two conditions, and the second is the adversarial re-run's. A subset covering less than half the
+ * window's rated meals does not lead, because the window cell is then the picture (C-4: the
+ * reassuring branch must not outrank the accusing one just for being more specific). And a subset
+ * of ONE never leads at all: `ti=1, mc=2` cleared the share test and printed "1 / 1" in the most
+ * prominent cell on the page, which is §6.11's single-sample-as-a-rate, enforced in the sentence
+ * below this cell and not in the cell.
+ */
+function trialCellEarnsTheSlot(
+  ti: TrialDietIntake | null,
+  mc: DietSummary['mealCompletion'],
+): boolean {
+  if (ti === null || ti.ratedMeals < 2) return false
+  return mc === null || ti.ratedMeals * 2 >= mc.ratedMeals
 }
 
 /**
@@ -4384,38 +4416,56 @@ interface TrialDietIntake {
   formats: TrialFormatIntake[]
   ratedMeals: number
   fullyEaten: number
-  /** Rated trial-diet meals recorded as refused — how the refusal sentence knows whose they are. */
+  /** Rated trial-diet meals recorded as refused. */
   refused: number
+  /** Servings of a counted format the owner logged and never rated — the tile's own blind spot. */
+  unrated: number
   span: string
 }
 
 function trialDietIntake(snap: ReportSnapshot): TrialDietIntake | null {
   const t = snap.trial
   if (!t) return null
-  // ONE ROW PER PERMISSION KEY. Two `diet_trial_foods` rows can carry the same food, role and
-  // start date, and `trial.ts` reads its per-row map BY that key — so a duplicate pair would take
-  // the same ratings twice and this block would print a total LARGER than the window's rated
-  // meals. Migration 040's UNIQUE constraint makes that unreachable from the database today; the
-  // guard is here because the partition sentence below is the only check on the ratio and it
-  // fails quiet in that direction (adversarial pass).
-  const seenKey = new Set<string>()
-  const rows = t.permittedFoods.filter((f) => {
-    if (f.role !== 'primary_diet') return false
+  // ROWS SHARING A LABEL AND ITS DATES ARE MERGED, NEVER DROPPED (adversarial re-run — this
+  // replaced a `Set` that dropped one, and the drop was the worse bug by a distance).
+  //
+  // The dropped version was written to stop a duplicate pair double-counting, on the stated
+  // reasoning that migration 040's UNIQUE makes a duplicate unreachable. That reasoning was
+  // WRONG, and checkable: the constraint is `(diet_trial_id, food_item_id, role, allowed_from)`
+  // — it does not include the label. Two `food_items` rows for the SAME BAG is the routine state
+  // `lib/dietTrial.ts` documents (re-photographing a bag mints a new row; four duplicate
+  // brand+product groups already exist in a 59-row library), so a trial can legally hold two
+  // `primary_diet` rows with one label, one start date, and DISJOINT ratings — `trial.ts` keys
+  // its per-row counts by `foodItemId`, which this type does not carry. Executed: 21 eaten on
+  // the old row, 12 refused on the new one, and dropping the smaller printed "21 rated meals:
+  // ate it all ×21", a 21/21 headline, and two further false sentences over a cat refusing a
+  // third of her prescription diet.
+  //
+  // Merging preserves both the reader's view (one label is one food to a human) and the `ti <= mc`
+  // relation the drop was protecting — the ratings are concatenated, not counted twice, because
+  // each row's list came from its own key.
+  const merged = new Map<string, { row: (typeof t.permittedFoods)[number]; feedings: number; ratings: string[] }>()
+  for (const f of t.permittedFoods) {
+    if (f.role !== 'primary_diet') continue
     const key = `${f.label}|${f.allowedFrom}|${f.allowedUntil ?? ''}`
-    if (seenKey.has(key)) return false
-    seenKey.add(key)
-    return true
-  })
-  const formats: TrialFormatIntake[] = rows
-    .map((f) => ({
+    const prev = merged.get(key)
+    if (prev) {
+      prev.feedings += f.feedings
+      prev.ratings.push(...f.intakeRatings)
+    } else {
+      merged.set(key, { row: f, feedings: f.feedings, ratings: [...f.intakeRatings] })
+    }
+  }
+  const formats: TrialFormatIntake[] = [...merged.values()]
+    .map(({ row: f, feedings, ratings }) => ({
       label: f.label,
-      feedings: f.feedings,
-      ratedMeals: f.intakeRatings.length,
+      feedings,
+      ratedMeals: ratings.length,
       // `=== 'all'`, the predicate page 1's "N of M rated meals fully eaten" uses — NOT
       // `feedingWasFinished`, which counts most-or-all and would score eleven "ate most" servings
       // of a never-finished diet as finished.
-      fullyEaten: f.intakeRatings.filter((r) => r === 'all').length,
-      breakdown: intakeBreakdownOf(f.intakeRatings),
+      fullyEaten: ratings.filter((r) => r === 'all').length,
+      breakdown: intakeBreakdownOf(ratings),
       from: f.allowedFrom,
       until: f.allowedUntil,
     }))
@@ -4428,6 +4478,10 @@ function trialDietIntake(snap: ReportSnapshot): TrialDietIntake | null {
     ratedMeals: formats.reduce((a, f) => a + f.ratedMeals, 0),
     fullyEaten: formats.reduce((a, f) => a + f.fullyEaten, 0),
     refused: formats.reduce((a, f) => a + (f.breakdown.find((b) => b.rating === 'refused')?.count ?? 0), 0),
+    // `feedings` counts every permitted serving of the row, rated or not, so the difference is
+    // what the rated counts cannot see. Clamped at zero: a row whose feedings are treats while
+    // its ratings are meals can legitimately run the other way.
+    unrated: formats.reduce((a, f) => a + Math.max(0, f.feedings - f.ratedMeals), 0),
     span: fmtRange(t.evidenceStartDate, t.evidenceEndDate),
   }
 }
@@ -4514,18 +4568,23 @@ function intakeLine(snap: ReportSnapshot): string {
   // is no honest reason a refusal would be worth stating only when a trial is running.
   // NEVER "1 of the 1" (§6.11's rule, as the Noticed line already applies it): a single sample
   // dressed as a ratio reads as a rate. At a denominator of one the fact is stated as a fact.
-  // AND IT SAYS WHICH POPULATION IT COUNTS (Dr. Chen, cold read). In bold, under a sentence that
-  // opens "Trial diet by format", a window-scoped count reads as a trial-diet refusal — and on the
-  // artifact it was the exact opposite signal: she refused the OFF-diet chicken and ate the trial
-  // food. The clause renders only when no refusal is one of the formats above, because when one is
-  // the tally already shows it as `refused ×N` and a second statement would be the redundancy.
+  // THERE IS NO CLAUSE HERE SAYING WHOSE REFUSAL IT WAS, and the one that was here was deleted
+  // rather than repaired (adversarial re-run).
+  //
+  // It read "None of them was one of the formats above" whenever `ti.refused === 0` — which is a
+  // statement about the COUNTED SUBSET, not about the record. It was false on an ended trial whose
+  // diet kept being refused after the span closed, on a format added mid-trial and refused before
+  // its row opened, and on a merged duplicate; and once an offered-but-unrated format could reach
+  // it, on a record where nothing at all had been attributed. Executed on the very record the
+  // partition sentence beside it had just been rewritten to stop mis-describing — the fix repaired
+  // the weaker claim and left the stronger one standing next to it.
+  //
+  // It cannot be rescued by a gate either: the only condition under which `ti.refused === 0` really
+  // does mean "no refusal among the formats" is `ti.ratedMeals === mc.ratedMeals`, and under that
+  // condition `mc.refusedMeals` is zero too, so the sentence does not render at all. A clause true
+  // only when it is absent is not a clause. The denominator already names the population — "of the
+  // 36 rated meals in this window" — and the note below relates it to the counted set.
   const trialRefused = ti?.refused ?? 0
-  const notTrialDiet =
-    ti && trialRefused === 0
-      ? mc && mc.refusedMeals === 1
-        ? ` It was not one of the formats above.`
-        : ` None of them was one of the formats above.`
-      : ''
   // AND IT IS DROPPED WHEN IT SAYS NOTHING THE TALLY DID NOT (Dr. Chen, cold read: on the
   // single-format refused artifact this was "the fifth and sixth restatement of a fact already
   // stated four times"). The condition is exact duplication — every refusal is inside the formats
@@ -4542,7 +4601,7 @@ function intakeLine(snap: ReportSnapshot): string {
       ? `<b>The one rated meal in this window is recorded as refused.</b>`
       : `<b>${num(mc.refusedMeals)} of the ${num(mc.ratedMeals)} rated meals in this window ${
           mc.refusedMeals === 1 ? 'is' : 'are'
-        } recorded as refused.</b>${notTrialDiet}`
+        } recorded as refused.</b>`
   if (refusedBit) sentences.push(refusedBit)
   if (sentences.length === 0) return ''
 
@@ -4552,23 +4611,25 @@ function intakeLine(snap: ReportSnapshot): string {
   // and "these are 38 of the 38 rated meals" back to back. It is spelled out rather than leaning
   // on "those": a pronoun here binds to whichever plural rendered last, which is the refusal
   // count on one branch and nothing at all on another.
-  // …AND IT NAMES BOTH REASONS THE REST ARE NOT HERE (adversarial pass, executed). It read "cover
-  // 20 of the 32 rated meals in this window", whose plain reading is that the other twelve were
-  // OTHER FOODS — and on an ended trial whose diet the owner kept offering, those twelve were the
-  // SAME food, picked at, excluded because the counted span closes when the trial does. So page 1
-  // printed "20 / 20 fully eaten" for that format with the declining servings described as
-  // something else. C-37's tell exactly: the span reached outside the window and the accusing
-  // count did not. The sentence now names the span first and both causes without asserting which
-  // applies to any row — the record cannot settle that, and a page must not answer what it cannot
-  // (C-4). Which rows those are is in appendix E, by food.
+  // IT NAMES WHAT IS *IN* THE COUNTS, NEVER WHY A MEAL IS OUT (adversarial re-run — third attempt
+  // at this sentence, and the first two both enumerated).
+  //
+  // "Cover N of the M" implied the rest were other foods; naming "outside that span or other
+  // foods" then enumerated two causes when there are three — a format added mid-trial and fed
+  // before its row opened is INSIDE the span and IS the same food, and rung 1 drops it anyway, so
+  // both stated disjuncts were false on a first-class migration-040 workflow. Every enumeration
+  // fails the same way, because the exclusion set is whatever the classifier happens to reject.
+  //
+  // The INCLUSION rule, by contrast, is knowable and stable: a meal is counted when it falls in
+  // the span AND its food was on the trial's list on the day it was fed. So the sentence states
+  // that and stops. It also needs a numerator to be about: with nothing rated in any format there
+  // is no "other", and the clause is absent (the offered-but-unrated shape, reachable since
+  // formats stopped being dropped).
   const outside = mc && ti ? mc.ratedMeals - ti.ratedMeals : 0
   const partition =
-    ti && mc && outside > 0
-      ? outside === 1
-        ? `These counts are over ${h(ti.span)}; the window&rsquo;s one other rated meal falls outside that span or was another food. `
-        : `These counts are over ${h(ti.span)}; the window&rsquo;s other ${num(
-            outside,
-          )} rated meals fall outside that span or were other foods. `
+    ti && mc && ti.ratedMeals > 0 && outside > 0
+      ? `These counts are over ${h(ti.span)}, and over each food while it was on the trial&rsquo;s list; ` +
+        `the window&rsquo;s other ${num(outside)} rated meal${outside === 1 ? ' is' : 's are'} not in them. `
       : ''
   // THE GRAZER'S QUALIFIER, COMPOSED WITH THE COUNT RATHER THAN REPLACING IT (Sam's lens; the
   // B-532 round-7 resolution of R2-3). "0 fully eaten" over a cat with a bowl down all day is a
@@ -4579,7 +4640,20 @@ function intakeLine(snap: ReportSnapshot): string {
   const freeFed = snap.diet.intakeNotDirectlyObserved
     ? `Food was also available free-choice in this window. <b>Intake not directly observed.</b> `
     : ''
-  const note = `${partition}${freeFed}The intake recorded against every food is in appendix&nbsp;E.`
+  // THE FIGURE THE CELL DROPPED, WHEREVER IT DROPPED IT (adversarial re-run). The derived
+  // fully-eaten fraction was designed to live exactly once, on the tile — and on every record
+  // where the tile goes to the window cell instead, it lived nowhere: a trial diet at 0 of 12
+  // fully eaten inside a 40-meal window printed its 28 / 40 headline with the trial's own figure
+  // absent from page 1, which is R-6's founding complaint restored. It is stated here rather than
+  // at the head of the row, because leading with the derived count is what over-read the eleven
+  // "ate most" in the first place — the note is where a number goes when it must be present and
+  // must not dominate. Also printed when several formats are in play, where an aggregate is not
+  // something the reader can take off one row.
+  const aggregate =
+    ti && ti.ratedMeals > 0 && (ti.formats.length > 1 || !trialCellEarnsTheSlot(ti, mc))
+      ? `Across the formats above, ${num(ti.fullyEaten)} of ${num(ti.ratedMeals)} were fully eaten. `
+      : ''
+  const note = `${aggregate}${partition}${freeFed}The intake recorded against every food is in appendix&nbsp;E.`
   return `
     <div class="subline">
       <div class="subline-h">Intake recorded</div>
