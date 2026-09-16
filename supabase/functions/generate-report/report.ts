@@ -2343,6 +2343,20 @@ export interface ProteinTimeline {
    */
   humanFoodFeedings: number
   incompleteHumanFoodFeedings: number
+  /**
+   * THE FLOOR RATIO'S OWN TWO NUMBERS (adversarial review), so the render divides one
+   * population rather than subtracting its way to two.
+   *
+   * `incompleteFeedings` counts only feedings whose food had at least one protein — a
+   * feeding with none is "unknown", not "unread", and is disclosed separately. So a
+   * denominator derived as `totalFeedings − humanFoodFeedings` silently included the
+   * unknown ones the numerator had already skipped: ten packaged feedings with two read,
+   * three unread and five with nothing captured printed "3 of 10" on the one sentence whose
+   * job is to stop the antigen tally reading as complete, when eight of the ten had no
+   * complete panel. Both halves are now counted in the same pass over the same members.
+   */
+  packagedReadable: number
+  packagedUnread: number
   /** Off-diet feedings whose food's protein set may NOT be read as complete (D10).
    *  > 0 ⇒ the tally is a floor and the render must disclose it. */
   incompleteFeedings: number
@@ -2559,21 +2573,20 @@ export type { IntakeRating }
  * one dash beside a silence. Three states, named, is the whole fix: a caller can no longer
  * collapse two of them by accident.
  *
- *   none    no rating at all — the ONLY state the em-dash is for
- *   mode    a strict plurality, and an honest "typically X"
- *   split   a tie: the tied ratings with their counts, so the page states the split
- *           rather than picking a side
+ *   none      no rating at all — the ONLY state the em-dash is for
+ *   typical   one rating repeats and outnumbers the rest, so "typically X" is honest
+ *   itemised  every rating with its count — a tie, or a set too small to call habitual
  *
  * THE TIE IS NEVER BROKEN, in either direction. Breaking it toward the calmer rating would
  * manufacture reassurance, which the intake floor forbids outright; breaking it toward the
- * worse one would manufacture a finding. The split is the honest render and it is also the
- * more informative one — "evenly split between finishing and refusing" is a clinical picture
- * no single adverb can carry.
+ * worse one would manufacture a finding. Itemising is the honest render and it is also the
+ * more informative one — a record evenly split between finishing and refusing is a clinical
+ * picture no single adverb can carry.
  */
 export type IntakeSummary =
   | { kind: 'none' }
-  | { kind: 'mode'; rating: IntakeRating }
-  | { kind: 'split'; tied: Array<{ rating: IntakeRating; count: number }> }
+  | { kind: 'typical'; rating: IntakeRating; count: number }
+  | { kind: 'itemised'; ratings: Array<{ rating: IntakeRating; count: number }> }
 
 export function summariseIntake(
   breakdown: ReadonlyArray<{ rating: IntakeRating; count: number }>,
@@ -2581,10 +2594,22 @@ export function summariseIntake(
   let top = 0
   for (const b of breakdown) if (b.count > top) top = b.count
   if (top === 0) return { kind: 'none' }
-  // `intakeBreakdownOf` orders along the intake SCALE, not by count, so a split comes out of
-  // here in the same order appendix E prints it — the two surfaces list one tie identically.
   const tied = breakdown.filter((b) => b.count === top)
-  return tied.length === 1 ? { kind: 'mode', rating: tied[0].rating } : { kind: 'split', tied: [...tied] }
+  // A SUMMARY MAY NEVER DELETE A RATING (adversarial review). The first cut returned the
+  // TIED ratings on a tie, and the render said "split between A and B" — which reads as an
+  // exhaustive two-way partition. On `all×3 most×3 some×2 picked×2 refused×2` that dropped
+  // six of twelve meals including both refusals, and dropped them in the CALM direction,
+  // because `intakeBreakdownOf` orders best-to-worst and the tie is resolved by count. It was
+  // the B-532 defect this predicate exists to kill, with two survivors instead of one, and
+  // arguably worse: "typically X" is grammatically a partial claim and "split between A and
+  // B" is not. Where no rating is habitual, every rating goes, with its count.
+  //
+  // AND "TYPICALLY" NEEDS A REPEATED RATING. A single rated meal is a fact, not a habit, and
+  // "typically ate it all" over one meal is an n=1 reassurance on the intake axis — which the
+  // clinical floor forbids by construction, and which the plurality rule permitted at its
+  // limit. Two is the floor because it is what the word means, not a tuned threshold.
+  if (tied.length === 1 && top >= 2) return { kind: 'typical', rating: tied[0].rating, count: top }
+  return { kind: 'itemised', ratings: [...breakdown] }
 }
 
 /**
@@ -3845,12 +3870,26 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     if (!trialBlock || !startedAt) return null
     const startDayNum = dayNumber(startedAt)
     if (startDayNum === null) return null
+    // THE TRIAL'S OWN FOOD IS NEVER THE PREVIOUS DIET (adversarial review). A five-to-seven
+    // day transition onto the new food is the standard veterinary instruction, so an owner who
+    // logs the changeover has trial-food meals before the start date — and naming them here
+    // tells a vet the animal was NOT naive to the trial protein before the trial, which
+    // invalidates the elimination's premise. The row's completeness caveat does not touch it:
+    // that caveat is about how far back the log reaches, not about which food is which.
+    const trialFoodId = reportTrialInput?.foodItemId ?? null
+    const trialFoodLabel = reportTrialInput?.foodLabel?.trim().toLowerCase() ?? null
+    const isTrialFood = (m: NonNullable<ReportEventInput['meal']>): boolean => {
+      if (trialFoodId && m.foodItemId === trialFoodId) return true
+      const label = mealFoodLabel(m)?.trim().toLowerCase()
+      return !!trialFoodLabel && !!label && label === trialFoodLabel
+    }
     const counts = new Map<string, number>()
     let feedings = 0
     let firstDay: string | null = null
     let lastDay: string | null = null
     for (const e of dedupedAll) {
       if (e.type !== 'meal' || !e.meal || e.meal.foodType !== 'meal') continue
+      if (isTrialFood(e.meal)) continue
       const key = localDayKey(e.occurredAt, tz)
       if (key === null) continue
       // The BOUND is numeric, on day numbers parsed from both sides — never a text compare
@@ -4261,11 +4300,22 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // complete — and the reason the diet summary is assembled here rather than upstream: two
   // definitions of "counted" is how a page and its appendix come to disagree (C-4).
   const medicationVehicles = ((): DietSummary['medicationVehicles'] => {
+    // THE PAIRED MEAL IS THE SIDE THAT MOVES (adversarial review). The dose's own id can
+    // never be dropped — `dedupeEvents` keys medication events `keep|<id>` — so guarding on
+    // it, as `buildDetectionInput` does, guards nothing here. What dedup does drop is the
+    // MEAL the dose rode inside: an owner who one-taps a treat and then records the pill
+    // through the combo sheet can pair the dose to the twin that collapses, and the row then
+    // printed "no dose in this window was logged as given in food" over a record holding one.
+    // Resolving each member id to its surviving representative is what makes the vehicle
+    // survive its own de-duplication.
+    const survivorOfMember = new Map<string, string>()
+    for (const e of dedupedAll) {
+      for (const mid of e.memberEventIds) survivorOfMember.set(mid, e.id)
+    }
     const paired = new Set<string>()
     for (const d of input.doses) {
-      // Mirrors `buildDetectionInput`: a dose on a de-duplicated twin is not a second dose.
       if (droppedEventIds.has(d.eventId)) continue
-      if (d.pairedEventId) paired.add(d.pairedEventId)
+      if (d.pairedEventId) paired.add(survivorOfMember.get(d.pairedEventId) ?? d.pairedEventId)
     }
     if (paired.size === 0) return null
     const inTally = new Set(confounderFeedings.map((e) => e.id))
@@ -4322,8 +4372,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   let incompleteFeedings = 0
   let humanFoodFeedingsInTally = 0
   let incompleteHumanFoodFeedings = 0
+  let packagedReadable = 0
+  let packagedUnread = 0
   for (const c of confounders) {
-    if (c.format === 'human_food') humanFoodFeedingsInTally++
+    const isHome = c.format === 'human_food'
+    if (isHome) humanFoodFeedingsInTally++
     if (c.proteinSet.proteins.length === 0) {
       // NOT counted as an unread panel: a feeding with no captured protein at all
       // (often no food row at all — a bare human-food log) is already disclosed as
@@ -4334,9 +4387,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       proteinUnknownCount++
       continue
     }
+    // Past the `continue` above, this feeding HAD a protein set to judge — which is exactly
+    // the population the ratio is about, so both of its numbers are accumulated here.
+    if (!isHome) packagedReadable++
     if (!c.proteinSet.complete) {
       incompleteFeedings++
-      if (c.format === 'human_food') incompleteHumanFoodFeedings++
+      if (isHome) incompleteHumanFoodFeedings++
+      else packagedUnread++
     }
     for (const key of c.proteinSet.proteins) {
       proteinExposureTally[key] = (proteinExposureTally[key] ?? 0) + 1
@@ -4393,6 +4450,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     incompleteFeedings,
     humanFoodFeedings: humanFoodFeedingsInTally,
     incompleteHumanFoodFeedings,
+    packagedReadable,
+    packagedUnread,
   }
 
   // ── Intake appendix (B-213) — recent rated meals, ONLY when an intake flag fired ─────

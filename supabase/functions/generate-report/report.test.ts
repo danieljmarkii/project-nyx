@@ -90,6 +90,14 @@ function mkAnalysis(eventId: string, o: Partial<ReportAiAnalysisInput> = {}): Re
 }
 
 /** An empty-but-valid input skeleton; individual tests fill the arrays they need. */
+/** Rendered prose with tags stripped and the entities the report writes resolved. */
+function plainText(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ')
+    .replace(/&times;/g, '\u00d7').replace(/&ndash;/g, '\u2013').replace(/&mdash;/g, '\u2014')
+    .replace(/&middot;/g, '\u00b7').replace(/&ldquo;|&rdquo;/g, '"').replace(/&rsquo;/g, "'")
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
+}
+
 function baseInput(overrides: Partial<ReportInput> = {}): ReportInput {
   return {
     now: NOW,
@@ -1596,7 +1604,7 @@ Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · 
   assert.equal(items[0].primaryProtein, 'chicken')
   assert.equal(items[0].firstDate, '2026-05-14', 'date span start')
   assert.equal(items[0].lastDate, '2026-06-10', 'date span end')
-  assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'mode', rating: 'some' }, 'strict-plurality intake (2 some vs 1 all)')
+  assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'typical', rating: 'some', count: 2 }, 'strict-plurality intake (2 some vs 1 all)')
   assert.equal(items[1].foodLabel, 'Instinct Turkey (Wet)') // B-568 — same rule on every appendix row
   assert.equal(items[1].count, 1)
   // The grouped total reconciles with mealCompletion (same ratedMeals set).
@@ -1825,8 +1833,8 @@ Deno.test('R2-3 / CUL-497 — the intake summary is a plurality, a split, or not
   )
   assert.deepEqual(
     summariseIntake(plurality.diet.mealCompletion!.intakeBreakdown),
-    { kind: 'mode', rating: 'some' },
-    'the most common rating wins',
+    { kind: 'typical', rating: 'some', count: 3 },
+    'the most common repeated rating wins',
   )
   const tied = assembleReport(
     baseInput({ events: [mealAt('2026-06-10', 'all'), mealAt('2026-06-11', 'all'), mealAt('2026-06-12', 'some'), mealAt('2026-06-13', 'some')] }),
@@ -1836,8 +1844,8 @@ Deno.test('R2-3 / CUL-497 — the intake summary is a plurality, a split, or not
   // stand for ninety rated meals and a silence stand for an evenly split record.
   assert.deepEqual(
     summariseIntake(tied.diet.mealCompletion!.intakeBreakdown),
-    { kind: 'split', tied: [{ rating: 'all', count: 2 }, { rating: 'some', count: 2 }] },
-    'a tie is a split, listed along the intake scale',
+    { kind: 'itemised', ratings: [{ rating: 'all', count: 2 }, { rating: 'some', count: 2 }] },
+    'a tie itemises, along the intake scale',
   )
   const none = assembleReport(baseInput({ events: [] }))
   assert.equal(none.diet.mealCompletion, null, 'no rated meal at all')
@@ -1866,12 +1874,13 @@ Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · c
   // Sorted by count desc → chicken (3) then turkey (1).
   assert.equal(items[0].count, 3)
   assert.equal(items[0].primaryProtein, 'chicken')
-  assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'mode', rating: 'some' }, 'strict-plurality typical intake across the grouped food (some 2 vs all 1)')
+  assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'typical', rating: 'some', count: 2 }, 'strict-plurality typical intake across the grouped food (some 2 vs all 1)')
   assert.equal(items[0].firstDate, '2026-06-10')
   assert.equal(items[0].lastDate, '2026-06-14')
   assert.equal(items[1].count, 1)
   assert.equal(items[1].primaryProtein, 'turkey')
-  assert.deepEqual(summariseIntake(items[1].intakeBreakdown), { kind: 'mode', rating: 'picked' })
+  // One meal of this food: a fact, never a habit (the n floor).
+  assert.deepEqual(summariseIntake(items[1].intakeBreakdown), { kind: 'itemised', ratings: [{ rating: 'picked', count: 1 }] })
   // Reconciles with mealCompletion.ratedMeals — the SAME underlying set, never a double count.
   assert.equal(items.reduce((a, i) => a + i.count, 0), snap.diet.mealCompletion?.ratedMeals)
 })
@@ -3694,14 +3703,14 @@ Deno.test('R-13 item 5 — per-food breakdowns sum to the window breakdown, and 
 
   // Page 1 sees the window: an even split, and it picks no side.
   const windowSummary = summariseIntake(snap.diet.mealCompletion!.intakeBreakdown)
-  assert.equal(windowSummary.kind, 'split', 'three refused against three finished is a tie')
+  assert.equal(windowSummary.kind, 'itemised', 'three refused against three finished is a tie')
 
   // Appendix E sees each food: two unanimous verdicts, neither of them a split.
   const perFood = snap.diet.mealItems.map((i) => summariseIntake(i.intakeBreakdown))
   assert.deepEqual(
     perFood.map((s) => s.kind).sort(),
-    ['mode', 'mode'],
-    'a food eaten every time is not a split, whatever the window says',
+    ['typical', 'typical'],
+    'a food eaten every time is not a tie, whatever the window says',
   )
 
   // THE PARTITION. Per-food counts sum to the window's, rating by rating — which is what
@@ -3789,4 +3798,204 @@ Deno.test('R-13 item 4 — proteinTimeline partitions home-prepared from package
   assert.equal(packagedIncomplete, 1)
   assert.ok(packagedIncomplete <= packagedTotal, 'the ratio can never exceed 1')
   assert.ok(pt.incompleteHumanFoodFeedings <= pt.humanFoodFeedings, 'nor can the home-food one')
+})
+
+// ── Adversarial review, finding 1 — a tie that does not exhaust the population ─────────
+//
+// `split between "ate it all" ×3 and "ate most" ×3` over twelve meals reads as an exhaustive
+// two-way partition, and dropped six meals INCLUDING TWO REFUSALS. That is the B-532 defect
+// the predicate's own docstring says it exists to kill — a summary that silently deletes the
+// rest — re-entered with two survivors instead of one, and biased toward the calm half,
+// because `intakeBreakdownOf` orders best-to-worst and the tie is resolved by count.
+
+Deno.test('CUL-497 — a non-exhaustive tie names EVERY rating, never just the tied ones', () => {
+  idSeq = 0
+  const r = (date: string, rating: 'all' | 'most' | 'some' | 'picked' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '08:00:00'),
+      meal: { foodItemId: 'f1', intakeRating: rating, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'tuna', brand: null, productName: 'One Food' },
+    })
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        r('2026-06-01', 'all'), r('2026-06-02', 'all'), r('2026-06-03', 'all'),
+        r('2026-06-04', 'most'), r('2026-06-05', 'most'), r('2026-06-06', 'most'),
+        r('2026-06-07', 'some'), r('2026-06-08', 'some'),
+        r('2026-06-09', 'picked'), r('2026-06-10', 'picked'),
+        r('2026-06-11', 'refused'), r('2026-06-12', 'refused'),
+      ],
+    }),
+  )
+  const s = summariseIntake(snap.diet.mealCompletion!.intakeBreakdown)
+  assert.equal(s.kind, 'itemised', 'no rating is habitual enough to stand for the rest')
+  if (s.kind !== 'itemised') throw new Error('unreachable')
+  assert.equal(
+    s.ratings.reduce((a, x) => a + x.count, 0),
+    12,
+    'the summary accounts for every rated meal — the refusals are not dropped',
+  )
+  assert.deepEqual(s.ratings.map((x) => x.rating), ['all', 'most', 'some', 'picked', 'refused'])
+})
+
+Deno.test('CUL-497 — "typically" needs a repeated rating, so n=1 never claims a habit', () => {
+  idSeq = 0
+  const one = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        makeEvent({ type: 'meal', occurredAt: at('2026-06-01', '08:00:00'), meal: { foodItemId: 'f1', intakeRating: 'all', quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'tuna', brand: null, productName: 'One Food' } }),
+      ],
+    }),
+  )
+  // A single rated meal is a fact, not a habit — and "typically ate it all" over one meal is
+  // an n=1 reassurance on the intake axis, which the clinical floor forbids by construction.
+  assert.equal(summariseIntake(one.diet.mealCompletion!.intakeBreakdown).kind, 'itemised')
+  assert.deepEqual(summariseIntake([{ rating: 'all', count: 2 }]), { kind: 'typical', rating: 'all', count: 2 })
+})
+
+// ── Adversarial review, finding 3 — the packaged ratio's two halves must be ONE population ──
+
+Deno.test('CUL-292 — the ratio counts only feedings that HAD a panel to read, on both sides', () => {
+  idSeq = 0
+  const feeding = (date: string, o: { label: string; proteins: string[] | null; panel?: string }) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '12:00:00'),
+      meal: {
+        foodItemId: o.label, intakeRating: null, quantity: null, foodType: 'treat', format: 'treat',
+        primaryProtein: o.proteins?.[0] ?? null, proteins: o.proteins, brand: null, productName: o.label,
+        ingredientsNotes: o.panel ?? null, extractionConfidence: o.panel ? { proteins: 0.9 } : null,
+      },
+    })
+  // Ten packaged off-diet feedings: 2 read complete, 3 read-but-incomplete, 5 with NO protein
+  // captured at all. `incompleteFeedings` skips the five (they are "unknown", not "unread"),
+  // so a denominator that still counts them understates the blind spot: eight of ten have no
+  // complete panel, and the sentence said three of ten.
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        feeding('2026-06-01', { label: 'A', proteins: ['beef'], panel: 'Beef, rice, barley' }),
+        feeding('2026-06-02', { label: 'B', proteins: ['lamb'], panel: 'Lamb, oats, peas' }),
+        feeding('2026-06-03', { label: 'C', proteins: ['chicken'] }),
+        feeding('2026-06-04', { label: 'D', proteins: ['duck'] }),
+        feeding('2026-06-05', { label: 'E', proteins: ['pork'] }),
+        feeding('2026-06-06', { label: 'F', proteins: null }),
+        feeding('2026-06-07', { label: 'G', proteins: null }),
+        feeding('2026-06-08', { label: 'H', proteins: null }),
+        feeding('2026-06-09', { label: 'I', proteins: null }),
+        feeding('2026-06-10', { label: 'J', proteins: null }),
+      ],
+    }),
+  )
+  const pt = snap.proteinTimeline
+  assert.equal(pt.totalFeedings, 10)
+  assert.equal(snap.provenance.proteinUnknownCount, 5, 'five had no protein at all')
+  // The ratio's own denominator: packaged feedings whose food HAD a protein set to judge.
+  assert.equal(pt.packagedReadable, 5, 'the five with a protein set are the population judged')
+  assert.equal(pt.packagedUnread, 3, 'three of those five were never read')
+  const html = renderReport(snap)
+  const t = plainText(html)
+  assert.ok(/3 of 5 off-diet feedings involved a food whose ingredient panel was never captured/.test(t), t.slice(t.indexOf('A floor'), t.indexOf('A floor') + 300))
+  assert.ok(!/3 of 10/.test(t), 'never a numerator drawn from one population over another\'s denominator')
+})
+
+Deno.test('CUL-292 — an all-home-food record still discloses its blind spot', () => {
+  idSeq = 0
+  const scrap = (date: string) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '19:00:00'),
+      meal: {
+        foodItemId: null, intakeRating: null, quantity: null, foodType: 'other', format: 'human_food',
+        primaryProtein: null, proteins: null, brand: null, productName: null,
+        ingredientsNotes: null, extractionConfidence: null,
+      },
+    })
+  const snap = assembleReport(
+    baseInput({ now: '2026-07-02T12:00:00Z', events: ['2026-06-01', '2026-06-02', '2026-06-03'].map(scrap) }),
+  )
+  assert.equal(snap.proteinTimeline.humanFoodFeedings, 3)
+  assert.equal(Object.keys(snap.provenance.proteinExposureTally).length, 0, 'the tally is empty')
+  const t = plainText(renderReport(snap))
+  // The floor block used to hang off a non-empty tally, so on the record where the blind spot
+  // is TOTAL the report disclosed it nowhere.
+  assert.ok(/3 home-prepared feedings/.test(t), 'the home-food limitation is stated')
+  assert.ok(/no ingredient panel at all/.test(t))
+})
+
+// ── Adversarial review, findings 4 + 5 ─────────────────────────────────────────────────
+
+Deno.test('CUL-851 — the trial food is never named as the PREVIOUS diet', () => {
+  // A 5-to-7 day transition onto the new food is the standard veterinary instruction, so an
+  // owner who logs the changeover has trial-food meals before the start date. Printing
+  // "Previous diet: Hydrolyzed HP" tells a vet the animal was NOT naive to the hydrolysate
+  // before the trial, which invalidates the elimination's premise — a clinical misread the
+  // row's completeness caveat does not touch, because the caveat is about how far back the
+  // log reaches, not about which food is which.
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      dietTrials: [
+        { id: 'dt', foodItemId: 'f-hp', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydrolyzed HP', primaryProtein: 'hydrolyzed' },
+      ],
+      events: [
+        ...['2026-05-01', '2026-05-02', '2026-05-03'].map((d) => mealEvent(d, { label: 'Purina ONE Chicken' })),
+        // the transition days, logged
+        ...['2026-05-09', '2026-05-10', '2026-05-11'].map((d) => mealEvent(d, { label: 'f-hp' })),
+        mealEvent('2026-05-20', { label: 'f-hp' }),
+      ],
+    }),
+  )
+  const prev = snap.diet.previousDiet
+  assert.ok(prev, 'the pre-trial diet is still derived')
+  assert.ok(!prev.labels.some((l) => /f-hp/i.test(l)), 'the trial food is not one of them')
+  assert.deepEqual(prev.labels, ['Purina ONE Chicken (Dry)'])
+  assert.equal(prev.feedings, 3, 'and the transition meals are out of the count')
+  assert.equal(prev.lastDay, '2026-05-03', 'so the span ends at the last genuinely-previous meal')
+})
+
+Deno.test('CUL-851 — a record of nothing but the transition derives no previous diet', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      dietTrials: [
+        { id: 'dt', foodItemId: 'f-hp', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydrolyzed HP', primaryProtein: 'hydrolyzed' },
+      ],
+      events: ['2026-05-09', '2026-05-10'].map((d) => mealEvent(d, { label: 'f-hp' })),
+    }),
+  )
+  assert.equal(snap.diet.previousDiet, null, 'silence beats naming the trial food')
+})
+
+Deno.test('CUL-852 — a dose paired to a de-duplicated meal twin still names its vehicle', () => {
+  // The guard was on the DOSE, which is the side that can never move: `dedupeEvents` gives
+  // medication events a `keep|<id>` group key. The side that does move is the paired MEAL id,
+  // and an owner who one-taps a treat and then records the pill through the combo sheet can
+  // pair the dose to the twin that dedup drops. The row then printed a negative — "no dose in
+  // this window was logged as given in food" — over a record that holds one, which is the
+  // CUL-978 class two rows up the same table.
+  idSeq = 0
+  const at1 = at('2026-06-10', '13:00:00')
+  const at2 = at('2026-06-10', '13:00:20')
+  const first = makeEvent({ type: 'meal', occurredAt: at1, meal: { foodItemId: 'f-pocket', intakeRating: null, quantity: null, foodType: 'treat', format: 'treat', primaryProtein: null, brand: null, productName: 'Greenies Pill Pocket' } })
+  const twin = makeEvent({ type: 'meal', occurredAt: at2, meal: { foodItemId: 'f-pocket', intakeRating: null, quantity: null, foodType: 'treat', format: 'treat', primaryProtein: null, brand: null, productName: 'Greenies Pill Pocket' } })
+  const build = (paired: string) =>
+    assembleReport(
+      baseInput({
+        now: '2026-07-02T12:00:00Z',
+        events: [first, twin],
+        doses: [{ eventId: 'd1', occurredAt: at2, medicationId: null, medicationItemId: 'mi-1', adherence: 'given', doseAmount: null, pairedEventId: paired }],
+      }),
+    )
+  const survivor = build(first.id).diet.medicationVehicles
+  const dropped = build(twin.id).diet.medicationVehicles
+  assert.ok(survivor, 'control: pairing to the surviving twin names the vehicle')
+  assert.ok(dropped, 'pairing to the DROPPED twin must name it too — it is the same feeding')
+  assert.deepEqual(dropped.labels, survivor.labels)
+  assert.equal(dropped.feedings, survivor.feedings)
 })

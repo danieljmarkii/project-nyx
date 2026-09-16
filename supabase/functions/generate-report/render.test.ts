@@ -257,6 +257,8 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       incompleteFeedings: 0,
       humanFoodFeedings: 0,
       incompleteHumanFoodFeedings: 0,
+      packagedReadable: 0,
+      packagedUnread: 0,
     },
     provenance: {
       ownerReported: true,
@@ -2214,6 +2216,8 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
         incompleteFeedings: 0,
         humanFoodFeedings: 0,
         incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -2248,6 +2252,8 @@ Deno.test('B-444 — every protein band carries a texture; solid fill is reserve
         incompleteFeedings: 0,
         humanFoodFeedings: 0,
         incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -2503,6 +2509,8 @@ Deno.test('B-497 — an off-diet week that was logged but clean draws a measured
         incompleteFeedings: 0,
         humanFoodFeedings: 0,
         incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -2527,6 +2535,8 @@ Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data
         incompleteFeedings: 0,
         humanFoodFeedings: 0,
         incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -3080,6 +3090,8 @@ Deno.test('B-351 D10 — an under-counted protein tally is disclosed as a FLOOR'
         incompleteFeedings: 2,
         humanFoodFeedings: 0,
         incompleteHumanFoodFeedings: 0,
+        packagedReadable: 4,
+        packagedUnread: 2,
       },
       provenance: {
         ...base({}).provenance,
@@ -3112,6 +3124,8 @@ Deno.test('B-351 §9 — the exposure chart states that one feeding can fill sev
         incompleteFeedings: 0,
         humanFoodFeedings: 0,
         incompleteHumanFoodFeedings: 0,
+        packagedReadable: 0,
+        packagedUnread: 0,
       },
     }),
   )
@@ -3364,6 +3378,8 @@ function breachedTrialSnap() {
       incompleteFeedings: 0,
       humanFoodFeedings: 0,
       incompleteHumanFoodFeedings: 0,
+      packagedReadable: 0,
+      packagedUnread: 0,
     },
   })
 }
@@ -5830,6 +5846,11 @@ Deno.test('R-13 item 3 — the vehicle is named, and the row says whether the ta
   )
   const m = text(appendixBRow(mixed, 'Food used to give medication'))
   assert.ok(/3 of these are counted/.test(m), 'a split population states its split (C-4)')
+  // …and agrees with itself at one.
+  const single = renderReport(
+    base({ diet: { ...b.diet, medicationVehicles: { labels: ['Pill Pocket', 'Tiki Cat Tuna'], feedings: 4, countedInTally: 1 } } }),
+  )
+  assert.ok(/1 of these is counted/.test(text(appendixBRow(single, 'Food used to give medication'))), 'singular agreement')
 })
 
 Deno.test('R-13 item 3 — an absence distinguishes "no dose in food" from "no medication"', () => {
@@ -5920,6 +5941,8 @@ Deno.test('R-13 item 4 — the floor disclosure counts packaged feedings, and st
         incompleteFeedings: 3,
         humanFoodFeedings: 2,
         incompleteHumanFoodFeedings: 2,
+        packagedReadable: 2,
+        packagedUnread: 1,
       },
     }),
   )
@@ -5940,7 +5963,7 @@ Deno.test('R-13 item 4 — an all-home-food record makes no packaged claim at al
         confounders: [conf({ eventId: 'h1', foodLabel: 'Ground beef', primaryProtein: 'beef', proteinSet: pset(['beef']), format: 'human_food', foodType: 'meal' })],
         proteinExposureTally: { beef: 1 },
       },
-      proteinTimeline: { ...b.proteinTimeline, proteins: ['beef'], totalFeedings: 1, incompleteFeedings: 1, humanFoodFeedings: 1, incompleteHumanFoodFeedings: 1 },
+      proteinTimeline: { ...b.proteinTimeline, proteins: ['beef'], totalFeedings: 1, incompleteFeedings: 1, humanFoodFeedings: 1, incompleteHumanFoodFeedings: 1, packagedReadable: 0, packagedUnread: 0 },
     }),
   )
   const t = text(html).replace(/&nbsp;/g, ' ')
@@ -5975,8 +5998,8 @@ Deno.test('R-13 item 5 — a tie renders the SPLIT, and never picks the calmer s
     }),
   )
   const t = plain(html)
-  assert.ok(/split between/.test(t), 'the tie is named as a split')
-  assert.ok(/Ate it all/i.test(t) && /Refused/i.test(t), 'both tied ratings are shown')
+  assert.ok(/ratings:/.test(t), 'the tie is itemised rather than summarised')
+  assert.ok(/Ate it all/i.test(t) && /Refused/i.test(t), 'both ratings are shown')
   assert.ok(!/typically/.test(t), 'no side is picked')
   assert.ok(/6 of 12 fully eaten/.test(t), 'and the count still prints')
 })
@@ -5995,7 +6018,7 @@ Deno.test('R-13 item 5 — a strict plurality still reads "typically", unchanged
   )
   const t = plain(html)
   assert.ok(/typically "ate it all"/i.test(t), 'a real plurality keeps the adverb')
-  assert.ok(!/split between/.test(t), 'and is not described as a split')
+  assert.ok(!/ratings:/.test(t), 'and is not itemised')
 })
 
 Deno.test('R-13 item 5 — the dash is reserved for genuinely no data, on both surfaces', () => {
@@ -6045,9 +6068,17 @@ Deno.test('R-13 item 5 — ONE predicate: the two surfaces never disagree about 
     const t = plain(html)
     const top = Math.max(...breakdown.map((x) => x.count))
     const tied = breakdown.filter((x) => x.count === top)
-    if (tied.length > 1) {
-      assert.ok(/split between/.test(t), `tie of ${tied.length} should read as a split`)
+    if (tied.length > 1 || top < 2) {
+      assert.ok(/ratings:/.test(t), `a tie of ${tied.length} (top ${top}) should itemise`)
       assert.ok(!/typically/.test(t), 'and pick no side')
+      // AND ACCOUNT FOR EVERY MEAL — the itemised clause is the whole breakdown, not the
+      // tied subset, so a rating can never be dropped from the sentence that summarises it.
+      for (const x of breakdown) {
+        assert.ok(
+          new RegExp(`${intakeLabelFor(x.rating)}" ×${x.count}`, 'i').test(t),
+          `page 1 names ${x.rating} ×${x.count}`,
+        )
+      }
     } else {
       assert.ok(
         new RegExp(`typically "${intakeLabelFor(tied[0].rating)}"`, 'i').test(t),
@@ -6320,4 +6351,68 @@ Deno.test('R-3 — a log that crosses into the next year still stamps it', () =>
   )
   assert.equal(rows[0][0], 'Dec 30')
   assert.equal(rows[0][3], 'Jan 2, 2027, 08:15')
+})
+
+// ── Adversarial review, findings 2 + 9 — the home-food marker's other two branches ──────
+
+Deno.test('CUL-292 — a home food NEVER gets the "nothing else on the label" all-clear', () => {
+  // `kind` reached only the incomplete branch, so a home food whose panel text the owner DID
+  // capture printed the D10 all-clear on appendix B while appendix C, on the next sheet, said
+  // the same feedings have "no ingredient panel at all". One document, two opposite claims
+  // about one food, and appendix B took the reassuring side — which render.ts's own rule
+  // ("no negative form except the one D10 licenses") exists to forbid.
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        mealItems: [
+          mealItem({
+            foodLabel: 'Deli chicken breast',
+            primaryProtein: 'chicken',
+            proteinSet: pset(['chicken'], { complete: true }),
+            format: 'human_food',
+            count: 3,
+          }),
+        ],
+      },
+    }),
+  )
+  const row = text(appendixBRow(html, 'Proteins in the diet'))
+  assert.ok(/Deli chicken breast/.test(row), 'the food is named')
+  assert.ok(!/nothing else on the label/.test(row), 'no label claim over a food that has no label')
+  assert.ok(/nothing else recorded/.test(row), 'the true claim is about the record instead')
+})
+
+Deno.test('CUL-292 — a packaged food with a read panel keeps the label claim', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        mealItems: [mealItem({ foodLabel: 'Acme Duck', proteinSet: pset(['duck'], { complete: true }), format: 'dry_kibble' })],
+      },
+    }),
+  )
+  assert.ok(/nothing else on the label/.test(text(appendixBRow(html, 'Proteins in the diet'))))
+})
+
+Deno.test('CUL-292 — the home-food legend does not render over rows that show no marker', () => {
+  // The gate asked for `!complete`, but `proteinSetCell` returns an EMPTY cell when no protein
+  // was captured at all — so a bare table-scrap log produced the legend defining a marker the
+  // sheet never printed. That is the dangling reference the gate's own comment cites.
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        confounders: [
+          conf({ eventId: 'h1', foodLabel: 'Chicken off my plate', primaryProtein: null, proteinSet: pset([]), format: 'human_food', foodType: 'other' }),
+        ],
+      },
+    }),
+  )
+  const i = html.indexOf('Appendix C —')
+  const sub = text(html.slice(i, html.indexOf('</p>', html.indexOf('appx-sub', i))))
+  assert.ok(!/Home-prepared food has no panel/.test(sub), 'no legend for a marker no row carries')
 })

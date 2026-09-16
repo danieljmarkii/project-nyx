@@ -798,7 +798,16 @@ function proteinSetPhrase(v: ProteinSetView, markOffTrial: boolean, kind: PanelK
       kind === 'home' ? 'home food &mdash; other ingredients not recorded' : 'ingredient list not captured'
     }</span>`
   }
-  if (rest.length === 0) return `${head} <span class="rnote">&middot; nothing else on the label</span>`
+  // THE COMPLETE BRANCH READS `kind` TOO (adversarial review). D10 licenses exactly one
+  // negative form, "nothing else on the label", and it is a claim about a LABEL — false of a
+  // home food whether or not the owner typed out what went in. Ignoring `kind` here put that
+  // all-clear on appendix B over a food appendix C simultaneously called "no ingredient panel
+  // at all": one document, two opposite claims, with the reassuring one on the earlier sheet.
+  if (rest.length === 0) {
+    return `${head} <span class="rnote">&middot; ${
+      kind === 'home' ? 'nothing else recorded' : 'nothing else on the label'
+    }</span>`
+  }
   return `${head}, also ${rest.map(mark).join(', ')}`
 }
 
@@ -5244,14 +5253,17 @@ function dietMeds(snap: ReportSnapshot): string {
     // reassurance the intake floor forbids) and it carries more than the adverb could.
     const intake = mc ? summariseIntake(mc.intakeBreakdown) : { kind: 'none' as const }
     const modeBit =
-      intake.kind === 'mode'
+      intake.kind === 'typical'
         ? `, typically &ldquo;${h(intakeLabel(intake.rating).toLowerCase())}&rdquo;`
-        : intake.kind === 'split'
-          ? `, split between ${joinList(
-              intake.tied.map(
-                (t) => `&ldquo;${h(intakeLabel(t.rating).toLowerCase())}&rdquo; &times;${num(t.count)}`,
-              ),
-            )}`
+        : intake.kind === 'itemised'
+          ? // EVERY rating, with its count — never a summary that deletes one. "Split between
+            // A and B" read as an exhaustive partition and dropped the untied ratings, which
+            // on a real spread meant two refusals vanished from page 1 under a sentence
+            // claiming to account for the set. This is the same list appendix E prints, so
+            // the two surfaces are now literally identical on a record of one food.
+            `, ratings: ${intake.ratings
+              .map((t) => `&ldquo;${h(intakeLabel(t.rating).toLowerCase())}&rdquo; &times;${num(t.count)}`)
+              .join(' &middot; ')}`
           : ''
     const typically = mc ? `${modeBit} &mdash; ${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} fully eaten` : ''
     // #8 — NAME the foods fed as meals (e.g. a wet diet) on page 1, not just a bare "N discrete
@@ -6907,7 +6919,12 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // first artifact buried at the very end — then the grouped exposure rows below it.
   // CUL-292 — gated like every other legend line on this document (the B-599 rule): a
   // definition for a marker the sheet does not carry sends a reader hunting for it.
-  const homeMarkerNote = snap.provenance.confounders.some((c) => c.format === 'human_food' && !c.proteinSet.complete)
+  // `proteins.length > 0` is load-bearing, not belt-and-braces: `proteinSetCell` renders an
+  // EMPTY cell when nothing was captured, so a bare table-scrap log carries no marker for this
+  // sentence to define — the dangling reference the gate exists to prevent, via the gate.
+  const homeMarkerNote = snap.provenance.confounders.some(
+    (c) => c.format === 'human_food' && !c.proteinSet.complete && c.proteinSet.proteins.length > 0,
+  )
     ? ' Home-prepared food has no panel to read at all, so those rows say what is missing instead: the proteins shown are the ones the owner recorded.'
     : ''
   const tally = Object.entries(snap.provenance.proteinExposureTally)
@@ -7030,9 +7047,13 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // a far worse capture rate than the record has. Each count now states itself against its
   // own denominator, and the home-food blind spot is named rather than folded away: it is a
   // real limitation, just a different one.
+  //
+  // Both numbers come from `proteinTimeline` rather than from subtraction here: the ratio is
+  // over the feedings that HAD a panel to read, and deriving its denominator as
+  // "total minus home food" quietly re-admitted the no-protein feedings the numerator skips.
   const pt = snap.proteinTimeline
-  const packagedTotal = pt.totalFeedings - pt.humanFoodFeedings
-  const packagedIncomplete = pt.incompleteFeedings - pt.incompleteHumanFoodFeedings
+  const packagedTotal = pt.packagedReadable
+  const packagedIncomplete = pt.packagedUnread
   const floorParts: string[] = []
   if (packagedIncomplete > 0 && packagedTotal > 0) {
     // "packaged" is PRESENT-ONLY: it exists to separate these feedings from the home-prepared
@@ -7052,7 +7073,12 @@ function offDietAppendix(snap: ReportSnapshot): string {
       } no ingredient panel at all &mdash; the proteins shown are what the owner recorded, and seasoning, stock and cooking fat are not.`,
     )
   }
-  if (tally && floorParts.length > 0) {
+  // NOT GATED ON THE TALLY. The block used to hang off a non-empty `tally`, so on the one
+  // record where the protein blind spot is TOTAL — everything fed off-diet is home food, or
+  // carries no captured protein, so there is nothing to tally — the report disclosed it
+  // nowhere at all. A disclosure that disappears exactly when its subject is everything is
+  // the failure class this whole pass is about.
+  if (floorParts.length > 0) {
     tallyParts.push(`<b>A floor, not a total:</b> ${floorParts.join(' ')}`)
   }
   if (hasTrial && freeFedProteins.length) {
@@ -7457,7 +7483,9 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
           ? 'Not counted among the off-diet exposures in appendix&nbsp;C, so the protein tally there does not describe them.'
           : veh.countedInTally === veh.feedings
             ? 'Counted among the off-diet exposures in appendix&nbsp;C.'
-            : `${num(veh.countedInTally)} of these are counted among the off-diet exposures in appendix&nbsp;C; the rest are not, so the protein tally there does not describe those.`
+            : `${num(veh.countedInTally)} of these ${
+                veh.countedInTally === 1 ? 'is' : 'are'
+              } counted among the off-diet exposures in appendix&nbsp;C; the rest are not, so the protein tally there does not describe those.`
       }`
     : // An absence here means different things depending on whether there was anything to
       // give, and the vet is reading this row to decide whether a pill vehicle is in play.
