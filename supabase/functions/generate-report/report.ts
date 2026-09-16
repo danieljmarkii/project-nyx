@@ -1743,7 +1743,15 @@ export interface DietSummary {
    * a grazing cat's discrete meals read "typically partly eaten" instead of a scary "0 of N fully
    * eaten." Descriptive texture, never a scored completion figure and never reassurance.
    */
-  mealCompletion: { ratedMeals: number; finishedMeals: number; rate: number; intakeMode: IntakeRating | null } | null
+  mealCompletion: {
+    ratedMeals: number
+    finishedMeals: number
+    rate: number
+    /** The ratings behind the figures, for `summariseIntake` — the one predicate both
+     *  surfaces read. Replaces the pre-CUL-497 `intakeMode`, whose null could not tell a
+     *  tie from an empty set. */
+    intakeBreakdown: Array<{ rating: IntakeRating; count: number }>
+  } | null
   /**
    * Grouped rated-meal items (#7/#8) — the actual foods eaten AS MEALS (e.g. a wet diet),
    * grouped by food item like Appendix B treats: label · protein · feeding count · date span ·
@@ -1758,11 +1766,11 @@ export interface DietSummary {
     count: number
     firstDate: string | null
     lastDate: string | null
-    intakeMode: IntakeRating | null
     /**
      * EVERY rating this food was given, with its count — not the mode (B-532).
      *
-     * `intakeMode` is a strict plurality, so it can stand for as little as 51% of the
+     * The mode field this note was written against is GONE (CUL-497); the warning is why.
+     * A strict plurality can stand for as little as 51% of the
      * feedings and it SILENTLY DELETES the rest: the cold read hit a cat whose 38
      * feedings of a prescribed diet rendered one word, "Refused", while four "ate some"
      * meals — the only intake this animal took in nineteen days — had no cell on the
@@ -2070,6 +2078,13 @@ export interface SymptomLogPhenotype {
 export interface SymptomLogEntry {
   eventId: string
   type: string
+  /**
+   * This incident was photographed and READ, and the owner has since removed the photo
+   * (CUL-634). The row still carries its full photo findings — the analysis outlives the
+   * image — so without the marker the appendix showed a complete read beside an appendix
+   * that said one photo was gone, and named neither.
+   */
+  photoRemoved: boolean
   occurredAt: string
   occurredAtConfidence: OccurredAtConfidence | null
   occurredAtEarliest: string | null
@@ -2471,7 +2486,23 @@ export interface ReportSnapshot {
    * never silently contradicts Appendix A's "Photo:" lines / the phenotype counts (which are
    * analysis-scoped). Appendix E renders when `incidentPhotos.length > 0 OR this > 0`.
    */
-  incidentPhotosAnalyzedNoRetained: number
+  /**
+   * Incidents that WERE photographed and read, whose photo the owner has since removed
+   * (CUL-634) — the list, not a count, because the disclosure has to name them.
+   *
+   * The count alone left a vet with "1 further incident" on the photos sheet and an unmarked
+   * full photo read on appendix A, with no way to join the two: the cross-check the
+   * disclosure exists to enable was the one thing it did not support. The list is built in
+   * the same pass that used to produce the count, so the number in the sentence and the
+   * incidents named beside it can never disagree (C-4) — and `SymptomLogEntry.photoRemoved`
+   * is set from this same set, so the appendix A marker cannot drift from either.
+   *
+   * It is a SUPERSET of the rows appendix A can mark: this pass runs over every deduped
+   * observation type, and appendix A lists the report's symptom types, so a normal stool
+   * with a removed photo is counted and named here with no row to mark. That is why the
+   * disclosure names dates rather than relying on the marker alone.
+   */
+  incidentPhotosRemoved: Array<{ eventId: string; type: string; occurredAt: string }>
   /**
    * CUL-875 — the owner's daily looks: the page-1 line, the graph and the appendix.
    * NULL when no look falls in the window (no designed empty state, deliberately — a
@@ -2514,28 +2545,46 @@ function mealFoodLabel(
   return form ? `${name} (${form})` : name
 }
 
+export type { IntakeRating }
+
 /**
- * The strict-plurality intake rating across a set of rated meals (R2-3), or null when the set is
- * empty OR two ratings tie for the top count (no honest "typically X"). Deterministic; used only
- * for descriptive texture on the free-fed feeding line. On a tie we return null rather than pick a
- * side — and we never break the tie toward the calmer rating, so this can't manufacture reassurance.
+ * What a set of rated meals supports SAYING about it (CUL-497) — the one predicate behind
+ * page 1's "typically …" clause and appendix E's intake cell.
+ *
+ * Its ancestor, `strictPluralityIntake`, returned a rating or NULL, and null carried two
+ * unrelated meanings: "the ratings tie, so there is no honest typical" and "there are no
+ * ratings at all". Every consumer then had to guess which, and each guessed differently —
+ * appendix E rendered an em-dash indistinguishable from *not recorded*, and page 1 simply
+ * dropped the clause, so ninety rated meals on a chronic-GI patient could reach the page as
+ * one dash beside a silence. Three states, named, is the whole fix: a caller can no longer
+ * collapse two of them by accident.
+ *
+ *   none    no rating at all — the ONLY state the em-dash is for
+ *   mode    a strict plurality, and an honest "typically X"
+ *   split   a tie: the tied ratings with their counts, so the page states the split
+ *           rather than picking a side
+ *
+ * THE TIE IS NEVER BROKEN, in either direction. Breaking it toward the calmer rating would
+ * manufacture reassurance, which the intake floor forbids outright; breaking it toward the
+ * worse one would manufacture a finding. The split is the honest render and it is also the
+ * more informative one — "evenly split between finishing and refusing" is a clinical picture
+ * no single adverb can carry.
  */
-function strictPluralityIntake(ratings: IntakeRating[]): IntakeRating | null {
-  const counts = new Map<IntakeRating, number>()
-  for (const r of ratings) counts.set(r, (counts.get(r) ?? 0) + 1)
-  let mode: IntakeRating | null = null
-  let modeN = 0
-  let tie = false
-  for (const [r, c] of counts) {
-    if (c > modeN) {
-      mode = r
-      modeN = c
-      tie = false
-    } else if (c === modeN) {
-      tie = true
-    }
-  }
-  return tie ? null : mode
+export type IntakeSummary =
+  | { kind: 'none' }
+  | { kind: 'mode'; rating: IntakeRating }
+  | { kind: 'split'; tied: Array<{ rating: IntakeRating; count: number }> }
+
+export function summariseIntake(
+  breakdown: ReadonlyArray<{ rating: IntakeRating; count: number }>,
+): IntakeSummary {
+  let top = 0
+  for (const b of breakdown) if (b.count > top) top = b.count
+  if (top === 0) return { kind: 'none' }
+  // `intakeBreakdownOf` orders along the intake SCALE, not by count, so a split comes out of
+  // here in the same order appendix E prints it — the two surfaces list one tie identically.
+  const tied = breakdown.filter((b) => b.count === top)
+  return tied.length === 1 ? { kind: 'mode', rating: tied[0].rating } : { kind: 'split', tied: [...tied] }
 }
 
 /**
@@ -3602,10 +3651,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // free-fed grazer's discrete meals, never a scored figure. A tie yields null (no honest "typical").
   // NOTE: this is descriptive display data only — it does NOT touch the intake-decline engine or the
   // fully-eaten anchor (detection.ts / lastFullMealIso), which the clinical-guardrails floor protects.
-  const intakeMode = strictPluralityIntake(ratedMeals.map((e) => e.meal!.intakeRating as IntakeRating))
+  const mealCompletionBreakdown = intakeBreakdownOf(
+    ratedMeals.map((e) => e.meal!.intakeRating as IntakeRating),
+  )
   const mealCompletion =
     ratedMeals.length > 0
-      ? { ratedMeals: ratedMeals.length, finishedMeals, rate: finishedMeals / ratedMeals.length, intakeMode }
+      ? {
+          ratedMeals: ratedMeals.length,
+          finishedMeals,
+          rate: finishedMeals / ratedMeals.length,
+          intakeBreakdown: mealCompletionBreakdown,
+        }
       : null
 
   // Grouped rated-meal items (#7/#8) — surface the ACTUAL foods eaten as meals (e.g. a wet diet),
@@ -3677,7 +3733,6 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       count: g.count,
       firstDate: g.firstDate,
       lastDate: g.lastDate,
-      intakeMode: strictPluralityIntake(g.intakes),
       intakeBreakdown: intakeBreakdownOf(g.intakes),
       proteinSet: g.proteinSet,
     }))
@@ -4068,6 +4123,40 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
 
   // ── Provenance / appendices (§3.9, appendix A/B/C) ───────────────────────────
+  // Hoisted above its consumers (it is a pure index over the input) because CUL-634's
+  // removed-photo set is needed by appendix A's rows as well as by the photos appendix.
+  const attachmentsByEvent = new Map<string, ReportAttachmentInput[]>()
+  for (const at of input.attachments ?? []) {
+    const arr = attachmentsByEvent.get(at.eventId)
+    if (arr) arr.push(at)
+    else attachmentsByEvent.set(at.eventId, [at])
+  }
+
+  // CUL-634 — ONE set behind the count, the names and the appendix A marker. An incident
+  // whose photo the owner removed after it was read keeps its AI read (the app deletes the
+  // attachment row and the storage object, never `event_ai_analysis`), so the read still
+  // prints on appendix A and still counts in the phenotype figures while no image exists.
+  // Computed once here rather than inside the photo loop below, so the sentence's number,
+  // the incidents it names and the rows that carry the marker cannot disagree (C-4).
+  const incidentPhotosRemoved: ReportSnapshot['incidentPhotosRemoved'] = []
+  for (const e of windowEvents) {
+    if (!DEDUP_OBSERVATION_TYPES.has(e.type)) continue
+    // Attachments are unioned across every member of a de-duplicated bout, exactly as the
+    // photo loop does it: a photo logged on a dropped twin still belongs to the survivor.
+    let retained = false
+    for (const mid of e.memberEventIds) {
+      if ((attachmentsByEvent.get(mid)?.length ?? 0) > 0) {
+        retained = true
+        break
+      }
+    }
+    if (retained) continue
+    if (buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)) {
+      incidentPhotosRemoved.push({ eventId: e.id, type: e.type, occurredAt: e.occurredAt })
+    }
+  }
+  const photoRemovedIds = new Set(incidentPhotosRemoved.map((r) => r.eventId))
+
   const symptomLog: SymptomLogEntry[] = windowEvents
     .filter((e) => REPORT_SYMPTOM_SET.has(e.type))
     .map((e) => {
@@ -4078,6 +4167,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       return {
         eventId: e.id,
         type: e.type,
+        photoRemoved: photoRemovedIds.has(e.id),
         occurredAt: e.occurredAt,
         occurredAtConfidence: e.occurredAtConfidence,
         occurredAtEarliest: e.occurredAtEarliest,
@@ -4385,21 +4475,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // (§3 Appendix E). The present-only safety class is derived from the SAME per-incident phenotype
   // the symptom log + safety band use (single source), so a blood/foreign photo that leads the
   // safety band is exactly the one flagged here. `dataUri` is populated by the index.ts I/O shell.
-  const attachmentsByEvent = new Map<string, ReportAttachmentInput[]>()
-  for (const at of input.attachments ?? []) {
-    const arr = attachmentsByEvent.get(at.eventId)
-    if (arr) arr.push(at)
-    else attachmentsByEvent.set(at.eventId, [at])
-  }
   const incidentPhotos: IncidentPhoto[] = []
-  // An incident with a persisted AI read but NO retained photo — the owner removed the photo after
-  // it was analysed (app/event/[id].tsx deletes the event_attachments row + storage object but keeps
-  // the event_ai_analysis). Its read still prints in Appendix A + counts in the vomit phenotype, so
-  // Appendix E MUST disclose it or the "every photographed incident" appendix silently contradicts
-  // them — the exact "photos silently missing → erodes trust" failure the §4 all-photos rule exists
-  // to prevent (vet-report-cold-read finding, PR 7). Counted here for the disclosure; no card (there
-  // is no image to show).
-  let incidentPhotosAnalyzedNoRetained = 0
+  // An incident with a persisted AI read but NO retained photo — the owner removed the photo
+  // after it was analysed (app/event/[id].tsx deletes the event_attachments row + storage
+  // object but keeps the event_ai_analysis). Its read still prints in Appendix A + counts in
+  // the vomit phenotype, so the photos appendix MUST disclose it or the "every photographed
+  // incident" claim silently contradicts them — the exact "photos silently missing → erodes
+  // trust" failure the §4 all-photos rule exists to prevent (vet-report-cold-read, PR 7).
+  // The disclosure's data is `incidentPhotosRemoved`, built above; this loop only skips.
   for (const e of windowEvents) {
     if (!DEDUP_OBSERVATION_TYPES.has(e.type)) continue
     // Union attachments across every member of a de-duplicated bout (§5.11) — a photo logged on a
@@ -4409,10 +4492,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const a = attachmentsByEvent.get(mid)
       if (a) atts.push(...a)
     }
-    if (atts.length === 0) {
-      if (buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)) incidentPhotosAnalyzedNoRetained++
-      continue
-    }
+    // No retained photo: there is no card to build. The DISCLOSURE for these incidents is
+    // `incidentPhotosRemoved`, computed once above so it cannot drift from this loop.
+    if (atts.length === 0) continue
     atts.sort(
       (a, b) =>
         a.sortOrder - b.sortOrder ||
@@ -4795,7 +4877,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     provenance,
     incompletePulls: input.incompletePulls ?? [],
     incidentPhotos,
-    incidentPhotosAnalyzedNoRetained,
+    incidentPhotosRemoved,
     noticed,
   }
 }

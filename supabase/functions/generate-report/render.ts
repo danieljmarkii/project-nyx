@@ -72,6 +72,9 @@ import type {
   NoticedBlock,
   NoticedWordCount,
 } from './report.ts'
+// The ONE intake predicate (CUL-497) — a value import, because both surfaces on this page
+// have to reach the same verdict about the same ratings.
+import { summariseIntake } from './report.ts'
 import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -5233,10 +5236,23 @@ function dietMeds(snap: ReportSnapshot): string {
     // meals are explicitly "also". Composition is the guard, as it is on the B-494 band; a
     // number a clinician can check beats an adverb they cannot.
     //
-    // A NULL MODE STAYS NULL. `strictPluralityIntake` returns null on a tie precisely so the
-    // report never picks a side, and defaulting it to "ate it all" here would invent the
-    // reassuring reading — the same defect one line up, committed by the fix for it.
-    const modeBit = mc && mc.intakeMode ? `, typically &ldquo;${h(intakeLabel(mc.intakeMode).toLowerCase())}&rdquo;` : ''
+    // A TIE IS SAID, NOT SWALLOWED (CUL-497). The predecessor read a mode that was null on
+    // BOTH a tie and an empty set, and rendered silence for both — so an evenly split record
+    // was indistinguishable from one nobody had summarised, on the one page-1 intake clause
+    // a vet reads for texture. `summariseIntake` separates the two, and the tie renders as
+    // the split: it picks no side (breaking it toward the calmer rating would manufacture
+    // reassurance the intake floor forbids) and it carries more than the adverb could.
+    const intake = mc ? summariseIntake(mc.intakeBreakdown) : { kind: 'none' as const }
+    const modeBit =
+      intake.kind === 'mode'
+        ? `, typically &ldquo;${h(intakeLabel(intake.rating).toLowerCase())}&rdquo;`
+        : intake.kind === 'split'
+          ? `, split between ${joinList(
+              intake.tied.map(
+                (t) => `&ldquo;${h(intakeLabel(t.rating).toLowerCase())}&rdquo; &times;${num(t.count)}`,
+              ),
+            )}`
+          : ''
     const typically = mc ? `${modeBit} &mdash; ${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} fully eaten` : ''
     // #8 — NAME the foods fed as meals (e.g. a wet diet) on page 1, not just a bare "N discrete
     // meals": the first real artifact left Nyx's wet food unnamed and cited a non-existent appendix.
@@ -5910,7 +5926,7 @@ function mealsAppendixPointer(snap: ReportSnapshot): string {
  * page 1 / Appendix A — vet-report-cold-read finding, PR 7).
  */
 function hasIncidentPhotos(snap: ReportSnapshot): boolean {
-  return snap.incidentPhotos.length > 0 || snap.incidentPhotosAnalyzedNoRetained > 0
+  return snap.incidentPhotos.length > 0 || snap.incidentPhotosRemoved.length > 0
 }
 function photosAppendixLetter(snap: ReportSnapshot): string {
   return mealsAppendixVisible(snap) ? 'F' : 'E'
@@ -6072,7 +6088,11 @@ function symptomLogRow(e: SymptomLogEntry, tz: string | null, windowEndDayKey: s
   const dup = e.dupCount > 1 ? ` <span class="conf">${e.dupCount} logs</span>` : ''
   let noteCell = e.notes ? h(e.notes) : ''
   if (e.phenotype) {
-    noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype)}</span>`
+    // CUL-634 — the read outlives the image, so a row can show a complete photo analysis
+    // over a photo that no longer exists. Said HERE, beside the findings it qualifies,
+    // rather than only as a count on the photos sheet: the findings are what a vet acts on.
+    const gone = e.photoRemoved ? ` <span class="conf">photo no longer retained</span>` : ''
+    noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype)}${gone}</span>`
   }
   return `<tr><td class="num">${h(dateCell)}</td><td>${h(symptomLabel(e.type))}</td><td>${occCell}${dup}</td><td class="num">${h(
     logged,
@@ -6242,8 +6262,11 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
       //
       // Below-baseline ratings carry weight, matching `intakeLogRow` one table down, so
       // the concerning share reads at a glance without becoming a score or a verdict.
+      // THE DASH IS THE PREDICATE'S `none` AND NOTHING ELSE (CUL-497). Written as a length
+      // check it was correct today and one refactor away from meaning "no honest typical"
+      // again, which is how this cell came to stand for ninety rated meals.
       const typical =
-        i.intakeBreakdown.length > 0
+        summariseIntake(i.intakeBreakdown).kind !== 'none'
           ? i.intakeBreakdown
               .map((b) => {
                 const cell = `${h(intakeLabel(b.rating))} &times;${num(b.count)}`
@@ -6380,14 +6403,22 @@ function incidentPhotosAppendix(snap: ReportSnapshot): string {
       : ''
   // The analysis↔attachment divergence disclosure (cold-read fix): reconciles a vet's "N reads but
   // fewer photos?" cross-check without dropping the reads (which remain in Appendix A).
-  const removed = snap.incidentPhotosAnalyzedNoRetained
+  // CUL-634 — NAME THEM. The count alone gave a vet "1 further incident" here and an
+  // unmarked full photo read on appendix A, with no way to join the two — so the
+  // cross-check this sentence exists to enable was the one thing it did not support. The
+  // dates and types come from the same list the number does, so they cannot disagree.
+  const removedList = snap.incidentPhotosRemoved
+  const removed = removedList.length
+  const removedNames = joinList(
+    removedList.map((r) => `${h(symptomLabel(r.type))} ${h(fmtLocalDay(r.occurredAt, snap.timezone))}`),
+  )
   const removedNote =
     removed > 0
       ? ` ${num(removed)} further incident${removed === 1 ? ' was' : 's were'} photographed and read but ${
           removed === 1 ? 'its' : 'their'
-        } photo is no longer retained (removed by the owner); the read${removed === 1 ? '' : 's'} ${
-          removed === 1 ? 'remains' : 'remain'
-        } in appendix&nbsp;A.`
+        } photo is no longer retained (removed by the owner): ${removedNames}. The read${
+          removed === 1 ? '' : 's'
+        } ${removed === 1 ? 'remains' : 'remain'} in appendix&nbsp;A, marked there.`
       : ''
   const lead =
     n > 0

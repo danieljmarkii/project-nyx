@@ -32,6 +32,7 @@ import type {
   ProteinSetView,
   DietSummary,
   IntakeLogEntry,
+  IntakeRating,
 } from './report.ts'
 
 /**
@@ -271,7 +272,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       conditions: [],
     },
     incidentPhotos: [],
-    incidentPhotosAnalyzedNoRetained: 0,
+    incidentPhotosRemoved: [],
     // CUL-875 — null is the shape of "this account never answered", which is every
     // pre-N-6 fixture. The Noticed cases build their own block.
     noticed: null,
@@ -347,6 +348,7 @@ function logEntry(over: Partial<SymptomLogEntry> & { type: string; occurredAt: s
     occurredAtEarliest: over.occurredAtEarliest ?? null,
     occurredAtLatest: over.occurredAtLatest ?? null,
     loggedAt: over.loggedAt ?? over.occurredAt,
+    photoRemoved: over.photoRemoved ?? false,
     severity: over.severity ?? null,
     notes: over.notes ?? null,
     dupCount: over.dupCount ?? 1,
@@ -632,10 +634,10 @@ Deno.test('#7/#8 meals-only Appendix E — grouped meal foods render WITHOUT an 
       diet: {
         ...base().diet,
         freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
-        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.107, intakeMode: 'some' },
+        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.107, intakeBreakdown: [{ rating: 'all', count: 3 }, { rating: 'some', count: 25 }] },
         mealItems: [
-          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: null, count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
-          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', proteinSet: pset(['salmon']), format: null, count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'most', intakeBreakdown: [{ rating: 'most', count: 10 }] },
+          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: null, count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeBreakdown: [{ rating: 'some', count: 18 }] },
+          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', proteinSet: pset(['salmon']), format: null, count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeBreakdown: [{ rating: 'most', count: 10 }] },
         ],
       },
     }),
@@ -663,10 +665,10 @@ Deno.test('#7/#8 — meals appendix E renders the grouped meal foods even with N
         trial: null,
         freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-05-01', activeUntil: null , isShared: false }],
         intakeNotDirectlyObserved: true,
-        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.1, intakeMode: 'some' },
+        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.1, intakeBreakdown: [{ rating: 'all', count: 3 }, { rating: 'some', count: 25 }] },
         mealItems: [
-          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: null, count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 18 }] },
-          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', proteinSet: pset(['turkey']), format: null, count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'some', intakeBreakdown: [{ rating: 'some', count: 10 }] },
+          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), format: null, count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeBreakdown: [{ rating: 'some', count: 18 }] },
+          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', proteinSet: pset(['turkey']), format: null, count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeBreakdown: [{ rating: 'some', count: 10 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -1432,7 +1434,7 @@ Deno.test('diet/meds render an active trial, the human-food confounder line, and
         },
         freeFed: [],
         intakeNotDirectlyObserved: false,
-        mealCompletion: { ratedMeals: 80, finishedMeals: 78, rate: 0.975, intakeMode: 'all' },
+        mealCompletion: { ratedMeals: 80, finishedMeals: 78, rate: 0.975, intakeBreakdown: [{ rating: 'all', count: 78 }, { rating: 'some', count: 2 }] },
         mealItems: [],
         treats: { count: 7, distinctItems: 2 },
         humanFood: { count: 3, days: 3, items: [{ date: '2026-05-19', label: 'Roast chicken' }] },
@@ -2049,7 +2051,7 @@ Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
     diet: {
       ...base().diet,
       trial: { foodLabel: 'Hydrolyzed', primaryProtein: 'hydrolyzed', proteinSet: pset(['hydrolyzed']), startedAt: '2026-05-01', targetDurationDays: 56, vetName: null },
-      mealCompletion: { ratedMeals: 50, finishedMeals: 48, rate: 0.96, intakeMode: 'all' },
+      mealCompletion: { ratedMeals: 50, finishedMeals: 48, rate: 0.96, intakeBreakdown: [{ rating: 'all', count: 48 }, { rating: 'some', count: 2 }] },
       mealItems: [],
     },
     atAGlance: { ...base().atAGlance, trialDaysLogged: 38, primarySymptom: { type: 'vomit', count: 5 }, totalSymptomIncidents: 5 },
@@ -2073,7 +2075,7 @@ Deno.test('R2-3 — a free-fed grazer with NO decline flag gets a descriptive fe
       ...base().diet,
       freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
       intakeNotDirectlyObserved: true,
-      mealCompletion: { ratedMeals: 25, finishedMeals: 0, rate: 0, intakeMode: 'some' },
+      mealCompletion: { ratedMeals: 25, finishedMeals: 0, rate: 0, intakeBreakdown: [{ rating: 'some', count: 25 }] },
       mealItems: [],
     },
     safetyFlags: [],
@@ -2114,7 +2116,7 @@ Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (
       ...base().diet,
       freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
       intakeNotDirectlyObserved: true,
-      mealCompletion: { ratedMeals: 25, finishedMeals: 5, rate: 0.2, intakeMode: 'some' },
+      mealCompletion: { ratedMeals: 25, finishedMeals: 5, rate: 0.2, intakeBreakdown: [{ rating: 'all', count: 5 }, { rating: 'some', count: 20 }] },
       mealItems: [],
     },
     safetyFlags: [flag],
@@ -2646,7 +2648,7 @@ Deno.test('PR7 render — the removed-photo divergence is DISCLOSED in Appendix 
   const html = renderReport(
     base({
       incidentPhotos: [photo({ eventId: 'v1', occurredAt: '2026-06-20T14:00:00Z', dataUri: PNG_1PX })],
-      incidentPhotosAnalyzedNoRetained: 3,
+      incidentPhotosRemoved: [{ eventId: 'rm0', type: 'vomit', occurredAt: '2026-06-10T12:00:00Z' }, { eventId: 'rm1', type: 'vomit', occurredAt: '2026-06-11T12:00:00Z' }, { eventId: 'rm2', type: 'vomit', occurredAt: '2026-06-12T12:00:00Z' }],
     }),
   )
   assert.ok(html.includes('Appendix E — Incident photos'))
@@ -2656,7 +2658,7 @@ Deno.test('PR7 render — the removed-photo divergence is DISCLOSED in Appendix 
 })
 
 Deno.test('PR7 render — Appendix E STILL renders (disclosure only, no grid) when every photo was removed', () => {
-  const html = renderReport(base({ incidentPhotos: [], incidentPhotosAnalyzedNoRetained: 2 }))
+  const html = renderReport(base({ incidentPhotos: [], incidentPhotosRemoved: [{ eventId: 'rm0', type: 'vomit', occurredAt: '2026-06-10T12:00:00Z' }, { eventId: 'rm1', type: 'vomit', occurredAt: '2026-06-11T12:00:00Z' }] }))
   assert.ok(html.includes('Appendix E — Incident photos'), 'the section renders to reconcile the phenotype counts')
   assert.ok(/No photographed incident in this window still has a retained photo/.test(html))
   assert.ok(!html.includes('<div class="phgrid">'), 'no empty photo grid element when there are no cards')
@@ -2947,7 +2949,7 @@ Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else o
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Marketing Duck', primaryProtein: 'duck', proteinSet: pset(['duck']), format: null, count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
+          { foodLabel: 'Marketing Duck', primaryProtein: 'duck', proteinSet: pset(['duck']), format: null, count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeBreakdown: [{ rating: 'all', count: 12 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -2976,7 +2978,7 @@ Deno.test('B-351 D10 — a genuinely READ single-protein panel DOES earn the com
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Real Duck', primaryProtein: 'duck', proteinSet: pset(['duck'], { complete: true }), format: null, count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 12 }] },
+          { foodLabel: 'Real Duck', primaryProtein: 'duck', proteinSet: pset(['duck'], { complete: true }), format: null, count: 12, firstDate: '2026-06-01', lastDate: '2026-06-20', intakeBreakdown: [{ rating: 'all', count: 12 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -2999,7 +3001,7 @@ Deno.test('B-351 §9 condition 2 — the primary renders first and in bold, seco
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Duck Dinner', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken', 'salmon'], { complete: true }), format: null, count: 4, firstDate: '2026-06-01', lastDate: '2026-06-04', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 4 }] },
+          { foodLabel: 'Duck Dinner', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken', 'salmon'], { complete: true }), format: null, count: 4, firstDate: '2026-06-01', lastDate: '2026-06-04', intakeBreakdown: [{ rating: 'all', count: 4 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -3021,7 +3023,7 @@ Deno.test('B-351 — an empty set says the reading is missing, never that the fo
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Unknown Food', primaryProtein: null, proteinSet: pset([]), format: null, count: 3, firstDate: '2026-06-01', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 3 }] },
+          { foodLabel: 'Unknown Food', primaryProtein: null, proteinSet: pset([]), format: null, count: 3, firstDate: '2026-06-01', lastDate: '2026-06-03', intakeBreakdown: [{ rating: 'all', count: 3 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -3276,8 +3278,8 @@ Deno.test('B-351 — duplicate library rows under one label do not inherit each 
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), format: null, count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 2 }] },
-          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), format: null, count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), format: null, count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeBreakdown: [{ rating: 'all', count: 2 }] },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), format: null, count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeBreakdown: [{ rating: 'all', count: 1 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -3302,7 +3304,7 @@ Deno.test('B-351 — owner-entered food labels and protein keys are HTML-escaped
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
         mealItems: [
-          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), format: null, count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeMode: 'all', intakeBreakdown: [{ rating: 'all', count: 1 }] },
+          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), format: null, count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeBreakdown: [{ rating: 'all', count: 1 }] },
         ],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
@@ -3594,7 +3596,7 @@ Deno.test('B-532 — Appendix E states EVERY intake rating, never the mode alone
         trial: null,
         freeFed: [],
         intakeNotDirectlyObserved: false,
-        mealCompletion: { ratedMeals: 38, finishedMeals: 0, rate: 0, intakeMode: 'refused' },
+        mealCompletion: { ratedMeals: 38, finishedMeals: 0, rate: 0, intakeBreakdown: [{ rating: 'refused', count: 38 }] },
         mealItems: [
           {
             foodLabel: "Hill's z/d",
@@ -3604,7 +3606,6 @@ Deno.test('B-532 — Appendix E states EVERY intake rating, never the mode alone
             count: 38,
             firstDate: '2026-06-01',
             lastDate: '2026-06-19',
-            intakeMode: 'refused',
             intakeBreakdown: [
               { rating: 'some', count: 4 },
               { rating: 'refused', count: 34 },
@@ -5663,7 +5664,6 @@ function mealItem(o: Partial<DietSummary['mealItems'][number]> = {}): DietSummar
     count: o.count ?? 12,
     firstDate: o.firstDate ?? '2026-06-01',
     lastDate: o.lastDate ?? '2026-07-01',
-    intakeMode: o.intakeMode ?? 'all',
     intakeBreakdown: o.intakeBreakdown ?? [{ rating: 'all', count: 12 }],
   }
 }
@@ -5695,11 +5695,11 @@ function appendixEHasPerMealTable(html: string): boolean {
 Deno.test('R-13 item 1 — no pointer promises itemisation, and every one matches the appendix it points at', () => {
   const b = base()
   const grouped = base({
-    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeMode: 'all' } },
+    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeBreakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }] } },
     provenance: { ...b.provenance, intakeLog: [], intakeLogScope: null, intakeLogHiddenOlder: 0 },
   })
   const unfinished = base({
-    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeMode: 'all' } },
+    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeBreakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }] } },
     provenance: {
       ...b.provenance,
       intakeLog: [intakeRow({ intakeRating: 'picked' })],
@@ -5708,7 +5708,7 @@ Deno.test('R-13 item 1 — no pointer promises itemisation, and every one matche
     },
   })
   const flagged = base({
-    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeMode: 'all' } },
+    diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeBreakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }] } },
     provenance: {
       ...b.provenance,
       intakeLog: [intakeRow({ intakeRating: 'all', isLastFullMeal: true })],
@@ -5746,7 +5746,7 @@ Deno.test('R-13 item 1 — the pointer is ONE string, so the promises cannot dri
   const b = base()
   const html = renderReport(
     base({
-      diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeMode: 'all' } },
+      diet: { ...b.diet, mealItems: [mealItem()], mealCompletion: { ratedMeals: 12, finishedMeals: 10, rate: 10 / 12, intakeBreakdown: [{ rating: 'all', count: 10 }, { rating: 'some', count: 2 }] } },
       provenance: { ...b.provenance, intakeLog: [intakeRow()], intakeLogScope: 'unfinished', intakeLogHiddenOlder: 0 },
     }),
   )
@@ -5932,4 +5932,212 @@ Deno.test('R-13 item 4 — an all-home-food record makes no packaged claim at al
   const t = text(html).replace(/&nbsp;/g, ' ')
   assert.ok(!/packaged off-diet feeding/.test(t), 'no packaged ratio over a record with no packaged food')
   assert.ok(/1 home-prepared feeding/.test(t), 'the home-food limitation still stands')
+})
+
+// ── R-13 item 5 (CUL-497) — a tie is not a dash, and the dash is reserved for no data ──
+//
+// STATE OF THE DEFECT ON MAIN, MEASURED RATHER THAN INHERITED. CUL-497 describes two
+// mechanisms and B-532 has since fixed one: appendix E's cell renders the full
+// `intakeBreakdown`, not the mode, so ninety rated meals can no longer collapse to one
+// em-dash — that dash now fires only on an empty breakdown, which IS no data. Round 7
+// likewise restored the "N of M fully eaten" figure to the free-fed branch. What remains is
+// the third: on a TIE the page-1 adverb is silently dropped, so a reader cannot tell "the
+// record is evenly split" from "nobody computed one", and the two surfaces describe the same
+// rating multiset at different densities with nothing tying them together.
+
+const intakeSet = (b: Array<{ rating: IntakeRating; count: number }>) => b
+
+
+Deno.test('R-13 item 5 — a tie renders the SPLIT, and never picks the calmer side', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        freeFed: [{ foodLabel: 'Dry bowl', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-04-03', activeUntil: null, isShared: false }],
+        mealItems: [mealItem({ count: 12, intakeBreakdown: intakeSet([{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }]) })],
+        mealCompletion: { ratedMeals: 12, finishedMeals: 6, rate: 0.5, intakeBreakdown: intakeSet([{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }]) },
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/split between/.test(t), 'the tie is named as a split')
+  assert.ok(/Ate it all/i.test(t) && /Refused/i.test(t), 'both tied ratings are shown')
+  assert.ok(!/typically/.test(t), 'no side is picked')
+  assert.ok(/6 of 12 fully eaten/.test(t), 'and the count still prints')
+})
+
+Deno.test('R-13 item 5 — a strict plurality still reads "typically", unchanged', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        freeFed: [{ foodLabel: 'Dry bowl', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-04-03', activeUntil: null, isShared: false }],
+        mealItems: [mealItem({ count: 12, intakeBreakdown: intakeSet([{ rating: 'all', count: 9 }, { rating: 'some', count: 3 }]) })],
+        mealCompletion: { ratedMeals: 12, finishedMeals: 9, rate: 0.75, intakeBreakdown: intakeSet([{ rating: 'all', count: 9 }, { rating: 'some', count: 3 }]) },
+      },
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/typically "ate it all"/i.test(t), 'a real plurality keeps the adverb')
+  assert.ok(!/split between/.test(t), 'and is not described as a split')
+})
+
+Deno.test('R-13 item 5 — the dash is reserved for genuinely no data, on both surfaces', () => {
+  const b = base()
+  // A food with meals logged but NONE rated: the one state that honestly has no intake.
+  const noData = renderReport(
+    base({ diet: { ...b.diet, mealItems: [mealItem({ count: 4, intakeBreakdown: [] })], mealCompletion: null } }),
+  )
+  const cells = appendixEMealRows(noData)
+  assert.equal(cells[0][4], '—', 'an unrated food renders the dash')
+
+  // A tie over the SAME surface must not.
+  const tie = renderReport(
+    base({
+      diet: {
+        ...b.diet,
+        mealItems: [mealItem({ count: 12, intakeBreakdown: intakeSet([{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }]) })],
+        mealCompletion: { ratedMeals: 12, finishedMeals: 6, rate: 0.5, intakeBreakdown: intakeSet([{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }]) },
+      },
+    }),
+  )
+  const tieCell = appendixEMealRows(tie)[0][4]
+  assert.ok(tieCell !== '—', 'a tie is never the dash')
+  assert.ok(/Ate it all ×6/.test(tieCell) && /Refused ×6/.test(tieCell), 'it shows every rating')
+})
+
+Deno.test('R-13 item 5 — ONE predicate: the two surfaces never disagree about the same ratings', () => {
+  const b = base()
+  const cases: Array<{ breakdown: Array<{ rating: IntakeRating; count: number }>; finished: number }> = [
+    { breakdown: [{ rating: 'all', count: 9 }, { rating: 'some', count: 3 }], finished: 9 },
+    { breakdown: [{ rating: 'all', count: 6 }, { rating: 'refused', count: 6 }], finished: 6 },
+    { breakdown: [{ rating: 'some', count: 4 }, { rating: 'picked', count: 4 }, { rating: 'refused', count: 4 }], finished: 0 },
+    { breakdown: [{ rating: 'refused', count: 12 }], finished: 0 },
+  ]
+  for (const { breakdown, finished } of cases) {
+    const total = breakdown.reduce((a, x) => a + x.count, 0)
+    const html = renderReport(
+      base({
+        diet: {
+          ...b.diet,
+          freeFed: [{ foodLabel: 'Dry bowl', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-04-03', activeUntil: null, isShared: false }],
+          mealItems: [mealItem({ count: total, intakeBreakdown: breakdown })],
+          mealCompletion: { ratedMeals: total, finishedMeals: finished, rate: finished / total, intakeBreakdown: breakdown },
+        },
+      }),
+    )
+    const t = plain(html)
+    const top = Math.max(...breakdown.map((x) => x.count))
+    const tied = breakdown.filter((x) => x.count === top)
+    if (tied.length > 1) {
+      assert.ok(/split between/.test(t), `tie of ${tied.length} should read as a split`)
+      assert.ok(!/typically/.test(t), 'and pick no side')
+    } else {
+      assert.ok(
+        new RegExp(`typically "${intakeLabelFor(tied[0].rating)}"`, 'i').test(t),
+        `a plurality should name ${tied[0].rating}`,
+      )
+    }
+    // Appendix E shows every rating whatever page 1 said, so the two can be reconciled.
+    const cell = appendixEMealRows(html)[0][4]
+    for (const x of breakdown) {
+      assert.ok(cell.includes(`×${x.count}`), `appendix E carries the ${x.rating} count`)
+    }
+  }
+})
+
+/** Appendix E's grouped meal rows, as cell text. */
+function appendixEMealRows(html: string): string[][] {
+  const start = html.indexOf('Appendix E — Meals &amp; intake')
+  assert.ok(start > -1, 'appendix E renders')
+  const body = html.slice(html.indexOf('<tbody>', start), html.indexOf('</tbody>', start))
+  return [...body.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) =>
+    [...m[1].matchAll(/<td[^>]*>([^]*?)<\/td>/g)].map((c) => plain(c[1]).replace(/\s+/g, ' ').trim()),
+  )
+}
+
+/** The owner-facing label for a rating, as the report prints it. */
+function intakeLabelFor(r: IntakeRating): string {
+  return { all: 'Ate it all', most: 'Ate most', some: 'Ate some', picked: 'Picked at it', refused: 'Refused' }[r]
+}
+
+// ── R-13 item 6 (CUL-634) — the owner-removed photo is named, not just counted ─────────
+//
+// The photos appendix disclosed "1 further incident was photographed and read but its photo
+// is no longer retained" without saying WHICH, while that incident's appendix A row showed a
+// full photo read with no marker at all. A vet cross-checking "N reads but fewer photos" had
+// a count on one sheet, an unmarked row on another, and no way to join them.
+
+Deno.test('R-13 item 6 — the appendix A row whose photo was removed says so', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: {
+        ...b.provenance,
+        totalSymptomIncidents: 2,
+        symptomLog: [
+          logEntry({
+            eventId: 'gone',
+            type: 'vomit',
+            occurredAt: '2026-06-20T14:00:00Z',
+            photoRemoved: true,
+            phenotype: { kind: 'vomit', status: 'completed', colour: 'yellow', contentsCategory: 'bile', consistency: 'foamy', bloodPresent: null, foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
+          }),
+          logEntry({
+            eventId: 'kept',
+            type: 'vomit',
+            occurredAt: '2026-06-21T14:00:00Z',
+            phenotype: { kind: 'vomit', status: 'completed', colour: 'yellow', contentsCategory: 'bile', consistency: 'foamy', bloodPresent: null, foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
+          }),
+        ],
+      },
+      incidentPhotosRemoved: [{ eventId: 'gone', type: 'vomit', occurredAt: '2026-06-20T14:00:00Z' }],
+    }),
+  )
+  const rows = appendixARows(html)
+  const gone = rows.find((r) => r[0] === 'Jun 20')
+  const kept = rows.find((r) => r[0] === 'Jun 21')
+  assert.ok(gone && kept, 'both rows render')
+  assert.ok(/no longer retained/i.test(gone.join(' ')), 'the removed-photo row is marked')
+  assert.ok(!/no longer retained/i.test(kept.join(' ')), 'a retained photo adds no marker')
+})
+
+Deno.test('R-13 item 6 — the photos appendix NAMES the removed incidents, and its count is their count', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      incidentPhotos: [
+        {
+          eventId: 'kept', type: 'vomit', occurredAt: '2026-06-21T14:00:00Z', dataUri: 'data:image/jpeg;base64,AAAA',
+          storagePath: 'pet/kept/1.jpg', occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null,
+          notes: null, safety: null,
+          phenotype: { kind: 'vomit', status: 'completed', colour: 'yellow', contentsCategory: 'bile', consistency: 'foamy', bloodPresent: null, foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
+        },
+      ],
+      incidentPhotosRemoved: [
+        { eventId: 'g1', type: 'vomit', occurredAt: '2026-06-20T14:00:00Z' },
+        { eventId: 'g2', type: 'diarrhea', occurredAt: '2026-06-12T09:00:00Z' },
+      ],
+    }),
+  )
+  const t = plain(html)
+  assert.ok(/2 further incidents/.test(t), 'the count still leads')
+  assert.ok(/Jun 20/.test(t) && /Jun 12/.test(t), 'and each one is dated, so a vet can join it to appendix A')
+  // The types use the report's own clinical labels, so the disclosure reads in the same
+  // vocabulary as the appendix A rows a vet is about to join it to.
+  assert.ok(/Vomiting Jun 20/.test(t), 'the vomiting incident, by its report label')
+  assert.ok(/Loose stool Jun 12/.test(t), 'and the loose stool by its own')
+})
+
+Deno.test('R-13 item 6 — no removed photo, no disclosure and no marker', () => {
+  const b = base()
+  const html = renderReport(
+    base({
+      provenance: { ...b.provenance, totalSymptomIncidents: 1, symptomLog: [logEntry({ type: 'vomit', occurredAt: '2026-06-21T14:00:00Z' })] },
+      incidentPhotosRemoved: [],
+    }),
+  )
+  assert.ok(!/no longer retained/i.test(plain(html)), 'a quiet record gains nothing')
 })

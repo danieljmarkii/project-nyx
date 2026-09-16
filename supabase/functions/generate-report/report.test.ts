@@ -20,6 +20,7 @@ import {
   resolveScope,
   FALLBACK_DAYS,
   INTAKE_LOG_CAP,
+  summariseIntake,
   type ReportInput,
   type ReportEventInput,
   type ReportAiAnalysisInput,
@@ -1595,7 +1596,7 @@ Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · 
   assert.equal(items[0].primaryProtein, 'chicken')
   assert.equal(items[0].firstDate, '2026-05-14', 'date span start')
   assert.equal(items[0].lastDate, '2026-06-10', 'date span end')
-  assert.equal(items[0].intakeMode, 'some', 'strict-plurality intake (2 some vs 1 all)')
+  assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'mode', rating: 'some' }, 'strict-plurality intake (2 some vs 1 all)')
   assert.equal(items[1].foodLabel, 'Instinct Turkey (Wet)') // B-568 — same rule on every appendix row
   assert.equal(items[1].count, 1)
   // The grouped total reconciles with mealCompletion (same ratedMeals set).
@@ -1812,7 +1813,7 @@ Deno.test('R2-2 — daysSinceLastEpisode is 0 when the most recent episode is th
   assert.equal(ag.daysSinceLastEpisode, 0, 'an episode today reads 0 days since — never negative')
 })
 
-Deno.test('R2-3 — mealCompletion.intakeMode is the strict plurality; a tie yields null', () => {
+Deno.test('R2-3 / CUL-497 — the intake summary is a plurality, a split, or nothing, and never a picked side', () => {
   const mealAt = (date: string, rating: 'all' | 'most' | 'some' | 'picked' | 'refused') =>
     makeEvent({
       type: 'meal',
@@ -1822,11 +1823,25 @@ Deno.test('R2-3 — mealCompletion.intakeMode is the strict plurality; a tie yie
   const plurality = assembleReport(
     baseInput({ events: [mealAt('2026-06-10', 'some'), mealAt('2026-06-11', 'some'), mealAt('2026-06-12', 'some'), mealAt('2026-06-13', 'all')] }),
   )
-  assert.equal(plurality.diet.mealCompletion?.intakeMode, 'some', 'the most common rating wins')
+  assert.deepEqual(
+    summariseIntake(plurality.diet.mealCompletion!.intakeBreakdown),
+    { kind: 'mode', rating: 'some' },
+    'the most common rating wins',
+  )
   const tied = assembleReport(
     baseInput({ events: [mealAt('2026-06-10', 'all'), mealAt('2026-06-11', 'all'), mealAt('2026-06-12', 'some'), mealAt('2026-06-13', 'some')] }),
   )
-  assert.equal(tied.diet.mealCompletion?.intakeMode, null, 'a tie has no honest "typical" — null, never a picked side')
+  // CUL-497 — the pre-existing contract, unchanged: a tie never picks a side. What changed
+  // is that it is now DISTINGUISHABLE from an empty set, which is what let one em-dash
+  // stand for ninety rated meals and a silence stand for an evenly split record.
+  assert.deepEqual(
+    summariseIntake(tied.diet.mealCompletion!.intakeBreakdown),
+    { kind: 'split', tied: [{ rating: 'all', count: 2 }, { rating: 'some', count: 2 }] },
+    'a tie is a split, listed along the intake scale',
+  )
+  const none = assembleReport(baseInput({ events: [] }))
+  assert.equal(none.diet.mealCompletion, null, 'no rated meal at all')
+  assert.deepEqual(summariseIntake([]), { kind: 'none' }, 'and an empty set is its own state, not the tie')
 })
 
 Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · count · span · typical intake)', () => {
@@ -1851,12 +1866,12 @@ Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · c
   // Sorted by count desc → chicken (3) then turkey (1).
   assert.equal(items[0].count, 3)
   assert.equal(items[0].primaryProtein, 'chicken')
-  assert.equal(items[0].intakeMode, 'some', 'strict-plurality typical intake across the grouped food (some 2 vs all 1)')
+  assert.deepEqual(summariseIntake(items[0].intakeBreakdown), { kind: 'mode', rating: 'some' }, 'strict-plurality typical intake across the grouped food (some 2 vs all 1)')
   assert.equal(items[0].firstDate, '2026-06-10')
   assert.equal(items[0].lastDate, '2026-06-14')
   assert.equal(items[1].count, 1)
   assert.equal(items[1].primaryProtein, 'turkey')
-  assert.equal(items[1].intakeMode, 'picked')
+  assert.deepEqual(summariseIntake(items[1].intakeBreakdown), { kind: 'mode', rating: 'picked' })
   // Reconciles with mealCompletion.ratedMeals — the SAME underlying set, never a double count.
   assert.equal(items.reduce((a, i) => a + i.count, 0), snap.diet.mealCompletion?.ratedMeals)
 })
@@ -2141,14 +2156,14 @@ Deno.test('PR7 photos — an analyzed vomit whose photo was REMOVED is disclosed
   )
   assert.equal(snap.incidentPhotos.length, 1, 'only the retained photo is a card')
   assert.equal(snap.incidentPhotos[0].eventId, 'kept')
-  assert.equal(snap.incidentPhotosAnalyzedNoRetained, 1, 'the removed-photo incident is counted for disclosure')
+  assert.equal(snap.incidentPhotosRemoved.length, 1, 'the removed-photo incident is counted for disclosure')
 })
 
 Deno.test('PR7 photos — a vomit with NO analysis and no photo is NOT counted as removed (never photographed)', () => {
   const noPhoto = makeEvent({ id: 'np', type: 'vomit', occurredAt: at('2026-06-20') })
   const snap = assembleReport(baseInput({ events: [noPhoto] })) // no analysis, no attachment
   assert.equal(snap.incidentPhotos.length, 0)
-  assert.equal(snap.incidentPhotosAnalyzedNoRetained, 0, 'an unphotographed incident is not a removed photo')
+  assert.equal(snap.incidentPhotosRemoved.length, 0, 'an unphotographed incident is not a removed photo')
 })
 
 Deno.test('PR7/B-246 slice — chronicity flag daysSinceLastEpisode agrees with the At-a-glance tile (local-day, no UTC drift)', () => {
