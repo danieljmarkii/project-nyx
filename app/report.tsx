@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Alert, Switch, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/theme';
-import { Header, PrimaryButton, SectionLabel } from '../components/ui';
+import { Header, PrimaryButton, SectionLabel, ThemedText } from '../components/ui';
 import { NightMoment } from '../components/brand/NightMoment';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { ChipGroup } from '../components/ui/ChipGroup';
@@ -13,6 +13,8 @@ import { usePetStore } from '../store/petStore';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
 import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
+import { readVetLibrary } from '../lib/vetDocumentLibrary';
+import { VET_FILES_ENTRY_ENABLED } from '../lib/vetFilesEntry';
 import {
   flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
   type VetReport, type VetReportParams,
@@ -35,6 +37,14 @@ import {
 // events that fall outside it ("nothing cropped to a good week", §6). The
 // disclosure is rendered *inside* the report HTML by render.ts — this screen only
 // picks the window; it never renders the disclosure itself.
+//
+// The send moment (R-16, CUL-998): the bar above "Send to vet" tells the owner what
+// the report is about to say to the vet, before it says it. Two lines, each only
+// when true of THIS report: that no allowed-food list is set for the running trial
+// (the report's own verdict, returned by the function — with `Set it up` beside
+// `Send anyway`, since the fix is the owner's own trial setup), and that the vet
+// documents saved on the profile do not travel with the PDF (CUL-457). Principle 1:
+// a line, never a form — the flow gains no decision it did not already have.
 //
 // A dedicated "Last 90 days" preset is deliberately NOT offered here: passing an
 // explicit 90-day window makes the server label the report "Custom range" (any
@@ -174,6 +184,55 @@ export default function ReportScreen() {
       token.cancelled = true;
     };
   }, [load]);
+
+  // R-16 (CUL-861) — `Set it up` leaves for the allowed-set screen; on the way back the
+  // report is rebuilt once, so the line and the document both reflect the list the owner
+  // just made (the pre-generate flush pushes the new rows first). The request lives in a
+  // REF and is cleared before the side effect, never in state (C-22: held in state, the
+  // already-scheduled passive effect re-enters with the pre-clear closure and fires
+  // twice). Cancelled on blur or when the params change underneath it, so a rebuild
+  // started here can never overwrite a newer one.
+  const regenerateOnFocus = useRef(false);
+  const onSetUpList = useCallback(() => {
+    regenerateOnFocus.current = true;
+    router.push('/trial-foods');
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!regenerateOnFocus.current) return undefined;
+      regenerateOnFocus.current = false;
+      const token = { cancelled: false };
+      load(token);
+      return () => {
+        token.cancelled = true;
+      };
+    }, [load]),
+  );
+
+  // R-16 (CUL-457) — does this pet have any saved vet document? Read locally, the same
+  // read the profile's Vet Files card makes. Three states on purpose (C-12): `null`
+  // until the read answers (or when it fails, or when Vet Files is not an entry point
+  // yet), and the line renders only on a POSITIVE answer — an absent line makes no claim,
+  // and the profile card carries the same truth for the owner who lands there instead.
+  const [hasVetDocuments, setHasVetDocuments] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!VET_FILES_ENTRY_ENABLED || !petId) {
+      setHasVetDocuments(null);
+      return undefined;
+    }
+    let cancelled = false;
+    readVetLibrary(petId)
+      .then((rows) => {
+        if (!cancelled) setHasVetDocuments(rows.length > 0);
+      })
+      .catch((e) => {
+        console.warn('[Report] vet-library read failed:', e);
+        if (!cancelled) setHasVetDocuments(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [petId]);
 
   const onShare = useCallback(async () => {
     if (!report) return;
@@ -400,13 +459,52 @@ export default function ReportScreen() {
                 Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
               </Text>
             )}
-            <PrimaryButton
-              // Disabled while regenerating — the visible report is the PREVIOUS
-              // window; never let the owner share a stale range to the vet.
-              label={sharing ? 'Preparing PDF…' : 'Send to vet'}
-              onPress={onShare}
-              disabled={sharing || regenerating}
-            />
+            {hasVetDocuments === true && (
+              // R-16 (CUL-457) — D14's truth at the moment it matters. The Vet Files card
+              // already says it on the profile; this is the screen where the owner is
+              // actually sending something, and both persona reviews assumed a saved
+              // document rode along. Same register as the photos line: a fact about what
+              // this document holds. Stops being true the day the paperclip (CUL-450)
+              // ships, at which point this line goes with it.
+              <ThemedText style={styles.barPhotos}>
+                Your saved vet documents aren’t part of this report.
+              </ThemedText>
+            )}
+            {report.trialAllowedListMissing ? (
+              // R-16 (CUL-861) — the report is about to tell the vet, more than once,
+              // that nothing was checked against an allowed-food list. Say it here
+              // first, with the fix beside the send. ONE send control in this state:
+              // `Send anyway` IS the send, labelled for what the owner just read —
+              // never a second button under "Send to vet". (Adjacent controls: neither
+              // button carries hitSlop, so the row's gap is the whole separation.)
+              <>
+                <ThemedText style={styles.barStale}>
+                  No allowed-food list is set for this trial, so the report can’t check feedings against it.
+                </ThemedText>
+                <View style={styles.gapActions}>
+                  <PrimaryButton
+                    label="Set it up"
+                    onPress={onSetUpList}
+                    variant="secondary"
+                    style={styles.gapAction}
+                  />
+                  <PrimaryButton
+                    label={sharing ? 'Preparing PDF…' : 'Send anyway'}
+                    onPress={onShare}
+                    disabled={sharing || regenerating}
+                    style={styles.gapAction}
+                  />
+                </View>
+              </>
+            ) : (
+              <PrimaryButton
+                // Disabled while regenerating — the visible report is the PREVIOUS
+                // window; never let the owner share a stale range to the vet.
+                label={sharing ? 'Preparing PDF…' : 'Send to vet'}
+                onPress={onShare}
+                disabled={sharing || regenerating}
+              />
+            )}
             <Text style={styles.barHint}>
               Creates a PDF you can email, message, or AirDrop to your vet.
             </Text>
@@ -602,5 +700,14 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     textAlign: 'center',
     lineHeight: 19,
+  },
+  // R-16 — the `Set it up · Send anyway` pair. Two equal halves so neither reads as
+  // the afterthought: the setup is the fix, the send is the owner's call.
+  gapActions: {
+    flexDirection: 'row',
+    gap: theme.space2,
+  },
+  gapAction: {
+    flex: 1,
   },
 });

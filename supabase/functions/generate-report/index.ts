@@ -62,7 +62,7 @@ import { renderReport } from './render.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
 // re-implemented so the pull is stretched for exactly the trial the block describes; two
 // copies of this test are what once anchored a window on an abandoned trial.
-import { selectReportTrial } from './trial.ts'
+import { selectReportTrial, trialAllowedListMissing } from './trial.ts'
 // B-568 — the same format-label map the app and report.ts render from (one copy,
 // two runtimes; a duplicate map here is the B-103 drift class).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
@@ -1645,6 +1645,13 @@ export async function generateReportForPet(
       photo_count: photoStats.total,
       photo_embedded: photoStats.embedded,
       photo_omitted: photoStats.omitted,
+      // R-16 (CUL-998 / CUL-861) — the report's own verdict that its trial has no
+      // allowed-food list, returned so the owner hears it on the report screen BEFORE
+      // Send, with a door to set the list up, rather than reading it in front of the vet.
+      // Scoped to a running trial and to the list's absence (never the unhydrated-set
+      // heuristic) — the reasons are on `trialAllowedListMissing`. The app treats an
+      // absent field as false, so a client built before this deploys shows nothing.
+      trial_allowed_list_missing: trialAllowedListMissing(snapshot.trial, nowMs, timezone),
     },
   }
 }

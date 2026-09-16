@@ -46,6 +46,7 @@ import {
   dayIndexOf,
   feedingWasFinished,
   interpretabilityStatement,
+  isTrialRunning,
   isWithinChallengeWindow,
   contaminationFindings,
   mayClaimAllMatched,
@@ -1522,4 +1523,52 @@ function dayIndexOfValue(value: string | null, timeZone: string | null): number 
 
 function dayKeyFromIndex(dayIndex: number): string {
   return new Date(dayIndex * MS_PER_DAY).toISOString().slice(0, 10)
+}
+
+// ── R-16 (CUL-998 / CUL-861) — the pre-send fact ─────────────────────────────
+//
+// The report tells the vet, more than once, when no allowed-food list was recorded
+// for the trial — and until R-16 it told the OWNER nothing before they tapped Send,
+// so Jordan learned about a setting she had never seen by reading it in front of her
+// vet. This is the report's own verdict, returned so the app can say it first.
+//
+// Two scopings, both deliberate:
+//
+//  • "MISSING" IS THE LIST'S ABSENCE, NOT THE HEURISTIC. `allowedSetUnavailable` has
+//    two arms: no `primary_diet` row (the list was never set up) OR a primary row that
+//    matched none of ≥10 feedings (the UNHYDRATED_SET_FLOOR guess that the set is a
+//    cold cache). The app pairs this fact with `Set it up`, and sending an owner to
+//    set up a list she already has is the wrong door — so only the first arm counts.
+//    The heuristic's caveat still prints on the report; that half is CUL-480.
+//
+//  • ONLY WHILE THE TRIAL IS RUNNING. `Set it up` opens the allowed-set screen, which
+//    resolves the RUNNING trial through the shared `isTrialRunning` (B-422's belief
+//    side) and says "isn't on a diet trial right now" otherwise. A trial that ended
+//    inside the report's 90-day grace still anchors the report and still prints the
+//    caveat, but there is nothing left for the owner to set up, so the pre-send line
+//    stays off rather than opening a door onto a screen that contradicts it. The same
+//    predicate on both sides is what keeps the door honest.
+export function trialAllowedListMissing(
+  trial: {
+    permittedFoods: readonly { role: TrialFoodRole }[]
+    startedAt: string
+    targetDurationDays: number
+    status: string
+    endedAt: string | null
+  } | null,
+  nowMs: number,
+  timeZone: string | null,
+): boolean {
+  if (!trial) return false
+  if (trial.permittedFoods.some((f) => f.role === 'primary_diet')) return false
+  return isTrialRunning(
+    {
+      startedAt: trial.startedAt,
+      targetDurationDays: trial.targetDurationDays,
+      status: trial.status,
+      endedAt: trial.endedAt,
+    },
+    nowMs,
+    timeZone ?? undefined,
+  )
 }
