@@ -4735,13 +4735,7 @@ Deno.test('CUL-993 A.1 — every running footer sits inside a section tail with 
   assert.ok(/\.foot\{page-break-before:avoid;break-before:avoid;\}/.test(html), 'the footer avoids a break before it (belt)')
 })
 
-Deno.test('CUL-993 A.1 — the Noticed appendix carries the running footer like every other sheet', () => {
-  // Proven through the section the Noticed tests already build: its <section> holds a footer.
-  const src = Deno.readTextFileSync(new URL('./render.ts', import.meta.url))
-  const fn = src.slice(src.indexOf('function noticedAppendix('), src.indexOf('function appendixBCD('))
-  assert.ok(/const noticedFoot = footer\(snap, `Appendix \$\{letter\} — Noticed/.test(fn), 'the Noticed appendix builds its footer')
-  assert.ok(/sectionTail\(\s*`<p class="appx-foot">/.test(fn), 'its closing paragraph anchors the footer')
-})
+// The Noticed appendix's footer is asserted on the rendered tree in noticed.test.ts (CUL-993 A.1).
 
 Deno.test('CUL-993 A.1 — the photo grid keeps only its last row with the footer; the rest still breaks between cards', () => {
   const photos = [1, 2, 3].map((n) => photo({ eventId: `ev-p${n}`, occurredAt: `2026-06-0${n}T10:00:00Z`, dataUri: PNG_1PX }))
