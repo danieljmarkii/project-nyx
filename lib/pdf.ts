@@ -47,6 +47,18 @@ export interface VetReport {
   // bytes themselves are already embedded in `html` (EXIF-stripped, downscaled server-side), so
   // they flow into both the in-app WebView and the on-device PDF with no extra client wiring.
   photoCount: number;
+  /**
+   * R-16 (CUL-998 / CUL-861) — the report's own verdict that the trial it describes is
+   * still running and has no allowed-food list, so nothing on it was checked against one.
+   * Returned by the function rather than re-derived here, because the line the owner reads
+   * before Send is a claim about THIS document, and a client re-read of the local mirror
+   * could name a different trial or a different day than the report did (C-4: one
+   * predicate both surfaces switch on).
+   *
+   * ABSENT ⇒ FALSE. A client built before the function deploys shows nothing, which is
+   * the pre-R-16 state — never a false "no list" over a report that did not say so.
+   */
+  trialAllowedListMissing: boolean;
 }
 
 // ── B-534 — the report's freshness gate ─────────────────────────────────────
@@ -161,6 +173,7 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
     endDate: typeof data.end_date === 'string' ? data.end_date : '',
     scopeBasis: typeof data.scope_basis === 'string' ? data.scope_basis : '',
     photoCount: typeof data.photo_count === 'number' ? data.photo_count : 0,
+    trialAllowedListMissing: data.trial_allowed_list_missing === true,
   };
 }
 

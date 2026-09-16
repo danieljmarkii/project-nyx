@@ -1242,6 +1242,59 @@ Deno.test('reachedLookbackIso: an INCOMPLETE pull reports the floor it REACHED, 
   assert.equal(reachedLookbackIso(asked, false, Date.parse('2025-06-01T00:00:00.000Z')), asked)
 })
 
+// ── R-16 (CUL-998 / CUL-861) — the response carries the pre-send fact ────────
+
+/** A trial row as the pull returns it, with the allowed set embedded. */
+function trialRow(over: Record<string, unknown> = {}) {
+  return {
+    id: 't1', food_item_id: null, started_at: '2026-06-22', target_duration_days: 56,
+    status: 'active', completed_at: null, ended_at: null, indication: 'gi',
+    outcome: null, outcome_notes: null, stopped_reason: null, food_label: 'Purina HA',
+    vet_name: null, target_protein: null, target_protein_set_at: null,
+    food_items: null, diet_trial_foods: [],
+    ...over,
+  }
+}
+
+Deno.test('generateReportForPet: a running trial with NO allowed list → trial_allowed_list_missing true', async () => {
+  const client = fakeClient({ ...PET_TABLES, diet_trials: { list: [trialRow()] }, events: { list: [] } })
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
+  assert.equal(res.status, 200)
+  assert.equal(res.body.scope_basis, 'diet_trial', 'the fixture anchors the report on the trial')
+  assert.equal(res.body.trial_allowed_list_missing, true)
+})
+
+Deno.test('generateReportForPet: a running trial WITH a primary_diet row → false', async () => {
+  const row = trialRow({
+    food_item_id: 'f1',
+    diet_trial_foods: [{
+      food_item_id: 'f1', food_label: 'Purina HA', role: 'primary_diet',
+      allowed_from: '2026-06-22', allowed_until: null,
+      food_items: { primary_protein: 'soy', proteins: ['soy'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'Purina', product_name: 'HA', format: 'kibble' },
+    }],
+  })
+  const client = fakeClient({ ...PET_TABLES, diet_trials: { list: [row] }, events: { list: [] } })
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
+  assert.equal(res.status, 200)
+  assert.equal(res.body.trial_allowed_list_missing, false)
+})
+
+Deno.test('generateReportForPet: an ended-in-grace trial with no list → false (the report keeps its caveat; the owner has no door)', async () => {
+  const row = trialRow({ status: 'completed', completed_at: '2026-06-27', ended_at: '2026-06-27' })
+  const client = fakeClient({ ...PET_TABLES, diet_trials: { list: [row] }, events: { list: [] } })
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
+  assert.equal(res.status, 200)
+  assert.equal(res.body.scope_basis, 'diet_trial', 'still the report\'s subject inside the grace')
+  assert.equal(res.body.trial_allowed_list_missing, false)
+})
+
+Deno.test('generateReportForPet: no trial at all → false, and the field is always present', async () => {
+  const client = fakeClient({ ...PET_TABLES, events: { list: [] } })
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE)
+  assert.equal(res.status, 200)
+  assert.equal(res.body.trial_allowed_list_missing, false)
+})
+
 // ── CUL-979 (R-5) — the household pull: the first read outside the subject pet's row ──
 //
 // Two facts, kept apart on purpose (the issue's own framing). (1) "This account holds
