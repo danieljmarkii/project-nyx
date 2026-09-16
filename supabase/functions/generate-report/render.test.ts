@@ -27,6 +27,7 @@ import type {
   MedicationHistoryEntry,
   MedicationHistoryTable,
   SymptomLogEntry,
+  ConcurrentChange,
   ConfounderExposure,
   IncidentPhoto,
   ProteinSetView,
@@ -1523,8 +1524,8 @@ Deno.test('a zero-count week renders a nub (never blank) + the GP-0 note names c
         }),
       ],
       concurrentChanges: [
-        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
-        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
       ],
     }),
   )
@@ -1543,8 +1544,8 @@ Deno.test('a standing pre-window intervention is named "ongoing" in the Reading-
       concurrentChanges: [
         // A steroid begun before the window, running throughout — no chart marker, but MUST
         // be named or the diet silently takes its credit (spec §4/B-117).
-        { kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: null },
-        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
+        { kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
       ],
     }),
   )
@@ -1561,7 +1562,7 @@ Deno.test('B-233 — a lone standing free-fed diet renders as context ("Present 
       concurrentChanges: [
         // A free-fed maintenance diet, null start (its logged date is a first-food-log, not a
         // real diet start — B-233). Must read as standing context, never "One change overlaps".
-        { kind: 'free_fed', label: 'Royal Canin Weight', startDate: null, bucketIndex: null, ongoing: true, endInWindow: null },
+        { kind: 'free_fed', label: 'Royal Canin Weight', startDate: null, bucketIndex: null, ongoing: true, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
       ],
     }),
   )
@@ -1688,9 +1689,9 @@ Deno.test('a confounder that ended mid-window reads "until <date>", never a fals
       symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [1, 1, 1], windowDays: 21 })],
       concurrentChanges: [
         // Pre-window start, stopped mid-window → must NOT read present-tense "ongoing since".
-        { kind: 'medication', label: 'Metronidazole', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-20' },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-20', endBucketIndex: 2, endIsDeclared: true },
         // Standing arrangement, start unrecorded, still active → "ongoing, start not recorded".
-        { kind: 'free_fed', label: 'Duck bowl', startDate: null, bucketIndex: null, ongoing: true, endInWindow: null },
+        { kind: 'free_fed', label: 'Duck bowl', startDate: null, bucketIndex: null, ongoing: true, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
       ],
     }),
   )
@@ -2157,12 +2158,600 @@ Deno.test('R2-6 — an intervention marker is a neutral "start ·" label (no ▲
         bucketStartDates: ['2026-04-03', '2026-04-10', '2026-04-17', '2026-04-24', '2026-05-01'],
       }),
     ],
-    concurrentChanges: [{ kind: 'medication', label: 'Metronidazole', startDate: '2026-04-20', bucketIndex: 2, ongoing: false, endInWindow: null }],
+    concurrentChanges: [{ kind: 'medication', label: 'Metronidazole', startDate: '2026-04-20', bucketIndex: 2, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true }],
   })
   const html = renderReport(snap)
   assert.ok(!html.includes('▲'), 'no triangle spike glyph on the chart')
   assert.ok(/med start &middot;/.test(html), 'neutral "start ·" marker label, naming its kind on the face')
-  assert.ok(/dashed vertical marks the <b>week<\/b> a diet, medication, or supplement started/i.test(html), 'chart legend line explains the marker is week-granular (B-496)')
+  assert.ok(/dashed vertical marks the <b>week<\/b> a treatment or diet change started/i.test(html), 'chart legend line explains the marker is week-granular (B-496)')
+})
+
+// ── R-14 (CUL-291): the trend chart marks intervention STOPS as well as starts ──────────
+//
+// The legend promised the week something "started" and delivered exactly that, so a drug
+// coming off mid-window was drawn by nothing while "Reading the trend" counted it as a
+// change — the chart and the sentence beside it disagreed about how many changes there were.
+// The clinical cost is the reading this makes possible: a steroid withdrawn as the flares
+// fell is the strongest argument the record holds for a diet working, and it was invisible.
+
+/** The chart SVG only — a page-wide `includes` cannot tell a chart glyph from a prose word. */
+function firstChart(html: string): string {
+  const m = /<svg viewBox="0 0 648 158".*?<\/svg>/s.exec(html)
+  assert.ok(m, 'the fixture renders a symptom chart')
+  return m[0]
+}
+
+/**
+ * Every `<line>` on the chart, with its BASE class separated from the `on` (inverted-ink)
+ * modifier. Matching `[a-z]+` was the first cut and it skipped every `class="mark on"` outright,
+ * which would have made each of the absence assertions below green over a real leak.
+ */
+function chartLines(svg: string): { cls: string; on: boolean; x1: number; y1: number; x2: number; y2: number }[] {
+  return [...svg.matchAll(/<line class="([a-z]+)( on)?" x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"\/>/g)].map(
+    (m) => ({ cls: m[1], on: m[2] !== undefined, x1: Number(m[3]), y1: Number(m[4]), x2: Number(m[5]), y2: Number(m[6]) }),
+  )
+}
+
+const stopWeeks = (over: Partial<SymptomAggregate> = {}): SymptomAggregate =>
+  aggregate({
+    type: 'vomit',
+    count: 6,
+    weeklyBuckets: [4, 1, 1, 0],
+    bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22'],
+    windowDays: 28,
+    ...over,
+  })
+
+Deno.test('R-14 — a course that STOPPED mid-window draws its own glyph and a dated "stop ·" label', () => {
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [stopWeeks()],
+        concurrentChanges: [
+          // The canonical case: a steroid begun BEFORE the window, withdrawn inside it. No
+          // start marker is possible — its only in-window transition is the stop.
+          {
+            kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null,
+            ongoing: true, endInWindow: '2026-05-12', endBucketIndex: 1, endIsDeclared: true,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/med stop &middot; May 12/.test(svg), 'the stop is labelled with its own date, naming its kind on the face')
+  const lines = chartLines(svg)
+  assert.ok(lines.some((l) => l.cls === 'markend'), 'the stop draws a rule of its own class, distinct from a start')
+  assert.ok(lines.some((l) => l.cls === 'markcap'), 'and a flat head — a second non-colour channel for a B&W photocopy (§5.8)')
+  assert.ok(!lines.some((l) => l.cls === 'mark'), 'a stop is NOT drawn as a start')
+  assert.ok(!svg.includes('▲'), 'still no triangle spike glyph (R2-6)')
+})
+
+Deno.test('R-14 — a starts-only window draws no stop glyph (the fixture that must stay clean)', () => {
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [stopWeeks()],
+        concurrentChanges: [
+          {
+            kind: 'medication', label: 'Metronidazole', startDate: '2026-05-12', bucketIndex: 1,
+            ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+          },
+        ],
+      }),
+    ),
+  )
+  const lines = chartLines(svg)
+  assert.ok(lines.some((l) => l.cls === 'mark'), 'the start still draws')
+  assert.equal(lines.filter((l) => l.cls === 'markend' || l.cls === 'markcap').length, 0, 'nothing stopped, so no stop glyph')
+  assert.ok(!/stop/.test(svg), 'and no "stop" word anywhere on the chart')
+})
+
+Deno.test('R-14 — a course ending AFTER the window draws no stop (the window end is not a stop)', () => {
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [stopWeeks()],
+        concurrentChanges: [
+          // Still running at the window end. `endInWindow` is null BY CONSTRUCTION for this
+          // case (it is only set when the course stopped strictly before the end), and drawing
+          // a stop here would tell a vet a drug was withdrawn when it is still on board — the
+          // direction of error that ends a treatment.
+          {
+            kind: 'medication', label: 'Prednisolone', startDate: '2026-05-12', bucketIndex: 1,
+            ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.equal(chartLines(svg).filter((l) => l.cls === 'markend' || l.cls === 'markcap').length, 0, 'no stop glyph for a course still running')
+  assert.ok(/med start &middot; May 12/.test(svg), 'its start still marks')
+})
+
+Deno.test('R-14 — a start and a stop in ONE week draw both rules and print both labels, in date order', () => {
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [stopWeeks()],
+        concurrentChanges: [
+          {
+            kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-09', bucketIndex: 1,
+            ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+          },
+          {
+            kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null,
+            ongoing: true, endInWindow: '2026-05-13', endBucketIndex: 1, endIsDeclared: true,
+          },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/diet start &middot; May 9; med stop &middot; May 13/.test(svg), 'both labels print — neither is dropped to make room')
+  const lines = chartLines(svg)
+  const start = lines.find((l) => l.cls === 'mark')
+  const stop = lines.find((l) => l.cls === 'markend')
+  assert.ok(start && stop, 'both rules are drawn')
+  assert.notEqual(start.x1, stop.x1, 'they step apart rather than overprinting each other')
+  // May 9 is before May 13, so the start sits LEFT. A position that contradicted the printed
+  // dates would be a false claim for free; the step asserts order only, never a day.
+  assert.ok(start.x1 < stop.x1, 'the earlier transition sits left of the later one')
+  // Both rules must sit inside the bucket's own slot, or the pair reads as two weeks (B-496).
+  const slot = (628 - 40) / 4
+  assert.ok(Math.abs(start.x1 - stop.x1) < slot / 2, 'and close enough that the pair still reads as ONE week (B-496)')
+})
+
+Deno.test('R-14 — several stops in one week list their dates; past three, the count and the week', () => {
+  const stopper = (label: string, day: string, bucket: number) => ({
+    kind: 'medication' as const, label, startDate: '2026-03-01', bucketIndex: null,
+    ongoing: true, endInWindow: day, endBucketIndex: bucket, endIsDeclared: true,
+  })
+  const two = firstChart(
+    renderReport(base({ symptoms: [stopWeeks()], concurrentChanges: [stopper('A', '2026-05-09', 1), stopper('B', '2026-05-11', 1)] })),
+  )
+  assert.ok(/stops &middot; May 9, May 11/.test(two), 'two stops in a week name both dates (the CUL-982 rule, mirrored)')
+  const same = firstChart(
+    renderReport(base({ symptoms: [stopWeeks()], concurrentChanges: [stopper('A', '2026-05-09', 1), stopper('B', '2026-05-09', 1)] })),
+  )
+  assert.ok(/2 stops &middot; May 9/.test(same), 'two stops on ONE day say so once, with the count — never "May 9, May 9"')
+  const four = firstChart(
+    renderReport(
+      base({
+        symptoms: [stopWeeks()],
+        concurrentChanges: [9, 10, 11, 12].map((d) => stopper(`d${d}`, `2026-05-${d}`, 1)),
+      }),
+    ),
+  )
+  assert.ok(/4 stops this week/.test(four), 'past three, the label says the count and the week — never one date for four')
+})
+
+Deno.test('R-14 — the chart marks EXACTLY the changes "Reading the trend" counts (one predicate, C-4)', () => {
+  // A mid-trial addition to the allowed list is a diet change by the legend's own definition,
+  // and it was the case both surfaces got wrong in opposite directions: the chart drew nothing
+  // and the sentence did not count it, so the report was quietly one change short of the truth.
+  const html = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        {
+          kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0,
+          ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+        },
+        {
+          kind: 'diet_allowed', label: 'Dentastix', startDate: '2026-05-09', bucketIndex: 1,
+          ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+        },
+        {
+          kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null,
+          ongoing: true, endInWindow: '2026-05-16', endBucketIndex: 2, endIsDeclared: true,
+        },
+        // Standing context: present throughout, no dated transition. Counted by NEITHER surface.
+        {
+          kind: 'free_fed', label: 'Kibble', startDate: null, bucketIndex: null,
+          ongoing: true, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+        },
+      ],
+    }),
+  )
+  const svg = firstChart(html)
+  const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/3 changes overlap this window/.test(text), 'the sentence counts the three dated transitions')
+  // …and the chart carries a mark for each of those three, no more and no fewer.
+  const drawn = [...svg.matchAll(/<text class="ann"[^>]*>([^<]*)<\/text>/g)]
+    .map((m) => m[1])
+    .filter((t) => !/nothing logged/.test(t))
+  assert.deepEqual(
+    drawn.sort(),
+    ['diet start &middot; May 2', 'med stop &middot; May 16', 'permitted &middot; May 9'].sort(),
+    'one mark per counted change — the allowed-list addition included, the standing bowl excluded',
+  )
+  assert.ok(/Present during this window: free-fed Kibble/.test(text), 'the standing bowl is context, not a change')
+  assert.ok(!/Kibble/.test(svg), 'and it draws no mark')
+})
+
+Deno.test('R-14 — the legend names both glyphs and every marked date; absent when nothing is marked', () => {
+  const html = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        {
+          kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0,
+          ongoing: false, endInWindow: '2026-05-20', endBucketIndex: 2, endIsDeclared: true,
+        },
+        {
+          kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null,
+          ongoing: true, endInWindow: '2026-05-16', endBucketIndex: 2, endIsDeclared: true,
+        },
+      ],
+    }),
+  )
+  assert.ok(
+    /a flat-headed vertical marks the <b>week<\/b> one stopped:/.test(html),
+    'the legend teaches the stop glyph, not just the start',
+  )
+  assert.ok(/the trial diet RC HP from May 2 to May 20/.test(html), 'a change marked at both ends names both dates')
+  // The pre-window start is NOT repeated here: there is no vertical for it, and a legend that
+  // named it would send a reader hunting the chart for a line that is not on it (B-599).
+  assert.ok(/the medication Prednisolone, stopped May 16/.test(html), 'a stop-only change names only its stop')
+  assert.ok(!/Prednisolone from Mar 1/.test(html), 'its pre-window start belongs to the prose, not the marker legend')
+
+  // The gate is the same predicate: a window whose only intervention is standing draws no
+  // marks, so it carries no legend to explain them.
+  const standingOnly = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        {
+          kind: 'medication', label: 'Apoquel', startDate: '2026-03-01', bucketIndex: null,
+          ongoing: true, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+        },
+      ],
+    }),
+  )
+  assert.ok(!/class="chartlegend"/.test(standingOnly), 'no marks drawn ⇒ no legend explaining them')
+  assert.equal(chartLines(firstChart(standingOnly)).filter((l) => /^mark/.test(l.cls)).length, 0, 'and no marks')
+})
+
+Deno.test('R-14 — the stop is never given a cause: no sentence attributes the fall to the withdrawal', () => {
+  const html = renderReport(
+    base({
+      // Flares fall 4 → 1 → 1 → 0 across the window, and the steroid comes off in week 2. The
+      // reading a vet can now DRAW from the chart is exactly the one the page must never WRITE.
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        {
+          kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0,
+          ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+        },
+        {
+          kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null,
+          ongoing: true, endInWindow: '2026-05-12', endBucketIndex: 1, endIsDeclared: true,
+        },
+      ],
+    }),
+  )
+  // Scoped to the trend SECTION, not the page: "because" is legitimate prose elsewhere (the
+  // allowed-list count explains itself with one), and a page-wide scan would be a test that
+  // passes or fails on a section it is not about.
+  const from = html.indexOf('Symptom frequency')
+  assert.ok(from > 0, 'the trend section renders')
+  const to = html.indexOf('<h2', from + 1)
+  const text = html.slice(from, to > 0 ? to : undefined).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/Reading the trend/.test(text), 'the slice really is the trend section, note included')
+  for (const causal of [
+    /because/i, /due to/i, /caused/i, /as the steroid/i, /after stopping/i, /since stopping/i,
+    /suggests the diet/i, /consistent with the diet working/i, /improv\w+ after/i, /response to/i,
+  ]) {
+    assert.ok(!causal.test(text), `no causal caption on the trend (${causal})`)
+  }
+  assert.ok(
+    /cannot be attributed to any one of them alone/.test(text),
+    'the associational caution is what the note says, unchanged',
+  )
+})
+
+// ── R-14 round 2: what the adversarial pass and the cold read broke ─────────────────────
+
+const adHoc = (label: string, from: string, to: string, endBucket: number): ConcurrentChange => ({
+  kind: 'medication', label, startDate: from, bucketIndex: 0, ongoing: false,
+  endInWindow: to, endBucketIndex: endBucket, endIsDeclared: false,
+})
+
+Deno.test('R-14 — an end the owner never DECLARED draws no stop glyph, and is never called "stopped"', () => {
+  // The adversarial pass's highest-severity finding. An ad-hoc course has no regimen row, so its
+  // span ends at the last dose IN THE RECORD — which an owner who keeps giving a drug and stops
+  // logging it produces exactly as an owner who stopped it does. §4.4's lifetime table refuses to
+  // let silence fill that field over the same dose rows; this is the surface that has to agree.
+  const html = renderReport(
+    base({ symptoms: [stopWeeks()], concurrentChanges: [adHoc('Apoquel', '2026-05-02', '2026-05-16', 2)] }),
+  )
+  const svg = firstChart(html)
+  assert.equal(chartLines(svg).filter((l) => l.cls === 'markend' || l.cls === 'markcap').length, 0, 'no stop glyph, because a glyph cannot hedge')
+  assert.ok(/med start &middot; May 2/.test(svg), 'its start still marks — the change is still a change')
+  const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/last dose logged May 16/.test(text), 'the date is still reported, with the verb the record supports')
+  assert.ok(!/Apoquel \(medication\) \(started May 2, stopped/.test(text), 'never "stopped" over logging silence')
+  assert.ok(!/stopped May 16/.test(text), 'nor anywhere else in the note')
+  assert.ok(!/Apoquel.*, stopped May 16/.test(html), 'and the legend does not name a stop the chart did not draw')
+})
+
+Deno.test('R-14 — a DECLARED end still draws and still reads "stopped" (the undeclared rule is not a blanket)', () => {
+  const html = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [{ ...adHoc('Prednisolone', '2026-05-02', '2026-05-16', 2), endIsDeclared: true }],
+    }),
+  )
+  assert.ok(chartLines(firstChart(html)).some((l) => l.cls === 'markend'), 'a declared end draws its stop')
+  assert.ok(/started May 2, stopped May 16/.test(html.replace(/<[^>]*>/g, ' ')), 'and reads as a stop')
+})
+
+Deno.test('R-14 — a permission is never spoken as an exposure ("permitted", never "started")', () => {
+  // A row on the allowed list records that a food became permitted, not that it was fed. Saying
+  // "started" manufactures a food challenge with a negative result over zero trials, which a vet
+  // can rationally read as "those were fine, keep them".
+  const html = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        {
+          kind: 'diet_allowed', label: 'Dentastix', startDate: '2026-05-09', bucketIndex: 1,
+          ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
+        },
+      ],
+    }),
+  )
+  const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/Dentastix \(an allowed food\) \(permitted from May 9\)/.test(text), 'the note says permitted')
+  assert.ok(/the allowed food Dentastix, permitted from May 9/.test(text), 'and so does the legend, with the verb attached')
+  assert.ok(!/Dentastix.* \(started/.test(text) && !/Dentastix on May 9/.test(text), 'never "started", never a bare date under a "started" sentence')
+  assert.ok(/permitted &middot; May 9/.test(firstChart(html)), 'and the chart face says permitted, not "diet added"')
+})
+
+Deno.test('R-14 — a marker crossing a bar inverts its ink, and is painted AFTER the bar', () => {
+  // The cold read measured the prednisolone stop as a ~3px stub: markers were emitted before the
+  // bars and the bar fill is near-black, so every rule crossing a column was painted out. It is
+  // worst exactly where it matters — an intervention starts in the week with the most events,
+  // because that is why it was started.
+  const svg = firstChart(
+    renderReport(
+      base({
+        // bucket 0 is the axis maximum, so its bar runs the full plot height: no headroom at all.
+        symptoms: [aggregate({
+          type: 'vomit', count: 7, weeklyBuckets: [4, 2, 1, 0],
+          bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22'], windowDays: 28,
+        })],
+        concurrentChanges: [
+          {
+            kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null,
+            ongoing: true, endInWindow: '2026-05-03', endBucketIndex: 0, endIsDeclared: true,
+          },
+        ],
+      }),
+    ),
+  )
+  const barTop = Number(/<rect class="bar" x="[\d.]+" y="([\d.]+)"/.exec(svg)?.[1])
+  assert.ok(Number.isFinite(barTop), 'the fixture draws a bar')
+  const over = chartLines(svg).filter((l) => l.cls === 'markend' && l.on)
+  assert.ok(over.length > 0, 'the stretch crossing the bar is drawn paper-on-ink')
+  const visible = over.reduce((n, l) => n + (l.y2 - l.y1), 0)
+  assert.ok(visible > 40, `the rule stays legible down the bar (${visible}px, was a ~3px stub)`)
+  assert.ok(over.every((l) => l.y1 >= barTop - 0.01), 'and only the stretch actually over the bar inverts')
+  assert.ok(svg.indexOf('class="markend') > svg.indexOf('class="bar"'), 'markers paint after the bars, or the inversion is painted out in turn')
+})
+
+Deno.test('R-14 — marker labels never overprint; they shorten, and the row keeps every mark', () => {
+  // On the real clean fixture two marks three days apart landed in adjacent buckets and their
+  // labels ran together into "med start · Jundiet added · Jun 8" — garbled text on a clinical
+  // figure, which costs the whole page its credibility.
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [stopWeeks()],
+        concurrentChanges: [
+          { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+          { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-09', bucketIndex: 1, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+          { kind: 'diet_allowed', label: 'Dentastix', startDate: '2026-05-16', bucketIndex: 2, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        ],
+      }),
+    ),
+  )
+  // Same advance model the emitter lays out with: if the two ever disagree the guard is measuring
+  // a different page than the one that ships.
+  const spans = [...svg.matchAll(/<text class="ann" x="([\d.]+)" y="11" text-anchor="(\w+)">([^<]*)<\/text>/g)].map((m) => {
+    const plain = m[3].replace(/&middot;/g, '·').replace(/&ndash;/g, '–')
+    const w = plain.length * 5.6 + 3
+    const x = Number(m[1])
+    return m[2] === 'end' ? { lo: x - w, hi: x } : { lo: x, hi: x + w }
+  })
+  assert.equal(spans.length, 3, 'all three marks keep a label — degrading beats dropping')
+  const sorted = [...spans].sort((a, b) => a.lo - b.lo)
+  for (let i = 1; i < sorted.length; i++) {
+    assert.ok(sorted[i].lo >= sorted[i - 1].hi, `label ${i} starts after label ${i - 1} ends (no overprint)`)
+  }
+})
+
+Deno.test('R-14 — a week whose stop precedes its start reads in the drawn order, not starts-first', () => {
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [stopWeeks()],
+        concurrentChanges: [
+          // Pred ends May 9; ciclosporin begins May 13. Same bucket, stop FIRST.
+          { kind: 'medication', label: 'Pred', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-09', endBucketIndex: 1, endIsDeclared: true },
+          { kind: 'medication', label: 'Ciclo', startDate: '2026-05-13', bucketIndex: 1, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        ],
+      }),
+    ),
+  )
+  assert.ok(/med stop &middot; May 9; med start &middot; May 13/.test(svg), 'the earlier transition is named first')
+  const lines = chartLines(svg)
+  const stop = lines.find((l) => l.cls === 'markend')
+  const start = lines.find((l) => l.cls === 'mark')
+  assert.ok(stop && start, 'both rules drawn')
+  assert.ok(stop.x1 < start.x1, 'and the earlier transition is DRAWN first, so the label order matches the rule order')
+})
+
+Deno.test('R-14 — a label never states fewer marks than the week holds', () => {
+  // Four stops across three distinct days rendered "stops · May 16, May 17, May 18" — three dates
+  // for four marks, CUL-982 item 4's own defect reproduced on the new lane.
+  const stopper = (label: string, day: string) => ({
+    kind: 'medication' as const, label, startDate: '2026-03-01', bucketIndex: null,
+    ongoing: true, endInWindow: day, endBucketIndex: 1, endIsDeclared: true,
+  })
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [stopWeeks()],
+        concurrentChanges: [stopper('A', '2026-05-09'), stopper('B', '2026-05-09'), stopper('C', '2026-05-10'), stopper('D', '2026-05-11')],
+      }),
+    ),
+  )
+  assert.ok(/4 stops &middot; May 9, May 10, May 11/.test(svg), 'the count rides whenever it exceeds the dates')
+})
+
+Deno.test('R-14 — a drawn stop earns the withdrawal caveat; a starts-only window does not', () => {
+  // The stop marker carves out an apparently de-confounded stretch, and the caution's own
+  // rationale ("they overlap in time") tells a sharp reader the prohibition lapses there.
+  const withStop = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'medication', label: 'Pred', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-09', endBucketIndex: 1, endIsDeclared: true },
+      ],
+    }),
+  ).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/does not divide it: its effect can outlast its last day/.test(withStop), 'the caveat is stated where the marker is, and states its warrant')
+  assert.ok(/cannot be attributed to any one of them alone/.test(withStop), 'and the original caution still stands')
+  const startsOnly = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+      ],
+    }),
+  ).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(!/outlast its last day/.test(startsOnly), 'and is absent when nothing was withdrawn — a caveat for an absent mark is noise')
+
+  // A withdrawn PERMISSION is not an agent with an effect to outlast. Firing over one would be
+  // the exposure reading this pass removed from every other surface.
+  const permitOnly = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'diet_allowed', label: 'Dentastix', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-09', endBucketIndex: 1, endIsDeclared: true },
+      ],
+    }),
+  )
+  assert.ok(/markend/.test(firstChart(permitOnly)), 'the withdrawn permit still draws its stop')
+  assert.ok(
+    !/outlast its last day/.test(permitOnly.replace(/<[^>]*>/g, ' ')),
+    'but does not earn the carryover caveat — a permit is not an intervention with an effect',
+  )
+})
+
+Deno.test('R-14 — the legend DRAWS its two marks, not only describes them', () => {
+  const html = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        { kind: 'medication', label: 'Pred', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-09', endBucketIndex: 1, endIsDeclared: true },
+      ],
+    }),
+  )
+  const legend = /<div class="chartlegend">(.*?)<\/div>/s.exec(html)?.[1] ?? ''
+  const keys = [...legend.matchAll(/<svg [^>]*aria-hidden="true"[^>]*>(.*?)<\/svg>/gs)].map((m) => m[1])
+  assert.equal(keys.length, 2, 'both marks are drawn in the key — a 60-second scan should not translate prose into a glyph')
+  assert.ok(keys.every((k) => /stroke-dasharray/.test(k)), 'each key shows its rule')
+  assert.ok(keys.filter((k) => /stroke-width="2.25"/.test(k)).length === 1, 'exactly one of them carries the flat head')
+  assert.ok(/aria-hidden="true"/.test(legend), 'and the keys are hidden from assistive tech, which reads the words beside them')
+})
+
+Deno.test('R-14 — a paired rule that sits BESIDE a narrow bar is drawn in ink, never white on white', () => {
+  // The round-2 break, and the reason it was invisible to every fixture: `PAIR_STEP` is sized
+  // from the stop's head (10px), but `barW` SHRINKS with the window (`slot * 0.5`), so above ~14
+  // buckets a paired rule leaves the bar horizontally while its y still reads "below the bar
+  // top". Deciding the ink on y alone drew the whole rule body WHITE ON WHITE — round 1's
+  // occluded stub in the opposite ink, and worse, because the head survived to point at nothing.
+  //
+  // The window is NOT decorative. `resolveScope`'s `since_visit` rung has no upper bound, so a
+  // last visit fourteen weeks back is the ordinary annual-wellness case, and a start and a stop
+  // in one week is exactly the drug switch or taper this chart exists to show.
+  const WEEKS = 22 // a 151-day since-visit window
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [aggregate({
+          type: 'vomit',
+          count: 30,
+          weeklyBuckets: Array.from({ length: WEEKS }, (_, i) => (i === 3 ? 6 : 1)),
+          bucketStartDates: Array.from({ length: WEEKS }, (_, i) => `2026-0${1 + Math.floor(i / 28)}-${String((i % 28) + 1).padStart(2, '0')}`),
+          windowDays: WEEKS * 7,
+        })],
+        concurrentChanges: [
+          { kind: 'medication', label: 'Pred', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-01-23', endBucketIndex: 3, endIsDeclared: true },
+          { kind: 'medication', label: 'Ciclo', startDate: '2026-01-25', bucketIndex: 3, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        ],
+      }),
+    ),
+  )
+  // The bar this pair straddles, and the rules themselves.
+  const bars = [...svg.matchAll(/<rect class="bar" x="([\d.]+)" y="([\d.]+)" width="([\d.]+)"/g)].map((m) => ({
+    x: Number(m[1]), y: Number(m[2]), w: Number(m[3]),
+  }))
+  const tall = bars.reduce((a, b) => (b.y < a.y ? b : a))
+  assert.ok(tall.w < 2 * 10, `the fixture really is narrow enough to expose this (barW ${tall.w} < 2 x PAIR_STEP)`)
+  const lines = chartLines(svg).filter((l) => l.cls === 'mark' || l.cls === 'markend')
+  assert.ok(lines.length > 0, 'both rules draw')
+  for (const l of lines) {
+    if (!l.on) continue
+    assert.ok(
+      l.x1 > tall.x && l.x1 < tall.x + tall.w,
+      `a rule inverted to paper-ink must actually be over the bar (x=${l.x1}, bar ${tall.x}..${tall.x + tall.w})`,
+    )
+  }
+  // And the load-bearing half: the rules beside the bar carry ink, so they are visible at all.
+  const beside = lines.filter((l) => l.x1 <= tall.x || l.x1 >= tall.x + tall.w)
+  assert.ok(beside.length > 0, 'the pair really does straddle out of the bar at this width')
+  assert.ok(beside.every((l) => !l.on), 'every rule beside the bar is drawn in ink, over paper')
+  const inked = beside.reduce((n, l) => n + (l.y2 - l.y1), 0)
+  assert.ok(inked > 40, `and carries real length (${inked}px), not a stub over a floating head`)
+})
+
+Deno.test('R-14 — the stop head sits at the top of its stem, and is clipped at the bar edges', () => {
+  // The cold read measured the head on a max-height bar rendering ~7px BELOW its own stem top,
+  // so the stem poked through and the glyph read as a white "+" rather than the legend's ⊤ —
+  // with a fleck of bar stranded above it. Same mark, two glyphs on one chart.
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [aggregate({
+          type: 'vomit', count: 7, weeklyBuckets: [4, 2, 1, 0],
+          bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22'], windowDays: 28,
+        })],
+        concurrentChanges: [
+          { kind: 'medication', label: 'Pred', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-03', endBucketIndex: 0, endIsDeclared: true },
+        ],
+      }),
+    ),
+  )
+  const lines = chartLines(svg)
+  const cap = lines.find((l) => l.cls === 'markcap')
+  const stem = lines.filter((l) => l.cls === 'markend').sort((a, b) => a.y1 - b.y1)[0]
+  assert.ok(cap && stem, 'the stop draws a head and a stem')
+  assert.ok(Math.abs(cap.y1 - stem.y1) < 0.6, `the head is AT the stem's top (head ${cap.y1}, stem ${stem.y1})`)
+  // Every piece of the head takes the ink of the ground it is over — it is horizontal, so unlike
+  // the stem it can straddle the bar's edge, and ~1px of white head over white paper turned a
+  // symmetric head into a left-pointing notch.
+  const bar = /<rect class="bar" x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/.exec(svg)
+  assert.ok(bar, 'the fixture draws a bar')
+  const [bx, bw] = [Number(bar[1]), Number(bar[2])]
+  for (const piece of lines.filter((l) => l.cls === 'markcap')) {
+    const mid = (piece.x1 + piece.x2) / 2
+    const overBar = mid > bx && mid < bx + bw
+    assert.equal(piece.on, overBar && piece.y1 >= Number(/y="([\d.]+)"/.exec(bar[0])?.[1] ?? 0), `head piece at ${mid} takes the ink of its ground`)
+  }
 })
 
 Deno.test('the symptom chart draws week-start date labels (May 11, May 18 …), not bare month ticks', () => {
@@ -2434,8 +3023,8 @@ Deno.test('B-496 — two starts in the same week render one marker with a count,
         }),
       ],
       concurrentChanges: [
-        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null },
-        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-04', bucketIndex: 0, ongoing: false, endInWindow: null },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-04', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
       ],
     }),
   )
@@ -2445,17 +3034,17 @@ Deno.test('B-496 — two starts in the same week render one marker with a count,
   assert.ok(!/2 starts &middot; May 2/.test(html), 'the bucket is never labelled with a single date')
   // Exactly one dashed vertical for that week (both starts share it — the dates say so). A vertical
   // is drawn as two segments around the count label's band (CUL-993 A.3), so count x positions.
-  const markXs = new Set([...html.matchAll(/<line class="mark" x1="([\d.]+)"/g)].map((m) => m[1]))
+  const markXs = new Set([...html.matchAll(/<line class="mark(?: on)?" x1="([\d.]+)"/g)].map((m) => m[1]))
   assert.equal(markXs.size, 1, 'one vertical for the shared week')
   // The legend now promises the WEEK, not the day (the mark is bucket-granular).
-  assert.ok(/marks the <b>week<\/b> a diet, medication, or supplement started/.test(html), 'legend is honest about week granularity')
+  assert.ok(/marks the <b>week<\/b> a treatment or diet change started/.test(html), 'legend is honest about week granularity')
 })
 
 Deno.test('B-496 — a lone start still reads "start · <date>" (single-marker behaviour unchanged)', () => {
   const html = renderReport(
     base({
       symptoms: [aggregate({ type: 'vomit', count: 2, weeklyBuckets: [1, 1], bucketStartDates: ['2026-05-01', '2026-05-08'], windowDays: 14 })],
-      concurrentChanges: [{ kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-09', bucketIndex: 1, ongoing: false, endInWindow: null }],
+      concurrentChanges: [{ kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-09', bucketIndex: 1, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true }],
     }),
   )
   assert.ok(/diet start &middot; May 9/.test(html), 'a single start keeps its exact-date label, kind first')
@@ -4854,8 +5443,8 @@ function everythingOnSnap(): ReportSnapshot {
     vomitPhenotype: emptyPhenotype(),
     incidentPhotos: [photo({ eventId: 'ev-p1', occurredAt: '2026-06-01T10:00:00Z', dataUri: PNG_1PX })],
     concurrentChanges: [
-      { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 4, ongoing: false, endInWindow: null },
-      { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 5, ongoing: false, endInWindow: null },
+      { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 4, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+      { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 5, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
     ],
     provenance: {
       ...base().provenance,
@@ -4998,8 +5587,8 @@ Deno.test('CUL-982 item 4 — the marker legend precedes the first chart and nam
     base({
       symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [3, 0, 0], bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15'], windowDays: 21 })],
       concurrentChanges: [
-        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-04', bucketIndex: 0, ongoing: false, endInWindow: null },
-        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-04', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
       ],
     }),
   )
@@ -5007,9 +5596,17 @@ Deno.test('CUL-982 item 4 — the marker legend precedes the first chart and nam
   const chartAt = html.indexOf('<svg viewBox="0 0 648 158"')
   assert.ok(legendAt > 0 && chartAt > 0 && legendAt < chartAt, 'the legend sits above the first chart that uses it')
   assert.ok(
-    /started: the trial diet RC HP on May 2; the medication Metronidazole on May 4\. Timing and overlap are in &ldquo;Reading the trend&rdquo; below\./.test(html),
+    /one stopped: the trial diet RC HP on May 2; the medication Metronidazole on May 4\. Timing and overlap are in &ldquo;Reading the trend&rdquo; below\./.test(html),
     'each start is named with its own date, in date order, kind first (no double parenthetical)',
   )
+  // R-14 extends this line rather than re-placing it: the start half of the sentence is still
+  // the start half, and the marks a reader meets on the chart below are still what it explains.
+  assert.ok(
+    /A dashed vertical marks the <b>week<\/b> a treatment or diet change started; .*a flat-headed vertical marks the <b>week<\/b> one stopped:/.test(html),
+    'the legend names BOTH glyphs (R-14), the dashed start and the flat-headed stop',
+  )
+  // 11px is R-17/R-18's type pass from main, not R-14's; the assertion R-14 cares about is the
+  // colour token beside it.
   assert.ok(/\.chartlegend\{font-size:11px;color:var\(--muted\);margin:0 0 9px/.test(html), 'the legend is --muted, not the lightest grey on the page')
 })
 
@@ -5018,7 +5615,7 @@ Deno.test('CUL-982 item 4 — a week with more than three starts says the count 
     base({
       symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [3, 0], bucketStartDates: ['2026-05-01', '2026-05-08'], windowDays: 14 })],
       concurrentChanges: ['a', 'b', 'c', 'd'].map((label, i) => ({
-        kind: 'supplement' as const, label, startDate: `2026-05-0${i + 1}`, bucketIndex: 0, ongoing: false, endInWindow: null,
+        kind: 'supplement' as const, label, startDate: `2026-05-0${i + 1}`, bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true,
       })),
     }),
   )
@@ -5215,9 +5812,9 @@ Deno.test('CUL-993 A.3 — the marker line is drawn in two segments that leave t
     base({
       symptoms: [aggregate({ type: 'vomit', count: 4, weeklyBuckets: [3, 1, 0, 0], loggedDaysByBucket: [7, 7, 7, 0], bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22'], windowDays: 28 })],
       concurrentChanges: [
-        { kind: 'medication', label: 'A', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null },
-        { kind: 'supplement', label: 'B', startDate: '2026-05-16', bucketIndex: 2, ongoing: false, endInWindow: null },
-        { kind: 'diet_trial', label: 'C', startDate: '2026-05-23', bucketIndex: 3, ongoing: false, endInWindow: null },
+        { kind: 'medication', label: 'A', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'supplement', label: 'B', startDate: '2026-05-16', bucketIndex: 2, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'diet_trial', label: 'C', startDate: '2026-05-23', bucketIndex: 3, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
       ],
     }),
   )
@@ -5267,8 +5864,8 @@ Deno.test('R-11 cold read round 2 — a marker face names its kind, so "diet or 
     base({
       symptoms: [aggregate({ type: 'vomit', count: 2, weeklyBuckets: [1, 1], bucketStartDates: ['2026-05-01', '2026-05-08'], windowDays: 14 })],
       concurrentChanges: [
-        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null },
-        { kind: 'supplement', label: 'Omega', startDate: '2026-05-09', bucketIndex: 1, ongoing: false, endInWindow: null },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'supplement', label: 'Omega', startDate: '2026-05-09', bucketIndex: 1, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
       ],
     }),
   )

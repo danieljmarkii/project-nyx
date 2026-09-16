@@ -131,6 +131,7 @@ import { attributeDoses, type AttributableDose, type DoseAttribution } from '../
 import {
   buildTrialBlock,
   halfPartition,
+  openedAfter,
   selectReportTrial,
   trialEndValue,
   trialLastDayNum,
@@ -1981,7 +1982,16 @@ export interface CorrelationSummary {
   timing: TimingFinding[]
 }
 
-export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed'
+/**
+ * `diet_allowed` (R-14, CUL-291) is a MID-TRIAL change to the trial's allowed set — a food the
+ * vet permitted after the trial started. It is a diet change by the chart legend's own
+ * definition, and the cold read's sharpest case: a chicken-bearing treat entered the allowed
+ * list on Jun 8 and was fed 25 times, while the chart drew nothing and "Reading the trend"
+ * still said two changes overlapped. It is its own kind rather than a second `diet_trial`
+ * because the label differs — "the trial diet (Greenies)" would be a false sentence about a
+ * treat — and because the chart's face says `diet added`, never `diet start`.
+ */
+export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed' | 'diet_allowed'
 
 export interface ConcurrentChange {
   kind: InterventionKind
@@ -2006,6 +2016,62 @@ export interface ConcurrentChange {
    * (adversarial finding) — the note must say "until <date>" instead.
    */
   endInWindow: string | null
+  /**
+   * The 7-day bucket index where this intervention STOPPED (the stop marker, §3.5) — non-null
+   * exactly when `endInWindow` is, and derived from the SAME `bucketIndexOfDay` closure that
+   * places `bucketIndex`. R-14 (CUL-291): the chart needs a bucket and `endInWindow` is a date,
+   * so the alternative was re-deriving the bucket in the renderer off `bucketStartDates`. That
+   * is a second answer to a question the report already answered, and the two can only be
+   * argued equal — this way they are the same call.
+   */
+  endBucketIndex: number | null
+  /**
+   * Did the OWNER declare this end, or did the logging merely stop? (R-14 adversarial finding,
+   * the highest-severity one this change turned up.)
+   *
+   * An ad-hoc course has no regimen row, so its span is derived from doses and its end is
+   * `UnlinkedMedicationGroup.lastDate` — "the latest dose in window", a LOGGING fact over rows
+   * that include refusals. An owner who keeps giving a drug and stops logging it produces the
+   * same value as one who stopped the drug. §4.4's H1 invariant already refuses to let silence
+   * fill that field — *"a course shown with no end date is one whose end the owner never
+   * recorded, not one still under way"* — and R-14's first cut would have drawn `med stop ·
+   * May 20` for a drug still on board, in the most-read element on the page, contradicting the
+   * lifetime table over the same dose rows on the same document.
+   *
+   * So the chart draws a stop only where this is true, and `changeTiming` says "last dose
+   * logged" rather than "stopped" where it is false. False is not "still running" either — it
+   * is "the record does not say", which is why the date is still printed.
+   */
+  endIsDeclared: boolean
+}
+
+/**
+ * THE change predicate — "did this intervention transition inside the window?" (R-14, CUL-291).
+ *
+ * One function, three surfaces: the trend chart's marker set, the marker legend's gate, and
+ * "Reading the trend"'s `N changes overlap this window` count. They disagreed before this
+ * existed, and the disagreement was visible on the page: a drug that started before the window
+ * and stopped inside it was counted as a change in the prose and drawn by nothing, so a vet
+ * comparing the sentence to the chart found one more change than the chart had marks for.
+ *
+ * Because the count and the drawing now switch on the same call, inverting it reds both guards
+ * (C-4). Its complement is exactly the STANDING set — present across the window with no dated
+ * transition — which is why `readingTheTrend` can split on this one predicate rather than two
+ * filters that have to be kept each other's negation by hand.
+ */
+export function isWindowChange(c: ConcurrentChange): boolean {
+  return !c.ongoing || c.endInWindow !== null
+}
+
+/**
+ * Does this change draw a STOP glyph? An in-window end the owner DECLARED (R-14).
+ *
+ * Deliberately narrower than `isWindowChange`: a dose-derived end is a real dated fact and
+ * belongs in the prose with an honest verb, but it is not an ending, and a glyph cannot hedge.
+ * A change with an undeclared end is still a change — it just draws only its start.
+ */
+export function drawsStopMark(c: ConcurrentChange): boolean {
+  return c.endBucketIndex !== null && c.endInWindow !== null && c.endIsDeclared
 }
 
 export interface SymptomLogPhenotype {
@@ -5197,7 +5263,27 @@ function buildConcurrentChanges(
   // in-window-start-only gate) let the diet take its credit — adversarial finding A1, the
   // spec §4/B-117 highest-consequence misread. An open-ended (still-active) intervention
   // runs to the window end; one that ENDED before the window never overlaps and is dropped.
-  const consider = (kind: InterventionKind, label: string, startDate: string | null, endDate: string | null) => {
+  const consider = (
+    kind: InterventionKind,
+    label: string,
+    startDate: string | null,
+    endDate: string | null,
+    /**
+     * Is `endDate` an end the OWNER declared, or the last day the record happens to carry?
+     * Every caller states it, because the answer is a property of the SOURCE COLUMN and
+     * cannot be recovered from the value. See `ConcurrentChange.endIsDeclared`.
+     */
+    endIsDeclared: boolean,
+    /**
+     * R-14. Drop the entry unless it carries a real in-window TRANSITION (a start or a stop
+     * inside the window). Only the allowed-set rows pass this: a treat permitted before the
+     * report window is part of the standing protocol, and framing a snack as a confounder the
+     * trend "cannot be attributed against" would be both noise and an over-claim. Every other
+     * caller keeps the default — a standing drug with no in-window transition is exactly what
+     * the A1 finding says must never be dropped.
+     */
+    onlyInWindowTransition = false,
+  ) => {
     // A NULL startDate = a standing arrangement whose start was never recorded (a free-fed bowl
     // "always down"). Treat it as active from before the window (spanStart -Infinity) so it is
     // never dropped from the confounder note just because its start date is missing (adversarial
@@ -5212,6 +5298,7 @@ function buildConcurrentChanges(
     // The end date ONLY when it stopped strictly before the window end — so the render says
     // "until <date>" instead of a false present-tense "ongoing since <start>" (adversarial finding).
     const endInWindow = activeEndDn !== null && activeEndDn < scope.endDayNum ? endDate : null
+    if (onlyInWindowTransition && !startedInWindow && endInWindow === null) return
     out.push({
       kind,
       label,
@@ -5220,6 +5307,11 @@ function buildConcurrentChanges(
       bucketIndex: startedInWindow ? bucketIndexOfDay(startDn as number) : null,
       ongoing: !startedInWindow,
       endInWindow,
+      // The stop marker's bucket (R-14). `endInWindow` is by construction inside the window —
+      // the overlap gate above drops a span ending before `startDayNum`, and `endInWindow` is
+      // only set strictly before `endDayNum` — so this is a real index, never a clamp artefact.
+      endBucketIndex: endInWindow !== null ? bucketIndexOfDay(activeEndDn as number) : null,
+      endIsDeclared,
     })
   }
   for (const t of input.dietTrials) {
@@ -5229,16 +5321,56 @@ function buildConcurrentChanges(
     // said "the trial diet (Royal Canin HP) — ongoing since 3 June" about a diet the
     // cat came off three weeks ago. §3.1 writes `ended_at` on BOTH outcomes precisely
     // so this reader has an end; it just never selected the column.
-    consider('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt, trialEndValue(t))
+    // `ended_at` / `completed_at` are written by an owner action on BOTH outcomes (§3.1), so a
+    // trial's end is declared.
+    consider('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt, trialEndValue(t), true)
+    // R-14 (CUL-291). A food added to the allowed set AFTER the trial started is a diet change
+    // by the chart legend's own definition, and it was the one class of change no surface drew:
+    // the cold read found a chicken-bearing treat permitted on Jun 8 and fed 25 times, with no
+    // marker on the chart and "Reading the trend" still counting two changes. Routing it through
+    // `consider` is what makes the two agree — the chart and the count read one list.
+    //
+    // The `> trialStartDn` gate is load-bearing, not a nicety: `startDietTrial` writes
+    // `allowed_from = started_at` on the primary diet, so without it EVERY trial would draw a
+    // second, duplicate diet marker on its own start week. A row's `allowedUntil` rides along as
+    // the end, so a permit granted mid-trial and withdrawn again draws both transitions through
+    // the same path.
+    //
+    // Deliberately NOT here: withdrawal of an ORIGINAL-set food (allowed from day one, permit
+    // closed mid-trial). Whether that is a change distinct from the trial itself ending is its
+    // own ruling, and §7's allowed list already carries it as `endedBeforeWindowEnd`. CUL-1018.
+    // `openedAfter` is `trial.ts`'s own predicate — the one §7's allowed list already renders as
+    // `addedAfterStart`. Re-deriving it here with a bare `dayNumber` comparison would be a second
+    // answer to a question the report has already answered, equal until one of them is edited
+    // (C-4). That is the whole reason. An earlier draft of this comment also called the shared
+    // call "the timezone-aware one" — it is not, in practice: `localDayIndexOf` has a
+    // `YYYY-MM-DD` fast path that never consults the zone, and both columns behind this call are
+    // `DATE NOT NULL`, so the argument cannot change the answer. Passing the real zone stays
+    // right (the signature takes one, and a future caller's key may not be a bare DATE), but an
+    // unearned justification is how the next edit preserves the wrong constraint.
+    for (const f of t.allowedFoods ?? []) {
+      if (!openedAfter(f.allowedFrom, t.startedAt, input.timezone ?? undefined)) continue
+      consider('diet_allowed', f.foodLabel, f.allowedFrom, f.allowedUntil, true, true)
+    }
   }
   for (const m of input.medications) {
-    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)
+    // A regimen's `ended_at` is an owner action (the End tap), so its end is declared.
+    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt, true)
   }
   for (const u of unlinkedMedications) {
     // `lastDate` is the last dose IN WINDOW, so an ongoing ad-hoc course reads as
     // ending at its last logged dose rather than running open-ended. That is the
     // honest direction for a dose-derived span: the record ends where the logging does.
-    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate)
+    // NOT DECLARED. `lastDate` is the latest dose IN THE RECORD, so an owner who keeps giving a
+    // drug and stops logging it produces the same value as one who stopped it. It stays a dated
+    // fact in the prose ("last dose logged"), and draws no stop glyph.
+    //
+    // THE START END OF THIS SPAN HAS THE SAME PROBLEM AND IS NOT FIXED HERE (CUL-1032). `firstDate`
+    // is the earliest dose IN WINDOW, so an ad-hoc course that began before the window draws
+    // `med start` on the window's first day and the prose says "started" — a window-boundary
+    // artefact wearing an exposure verb, and the mirror of the endpoint above. It is pre-existing
+    // and fixing it changes the START lane on every existing report, so it is its own change.
+    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate, false)
   }
   for (const a of input.feedingArrangements) {
     // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,
@@ -5248,7 +5380,10 @@ function buildConcurrentChanges(
     // So pass a NULL start: the diet is a STANDING confounder present across the window with an
     // unrecorded start (no chart marker, framed as context — not a change). `activeUntil` (a
     // deliberate "stopped feeding this" action) is kept, since a stop IS a real signal.
-    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', null, a.activeUntil)
+    // DECLARED: `lib/feedingArrangements.ts`'s toggle-off stamps `active_until = today` on an
+    // owner tap. Verified at the writer, not taken from the comment above — R-14's adversarial
+    // pass named this lane's provenance as the one it had not checked.
+    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', null, a.activeUntil, true)
   }
   // Explicit total order (matches the determinism discipline of every other sort here) —
   // by start date, then kind, then label, so same-day interventions never depend on push order.
