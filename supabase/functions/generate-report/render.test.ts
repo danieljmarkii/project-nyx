@@ -6279,3 +6279,45 @@ Deno.test('R-13 item 1 — no report points at appendix E when appendix E does n
   // The letterhead's own range must not advertise an E either.
   assert.ok(!/appendices A&ndash;E/.test(html), 'the orient line stops at the last appendix that renders')
 })
+
+Deno.test('R-3 — across a window that spans New Year, the row\'s two dates agree about the year', () => {
+  // THE PAIRING HAZARD `fmtLocalDayScoped`'s own header warns about: it stamps against the
+  // WINDOW's year, and appendix A's Date column is always bare. On a 90-day window opened in
+  // November — which the fallback cascade produces every winter — an event in the earlier
+  // year got a bare "Dec 15" beside a stamped "Dec 17, 2025", and the bare one inherits the
+  // window's 2026. Read literally that is again a row logged before it happened.
+  const rows = appendixARows(
+    chicagoReport(
+      [
+        logEntry({
+          type: 'vomit',
+          occurredAt: atLocal(CHI, '2025-12-15', '19:00'),
+          loggedAt: atLocal(CHI, '2025-12-17', '08:30'),
+        }),
+      ],
+      { startDate: '2025-11-20', endDate: '2026-02-18' },
+    ),
+  )
+  assert.equal(rows[0][0], 'Dec 15', 'the Date column is bare, as it always has been')
+  assert.equal(rows[0][3], 'Dec 17, 08:30', 'so its partner must not stamp a year the pair does not need')
+})
+
+Deno.test('R-3 — a log that crosses into the next year still stamps it', () => {
+  // The case CUL-977 point 3 actually raises: logging postdates the window end. Here the two
+  // dates genuinely disagree about the year, so the year is what disambiguates them — and the
+  // stamped later date implies the bare earlier one, correctly.
+  const rows = appendixARows(
+    chicagoReport(
+      [
+        logEntry({
+          type: 'vomit',
+          occurredAt: atLocal(CHI, '2026-12-30', '18:00'),
+          loggedAt: atLocal(CHI, '2027-01-02', '08:15'),
+        }),
+      ],
+      { startDate: '2026-11-01', endDate: '2026-12-31' },
+    ),
+  )
+  assert.equal(rows[0][0], 'Dec 30')
+  assert.equal(rows[0][3], 'Jan 2, 2027, 08:15')
+})

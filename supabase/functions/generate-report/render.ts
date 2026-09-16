@@ -6014,7 +6014,7 @@ function allTimesWitnessed(snap: ReportSnapshot): boolean {
 function appendixA(snap: ReportSnapshot): string {
   const uniformSeen = allTimesWitnessed(snap)
   const rows = snap.provenance.symptomLog
-    .map((e) => symptomLogRow(e, snap.timezone, snap.scope.endDate, uniformSeen))
+    .map((e) => symptomLogRow(e, snap.timezone, uniformSeen))
     .join('')
   const count = snap.provenance.symptomLog.length
   // Counted over the rows below with the predicate that tags them (`timeConfidence`), never
@@ -6120,15 +6120,10 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
   return `${h(stateWord)} — not clear enough to read`
 }
 
-function symptomLogRow(
-  e: SymptomLogEntry,
-  tz: string | null,
-  windowEndDayKey: string,
-  uniformSeen = false,
-): string {
+function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = false): string {
   const dateCell = fmtLocalDay(e.occurredAt, tz)
   const occCell = occurredCell(e, tz, uniformSeen)
-  const logged = loggedCell(e, tz, windowEndDayKey)
+  const logged = loggedCell(e, tz)
   const dup = e.dupCount > 1 ? ` <span class="conf">${e.dupCount} logs</span>` : ''
   let noteCell = e.notes ? h(e.notes) : ''
   if (e.phenotype) {
@@ -6173,15 +6168,30 @@ function symptomLogRow(
  *    cross-midnight delay would hide. The anchor is `occurredAt` — the same value the row's
  *    own Date column prints — so this cell can never contradict the cell beside it.
  *
- * The year comes from `fmtLocalDayScoped`, because this is one of the few dates on the page
- * NOT bounded by the letterhead range: logging can postdate the window end, so a January log
- * of a December event must say which January (C-19's year rule). That helper's own header
- * warns it is safe only where a sentence carries one date, and this cell carries exactly one.
+ * THE YEAR IS DECIDED ONCE FOR THE PAIR, and the pair is this ROW — not the window. C-19
+ * needs a year here because this is one of the few dates on the page the letterhead range
+ * does not bound: logging can postdate the window end, so a January log of a December event
+ * must say which January. The obvious source, `fmtLocalDayScoped`, stamps against the
+ * WINDOW's year, and its own header warns that a conditional year is worse than none once
+ * two dates share a sentence. This row has two: the Date column, which is always bare.
+ *
+ * On a window that spans New Year — which the 90-day fallback produces every winter — that
+ * combination prints `Dec 15` beside `Dec 17, 2025`, and the bare one inherits the window's
+ * 2026. Read literally, the row is again logged before it happened: the exact failure this
+ * whole change exists to remove, re-introduced by the fix for it one column over.
+ *
+ * So the year is stamped when the two LOCAL YEARS of this row differ, and never otherwise.
+ * That keeps the pair internally consistent at every window shape, and still answers C-19's
+ * question, because a stamped later date implies the bare earlier one.
  */
-function loggedCell(e: SymptomLogEntry, tz: string | null, windowEndDayKey: string): string {
+function loggedCell(e: SymptomLogEntry, tz: string | null): string {
   const time = fmtLocalTime(e.loggedAt, tz)
-  if (localDayKeyOf(e.loggedAt, tz) === localDayKeyOf(e.occurredAt, tz)) return time
-  return `${fmtLocalDayScoped(e.loggedAt, tz, windowEndDayKey)}, ${time}`
+  const occDay = localDayKeyOf(e.occurredAt, tz)
+  const logDay = localDayKeyOf(e.loggedAt, tz)
+  if (logDay === occDay) return time
+  return logDay.slice(0, 4) === occDay.slice(0, 4)
+    ? `${fmtLocalDay(e.loggedAt, tz)}, ${time}`
+    : `${fmtDayYear(logDay)}, ${time}`
 }
 
 /**
