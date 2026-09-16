@@ -56,13 +56,14 @@ import {
   type IncidentPhoto,
   type ReportAudience,
   type ReportLookInput,
+  type Household,
   TRIAL_ANCHOR_GRACE_DAYS,
 } from './report.ts'
 import { renderReport } from './render.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
 // re-implemented so the pull is stretched for exactly the trial the block describes; two
 // copies of this test are what once anchored a window on an abandoned trial.
-import { selectReportTrial } from './trial.ts'
+import { selectReportTrial, trialAllowedListMissing } from './trial.ts'
 // B-568 — the same format-label map the app and report.ts render from (one copy,
 // two runtimes; a duplicate map here is the B-103 drift class).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
@@ -172,6 +173,9 @@ const MAX_UTC_OFFSET_MS = 14 * 60 * 60 * 1000
 
 interface PetRow {
   id: string
+  /** CUL-979 — the owner. Read ONLY so the household pull can be scoped to the subject's
+   *  owner in code as well as by RLS (see `mapHouseholdRows`); never mapped onto the page. */
+  user_id: string
   name: string
   species: string
   breed: string | null
@@ -179,6 +183,15 @@ interface PetRow {
   date_of_birth: string | null
   date_of_birth_precision?: string | null
   weight_kg: number | string | null
+}
+
+/** CUL-979 — the three columns the household pull selects. `id` exists ONLY to exclude the
+ *  subject and to key the page overlap; `user_id` ONLY to keep the count to the subject's
+ *  owner; neither leaves `mapHouseholdRows`. */
+interface HouseholdPetRow {
+  id: string
+  species: string
+  user_id: string
 }
 
 // B-351 slice 5 (§9, D10): the join carries the full captured protein SET plus the
@@ -660,6 +673,36 @@ export function mapPet(row: PetRow): ReportPetInput {
     // renders it as the trend, only as the signalment "latest weight".
     weightKg: num(row.weight_kg),
   }
+}
+
+/**
+ * CUL-979 — the subject's owner's other live pets, reduced to counts by species.
+ *
+ * THIS IS THE PRIVACY BOUNDARY, IN CODE. The pull selects `id, species, user_id` and
+ * nothing else; this function drops the id and the owner on the way through, so the pure
+ * layer — and the page — can only ever hold a count and a species. The subject is excluded
+ * by the id of the row ownership was just verified against (after the 404 gate), never by
+ * a body value, and the count is bound to that row's OWNER: a row another policy might one
+ * day let the caller see (a co-carer's own animals) is not this pet's household. The
+ * subject is passed as the verified row rather than as two strings, so a caller cannot
+ * hand over the body's `petId` by mistake — Postgres normalises a uuid on the way in, and
+ * a string compare against the request value would have failed to exclude the subject on
+ * an upper-cased id. A species the enum does not know reads as `other` rather than as the
+ * subject's own, which would print "another cat" about an animal the record cannot place.
+ * `complete` is the pull's verdict, carried through so the render can say "at least".
+ */
+export function mapHouseholdRows(
+  rows: HouseholdPetRow[],
+  subject: Pick<PetRow, 'id' | 'user_id'>,
+  complete: boolean,
+): Household {
+  const counts = new Map<Household['others'][number]['species'], number>()
+  for (const r of rows) {
+    if (r.id === subject.id || r.user_id !== subject.user_id) continue
+    const species = r.species === 'cat' || r.species === 'dog' ? r.species : 'other'
+    counts.set(species, (counts.get(species) ?? 0) + 1)
+  }
+  return { others: [...counts].map(([species, count]) => ({ species, count })), complete }
 }
 
 /** The raw protein evidence off a food join, unmapped and un-derived — report.ts owns
@@ -1166,10 +1209,10 @@ export async function generateReportForPet(
   //    two matter MORE than a count does: they are the scope cascade's rungs 1 and 2, so a
   //    truncated pull here does not shorten a number, it MOVES THE REPORT'S WINDOW. `pets`
   //    and `user_profiles` are `.maybeSingle()` and cannot truncate.
-  const [petRes, profileRes, vetVisitsPull, dietTrialsPull] = await Promise.all([
+  const [petRes, profileRes, vetVisitsPull, dietTrialsPull, householdPull] = await Promise.all([
     supabase
       .from('pets')
-      .select('id, name, species, breed, sex, date_of_birth, date_of_birth_precision, weight_kg')
+      .select('id, user_id, name, species, breed, sex, date_of_birth, date_of_birth_precision, weight_kg')
       .eq('id', petId)
       .maybeSingle(),
     supabase.from('user_profiles').select('display_name, timezone').maybeSingle(),
@@ -1211,6 +1254,28 @@ export async function generateReportForPet(
       .order('started_at', { ascending: false })
       .order('id', { ascending: false })
       .range(from, to)),
+    // CUL-979 — THE HOUSEHOLD, and the first read in this function outside the subject
+    // pet's own row. It stays on the USER-SCOPED client, so RLS (`pets_owner`:
+    // `auth.uid() = user_id`, migration 001) is its scope — the caller's own pets and
+    // nobody else's, with no user id taken from anywhere but the JWT and no id taken from
+    // the request body. It selects a species, an id and an owner: the id only so the
+    // subject can be excluded below by the row ownership is verified against, the owner
+    // only so the count is bound to THE SUBJECT'S OWNER in code as well as by policy;
+    // `mapHouseholdRows` drops both, so a name, a weight, a condition or an event of
+    // another animal has no path to the page. The owner predicate is defence in depth the
+    // `rls-privacy-reviewer` measured rather than argued: this is the one query here with
+    // no tenant predicate of its own, and under a widened `pets` policy (the shared-care
+    // Open Question) or a bypassed one it printed another household's animals onto this
+    // pet's signalment. `is_active = true` is the archive filter, and it is the only
+    // liveness filter the table CAN take: `pets` has no soft-delete column (account
+    // deletion hard-purges). Paged like every pull here (CUL-975) — a household is a
+    // handful of rows, but "a handful" is a judgement the deployed function cannot
+    // re-check, and a short read is disclosed on page 1 as one.
+    fetchAll<HouseholdPetRow>('pets', (r) => r.id, (from, to) =>
+      supabase.from('pets').select('id, species, user_id', { count: 'exact' })
+        .eq('is_active', true)
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(from, to)),
   ])
 
   // A real error on the pet load must NOT masquerade as a 404 ("you don't own this
@@ -1521,6 +1586,7 @@ export async function generateReportForPet(
       ['event_attachments', attachmentsPull.complete],
       ['vet_visits', vetVisitsPull.complete],
       ['diet_trials', dietTrialsPull.complete],
+      ['pets', householdPull.complete],
     ] as [string, boolean][]
   )
     .filter(([, complete]) => !complete)
@@ -1586,6 +1652,10 @@ export async function generateReportForPet(
     timezone,
     pet,
     ownerName,
+    // CUL-979 — a count and a species per other live animal of the subject's owner; the
+    // subject is excluded, and the owner bound, by the verified row itself. See the pull
+    // above for why this is the only read here that reaches outside the subject pet's row.
+    household: mapHouseholdRows(householdPull.rows, petRow, householdPull.complete),
     requestedWindow,
     events: mapEventRows(eventsPull.rows),
     aiAnalyses: mapAiAnalysisRows(aiPull.rows),
@@ -1645,6 +1715,13 @@ export async function generateReportForPet(
       photo_count: photoStats.total,
       photo_embedded: photoStats.embedded,
       photo_omitted: photoStats.omitted,
+      // R-16 (CUL-998 / CUL-861) — the report's own verdict that its trial has no
+      // allowed-food list, returned so the owner hears it on the report screen BEFORE
+      // Send, with a door to set the list up, rather than reading it in front of the vet.
+      // Scoped to a running trial and to the list's absence (never the unhydrated-set
+      // heuristic) — the reasons are on `trialAllowedListMissing`. The app treats an
+      // absent field as false, so a client built before this deploys shows nothing.
+      trial_allowed_list_missing: trialAllowedListMissing(snapshot.trial, nowMs, timezone),
     },
   }
 }

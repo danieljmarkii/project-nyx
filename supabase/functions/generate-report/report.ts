@@ -333,6 +333,33 @@ export interface ReportPetInput {
 }
 
 /**
+ * CUL-979 — the caller's OTHER live pets, as counts by species.
+ *
+ * The vet report's first read outside the subject pet's own row, and this shape is what
+ * keeps it a structural fact rather than a disclosure: it has no field a name, an id, a
+ * weight or an event could travel in. "Lives with 1 other cat" is the central compliance
+ * question of an elimination trial (can she get at the other animal's food?), and the
+ * account already holds the answer; what it does NOT hold is whether any of that food was
+ * eaten, which is why the render only ever states availability.
+ *
+ * `complete` is the pull's own verdict: a short read makes the count a floor, and the
+ * render says "at least". Absent on the input ⇒ UNKNOWN ⇒ nothing renders — never "one
+ * pet", which would be a claim the caller did not make.
+ */
+export interface Household {
+  others: { species: Species; count: number }[]
+  complete: boolean
+}
+
+/** Subject's own species first (the "other cat" is the one a vet asks about first), then
+ *  cat, dog, other — a stable order for one sentence. The mapper merges by species, so no
+ *  two entries share a rank. */
+function householdRank(species: Species, subject: Species): number {
+  if (species === subject) return 0
+  return species === 'cat' ? 1 : species === 'dog' ? 2 : 3
+}
+
+/**
  * The three stored facts every protein-set decision needs (B-351 slice 5, D10).
  *
  * Carried RAW through the input layer and derived here in the pure module, so the
@@ -590,6 +617,14 @@ export interface ReportInput {
   timezone: string | null // owner IANA tz (user_profiles.timezone) — day-boundary + local-week math
   pet: ReportPetInput
   ownerName: string | null // profile/auth display name — PIMS filing (spec §7.1); NULL ⇒ "not recorded"
+  /**
+   * CUL-979 — the caller's other live pets, counted by species (never named). Optional so
+   * every pre-existing fixture keeps compiling; ABSENT ⇒ unknown ⇒ the signalment says
+   * nothing about the household and the trial block carries no housemate caveat. That is
+   * the direction that cannot mislead: silence here is the pre-R-5 report, not a claim of
+   * a single-pet home.
+   */
+  household?: Household
   requestedWindow?: { startDate: string; endDate: string } | null // owner override (DATE strings)
   events: ReportEventInput[]
   aiAnalyses: ReportAiAnalysisInput[]
@@ -1112,6 +1147,9 @@ export interface Signalment {
   ownerName: string | null
   /** Latest weigh-in overall (weight_checks), NEVER the pets.weight_kg onboarding snapshot (spec §7.1). */
   latestWeight: { kg: number; lbs: number; date: string } | null
+  /** CUL-979 — the other live animals on the account, by species. `null` ⇒ unknown, which
+   *  renders as nothing; an empty `others` ⇒ a one-pet home, which ALSO renders as nothing. */
+  household: Household | null
 }
 
 export interface ScopeInfo extends ReportScope {
@@ -4415,6 +4453,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     dateOfBirth: input.pet.dateOfBirth,
     dateOfBirthPrecision: input.pet.dateOfBirthPrecision ?? 'exact',
     ownerName: input.ownerName,
+    // CUL-979 — zero counts dropped (a species with nobody in it is not a fact about the
+    // household), the subject's own species first. The mapper already merged by species.
+    household: input.household
+      ? {
+          others: input.household.others
+            .filter((o) => o.count > 0)
+            .sort(
+              (a, b) =>
+                householdRank(a.species, input.pet.species) - householdRank(b.species, input.pet.species),
+            ),
+          complete: input.household.complete,
+        }
+      : null,
     latestWeight: latestOverall
       ? {
           kg: latestOverall.weightKg,

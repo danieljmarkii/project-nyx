@@ -15,7 +15,9 @@ import {
   type ReportInput, type ReportEventInput,
 } from './report.ts'
 import { renderReport } from './render.ts'
-import { buildTrialBlock, halfPartition, looksAntibacterial, selectReportTrial } from './trial.ts'
+import {
+  buildTrialBlock, halfPartition, looksAntibacterial, selectReportTrial, trialAllowedListMissing,
+} from './trial.ts'
 
 /** The rendered page as a VET READS IT: tags stripped, entities decoded.
  *
@@ -4465,4 +4467,55 @@ Deno.test('B-613 — a one-day crop takes the pronoun, never "1 of those 1 days"
   const text = plain(renderReport(snap))
   assert.ok(!/of those 1 days/.test(text))
   assert.match(text, /This report holds no meal log for that day\./)
+})
+
+// ── R-16 (CUL-998 / CUL-861) — the pre-send fact ─────────────────────────────
+
+const R16_NOW_MS = Date.parse('2026-07-02T12:00:00Z')
+type R16Trial = NonNullable<Parameters<typeof trialAllowedListMissing>[0]>
+const r16Trial = (over: Partial<R16Trial> = {}): R16Trial => ({
+  permittedFoods: [],
+  startedAt: '2026-06-22',
+  targetDurationDays: 56,
+  status: 'active',
+  endedAt: null,
+  ...over,
+})
+
+Deno.test('trialAllowedListMissing: a running trial with no primary_diet row → true', () => {
+  assert.equal(trialAllowedListMissing(r16Trial(), R16_NOW_MS, 'UTC'), true)
+})
+
+Deno.test('trialAllowedListMissing: a permitted extra is not a list — only a primary_diet row is', () => {
+  // The sanctioned protein set is built from primary rows alone (trial.ts hasPrimary), so a
+  // list holding only a treat has nothing to define the diet with. Still "not set up".
+  const t = r16Trial({ permittedFoods: [{ role: 'permitted_treat' }] })
+  assert.equal(trialAllowedListMissing(t, R16_NOW_MS, 'UTC'), true)
+})
+
+Deno.test('trialAllowedListMissing: a primary_diet row → false, whatever the unhydrated-set heuristic says', () => {
+  // `allowedSetUnavailable` also fires when a primary row matched none of ≥10 feedings.
+  // That caveat belongs on the report; a pre-send "Set it up" on a list the owner already
+  // has is the wrong door, so the fact here is the LIST'S ABSENCE only.
+  const t = r16Trial({ permittedFoods: [{ role: 'primary_diet' }] })
+  assert.equal(trialAllowedListMissing(t, R16_NOW_MS, 'UTC'), false)
+})
+
+Deno.test('trialAllowedListMissing: an ended trial → false (nothing left to set up)', () => {
+  // Ended five days ago, inside the report's 90-day grace: the report still anchors on it
+  // and still prints the caveat, but the allowed-set screen would say "isn't on a diet
+  // trial right now" — the door must not open onto a screen that contradicts the line.
+  const t = r16Trial({ status: 'completed', endedAt: '2026-06-27' })
+  assert.equal(trialAllowedListMissing(t, R16_NOW_MS, 'UTC'), false)
+})
+
+Deno.test('trialAllowedListMissing: an active-status trial past its overrun grace → false (B-422)', () => {
+  // `status = 'active'` is the steady state of a stale trial. The shared predicate withdraws
+  // belief at target + 56 days, exactly as the allowed-set screen does.
+  const t = r16Trial({ startedAt: '2026-01-01', targetDurationDays: 28 })
+  assert.equal(trialAllowedListMissing(t, R16_NOW_MS, 'UTC'), false)
+})
+
+Deno.test('trialAllowedListMissing: no trial block → false', () => {
+  assert.equal(trialAllowedListMissing(null, R16_NOW_MS, 'UTC'), false)
 })

@@ -199,6 +199,9 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       dateOfBirthPrecision: 'exact',
       ownerName: 'Daniel Mark',
       latestWeight: null,
+      // CUL-979 — null is "unknown", the shape of every pre-R-5 fixture; the household
+      // cases set their own.
+      household: null,
     },
     clinicalQuestion: { question: 'symptom_monitoring', primarySymptom: null },
     safetyFlags: [],
@@ -1129,6 +1132,167 @@ Deno.test('signalment: an APPROXIMATE DOB renders "~N yr" and NEVER a birth year
   assert.ok(text.includes('~6 yr'), 'estimated age is hedged with ~')
   assert.ok(!/\(b\./.test(text), 'no witnessed birth year for an approximate DOB')
   assert.ok(!/b\. 2020/.test(text), 'the anchor year is never surfaced as a birth year')
+})
+
+// ── CUL-979 (R-5) — the household. A second animal is the central compliance fact of an
+//    elimination trial, and the report never fetched it ──────────────────────────────────
+
+type Household = ReportSnapshot['signalment']['household']
+
+/** The callout a vet reads for the bottom line — the only place the household caveat may live. */
+function interpretingCallout(html: string): string {
+  const m = html.match(/<div class="callout">[\s\S]*?<\/div>/)
+  return m ? m[0] : ''
+}
+
+/**
+ * A clean, well-logged trial whose block would otherwise print the AFFIRMATIVE sentence.
+ * Every other caveat on that list suppresses it; the household one must too, or the block
+ * opens with a claim its own paragraph then dismantles — and this fixture is what proves
+ * there was an affirmative to suppress (a green test over a block that never printed it
+ * would measure nothing).
+ */
+function cleanTrialSnap(household: Household, over: Partial<NonNullable<ReportSnapshot['trial']>> = {}): ReportSnapshot {
+  const snap = base({
+    clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
+    diet: {
+      trialTargetProtein: 'duck',
+      trial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+      freeFed: [],
+      intakeNotDirectlyObserved: false,
+      mealCompletion: null,
+      mealItems: [],
+      treats: { count: 0, distinctItems: 0 },
+      humanFood: { count: 0, days: 0, items: [] },
+    },
+    trial: trialBlockFixture({
+      startedAt: DUCK_TRIAL.startedAt,
+      species: 'cat',
+      allowedSetUnavailable: false,
+      interpretability: 'supports',
+      interpretabilityStatement:
+        'This record covers 43 of 43 days of the trial — enough to read alongside the rest of the history and supports interpreting it.',
+      ...over,
+    }),
+  })
+  snap.signalment.household = household
+  return snap
+}
+
+Deno.test('CUL-979 — the signalment names a second pet as a COUNT and a SPECIES, beside species and age', () => {
+  const snap = base()
+  snap.signalment.household = { others: [{ species: 'cat', count: 1 }], complete: true }
+  const html = renderReport(snap)
+  const sig = text(pageOne(html)).replace(/&nbsp;/g, ' ')
+  // In the signalment line's own register — a lowercase fragment after the age, not a
+  // sentence and not a box — because that is the line a clinician reads species and age off.
+  assert.ok(/6 yr \(b\. 2020\) &middot; lives with 1 other cat/.test(sig), 'the housemate rides the signalment line')
+  assert.ok(
+    /<div class="sig">[^\n]*lives with <span class="num">1<\/span> other cat <span class="rnote">owner-recorded, as of this report<\/span><\/div>/.test(
+      html,
+    ),
+    'it is the .sig line, not a new block, and it names its source and its tense',
+  )
+  // No trial on this snapshot ⇒ no trial block ⇒ the fact is stated exactly once.
+  assert.equal((html.match(/lives with/g) ?? []).length, 1)
+})
+
+Deno.test('CUL-979 — a ONE-pet household renders NEITHER line (the common case gains no noise)', () => {
+  for (const household of [null, { others: [], complete: true }] as Household[]) {
+    const html = renderReport(cleanTrialSnap(household))
+    assert.ok(!/lives with/.test(html), 'no signalment line')
+    assert.ok(!/kept separate/.test(html), 'no trial caveat')
+    // And nothing that says "single-pet" either: absence renders as absence, never as a claim.
+    assert.ok(!/only pet|single pet|no other (pet|animal)/i.test(text(html)))
+  }
+})
+
+Deno.test('CUL-979 — species and number: "other" only when it IS the same species, plurals, mixed households', () => {
+  const cat = base()
+  cat.signalment.household = {
+    others: [{ species: 'cat', count: 2 }, { species: 'dog', count: 1 }, { species: 'other', count: 1 }],
+    complete: true,
+  }
+  const catText = text(renderReport(cat))
+  assert.ok(/lives with 2 other cats, 1 dog and 1 other animal/.test(catText), catText.match(/lives with[^<]{0,80}/)?.[0])
+
+  const dog = base()
+  dog.signalment.species = 'dog'
+  dog.signalment.household = { others: [{ species: 'cat', count: 1 }], complete: true }
+  assert.ok(/lives with 1 cat/.test(text(renderReport(dog))), 'a cat is not "another" cat to a dog')
+  assert.ok(!/other cat/.test(text(renderReport(dog))))
+})
+
+Deno.test('CUL-979 — an INCOMPLETE household pull says "at least", and page 1 discloses the short read', () => {
+  const snap = base({ incompletePulls: ['pets'] })
+  snap.signalment.household = { others: [{ species: 'cat', count: 1 }], complete: false }
+  const p1 = text(pageOne(renderReport(snap)))
+  assert.ok(/lives with at least 1 other cat/.test(p1))
+  assert.ok(/Partial record\.[^.]*household/.test(p1), 'the truncation disclosure names the household in a clinical noun')
+
+  // Short pull, nothing read ⇒ no count to speak. The disclosure carries it; the line does not guess.
+  const empty = base({ incompletePulls: ['pets'] })
+  empty.signalment.household = { others: [], complete: false }
+  assert.ok(!/lives with/.test(renderReport(empty)))
+})
+
+Deno.test('CUL-979 — the trial block names the housemate as a CONFOUNDER, in the existing register, without asserting intake', () => {
+  const html = renderReport(cleanTrialSnap({ others: [{ species: 'cat', count: 1 }], complete: true }))
+  const callout = text(interpretingCallout(html))
+  assert.ok(callout.length > 0, 'the Interpreting-this-record callout rendered')
+  assert.ok(
+    /As of this report, Nyx lives with 1 other cat, so another animal&rsquo;s food may have been available during the trial \(intake not directly observed\) &mdash; this record does not say whether feeding was kept separate\./.test(
+      callout,
+    ),
+    callout,
+  )
+  // Availability, never intake (render.ts's own distinction at trialProteinBreaches): no
+  // sentence on this callout may say the pet ATE anything.
+  assert.ok(!/\bate\b|eaten|consumed|reaching Nyx/i.test(callout), 'no consumption claim')
+  // The list's own rule: an item on it suppresses the affirmative variant, because a
+  // paragraph must not open with a sentence it then dismantles.
+  assert.ok(!/supports interpreting it/.test(callout), 'the affirmative is withheld beside a stated confounder')
+})
+
+Deno.test('CUL-979 — the same trial with NO housemate keeps its affirmative (the suppression is not vacuous)', () => {
+  const html = renderReport(cleanTrialSnap(null))
+  const callout = text(interpretingCallout(html))
+  assert.ok(/supports interpreting it/.test(callout), 'the affirmative was there to be suppressed')
+  assert.ok(!/lives with/.test(callout))
+})
+
+Deno.test('CUL-979 — on the list, the housemate follows the RECORDED confounders and precedes the record GAP', () => {
+  // Recorded facts first (a drug that overlapped), then the structural possibility (a
+  // housemate), then the gap in the record (a dark antigen arm) — the order the block
+  // already ranks its sentences in.
+  const html = renderReport(
+    cleanTrialSnap(
+      { others: [{ species: 'cat', count: 1 }], complete: true },
+      {
+        antigenArmDark: true,
+        medicationOverlap: [
+          {
+            drugName: 'Metronidazole',
+            isSupplement: false,
+            startedAt: '2026-05-10',
+            endedAt: null,
+            fromDate: '2026-05-10',
+            toDate: '2026-07-02',
+            daysOverlapping: 54,
+            activeAtWindowEnd: true,
+            overlapsLast7Days: true,
+            antibacterialInGiTrial: true,
+          },
+        ],
+      },
+    ),
+  )
+  const callout = text(interpretingCallout(html))
+  const drug = callout.indexOf('Metronidazole overlapped the trial')
+  const house = callout.indexOf('lives with')
+  const gap = callout.indexOf('no trial diet was recorded on the allowed list')
+  assert.ok(drug >= 0 && house >= 0 && gap >= 0, callout)
+  assert.ok(drug < house && house < gap, `order: drug@${drug} house@${house} gap@${gap}`)
 })
 
 // ── HTML escaping of owner free text ───────────────────────────────────────────────
