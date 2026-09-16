@@ -1180,7 +1180,12 @@ Deno.test('CUL-979 — the signalment names a second pet as a COUNT and a SPECIE
   // In the signalment line's own register — a lowercase fragment after the age, not a
   // sentence and not a box — because that is the line a clinician reads species and age off.
   assert.ok(/6 yr \(b\. 2020\) &middot; lives with 1 other cat/.test(sig), 'the housemate rides the signalment line')
-  assert.ok(/<div class="sig">[^\n]*lives with <span class="num">1<\/span> other cat<\/div>/.test(html), 'it is the .sig line, not a new block')
+  assert.ok(
+    /<div class="sig">[^\n]*lives with <span class="num">1<\/span> other cat <span class="rnote">owner-recorded, as of this report<\/span><\/div>/.test(
+      html,
+    ),
+    'it is the .sig line, not a new block, and it names its source and its tense',
+  )
   // No trial on this snapshot ⇒ no trial block ⇒ the fact is stated exactly once.
   assert.equal((html.match(/lives with/g) ?? []).length, 1)
 })
@@ -1229,7 +1234,7 @@ Deno.test('CUL-979 — the trial block names the housemate as a CONFOUNDER, in t
   const callout = text(interpretingCallout(html))
   assert.ok(callout.length > 0, 'the Interpreting-this-record callout rendered')
   assert.ok(
-    /Nyx lives with 1 other cat, so another animal&rsquo;s food may have been available during the trial \(intake not directly observed\) &mdash; this record does not say whether feeding was kept separate\./.test(
+    /As of this report, Nyx lives with 1 other cat, so another animal&rsquo;s food may have been available during the trial \(intake not directly observed\) &mdash; this record does not say whether feeding was kept separate\./.test(
       callout,
     ),
     callout,

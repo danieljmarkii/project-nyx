@@ -1159,13 +1159,21 @@ function signalmentBlock(snap: ReportSnapshot): string {
   // the document's only trace of the second was three owner notes in an appendix table.
   // Stated where a clinician reads species and age, in that line's own register — a
   // fragment, not a box — and absent for a one-pet home (see `householdPhrase`).
+  //
+  // IT CARRIES ITS PROVENANCE, LIKE EVERYTHING ELSE ON THE PAGE. The cold read on this
+  // build called it "the one unhedged clause on a page that tags every other fact's
+  // source", and named the failure it invites: a pet that died or was rehomed and whose
+  // profile was never archived prints as a current housemate, and a vet acts on it. So the
+  // note says two things in the page's own words — this is the owner's record (the tag the
+  // conditions line already uses), and it is the record NOW, not during the window (the
+  // account cannot say when an animal arrived; `pets.created_at` is a profile date).
   const household = householdPhrase(s)
   const sig = [
     speciesLabel(s.species),
     s.breed ? h(s.breed) : 'breed not recorded',
     `${h(sexBit)}, ${h(neuterBit)}`,
     ageBit,
-    ...(household ? [household] : []),
+    ...(household ? [`${household} <span class="rnote">owner-recorded, as of this report</span>`] : []),
   ].join(' &middot; ')
   const ownerBit = s.ownerName ? `Owner: ${h(s.ownerName)}` : 'Owner: not recorded'
   const weightBit = s.latestWeight
@@ -2738,10 +2746,16 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // could not check. And like every item here it suppresses the affirmative variant — a
   // clean two-dog trial loses "…and supports interpreting it", because a paragraph must
   // not open with a sentence it then dismantles.
+  //
+  // "AS OF THIS REPORT" IS LOAD-BEARING, NOT THROAT-CLEARING. The household is a
+  // present-tense fact printed into a sentence about a past window, and the account cannot
+  // date an animal's arrival — so a cat adopted last week would otherwise assert
+  // availability during a trial that ran in May. The clause puts the tense where the reader
+  // meets the claim (C-37: a sentence holding two spans says which is which).
   const household = householdPhrase(snap.signalment)
   if (household) {
     caveats.push(
-      `${h(snap.signalment.name)} ${household}, so another animal&rsquo;s food may have been available during the trial (intake not directly observed) &mdash; this record does not say whether feeding was kept separate.`,
+      `As of this report, ${h(snap.signalment.name)} ${household}, so another animal&rsquo;s food may have been available during the trial (intake not directly observed) &mdash; this record does not say whether feeding was kept separate.`,
     )
   }
   // DO NOT OPEN WITH A SENTENCE THE PARAGRAPH THEN DISMANTLES. The affirmative variant
