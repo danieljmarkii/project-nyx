@@ -4,7 +4,7 @@
   /* ============================================================
      Diet trial extension — mock ROUND 1 (low-fi).
      Build contract: docs/nyx-trial-extension-requirements.md (CUL-156).
-     Six decisions open (D1–D6); every one whose options differ
+     Seven decisions open (D1–D7); every one whose options differ
      VISUALLY is drawn side by side here rather than described.
 
      Page convention (PM directive 2026-09-09): ONE proposal.
@@ -212,14 +212,15 @@
       <span>Culprit · Diet trial</span>
       <span>Mock round 1</span>
       <span>2026-09-16</span>
-      <span class="draft">6 decisions open</span>
+      <span class="draft">7 decisions open</span>
     </p>
     <h1>Changing a running trial&rsquo;s window</h1>
     <p class="standfirst">
       A vet directs twelve weeks on day 53 of a 56-day elimination trial. <strong>The app has nowhere to put
-      that instruction.</strong> This round draws the door that records it, and puts the six open calls
-      side by side rather than describing them. Build contract:
-      <code>docs/nyx-trial-extension-requirements.md</code>.
+      that instruction.</strong> This round draws the door that records it, and puts the seven open calls
+      side by side rather than describing them. <strong>§8 was added after an adversarial pass returned
+      FAIL on a claim this page made in its first draft</strong> &mdash; it is the most serious of the seven.
+      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v1.1.
     </p>
   </header>
 
@@ -240,6 +241,7 @@
         <tr><td>§5</td><td><span class="tag now">current</span> + 2 options</td><td><b>D2</b> &mdash; what the vet report can say. Also carries <b>D4</b>, the vet-directed clause.</td></tr>
         <tr><td>§6</td><td><span class="tag never">executed</span></td><td><b>D3</b> &mdash; why moving the window <em>backward</em> cannot ride this path.</td></tr>
         <tr><td>§7</td><td><span class="tag today">today</span> + 1 option</td><td><b>D5</b> &mdash; the GI preset (CUL-367), now with an observed case.</td></tr>
+        <tr><td>§8</td><td><span class="tag never">executed</span></td><td><b>D7</b> &mdash; one tap moves a reassurance gate. <b>Added after the adversarial pass returned FAIL</b>; the most serious decision in the set.</td></tr>
       </tbody>
     </table>
     </div>
@@ -518,9 +520,9 @@
         <figcaption>
           <b>Day 53 of 84 <span class="tag now">current</span></b>
           One added line, for the rest of the day only. No exclamation mark, no &ldquo;great &mdash; keep
-          going&rdquo;, no coverage restated beside it. Every other number on the card is
-          <strong>byte-identical</strong>: coverage and exposures are computed over elapsed days and
-          feedings, never over the target.
+          going&rdquo;, no coverage restated beside it. The <strong>off-diet count and its denominator</strong>
+          are byte-identical &mdash; verified under the tap. <strong>Coverage is not</strong>, on a trial past
+          its target: see §8, which is why D7 exists.
         </figcaption>
       </figure>
 
@@ -695,6 +697,86 @@
           ratification, and have been since CUL-367 was filed.
         </figcaption>
       </figure>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">08</span><h2>D7 &mdash; one tap moves a reassurance gate</h2></div>
+    <div class="col">
+      <p>
+        Round 1 of this page asserted that coverage is untouched by an extension. <strong>The
+        <code>adversarial-reviewer</code> pass falsified that the same session</strong>, and the finding is
+        serious enough to be the most consequential decision here. It is <em>already reachable today</em>
+        at the milestone &mdash; the mid-trial door does not create it, it multiplies it.
+      </p>
+      <p>
+        On an <strong>un-ended trial past its target</strong>, the B-422 coverage tail clip bounds the
+        coverage denominator at the <em>current</em> target (<code>lib/dietTrial.ts:2201-2206</code>).
+        Extend, and the clip stops applying.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+    <table class="ledger">
+      <thead><tr><th>dog&middot;gi, 28-day window, 10 of days 1&ndash;28 logged then daily to day 50</th><th>coverage</th><th>below floor</th><th>may state clean</th></tr></thead>
+      <tbody>
+        <tr><td>before the tap</td><td><b>10 / 28</b> &mdash; 36%</td><td><b>true</b></td><td><b>false</b></td></tr>
+        <tr><td>after one <em>Keep going &mdash; 2 more weeks</em></td><td><b>32 / 50</b> &mdash; 64%</td><td><b>false</b></td><td><b>true</b></td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="stack">
+      <div class="specimen">
+        <p class="s-k"><span class="tag never">executed</span> &nbsp; what the vet report prints across that one tap</p>
+        <p class="report-line" style="margin-bottom:10px">
+          <span class="bad">The record is too sparse to read that as a clean elimination.</span>
+        </p>
+        <p class="report-line">
+          &darr;&nbsp; <span class="moved">32 feedings &mdash; all 32 matched the trial diet or a permitted food.</span>
+        </p>
+        <p class="s-note">
+          <strong>Zero new evidence.</strong> No meal was logged, no exposure resolved; an owner tapped a
+          button about a calendar. It runs both ways &mdash; on a trial logged daily then silent, one tap
+          <em>withdraws</em> a clean claim. And nothing on any surface says the window moved.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k">The disclosure the clip&rsquo;s own justification cites &mdash; and does not have</p>
+        <p class="report-line" style="font-size:14px">
+          <code>lib/dietTrial.ts:2223</code> &mdash; <em>&ldquo;not the B-422 tail clip (that is the
+          trial&rsquo;s own prescribed window closing, and <code>closedByOverrun</code> discloses it)&rdquo;</em>
+        </p>
+        <p class="s-note">
+          Repo-wide, <code>closedByOverrun</code> is read by <strong>nothing in production</strong> &mdash;
+          its definition, one comment, and its own test file. A comment writing a cheque the code does not
+          cash (C-38), sitting inside the clip whose whole justification is the disclosure.
+          <strong>D7(a) is to wire it up.</strong>
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k">The precedent that settles it &mdash; one block away in the same report</p>
+        <p class="report-line">
+          Allowed list: Royal Canin Selected Protein PR <span style="color:var(--ink-3)">primary diet</span>.
+          <span class="moved">The allowed list changed after the trial started</span> &mdash; the dates above
+          are when each food was permitted, and feedings are scored against the list in force on the day.
+        </p>
+        <p class="s-note">
+          The report <strong>already discloses</strong> the other mid-trial change to the comparator
+          (<code>render.ts:2721</code>), because a mid-trial change to the comparator invalidates a reading.
+          A mid-trial change to the <strong>window</strong> is the larger claim and has no equivalent
+          anywhere. §5 of this page is that equivalent; D7 is the gate behind it.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <strong>D7&rsquo;s option (d) is &ldquo;do nothing&rdquo;, and it is drawn here so that it is ruled
+      rather than defaulted into.</strong> The recommendation is (a): wire the disclosure that already
+      exists, is already computed, is already tested, and is read by nothing.
     </div>
   </section>
 

@@ -94,11 +94,58 @@ the report safe whichever way D3 is ruled.
   deletion, and a DRAFT spec with six open decisions and nothing buildable has not earned one. The row
   lands when the rulings do.
 
-## What is still out
+## The adversarial pass came back FAIL, and broke one of the spec's own rules
 
-The `adversarial-reviewer` pass on the shipped extension logic was dispatched and its findings are folded
-in where they landed before the push; anything arriving after is an amendment to the spec, not a new
-document.
+Draft 1 asserted, as TE-6 and §5.3, that an extension cannot re-score what the owner already saw: coverage
+and exposures are computed over elapsed days and feedings, never over the target. **Half of that was
+wrong**, and the `adversarial-reviewer` executed the counterexample the same session.
+
+`computeTrialFacts`'s B-422 coverage tail clip bounds the coverage **denominator** at
+`trialTargetEndDayIndex` (`lib/dietTrial.ts:2201-2206`) — which reads the exact integer `extendTrial`
+overwrites. On an un-ended trial past its target, one tap moves the denominator, and with it the gate:
+
+| dog·gi, 28-day window, 10 of days 1–28 logged then daily to day 50 | coverage | `belowCoverageFloor` | `mayStateRecordClean` |
+|---|---|---|---|
+| before | 10/28 | true | false |
+| after one `Keep going` | 32/50 | **false** | **true** |
+
+The vet report moves from *"The record is too sparse to read that as a clean elimination"* to **"32
+feedings — all 32 matched the trial diet or a permitted food"** with zero new evidence, retroactively over
+days already reported, and nothing anywhere says the window moved. It runs both ways: on a record logged
+daily then silent, one tap *withdraws* a clean claim.
+
+Verified in the tree rather than taken on the subagent's word — the clip and its `overrunUnended` guard
+read exactly as reported.
+
+Two things make it worse, and both were verified too:
+
+- **The disclosure the clip cites does not exist.** `lib/dietTrial.ts:2223` justifies the clip with *"and
+  `closedByOverrun` discloses it"*. Repo-wide, `closedByOverrun` is read by nothing in production — its
+  definition, one comment, and its own test file. C-38's cheque the code does not cash, sitting inside the
+  clip whose whole justification is the disclosure.
+- **The report already discloses the sibling case.** `render.ts:2721` prints *"The allowed list changed
+  after the trial started"*, because a mid-trial change to the comparator invalidates a reading. The
+  window is the larger claim and has no equivalent. That precedent is now the strongest argument for D2,
+  and it is one block away in the same document.
+
+So the spec went to **v1.1** in the same session: TE-6 is a requirement rather than an assertion, §5.3 is
+narrowed to the exposure half that held, §5.4–§5.6 are new, and **D7 is new and is the most serious
+decision in the set**. Draft 1's claim is named where it stood rather than quietly rewritten.
+
+Three more findings landed in §5.5 — unbounded intent/value divergence in overrun (a day-140 tap writes a
+168-day window, rendered to a clinician as a 24-week prescription), the unbounded and unlabelled
+resurrection of a trial past `TRIAL_OVERRUN_GRACE_DAYS`, and the ladder problem: on the shipped cat·gi
+default of 42 days, **84 is never reachable** (42 → 67 → 81 → 95).
+
+What held is in §5.6, because a list of only failures is not a falsification pass: 1,280 degenerate inputs
+to `nextTargetDays` with zero clamp violations, the exposure floor surviving the tap, the decline/refusal
+replacements still outranking the milestone, target-independent rate denominators, and LWW unable to
+strand an extension.
+
+**The lesson worth carrying past this track**, and the reason the pass was dispatched at all: the spec's
+own safety rule was the thing that broke. TE-6 was written from reading §5.1's definitions, which say
+coverage is days-over-days-elapsed — true, and irrelevant, because a *clip* three hundred lines away had
+quietly made the target a bound on "days elapsed". A definition is not a denominator.
 
 ## For the next session
 
