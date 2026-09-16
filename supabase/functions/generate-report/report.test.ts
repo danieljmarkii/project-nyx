@@ -2757,6 +2757,7 @@ Deno.test('B-704 TG-5 — editing the stored target never moves a report NUMBER 
       mealCompletion: s.diet.mealCompletion,
       treats: s.diet.treats,
       humanFood: { count: s.diet.humanFood.count, days: s.diet.humanFood.days },
+      previousDiet: null,
       proteinExposureTally: s.provenance.proteinExposureTally,
       proteinTimelineTotal: s.proteinTimeline.totalFeedings,
       totalByProtein: s.proteinTimeline.totalByProtein,
@@ -3537,4 +3538,62 @@ Deno.test('CUL-994 Part 2 — lifetimeFirst/LastDoseDay are drawn from ADMINISTE
   assert.equal(none.lifetimeLastDoseDay, null)
   assert.equal(none.lifetimeDosesLogged, 0)
   assert.equal(none.lifetimeDoseDayCount, 0)
+})
+
+// ── R-13 item 2 (CUL-851) — the WSAVA "Previous diet" row, derived from the meal log ──
+//
+// Appendix B printed a hardcoded "Not recorded." for previous diet while appendix E of the
+// same document listed the food the pet ate every day up to the trial. The field genuinely
+// is not captured (CUL-330 is that work, and stays separate), but the record answers the
+// question anyway, and saying "not recorded" over an answer the report itself prints is the
+// same self-contradiction R-4 fixes two rows down.
+
+Deno.test('R-13 item 2 — the previous diet is derived from meals logged BEFORE the trial started', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      dietTrials: [
+        { id: 'dt', foodItemId: 'fi-t', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydro HP', primaryProtein: 'hydrolyzed' },
+      ],
+      events: [
+        // Before the trial — the previous diet.
+        mealEvent('2026-05-08', { label: 'Tiki Cat Tuna' }),
+        mealEvent('2026-05-09', { label: 'Tiki Cat Tuna' }),
+        mealEvent('2026-05-10', { label: 'Tiki Cat Tuna' }),
+        mealEvent('2026-05-11', { label: 'Fancy Feast Salmon' }),
+        // A TREAT before the trial is not the diet.
+        mealEvent('2026-05-10', { label: 'Temptations', foodType: 'treat' }),
+        // On and after the start day — the trial diet, never the previous one.
+        mealEvent('2026-05-12', { label: 'Hydro HP' }),
+        mealEvent('2026-05-20', { label: 'Hydro HP' }),
+      ],
+    }),
+  )
+  const prev = snap.diet.previousDiet
+  assert.ok(prev, 'a trial with pre-trial meals derives a previous diet')
+  // `mealFoodLabel` carries the format, exactly as it does for `mealItems` — one labelling
+  // convention across the appendix, so a food reads the same in both rows.
+  assert.deepEqual(prev.labels, ['Tiki Cat Tuna (Dry)', 'Fancy Feast Salmon (Dry)'], 'most-fed first, treats excluded')
+  assert.equal(prev.feedings, 4, 'four pre-trial meals, and neither trial meal nor the treat')
+  assert.equal(prev.firstDay, '2026-05-08')
+  assert.equal(prev.lastDay, '2026-05-11', 'through the day before the trial began')
+})
+
+Deno.test('R-13 item 2 — no trial, or no pre-trial meal, derives nothing rather than guessing', () => {
+  idSeq = 0
+  const noTrial = assembleReport(baseInput({ events: [mealEvent('2026-05-08', { label: 'Tiki Cat Tuna' })] }))
+  assert.equal(noTrial.diet.previousDiet, null, 'without a trial there is no "previous" to speak of')
+
+  idSeq = 0
+  const noPrior = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      dietTrials: [
+        { id: 'dt', foodItemId: 'fi-t', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydro HP', primaryProtein: 'hydrolyzed' },
+      ],
+      events: [mealEvent('2026-05-20', { label: 'Hydro HP' })],
+    }),
+  )
+  assert.equal(noPrior.diet.previousDiet, null, 'a pull that saw no pre-trial meal claims nothing')
 })

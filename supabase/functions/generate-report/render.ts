@@ -5226,7 +5226,7 @@ function dietMeds(snap: ReportSnapshot): string {
     const mealsBit = mc
       ? ` Also fed as meals: ${mealNames} (${num(mc.ratedMeals)} meal${
           mc.ratedMeals === 1 ? '' : 's'
-        }${typically}; itemised in appendix&nbsp;E).`
+        }${typically}; ${mealsAppendixPointer(snap)}).`
       : ''
     feedBits.push(`Primarily free-fed: ${freeFedLabels}. <b>Intake not directly observed.</b>${mealsBit}`)
   } else {
@@ -5234,7 +5234,9 @@ function dietMeds(snap: ReportSnapshot): string {
       feedBits.push(
         `${num(d.mealCompletion.finishedMeals)} of ${num(
           d.mealCompletion.ratedMeals,
-        )} rated meals fully eaten (owner-observed; treats + free-fed excluded). Meals itemised in appendix&nbsp;E.`,
+        )} rated meals fully eaten (owner-observed; treats + free-fed excluded). Meals are ${mealsAppendixPointer(
+          snap,
+        )}.`,
       )
     }
     if (isFreeFed) {
@@ -5836,6 +5838,46 @@ function mealsAppendixVisible(snap: ReportSnapshot): boolean {
 }
 
 /**
+ * What appendix E actually holds, in the ONE phrase every pointer to it uses (CUL-643).
+ *
+ * Page 1 and appendix B said "itemised in appendix E" at five sites, four of them rendering
+ * on any given report. Appendix E itemises nothing. Its first table is GROUPED — one row per
+ * food, with a feeding count and a date span — and the second table, which does list
+ * individual meals with their times, renders only when a reduced-intake flag fired or the
+ * record holds meals the owner did not finish, is capped at the most recent N, and is
+ * filtered to one population. So the document promised a meal-by-meal list three or four
+ * times and delivered a summary, on the appendix a vet turns to precisely to check a page-1
+ * figure. The meal TIMES exist — the not-fully-eaten table prints them.
+ *
+ * R-15 brief 5 rules the shape and was unruled at build time, so this is the fallback that
+ * issue names: the honest direction, provisional. The word goes, the pointer describes the
+ * grouping it actually points at, and appendix E says where the per-meal times do live.
+ * Option (a) — a real per-meal table, most-recent-N with the older count disclosed — stays
+ * open on CUL-643 and would replace this phrase, not add to it.
+ *
+ * ONE STRING, READ BY EVERY SITE, is the load-bearing part rather than the wording. The
+ * promise and the appendix drifted apart because four sites each spelled the promise out,
+ * and nothing tied any of them to what the appendix rendered. Derived here from the same two
+ * predicates the appendix branches on, so a future change to appendix E's shape cannot leave
+ * a stale promise behind on page 1.
+ */
+function mealsAppendixPointer(snap: ReportSnapshot): string {
+  const grouped = 'grouped by food in appendix&nbsp;E'
+  if (!mealsAppendixVisible(snap) || snap.provenance.intakeLog.length === 0) return grouped
+  // The second table's population is named, never generalised: "the rated meals" would be
+  // false of the `unfinished` scope, which is precisely the rows the first table's own
+  // ratings are filtered AGAINST.
+  //
+  // "the most recent" is load-bearing, not padding: the second table is capped at N and
+  // discloses the omitted count itself, so a pointer saying it lists "each" such meal
+  // contradicts the appendix's own disclosure — the same over-promise as "itemised", one
+  // clause smaller. The phrase is true whether or not the cap bit.
+  return snap.provenance.intakeLogScope === 'unfinished'
+    ? `${grouped}, which also lists the most recent meals recorded as not fully eaten, by date and time`
+    : `${grouped}, which also lists the most recent rated meals, by date and time`
+}
+
+/**
  * Incident-photo appendix (PR 7). Renders whenever any in-window incident was photographed.
  * Lettering: it is the LAST lettered appendix, after the (conditional) meals appendix — so it is
  * 'F' when meals render and 'E' when they don't (the meals-appendix 'E' cross-references, all
@@ -6150,7 +6192,7 @@ function mealsAppendix(snap: ReportSnapshot): string {
   return `
 <section class="page">
   <p class="appx-title serif">Appendix E — Meals &amp; intake</p>
-  <p class="appx-sub">The meals the owner logged in this window — the food fed as discrete meals, distinct from free-fed food and treats (which appear in appendix&nbsp;C). &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; Free-fed food is not directly observed and is not rated, so it does not appear here.</p>
+  <p class="appx-sub">The meals the owner logged in this window — the food fed as discrete meals, distinct from free-fed food and treats (which appear in appendix&nbsp;C). &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; Free-fed food is not directly observed and is not rated, so it does not appear here. Meals are grouped by food below; the time of each individual meal is in the Culprit app.</p>
   ${
     // The intake table can be a sheet tall, so it is never the anchor: measured on the
     // `refused` fixture, wrapping it whole pushed it to a fresh sheet and cost a page. Its
@@ -7160,7 +7202,9 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   const mealsBit = d.mealItems.length
     ? `${num(mealTotal)} logged meal${mealTotal === 1 ? '' : 's'} across ${num(d.mealItems.length)} food${
         d.mealItems.length === 1 ? '' : 's'
-      }: ${distinctLabels(d.mealItems.map((i) => ({ label: i.foodLabel })), 4)}. Itemised in appendix&nbsp;E.`
+      }: ${distinctLabels(d.mealItems.map((i) => ({ label: i.foodLabel })), 4)}. These are ${mealsAppendixPointer(
+        snap,
+      )}.`
     : 'None logged as discrete meals in this window.'
   const humanBit = d.humanFood.count
     ? `${num(d.humanFood.days)} day${d.humanFood.days === 1 ? '' : 's'} (${distinctLabels(d.humanFood.items, 6)}).`
@@ -7242,6 +7286,21 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   // against a drug, not a diagnosis the owner entered as history, and promoting one would
   // invent clinical history nobody recorded. Name the tension; let the vet resolve it.
   const indications = indicationsNamedOnReport(snap)
+  // CUL-851 — DERIVED, and saying so. The row is not "not recorded" on a record whose own
+  // meal log answers the question; nor is it presented as an entered field, because the
+  // sub-head above promises that uncaptured fields are marked rather than guessed. The span
+  // takes its year ONCE for the pair (C-19): these dates precede the window, so the
+  // letterhead's range does not bound them and a bare "May 11" could be any year.
+  const prev = d.previousDiet
+  const prevDietBit = prev
+    ? `Not entered as a field. Derived from the meal log: ${distinctLabels(
+        prev.labels.map((label) => ({ label })),
+        4,
+      )}, fed as meals ${
+        prev.firstDay === prev.lastDay ? `on ${h(fmtDayYear(prev.lastDay))}` : h(fmtSpanFromTo(prev.firstDay, prev.lastDay))
+      } (${num(prev.feedings)} meal${prev.feedings === 1 ? '' : 's'}). This is what the record holds, and the log may not reach the whole of it.`
+    : 'Not recorded.'
+
   const condBit = snap.provenance.conditions.length
     ? snap.provenance.conditions.map((c) => `${h(c.name)} (${h(c.status)})`).join('; ')
     : indications.length
@@ -7268,9 +7327,9 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
       <tr><th style="width:180px">Primary diet</th><td>${primaryDiet}</td></tr>
       <tr><th>Proteins in the diet</th><td>${proteinsBit}</td></tr>
       <tr><th>Meals logged</th><td>${mealsBit}</td></tr>
-      <tr><th>Previous diet</th><td>Not recorded.</td></tr>
+      <tr><th>Previous diet</th><td>${prevDietBit}</td></tr>
       <tr><th>Amount &amp; schedule</th><td>Not recorded in structured form (per-meal quantities are owner-entered free text${
-        d.mealItems.length > 0 ? '; meals are itemised in appendix&nbsp;E' : ''
+        d.mealItems.length > 0 ? '; the meals themselves are in the Meals-logged row above and in appendix&nbsp;E' : ''
       }).</td></tr>
       <tr><th>Treats</th><td>${treatBit}</td></tr>
       <tr><th>Human food</th><td>${humanBit}</td></tr>
@@ -7596,16 +7655,20 @@ function appendixF(snap: ReportSnapshot): string {
       // report that does not carry it is the same dangling-reference defect B-599 is about,
       // re-entered through the legend.
       snap.provenance.intakeLogScope === 'intake_flag'
-        ? ' When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal), and the meals behind it are in appendix&nbsp;E (meals &amp; intake).'
+        ? ` When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal); the meals behind it are ${mealsAppendixPointer(
+            snap,
+          )} (meals &amp; intake).`
         : snap.provenance.intakeLogScope === 'unfinished'
-          ? ' Appendix&nbsp;E carries the intake recorded against every food, and lists each meal the owner did not record as fully eaten. A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal.'
+          ? ` The intake recorded against every food is ${mealsAppendixPointer(
+              snap,
+            )} (meals &amp; intake). A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal.`
           : snap.diet.mealItems.length > 0
           ? // The same defect as the safety-flag entry, on the one axis where it is
             // worst: "none was raised in this window" told a cold reader the app had
             // examined intake and found nothing, on a cat refusing nearly every bowl.
             // Intake is not preference — refusal is frequently a disease signal — so the
             // legend may state what the line DEPENDS ON and must not certify its absence.
-            ' The meals the owner logged are itemised in appendix&nbsp;E (meals &amp; intake). A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal &mdash; read the logged ratings in appendix&nbsp;E.'
+            ` The meals the owner logged are ${mealsAppendixPointer(snap)} (meals &amp; intake). A page-1 &ldquo;time since the last <b>fully-eaten</b> meal&rdquo; line appears only when a reduced-intake flag fired; its absence means no flag fired, not that intake was normal &mdash; read the logged ratings in appendix&nbsp;E.`
           : ' When a reduced-intake flag is raised, page&nbsp;1 adds the time since the last <b>fully-eaten</b> meal and a meals appendix lists the rated meals behind it; no meals were logged in this window.'
     } For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
     <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>

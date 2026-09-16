@@ -1780,6 +1780,29 @@ export interface DietSummary {
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
   humanFood: { count: number; days: number; items: Array<{ date: string; label: string | null }> }
+  /**
+   * The WSAVA "Previous diet" row, DERIVED from the meals logged before the trial started
+   * (CUL-851). Null when there is no trial, or when the pull held no pre-trial meal.
+   *
+   * The field itself is not captured — CUL-330 is that work and stays separate — but the
+   * record answers the question anyway, and appendix B printed a hardcoded "Not recorded."
+   * over a document whose own meal log showed what the pet ate every day up to the trial.
+   * Rendered as a DERIVATION, never as an entered field: the appendix's sub-head promises
+   * that uncaptured fields are marked rather than guessed, so the row has to say which it is.
+   *
+   * `firstDay` is the pull's floor, not the record's: the meal pull is a generous lookback,
+   * so an older diet can sit behind it. Rendered as a span rather than a start, so nothing
+   * here reads as "this is when the previous diet began".
+   */
+  previousDiet: {
+    /** Distinct food labels, most-fed first. */
+    labels: string[]
+    /** Meals counted (foodType `meal` only — a treat is not the diet). */
+    feedings: number
+    /** Local day keys of the first and last pre-trial meal the pull could see. */
+    firstDay: string
+    lastDay: string
+  } | null
 }
 
 export interface MedicationAdherence {
@@ -3703,6 +3726,48 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       }
     : null
 
+  // CUL-851 — the previous diet, read off the meal log rather than left as a negative.
+  //
+  // Scoped to meals STRICTLY BEFORE the trial's start day, in the owner's local days, over
+  // `dedupedAll` rather than `windowEvents`: the report window frequently OPENS at the trial
+  // start (the §6 cascade's rung 2), in which case there is no pre-trial meal inside the
+  // window at all and the in-window set would answer "none" on every trial report that most
+  // needs the row. `dedupedAll` is the generous lookback, which is exactly the span this
+  // question wants.
+  //
+  // Treats are excluded. A pre-trial treat says nothing about what the animal was FED, and
+  // the WSAVA row is about the diet; the treats have their own row two lines down.
+  const previousDiet = ((): DietSummary['previousDiet'] => {
+    const startedAt = reportTrialInput?.startedAt
+    if (!trialBlock || !startedAt) return null
+    const startDayNum = dayNumber(startedAt)
+    if (startDayNum === null) return null
+    const counts = new Map<string, number>()
+    let feedings = 0
+    let firstDay: string | null = null
+    let lastDay: string | null = null
+    for (const e of dedupedAll) {
+      if (e.type !== 'meal' || !e.meal || e.meal.foodType !== 'meal') continue
+      const key = localDayKey(e.occurredAt, tz)
+      if (key === null) continue
+      // The BOUND is numeric, on day numbers parsed from both sides — never a text compare
+      // of two ISO spellings (C-40). The min/max below are ordering over fixed-width day
+      // keys, where lexical and chronological agree, which is the safe half of that rule.
+      const dn = dayNumber(key)
+      if (dn === null || dn >= startDayNum) continue
+      feedings++
+      if (firstDay === null || key < firstDay) firstDay = key
+      if (lastDay === null || key > lastDay) lastDay = key
+      const label = mealFoodLabel(e.meal)
+      if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+    }
+    if (feedings === 0 || firstDay === null || lastDay === null) return null
+    const labels = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([label]) => label)
+    return { labels, feedings, firstDay, lastDay }
+  })()
+
   const diet: DietSummary = {
     trialTargetProtein: trialProteinTarget,
     trialProteinProvenance,
@@ -3714,6 +3779,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     mealItems,
     treats: { count: treatFeedings.length, distinctItems: treatItemIds.size },
     humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
+    previousDiet,
   }
 
   // ── Detection reuse (§7 / §8.5) ──────────────────────────────────────────────
