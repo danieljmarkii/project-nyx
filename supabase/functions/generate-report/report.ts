@@ -1846,6 +1846,24 @@ export interface MedicationAdherence {
   prescribedDoses: number | null
   /** Administered (given + partial) across the WHOLE record — the canonical claim's numerator. */
   lifetimeDosesLogged: number
+  /**
+   * The first and last local day an ADMINISTERED dose (given | partial) was logged, across the
+   * WHOLE record — the dosing span (CUL-994 Part 2). ONE population for both ends, and the same
+   * population as `lifetimeDosesLogged` beside it: the gap sentence the render prints from these
+   * can never take its start from administered rows and its end from any row, which is the C-37
+   * asymmetry R-2's second review found ("Dosed Jul 17 – Jul 27" over one administered dose and
+   * twenty refusals). Null when nothing was administered. Record-scoped, not window-scoped, so a
+   * window that truncates a course cannot manufacture a gap.
+   */
+  lifetimeFirstDoseDay: string | null
+  lifetimeLastDoseDay: string | null
+  /**
+   * How many DISTINCT local days carry an administered dose across the whole record — the
+   * density the span alone cannot carry (CUL-994 Part 2, adversarial round 3): a first and a
+   * last date read as a continuous range, and ten dosing days with a nineteen-day hole between
+   * them printed as a 29-day span. Same population and same writer as the two endpoints.
+   */
+  lifetimeDoseDayCount: number
   /** Administered doses inside the report window. A count, never a ratio's numerator. */
   windowDosesLogged: number
   /**
@@ -4826,11 +4844,14 @@ function buildMedicationAdherence(
   // The same days as `doseDayNums`, as local day KEYS — Appendix D renders dates, and a day
   // number is only meaningful next to the scope that produced it (B-532).
   const doseDayKeys = new Set<string>()
-  // Administered-dose days across the WHOLE record, for the dosing span. Day keys are
-  // fixed-width 'YYYY-MM-DD', so a lexical min/max IS the chronological one with no instant
-  // parse (B-441-safe) — and it is order-independent, so it does not care which direction the
-  // row pull happened to arrive in (CUL-975 reorders every pull).
+  // Administered-dose days across the WHOLE record, for the dosing span (CUL-994 Part 2). Day
+  // keys are fixed-width 'YYYY-MM-DD', so a lexical min/max IS the chronological one with no
+  // instant parse (B-441-safe) — and it is order-independent, so it does not care which
+  // direction the row pull happened to arrive in (CUL-975 reorders every pull).
   let lifetimeDosesLogged = 0
+  let lifetimeFirstDoseDay: string | null = null
+  let lifetimeLastDoseDay: string | null = null
+  const lifetimeDoseDayKeys = new Set<string>()
 
   for (const d of attributedDoses) {
     const administered = d.adherence === 'given' || d.adherence === 'partial'
@@ -4838,7 +4859,15 @@ function buildMedicationAdherence(
     // (adherence null) is deliberately NOT counted here: bundling it as administered
     // would overstate compliance for a critical drug (adversarial finding 4). It stays
     // visible as unconfirmedDoses so the render can be honest about it.
-    if (administered) lifetimeDosesLogged++
+    if (administered) {
+      lifetimeDosesLogged++
+      const dk = localDayKey(d.occurredAt, tz)
+      if (dk !== null) {
+        if (lifetimeFirstDoseDay === null || dk < lifetimeFirstDoseDay) lifetimeFirstDoseDay = dk
+        if (lifetimeLastDoseDay === null || dk > lifetimeLastDoseDay) lifetimeLastDoseDay = dk
+        lifetimeDoseDayKeys.add(dk)
+      }
+    }
     if (!inWindow(d)) continue
     switch (d.adherence) {
       case 'given':
@@ -4900,6 +4929,9 @@ function buildMedicationAdherence(
     // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.
     prescribedDoses: course?.plannedDoses ?? null,
     lifetimeDosesLogged,
+    lifetimeFirstDoseDay,
+    lifetimeLastDoseDay,
+    lifetimeDoseDayCount: lifetimeDoseDayKeys.size,
     windowDosesLogged: given + partial,
     windowDosesTotal: given + partial + missed + refused + unconfirmed,
     courseEnded: courseEnded === true,

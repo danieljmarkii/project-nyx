@@ -391,6 +391,14 @@ function evenAxisMax(values: number[]): number {
  * cannot miss that "something changed here" — the full enumeration lives in the
  * `Reading the trend` note below the chart (GP-0).
  */
+/** The one-word kind on a marker's face — short enough to sit beside its date inside the plot. */
+const MARKER_KIND_WORD: Record<ConcurrentChange['kind'], string> = {
+  diet_trial: 'diet',
+  medication: 'med',
+  supplement: 'supplement',
+  free_fed: 'free-fed',
+}
+
 function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], windowEndDate: string): string {
   const buckets = sym.weeklyBuckets
   const loggedByBucket = sym.loggedDaysByBucket
@@ -432,18 +440,45 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     group.push(m)
     markersByBucket.set(m.bucketIndex, group)
   }
+  // The y of a bucket's count label baseline — the band the marker line must NOT cross (CUL-993
+  // A.3). The white halo on the label is kept as a belt, but the R-11 cold read zoomed the
+  // printed chart and the dashes still ran through the "3" on the marked week, so the line is
+  // drawn in two segments with the label's band left open. Mirrors the bar loop's placement.
+  const labelBaseline = (i: number): number => {
+    const c = buckets[i]
+    if (c > 0) return yFor(c) - 6
+    return (loggedByBucket[i] ?? 0) > 0 ? BASE - 7 : BASE - 13
+  }
+  const MARK_TOP = 18
   for (const [bucketIndex, group] of [...markersByBucket.entries()].sort((a, b) => a[0] - b[0])) {
     const mx = centerX(bucketIndex)
-    parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="18" x2="${mx.toFixed(1)}" y2="${BASE}"/>`)
+    const ly = labelBaseline(bucketIndex)
+    const bandTop = ly - 11
+    const bandBottom = ly + 3
+    if (bandTop > MARK_TOP) {
+      parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="${MARK_TOP}" x2="${mx.toFixed(1)}" y2="${bandTop.toFixed(1)}"/>`)
+    }
+    if (bandBottom < BASE) {
+      parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="${bandBottom.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${BASE}"/>`)
+    }
     // Anchor the date label so it stays inside the plot (end-anchor in the right third).
     const anchor = mx > L + plotW * 0.66 ? 'end' : 'start'
     const lx = anchor === 'end' ? mx - 3 : mx + 3
-    // Date the marker with the EARLIEST start in the week; prefix a count when it carries more.
-    const earliest = group.reduce((a, b) => ((a.startDate ?? '') <= (b.startDate ?? '') ? a : b))
+    // A shared week lists EVERY start's date (CUL-982 item 4): "2 starts · Jul 26" labelled the
+    // bucket with the earliest start's date, and read as both starting on Jul 26 when the second
+    // was Aug 1 — a number that labels a bucket spoken as a record fact (C-3). Past three starts
+    // the label says the count and the week, which does not masquerade as a date; the legend
+    // above the chart carries every date regardless.
+    const dated = [...group].sort((a, b) => ((a.startDate ?? '') < (b.startDate ?? '') ? -1 : 1))
+    // The face names the KIND (cold read round 2): two bare "start ·" labels were visually
+    // identical on the one chart whose question is "diet or drug?", and the kind lived only in
+    // the legend paragraph above the section. The legend still carries the name and the date.
     const label =
-      group.length > 1
-        ? `${group.length} starts &middot; ${h(fmtDay(earliest.startDate))}`
-        : `start &middot; ${h(fmtDay(earliest.startDate))}`
+      dated.length === 1
+        ? `${MARKER_KIND_WORD[dated[0].kind]} start &middot; ${h(fmtDay(dated[0].startDate))}`
+        : dated.length <= 3
+          ? `starts &middot; ${dated.map((c) => h(fmtDay(c.startDate))).join(', ')}`
+          : `${dated.length} starts this week`
     parts.push(`<text class="ann" x="${lx.toFixed(1)}" y="11" text-anchor="${anchor}">${label}</text>`)
   }
 
@@ -1030,6 +1065,8 @@ function letterhead(snap: ReportSnapshot): string {
   // last letter — E or F); the closing "How to read" page is deliberately unlettered. State the
   // ACCURATE range — the first round-2 artifact said "A–F", sending a careful vet hunting for a
   // non-existent appendix on a document whose whole pitch is "traces to every figure" (cold-read).
+  // And the line no longer says "this page" (CUL-993 A.5): the summary runs two to three
+  // printed sheets on every fixture, so it says what is true — the summary comes first.
   const lastAppendix = lastAppendixLetter(snap)
   return `
   <div class="letter">
@@ -1051,7 +1088,7 @@ function letterhead(snap: ReportSnapshot): string {
     </div>
   </div>
   <div class="rule-brand"></div>
-  <div class="orient">Clinical summary: this page. Appendices A&ndash;${lastAppendix} (+ a legend): the reference record behind every figure.</div>`
+  <div class="orient">Clinical summary first; appendices A&ndash;${lastAppendix} and a legend follow: the reference record behind every figure.</div>`
 }
 
 /**
@@ -3604,11 +3641,13 @@ function weightBlock(snap: ReportSnapshot): string {
   // + `trend` (not just `isEmpty`): those are independent fields across the report.ts
   // boundary, and a fabricated "0.0 kg" (from a `?? 0` fallback) would be exactly the
   // invented value this file refuses to render (code-reviewer). Honest "—", never a zero.
+  // The copy is the FACT and nothing else (CUL-857): "the owner can log weigh-ins in Culprit"
+  // was the app addressing the owner on the vet's page. The logging nudge lives in the app.
   if (w.isEmpty || (!w.latest && !w.trend)) {
     return `
   <div class="weight weight-empty">
     <div class="wt-read"><span class="v">No home weigh-ins recorded.</span><br/>
-    <span class="l">A weight trend is a useful GI bellwether; the owner can log weigh-ins in Culprit.</span></div>
+    <span class="l">No weight trend can be shown; body condition not assessed.</span></div>
   </div>`
   }
   const t = w.trend
@@ -4467,18 +4506,27 @@ function symptomTrend(snap: ReportSnapshot): string {
   </div>`
   }
   const panels = snap.symptoms.map((s) => symptomPanel(s, snap)).join('')
-  // One legend line for the dashed intervention markers on the charts (R2-6) — so a reader who
-  // sees a dashed vertical knows it is a start-of-intervention divider, not a data spike, and where
-  // the detail lives. Only shown when there is at least one marker to explain.
+  // One legend line for the dashed intervention markers on the charts (R2-6), ABOVE the first
+  // chart that uses it (CUL-982 item 4): it sat after the charts, in the lightest grey on the
+  // page, and the cold read nearly missed it. It names each start with its exact date, because
+  // the mark itself is week-granular (B-496) and the date has to live somewhere the reader
+  // meets the mark; "Reading the trend" below still carries the timing, the stops and the
+  // co-attribution caution. Only shown when there is at least one marker to explain. R-14
+  // (CUL-291) extends this line with the stops.
+  const marked = snap.concurrentChanges
+    .filter((c) => c.bucketIndex !== null)
+    .sort((a, b) => ((a.startDate ?? '') < (b.startDate ?? '') ? -1 : (a.startDate ?? '') > (b.startDate ?? '') ? 1 : 0))
   const markerLegend =
-    snap.concurrentChanges.some((c) => c.bucketIndex !== null)
-      ? `<div class="chartlegend">A dashed vertical marks the <b>week</b> a diet, medication, or supplement started — each is named with its exact date in &ldquo;Reading the trend&rdquo; below.</div>`
+    marked.length > 0
+      ? `<div class="chartlegend">A dashed vertical marks the <b>week</b> a diet, medication, or supplement started: ${marked
+          .map((c) => `${legendLabel(c)}${c.startDate ? ` on ${h(fmtDay(c.startDate))}` : ''}`)
+          .join('; ')}. Timing and overlap are in &ldquo;Reading the trend&rdquo; below.</div>`
       : ''
   return `
   <div class="sec">
     <h2>Symptom frequency &amp; trend</h2>
-    ${panels}
     ${markerLegend}
+    ${panels}
     ${readingTheTrend(snap)}
   </div>`
 }
@@ -4604,7 +4652,7 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
     fmtDay(snap.scope.endDate),
   )}</span></div>
         <div class="big">
-          <div class="n num">${s.count}<small>&nbsp;entries&nbsp;/&nbsp;${s.windowDays}&nbsp;d</small></div>
+          <div class="n num">${s.count}<small>&nbsp;${s.count === 1 ? 'entry' : 'entries'}&nbsp;/&nbsp;${s.windowDays}&nbsp;d</small></div>
           ${deltaHtml}
         </div>
       </div>
@@ -4700,6 +4748,25 @@ function changeTiming(c: ConcurrentChange): string {
   return start ? `ongoing since ${start}` : 'ongoing, start not recorded'
 }
 
+/**
+ * The legend's label — kind FIRST, so "afoxolaner (NexGard) (medication)" never happens (the
+ * R-11 cold read's double parenthetical): "the medication afoxolaner (NexGard) on Jun 5".
+ * `changeLabel` keeps the kind-after form for the "Reading the trend" note, where the label is
+ * the subject of a clause.
+ */
+function legendLabel(c: ConcurrentChange): string {
+  switch (c.kind) {
+    case 'diet_trial':
+      return `the trial diet ${h(c.label)}`
+    case 'medication':
+      return `the medication ${h(c.label)}`
+    case 'supplement':
+      return `the supplement ${h(c.label)}`
+    case 'free_fed':
+      return `free-fed ${h(c.label)}`
+  }
+}
+
 function changeLabel(c: ConcurrentChange): string {
   switch (c.kind) {
     case 'diet_trial':
@@ -4713,6 +4780,12 @@ function changeLabel(c: ConcurrentChange): string {
   }
 }
 
+/** "none has" / "1 has" / "N have" — the assessed-count subject, agreeing at zero and one. */
+function legibleReadCount(n: number): string {
+  if (n === 0) return 'none has'
+  return `${num(n)} ${n === 1 ? 'has' : 'have'}`
+}
+
 /** Vomit characteristics (§3.6) — assessed denominators + present-only blood/foreign. */
 function vomitCharacteristics(snap: ReportSnapshot): string {
   const p = snap.vomitPhenotype
@@ -4721,6 +4794,8 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   const barSegs = CONTENTS_ORDER.filter((c) => p.contentsMix[c] > 0)
   let mixHtml = ''
   let keyHtml = ''
+  // One category is a count, not a chart (CUL-993 A.6, the stool strip's rule applied here).
+  const singleCategory = barSegs.length === 1
   if (assessed > 0 && barSegs.length > 0) {
     mixHtml = barSegs
       .map((c, i) => {
@@ -4736,9 +4811,9 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
     keyHtml = barSegs
       .map(
         (c, i) =>
-          `<span class="sw" style="background:${GRAY_RAMP[i % GRAY_RAMP.length]}"></span>${h(contentsLabel(c))} &times;${
-            p.contentsMix[c]
-          }`,
+          `${
+            singleCategory ? '' : `<span class="sw" style="background:${GRAY_RAMP[i % GRAY_RAMP.length]}"></span>`
+          }${h(contentsLabel(c))} &times;${p.contentsMix[c]}`,
       )
       .join('&nbsp;&middot;&nbsp; ')
   } else {
@@ -4758,9 +4833,9 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   if (p.states.pending) stateBits.push(`${p.states.pending} still processing`)
   if (noPhoto > 0) stateBits.push(`${noPhoto} without a photo`)
   const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
-  const denom = `Across all ${num(p.totalIncidents)} vomiting incident${
+  const denom = `Across ${p.totalIncidents === 1 ? 'the' : 'all'} ${num(p.totalIncidents)} vomiting incident${
     p.totalIncidents === 1 ? '' : 's'
-  }; ${num(assessed)} ${assessed === 1 ? 'has' : 'have'} a legible AI read${stateDisclosure}.${consistBit} Per-incident detail in appendix&nbsp;A.`
+  }; ${legibleReadCount(assessed)} a legible AI read${stateDisclosure}.${consistBit} Per-incident detail in appendix&nbsp;A.`
 
   // COLLAPSE THE EMPTY BLOCK TO A LINE (B-502). With nothing photographed the section said
   // "no photo" three ways — a lead describing a read that never happened, a chart-shaped grey
@@ -4820,7 +4895,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   // reaches this bar at all, so there is no grey "no legible read yet" stand-in to mistake
   // for a finding.
   const body = `<div>
-        <div class="barmix">${mixHtml}</div>
+        ${singleCategory && assessed > 0 ? '' : `<div class="barmix">${mixHtml}</div>`}
         <div class="mixkey">${keyHtml}<br/>${denom}</div>
       </div>`
   return `
@@ -4863,16 +4938,28 @@ function predominantBit(
 function stoolCharacteristics(snap: ReportSnapshot): string {
   const st: StoolCharacteristics | null = snap.stool
   if (!st) return ''
-  const segs: string[] = []
-  const key: string[] = []
-  if (st.normalCount > 0) {
-    segs.push(`<div class="seg" style="flex:${st.normalCount};background:#5f636c">${st.normalCount}</div>`)
-    key.push(`<span class="sw" style="background:#5f636c"></span>Normal / formed &times;${st.normalCount}`)
-  }
-  if (st.looseCount > 0) {
-    segs.push(`<div class="seg" style="flex:${st.looseCount};background:#1a1c22">${st.looseCount}</div>`)
-    key.push(`<span class="sw" style="background:#1a1c22"></span>Loose / watery &times;${st.looseCount}`)
-  }
+  const allCats = [
+    { n: st.normalCount, label: 'Normal / formed', bg: '#5f636c' },
+    { n: st.looseCount, label: 'Loose / watery', bg: '#1a1c22' },
+  ]
+  const cats = allCats.filter((c) => c.n > 0)
+  // A PROPORTION BAR OF ONE CATEGORY IS A NUMBER, NOT A CHART (CUL-993 A.6). With one category
+  // the strip drew a full-width black bar labelled "1" over "Loose / watery ×1" — a distribution
+  // with no second part, which three cold-read lenses each named. One category prints as its
+  // count line; the swatch goes with the bar it keyed.
+  const single = cats.length === 1
+  const barHtml = single
+    ? ''
+    : `<div class="barmix">${cats
+        .map((c) => `<div class="seg" style="flex:${c.n};background:${c.bg}">${c.n}</div>`)
+        .join('')}</div>`
+  // BOTH categories always, a zero included (cold read round 2): "Loose / watery ×1" alone
+  // could be one loose stool of one or of forty, and those are opposite consults. A zero here
+  // is a count of the owner's normal-stool logs, stated as a count beside its sibling — not a
+  // present-only category and not a clearance.
+  const keyLine = allCats
+    .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
+    .join('&nbsp;&middot;&nbsp; ')
 
   const ai = st.ai
   const aiTag = ai
@@ -4947,9 +5034,9 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     if (ai.states.pending) stateBits.push(`${ai.states.pending} still processing`)
     if (noPhoto > 0) stateBits.push(`${noPhoto} without a photo`)
     const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
-    aiLine = `<br/>Across all ${num(ai.totalIncidents)} stool event${
+    aiLine = `<br/>Across ${ai.totalIncidents === 1 ? 'the' : 'all'} ${num(ai.totalIncidents)} stool event${
       ai.totalIncidents === 1 ? '' : 's'
-    }; ${num(ai.assessedCount)} ${ai.assessedCount === 1 ? 'has' : 'have'} a legible AI read${stateDisclosure}.${bristolBit}${colourBit} Bristol type is the AI's read of the photo, for the owner to confirm; it is not a diagnosis.`
+    }; ${legibleReadCount(ai.assessedCount)} a legible AI read${stateDisclosure}.${bristolBit}${colourBit} Bristol type is the AI's read of the photo, for the owner to confirm; it is not a diagnosis.`
   }
 
   return `
@@ -4957,10 +5044,20 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     <h2>Stool characteristics ${aiTag}</h2>
     <div class="pheno">
       <div>
-        <div class="barmix">${segs.join('')}</div>
-        <div class="mixkey">${key.join('&nbsp;&middot;&nbsp; ')}<br/>Owner-described over ${num(st.loggedDays)} of ${num(
-    st.windowDays,
-  )} days logged. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.${aiLine}</div>
+        ${barHtml}
+        <div class="mixkey">${keyLine}<br/>Owner-described${
+    // C-3: a coverage density beside a count is the UN-LOGGED days only, and nothing when
+    // fully covered. "Owner-described over 43 of 46 days logged" read as a stool denominator
+    // (the R-11 cold read: one loose stool out of forty-three), when 43/46 was record coverage.
+    // …and it says what the coverage is OF (cold read round 2): beside "1 stool event" a bare
+    // "3 of 46 days had no log" implied 43 days of stool coverage, when the record has no
+    // per-day stool coverage at all — only days with any log.
+    st.windowDays - st.loggedDays > 0
+      ? `; nothing of any kind was logged on ${num(st.windowDays - st.loggedDays)} of ${num(
+          st.windowDays,
+        )} days, so a stool on those days is not in this count`
+      : ''
+  }. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.${aiLine}</div>
       </div>
       ${sideHtml}
     </div>
@@ -5293,10 +5390,43 @@ function kv(k: string, v: string): string {
  */
 function regimenDates(m: MedicationAdherence): string {
   if (m.endedAt && (m.status === 'completed' || m.status === 'stopped')) {
-    const verb = m.status === 'completed' ? ' (course complete)' : ' (stopped)'
-    return `${h(fmtDay(m.startedAt))} &ndash; ${h(fmtDay(m.endedAt))}${verb}`
+    // "end recorded by owner", never "course complete" (CUL-982 item 1): `endRegimen` writes
+    // `completed` on every End tap, so the status says the owner RECORDED an end and nothing
+    // about whether its doses reached the target. On the cold read's record it printed "course
+    // complete" over a course with no dose logged for its final ten days. Not "ended by owner"
+    // either (the R-11 cold read): to a vet that reads as "the owner stopped the drug", which
+    // on a one-dose, twenty-refusal course tells the opposite clinical story from the truth.
+    // What the doses actually covered is the span sentence's to say (`dosingSpan`, CUL-994
+    // Part 2), beside this clause.
+    const verb = m.status === 'completed' ? ' (end recorded by owner)' : ' (stopped by owner)'
+    // Year-stamped (C-19): a regimen's dates are RECORD-scoped — an old completed course is a
+    // valid historical confounder and the meds pull is deliberately unbounded — so a year-less
+    // pair printed a year-long course as "Jun 20 – Jun 25" and a 2025 course as this year's
+    // (adversarial round 2). `fmtRange` stamps the year once per range, never per date.
+    return `${h(fmtRange(m.startedAt.slice(0, 10), m.endedAt.slice(0, 10)))}${verb}`
   }
-  return `since ${h(fmtDay(m.startedAt))}`
+  return `since ${h(fmtDayYear(m.startedAt.slice(0, 10)))}`
+}
+
+/**
+ * The route as a clinician writes it (R-11 cold read: "by oral" and "by otic" are not things a
+ * vet writes, and the inconsistency reads as a data-layer tell). Keyed on the app's stored
+ * values (`lib/medications.ts` ROUTE options) plus the older free-text spellings; anything
+ * unknown prints as it was entered.
+ */
+const ROUTE_LABEL: Record<string, string> = {
+  oral: 'by mouth',
+  mouth: 'by mouth',
+  topical: 'on the skin',
+  otic: 'in the ear',
+  ophthalmic: 'in the eye',
+  injectable: 'by injection',
+  inhaled: 'inhaled',
+  rectal: 'rectally',
+  other: 'other route',
+}
+function routeLabel(route: string): string {
+  return ROUTE_LABEL[route.trim().toLowerCase()] ?? `by ${route}`
 }
 
 /** The B-117 adherence line — "adherence not tracked" on zero doses, NEVER "compliant". */
@@ -5307,7 +5437,7 @@ function medicationLine(m: MedicationAdherence): string {
   const regimen = [
     m.strength ? h(m.strength) : null,
     doseBit,
-    m.route ? `by ${h(m.route)}` : null,
+    m.route ? h(routeLabel(m.route)) : null,
     m.dosesPerDay != null ? `${m.dosesPerDay}×/day` : 'as needed',
     m.indication ? `for ${h(m.indication)}` : null,
     regimenDates(m),
@@ -5354,7 +5484,124 @@ function medicationLine(m: MedicationAdherence): string {
             m.windowDosesLogged === 1 ? '' : 's'
           } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course; ${extras.join(', ')}.`
 
-  return `${regimen}. ${adherenceClaim(m)} ${windowClause}`
+  return `${regimen}. ${adherenceClaim(m)}${dosingSpan(m)} ${windowClause}`
+}
+
+/**
+ * The dosing SPAN (CUL-994 Part 2, after adversarial rounds 3 and 4 and two cold reads): what
+ * the administered doses of an owner-ended, planned, paced course actually covered, stated as
+ * DENSITY + SPAN beside the plan's own arithmetic, so a vet can see a hole, a crammed course
+ * or a faster-than-prescribed pace without the page adjudicating any of them.
+ *
+ *   "The 28 administered doses fell on all 14 days, Jul 17 – Jul 30, 2026 (28 prescribed
+ *    doses at 1×/day take 28 days)."
+ *   "The 20 administered doses fell on 10 of the 29 days from Jul 1 to Jul 29, 2026 (28
+ *    prescribed doses at 1×/day take 28 days)."
+ *
+ * Every noun names its population, because the sentence sits beside `adherenceClaim`, whose
+ * nearest plural noun is the PRESCRIBED set: a bare "Those doses" was readable as "the 28
+ * prescribed doses fell on 10 days", an over-dosing story where the truth was under-delivery
+ * (round 4). So: "The N administered doses" — the claim's numerator, same population, the
+ * three fields with one writer each in report.ts (`lifetimeFirstDoseDay` / `lifetimeLastDoseDay`
+ * / `lifetimeDoseDayCount`, inside `if (administered)`) — and the parenthetical says whether
+ * its N is the plan ("28 prescribed doses") or the record ("40 doses … 28 were prescribed").
+ * The word "logged" never appears in it.
+ *
+ * THE RATIO PRINTS ONLY WHEN THERE ARE HOLES. Its denominator is the span between the first
+ * and last administered day, so it can only ever show what lies BETWEEN them: contiguous
+ * dosing reads "N of N" whatever sits outside, and round 4 found that a full-looking fraction
+ * in front of a ten-day tail (the CUL-976 reference record: 28 doses over 14 days, End tapped
+ * ten days later) read as 100% where the previous bare-count form had read as what it was. So
+ * a course dosed on every day of its span says so in words — "on all 14 days" — and the ratio
+ * appears only where it measures something: "10 of the 29 days". What lies outside the span is
+ * carried by the dates, and the regimen's own recorded dates sit two clauses earlier on the
+ * same line; the sentence does not restate the recorded end (round 4's nit: the same date twice
+ * in two framings). The plan's arithmetic is the honest yardstick for a tail — `endRegimen`
+ * writes TODAY's local day when the owner taps End, so a recorded end is when they got round
+ * to it, and R-2's ruling stands: the page does not call a late tap an early stop.
+ *
+ * WHY IT ALWAYS RENDERS on that class of course (both adversarial rounds agree the always-
+ * render shape is safer than the suppression it replaced): the stated predicate — withhold
+ * when `count ≥ plan AND span ≥ ceil(plan / dosesPerDay)` — failed in both directions under
+ * falsification. A ONE-dose shortfall over the full prescribed length re-armed the sentence
+ * and read as a ten-day abandonment; ONE linked dose logged after the End tap moved the last
+ * endpoint past the end and deleted the sentence over a fifteen-day hole; a first–last range
+ * printed ten dosing days with a nineteen-day hole between them as a 29-day span; and the cold
+ * read found the silence itself misleading — a "28 of 28" beside an unexplained "14 of 25
+ * days" resolved the record's ambiguity in the reassuring direction by omission. A count
+ * condition is a cliff, and two endpoints cannot carry density. The day count carries it; the
+ * need is printed rather than tested.
+ *
+ * DATES CARRY THEIR YEAR (C-19). These are record-scoped — the meds pull is unbounded and
+ * `lifetimeDoses` untrimmed — while every other date on this line was window-bounded, and
+ * year-less they printed a year-long course as "from Jun 21 to Jun 20" and a 2025 course
+ * inside this year's window (round 4). The year is stamped once per range (`fmtRange`'s rule),
+ * never per date.
+ *
+ * THE NEED is exact for any pace the column can hold: N doses at r per day occupy
+ * `floor((N − 1) / r) + 1` days (28 at 2 → 14; 28 at 1 → 28; 10 at 0.5 → 19, every other day),
+ * computed in hundredths because `doses_per_day` is NUMERIC(4,2) and IEEE doubles understated
+ * the need by a day on 367 of the two-decimal paces (round 4 — every one in the reassuring
+ * direction). N is the LARGER of the doses administered and the doses planned (CUL-994's
+ * worked row 3, its delivered divisor): the arithmetic is about the doses that exist, and the
+ * prescribed divisor made the bar easier to clear the more a course was over-counted.
+ *
+ * WHAT STAYS SILENT, and why (C-4 rule 4 — where the record cannot settle it the page does not
+ * answer): no owner-recorded end (H1: silence never becomes an ending); no planned total; no
+ * daily pace (PRN — an as-needed course measured against a schedule is a category error, and
+ * without a need to print beside them the dates would be R-2's bare gap again); nothing
+ * administered (the claim's "0 of N" already says it).
+ *
+ * KNOWN BLIND SPOTS, stated rather than implied: a day count cannot tell WHERE the holes are
+ * (Appendix D lists the dates, and CUL-1013 is the guard that column lacks); a dose linked to a
+ * regimen but logged outside its recorded span reaches here undisclosed (CUL-992, both ends);
+ * and an under-LOGGED course reads as a sparse dosing pattern — the "only what the owner
+ * entered" caveat lives on §4.4's subhead.
+ */
+function dosingSpan(m: MedicationAdherence): string {
+  if (!m.courseEnded || !m.endedAt) return ''
+  if (m.prescribedDoses == null) return ''
+  if (m.dosesPerDay == null || !(m.dosesPerDay > 0)) return ''
+  const first = m.lifetimeFirstDoseDay
+  const last = m.lifetimeLastDoseDay
+  const days = m.lifetimeDoseDayCount
+  const given = m.lifetimeDosesLogged
+  if (!first || !last || days < 1 || given < 1) return ''
+  const n = Math.max(given, m.prescribedDoses)
+  const need = dosingDaysFor(n, m.dosesPerDay)
+  const rate = h(String(m.dosesPerDay))
+  const needBit =
+    given > m.prescribedDoses
+      ? `(${num(n)} doses at ${rate}×/day take ${num(need)} day${need === 1 ? '' : 's'}; ${num(m.prescribedDoses)} ${
+          m.prescribedDoses === 1 ? 'was' : 'were'
+        } prescribed)`
+      : `(${num(n)} prescribed dose${n === 1 ? '' : 's'} at ${rate}×/day take${n === 1 ? 's' : ''} ${num(need)} day${
+          need === 1 ? '' : 's'
+        })`
+  if (given === 1) return ` That dose was administered on ${h(fmtDayYear(first))} ${needBit}.`
+  const subject = `The ${num(given)} administered doses`
+  if (days === 1) return ` ${subject} all fell on ${h(fmtDayYear(first))} ${needBit}.`
+  const span = daysBetweenDayKeys(first, last) + 1
+  if (days >= span) return ` ${subject} fell on all ${num(days)} days, ${h(fmtRange(first, last))} ${needBit}.`
+  return ` ${subject} fell on ${num(days)} of the ${num(span)} days ${h(fmtSpanFromTo(first, last))} ${needBit}.`
+}
+
+/** "from Mon D to Mon D, YYYY" (one year) or "from Mon D, YYYY to Mon D, YYYY" — the year once per pair (C-19). */
+function fmtSpanFromTo(a: string, b: string): string {
+  const pa = dayParts(a)
+  const pb = dayParts(b)
+  if (pa && pb && pa.y === pb.y) return `from ${fmtDay(a)} to ${fmtDay(b)}, ${pb.y}`
+  return `from ${fmtDayYear(a)} to ${fmtDayYear(b)}`
+}
+
+/**
+ * The days N doses at `perDay` occupy when given at that pace. Computed in HUNDREDTHS —
+ * `doses_per_day` is NUMERIC(4,2) — so a two-decimal pace never loses a day to a double's
+ * rounding (7 / 0.14 is 49.999… in IEEE and exactly 50 in the record).
+ */
+function dosingDaysFor(n: number, perDay: number): number {
+  const perDayHundredths = Math.round(perDay * 100)
+  return Math.floor(((n - 1) * 100) / perDayHundredths) + 1
 }
 
 /**
@@ -5427,7 +5674,7 @@ function unlinkedSpan(u: UnlinkedMedicationGroup): string {
 /** Page-1 line for a drug the owner dosed with no configured regimen (§3.8). Factual counts only —
  *  no adherence RATE (no schedule to divide by), and an unconfirmed dose is never read as given. */
 function unlinkedMedLine(u: UnlinkedMedicationGroup): string {
-  const meta = [u.strength ? h(u.strength) : null, u.route ? h(u.route) : null]
+  const meta = [u.strength ? h(u.strength) : null, u.route ? h(routeLabel(u.route)) : null]
     .filter(Boolean)
     .join(' &middot; ')
   const prefix = meta ? `${meta}. ` : ''
@@ -5527,6 +5774,30 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
 }
 
 // ── Footer (per page/section) ────────────────────────────────────────────────────
+
+/**
+ * A section's TAIL — its last block and its footer, kept on one sheet (CUL-993 A.1).
+ *
+ * Every section closes with `footer()`, and nothing kept that footer with the content above
+ * it: when a section's content ended within a footer's height of the sheet bottom, the
+ * footer alone opened the next sheet — a page carrying only the running footer, which a
+ * printed handout reads as a truncated document (the cold read's blank pages 6, 11 and 18;
+ * reproduced on the `completed` fixture as a footer-only sheet 3). Wrapping the footer with
+ * the section's last block in one `page-break-inside:avoid` container means the footer can
+ * never stand alone: it moves with its anchor or not at all.
+ *
+ * THE ANCHOR IS THE SMALLEST TRAILING BLOCK THE SECTION HAS, chosen per call site — a closing
+ * note, the last row of the photo grid, the legend's last entry — because the container is
+ * unbreakable, and an unbreakable block that does not fit is pushed whole to the next sheet,
+ * leaving its own height of white beneath the content before it. Where a section ends on a
+ * table (Appendix D, the meals appendix) the table is the anchor and that white is bounded by
+ * the table's height, which is the trade the issue accepted; the empty Appendix D's own thin
+ * sheet is a different defect and is R-13's (CUL-996). A block taller than a sheet breaks
+ * inside anyway, exactly as it did before, so this never makes a fold worse.
+ */
+function sectionTail(anchor: string, foot: string): string {
+  return `<div class="tail">${anchor}${foot}</div>`
+}
 
 function footer(snap: ReportSnapshot, sectionLabel: string): string {
   // R2-6 — an explicit "Patient:" label. It originally disambiguated the pet's name from the app
@@ -5636,16 +5907,42 @@ function appendixDivider(snap: ReportSnapshot): string {
 function appendixA(snap: ReportSnapshot): string {
   const rows = snap.provenance.symptomLog.map((e) => symptomLogRow(e, snap.timezone)).join('')
   const count = snap.provenance.symptomLog.length
-  const eN = snap.provenance.estimatedOrWindowCount
+  // Counted over the rows below with the predicate that tags them (`timeConfidence`), never
+  // read off the snapshot: every row that is not `seen` — an estimate, a window, a one-sided
+  // bound, or no confidence recorded — is a time the reader must treat as approximate (CUL-634).
+  const eN = snap.provenance.symptomLog.filter((e) => timeConfidence(e) !== 'seen').length
   const estBit =
     eN > 0
-      ? ` ${num(eN)} of them ${eN === 1 ? 'has' : 'have'} an estimated or windowed time (found later, not witnessed).`
+      ? ` ${num(eN)} of the ${num(count)} events below ${eN === 1 ? 'carries' : 'carry'} no witnessed time (an estimate, a window, or none recorded); treat ${
+          eN === 1 ? 'it' : 'those'
+        } as approximate.`
+      : ''
+  // The vocabulary, where it is first used (CUL-634): the tags were defined only on the last
+  // sheet and used from sheet 2. One line here; the full key stays in "How to read this report".
+  // Only the classes the rows below actually use (R-11 cold read: five definitions over a
+  // column of nothing but SEEN is forty words a reader has to discount), in the tag column's
+  // own order; the untagged one-sided form is named as untagged so it cannot read as part of
+  // the `range` entry.
+  const present = new Set(snap.provenance.symptomLog.map(timeConfidence))
+  const glossEntries: Array<[ReturnType<typeof timeConfidence>, string]> = [
+    ['seen', '<span class="conf">seen</span> witnessed'],
+    ['est', '<span class="conf">est</span> estimated'],
+    ['range', '<span class="conf">range</span> found later, the window it occurred in'],
+    ['bound', 'a bare &ldquo;before&rdquo; or &ldquo;after&rdquo; time is one known bound and carries no tag'],
+    ['unspecified', '<span class="conf">unspecified</span> no confidence recorded'],
+  ]
+  const glossBit =
+    count > 0
+      ? ` Time tags: ${glossEntries
+          .filter(([k]) => present.has(k))
+          .map(([, text]) => text)
+          .join(' &middot; ')}.`
       : ''
   return `
 <section class="page">
   ${appendixDivider(snap)}
   <p class="appx-title serif">Appendix A — Symptom event log</p>
-  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed.${estBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
+  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed.${estBit}${glossBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
   <table>
     <caption>${num(count)} symptom event${count === 1 ? '' : 's'} &middot; ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}</caption>
     <thead>
@@ -5659,8 +5956,10 @@ function appendixA(snap: ReportSnapshot): string {
     </thead>
     <tbody>${rows || `<tr><td colspan="5">No symptom events in this window.</td></tr>`}</tbody>
   </table>
-  <p class="note" style="margin-top:9px"><b>Why a range and not a time:</b> an event found at 07:44 but occurring around 04:00 changes the interval from the prior meal from minutes to hours — a clinically different picture. Where the owner did not witness the event, the window it occurred in is shown, not the time it was noticed. Photo findings are Culprit's read of the owner's photo, owner-reviewable; they never carry a diagnosis or a single-incident verdict (that stays in the app, off this report).</p>
-  ${footer(snap, 'Appendix A — event log')}
+  ${sectionTail(
+    `<p class="note" style="margin-top:9px"><b>Why a range and not a time:</b> an event found at 07:44 but occurring around 04:00 changes the interval from the prior meal from minutes to hours — a clinically different picture. Where the owner did not witness the event, the window it occurred in is shown, not the time it was noticed. Photo findings are Culprit's read of the owner's photo, owner-reviewable; they never carry a diagnosis or a single-incident verdict (that stays in the app, off this report).</p>`,
+    footer(snap, 'Appendix A — event log'),
+  )}
 </section>`
 }
 
@@ -5720,36 +6019,61 @@ function symptomLogRow(e: SymptomLogEntry, tz: string | null): string {
   )}</td><td>${noteCell || '&mdash;'}</td></tr>`
 }
 
+/**
+ * A row's time-confidence CLASS — the ONE predicate behind Appendix A's tag column AND its
+ * preamble count (CUL-634; C-3: a count beside an enumeration is a claim about the
+ * enumeration, and it uses the predicate the rows use). The preamble used to read the
+ * snapshot's `estimatedOrWindowCount`, which counts `estimated` + `window` only, so the
+ * `unspecified` rows — which the legend itself says to treat as approximate — were left out:
+ * "5 of them" over a twelve-row log where six carried no witnessed time.
+ *
+ *   seen         witnessed — the one class with an exact time
+ *   est          an estimated time (a window with no bound at all degrades to one)
+ *   range        a two-sided window
+ *   bound        a ONE-SIDED window: "before HH:MM" / "after HH:MM". The words are the tag, so
+ *                the cell carries no `range` chip beside them — the chip restated what the
+ *                cell already said (CUL-634)
+ *   unspecified  logged before B-010, no confidence recorded
+ */
+function timeConfidence(e: SymptomLogEntry): 'seen' | 'est' | 'range' | 'bound' | 'unspecified' {
+  const conf = e.occurredAtConfidence
+  if (conf === 'window') {
+    if (e.occurredAtEarliest && e.occurredAtLatest) return 'range'
+    if (e.occurredAtEarliest || e.occurredAtLatest) return 'bound'
+    return 'est'
+  }
+  if (conf === 'estimated') return 'est'
+  if (conf === 'witnessed') return 'seen'
+  return 'unspecified'
+}
+
 /** B-010 occurred cell — witnessed=exact+seen, estimated=~time+est, window=range+range. */
 function occurredCell(e: SymptomLogEntry, tz: string | null): string {
-  const conf = e.occurredAtConfidence
-  if (conf === 'window' && !(e.occurredAtEarliest && e.occurredAtLatest)) {
-    // One-sided window — the "Sometime before/after" capture mode records a single bound
-    // (occurred_at IS that bound, B-010 addendum). The first real artifact rendered these as
-    // bare, precise-looking points with no tag while the preamble still counted them as
-    // windowed — the exact false precision §4/B-010 forbids. Render the bound the owner
-    // actually asserted; a boundless window (shouldn't exist) degrades to an estimate mark.
-    if (e.occurredAtLatest) {
-      return `${num(`before ${fmtLocalTime(e.occurredAtLatest, tz)}`)} <span class="conf">range</span>`
-    }
-    if (e.occurredAtEarliest) {
-      return `${num(`after ${fmtLocalTime(e.occurredAtEarliest, tz)}`)} <span class="conf">range</span>`
-    }
-    return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">est</span>`
+  switch (timeConfidence(e)) {
+    case 'bound':
+      // One-sided window — the "Sometime before/after" capture mode records a single bound
+      // (occurred_at IS that bound, B-010 addendum). The first real artifact rendered these as
+      // bare, precise-looking points with no tag while the preamble still counted them as
+      // windowed — the exact false precision §4/B-010 forbids. Render the bound the owner
+      // actually asserted, as words: "before 06:45" IS the confidence statement.
+      return e.occurredAtLatest
+        ? num(`before ${fmtLocalTime(e.occurredAtLatest, tz)}`)
+        : num(`after ${fmtLocalTime(e.occurredAtEarliest!, tz)}`)
+    case 'range':
+      return `${num(`~${fmtLocalTime(e.occurredAtEarliest!, tz)}–${fmtLocalTime(e.occurredAtLatest!, tz)}`)} <span class="conf">range</span>`
+    case 'est':
+      return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">est</span>`
+    case 'seen':
+      return `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">seen</span>`
+    case 'unspecified':
+      // null confidence (legacy rows logged before B-010) — tag it explicitly. A bare time in a
+      // column of tagged rows reads as MORE certain than a witnessed one, the reassuring
+      // direction; the honest render says the confidence was never recorded. Drawn with the
+      // estimate's "~" as well (cold read round 2): at minute precision it was visually
+      // identical to a witnessed time, distinguished only by a small grey chip, on the block
+      // whose own closing note explains why a wrong minute changes the clinical picture.
+      return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">unspecified</span>`
   }
-  if (conf === 'window' && e.occurredAtEarliest && e.occurredAtLatest) {
-    return `${num(`~${fmtLocalTime(e.occurredAtEarliest, tz)}–${fmtLocalTime(e.occurredAtLatest, tz)}`)} <span class="conf">range</span>`
-  }
-  if (conf === 'estimated') {
-    return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">est</span>`
-  }
-  if (conf === 'witnessed') {
-    return `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">seen</span>`
-  }
-  // null confidence (legacy rows logged before B-010) — tag it explicitly. A bare time in a
-  // column of tagged rows reads as MORE certain than a witnessed one, the reassuring
-  // direction; the honest render says the confidence was never recorded.
-  return `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">unspecified</span>`
 }
 
 /**
@@ -5772,21 +6096,28 @@ function mealsAppendix(snap: ReportSnapshot): string {
   const items = snap.diet.mealItems
   const log: IntakeLogEntry[] = snap.provenance.intakeLog
   if (!mealsAppendixVisible(snap)) return ''
+  const foot = footer(snap, 'Appendix E — meals & intake')
+  // The `*` is only legible where the sheet defines it — a marker whose legend sits two
+  // pages back is a marker a reader ignores. Emitted only when this table actually
+  // rendered one.
+  const mealItemsBlock = `${items.length > 0 ? mealItemsTable(snap, items) : ''}
+  ${
+    items.length > 0 && items.some((i) => i.proteinSet.offTrial.length > 0)
+      ? offTrialFootnote(snap.diet.trialTargetProtein)
+      : ''
+  }`
   return `
 <section class="page">
   <p class="appx-title serif">Appendix E — Meals &amp; intake</p>
   <p class="appx-sub">The meals the owner logged in this window — the food fed as discrete meals, distinct from free-fed food and treats (which appear in appendix&nbsp;C). &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; Free-fed food is not directly observed and is not rated, so it does not appear here.</p>
-  ${items.length > 0 ? mealItemsTable(snap, items) : ''}
   ${
-    // The `*` is only legible where the sheet defines it — a marker whose legend sits two
-    // pages back is a marker a reader ignores. Emitted only when this table actually
-    // rendered one.
-    items.length > 0 && items.some((i) => i.proteinSet.offTrial.length > 0)
-      ? offTrialFootnote(snap.diet.trialTargetProtein)
-      : ''
+    // The intake table can be a sheet tall, so it is never the anchor: measured on the
+    // `refused` fixture, wrapping it whole pushed it to a fresh sheet and cost a page. Its
+    // closing note anchors the footer instead; with no intake table the grouped meal-items
+    // table (a few rows) does.
+    log.length > 0 ? mealItemsBlock : sectionTail(mealItemsBlock, foot)
   }
-  ${log.length > 0 ? intakeDetailTable(snap, log) : ''}
-  ${footer(snap, 'Appendix E — meals & intake')}
+  ${log.length > 0 ? intakeDetailTable(snap, log, foot) : ''}
 </section>`
 }
 
@@ -5845,7 +6176,7 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
  * reduced-intake flag. Most-recent-first; the last fully-eaten meal is tagged so the page-1
  * "last full meal" number has an unambiguous home, pinned back in past the cap when needed.
  */
-function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string {
+function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], foot: string): string {
   const hidden = snap.provenance.intakeLogHiddenOlder
   // B-532 — the two populations, named. `unfinished` means no reduced-intake flag fired,
   // so there is no page-1 figure for these rows to trace to: they are here because the
@@ -5908,7 +6239,7 @@ function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[]): string 
     <thead><tr><th style="width:64px">Date</th><th style="width:58px">Time</th><th>Food</th><th style="width:150px">Intake</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="note" style="margin-top:9px">${readingBit}</p>`
+  ${sectionTail(`<p class="note" style="margin-top:9px">${readingBit}</p>`, foot)}`
 }
 
 function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
@@ -5962,13 +6293,20 @@ function incidentPhotosAppendix(snap: ReportSnapshot): string {
           n === 1 ? '' : 's'
         } with a retained photo in this window, most recent first`
       : `No photographed incident in this window still has a retained photo`
-  const cards = n > 0 ? `<div class="phgrid">${photos.map((p) => incidentPhotoCard(p, snap.timezone)).join('')}</div>` : ''
+  // The grid's LAST ROW is the footer's anchor (CUL-993 A.1): the two-column grid is split so
+  // its final one or two cards sit in the tail container with the footer, and the rest of the
+  // grid breaks between cards as it always has. Wrapping the whole grid would push a nearly
+  // sheet-high block to a fresh sheet and leave the previous one mostly white.
+  const cardHtml = photos.map((p) => incidentPhotoCard(p, snap.timezone))
+  const lastRowStart = n % 2 === 0 ? n - 2 : n - 1
+  const headGrid = lastRowStart > 0 ? `<div class="phgrid">${cardHtml.slice(0, lastRowStart).join('')}</div>` : ''
+  const tailGrid = n > 0 ? `<div class="phgrid phgrid-tail">${cardHtml.slice(Math.max(0, lastRowStart)).join('')}</div>` : ''
   return `
 <section class="page">
   <p class="appx-title serif">Appendix ${letter} — Incident photos</p>
   <p class="appx-sub">${lead} — the owner's own photos, attached when the event was logged. For analyzed incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}${removedNote}</p>
-  ${cards}
-  ${footer(snap, `Appendix ${letter} — incident photos`)}
+  ${headGrid}
+  ${sectionTail(tailGrid, footer(snap, `Appendix ${letter} — incident photos`))}
 </section>`
 }
 
@@ -6097,6 +6435,10 @@ function noticedAppendix(snap: ReportSnapshot): string {
     : n.notesWithheld > 0
       ? ` ${num(n.notesWithheld)} of these entries carr${n.notesWithheld === 1 ? 'ies' : 'y'} a written note, not printed on this copy.`
       : ''
+  // The running footer every other sheet carries (§3.9) — this appendix shipped without one,
+  // and it is the sheet holding the owner's verbatim notes, the one a filing clerk most needs
+  // to be able to put back with its patient.
+  const noticedFoot = footer(snap, `Appendix ${letter} — Noticed (owner's observations)`)
   return `
 <section class="page">
   <p class="appx-title serif">Appendix ${h(letter)} &mdash; Noticed (owner&rsquo;s observations)</p>
@@ -6107,9 +6449,12 @@ function noticedAppendix(snap: ReportSnapshot): string {
     <thead><tr><th>Time</th><th>What she recorded</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="appx-foot">There is no observer column: the app records one account per pet today, so every entry here is the account holder&rsquo;s. ${h(
-    petName,
-  )}&rsquo;s record keeps the full list of words available to her; a word she was never offered cannot appear.</p>
+  ${sectionTail(
+    `<p class="appx-foot">There is no observer column: the app records one account per pet today, so every entry here is the account holder&rsquo;s. ${h(
+      petName,
+    )}&rsquo;s record keeps the full list of words available to her; a word she was never offered cannot appear.</p>`,
+    noticedFoot,
+  )}
 </section>`
 }
 
@@ -6136,8 +6481,7 @@ function appendixBCD(snap: ReportSnapshot): string {
   ${offDietAppendix(snap)}
   ${!markedB && markedC ? offTrialFootnote(snap.diet.trialTargetProtein) : ''}
   ${medicationHistoryTable(snap)}
-  ${medicationAppendix(snap)}
-  ${footer(snap, 'Appendices B–D — diet, exposures & meds')}
+  ${sectionTail(medicationAppendix(snap), footer(snap, 'Appendices B–D — diet, exposures & meds'))}
 </section>`
 }
 
@@ -6798,7 +7142,7 @@ function medicationAppendix(snap: ReportSnapshot): string {
     .map((m) => {
       const regimen = [
         m.strength ? h(m.strength) : null,
-        m.route ? h(m.route) : null,
+        m.route ? h(routeLabel(m.route)) : null,
         m.dosesPerDay != null ? `${m.dosesPerDay}×/day` : 'as needed',
       ]
         .filter(Boolean)
@@ -7090,8 +7434,8 @@ function appendixF(snap: ReportSnapshot): string {
         : ''
     }</dd>
     <dt>Denominators</dt><dd>Counts are shown over their window and the days logged, so a count is never read without knowing how long and how completely it was tracked.</dd>
-    <dt>Entries vs episodes</dt><dd>Two different measures, deliberately not reconciled into one number (HR-7). An <b>entry</b> is one logged row (same-minute duplicates already collapsed) &mdash; the unit of the frequency trends. An <b>episode</b> is a bout: entries within three hours of each other are chained into one &mdash; the unit of the chronicity flag. So a sign the owner logs repeatedly during a single bout, such as coughing, will show more entries than episodes, and the <b>ratio between them describes how the sign presents</b> rather than being a discrepancy.</dd>
-    <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed — a one-sided account renders as &ldquo;before/after&rdquo; that bound &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>
+    <dt>Entries vs episodes</dt><dd>Two different measures, deliberately not reconciled into one number. An <b>entry</b> is one logged row (same-minute duplicates already collapsed) &mdash; the unit of the frequency trends. An <b>episode</b> is a bout: entries within three hours of each other are chained into one &mdash; the unit of the chronicity flag. So a sign the owner logs repeatedly during a single bout, such as coughing, will show more entries than episodes, and the <b>ratio between them describes how the sign presents</b> rather than being a discrepancy.</dd>
+    <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed &mdash; a one-sided account prints as &ldquo;before&rdquo; or &ldquo;after&rdquo; its one known bound, with no tag beside it &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>
     <dt>Duplicate logs</dt><dd>A <span class="conf">N logs</span> tag marks the same incident logged more than once (a re-log or sync retry). It is counted once everywhere in this report; the duplicate count is disclosed rather than hidden.</dd>
     <dt>Photo analysis</dt><dd>For photographed incidents, structured fields (colour, contents, blood, foreign material) are read automatically from the photo the owner took. These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
     ${chronicityWindowDt}
@@ -7119,9 +7463,13 @@ function appendixF(snap: ReportSnapshot): string {
           : ' When a reduced-intake flag is raised, page&nbsp;1 adds the time since the last <b>fully-eaten</b> meal and a meals appendix lists the rated meals behind it; no meals were logged in this window.'
     } For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
     <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
-    <dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. The symptom counts on page&nbsp;1 (including loose stools) trace line-by-line to appendix&nbsp;A and the off-diet exposures to appendix&nbsp;C; medication, diet, weight and normal-stool figures summarize the owner's logs for those items rather than itemising each one. Nothing is counted that the owner did not log.</dd>
   </dl>
-  ${footer(snap, 'How to read this report')}
+  ${sectionTail(
+    // The legend's last entry, in its own <dl> so it can anchor the footer without changing the
+    // float layout (a dt floats within its own list either way) — CUL-993 A.1.
+    `<dl class="legend"><dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. The symptom counts on page&nbsp;1 (including loose stools) trace line-by-line to appendix&nbsp;A and the off-diet exposures to appendix&nbsp;C; medication, diet, weight and normal-stool figures summarize the owner's logs for those items rather than itemising each one. Nothing is counted that the owner did not log.</dd></dl>`,
+    footer(snap, 'How to read this report'),
+  )}
 </section>`
 }
 
@@ -7149,8 +7497,13 @@ export function renderReport(snap: ReportSnapshot): string {
   ${proteinTimelineSection(snap)}
   ${vomitCharacteristics(snap)}
   ${stoolCharacteristics(snap)}
-  ${dietMeds(snap)}
-  ${footer(snap, 'Clinical summary')}
+  ${
+    // The whole diet/feeding/meds block is page 1's anchor, not just its closing line: measured
+    // on the `completed` fixture, a one-line anchor still opened a sheet holding that line and
+    // the footer, which is the thin sheet with one more line on it. The block is bounded (a
+    // key-value list), so the white it can leave behind is bounded too.
+    sectionTail(dietMeds(snap), footer(snap, 'Clinical summary'))
+  }
 </section>`
 
   // Viewport width is pinned to the fixed page width (210mm ≈ 794px), NOT
@@ -7165,7 +7518,7 @@ export function renderReport(snap: ReportSnapshot): string {
 <meta name="viewport" content="width=794" />
 <meta name="referrer" content="no-referrer" />
 <title>${title}</title>
-<style>${STYLE}</style>
+<style>${SHIPPED_STYLE}</style>
 </head>
 <body>
 ${page1}
@@ -7362,8 +7715,12 @@ const STYLE = `
   svg .mark{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;}
   svg text.yl{font-size:10px;fill:var(--faint);}
   svg text.xl{font-size:10.5px;fill:var(--muted);}
-  svg text.cap{font-size:11px;fill:var(--muted);}
-  svg text.z{font-size:11px;fill:var(--faint);}
+  /* A white halo under the count labels (CUL-993 A.3): the dashed intervention marker runs the
+     full plot height through the column its start falls in, and a tall bar's count sits in
+     that column, so the number printed with dashes through it. paint-order draws the stroke
+     beneath the glyphs; white on white paper, so it survives a B&W print unchanged. */
+  svg text.cap{font-size:11px;fill:var(--muted);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;}
+  svg text.z{font-size:11px;fill:var(--faint);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;}
   svg text.ann{font-size:10px;fill:var(--ink);font-weight:600;}
 
   /* Reading-the-trend callout — the GP-0 confound guard */
@@ -7408,7 +7765,10 @@ const STYLE = `
   .conf{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:0 4px;white-space:nowrap;}
   .fields{display:block;color:var(--muted);font-size:10.5px;margin-top:2px;}
   .fields b{color:#25272d;font-weight:600;}
-  .legend{font-size:11.5px;}
+  .legend{font-size:11.5px;margin-bottom:0;}
+  /* The legend's last entry sits in the tail container (sectionTail) as a second list; with the
+     lists' own margins zeroed the gap between entries stays the dd's 6px, exactly as one list. */
+  .tail > .legend{margin-top:0;}
   .legend dt{font-weight:700;float:left;clear:left;width:120px;color:#25272d;}
   .legend dd{margin:0 0 6px 132px;color:#2a2c31;}
 
@@ -7425,7 +7785,9 @@ const STYLE = `
   .aibadge{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:1px 5px;white-space:nowrap;vertical-align:baseline;}
   .tile .v .arw{color:var(--faint);font-weight:400;}
   .trend .big .delta-caveat{font-size:10px;color:var(--faint);margin-top:1px;font-style:italic;}
-  .chartlegend{font-size:10.5px;color:var(--faint);margin:8px 0 0;padding-left:2px;}
+  /* Above the charts it introduces, in --muted rather than --faint (CUL-982 item 4: the cold
+     read nearly missed it in the lightest grey on the page). */
+  .chartlegend{font-size:10.5px;color:var(--muted);margin:0 0 9px;padding-left:2px;}
   /* Protein-over-time legend (#9) — swatch (hue + texture) · protein · count, wrapping. */
   .ptlegend{margin-top:9px;font-size:10.5px;color:var(--muted);line-height:1.9;}
   .ptleg{display:inline-block;margin-right:13px;white-space:nowrap;}
@@ -7437,7 +7799,7 @@ const STYLE = `
   .ptrow{display:flex;gap:10px;align-items:baseline;padding:1px 0;}
   .ptrow .ptfood{flex:0 0 46%;}
   .ptrow .ptset{flex:1 1 auto;}
-  .chartlegend b{color:var(--muted);font-weight:600;}
+  .chartlegend b{color:var(--ink);font-weight:600;}
   .note.lead{margin:0 0 9px;}
   .rnote{color:var(--faint);font-style:italic;}
   .divider{margin:0 0 16px;border:1px solid var(--hair);border-left:3px solid var(--ink);border-radius:0 8px 8px 0;padding:9px 13px;font-size:11.5px;line-height:1.5;color:var(--muted);background:#fcfcfd;}
@@ -7447,6 +7809,9 @@ const STYLE = `
   /* Incident-photos appendix (PR 7). The chrome is grayscale (§5.8); the photos are the
      source datum, not a colour-coded encoding, so they carry no §5.8 concern. */
   .phgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px;margin-top:6px;}
+  /* The grid's last row lives in the tail container (sectionTail); when a grid precedes it the
+     gap between the two is the grid's own row gap, so the split is invisible. */
+  .phgrid + .tail > .phgrid-tail{margin-top:13px;}
   .phcard{margin:0;border:1px solid var(--hair);border-radius:9px;overflow:hidden;background:#fcfcfd;}
   .phimg{display:block;width:100%;height:auto;max-height:340px;object-fit:contain;background:var(--fill);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .phimg-missing{display:flex;align-items:center;justify-content:center;min-height:120px;font-size:11px;color:var(--faint);font-style:italic;border-bottom:1px solid var(--hair);}
@@ -7477,8 +7842,31 @@ const STYLE = `
        second safety flag brought the LEGEND within 6px of the same fold. A 28-cell glyph
        row on one sheet with its key on the next is unreadable, and it survived only by
        luck. (The cold re-read, which rendered to A4 rather than estimating.) */
-    tr,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard,.noticed-line,.noticed-graph,.noticed-conflict,.nb,.ns{page-break-inside:avoid;}
+    tr,.kv,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard,.noticed-line,.noticed-graph,.noticed-conflict,.nb,.ns{page-break-inside:avoid;}
+    /* CUL-993 A.1 — a section's tail (its last block + its footer, see sectionTail) is one
+       unbreakable unit, so the running footer can never open a sheet alone. The break-before
+       on .foot is the belt: Blink honours it, WebKit (the device PDF) does not, which is why
+       the container exists. */
+    .tail{page-break-inside:avoid;break-inside:avoid;}
+    .foot{page-break-before:avoid;break-before:avoid;}
     .rule-brand,.wordmark,.foot .fbrand .fw .w,.hqr,.cmark{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
-  @page{size:A4 portrait;margin:11mm;}
+  /* THE DEVICE WINS (CUL-993 A.2, corrects CUL-855's premise). The PDF the app produces comes
+     from expo-print (lib/pdf.ts → Print.printToFileAsync({ html }) with no size), which sets
+     the page box itself — 612 × 792 pt, US Letter, its documented default — and never reads
+     this declaration (ExpoPrintToFile.swift builds the paperRect from its options). So this
+     rule governs only a browser print of the served HTML, and it is declared to match the
+     device rather than contradict it: one paper, both paths. The 11 mm margin is the
+     browser's; the device applies its own. */
+  @page{size:letter portrait;margin:11mm;}
 `
+
+/**
+ * The stylesheet as SHIPPED — STYLE with its comments removed (CUL-993 / CUL-982 item 2).
+ * STYLE is interpolated into every document, so its comments were shipped bytes, and they
+ * carried exactly the internal identifiers (§5.8, B-532, CUL-875, B-221) that the no-internal-
+ * identifier guard forbids anywhere in the rendered HTML. The rules are byte-identical; only
+ * the commentary stays in this file, where it belongs. A CSS comment never nests, so the
+ * non-greedy match is the whole grammar.
+ */
+const SHIPPED_STYLE = STYLE.replace(/\/\*[\s\S]*?\*\//g, '')

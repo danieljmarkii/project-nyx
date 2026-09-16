@@ -3510,3 +3510,31 @@ Deno.test('CUL-976 p3 — "adherence not tracked" is scoped to the regimen, not 
   assert.ok(/no doses logged against this regimen/.test(line), 'the claim is scoped to what it can see')
   assert.ok(!/<b>Adherence not tracked<\/b> &mdash; no doses logged\./.test(line), 'never an absolute absence')
 })
+
+// ── CUL-994 Part 2 — the record-scoped administered-dose span ─────────────────────────
+
+Deno.test('CUL-994 Part 2 — lifetimeFirst/LastDoseDay are drawn from ADMINISTERED rows only, over the whole record', () => {
+  const rec = lateConfiguredCourse()
+  // A refusal AFTER the last administered dose and an unconfirmed row BEFORE the first: neither
+  // is administered, so neither moves an endpoint — both ends come from one population (C-37).
+  const doses: ReportDoseInput[] = [
+    ...rec.lifetimeDoses,
+    { eventId: 'dose-refused-late', occurredAt: at('2026-08-08', '08:00:00'), medicationId: 'reg-otic', medicationItemId: 'mi-otic', adherence: 'refused', doseAmount: null, pairedEventId: null },
+    { eventId: 'dose-unconfirmed-early', occurredAt: at('2026-07-16', '20:00:00'), medicationId: 'reg-otic', medicationItemId: 'mi-otic', adherence: null, doseAmount: null, pairedEventId: null },
+  ]
+  // Both the window pull and the untrimmed lifetime set carry the rows: the span reads the latter.
+  const snap = assembleReport(baseInput({ now: MED_NOW, ...rec, doses, lifetimeDoses: doses }))
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.lifetimeFirstDoseDay, '2026-07-17', 'first ADMINISTERED day — the unconfirmed Jul 16 row does not count')
+  assert.equal(otic.lifetimeLastDoseDay, '2026-07-30', 'last ADMINISTERED day — the refused Aug 8 row does not count')
+  assert.equal(otic.lifetimeDosesLogged, 28, 'the same population as the numerator beside it')
+  assert.equal(otic.lifetimeDoseDayCount, 14, '28 doses at 2×/day on 14 DISTINCT days — the density, not the count')
+  // Nothing administered → null, never a fabricated day.
+  const refused = rec.lifetimeDoses.map((d) => ({ ...d, adherence: 'refused' }))
+  const refusedAll = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: refused, lifetimeDoses: refused }))
+  const none = refusedAll.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(none.lifetimeFirstDoseDay, null)
+  assert.equal(none.lifetimeLastDoseDay, null)
+  assert.equal(none.lifetimeDosesLogged, 0)
+  assert.equal(none.lifetimeDoseDayCount, 0)
+})
