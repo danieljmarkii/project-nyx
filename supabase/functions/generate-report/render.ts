@@ -5905,7 +5905,7 @@ function appendixDivider(snap: ReportSnapshot): string {
 }
 
 function appendixA(snap: ReportSnapshot): string {
-  const rows = snap.provenance.symptomLog.map((e) => symptomLogRow(e, snap.timezone)).join('')
+  const rows = snap.provenance.symptomLog.map((e) => symptomLogRow(e, snap.timezone, snap.scope.endDate)).join('')
   const count = snap.provenance.symptomLog.length
   // Counted over the rows below with the predicate that tags them (`timeConfidence`), never
   // read off the snapshot: every row that is not `seen` — an estimate, a window, a one-sided
@@ -5942,7 +5942,7 @@ function appendixA(snap: ReportSnapshot): string {
 <section class="page">
   ${appendixDivider(snap)}
   <p class="appx-title serif">Appendix A — Symptom event log</p>
-  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed.${estBit}${glossBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
+  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed. &ldquo;Logged&rdquo; is when the owner recorded it, and carries a date whenever that fell on a different day from the event; a gap between the two is expected and is itself information, since the longer it is, the more of the reported time is recall.${estBit}${glossBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
   <table>
     <caption>${num(count)} symptom event${count === 1 ? '' : 's'} &middot; ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}</caption>
     <thead>
@@ -5950,7 +5950,7 @@ function appendixA(snap: ReportSnapshot): string {
         <th style="width:64px">Date</th>
         <th>Type</th>
         <th style="width:140px">Occurred (owner-reported)</th>
-        <th style="width:58px">Logged</th>
+        <th style="width:92px">Logged</th>
         <th>Owner note &amp; photo findings</th>
       </tr>
     </thead>
@@ -6005,18 +6005,59 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
   return `${h(stateWord)} — not clear enough to read`
 }
 
-function symptomLogRow(e: SymptomLogEntry, tz: string | null): string {
+function symptomLogRow(e: SymptomLogEntry, tz: string | null, windowEndDayKey: string): string {
   const dateCell = fmtLocalDay(e.occurredAt, tz)
   const occCell = occurredCell(e, tz)
-  const loggedCell = fmtLocalTime(e.loggedAt, tz)
+  const logged = loggedCell(e, tz, windowEndDayKey)
   const dup = e.dupCount > 1 ? ` <span class="conf">${e.dupCount} logs</span>` : ''
   let noteCell = e.notes ? h(e.notes) : ''
   if (e.phenotype) {
     noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype)}</span>`
   }
   return `<tr><td class="num">${h(dateCell)}</td><td>${h(symptomLabel(e.type))}</td><td>${occCell}${dup}</td><td class="num">${h(
-    loggedCell,
+    logged,
   )}</td><td>${noteCell || '&mdash;'}</td></tr>`
+}
+
+/**
+ * Appendix A's LOGGED cell (CUL-977) — the moment the OWNER recorded the event, carrying its
+ * DATE whenever that falls on a different local day from the event itself.
+ *
+ * The pair (OCCURRED, LOGGED) exists to show the logging DELAY, because that is what tells a
+ * clinician how much of a reported minute is observation and how much is recall — the report
+ * argues this itself in "Why a range and not a time". A bare `HH:MM` cannot say "two days
+ * later", so on the v15 artifact a window of ~07:02–17:40 on Aug 19, recorded at 09:04 on
+ * Aug 21, printed as `logged 09:04` beside it: read off the page, the window closed eight and
+ * a half hours AFTER the row was created. The cold read did not read that as a missing date.
+ * It read it as a record contradicting itself, and filed a blocking data-integrity finding
+ * against the RANGE convention — the one this appendix most needs trusted.
+ *
+ * C-19 is why this is cheap: a date anchored to the record is free, and only a DURATION would
+ * need the detection engine's floors. Nothing here claims a duration; the two dates sit side
+ * by side and the reader does their own arithmetic.
+ *
+ * Two rules hold it honest:
+ *
+ *  • BOTH DAYS ARE PARSED, never compared as text (C-40). A locally-written row and a
+ *    PostgREST-hydrated one are two spellings of one instant (`…T04:00:00.000Z` vs
+ *    `…T04:00:00+00:00`), and a day boundary is exactly where these rows sit.
+ *    `localDayKeyOf` takes both through `Date.parse` and an `Intl` zone format, so the
+ *    comparison is between derived local day keys and never between the stored strings.
+ *
+ *  • THE DAY IS THE OWNER'S, not UTC. 23:30 in Chicago is 04:30 UTC the next day: judged in
+ *    UTC, an event and its log twenty minutes apart would claim a day's delay, and a genuine
+ *    cross-midnight delay would hide. The anchor is `occurredAt` — the same value the row's
+ *    own Date column prints — so this cell can never contradict the cell beside it.
+ *
+ * The year comes from `fmtLocalDayScoped`, because this is one of the few dates on the page
+ * NOT bounded by the letterhead range: logging can postdate the window end, so a January log
+ * of a December event must say which January (C-19's year rule). That helper's own header
+ * warns it is safe only where a sentence carries one date, and this cell carries exactly one.
+ */
+function loggedCell(e: SymptomLogEntry, tz: string | null, windowEndDayKey: string): string {
+  const time = fmtLocalTime(e.loggedAt, tz)
+  if (localDayKeyOf(e.loggedAt, tz) === localDayKeyOf(e.occurredAt, tz)) return time
+  return `${fmtLocalDayScoped(e.loggedAt, tz, windowEndDayKey)}, ${time}`
 }
 
 /**
@@ -6988,13 +7029,93 @@ function offDietAppendix(snap: ReportSnapshot): string {
   ${daggerFootnote}`
 }
 
+/**
+ * The house shape for a negative on this report (CUL-978): a claim about the RECORD, with
+ * what its own silence does not prove, in that order.
+ *
+ * There is a real difference between "None recorded" — a claim about the world — and
+ * "nothing was entered in this table", which is what every one of these lines actually
+ * means. The report is otherwise scrupulous about it (appendix D's preamble spells it out
+ * at length), and the two lines below were the exceptions: on the v15 artifact p9 told a
+ * vet there were no active conditions and no supplements, while p5 named an ear-infection
+ * medication and pp2/4/5 called the same patient's antihistamine a supplement.
+ *
+ * WORDED ONCE, not per site, so a later edit to one cannot drift it from the other — which
+ * is exactly how two lines written to the same rule ended up disagreeing about what a
+ * negative asserts.
+ */
+function recordSilence(head: string, whatTheRecordHolds: string, worldClaim: string): string {
+  return `${head} &mdash; ${whatTheRecordHolds}, which is not evidence ${worldClaim}.`
+}
+
+/**
+ * Every supplement THIS DOCUMENT names (CUL-978, site 2).
+ *
+ * The v15 contradiction was not bad data and not a wording problem: appendix B's row read
+ * `snap.medications` ALONE, and an over-the-counter supplement dosed with no configured
+ * regimen — which is what an owner-bought antihistamine is — lives in
+ * `snap.unlinkedMedications`. So the drug rendered on three other pages and the row beneath
+ * them said none was recorded. A negative is only as true as the set it was computed over,
+ * and this one was computed over a third of it.
+ *
+ * All three places the report can name a supplement are read, deduped by name:
+ *   • a regimen supplement overlapping the window (the original set);
+ *   • an unlinked OTC dose group (the Zyrtec case);
+ *   • a `supplement` concurrent change — derived from the same medications, so ordinarily
+ *     redundant, and read anyway: this function's whole job is that the row cannot be
+ *     contradicted by the document around it, and a derivation that disagrees with its
+ *     own source is precisely the case a set-union would otherwise miss.
+ */
+function supplementsNamedOnReport(snap: ReportSnapshot): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const push = (name: string, detail: string): void => {
+    const key = name.trim().toLowerCase()
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    out.push(`${h(name)}${detail}`)
+  }
+  for (const m of snap.medications) {
+    // Window-scoped like every other medication view (page-1 `dietMeds` and appendix D both
+    // filter on `overlapsWindow`) — the meds pull is deliberately unbounded for the
+    // concurrent-change logic, so without this guard a supplement stopped years ago would
+    // render here as a live entry while page 1 correctly omits it (code-review find).
+    if (m.isSupplement && m.overlapsWindow) push(m.drugName, ` (started ${h(fmtDay(m.startedAt))})`)
+  }
+  for (const u of snap.unlinkedMedications) {
+    // No regimen means no start date to state — the honest anchor is the first dose logged,
+    // and saying which it is stops the date reading as a prescribed start.
+    if (u.isSupplement) push(u.drugName, ` (no regimen recorded; doses logged from ${h(fmtDay(u.firstDate))})`)
+  }
+  for (const c of snap.concurrentChanges) {
+    if (c.kind === 'supplement') push(c.label, ' (named among the concurrent changes on page&nbsp;1)')
+  }
+  return out
+}
+
+/**
+ * The treated indications the medication record names (CUL-978, site 1).
+ *
+ * Read from the medications the report itself prints, so the row can never contradict a
+ * page the reader has already passed. Deduped on the indication, since two drugs for one
+ * problem are one tension, not two.
+ */
+function indicationsNamedOnReport(snap: ReportSnapshot): Array<{ indication: string; drug: string }> {
+  const out: Array<{ indication: string; drug: string }> = []
+  const seen = new Set<string>()
+  for (const m of snap.medications) {
+    const ind = m.indication?.trim()
+    if (!ind || !m.overlapsWindow) continue
+    const key = ind.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ indication: ind, drug: m.drugName })
+  }
+  return out
+}
+
 function dietHistoryAppendix(snap: ReportSnapshot): string {
   const d = snap.diet
-  // Window-scoped like every other medication view (page-1 dietMeds + appendix D both
-  // filter on overlapsWindow) — the meds pull is deliberately unbounded for the
-  // concurrent-change logic, so without this guard a supplement stopped years ago would
-  // render here as a live entry while page 1 correctly omits it (code-review find).
-  const supps = snap.medications.filter((m) => m.isSupplement && m.overlapsWindow)
   // "NONE RECORDED" IS ABOUT THE LOG, AND ON A TRIAL REPORT IT IS LOAD-BEARING (B-532,
   // cold-read finding). Appendix D goes to real trouble to say a medication's absence is not
   // evidence it was not given; these three rows carried no such caveat at the point of claim —
@@ -7004,9 +7125,21 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   // well-logged artifact renders "65 this window"). The caveat is attached where the claim is,
   // not left to the page-1 blind-spot line four sheets away.
   const NOT_LOGGED = 'None recorded &mdash; nothing of this kind was logged in this window, which is not evidence none was fed.'
-  const suppBit = supps.length
-    ? supps.map((m) => `${h(m.drugName)} (started ${h(fmtDay(m.startedAt))})`).join('; ')
-    : NOT_LOGGED
+  // CUL-978 site 2 — every supplement the DOCUMENT names, not just the regimen ones this
+  // row used to read. `supps` is kept as the window-scoped guard it always was and is now
+  // one of three inputs (see `supplementsNamedOnReport`).
+  const namedSupps = supplementsNamedOnReport(snap)
+  const suppBit = namedSupps.length
+    ? namedSupps.join('; ')
+    : // AND THE RECONCILIATION SITS HERE, not a page later. It already existed, in appendix
+      // D's preamble — which is on the NEXT sheet, so the cold read met the contradiction
+      // first and the resolution second, and reported reading both twice. Same words,
+      // earlier position: the clause that resolves a negative belongs at the negative.
+      `${recordSilence(
+        'None recorded',
+        'no supplement was logged in this window',
+        'none was given',
+      )} A supplement given with a meal may have been logged as food instead; those appear in the diet rows above and in appendix&nbsp;C.`
   // B-499 — "Dates in appendix C" only resolves on a NON-trial report, where appendix C
   // IS the treats & table-food table and every treat is a dated row. On a trial report
   // appendix C lists OFF-DIET exposures only, so a PERMITTED treat has no dated row there:
@@ -7104,9 +7237,22 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
       // "stated only when the diet block happens to be populated".
       `No named diet food in this window to read a protein set from. <span class="rnote">${PROTEIN_PROVENANCE_NOTE}</span>`
 
+  // CUL-978 site 1 — the negative is cross-checked against the indications the report
+  // already prints. NEVER SYNTHESISED INTO A ROW: an indication is what the owner typed
+  // against a drug, not a diagnosis the owner entered as history, and promoting one would
+  // invent clinical history nobody recorded. Name the tension; let the vet resolve it.
+  const indications = indicationsNamedOnReport(snap)
   const condBit = snap.provenance.conditions.length
     ? snap.provenance.conditions.map((c) => `${h(c.name)} (${h(c.status)})`).join('; ')
-    : 'None recorded.'
+    : indications.length
+      ? `${recordSilence(
+          'None entered',
+          'no condition has been recorded in Culprit',
+          'there is none',
+        )} <b>The medication record names a treated indication this list does not carry:</b> ${indications
+          .map((i) => `${h(i.indication)} (${h(i.drug)})`)
+          .join('; ')}. An indication is what the owner entered against a drug, not a diagnosis, so it is shown here rather than listed above as a condition.`
+      : recordSilence('None entered', 'no condition has been recorded in Culprit', 'there is none')
   const weightBit = snap.weight.isEmpty
     ? 'No home weigh-ins recorded. Body-condition score and caloric adequacy not assessed in this record.'
     : `${

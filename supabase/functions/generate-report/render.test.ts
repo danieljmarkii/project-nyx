@@ -5282,3 +5282,279 @@ Deno.test('CUL-994 Part 2 — adversarial round 4: the sentence never restates t
   assert.ok(/administered doses fell on/.test(line) && /prescribed doses at/.test(line), 'both populations named')
 })
 
+
+// ── R-3 (CUL-977) — Appendix A's LOGGED column carries a date across a day boundary ────
+//
+// The column exists to show the LOGGING DELAY, and it rendered a bare `HH:MM`. On the real
+// v15 artifact that printed `Aug 19 · ~07:02–17:40 range · logged 09:04` for a row logged
+// on Aug 21, so the window appeared to close eight and a half hours after the row was
+// created. The cold read filed it as a blocking data-integrity finding against the RANGE
+// convention, which is one of the best things the document does.
+
+const CHI = 'America/Chicago'
+
+/**
+ * A local wall-clock time in a named zone → the UTC instant it names (B-514 / C-29).
+ *
+ * "Is the logged day the same local day as the occurred day?" is a LOCAL-day question, and
+ * a bare UTC literal cannot state one: `2026-08-20T02:00:00Z` is Aug 19 in Chicago and
+ * Aug 20 in London. Written as local components the fixture says what it means, and the
+ * render is handed the zone explicitly, so neither depends on the host's TZ.
+ *
+ * Two passes, because the first correction can itself cross a DST transition.
+ */
+function atLocal(tz: string, day: string, hhmm: string): string {
+  const [y, mo, d] = day.split('-').map(Number)
+  const [hh, mi] = hhmm.split(':').map(Number)
+  const target = Date.UTC(y, mo - 1, d, hh, mi)
+  let ms = target
+  for (let i = 0; i < 2; i++) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(ms))
+    const g = (t: string): number => Number(parts.find((p) => p.type === t)!.value)
+    ms += target - Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second'))
+  }
+  return new Date(ms).toISOString()
+}
+
+/** Appendix A's rows as cell text: [date, type, occurred, logged, note]. */
+function appendixARows(html: string): string[][] {
+  const start = html.indexOf('Appendix A — Symptom event log')
+  assert.ok(start > -1, 'appendix A renders')
+  const body = html.slice(html.indexOf('<tbody>', start), html.indexOf('</tbody>', start))
+  return [...body.matchAll(/<tr>([^]*?)<\/tr>/g)].map((m) =>
+    [...m[1].matchAll(/<td[^>]*>([^]*?)<\/td>/g)].map((c) => text(c[1]).replace(/\s+/g, ' ').trim()),
+  )
+}
+
+/** An August-window report in Chicago, so the local-day question has a stated zone. */
+function chicagoReport(rows: SymptomLogEntry[], scopeOver: Record<string, unknown> = {}): string {
+  const b = base()
+  return renderReport(
+    base({
+      timezone: CHI,
+      scope: { ...b.scope, startDate: '2026-07-20', endDate: '2026-08-31', ...scopeOver },
+      provenance: { ...b.provenance, symptomLog: rows, totalSymptomIncidents: rows.length },
+    }),
+  )
+}
+
+Deno.test('R-3 — a row logged on a DIFFERENT local day prints that day in the LOGGED cell', () => {
+  const rows = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-08-19', '17:40'),
+        loggedAt: atLocal(CHI, '2026-08-21', '09:04'),
+      }),
+    ]),
+  )
+  assert.equal(rows[0][0], 'Aug 19', 'the Date column is the event day')
+  assert.equal(rows[0][3], 'Aug 21, 09:04', 'the LOGGED cell names the day it was recorded')
+})
+
+Deno.test('R-3 — a row logged the SAME local day stays a bare time, so the common row gains no noise', () => {
+  const rows = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-08-19', '19:54'),
+        loggedAt: atLocal(CHI, '2026-08-19', '20:11'),
+      }),
+    ]),
+  )
+  assert.equal(rows[0][3], '20:11', 'no date on a same-day row')
+})
+
+Deno.test('R-3 — the local day is judged in the OWNER\'s zone, not UTC', () => {
+  // 23:30 Chicago on Aug 19 is 04:30 UTC on Aug 20: same local day, different UTC day. A
+  // UTC comparison would print a date here and claim a delay the record does not hold.
+  const sameLocal = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-08-19', '21:00'),
+        loggedAt: atLocal(CHI, '2026-08-19', '23:30'),
+      }),
+    ]),
+  )
+  assert.equal(sameLocal[0][3], '23:30', 'one Chicago day that straddles UTC midnight is still one day')
+  // And the mirror: 00:20 Chicago on Aug 20 is 05:20 UTC the same day, a DIFFERENT local day
+  // from an event at 21:00 on Aug 19 — so the date must print.
+  const crossLocal = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-08-19', '21:00'),
+        loggedAt: atLocal(CHI, '2026-08-20', '00:20'),
+      }),
+    ]),
+  )
+  assert.equal(crossLocal[0][3], 'Aug 20, 00:20', 'twenty minutes later is a new local day and says so')
+})
+
+Deno.test('R-3 — the Aug 19 row from the v15 artifact, verbatim: the window no longer closes after it was logged', () => {
+  // The record, exactly as production holds it (CUL-977's table). These are the stored UTC
+  // instants; the LOCAL-day question they pose is answered by the zone handed to the render.
+  const rows = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: '2026-08-19T22:40:00Z',
+        occurredAtConfidence: 'window',
+        occurredAtEarliest: '2026-08-19T12:02:00Z',
+        occurredAtLatest: '2026-08-19T22:40:00Z',
+        loggedAt: '2026-08-21T14:04:00Z',
+      }),
+    ]),
+  )
+  assert.equal(rows[0][0], 'Aug 19')
+  assert.equal(rows[0][2], '~07:02–17:40 range', 'the window renders unchanged')
+  assert.equal(rows[0][3], 'Aug 21, 09:04', 'two days later, and the page now says so')
+})
+
+Deno.test('R-3 — a logged day outside the window\'s YEAR carries the year (C-19)', () => {
+  // Logging can postdate the window end, so this cell is one of the few whose date is not
+  // bounded by the letterhead range. `fmtLocalDayScoped` stamps the year when it differs.
+  const rows = appendixARows(
+    chicagoReport([
+      logEntry({
+        type: 'vomit',
+        occurredAt: atLocal(CHI, '2026-12-30', '18:00'),
+        loggedAt: atLocal(CHI, '2027-01-02', '08:15'),
+      }),
+    ], { startDate: '2026-11-01', endDate: '2026-12-31' }),
+  )
+  assert.equal(rows[0][3], 'Jan 2, 2027, 08:15', 'a cross-year log day is never bare')
+})
+
+Deno.test('R-3 — Appendix A\'s preamble says what LOGGED means and that a gap is information', () => {
+  const html = chicagoReport([
+    logEntry({ type: 'vomit', occurredAt: atLocal(CHI, '2026-08-19', '17:40'), loggedAt: atLocal(CHI, '2026-08-21', '09:04') }),
+  ])
+  const sub = text(html.slice(html.indexOf('Appendix A — Symptom event log'), html.indexOf('<table>', html.indexOf('Appendix A — Symptom event log'))))
+  assert.ok(/when the owner recorded/i.test(sub), 'the column is defined')
+  assert.ok(/different day/i.test(sub), 'the date rule is stated')
+  assert.ok(/is itself information|is information/i.test(sub), 'the gap is named as signal, not error')
+})
+
+// ── R-4 (CUL-978) — a negative may not render while the same document says its opposite ──
+//
+// Two sites, one shape: a negative assertion printed from an empty table, with no check
+// against facts the report already renders elsewhere. On the v15 artifact p9 said "Active
+// conditions: None recorded" over a patient whose own p5 medication row read "for Ear
+// infection", and "Supplements: None recorded" over three other pages calling her
+// antihistamine a supplement. Both lines were true of the table they read and false of the
+// document they sat in.
+
+/** The `<td>` of the Appendix B row whose `<th>` is `label`. */
+function appendixBRow(html: string, label: string): string {
+  const start = html.indexOf('Appendix B — Diet history')
+  assert.ok(start > -1, 'appendix B renders')
+  const body = html.slice(start, html.indexOf('</table>', start))
+  const m = new RegExp(`<tr><th[^>]*>${label}</th><td>([^]*?)</td></tr>`).exec(body)
+  assert.ok(m, `appendix B has a "${label}" row`)
+  return m![1]
+}
+
+Deno.test('R-4 site 1 — an empty conditions table beside a medication that names an indication says so', () => {
+  const html = renderReport(
+    base({ medications: [med({ drugName: 'Motozol', indication: 'Ear infection', isSupplement: false })] }),
+  )
+  const cell = text(appendixBRow(html, 'Active conditions'))
+  assert.ok(!/^None recorded\.$/.test(cell.trim()), 'not the bare negative')
+  assert.ok(/Ear infection/.test(cell), 'the indication the medication record names is quoted')
+  assert.ok(/Motozol/.test(cell), 'and the drug it came from, so the vet can find it')
+  // NEVER SYNTHESISED: an indication is what the owner typed against a drug, not a
+  // diagnosis, so it is never promoted into the conditions list as if entered there.
+  assert.ok(!/^Ear infection/.test(cell.trim()), 'the indication is not printed as a condition row')
+})
+
+Deno.test('R-4 site 1 — a genuinely quiet record still gets a clean, calm negative', () => {
+  const html = renderReport(base({ medications: [med({ indication: null })], unlinkedMedications: [] }))
+  const cell = text(appendixBRow(html, 'Active conditions')).trim()
+  assert.ok(/^None entered/.test(cell), 'the quiet record is not made noisy')
+  assert.ok(!/indication/i.test(cell), 'no tension is invented where there is none')
+  // The claim is about the RECORD, not about the world.
+  assert.ok(/not evidence/.test(cell), 'and it says what its own silence does not prove')
+})
+
+Deno.test('R-4 site 2 — a supplement carried only as an UNLINKED dose group reaches the supplements row', () => {
+  // The real mechanism behind the v15 contradiction: `supps` read `snap.medications` only,
+  // so an OTC supplement dosed with no configured regimen — which is what an owner-bought
+  // antihistamine is — rendered on three other pages and never here.
+  const html = renderReport(base({ medications: [], unlinkedMedications: [unlinkedMed()] }))
+  const cell = text(appendixBRow(html, 'Supplements'))
+  assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(cell), 'the supplement the rest of the report names is named here')
+  assert.ok(!/None recorded/.test(cell), 'and the negative does not render over it')
+})
+
+Deno.test('R-4 site 2 — a supplement named only in the concurrent-change list still blocks the negative', () => {
+  const html = renderReport(
+    base({
+      medications: [],
+      unlinkedMedications: [],
+      concurrentChanges: [
+        { kind: 'supplement', label: 'Cetirizine HCl (Zyrtec)', startDate: '2026-05-09', bucketIndex: 1, ongoing: false, endInWindow: null },
+      ],
+    }),
+  )
+  const cell = text(appendixBRow(html, 'Supplements'))
+  assert.ok(!/^None recorded/.test(cell.trim()), 'a supplement the document names anywhere blocks the bare negative')
+  assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(cell), 'and the row points at it')
+})
+
+Deno.test('R-4 site 2 — the reconciliation sits WITH the negative, not a page later in appendix D', () => {
+  const html = renderReport(base({ medications: [], unlinkedMedications: [], concurrentChanges: [] }))
+  const cell = text(appendixBRow(html, 'Supplements')).trim()
+  assert.ok(/^None recorded/.test(cell), 'a truly quiet record still gets the calm negative')
+  assert.ok(/taken as food|with a meal/i.test(cell), 'the appendix D reconciliation is inlined at the claim')
+  assert.ok(/not evidence/.test(cell), 'the claim is about the record')
+  // And it is genuinely EARLIER than appendix D's copy of it, which is what the cold read
+  // had to read twice.
+  const dIdx = html.indexOf('Appendix D — Medication log')
+  const bIdx = html.indexOf('Appendix B — Diet history')
+  assert.ok(bIdx > -1 && dIdx > bIdx, 'appendix B precedes appendix D on the sheet')
+})
+
+// ── R-4 item 3 — the class sweep, and the one site it leaves pinned ──────────────────
+//
+// Every negative in `render.ts` was walked against the question "is there any other surface
+// on this document that could contradict it?" (37 sites). The two CUL-978 names were the
+// only ones that could, and the rest fall into three groups: a field absence nothing else
+// on the page states (sex / neuter / breed / owner / a bowl with no recorded start); a
+// negative already cross-checked by an earlier pass (`medicationOverlapLine` names the scope
+// it examined, after adversarial pass 5); and a negative computed from the SAME set as the
+// surface that could contradict it (page 1's "No fully-eaten meal" and appendix E's intake
+// breakdown both read the window's rated meals; appendix B's treat count is a superset of
+// appendix C's treat rows, so a zero there forces a zero here).
+//
+// NO GUARD FILE. The blunt detector for this class — "a negative string needs a cross-check"
+// — would need an exemption at 35 of 37 sites, and an exemption applied thirty-five times is
+// a scope error rather than an exemption (C-33). C-32's rule bites the same way: a registry
+// entry has to be earned, and thirty-five entries recording that someone thought about a
+// string is not a guard. The behaviour is pinned where it is load-bearing instead.
+
+Deno.test('R-4 sweep — page 1\'s medication negative already reads ALL THREE sources, and stays that way', () => {
+  // This is the site appendix B's supplements row should have looked like: it checks
+  // regimen meds, regimen supplements AND unlinked dose groups before claiming none. Pinned
+  // because dropping any one of the three reproduces the CUL-978 bug one page earlier.
+  const quiet = renderReport(base({ medications: [], unlinkedMedications: [], concurrentChanges: [] }))
+  assert.ok(/None logged in this window/.test(quiet), 'a truly quiet record still gets the negative')
+
+  const cases: Array<{ label: string; over: Partial<ReportSnapshot> }> = [
+    { label: 'a regimen medication', over: { medications: [med({ drugName: 'Metronidazole', isSupplement: false })] } },
+    { label: 'a regimen supplement', over: { medications: [med({ drugName: 'Omega-3', isSupplement: true })] } },
+    { label: 'an unlinked OTC group', over: { unlinkedMedications: [unlinkedMed()] } },
+  ]
+  for (const { label, over } of cases) {
+    const html = renderReport(base({ medications: [], unlinkedMedications: [], concurrentChanges: [], ...over }))
+    assert.ok(
+      !/None logged in this window/.test(html),
+      `${label} must suppress page 1's medication negative`,
+    )
+  }
+})
