@@ -5971,8 +5971,15 @@ function appendixDivider(snap: ReportSnapshot): string {
   // The lifetime medication-history table (§4.4) is un-lettered by design (one table, not a second
   // appendix — D2) but it renders between C and D, so name it in the map where it sits, or a reader
   // scanning the contents line never learns it exists (cold-read scannability nit).
+  // …AND SAY WHERE IT IS (R-13 item 8). Every other entry on this line is addressed by a
+  // letter, so an entry without one sent a reader hunting for "appendix" something that does
+  // not exist — the dangling-reference failure this document keeps paying for. It is
+  // deliberately un-lettered (one table, not a second appendix — D2), which makes its
+  // position the only address it has.
   const medHistBit =
-    snap.medicationHistory && snap.medicationHistory.entries.length > 0 ? ' &middot; medication history (lifetime)' : ''
+    snap.medicationHistory && snap.medicationHistory.entries.length > 0
+      ? ' &middot; medication history (lifetime) &mdash; un-lettered, immediately before D'
+      : ''
   return `
   <div class="divider">
     <span class="k">End of clinical summary</span>
@@ -5980,8 +5987,35 @@ function appendixDivider(snap: ReportSnapshot): string {
   </div>`
 }
 
+/**
+ * Is EVERY row below a witnessed time (R-13 item 9, Dr. Chen)?
+ *
+ * A column with one value carries no information, and on the clean fixture this one prints
+ * `seen` seventeen times — decoration on the sheet a vet scans hardest, which principle 6
+ * rules out. So a uniform column states itself once in the preamble and drops the chips.
+ *
+ * SCOPED TO `seen`, AND THAT SCOPE IS THE WHOLE RULING. The obvious rule — "when every row
+ * shares a tag, say it once" — is unsafe for every other class, because a BARE time reads as
+ * an exact one. That default reading is true of a witnessed column and false of the rest: a
+ * record logged entirely before B-010 is uniformly `unspecified`, and dropping its tags would
+ * turn a column of times nobody vouched for into a column of witnessed minutes — silence in
+ * the reassuring direction, on the convention the report's own "Why a range and not a time"
+ * note asks the reader to trust. A uniform `est` column fails the same way.
+ *
+ * So the chips go only where their absence says something true, and a MIXED column keeps all
+ * of them, including the witnessed ones: there the tag on a `seen` row is what makes the one
+ * `est` row visible by contrast, which is what the July cold read valued about the column.
+ */
+function allTimesWitnessed(snap: ReportSnapshot): boolean {
+  const log = snap.provenance.symptomLog
+  return log.length > 0 && log.every((e) => timeConfidence(e) === 'seen')
+}
+
 function appendixA(snap: ReportSnapshot): string {
-  const rows = snap.provenance.symptomLog.map((e) => symptomLogRow(e, snap.timezone, snap.scope.endDate)).join('')
+  const uniformSeen = allTimesWitnessed(snap)
+  const rows = snap.provenance.symptomLog
+    .map((e) => symptomLogRow(e, snap.timezone, snap.scope.endDate, uniformSeen))
+    .join('')
   const count = snap.provenance.symptomLog.length
   // Counted over the rows below with the predicate that tags them (`timeConfidence`), never
   // read off the snapshot: every row that is not `seen` — an estimate, a window, a one-sided
@@ -6007,8 +6041,13 @@ function appendixA(snap: ReportSnapshot): string {
     ['bound', 'a bare &ldquo;before&rdquo; or &ldquo;after&rdquo; time is one known bound and carries no tag'],
     ['unspecified', '<span class="conf">unspecified</span> no confidence recorded'],
   ]
-  const glossBit =
-    count > 0
+  const glossBit = uniformSeen
+    ? // The tags are gone, so their vocabulary note goes with them — a legend for a chip the
+      // sheet no longer prints is the dangling reference this document keeps paying for. The
+      // FACT the column carried is kept, as a sentence, because it is the thing that makes a
+      // bare time safe to read as exact.
+      ' Every time below was witnessed by the owner.'
+    : count > 0
       ? ` Time tags: ${glossEntries
           .filter(([k]) => present.has(k))
           .map(([, text]) => text)
@@ -6081,9 +6120,14 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
   return `${h(stateWord)} — not clear enough to read`
 }
 
-function symptomLogRow(e: SymptomLogEntry, tz: string | null, windowEndDayKey: string): string {
+function symptomLogRow(
+  e: SymptomLogEntry,
+  tz: string | null,
+  windowEndDayKey: string,
+  uniformSeen = false,
+): string {
   const dateCell = fmtLocalDay(e.occurredAt, tz)
-  const occCell = occurredCell(e, tz)
+  const occCell = occurredCell(e, tz, uniformSeen)
   const logged = loggedCell(e, tz, windowEndDayKey)
   const dup = e.dupCount > 1 ? ` <span class="conf">${e.dupCount} logs</span>` : ''
   let noteCell = e.notes ? h(e.notes) : ''
@@ -6169,7 +6213,7 @@ function timeConfidence(e: SymptomLogEntry): 'seen' | 'est' | 'range' | 'bound' 
 }
 
 /** B-010 occurred cell — witnessed=exact+seen, estimated=~time+est, window=range+range. */
-function occurredCell(e: SymptomLogEntry, tz: string | null): string {
+function occurredCell(e: SymptomLogEntry, tz: string | null, uniformSeen = false): string {
   switch (timeConfidence(e)) {
     case 'bound':
       // One-sided window — the "Sometime before/after" capture mode records a single bound
@@ -6185,7 +6229,11 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
     case 'est':
       return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">est</span>`
     case 'seen':
-      return `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">seen</span>`
+      // R-13 item 9 — the chip is dropped only when EVERY row is witnessed, and the preamble
+      // then states it once. See `allTimesWitnessed` for why no other class may do this.
+      return uniformSeen
+        ? num(fmtLocalTime(e.occurredAt, tz))
+        : `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">seen</span>`
     case 'unspecified':
       // null confidence (legacy rows logged before B-010) — tag it explicitly. A bare time in a
       // column of tagged rows reads as MORE certain than a witnessed one, the reassuring
@@ -7526,13 +7574,22 @@ function medicationAppendix(snap: ReportSnapshot): string {
   const sub = !hasAny
     ? `No prescription medication is recorded in this window. Over-the-counter supplements, if any, are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
     : `Doses are owner-logged, and this table is scoped to the report window &mdash; page&nbsp;1&rsquo;s adherence line counts the whole course, so a drug dosed before this window shows a lower count here than the number stated there. With no dose logged against a regimen at all it reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).${unloggedCaveat}`
-  return `
-  <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
-  <p class="appx-sub">${sub}</p>
+  // AN EMPTY APPENDIX D IS THE SENTENCE (R-13 item 7). With nothing to list it drew a
+  // five-column header, one placeholder row repeating the sub-head's own sentence, and the
+  // footer — the tail most likely to open a near-blank sheet on a printed report, and a
+  // table that tells a reader to scan columns holding nothing. The absence is not dropped:
+  // the sub-head states it, with the "only what the owner entered" caveat B-494 requires,
+  // and now states it exactly once.
+  const table = hasAny
+    ? `
   <table>
     <thead><tr><th>Medication</th><th style="width:150px">Regimen</th><th class="c" style="width:74px">Doses logged</th><th style="width:132px">Dose dates</th><th>Adherence</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="5">No prescription medication is recorded in this window.</td></tr>`}</tbody>
+    <tbody>${rows}</tbody>
   </table>`
+    : ''
+  return `
+  <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
+  <p class="appx-sub">${sub}</p>${table}`
 }
 
 /**

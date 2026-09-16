@@ -5120,8 +5120,22 @@ Deno.test('CUL-634 — Appendix A counts every row without a witnessed time, inc
   assert.ok(/<td><span class="num">~10:00<\/span> <span class="conf">unspecified<\/span><\/td>/.test(single), 'the unspecified row is tagged in the table and drawn approximate, not only defined in the legend')
   const clean = renderReport(base({ provenance: { ...base().provenance, symptomLog: [rows[0]], totalSymptomIncidents: 1 } }))
   assert.ok(!/events below carr/.test(clean), 'an all-witnessed log carries no count')
-  // The gloss is gated on the classes the rows USE: an all-witnessed log defines one tag, not five.
-  assert.ok(/Time tags: <span class="conf">seen<\/span> witnessed\. For photographed/.test(clean), 'only the tag in use is glossed')
+  // The gloss is gated on the classes the rows USE. R-11 took that from five definitions to
+  // one over an all-witnessed column; R-13 item 9 takes it to none, because a column with a
+  // single value is decoration and the chips go too — so the gloss that defined them would be
+  // a legend for a mark the sheet no longer prints. The FACT is kept as a sentence, which is
+  // what makes the bare times safe to read as exact. See `allTimesWitnessed` for why this is
+  // scoped to `seen` and to no other uniform class.
+  assert.ok(!/Time tags:/.test(clean), 'an all-witnessed column glosses no tag, because it prints none')
+  assert.ok(/Every time below was witnessed by the owner\./.test(clean), 'it states the fact once instead')
+  // Scoped to appendix A's own table: the closing "How to read" legend still DEFINES the tag
+  // vocabulary for the report as a whole, which is correct — it is the document's glossary,
+  // not a claim about this column.
+  const cleanBody = clean.slice(clean.indexOf('<tbody>', clean.indexOf('Appendix A — Symptom event log')))
+  assert.ok(
+    !/class="conf">seen</.test(cleanBody.slice(0, cleanBody.indexOf('</tbody>'))),
+    'and no row carries the chip',
+  )
   assert.ok(!/unspecified<\/span> no confidence recorded/.test(clean.slice(0, clean.indexOf('How to read this report'))), 'no definition of a tag the column never shows')
   const empty = renderReport(base())
   assert.ok(!/Time tags:/.test(empty), 'no gloss over an empty log')
@@ -6140,4 +6154,110 @@ Deno.test('R-13 item 6 — no removed photo, no disclosure and no marker', () =>
     }),
   )
   assert.ok(!/no longer retained/i.test(plain(html)), 'a quiet record gains nothing')
+})
+
+// ── R-13 items 7 + 8 — the empty appendix D, and the un-lettered table's address ───────
+
+Deno.test('R-13 item 7 — an empty appendix D is the sentence, with no table around it', () => {
+  const html = renderReport(base({ medications: [], unlinkedMedications: [] }))
+  const start = html.indexOf('Appendix D — Medication log')
+  assert.ok(start > -1, 'appendix D still renders')
+  const section = html.slice(start, html.indexOf('</section>', start))
+  assert.ok(!/<table>/.test(section), 'no five-column header over an empty body')
+  assert.ok(!/colspan="5"/.test(section), 'and no placeholder row')
+  // The sentence and its caveat survive: the absence is what a vet needs told, and the
+  // B-494 rule is that a zone the report teaches a reader to scan may not let its own
+  // silence stand as a finding.
+  const t = plain(section)
+  assert.ok(/No prescription medication is recorded in this window/.test(t))
+  assert.ok(/This lists only what the owner entered in Culprit/.test(t))
+  // Said ONCE — the sub-head and the placeholder row used to carry the same sentence.
+  assert.equal((t.match(/No prescription medication is recorded in this window/g) ?? []).length, 1)
+})
+
+Deno.test('R-13 item 7 — a populated appendix D still gets its table', () => {
+  const html = renderReport(base({ medications: [med({})] }))
+  const start = html.indexOf('Appendix D — Medication log')
+  const section = html.slice(start, html.indexOf('</section>', start))
+  assert.ok(/<table>/.test(section) && /Doses logged/.test(section), 'the table is untouched where there is data')
+})
+
+Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table sits', () => {
+  const html = renderReport(
+    base({
+      medicationHistory: { entries: [mhEntry({ drugName: 'Metronidazole' })], sinceDay: '2026-04-01' },
+    }),
+  )
+  const divider = plain(html.slice(html.indexOf('End of clinical summary'), html.indexOf('Appendix A —')))
+  assert.ok(/medication history \(lifetime\)/.test(divider), 'the table is still named in the contents line')
+  assert.ok(/un-lettered/.test(divider), 'and the reader is told it carries no letter')
+  assert.ok(/before D|with D|D's sheet/.test(divider), 'and where to find it')
+})
+
+// ── R-13 item 9 (Dr. Chen) — a uniform confidence column, collapsed only where it is SAFE ──
+//
+// On the clean fixture appendix A prints `seen` seventeen times: a column with one value
+// carries no information, and principle 6 calls that decoration on the document's most
+// scanned sheet. But the issue's default — "when every row shares one tag, say it once and
+// drop the per-row tag" — is unsafe as stated, because a BARE time reads as an exact one.
+// That default reading is true of a uniform `seen` column and false of every other: a record
+// logged entirely before B-010 is uniformly `unspecified`, and dropping its tags would turn a
+// column of times nobody vouched for into a column of witnessed minutes. So the collapse is
+// scoped to `seen`, the one class whose fallback reading is correct.
+
+function appendixASection(html: string): string {
+  const i = html.indexOf('Appendix A — Symptom event log')
+  return html.slice(i, html.indexOf('</table>', i))
+}
+
+const seenRow = (day: string) => logEntry({ eventId: `e${day}`, type: 'vomit', occurredAt: `2026-06-${day}T14:00:00Z`, occurredAtConfidence: 'witnessed' })
+
+Deno.test('R-13 item 9 — an all-witnessed column says it once and drops seventeen chips', () => {
+  const b = base()
+  const rows = ['10', '11', '12'].map(seenRow)
+  const html = renderReport(
+    base({ provenance: { ...b.provenance, symptomLog: rows, totalSymptomIncidents: rows.length } }),
+  )
+  const section = appendixASection(html)
+  const body = section.slice(section.indexOf('<tbody>'))
+  assert.equal((body.match(/class="conf">seen</g) ?? []).length, 0, 'no per-row chip')
+  const pre = plain(section.slice(0, section.indexOf('<table>')))
+  assert.ok(/every time below was witnessed/i.test(pre), 'the preamble states it once instead')
+  // And the tag gloss goes with the tags — a legend for a chip the sheet no longer prints is
+  // the dangling reference this document keeps paying for.
+  assert.ok(!/Time tags:/.test(pre), 'no vocabulary note for a vocabulary with nothing in it')
+})
+
+Deno.test('R-13 item 9 — a uniformly UNSPECIFIED column keeps every chip', () => {
+  // The falsification that scoped this: these times were never vouched for, and a bare
+  // column of them reads as witnessed. Silence here is the reassuring direction.
+  const b = base()
+  // `logEntry` defaults the confidence with `??`, so a null has to be applied after it —
+  // which is the shape a pre-B-010 row actually has.
+  const rows = ['10', '11', '12'].map((d) => ({
+    ...logEntry({ eventId: `u${d}`, type: 'vomit', occurredAt: `2026-06-${d}T14:00:00Z` }),
+    occurredAtConfidence: null,
+  }))
+  const html = renderReport(
+    base({ provenance: { ...b.provenance, symptomLog: rows, totalSymptomIncidents: rows.length } }),
+  )
+  const section = appendixASection(html)
+  const body = section.slice(section.indexOf('<tbody>'))
+  assert.equal((body.match(/class="conf">unspecified</g) ?? []).length, 3, 'every row keeps its tag')
+  assert.ok(/Time tags:/.test(plain(section)), 'and the gloss that defines it')
+})
+
+Deno.test('R-13 item 9 — a MIXED column keeps every chip, including the witnessed ones', () => {
+  const b = base()
+  const rows = [
+    seenRow('10'),
+    logEntry({ eventId: 'est', type: 'vomit', occurredAt: '2026-06-11T14:00:00Z', occurredAtConfidence: 'estimated' }),
+    seenRow('12'),
+  ]
+  const html = renderReport(
+    base({ provenance: { ...b.provenance, symptomLog: rows, totalSymptomIncidents: rows.length } }),
+  )
+  const body = appendixASection(html).slice(appendixASection(html).indexOf('<tbody>'))
+  assert.equal((body.match(/class="conf">seen</g) ?? []).length, 2, 'the witnessed rows keep their tag')
+  assert.equal((body.match(/class="conf">est</g) ?? []).length, 1, 'so the estimated one is visible BY CONTRAST')
 })
