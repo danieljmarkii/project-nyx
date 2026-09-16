@@ -1,25 +1,21 @@
 // The send moment — R-16 (CUL-998): what the bar above "Send to vet" says BEFORE the
-// owner sends, and the two doors it opens.
+// owner sends.
 //
-// Two directions of test, split on purpose (C-18): the gap and documents cases are
-// GUARDS and were run red against the pre-R-16 tree (the strings did not exist); the
-// "a trial with a list renders neither" case is a refactor-safety test — green before
-// and after — pinning that an ordinary report still gets the ordinary send button.
+// Two directions of test, split on purpose (C-18). The gap and documents cases are
+// GUARDS: run against the pre-R-16 tree their strings do not exist, so each fails at
+// its first `findByText` — red for the right reason, since the thing asserted is the
+// string's presence. The two "renders neither / renders nothing" cases are refactor-
+// safety tests — green before and after — pinning that an ordinary report still gets
+// the ordinary send button and that an owner with no documents sees no line.
+//
+// There is deliberately NO `Set it up` here: the door was cut before shipping
+// (CUL-1004, see app/report.tsx's header), and the gap state asserts its ABSENCE so
+// the button cannot quietly return without the screen that makes it work.
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
-// The one-shot re-focus regenerate is only testable if the harness can FIRE a re-focus:
-// the registered callback is kept so a test can call it, as rundown.test.tsx does.
-const focusCb: { current: null | (() => void | (() => void)) } = { current: null };
-jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn() },
-  useFocusEffect: (cb: () => void | (() => void)) => {
-    const { useEffect } = require('react');
-    focusCb.current = cb;
-    useEffect(() => cb(), [cb]);
-  },
-}));
+jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() } }));
 jest.mock('react-native-webview', () => ({ WebView: () => null }));
 jest.mock('@react-native-community/datetimepicker', () => () => null);
 jest.mock('../components/brand/NightMoment', () => ({ NightMoment: () => null }));
@@ -46,7 +42,7 @@ jest.mock('../lib/pdf', () => ({
 jest.mock('../lib/vetDocumentLibrary', () => ({ readVetLibrary: jest.fn(async () => []) }));
 jest.mock('../lib/vetFilesEntry', () => ({ VET_FILES_ENTRY_ENABLED: true }));
 
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { generateVetReport, shareReportPdf, type VetReport } from '../lib/pdf';
 import { readVetLibrary } from '../lib/vetDocumentLibrary';
@@ -67,33 +63,43 @@ const report = (over: Partial<VetReport> = {}): VetReport => ({
   ...over,
 });
 
-const GAP_LINE = 'No allowed-food list is set for this trial, so the report can’t check feedings against it.';
-const DOCS_LINE = 'Your saved vet documents aren’t part of this report.';
+// The pet is the REPORT's (C-9), so the line names what the document names.
+const GAP_LINE = 'No allowed-food list is set for Mochi’s trial, so the report can’t check feedings against it.';
+const DOCS_LINE = 'Your saved vet documents aren’t part of this report. Share them one at a time from Vet Files.';
 
 beforeEach(() => {
   jest.clearAllMocks();
-  focusCb.current = null;
   mockedLibrary.mockResolvedValue([]);
 });
 
 describe('the allowed-list gap, before Send (CUL-861)', () => {
-  it('a running trial with no list: the line, Set it up and Send anyway — and no plain Send to vet', async () => {
+  it('a running trial with no list: the line and Send anyway — no plain Send to vet, and no Set it up', async () => {
     mockedGenerate.mockResolvedValue(report({ trialAllowedListMissing: true }));
     const { findByText, queryByText } = render(<ReportScreen />);
     expect(await findByText(GAP_LINE)).toBeTruthy();
-    expect(queryByText('Set it up')).toBeTruthy();
     expect(queryByText('Send anyway')).toBeTruthy();
     // ONE send control: "Send anyway" is the send, labelled for what the owner just read.
     expect(queryByText('Send to vet')).toBeNull();
+    // The door is CUL-1004; until a screen can set a running trial's diet there is none.
+    expect(queryByText('Set it up')).toBeNull();
+    expect(router.push).not.toHaveBeenCalled();
   });
 
-  it('a trial with a list: neither the line nor the two controls — the ordinary send button', async () => {
+  it('the line names the report’s pet, and falls back to "your pet" when the report carries no name', async () => {
+    mockedGenerate.mockResolvedValue(report({ trialAllowedListMissing: true, petName: '' }));
+    const { findByText } = render(<ReportScreen />);
+    expect(
+      await findByText('No allowed-food list is set for your pet’s trial, so the report can’t check feedings against it.'),
+    ).toBeTruthy();
+  });
+
+  it('a trial with a list: neither the line nor Send anyway — the ordinary send button', async () => {
     mockedGenerate.mockResolvedValue(report({ trialAllowedListMissing: false }));
     const { findByText, queryByText } = render(<ReportScreen />);
     expect(await findByText('Send to vet')).toBeTruthy();
     expect(queryByText(GAP_LINE)).toBeNull();
-    expect(queryByText('Set it up')).toBeNull();
     expect(queryByText('Send anyway')).toBeNull();
+    expect(queryByText('Set it up')).toBeNull();
   });
 
   it('Send anyway is the same send: it shares the report the screen is showing', async () => {
@@ -103,46 +109,12 @@ describe('the allowed-list gap, before Send (CUL-861)', () => {
     fireEvent.press(await findByText('Send anyway'));
     await waitFor(() => expect(mockedShare).toHaveBeenCalledWith(r));
   });
-
-  it('Set it up opens the allowed-set screen, and coming back rebuilds the report ONCE', async () => {
-    mockedGenerate.mockResolvedValue(report({ trialAllowedListMissing: true }));
-    const { findByText } = render(<ReportScreen />);
-    fireEvent.press(await findByText('Set it up'));
-    expect(router.push).toHaveBeenCalledWith('/trial-foods');
-    expect(mockedGenerate).toHaveBeenCalledTimes(1);
-
-    // The owner comes back with a list made: one rebuild, so the line and the document
-    // reflect it. The rebuilt report says the list exists → the ordinary send returns.
-    mockedGenerate.mockResolvedValue(report({ trialAllowedListMissing: false }));
-    await act(async () => {
-      focusCb.current?.();
-    });
-    await waitFor(() => expect(mockedGenerate).toHaveBeenCalledTimes(2));
-    expect(await findByText('Send to vet')).toBeTruthy();
-
-    // A SECOND focus with no Set it up in between is not a rebuild — the request was
-    // consumed, not left armed (the C-22 double-fire is exactly what a ref prevents).
-    await act(async () => {
-      focusCb.current?.();
-    });
-    expect(mockedGenerate).toHaveBeenCalledTimes(2);
-  });
-
-  it('a plain re-focus (no Set it up) never rebuilds', async () => {
-    mockedGenerate.mockResolvedValue(report({ trialAllowedListMissing: true }));
-    const { findByText } = render(<ReportScreen />);
-    await findByText('Set it up');
-    await act(async () => {
-      focusCb.current?.();
-    });
-    expect(mockedGenerate).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('documents do not travel (CUL-457)', () => {
   const doc = { groupId: 'g1', title: 'Bloodwork', untitled: false };
 
-  it('renders the line when the pet has a saved vet document', async () => {
+  it('renders the line — fact and remedy — when the pet has a saved vet document', async () => {
     mockedGenerate.mockResolvedValue(report());
     mockedLibrary.mockResolvedValue([doc]);
     const { findByText } = render(<ReportScreen />);

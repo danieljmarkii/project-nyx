@@ -1537,17 +1537,18 @@ function dayKeyFromIndex(dayIndex: number): string {
 //  • "MISSING" IS THE LIST'S ABSENCE, NOT THE HEURISTIC. `allowedSetUnavailable` has
 //    two arms: no `primary_diet` row (the list was never set up) OR a primary row that
 //    matched none of ≥10 feedings (the UNHYDRATED_SET_FLOOR guess that the set is a
-//    cold cache). The app pairs this fact with `Set it up`, and sending an owner to
-//    set up a list she already has is the wrong door — so only the first arm counts.
-//    The heuristic's caveat still prints on the report; that half is CUL-480.
+//    cold cache). The line the app renders says the list "is not set", and the door
+//    that restores `Set it up` (CUL-1004) would send an owner with a list she already
+//    has to set one up — so only the first arm counts. The heuristic's caveat still
+//    prints on the report; that half is CUL-480.
 //
-//  • ONLY WHILE THE TRIAL IS RUNNING. `Set it up` opens the allowed-set screen, which
-//    resolves the RUNNING trial through the shared `isTrialRunning` (B-422's belief
-//    side) and says "isn't on a diet trial right now" otherwise. A trial that ended
-//    inside the report's 90-day grace still anchors the report and still prints the
-//    caveat, but there is nothing left for the owner to set up, so the pre-send line
-//    stays off rather than opening a door onto a screen that contradicts it. The same
-//    predicate on both sides is what keeps the door honest.
+//  • ONLY WHILE THE TRIAL IS RUNNING, by the shared `isTrialRunning` (B-422's belief
+//    side) — the predicate the allowed-set screen resolves the running trial with, so
+//    the fact stays true of the trial an owner could act on. A trial that ended inside
+//    the report's 90-day grace still anchors the report and still prints the caveat,
+//    but there is nothing left to set up, so the pre-send line stays off. (The app
+//    ships the line without its button today — CUL-1004 is the door — and keeping this
+//    scope is what lets the button return without the fact changing under it.)
 export function trialAllowedListMissing(
   trial: {
     permittedFoods: readonly { role: TrialFoodRole }[]
