@@ -1338,7 +1338,13 @@ function trialDietLabels(allowed: readonly AllowedFood[], fallback: string | nul
   return fallback && fallback.trim().length > 0 ? [fallback.trim()] : []
 }
 
-function openedAfter(allowedFrom: string, startedAt: string, tz: string | undefined): boolean {
+/**
+ * Did this allowed-set row open AFTER the trial did? `permittedFoods` renders it as §7's
+ * "the set changed after started_at", and `buildConcurrentChanges` (R-14) draws a marker from
+ * it — so the two surfaces answer the question with ONE call rather than two implementations
+ * that are equal until one of them is edited (C-4).
+ */
+export function openedAfter(allowedFrom: string, startedAt: string, tz: string | undefined): boolean {
   const from = dayIndexOfValue(allowedFrom, tz ?? null)
   const start = dayIndexOfValue(startedAt, tz ?? null)
   return from !== null && start !== null && from > start

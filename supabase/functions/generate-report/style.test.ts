@@ -169,6 +169,25 @@ const STRUCTURAL_MARKS: Readonly<Record<string, string>> = {
 }
 
 /**
+ * Marks whose ground is NOT the paper — the mark-side sibling of `NON_PAPER_GROUND`.
+ *
+ * R-14's intervention rules invert to `--surface` for the stretch that crosses a BAR, because
+ * the bar fill is near-black and a dark rule over it is invisible (the cold read measured the
+ * prednisolone stop reduced to a ~3px stub before the inversion existed). White against paper
+ * is 1:1 and this guard is right to say so — but paper is not the ground these declarations
+ * ever paint on. The `.on` class is applied by `rule()`'s `seg()` ONLY to the segment whose x
+ * is inside the bar and whose y is below the bar's top; everything else takes the un-suffixed
+ * class and is measured against paper by the sweep above, as it should be.
+ *
+ * This is C-1's rule in the stylesheet: the ground decides, a grep cannot read it, so the site
+ * is declared and its real ground named. It is NOT a skip — the test below measures each of
+ * these against the ground it names, so an entry that stopped clearing the target still fails.
+ */
+const NON_PAPER_MARKS: Readonly<Record<string, 'bar'>> = {
+  'svg .mark.on, svg .markend.on, svg .markcap.on': 'bar',
+}
+
+/**
  * Text whose ground is NOT the paper. One entry, and it is the §5.8 colour-as-enhancement
  * carve-out: the proportion bar's segments are filled from the protein palette in the render
  * body, and the label sits on that fill. The datum is carried by the label, the texture and
@@ -212,18 +231,50 @@ Deno.test('R-17 item 2 — a chart mark that carries meaning clears the 3:1 mark
   for (const { selector, body } of rules()) {
     if (!/^svg /.test(selector) || /\bsvg text/.test(selector)) continue
     if (selector in STRUCTURAL_MARKS) continue
+    // A mark that paints on a declared non-paper ground is measured against THAT ground.
+    const ground = selector in NON_PAPER_MARKS ? tok[NON_PAPER_MARKS[selector]] : PAPER
     for (const [prop, value] of decls(body)) {
       if (prop !== 'fill' && prop !== 'stroke') continue
       const hex = resolve(value, tok)
       if (hex === null) continue
       checked += 1
       assert.ok(
-        contrastRatio(hex, PAPER) >= AA_MARK,
-        `${selector} sets ${prop}:${value} = ${contrastRatio(hex, PAPER).toFixed(2)}:1 — a mark standing for an observation must clear ${AA_MARK}:1`,
+        contrastRatio(hex, ground) >= AA_MARK,
+        `${selector} sets ${prop}:${value} = ${contrastRatio(hex, ground).toFixed(2)}:1 — a mark standing for an observation must clear ${AA_MARK}:1`,
       )
     }
   }
   assert.ok(checked >= 5, `only ${checked} chart marks checked`)
+})
+
+Deno.test('R-17 item 2 — a non-paper mark is EARNED: it must fail on paper and clear on its own ground', () => {
+  // A registry is an exemption (C-32), so each entry pays for itself twice: the ground it
+  // names really is the only one that lets it through, and it genuinely clears there. An entry
+  // that passed on paper would be a registration recording that somebody thought about it.
+  const tok = tokens()
+  assert.ok(Object.keys(NON_PAPER_MARKS).length > 0, 'the registry is non-empty, or this test measures nothing')
+  for (const [selector, groundToken] of Object.entries(NON_PAPER_MARKS)) {
+    const body = bodyOf(selector)
+    assert.ok(body, `${selector} is declared in the sheet — a registry entry for a rule that does not exist is a stale exemption`)
+    const ground = tok[groundToken]
+    assert.ok(ground, `${groundToken} resolves as a token`)
+    let seen = 0
+    for (const [prop, value] of decls(body!)) {
+      if (prop !== 'fill' && prop !== 'stroke') continue
+      const hex = resolve(value, tok)
+      if (hex === null) continue
+      seen += 1
+      assert.ok(
+        contrastRatio(hex, PAPER) < AA_MARK,
+        `${selector} clears the target on PAPER — it does not need this exemption, and the sweep should measure it`,
+      )
+      assert.ok(
+        contrastRatio(hex, ground) >= AA_MARK,
+        `${selector} sets ${prop}:${value} = ${contrastRatio(hex, ground).toFixed(2)}:1 against --${groundToken}`,
+      )
+    }
+    assert.ok(seen > 0, `${selector} declares a fill or stroke, or the entry is measuring nothing`)
+  }
 })
 
 Deno.test('R-17 item 2 — the two no-count marks read, and are told apart by SHAPE', () => {
