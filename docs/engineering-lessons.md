@@ -246,6 +246,21 @@ Worse, and the part worth carrying: **the card's own test mock was stubbing the 
 
 **One more, about mutation testing itself.** Twenty-eight mutations were run against this change across two rounds and one survived — the twin gate re-pointed at the card's map. Investigated rather than accepted as a test gap, it turned out the mutation had replaced the `if`'s **guard clause** and left the **argument** on the next line untouched, so it changed no behaviour at all. Re-cut at the argument, it died immediately. **A survived mutant is not always a test gap; sometimes it is a bad mutation.** Read what the mutation actually did to the source before believing what it says about the tests.
 
+**The neighbour that is more insidious than the original, and cost seven defects in one pass (2026-09-16, CUL-996 / R-13).** C-35 asks *could production produce this shape?* Every fixture on the R-13 branch passed that test — and `adversarial-reviewer` still returned **nine findings, seven driven through the real `assembleReport`, none of them caught by a suite that was green at 683**. The fixtures were not impossible. They were uniformly **benign**:
+
+* every tie fixture was an **exhaustive** tie (`all×6 + refused×6`, `some×4 + picked×4 + refused×4`) — the one tie shape that cannot reveal a summary dropping the *untied* ratings. It was dropping them: `split between "ate it all" ×3 and "ate most" ×3` over twelve meals deleted six, **including both refusals**, in the calm direction, because the breakdown orders best-to-worst and a tie resolves by count. That is B-532's defect re-entered with two survivors instead of one, and worse than what it replaced — *"typically X"* is grammatically a partial claim and *"split between A and B"* is not.
+* every CUL-292 fixture gave each confounder a **non-empty** protein set — the one shape that cannot reveal a ratio whose numerator and denominator are drawn from different populations. `incompleteFeedings` skips protein-less feedings; the denominator, derived by subtraction, still counted them, so ten packaged feedings with two read, three unread and five unreadable printed **"3 of 10"** where eight had no complete panel, on the one sentence whose job is to stop the antigen tally reading as complete.
+* no fixture **crossed midnight**, which is the shape that still reads as logged-before-it-happened after R-3's fix (CUL-1030).
+
+So the question C-35 licenses is necessary and not sufficient. The one that would have caught these is asked from the *defect's* side rather than the fixture's: **"which shape would this bug need, and is that shape in the suite?"** A realistic fixture set can still be uniformly the wrong realistic shape, and the tell is that every fixture for one rule agrees with every other — `all×6 + refused×6` and `some×4 + picked×4 + refused×4` look like two cases and are one.
+
+Three corollaries from the same pass:
+
+* **A fix can re-create its own bug one column over.** R-3's first cut took its year from `fmtLocalDayScoped`, whose own header warns a conditional year is worse than none once two dates share a sentence. Appendix A's row has two, because its Date column is always bare — so on a New-Year-spanning window (the 90-day fallback, every winter) a bare `Dec 15` sat beside `Dec 17, 2025` and inherited the window's 2026: **logged before it happened, again.** When a helper's header states a precondition, check the CALLER'S SURROUNDINGS against it, not the call — here the "sentence" was a table row.
+* **A summary may never delete a member.** Whatever a clause claims to summarise, it accounts for all of it or it names no subset at all. The failure above is not a wording slip; the predicate's shape permitted it, so the shape changed (`itemised` carries the whole breakdown, which is also the list the appendix prints).
+* **Measure a structural hypothesis before filing it.** The clean fixture gained a sheet, and the tidy suspect — `sectionTail` wrapping a whole appendix, the pattern CUL-993 A.1 had just fixed next door — would have made a plausible, wrong issue. Removing the wrap still gave 10, as did removing each content addition individually. C-38's "a comment writing a cheque the code does not cash", applied to a *finding*: five minutes of measurement is the difference between a filed issue and filed noise.
+
+
 ---
 
 
