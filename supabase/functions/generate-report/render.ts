@@ -562,8 +562,30 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     if (c > 0) return yFor(c) - 6
     return (loggedByBucket[i] ?? 0) > 0 ? BASE - 7 : BASE - 13
   }
-  /** The top edge of this bucket's bar, or the baseline where there is no bar to cross. */
-  const barTopAt = (i: number): number => (buckets[i] > 0 ? yFor(buckets[i]) : BASE)
+  /**
+   * The y below which a rule at `x` is over this bucket's BAR rather than over paper — or null
+   * when it never is, because the bucket has no bar or the rule sits beside it.
+   *
+   * The x test is the half this needs and the first cut did not have. `PAIR_STEP` is sized from
+   * the stop's head, but `barW` SHRINKS as the window lengthens (`slot * 0.5`), so above ~14
+   * buckets — a 99-day window, and the default `since_visit` scope has no upper bound — a paired
+   * rule sits outside the bar while its y still says "below the bar top". Deciding the ink on y
+   * alone then drew the whole rule body WHITE ON WHITE: measured at 151 days, 154 of 182 marker
+   * pixels invisible, leaving a floating head and two nibs. That is round 1's occluded stub
+   * reproduced in the opposite ink, and worse, because the head survives to point at nothing.
+   *
+   * `BAR_RX` is the bar's corner radius: within that of an edge the bar's top surface curves
+   * away, so the boundary drops by the full radius rather than by the exact chord. Conservative
+   * in the safe direction — the rule stays INK slightly longer than it must, over paper.
+   */
+  const BAR_RX = 4
+  const overBarBelow = (i: number, x: number): number | null => {
+    if (buckets[i] <= 0) return null
+    const barX = centerX(i) - barW / 2
+    if (x <= barX || x >= barX + barW) return null
+    const edgeGap = Math.min(x - barX, barX + barW - x)
+    return yFor(buckets[i]) + (edgeGap >= BAR_RX ? 0 : BAR_RX)
+  }
   const MARK_TOP = 18
   // How far a start and a stop sharing one week step apart. Small against the narrowest slot the
   // axis ever draws, so the pair still reads as one week rather than two — but wider than the
@@ -572,6 +594,13 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   // step the 14px head came within 1px of the start rule).
   const CAP_HALF = 7
   const PAIR_STEP = CAP_HALF + 3
+  // The head sits AT the stem's top, with no clearance. A first cut pushed it `CAP_CLEARANCE`
+  // below, guessing that a bar tucked under a count digit would read as an underline on the
+  // number — and the cold read measured what that actually produced on the max-height bar: the
+  // stem poked up THROUGH the head, rendering a white "+" instead of the legend's ⊤, with a
+  // detached fleck of bar stranded above it. Same mark, two glyphs on one chart. A guess about a
+  // rendering lost to a measurement of it.
+  const CAP_INSET = 0
   const CAP_CLEARANCE = 6
   /** A marker's own date — the start's for a start rule, the stop's for a stop rule. */
   const dateOf = (c: ConcurrentChange, dir: 'start' | 'stop'): string =>
@@ -620,12 +649,12 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
    * because that is why the trial was started. Paper-on-ink over the bar costs no colour (§5.8) —
    * white against black is what a photocopy preserves best of anything on the page.
    */
-  const rule = (x: number, dir: 'start' | 'stop', ly: number, barTop: number): void => {
+  const rule = (x: number, dir: 'start' | 'stop', ly: number, barTop: number | null, bucketIndex: number): void => {
     const cls = dir === 'start' ? 'mark' : 'markend'
     const xs = x.toFixed(1)
     const seg = (y1: number, y2: number): void => {
       if (y2 <= y1) return
-      const cut = Math.min(Math.max(barTop, y1), y2)
+      const cut = barTop === null ? y2 : Math.min(Math.max(barTop, y1), y2)
       if (cut > y1) markerParts.push(`<line class="${cls}" x1="${xs}" y1="${y1.toFixed(1)}" x2="${xs}" y2="${cut.toFixed(1)}"/>`)
       if (y2 > cut) markerParts.push(`<line class="${cls} on" x1="${xs}" y1="${cut.toFixed(1)}" x2="${xs}" y2="${y2.toFixed(1)}"/>`)
     }
@@ -639,11 +668,28 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
       // swallows the upper segment — there is no room above a peak-week count — so it drops
       // below the band by `CAP_CLEARANCE`, clear of the label's 3px white halo (CUL-993 A.3): a
       // horizontal bar tucked right under a digit reads as an underline on the number.
-      const capY = topDrawn ? MARK_TOP : bandBottom + CAP_CLEARANCE
-      const capCls = capY >= barTop ? 'markcap on' : 'markcap'
-      markerParts.push(
-        `<line class="${capCls}" x1="${(x - CAP_HALF).toFixed(1)}" y1="${capY.toFixed(1)}" x2="${(x + CAP_HALF).toFixed(1)}" y2="${capY.toFixed(1)}"/>`,
-      )
+      const capY = topDrawn ? MARK_TOP : bandBottom + CAP_INSET
+      // The head is HORIZONTAL, so unlike the stem it can straddle the bar's edge — and on the
+      // max-height bar it did, putting ~1px of a white head over white paper and turning a
+      // symmetric ⊤ into a left-pointing notch. It is clipped at the edges and each piece takes
+      // the ink of the ground it is actually over.
+      const inverted = barTop !== null && capY >= barTop
+      const barX = centerX(bucketIndex) - barW / 2
+      const capFrom = x - CAP_HALF
+      const capTo = x + CAP_HALF
+      const cap = (from: number, to: number, on: boolean): void => {
+        if (to - from < 0.1) return
+        markerParts.push(
+          `<line class="markcap${on ? ' on' : ''}" x1="${from.toFixed(1)}" y1="${capY.toFixed(1)}" x2="${to.toFixed(1)}" y2="${capY.toFixed(1)}"/>`,
+        )
+      }
+      if (!inverted) {
+        cap(capFrom, capTo, false)
+      } else {
+        cap(capFrom, Math.max(capFrom, barX), false)
+        cap(Math.max(capFrom, barX), Math.min(capTo, barX + barW), true)
+        cap(Math.min(capTo, barX + barW), capTo, false)
+      }
     }
   }
   // Emitted AFTER the bars (see `rule`), so they are collected rather than pushed.
@@ -656,26 +702,33 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   // whole page its credibility. So the row is LAID OUT rather than placed: left to right, each
   // label taking the side that clears its neighbour, degrading to the bare dates and then to
   // nothing rather than overlapping. A dropped label is not a dropped fact — the legend directly
-  // above carries every mark with its kind and its exact date, in the same order.
+  // above names every mark's kind and its exact date. NOT "in the same order", which an earlier
+  // draft of this comment claimed: a change marked at BOTH ends is ONE legend entry carrying two
+  // dates, so three marks can sit under two entries and a reader counting to the third finds
+  // nothing there. What the drop is paid for with is the legend's COVERAGE, not its position
+  // (C-38 — a comment writing a cheque the code does not cash, caught inside this fix).
   let prevRight = L
   for (const bucketIndex of markedBuckets) {
     const starts = startsByBucket.get(bucketIndex) ?? []
     const stops = stopsByBucket.get(bucketIndex) ?? []
     const mx = centerX(bucketIndex)
     const ly = labelBaseline(bucketIndex)
-    const barTop = barTopAt(bucketIndex)
+
     // Both directions in one week step apart IN DATE ORDER, so the rules never place a stop left
     // of a start that happened after it — the labels beside them carry the exact dates, and a
     // position that contradicts them would be a false claim for free. The step is ordering only:
     // it asserts no day, and the legend's week promise is unchanged.
     const startsFirst = starts.length === 0 || stops.length === 0 || earliest(starts, 'start') <= earliest(stops, 'stop')
+    // Each rule resolves its OWN ink boundary: the two of a pair sit at different x and can
+    // straddle the bar's edge, so one may be over ink where the other is over paper.
+    const at = (x: number, dir: 'start' | 'stop'): void => rule(x, dir, ly, overBarBelow(bucketIndex, x), bucketIndex)
     if (starts.length > 0 && stops.length > 0) {
-      rule(mx + (startsFirst ? -PAIR_STEP : PAIR_STEP), 'start', ly, barTop)
-      rule(mx + (startsFirst ? PAIR_STEP : -PAIR_STEP), 'stop', ly, barTop)
+      at(mx + (startsFirst ? -PAIR_STEP : PAIR_STEP), 'start')
+      at(mx + (startsFirst ? PAIR_STEP : -PAIR_STEP), 'stop')
     } else if (starts.length > 0) {
-      rule(mx, 'start', ly, barTop)
+      at(mx, 'start')
     } else {
-      rule(mx, 'stop', ly, barTop)
+      at(mx, 'stop')
     }
     // The clauses read in the SAME order the rules are drawn, so the first clause always belongs
     // to the left-hand rule. Assembled starts-first unconditionally, a week where a course ended
@@ -4975,8 +5028,22 @@ function readingTheTrend(snap: ReportSnapshot): string {
   // course stopped on a date does not stop acting on it, and the exposure behind it may itself
   // be thin. So the caveat is stated where the marker is, and only when one is drawn. It REFUSES
   // an attribution rather than making one — no sentence here says what the fall means.
-  const withdrawal = started.some((c) => drawsStopMark(c))
-    ? ` One of them ending inside this window does not make the rest of it a single-agent period.`
+  //
+  // TWO REVIEWS CONVERGED ON THE FIRST WORDING AND BOTH WERE RIGHT. It read "One of them ending
+  // …" directly after a caution that says "attributed to IT ALONE" on a set of ONE — a reader
+  // looks for the other agents and finds none named. And at N=1 the claim it makes is the wrong
+  // one: with a single intervention the post-withdrawal stretch is a ZERO-agent period, so "not
+  // a single-agent period" is true only on a technicality and reads as "something else is still
+  // running", which the page has just denied. The live hazard at every N is CARRYOVER — a course
+  // stopped on a date does not stop acting on it — and that was the one claim the sentence did
+  // not make, while the comment above named carryover as its reason. So the warrant is stated,
+  // and the sentence is coherent at one agent or many.
+  //
+  // A withdrawn PERMISSION does not fire it. A treat leaving a trial's allowed list is not an
+  // agent with an effect to outlast, and calling it one is the exposure reading this pass
+  // removed from every other surface.
+  const withdrawal = started.some((c) => drawsStopMark(c) && c.kind !== 'diet_allowed')
+    ? ` An intervention ending inside this window does not divide it: its effect can outlast its last day.`
     : ''
   return `
     <div class="callout">

@@ -5320,8 +5320,13 @@ function buildConcurrentChanges(
     // own ruling, and §7's allowed list already carries it as `endedBeforeWindowEnd`. CUL-1018.
     // `openedAfter` is `trial.ts`'s own predicate — the one §7's allowed list already renders as
     // `addedAfterStart`. Re-deriving it here with a bare `dayNumber` comparison would be a second
-    // answer to a question the report has already answered, equal until one of them is edited;
-    // it is also the timezone-aware one, and this module's day keys are not.
+    // answer to a question the report has already answered, equal until one of them is edited
+    // (C-4). That is the whole reason. An earlier draft of this comment also called the shared
+    // call "the timezone-aware one" — it is not, in practice: `localDayIndexOf` has a
+    // `YYYY-MM-DD` fast path that never consults the zone, and both columns behind this call are
+    // `DATE NOT NULL`, so the argument cannot change the answer. Passing the real zone stays
+    // right (the signature takes one, and a future caller's key may not be a bare DATE), but an
+    // unearned justification is how the next edit preserves the wrong constraint.
     for (const f of t.allowedFoods ?? []) {
       if (!openedAfter(f.allowedFrom, t.startedAt, input.timezone ?? undefined)) continue
       consider('diet_allowed', f.foodLabel, f.allowedFrom, f.allowedUntil, true, true)
@@ -5338,6 +5343,12 @@ function buildConcurrentChanges(
     // NOT DECLARED. `lastDate` is the latest dose IN THE RECORD, so an owner who keeps giving a
     // drug and stops logging it produces the same value as one who stopped it. It stays a dated
     // fact in the prose ("last dose logged"), and draws no stop glyph.
+    //
+    // THE START END OF THIS SPAN HAS THE SAME PROBLEM AND IS NOT FIXED HERE (CUL-1032). `firstDate`
+    // is the earliest dose IN WINDOW, so an ad-hoc course that began before the window draws
+    // `med start` on the window's first day and the prose says "started" — a window-boundary
+    // artefact wearing an exposure verb, and the mirror of the endpoint above. It is pre-existing
+    // and fixing it changes the START lane on every existing report, so it is its own change.
     consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate, false)
   }
   for (const a of input.feedingArrangements) {

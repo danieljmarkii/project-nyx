@@ -2608,7 +2608,7 @@ Deno.test('R-14 — a drawn stop earns the withdrawal caveat; a starts-only wind
       ],
     }),
   ).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
-  assert.ok(/does not make the rest of it a single-agent period/.test(withStop), 'the caveat is stated where the marker is')
+  assert.ok(/does not divide it: its effect can outlast its last day/.test(withStop), 'the caveat is stated where the marker is, and states its warrant')
   assert.ok(/cannot be attributed to any one of them alone/.test(withStop), 'and the original caution still stands')
   const startsOnly = renderReport(
     base({
@@ -2618,7 +2618,24 @@ Deno.test('R-14 — a drawn stop earns the withdrawal caveat; a starts-only wind
       ],
     }),
   ).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
-  assert.ok(!/single-agent period/.test(startsOnly), 'and is absent when nothing was withdrawn — a caveat for an absent mark is noise')
+  assert.ok(!/outlast its last day/.test(startsOnly), 'and is absent when nothing was withdrawn — a caveat for an absent mark is noise')
+
+  // A withdrawn PERMISSION is not an agent with an effect to outlast. Firing over one would be
+  // the exposure reading this pass removed from every other surface.
+  const permitOnly = renderReport(
+    base({
+      symptoms: [stopWeeks()],
+      concurrentChanges: [
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        { kind: 'diet_allowed', label: 'Dentastix', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-09', endBucketIndex: 1, endIsDeclared: true },
+      ],
+    }),
+  )
+  assert.ok(/markend/.test(firstChart(permitOnly)), 'the withdrawn permit still draws its stop')
+  assert.ok(
+    !/outlast its last day/.test(permitOnly.replace(/<[^>]*>/g, ' ')),
+    'but does not earn the carryover caveat — a permit is not an intervention with an effect',
+  )
 })
 
 Deno.test('R-14 — the legend DRAWS its two marks, not only describes them', () => {
@@ -2636,6 +2653,92 @@ Deno.test('R-14 — the legend DRAWS its two marks, not only describes them', ()
   assert.ok(keys.every((k) => /stroke-dasharray/.test(k)), 'each key shows its rule')
   assert.ok(keys.filter((k) => /stroke-width="2.25"/.test(k)).length === 1, 'exactly one of them carries the flat head')
   assert.ok(/aria-hidden="true"/.test(legend), 'and the keys are hidden from assistive tech, which reads the words beside them')
+})
+
+Deno.test('R-14 — a paired rule that sits BESIDE a narrow bar is drawn in ink, never white on white', () => {
+  // The round-2 break, and the reason it was invisible to every fixture: `PAIR_STEP` is sized
+  // from the stop's head (10px), but `barW` SHRINKS with the window (`slot * 0.5`), so above ~14
+  // buckets a paired rule leaves the bar horizontally while its y still reads "below the bar
+  // top". Deciding the ink on y alone drew the whole rule body WHITE ON WHITE — round 1's
+  // occluded stub in the opposite ink, and worse, because the head survived to point at nothing.
+  //
+  // The window is NOT decorative. `resolveScope`'s `since_visit` rung has no upper bound, so a
+  // last visit fourteen weeks back is the ordinary annual-wellness case, and a start and a stop
+  // in one week is exactly the drug switch or taper this chart exists to show.
+  const WEEKS = 22 // a 151-day since-visit window
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [aggregate({
+          type: 'vomit',
+          count: 30,
+          weeklyBuckets: Array.from({ length: WEEKS }, (_, i) => (i === 3 ? 6 : 1)),
+          bucketStartDates: Array.from({ length: WEEKS }, (_, i) => `2026-0${1 + Math.floor(i / 28)}-${String((i % 28) + 1).padStart(2, '0')}`),
+          windowDays: WEEKS * 7,
+        })],
+        concurrentChanges: [
+          { kind: 'medication', label: 'Pred', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-01-23', endBucketIndex: 3, endIsDeclared: true },
+          { kind: 'medication', label: 'Ciclo', startDate: '2026-01-25', bucketIndex: 3, ongoing: false, endInWindow: null, endBucketIndex: null, endIsDeclared: true },
+        ],
+      }),
+    ),
+  )
+  // The bar this pair straddles, and the rules themselves.
+  const bars = [...svg.matchAll(/<rect class="bar" x="([\d.]+)" y="([\d.]+)" width="([\d.]+)"/g)].map((m) => ({
+    x: Number(m[1]), y: Number(m[2]), w: Number(m[3]),
+  }))
+  const tall = bars.reduce((a, b) => (b.y < a.y ? b : a))
+  assert.ok(tall.w < 2 * 10, `the fixture really is narrow enough to expose this (barW ${tall.w} < 2 x PAIR_STEP)`)
+  const lines = chartLines(svg).filter((l) => l.cls === 'mark' || l.cls === 'markend')
+  assert.ok(lines.length > 0, 'both rules draw')
+  for (const l of lines) {
+    if (!l.on) continue
+    assert.ok(
+      l.x1 > tall.x && l.x1 < tall.x + tall.w,
+      `a rule inverted to paper-ink must actually be over the bar (x=${l.x1}, bar ${tall.x}..${tall.x + tall.w})`,
+    )
+  }
+  // And the load-bearing half: the rules beside the bar carry ink, so they are visible at all.
+  const beside = lines.filter((l) => l.x1 <= tall.x || l.x1 >= tall.x + tall.w)
+  assert.ok(beside.length > 0, 'the pair really does straddle out of the bar at this width')
+  assert.ok(beside.every((l) => !l.on), 'every rule beside the bar is drawn in ink, over paper')
+  const inked = beside.reduce((n, l) => n + (l.y2 - l.y1), 0)
+  assert.ok(inked > 40, `and carries real length (${inked}px), not a stub over a floating head`)
+})
+
+Deno.test('R-14 — the stop head sits at the top of its stem, and is clipped at the bar edges', () => {
+  // The cold read measured the head on a max-height bar rendering ~7px BELOW its own stem top,
+  // so the stem poked through and the glyph read as a white "+" rather than the legend's ⊤ —
+  // with a fleck of bar stranded above it. Same mark, two glyphs on one chart.
+  const svg = firstChart(
+    renderReport(
+      base({
+        symptoms: [aggregate({
+          type: 'vomit', count: 7, weeklyBuckets: [4, 2, 1, 0],
+          bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22'], windowDays: 28,
+        })],
+        concurrentChanges: [
+          { kind: 'medication', label: 'Pred', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-03', endBucketIndex: 0, endIsDeclared: true },
+        ],
+      }),
+    ),
+  )
+  const lines = chartLines(svg)
+  const cap = lines.find((l) => l.cls === 'markcap')
+  const stem = lines.filter((l) => l.cls === 'markend').sort((a, b) => a.y1 - b.y1)[0]
+  assert.ok(cap && stem, 'the stop draws a head and a stem')
+  assert.ok(Math.abs(cap.y1 - stem.y1) < 0.6, `the head is AT the stem's top (head ${cap.y1}, stem ${stem.y1})`)
+  // Every piece of the head takes the ink of the ground it is over — it is horizontal, so unlike
+  // the stem it can straddle the bar's edge, and ~1px of white head over white paper turned a
+  // symmetric head into a left-pointing notch.
+  const bar = /<rect class="bar" x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/.exec(svg)
+  assert.ok(bar, 'the fixture draws a bar')
+  const [bx, bw] = [Number(bar[1]), Number(bar[2])]
+  for (const piece of lines.filter((l) => l.cls === 'markcap')) {
+    const mid = (piece.x1 + piece.x2) / 2
+    const overBar = mid > bx && mid < bx + bw
+    assert.equal(piece.on, overBar && piece.y1 >= Number(/y="([\d.]+)"/.exec(bar[0])?.[1] ?? 0), `head piece at ${mid} takes the ink of its ground`)
+  }
 })
 
 Deno.test('the symptom chart draws week-start date labels (May 11, May 18 …), not bare month ticks', () => {
