@@ -65,6 +65,12 @@ Round 3 added two more of the same family, both C-38 cheques written inside the 
 
 **A withdrawn permit from the trial's *original* set (CUL-1018)** needs a ruling on whether that is distinct from the trial ending.
 
+## The merge, which was its own small lesson
+
+`main` moved twice while this session wrapped — R-7, R-17 and R-18 landed on the same four files. Three conflicts, all resolved on meaning: the stylesheet (main's type pass beside R-14's marker rules), the legend test (same shape), and the deploy ledger, the one file every parallel session collides on, where both sides had re-fingerprinted `generate-report` and neither hash described the merged tree.
+
+The interesting one was R-17's brand-new contrast guard, which caught R-14's inverted-ink rules on the first run of the merged tree: *a mark standing for an observation must clear 3:1*, and white against paper is 1:1. Both were right. Paper is simply not the ground those declarations ever paint on — `.on` is applied only to the segment whose x is inside a bar and whose y is below the bar's top. That is C-1 in the stylesheet: the ground decides, and a grep cannot read it, so the site is declared and its real ground named. The resolution was a `NON_PAPER_MARKS` registry the sweep measures *against the named ground* rather than skipping, plus a second test making each entry earn its place — an entry must FAIL on paper (or it never needed the exemption) and clear on its own ground. A registry is an exemption (C-32), so it pays twice.
+
 ## Filed, not folded in
 
 | | |
