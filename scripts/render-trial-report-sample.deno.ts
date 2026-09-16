@@ -305,6 +305,11 @@ function refusedCase(): ReportInput {
       weightKg: 4.1,
     },
     ownerName: 'Sam Ortiz',
+    // CUL-979 — Mira shares the home with a second cat. This is the Nyx shape the cold read
+    // found the report withholding: a refused trial, a free-fed bowl still down, and another
+    // animal whose food is a standing competing antigen the record can only name as
+    // AVAILABLE. Count and species only; the fixture carries no second name.
+    household: { others: [{ species: 'cat', count: 1 }], complete: true },
     events,
     aiAnalyses: [],
     weightChecks: [
