@@ -5370,14 +5370,17 @@ Deno.test('CUL-980 — page 1 states the trial diet per FORMAT, with denominator
   const t = plain(renderReport(withTrialIntake()))
   assert.ok(/Trial diet by format, /.test(t), 'the per-format line renders on page 1')
   assert.ok(
-    /Purina HA — wet — 12 rated meals, 0 fully eaten \(ate most ×11 · ate some ×1\)/.test(t),
-    'the never-finished format states its count, its denominator and every rating behind it',
+    /Purina HA — wet — 12 rated meals: ate most ×11 · ate some ×1/.test(t),
+    'the never-finished format states its denominator and every rating behind it',
   )
-  assert.ok(/Purina HA — dry — 21 rated meals, 21 fully eaten/.test(t), 'and the finished one states the same shape')
-  // The tally is omitted ONLY where it would restate the count beside it.
-  assert.ok(!/21 fully eaten \(ate it all ×21\)/.test(t), 'no parenthetical that just repeats the number before it')
+  assert.ok(/Purina HA — dry — 21 rated meals: ate it all ×21/.test(t), 'and the finished one states the same shape')
+  // THE DISTRIBUTION IS THE LINE. Leading with a derived "0 fully eaten" over eleven "ate most"
+  // over-reads in the alarming direction (the cold read); the derived fraction lives on the tile,
+  // where it names its own bar, and the absence of "ate it all" is the finding here.
+  assert.ok(!/0 fully eaten/.test(t), 'no derived count leading the row')
+  assert.ok(!/<b>Purina HA/.test(renderReport(withTrialIntake())), 'no emphasis on the brand')
   // "FULLY EATEN", not "finished" — the two are different bars and both live on this page.
-  assert.ok(!/12 rated meals, 0 finished/.test(t), 'the word "finished" stays on the predicate that owns it')
+  assert.ok(!/12 rated meals: .*finished/.test(t), 'the word "finished" stays on the predicate that owns it')
 })
 
 Deno.test('CUL-980 — the per-format counts name their share of page 1s rated meals (C-3)', () => {
@@ -5431,7 +5434,7 @@ Deno.test('CUL-980 — a record where everything was eaten gets the counts and N
       }),
   )
   const clean = sliceIntakeLine(cleanHtml)
-  assert.ok(/Purina HA — dry — 21 rated meals, 21 fully eaten/.test(clean), 'the counts render')
+  assert.ok(/Purina HA — dry — 21 rated meals: ate it all ×21/.test(clean), 'the counts render')
   // NOTHING CONGRATULATES. A clean record and a refused one get the same shape, the same words
   // and the same emphasis; the vet draws the conclusion.
   for (const reassurance of [
@@ -5462,10 +5465,20 @@ Deno.test('CUL-980 — a single-format trial renders ONE entry, never an empty s
             },
           ],
         }),
-      }),
+      },
+      // THE COMPLETION FIGURES MATCH THE ROW ABOVE, which is what makes this fixture able to
+      // exercise the de-duplication at all. With the helper's default `refusedMeals: 0` the
+      // sentence was already suppressed by the zero, so the assertion below was green over a
+      // record that could never reach the rule it was written for (C-35) — proven by a mutation
+      // that removed the rule and changed nothing.
+      { ratedMeals: 38, finishedMeals: 0, refusedMeals: 34 },
+      ),
     ),
   )
-  assert.ok(/Hills z\/d — 38 rated meals, 0 fully eaten \(ate some ×4 · refused ×34\)/.test(one))
+  assert.ok(/Hills z\/d — 38 rated meals: ate some ×4 · refused ×34/.test(one))
+  // AND THE SEPARATE REFUSAL SENTENCE IS DROPPED HERE, because it would restate this row's own
+  // numbers over this row's own denominator — the cold read's "fifth and sixth restatement".
+  assert.ok(!/recorded as refused/.test(one), 'no sentence that says only what the tally just said')
   assert.ok(!/Dentastix — /.test(one), 'a permitted treat is not a format of the trial diet')
   assert.ok(!/· +—/.test(one), 'no empty second entry')
   // A format with no RATED meals is dropped, not printed at zero: "0 rated meals" is a fact about
@@ -5541,13 +5554,16 @@ Deno.test('CUL-981 — the vomit box tallies colour beside the blood caveat, ove
       }),
     ),
   )
-  assert.ok(/Colour, where legible: tan ×4 · green ×1 · yellow ×1\./.test(t), 'a tally, with counts')
+  assert.ok(
+    /Colour, from the 6 reads where it was legible: tan ×4 · green ×1 · yellow ×1\./.test(t),
+    'a tally, with counts AND its own denominator — never one the reader has to reconstruct by summing',
+  )
   // THE DENOMINATOR IS THE NEIGHBOURING SENTENCE'S, and it is reads, not incidents.
   assert.ok(/Across all 9 vomiting incidents; 6 have a legible AI read/.test(t))
   assert.ok(!/Colour[^.]*9 (reads|incidents)/.test(t), 'the tally is never spoken over the incident count')
   // NOT A RANKING. `predominantBit`'s "was most often" is a claim about which reading dominates,
   // and this field is explicitly forbidden from ranking, interpreting or flagging.
-  assert.ok(!/Colour, where legible, was most often/.test(t))
+  assert.ok(!/Colour, from the.*was most often/.test(t))
   assert.ok(!/bile present in/i.test(t), 'green is not re-read as a bile finding')
   // The blood caveat is untouched and still refuses to clear.
   assert.ok(/This is not a clearance/.test(t))
@@ -5565,7 +5581,7 @@ Deno.test('CUL-981 — a page of one colour is a tally and never an all-clear', 
     ),
     'Vomit characteristics',
   )
-  assert.ok(/Colour, where legible: tan ×6\./.test(t), 'the tally renders')
+  assert.ok(/Colour, from the 6 reads where it was legible: tan ×6\./.test(t), 'the tally renders')
   for (const reassurance of [/normal colour/i, /unremarkable/i, /reassuring/i, /no concern/i, /all clear/i, /\bnothing to worry\b/i]) {
     assert.ok(!reassurance.test(t), `a page of tan is not an all-clear: ${reassurance}`)
   }
@@ -5574,9 +5590,14 @@ Deno.test('CUL-981 — a page of one colour is a tally and never an all-clear', 
 
 Deno.test('CUL-981 — no legible read means no colour line at all', () => {
   const some = plain(renderReport(base({ vomitPhenotype: emptyPhenotype({ colourDistribution: { tan: 2 } }) })))
-  assert.ok(/Colour, where legible:/.test(some), 'the line renders when there is something to tally')
+  assert.ok(/Colour, from the 2 reads where it was legible: tan ×2\./.test(some), 'the line renders when there is something to tally')
+  // PER-FIELD LEGIBILITY, NOT PER-READ: eight assessed reads, two with a legible colour. The
+  // tally's denominator is its own, so the counts still sum to it and nothing goes silent.
+  assert.ok(/8 have a legible AI read/.test(some), 'and it does not borrow the assessed denominator')
+  const one = plain(renderReport(base({ vomitPhenotype: emptyPhenotype({ colourDistribution: { tan: 1 } }) })))
+  assert.ok(/Colour, from the one read where it was legible: tan ×1\./.test(one), 'never "the 1 reads"')
   const none = plain(renderReport(base({ vomitPhenotype: emptyPhenotype({ colourDistribution: {} }) })))
-  assert.ok(!/Colour, where legible:/.test(none), 'and is absent rather than empty when there is not')
+  assert.ok(!/Colour, from the/.test(none), 'and is absent rather than empty when there is not')
 })
 
 Deno.test('CUL-981 — the edited-read rule is stated once, in the wording the box already uses', () => {
@@ -5612,7 +5633,7 @@ Deno.test('CUL-980 — a free-choice bowl is disclosed beside the per-format cou
   // THE COUNTS STAY. The earlier fix for the grazer dropped the number for an adverb, and that ran
   // vague only in the reassuring direction (B-532 round 7) — so the limitation composes with the
   // count rather than replacing it.
-  assert.ok(/Purina HA — wet — 12 rated meals, 0 fully eaten/.test(grazing), 'the counts are not softened away')
+  assert.ok(/Purina HA — wet — 12 rated meals: ate most ×11/.test(grazing), 'the counts are not softened away')
   assert.ok(/Intake not directly observed/.test(grazing), 'and the free-choice bowl is disclosed beside them')
   // Absent when there is no bowl — it is a fact about the record, not boilerplate.
   assert.ok(!/Intake not directly observed/.test(sliceIntakeLine(renderReport(withTrialIntake()))))
@@ -5669,4 +5690,55 @@ Deno.test('CUL-980 — the headline row is always exactly four cells, on every b
   const declineHtml = plain(renderReport(cases[3][1]))
   assert.ok(/Consecutive days below intake baseline/.test(declineHtml), 'a fired health signal outranks the descriptive tally')
   assert.ok(!/Trial-diet meals fully eaten/.test(declineHtml), 'and takes the slot rather than adding a fifth')
+})
+
+Deno.test('CUL-981 — a black read is a colour, never the blood caveat’s own word', () => {
+  const t = sliceSection(
+    renderReport(
+      base({
+        vomitPhenotype: emptyPhenotype({
+          totalIncidents: 4, withAnalysis: 4, states: { completed: 4, uncertain: 0, failed: 0, pending: 0 },
+          assessedCount: 4, colourDistribution: { tan: 3, black_coffee_ground: 1 },
+        }),
+      }),
+    ),
+    'Vomit characteristics',
+  )
+  assert.ok(/Colour, from the 4 reads where it was legible: tan ×3 · black ×1\./.test(t), 'the value renders as a colour')
+  // THE CAVEAT OWNS THAT TERM. "Coffee-ground" is not a colour word in veterinary usage, it is THE
+  // descriptor for digested blood — and the box on the same line of sight uses it while asserting
+  // "Not seen". A vet reading both in one pass gets a contradiction and resolves it as either
+  // missed blood or two untrustworthy fields. The authoritative blood field stays the sole route.
+  assert.equal(t.split('coffee-ground').length - 1, 1, 'the term appears once, in the blood caveat')
+  assert.ok(/digested \(coffee-ground\) blood photographs poorly/.test(t), 'and that once is the caveat')
+  assert.ok(/Not seen/.test(t), 'which still refuses to clear')
+})
+
+Deno.test('CUL-980 — a refusal outside the trial formats says so, and one inside them does not repeat itself', () => {
+  // OUTSIDE: in bold, under a sentence opening "Trial diet by format", a window-scoped count reads
+  // as a trial-diet refusal. On the artifact it was the opposite signal — she refused the off-diet
+  // food and ate the trial diet.
+  const outside = sliceIntakeLine(renderReport(withTrialIntake({}, { refusedMeals: 1 })))
+  assert.ok(/1 of the 34 rated meals in this window is recorded as refused\. It was not one of the formats above\./.test(outside))
+  const outsideMany = sliceIntakeLine(renderReport(withTrialIntake({}, { refusedMeals: 3 })))
+  assert.ok(/None of them was one of the formats above\./.test(outsideMany))
+
+  // INSIDE: the tally already carries it, so the clause is absent — it would be false.
+  const inside = sliceIntakeLine(
+    renderReport(
+      withTrialIntake(
+        {
+          trial: twoFormatTrial({
+            permittedFoods: [
+              { label: 'Purina HA — dry', role: 'primary_diet', allowedFrom: '2026-06-01', allowedUntil: null, feedings: 21, intakeRatings: [...Array(20).fill('all'), 'refused'], addedAfterStart: false, endedBeforeWindowEnd: false, proteins: ['soy'], panelRead: true },
+            ],
+          }),
+        },
+        { ratedMeals: 34, finishedMeals: 20, refusedMeals: 1 },
+      ),
+    ),
+  )
+  assert.ok(/refused ×1/.test(inside), 'the tally shows it')
+  assert.ok(/1 of the 34 rated meals in this window is recorded as refused\./.test(inside), 'the window-scoped sentence still renders')
+  assert.ok(!/not one of the formats above/.test(inside), 'but never claims it was another food')
 })

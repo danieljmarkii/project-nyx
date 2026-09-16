@@ -368,12 +368,16 @@ const STOOL_COLOUR_LABEL: Record<string, string> = {
 /**
  * vomit_colour enum (migration 013) → plain label, lowercased for mid-sentence use.
  *
- * `black_coffee_ground` KEEPS BOTH WORDS, where the app's own chip says just "Black". The chip is
- * shortened for a 44pt control an owner taps; this line is read by a clinician standing beside a
- * caveat that names coffee-ground blood in the next sentence, and dropping the second word there
- * hides the appearance the caveat is about. Naming it in full errs toward escalation, which is the
- * permitted direction — and it stays a description of the PHOTO, never a blood finding: the
- * authoritative blood field is its own present-only column two paragraphs down.
+ * `black_coffee_ground` RENDERS AS "black", AND THE SECOND WORD IS THE POINT (Dr. Chen, cold read).
+ * This first shipped as "black / coffee-ground" on the reasoning that naming it in full errs toward
+ * escalation, which is the permitted direction. The cold read rejected it, and the argument is
+ * better than mine: "coffee-ground" is not a colour word in veterinary usage, it is THE descriptor
+ * for digested blood — and the caveat eight centimetres to the right uses the identical term while
+ * asserting "Not seen in the legible photos". A clinician takes both in one pass and gets a
+ * contradiction, resolving it as either blood the detector missed or two fields that cannot be
+ * trusted. Both are worse than the bare colour. The authoritative blood field stays the sole route
+ * to that finding (clinical-guardrails Pattern 9 — never a second, weaker one), and the app's own
+ * owner-facing chip has said "Black" all along.
  */
 const VOMIT_COLOUR_LABEL: Record<string, string> = {
   clear: 'clear',
@@ -384,7 +388,7 @@ const VOMIT_COLOUR_LABEL: Record<string, string> = {
   tan: 'tan',
   pink_red: 'pink / red',
   dark_red: 'dark red',
-  black_coffee_ground: 'black / coffee-ground',
+  black_coffee_ground: 'black',
   mixed: 'mixed',
 }
 
@@ -4297,7 +4301,13 @@ function trialIntakeTile(snap: ReportSnapshot, intake: SafetyFlag | undefined): 
     return tile(
       `${ti.fullyEaten}`,
       `<small>&nbsp;/&nbsp;${ti.ratedMeals}</small>`,
-      `Trial-diet meals fully eaten &middot; ${h(ti.span)}<br/>rated meals only &mdash; each format below`,
+      // THE BAR IS DEFINED WHERE IT IS CLAIMED (Dr. Chen, cold read). Page 1 carries two words for
+      // two different bars — this cell's "fully eaten" (`intake_rating = all`) and the trial
+      // block's "left unfinished", which counts "ate most" as finished — and a reader who
+      // reconciles them wrongly on a record holding both gets an arithmetic contradiction. Naming
+      // the owner's own word here makes this cell checkable against the distribution below it.
+      // The two bars themselves are CUL-1023, not this PR's to unify.
+      `Trial-diet meals fully eaten &middot; ${h(ti.span)}<br/>rated trial-diet meals marked &ldquo;ate it all&rdquo; &mdash; each format below`,
     )
   }
   if (snap.diet.mealCompletion) {
@@ -4350,6 +4360,8 @@ interface TrialDietIntake {
   formats: TrialFormatIntake[]
   ratedMeals: number
   fullyEaten: number
+  /** Rated trial-diet meals recorded as refused — how the refusal sentence knows whose they are. */
+  refused: number
   span: string
 }
 
@@ -4373,6 +4385,7 @@ function trialDietIntake(snap: ReportSnapshot): TrialDietIntake | null {
     formats,
     ratedMeals: formats.reduce((a, f) => a + f.ratedMeals, 0),
     fullyEaten: formats.reduce((a, f) => a + f.fullyEaten, 0),
+    refused: formats.reduce((a, f) => a + (f.breakdown.find((b) => b.rating === 'refused')?.count ?? 0), 0),
     span: fmtRange(t.evidenceStartDate, t.evidenceEndDate),
   }
 }
@@ -4407,19 +4420,28 @@ function intakeLine(snap: ReportSnapshot): string {
 
   if (ti) {
     const items = ti.formats.map((f) => {
-      // The tally is omitted only when it would restate the count beside it — a format whose every
-      // rating is "ate it all" already says so in "21 of 21 fully eaten". Anything else prints in
-      // full: the eleven "ate most" and the one "ate some" behind a never-finished wet diet ARE
-      // the finding, and a mode word in their place deleted them once already (B-532).
-      const onlyAll = f.breakdown.length === 1 && f.breakdown[0].rating === 'all'
-      const tally = onlyAll
-        ? ''
-        : ` (${f.breakdown.map((b) => `${h(intakeLabel(b.rating).toLowerCase())} &times;${num(b.count)}`).join(' &middot; ')})`
-      return `<b>${h(f.label)}</b> &mdash; ${num(f.ratedMeals)} rated meal${
+      // THE DISTRIBUTION IS THE LINE, AND THE DERIVED COUNT CAME OFF IT (Dr. Chen, cold read).
+      //
+      // This led with "0 fully eaten" and the cold read called that an OVER-read in the alarming
+      // direction: eleven "ate most" plus one "ate some" is a cat leaving a bit of the wet, not a
+      // cat refusing it, and the framing was rescued only by the parenthetical that followed. The
+      // ratings are the finding — a mode word in their place deleted four of them once already
+      // (B-532) — so they lead, and the derived fraction lives once, on the tile above, where it
+      // names its own bar. Nothing is hidden by the change: "ate it all" IS the fully-eaten count,
+      // so a format that never reaches the top of the scale simply does not print it, and the
+      // contrast with the format beside it is the thing a 60-second scan actually sees.
+      //
+      // NO EMPHASIS THAT VARIES WITH THE VALUE, either. Bolding the row that reads badly is a
+      // verdict rendered in typography, and this line is forbidden one; the cold read's "bold the
+      // count, not the brand" is answered by bolding neither.
+      const tally = f.breakdown
+        .map((b) => `${h(intakeLabel(b.rating).toLowerCase())} &times;${num(b.count)}`)
+        .join(' &middot; ')
+      return `${h(f.label)} &mdash; ${num(f.ratedMeals)} rated meal${
         f.ratedMeals === 1 ? '' : 's'
-      }, ${num(f.fullyEaten)} fully eaten${tally}`
+      }: ${tally}`
     })
-    sentences.push(`Trial diet by format, ${h(ti.span)}: ${items.join(' &middot; ')}.`)
+    sentences.push(`Trial diet by format, ${h(ti.span)}. ${items.join('. ')}.`)
   }
 
   // PRESENT-ONLY, AND SEPARATE FROM THE FORMATS ABOVE. A refused meal is a distinct outcome from
@@ -4429,13 +4451,35 @@ function intakeLine(snap: ReportSnapshot): string {
   // is no honest reason a refusal would be worth stating only when a trial is running.
   // NEVER "1 of the 1" (§6.11's rule, as the Noticed line already applies it): a single sample
   // dressed as a ratio reads as a rate. At a denominator of one the fact is stated as a fact.
-  const refusedBit = !mc || mc.refusedMeals === 0
+  // AND IT SAYS WHICH POPULATION IT COUNTS (Dr. Chen, cold read). In bold, under a sentence that
+  // opens "Trial diet by format", a window-scoped count reads as a trial-diet refusal — and on the
+  // artifact it was the exact opposite signal: she refused the OFF-diet chicken and ate the trial
+  // food. The clause renders only when no refusal is one of the formats above, because when one is
+  // the tally already shows it as `refused ×N` and a second statement would be the redundancy.
+  const trialRefused = ti?.refused ?? 0
+  const notTrialDiet =
+    ti && trialRefused === 0
+      ? mc && mc.refusedMeals === 1
+        ? ` It was not one of the formats above.`
+        : ` None of them was one of the formats above.`
+      : ''
+  // AND IT IS DROPPED WHEN IT SAYS NOTHING THE TALLY DID NOT (Dr. Chen, cold read: on the
+  // single-format refused artifact this was "the fifth and sixth restatement of a fact already
+  // stated four times"). The condition is exact duplication — every refusal is inside the formats
+  // above AND the two denominators are the same number — so the sentence is dropped only when the
+  // line one row up already reads "refused ×34" against "38 rated meals". Nothing about the
+  // safety band is consulted: the band's refusal lane sits behind CUL-60's floors, and gating the
+  // last statement of a refusal on a floor known to be too loose is how this fact went missing in
+  // the first place.
+  const duplicatesTally =
+    ti !== null && mc !== null && trialRefused === mc.refusedMeals && ti.ratedMeals === mc.ratedMeals
+  const refusedBit = !mc || mc.refusedMeals === 0 || duplicatesTally
     ? ''
     : mc.ratedMeals === 1
       ? `<b>The one rated meal in this window is recorded as refused.</b>`
       : `<b>${num(mc.refusedMeals)} of the ${num(mc.ratedMeals)} rated meals in this window ${
           mc.refusedMeals === 1 ? 'is' : 'are'
-        } recorded as refused.</b>`
+        } recorded as refused.</b>${notTrialDiet}`
   if (refusedBit) sentences.push(refusedBit)
   if (sentences.length === 0) return ''
 
@@ -5094,9 +5138,10 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   // beside the blood caveat, because that is the sentence a clinician reads immediately before
   // reaching for colour; scattered across appendix A it had to be tallied by eye. A tally, never a
   // finding: no rank, no flag, no colour-derived verdict, and nothing downstream reads it.
+  const colourReads = Object.values(p.colourDistribution).reduce((a, b) => a + b, 0)
   const colourBit = distributionBit(
     p.colourDistribution,
-    'Colour, where legible:',
+    `Colour, from ${colourReads === 1 ? 'the one read' : `the ${num(colourReads)} reads`} where it was legible:`,
     (k) => VOMIT_COLOUR_LABEL[k] ?? k.replace(/_/g, ' '),
   )
 
@@ -5213,9 +5258,11 @@ function predominantBit(
  * datum, and it is exactly the datum a modal sentence drops. So this prints every entry with its
  * count, ordered by count and then by key so the same distribution always renders identically.
  *
- * It states no denominator of its own: the caller's neighbouring sentence already names the
- * assessed set, and a second denominator here would be a second population for one reader to
- * reconcile (C-3 — the scope belongs where the reader meets the claim, once). Empty ⇒ ''.
+ * THE CALLER STATES THE TALLY'S OWN DENOMINATOR, and the first cut did not (Dr. Chen, cold read).
+ * Leaning on the neighbouring "6 have a legible AI read" worked only because 4+1+1 happened to sum
+ * to 6 — the reader was RECONSTRUCTING the denominator, and the reconstruction breaks silently the
+ * moment a read is legible for contents and not for colour. Per-read legibility and per-field
+ * legibility are different denominators; this one names the field's. Empty ⇒ ''.
  */
 function distributionBit(dist: Record<string, number>, lead: string, label: (k: string) => string): string {
   const entries = Object.entries(dist).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
