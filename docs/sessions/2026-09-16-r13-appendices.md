@@ -105,7 +105,26 @@ nothing else.
   options and a recommendation on the issue.
 * **CUL-1031** — the unknown-protein count disappears when the tally is empty (pre-existing).
 
+## R-15 ruled mid-session, and it added work here
+
+The PM ruled all seven R-15 (CUL-997) briefs by deferring to the team's recommendation, while
+this PR was green and unmerged. Two consequences:
+
+* **Brief 5 ratified what was already built.** Item 1's provisional becomes the ruling; option
+  (a), a real per-meal table, is declined rather than deferred.
+* **Brief 7 added an item to this PR.** Its recommendation is *(c) with (b)*, and (b) is routed
+  to R-13 by R-15's own consequence line, so Appendix A now states a COUNT of the in-window
+  observations logged as `other` — the eight-leaf allow-list drops them from every count and
+  table while that preamble claims *"every symptom event in the window"*. A count and **only**
+  a count: the notes are un-normalised owner text, promoting them is CUL-848's open question,
+  and a test asserts they never reach the document. The clean fixture gained the two ear rows
+  from CUL-974's measured case, for the same reason it gained pre-trial meals.
+
+The other five rulings were carried to their home issues (CUL-847 D3/D5/D8, CUL-929, CUL-632)
+and **brief 1 unblocked CUL-1001 (R-19) outright** — it was the only hard block in the set.
+
 ## PM action items
 
-* **CUL-997 (R-15) brief 5** — rule Appendix E's shape; item 1 ships provisional until then.
-* **CUL-1030** — pick how a cross-midnight range prints.
+* **CUL-1030** — pick how a cross-midnight range prints (three options and a recommendation on
+  the issue).
+* Nothing else is waiting. R-15 is closed.
