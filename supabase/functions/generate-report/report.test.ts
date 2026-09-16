@@ -3538,3 +3538,186 @@ Deno.test('CUL-994 Part 2 — lifetimeFirst/LastDoseDay are drawn from ADMINISTE
   assert.equal(none.lifetimeDosesLogged, 0)
   assert.equal(none.lifetimeDoseDayCount, 0)
 })
+
+// ── CUL-980 / CUL-981 — the per-format trial intake, the refusal, the colour tally ──────
+//
+// Every test below was written from the v15 cold read's own findings and was RED against the
+// assembly that shipped it: `TrialPermittedFood.intakeRatings` did not exist, `mealCompletion`
+// had no `refusedMeals`, and `VomitPhenotype` aggregated everything but colour.
+
+/**
+ * The shape none of the older fixtures can make: one prescription diet, TWO allowed rows.
+ *
+ * The dry is finished every time and the wet never once is, which is the configuration in which
+ * every summed aggregate on the report reads as a cat who is eating. `refusedOther` adds one
+ * rated meal of a DIFFERENT food recorded as refused, so the refusal count and the per-format
+ * counts are visibly separate populations rather than two views of one.
+ */
+function twoFormatTrialInput(o: { wetRatings?: Array<'all' | 'most' | 'some' | 'picked' | 'refused'>; refusedOther?: boolean } = {}): ReportInput {
+  idSeq = 0
+  const wetRatings = o.wetRatings ?? ['most', 'most', 'most', 'most', 'some']
+  const events: ReportEventInput[] = []
+  const dryDays = ['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25', '2026-06-26']
+  for (const d of dryDays) {
+    events.push(
+      makeEvent({
+        type: 'meal',
+        occurredAt: at(d, '08:00:00'),
+        meal: {
+          foodItemId: 'fi-dry', intakeRating: 'all', quantity: null, foodType: 'meal',
+          format: 'dry_kibble', primaryProtein: 'soy', brand: 'Purina', productName: 'HA dry',
+        },
+      }),
+    )
+  }
+  wetRatings.forEach((rating, i) => {
+    events.push(
+      makeEvent({
+        type: 'meal',
+        occurredAt: at(dryDays[i], '18:00:00'),
+        meal: {
+          foodItemId: 'fi-wet', intakeRating: rating, quantity: null, foodType: 'meal',
+          format: 'wet_canned', primaryProtein: 'soy', brand: 'Purina', productName: 'HA wet',
+        },
+      }),
+    )
+  })
+  // A TREAT of the trial diet's own row, and an UNRATED bowl of it — both permitted feedings,
+  // neither a rated meal. They are in `feedings` and must be in neither `intakeRatings`.
+  events.push(
+    makeEvent({
+      type: 'meal',
+      occurredAt: at('2026-06-22', '15:00:00'),
+      meal: { foodItemId: 'fi-dry', intakeRating: 'all', quantity: null, foodType: 'treat', format: 'treat', primaryProtein: 'soy', brand: 'Purina', productName: 'HA dry' },
+    }),
+  )
+  events.push(
+    makeEvent({
+      type: 'meal',
+      occurredAt: at('2026-06-24', '12:00:00'),
+      meal: { foodItemId: 'fi-dry', intakeRating: null, quantity: null, foodType: 'meal', format: 'dry_kibble', primaryProtein: 'soy', brand: 'Purina', productName: 'HA dry' },
+    }),
+  )
+  if (o.refusedOther !== false) {
+    events.push(
+      makeEvent({
+        type: 'meal',
+        occurredAt: at('2026-06-25', '07:30:00'),
+        meal: { foodItemId: 'fi-old', intakeRating: 'refused', quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'chicken', brand: 'Fancy Feast', productName: 'Classic Pate' },
+      }),
+    )
+  }
+  return baseInput({
+    now: '2026-06-27T12:00:00Z',
+    events,
+    dietTrials: [
+      {
+        id: 'dt-2f', foodItemId: 'fi-dry', startedAt: '2026-06-20', targetDurationDays: 56,
+        status: 'active', completedAt: null, vetName: 'Dr. A. Chen',
+        foodLabel: 'Purina HA Hydrolyzed', primaryProtein: 'soy',
+        allowedFoods: [
+          { foodItemId: 'fi-dry', foodLabel: 'Purina HA — dry', role: 'primary_diet', allowedFrom: '2026-06-20', allowedUntil: null, primaryProtein: 'soy', brand: 'Purina', productName: 'HA dry' },
+          { foodItemId: 'fi-wet', foodLabel: 'Purina HA — wet', role: 'primary_diet', allowedFrom: '2026-06-20', allowedUntil: null, primaryProtein: 'soy', brand: 'Purina', productName: 'HA wet' },
+        ],
+      },
+    ],
+  })
+}
+
+Deno.test('CUL-980 — the trial diet carries a per-format intake shape, and the aggregate hides it', () => {
+  const snap = assembleReport(twoFormatTrialInput())
+  const rows = snap.trial!.permittedFoods.filter((f) => f.role === 'primary_diet')
+  const wet = rows.find((f) => f.label === 'Purina HA — wet')!
+  const dry = rows.find((f) => f.label === 'Purina HA — dry')!
+
+  assert.equal(wet.intakeRatings.length, 5, 'every rated wet serving is carried')
+  assert.equal(wet.intakeRatings.filter((r) => r === 'all').length, 0, 'not one of them was fully eaten')
+  assert.deepEqual(
+    wet.intakeRatings.slice().sort(),
+    ['most', 'most', 'most', 'most', 'some'].sort(),
+    'and the ratings themselves survive — a mode word would delete four of these',
+  )
+  assert.equal(dry.intakeRatings.filter((r) => r === 'all').length, 7, 'the dry was finished every time')
+
+  // THE REASON THIS EXISTS: the aggregate is true and says the opposite.
+  assert.equal(snap.diet.mealCompletion!.finishedMeals, 7)
+  assert.ok(
+    snap.diet.mealCompletion!.finishedMeals / snap.diet.mealCompletion!.ratedMeals > 0.5,
+    'the summed rate reads as a cat who is eating, which is why the shape has to be stated separately',
+  )
+})
+
+Deno.test('CUL-980 — a treat and an unrated bowl are FEEDINGS and never rated meals', () => {
+  const snap = assembleReport(twoFormatTrialInput())
+  const dry = snap.trial!.permittedFoods.find((f) => f.label === 'Purina HA — dry')!
+  // 7 rated meals + 1 treat + 1 unrated bowl = 9 permitted feedings of this row.
+  assert.equal(dry.feedings, 9, 'the feeding count is unchanged — it counts servings offered')
+  assert.equal(dry.intakeRatings.length, 7, 'the intake list takes only the rated MEALS')
+})
+
+Deno.test('CUL-980 — the per-format counts PARTITION page 1s rated meals (C-3 / CUL-746)', () => {
+  for (const input of [twoFormatTrialInput(), twoFormatTrialInput({ refusedOther: false })]) {
+    const snap = assembleReport(input)
+    const perFormat = snap
+      .trial!.permittedFoods.filter((f) => f.role === 'primary_diet')
+      .reduce((n, f) => n + f.intakeRatings.length, 0)
+    const rated = snap.diet.mealCompletion!.ratedMeals
+    // A STRICT SUBSET, BY CONSTRUCTION — same source array, same filter, then narrowed by the
+    // classifier. This is what lets the render say "these are N of the M rated meals" as
+    // arithmetic rather than as a claim; widening the predicate in `trial.ts` reds it here.
+    assert.ok(perFormat <= rated, `per-format ${perFormat} must never exceed the ${rated} rated meals`)
+    assert.equal(perFormat, 12, 'the twelve trial-diet rated meals')
+  }
+  // And the ONE rated meal that is not a trial format is exactly the difference.
+  assert.equal(assembleReport(twoFormatTrialInput()).diet.mealCompletion!.ratedMeals, 13)
+  assert.equal(assembleReport(twoFormatTrialInput({ refusedOther: false })).diet.mealCompletion!.ratedMeals, 12)
+})
+
+Deno.test('CUL-980 — refusedMeals counts the rated meals recorded as refused, and is zero on a clean record', () => {
+  assert.equal(assembleReport(twoFormatTrialInput()).diet.mealCompletion!.refusedMeals, 1)
+  // THE OTHER DIRECTION. A record with nothing refused reports zero — and the render is what
+  // must stay silent about it. A zero that reached the page would be reassurance on an absence.
+  const clean = assembleReport(twoFormatTrialInput({ wetRatings: ['all', 'all', 'all', 'all', 'all'], refusedOther: false }))
+  assert.equal(clean.diet.mealCompletion!.refusedMeals, 0)
+  assert.equal(clean.diet.mealCompletion!.finishedMeals, clean.diet.mealCompletion!.ratedMeals)
+})
+
+Deno.test('CUL-981 — vomit colour is aggregated over the ASSESSED reads, unsure excluded', () => {
+  idSeq = 0
+  const days = ['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25']
+  const events = days.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d, '20:00:00') }))
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-06-27T12:00:00Z',
+      events,
+      aiAnalyses: [
+        mkAnalysis(events[0].id, { colour: 'tan' }),
+        mkAnalysis(events[1].id, { colour: 'tan' }),
+        mkAnalysis(events[2].id, { colour: 'green' }),
+        // An owner-CORRECTED read counts the same as a raw one — the rule contents and
+        // consistency already follow, not a second rule invented for colour.
+        mkAnalysis(events[3].id, { colour: 'tan', editedAt: '2026-06-23T21:00:00Z' }),
+        // 'unsure' is not a legible colour and never becomes a category.
+        mkAnalysis(events[4].id, { colour: 'unsure' }),
+        // An UNASSESSED read contributes no colour at all, whatever the column holds.
+        mkAnalysis(events[5].id, { colour: 'yellow', status: 'uncertain' }),
+      ],
+    }),
+  )
+  const p = snap.vomitPhenotype!
+  assert.deepEqual(p.colourDistribution, { tan: 3, green: 1 })
+  assert.equal(p.assessedCount, 5, 'five completed reads')
+  assert.equal(p.reviewedCount, 1, 'one of them owner-corrected — still counted above')
+  // THE DENOMINATOR IS READS, NEVER INCIDENTS. Six incidents, five assessed, four with a
+  // legible colour: the tally must never be spoken over the six.
+  assert.equal(p.totalIncidents, 6)
+  assert.equal(Object.values(p.colourDistribution).reduce((a, b) => a + b, 0), 4)
+})
+
+Deno.test('CUL-981 — no photographed incident means no colour distribution, not an empty one spoken', () => {
+  idSeq = 0
+  const events = [makeEvent({ type: 'vomit', occurredAt: at('2026-06-20', '20:00:00') })]
+  const snap = assembleReport(baseInput({ now: '2026-06-27T12:00:00Z', events, aiAnalyses: [] }))
+  assert.deepEqual(snap.vomitPhenotype!.colourDistribution, {})
+  assert.equal(snap.vomitPhenotype!.assessedCount, 0)
+})

@@ -42,6 +42,15 @@
 //
 // This is not an edge case: it is the SECOND report, the one an owner sends at or
 // after a recheck, and it is truncated by construction.
+//
+// CUL-980 / CUL-981 added a sixth, for the shape the v15 cold read actually found and that none
+// of the first five can produce — a two-format trial whose wet half is never once finished while
+// every aggregate sums it with the dry, a pet with no weigh-ins at all, one meal recorded as
+// refused, and vomit photos whose colours were read:
+//
+//   trial-report-two-format.html — Nyx, day 39 of a 56-day GI trial on a hydrolyzed diet stocked
+//                              as a wet and a dry. 21 of 21 dry finished, 0 of 12 wet, and the
+//                              relative reduced-intake detector silent over both.
 import { assembleReport, type ReportEventInput, type ReportInput } from '../supabase/functions/generate-report/report.ts'
 import { renderReport } from '../supabase/functions/generate-report/render.ts'
 
@@ -737,6 +746,180 @@ function pastWindowCase(): ReportInput {
   }
 }
 
+// ── Case 6: the two-format trial the aggregates read as eating (CUL-980 / CUL-981) ──
+//
+// The shape the cold read found on the real v15 artifact, which none of the five cases above can
+// produce. A prescription diet stocked as a WET and a DRY is two allowed rows on one trial, and
+// every total the report prints sums them: the dry is eaten, the wet is never once finished, and
+// "N of M rated meals fully eaten" is true while the sentence a vet needs — twelve of twelve of
+// the wet left — exists nowhere. The relative reduced-intake detector does not fire on it, which
+// is a statement about a threshold and not about the record.
+//
+// Three more things are true of it on purpose, each of which the other five fixtures cannot show:
+//   • NO WEIGH-INS AT ALL, so the headline row's weight cell has no number to print — the case
+//     that spent a quarter of the row on an em dash.
+//   • ONE MEAL RECORDED AS REFUSED, and deliberately NOT one of the trial formats, so the refusal
+//     sentence and the per-format counts are visibly separate populations.
+//   • VOMIT PHOTOS WITH COLOURS READ (CUL-981), including one owner-corrected read, so the colour
+//     tally renders beside the blood caveat in an artifact a cold read can actually grade.
+const RX_DRY = {
+  foodItemId: 'f-rx-dry',
+  foodLabel: 'Purina HA Hydrolyzed — dry',
+  role: 'primary_diet',
+  allowedFrom: '2026-05-25',
+  allowedUntil: null,
+  primaryProtein: 'soy',
+  brand: 'Purina Pro Plan',
+  productName: 'HA Hydrolyzed — dry',
+  proteins: ['soy'],
+  ingredientsNotes: 'Hydrolysed soy protein isolate, corn starch, animal fat',
+}
+const RX_WET = {
+  ...RX_DRY,
+  foodItemId: 'f-rx-wet',
+  foodLabel: 'Purina HA Hydrolyzed — wet',
+  productName: 'HA Hydrolyzed — wet',
+}
+
+function twoFormatCase(): ReportInput {
+  const events: ReportEventInput[] = []
+  // The dry, every morning across the window, finished every time.
+  for (const d of days('2026-06-10', '2026-07-02')) {
+    events.push(
+      meal({
+        date: d,
+        brand: 'Purina Pro Plan',
+        product: 'HA Hydrolyzed — dry',
+        foodItemId: 'f-rx-dry',
+        proteins: RX_DRY.proteins,
+        ingredientsNotes: RX_DRY.ingredientsNotes,
+        intakeRating: 'all',
+        format: 'kibble',
+      }),
+    )
+  }
+  // The wet, offered every other evening, and never once finished — eleven "ate most" and one
+  // "ate some". Every one of these is a serving the owner logged and rated; nothing here is a
+  // gap in the record.
+  const wetDays = days('2026-06-10', '2026-07-02').filter((_, i) => i % 2 === 0)
+  wetDays.forEach((d, i) => {
+    events.push(
+      meal({
+        date: d,
+        time: '18:20:00',
+        brand: 'Purina Pro Plan',
+        product: 'HA Hydrolyzed — wet',
+        foodItemId: 'f-rx-wet',
+        proteins: RX_WET.proteins,
+        ingredientsNotes: RX_WET.ingredientsNotes,
+        intakeRating: i === 4 ? 'some' : 'most',
+        format: 'wet',
+      }),
+    )
+  })
+  // One meal of the food she was on before, offered when the owner ran out, and REFUSED. Not a
+  // trial format, so it is in the window's rated meals and in none of the per-format counts.
+  events.push(
+    meal({
+      date: '2026-06-23',
+      time: '07:50:00',
+      brand: 'Fancy Feast',
+      product: 'Classic Pate Chicken',
+      foodItemId: 'f-ff',
+      proteins: ['chicken'],
+      intakeRating: 'refused',
+      format: 'wet',
+      notes: 'ran out of the HA, tried her old food',
+    }),
+  )
+
+  // Vomiting through the trial, photographed.
+  const vomitDays = ['2026-06-14', '2026-06-17', '2026-06-19', '2026-06-23', '2026-06-26', '2026-06-28', '2026-07-01']
+  const vomitIds: string[] = []
+  for (const d of vomitDays) {
+    const e = sym('vomit', d)
+    vomitIds.push(e.id)
+    events.push(e)
+  }
+  events.push(sym('lethargy', '2026-06-27'))
+
+  // The colours the pipeline read. Tan dominates, one green (bile), one yellow — and one of the
+  // tan reads was corrected by the owner, which counts the same as an uncorrected one. The last
+  // incident has no legible read at all, so the denominator is reads and not incidents.
+  const COLOURS: Array<[string, string, string | null]> = [
+    ['tan', 'completed', null],
+    ['tan', 'completed', null],
+    ['green', 'completed', null],
+    ['tan', 'completed', '2026-06-23T20:10:00Z'],
+    ['yellow', 'completed', null],
+    ['tan', 'completed', null],
+    ['unsure', 'uncertain', null],
+  ]
+
+  return {
+    now: NOW,
+    timezone: TZ,
+    pet: {
+      id: 'pet-nyx',
+      name: 'Nyx',
+      species: 'cat',
+      breed: 'Domestic Shorthair',
+      sex: 'female',
+      dateOfBirth: '2019-08-02',
+      neuterStatus: 'neutered',
+      weightKg: null,
+    },
+    ownerName: 'Sam Okafor',
+    events,
+    aiAnalyses: COLOURS.map(([colour, status, editedAt], i) => ({
+      eventId: vomitIds[i],
+      status,
+      colour,
+      contents: status === 'completed' ? ['partially_digested_food'] : null,
+      consistency: status === 'completed' ? 'chunky' : null,
+      bloodPresent: status === 'completed' ? 'none_visible' : null,
+      bilePresent: colour === 'green' ? 'yes' : 'no',
+      foreignMaterialPresent: status === 'completed' ? 'no' : null,
+      foreignMaterialNote: null,
+      stoolConsistency: null,
+      stoolColour: null,
+      stoolBloodPresent: null,
+      stoolBloodType: null,
+      stoolMucusPresent: null,
+      editedAt,
+    })),
+    // NONE. The headline row has no weight number to print, which is the case this fixture exists
+    // for — and the Weight block above the row states the absence as a line, so nothing is lost.
+    weightChecks: [],
+    doses: [],
+    medications: [],
+    medicationItems: [],
+    dietTrials: [
+      {
+        id: 'trial-nyx',
+        foodItemId: 'f-rx-dry',
+        startedAt: '2026-05-25',
+        targetDurationDays: 56,
+        status: 'active',
+        completedAt: null,
+        endedAt: null,
+        indication: 'gi',
+        vetName: 'Dr. A. Chen',
+        foodLabel: 'Purina HA Hydrolyzed',
+        primaryProtein: 'soy',
+        proteins: RX_DRY.proteins,
+        ingredientsNotes: RX_DRY.ingredientsNotes,
+        extractionConfidence: { proteins: 0.91 },
+        allowedFoods: [RX_DRY, RX_WET],
+      },
+    ],
+    vetVisits: [{ visitedAt: '2026-05-25', clinicName: 'Riverside Veterinary', vetName: 'Dr. A. Chen', reason: 'chronic vomiting — start elimination diet' }],
+    feedingArrangements: [],
+    conditions: [{ conditionName: 'Chronic vomiting', status: 'active', diagnosedAt: '2026-04-11' }],
+    audience: { kind: 'owner', includeLookNotes: true },
+  }
+}
+
 const outDir = Deno.args[0] ?? '.'
 for (const [name, input] of [
   ['trial-report-clean.html', cleanCase()],
@@ -744,6 +927,7 @@ for (const [name, input] of [
   ['trial-report-completed.html', completedCase()],
   ['trial-report-truncated.html', truncatedCase()],
   ['trial-report-past-window.html', pastWindowCase()],
+  ['trial-report-two-format.html', twoFormatCase()],
 ] as const) {
   const html = renderReport(assembleReport(input))
   await Deno.writeTextFile(`${outDir}/${name}`, html)
