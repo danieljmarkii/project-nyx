@@ -258,7 +258,14 @@ function intakeRow(headline: string | null): WorthRaisingRow | null {
     text: headline,
     detail: null,
     source: 'intake',
-    sourceLabel: 'from this device’s record',
+    // Was "from this device's record", which carried an IMPLEMENTATION fact — this
+    // row comes from SQLite while the Signal's come from a network cache — into the
+    // one label on the page most likely to be read aloud in a consulting room. The
+    // distinction is real and it is load-bearing in the comment above; it is not a
+    // distinction an owner has, or a vet needs, and "this device's" reads as a
+    // hedge about whether the record is the whole record (CUL-953 item 5). Plain,
+    // and identical to its siblings, because the owner meets one record.
+    sourceLabel: 'from the record',
     isSafety: true,
   };
 }

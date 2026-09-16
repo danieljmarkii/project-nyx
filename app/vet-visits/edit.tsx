@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -16,9 +16,11 @@ import {
   clampVisitDate,
   localDateKey,
   readVetVisitDetail,
+  readVisitConsequence,
   updateVisitDetails,
   type LocalVetVisit,
 } from '../../lib/vetVisits';
+import { visitAnchorsAnything } from '../../lib/vetVisitPlan';
 
 // Editing a visit (CUL-902 VV-4; mock D3's ⋯ *Edit*).
 //
@@ -43,6 +45,16 @@ export default function EditVisitScreen() {
   // Seeded once. A re-focus must never overwrite an edit in progress — the
   // half-typed correction is the thing this screen exists to protect.
   const seeded = useRef(false);
+  // Whether the visit, AT THE DATE CURRENTLY IN THE PICKER, anchors the report
+  // window and Home. `null` until the record has answered — and that third state is
+  // load-bearing rather than tidiness: the note is a claim about the owner's data,
+  // so an unanswered read renders nothing rather than a guess (C-12).
+  //
+  // Keyed on the CANDIDATE date, not the stored one, because the note is about what
+  // the save would do. Moving a March visit past April's genuinely does move the
+  // window, and a note gated on the row as stored would stay silent for exactly that
+  // edit.
+  const [anchors, setAnchors] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     if (!enabled || !visitId) {
@@ -86,6 +98,41 @@ export default function EditVisitScreen() {
       load();
     }, [load]),
   );
+
+  // Re-asked whenever the picker moves, because the answer depends on the date
+  // being saved rather than the one on file. Cheap (one COUNT), and the picker
+  // commits a date at a time, not a keystroke at a time.
+  //
+  // `visit` is in the dependencies as the whole object, so this also re-asks on
+  // every focus — which is wanted rather than tolerated: another device can sync a
+  // NEWER visit for this pet while the screen is backgrounded, and that changes
+  // `isLatest` without anything on this screen moving.
+  const candidateDay = fields ? localDateKey(fields.visitedAt) : null;
+  useEffect(() => {
+    if (!visit || !candidateDay) return;
+    let live = true;
+    // CLEARED BEFORE THE ASK, not only on failure. The answer is per-DATE, so the
+    // moment the question changes the previous answer is about a date the owner has
+    // moved away from — and keeping it on screen while the new read is in flight is
+    // the original false claim, just briefly. Sub-frame against a local COUNT, and
+    // silence is the right thing to show for a day nothing has answered for yet
+    // (C-12, reapplied when the QUESTION changes rather than only on first load).
+    setAnchors(null);
+    readVisitConsequence({ id: visit.id, pet_id: visit.pet_id, visited_at: candidateDay })
+      .then((c) => {
+        if (live) setAnchors(visitAnchorsAnything(c));
+      })
+      .catch((err) => {
+        // Nothing to clear — the reset above already did it, and a failed read
+        // simply leaves it cleared. That is the whole point of resetting on the
+        // QUESTION rather than on the answer: the error path needs no rule of its
+        // own, so there is no second place for the two to disagree.
+        console.warn('[vet-visit-edit] consequence read failed:', err);
+      });
+    return () => {
+      live = false;
+    };
+  }, [visit, candidateDay]);
 
   async function handleSave() {
     if (!visitId || !fields || saving) return;
@@ -153,6 +200,7 @@ export default function EditVisitScreen() {
               }
               saving={saving}
               onSave={handleSave}
+              movesReportWindow={anchors === true}
             />
           </ScrollView>
         </KeyboardAvoidingView>

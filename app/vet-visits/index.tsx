@@ -189,6 +189,23 @@ export default function VetVisitsScreen() {
             'Saved, apart from one',
             `${listNames(failedFor)} did not get an appointment. Add it again from their profile.`,
           );
+        } else if (input.alsoForPetIds.length > 0) {
+          // The success half, and it needs saying out loud for a reason particular
+          // to this control: the sheet closes onto a list scoped to the OTHER pet,
+          // where a second pet's new appointment is invisible by definition. The
+          // owner flipped a switch promising a booking and was shown nothing that
+          // it happened — with only the FAILURE path naming anyone, the quiet
+          // outcome was the one that looked like nothing occurred (CUL-953 item 4).
+          //
+          // Named, not counted, for the reason the failure path is: in a two-cat
+          // household the name is the only cue that says which booking this was.
+          const alsoNames = input.alsoForPetIds.map((id) => resolveRecordPetName(pets, id));
+          Alert.alert(
+            'Saved',
+            alsoNames.length === 1
+              ? `${alsoNames[0]} has one too — it shows on their own visits.`
+              : `${listNames(alsoNames)} have one too — each shows on their own visits.`,
+          );
         }
         return;
       }

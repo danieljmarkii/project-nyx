@@ -4,6 +4,7 @@ import {
   DEFAULT_RECHECK_WEEKS,
   defaultRecheckDate,
   describeVisitSave,
+  visitAnchorsAnything,
   trialVerdictLabel,
   VISIT_OFFLINE_LINE,
   type LinkedLine,
@@ -211,5 +212,63 @@ describe('defaultRecheckDate — the "in six weeks" seed', () => {
     // The seed is handed to a date picker, which renders its local day. Midnight
     // would be one hour from crossing on a spring-forward day.
     expect(defaultRecheckDate(new Date(2026, 2, 1, 0, 5)).getHours()).toBe(12);
+  });
+});
+
+// ── The shared anchor predicate (CUL-953 item 1) ─────────────────────────────
+//
+// `visitAnchorsAnything` was extracted from `describeVisitSave` when the EDIT
+// screen gained a second reader. The extraction is the point: the editor makes the
+// same claim one step EARLIER — under the date picker, before the write — and it
+// was making it unconditionally, so correcting a typo on a March visit with April's
+// already on record told an owner they had moved their report window.
+//
+// One question, one function. These cases pin the rule at the level both surfaces
+// now read it at, so a change made for one of them cannot quietly apply to only one.
+describe('visitAnchorsAnything — what the report window and Home key off', () => {
+  it('is true for the latest visit dated before today — the anchor already', () => {
+    expect(visitAnchorsAnything({ isLatest: true, dayRelation: 'before_today' })).toBe(true);
+  });
+
+  it('is true for the latest visit dated today — the anchor tomorrow', () => {
+    // The report's rung 1 is strictly before today, so this visit anchors the
+    // window from tomorrow. It still ANCHORS, which is what this predicate asks;
+    // which of the two sentences to print is describeVisitSave's separate job.
+    expect(visitAnchorsAnything({ isLatest: true, dayRelation: 'today' })).toBe(true);
+  });
+
+  it('is false for a FUTURE-dated visit even though it is the latest', () => {
+    // A future row anchors nothing and is claimed for nothing: the report skips it
+    // until the day arrives, and Home's unbounded MAX(visited_at) WOULD adopt it
+    // and then render an absence over a window that cannot contain anything.
+    expect(visitAnchorsAnything({ isLatest: true, dayRelation: 'after_today' })).toBe(false);
+  });
+
+  it('is false for a visit logged behind one already on record', () => {
+    // The case that made the edit screen lie: a March visit corrected while April's
+    // is on file moves neither surface.
+    expect(visitAnchorsAnything({ isLatest: false, dayRelation: 'before_today' })).toBe(false);
+    expect(visitAnchorsAnything({ isLatest: false, dayRelation: 'today' })).toBe(false);
+  });
+
+  it('is the same rule describeVisitSave speaks — asserted, not assumed', () => {
+    // The extraction's whole value is that these cannot diverge, so the agreement
+    // is checked rather than trusted: wherever the predicate says a visit anchors
+    // nothing, the moment must also be silent about both surfaces, and wherever it
+    // says it anchors, the moment must speak about both.
+    const cases = [
+      { isLatest: true, dayRelation: 'before_today' as const },
+      { isLatest: true, dayRelation: 'today' as const },
+      { isLatest: true, dayRelation: 'after_today' as const },
+      { isLatest: false, dayRelation: 'before_today' as const },
+      { isLatest: false, dayRelation: 'today' as const },
+      { isLatest: false, dayRelation: 'after_today' as const },
+    ];
+    for (const consequence of cases) {
+      const s = describeVisitSave({ petName: 'Mochi', consequence, linked: [] });
+      const anchors = visitAnchorsAnything(consequence);
+      expect(s.homeLine !== null).toBe(anchors);
+      expect(s.reportLine !== null).toBe(anchors);
+    }
   });
 });
