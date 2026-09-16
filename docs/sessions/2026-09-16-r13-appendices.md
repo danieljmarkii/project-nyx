@@ -75,10 +75,14 @@ and filed noise.
   before B-010 is uniformly `unspecified`, and dropping its tags turns times nobody vouched for
   into witnessed minutes. Scoped to `seen`; a mixed column keeps every chip, because there the tag
   on a `seen` row is what makes the one `est` row visible by contrast.
-* **Item 1 is provisional** — R-15 brief 5 unruled, so the fallback that issue names. Recorded on
-  CUL-643.
-* **R-15 brief 7 unruled, so its R-13 half was not built.** CUL-974 stays open per its own
-  fallback row.
+* **Item 1 shipped the honest direction** — R-15 brief 5 was unruled when it was built, so it
+  took the fallback that issue names; the PM then ratified exactly that, mid-session (below), so
+  it ships as the decision rather than a provisional. Recorded on CUL-643.
+* **R-15 brief 7's (b) half is built here; (c) is not.** The ruling is the pair, so CUL-974 stays
+  open until (c) lands on CUL-1033 — and this PR therefore carries **no attachment** to CUL-974,
+  only a mention. An attachment is a commitment that merging the PR finishes the issue, which is
+  how CUL-660 closed on related work with nothing built; the ruling comment is the sanctioned way
+  to point at half-done work.
 * **No guard file for R-4's negative-string class.** The blunt detector needs an exemption at
   **35 of 37** sites; an exemption applied thirty-five times is a scope error, not an exemption
   (C-33), and C-32 says a registry entry has to be earned. The one site closest to the same
@@ -86,7 +90,7 @@ and filed noise.
 
 ## Verification
 
-698 deno tests (up from 651), green under **UTC+14, UTC+12:45, UTC−10 and UTC** — R-3's local-day
+701 deno tests (up from 651), green under **UTC+14, UTC+12:45, UTC−10 and UTC** — R-3's local-day
 logic is why, and C-29 says prove it under a skewed clock rather than by re-running today.
 `tsc --noEmit` clean. `npx jest` 8390/8390. Page counts diffed at A4 **and** Letter, with the
 MediaBoxes checked distinct so the equal counts are a result rather than an ignored `@page` rule.
