@@ -28,7 +28,7 @@ import {
   type LocalVetDocument,
   type VetDocumentSource,
 } from './vetDocuments';
-import { formatVetDocumentDate, defaultVetDocumentTitle } from './vetDocumentLibrary';
+import { formatVetDocumentDate, defaultVetDocumentTitle, localDayStemOf } from './vetDocumentLibrary';
 
 // The `nyx-vet-documents` bucket's file_size_limit, mirrored client-side (15 MB,
 // set at creation per §5.2).
@@ -517,7 +517,7 @@ export function savedMomentCopy(
     ? rows.filter((r) => r.document_group_id === cover.document_group_id).length
     : 0;
   const dateLabel = cover
-    ? formatVetDocumentDate(cover.document_date ?? cover.created_at, now)
+    ? formatVetDocumentDate(cover.document_date ?? localDayStemOf(cover.created_at), now)
     : '';
   return {
     headline: `Saved to ${petName}’s Vet Files`,

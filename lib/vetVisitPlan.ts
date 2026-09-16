@@ -120,6 +120,28 @@ export interface VisitSaveSummary {
 export const VISIT_OFFLINE_LINE = 'On this phone now — backs up when you’re online';
 
 /**
+ * Does this visit, as dated, anchor anything the owner can see?
+ *
+ * A FUTURE-DATED visit anchors nothing and is claimed for nothing — not the report,
+ * which skips it until the day arrives, and not Home, whose unbounded
+ * `MAX(visited_at)` WOULD adopt it and then render an absence over a window that
+ * cannot contain anything. That second case is why this gates both lines rather
+ * than only the report's: a true sentence about a false window is the worse of the
+ * two.
+ *
+ * EXPORTED because the saved moment is no longer its only reader. The EDIT screen
+ * carried the consequence as an unconditional sentence — *"Moving this date moves
+ * where {pet}'s vet report starts"* — under a date field on every visit, so
+ * correcting a typo on a March visit told an owner they had moved their report
+ * window (CUL-953 item 1). It is the same question, so it is the same function:
+ * a second copy of this rule beside an editor is how the two drift, and the
+ * screen that drifts is the one making the claim BEFORE the write.
+ */
+export function visitAnchorsAnything(consequence: VisitConsequence): boolean {
+  return consequence.isLatest && consequence.dayRelation !== 'after_today';
+}
+
+/**
  * The moment's copy, derived from what the record now says.
  *
  * THE REPORT LINE IS THE CLINICALLY LOAD-BEARING STRING ON THIS SCREEN, and it has
@@ -143,12 +165,7 @@ export function describeVisitSave(args: {
   linked: LinkedLine[];
 }): VisitSaveSummary {
   const { petName, consequence, linked } = args;
-  // A FUTURE-DATED visit anchors nothing and is claimed for nothing — not the report,
-  // which skips it until the day arrives, and not Home, whose unbounded
-  // `MAX(visited_at)` WOULD adopt it and then render an absence over a window that
-  // cannot contain anything. The second is why this gates both lines rather than only
-  // the report's: a true sentence about a false window is the worse of the two.
-  const anchorsAnything = consequence.isLatest && consequence.dayRelation !== 'after_today';
+  const anchorsAnything = visitAnchorsAnything(consequence);
 
   let reportLine: string | null = null;
   if (anchorsAnything && consequence.dayRelation === 'before_today') {

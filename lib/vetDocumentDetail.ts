@@ -32,6 +32,7 @@ import {
   VET_DOCUMENT_KIND_LABELS,
   formatVetDocumentDate,
   defaultVetDocumentTitle,
+  localDayStemOf,
 } from './vetDocumentLibrary';
 
 // ── The document ─────────────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ export function buildVetDocumentDetail(
   if (!cover) return null;
 
   const kind = asKind(cover.kind);
-  const dateLabel = formatVetDocumentDate(cover.document_date ?? cover.created_at, now);
+  const dateLabel = formatVetDocumentDate(cover.document_date ?? localDayStemOf(cover.created_at), now);
   // Same rule as the library row: '' or '   ' counts as untitled, because an owner
   // who clears the Name field is asking for the default back, not for a blank.
   const owned = cover.title?.trim() ? cover.title.trim() : null;

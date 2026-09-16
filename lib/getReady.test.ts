@@ -691,6 +691,24 @@ describe('the device’s OWN intake decline is a row, and survives with no netwo
     expect(rows[0].text).toBe(HEADLINE);
     expect(rows[0].isSafety).toBe(true);
     expect(rows[0].source).toBe('intake');
+    // CUL-953 item 5. This read "from this device's record", which carried an
+    // implementation fact — this row comes from SQLite, the Signal's from a network
+    // cache — into the label on the page most likely to be read aloud in a
+    // consulting room. The local-vs-cached split is real and stays argued in the
+    // source; it is not a distinction the owner has, and "this device's" reads as a
+    // hedge about whether the record is the whole record. Plain, and identical to
+    // its siblings, because the owner meets one record.
+    expect(rows[0].sourceLabel).toBe('from the record');
+  });
+
+  it('never labels the row in implementation language', () => {
+    // The defect was one WORD of provenance vocabulary on a safety row, so the
+    // assertion is about the register rather than the exact string: no label on this
+    // page may name a device, a cache, a table or a sync state.
+    const { rows } = buildWorthRaising(input({ intakeDeclineHeadline: HEADLINE }));
+    for (const row of rows) {
+      expect(row.sourceLabel).not.toMatch(/device|cache|local|sync|database|table/i);
+    }
   });
 
   it('keeps it above the cap, like any other safety row', () => {
