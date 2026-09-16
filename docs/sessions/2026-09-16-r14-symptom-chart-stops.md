@@ -32,11 +32,25 @@ The honest attribution, which the reviewer made itself: the *prose* "stopped May
 
 **And four more.** Labels overprinted into `med start · Jundiet added · Jun 8` on the clean fixture — garbled text on a clinical figure, which the cold read called disqualifying on its own. A week whose stop preceded its start described its rules backwards, on a branch no fixture exercised. A label stated fewer marks than the week held (four stops on three days said three) — CUL-982 item 4's own defect reproduced on the new lane. And the caution's rationale *"— they overlap in time"*, true of the whole window while the chart drew only starts, is false after a withdrawal: the stop marker's entire purpose is to carve out that stretch, and the sentence's own justification told a sharp reader the prohibition lapsed there. One caveat now fires beside a drawn stop, refusing an attribution rather than making one.
 
+## Round 3 — the fix broke in the opposite direction
+
+The cold read's re-read came back **CLINIC-READY**, with none of its six still blocking and a 20-second scan that reached the right clinical conclusion and stopped short of the wrong one. The adversarial re-verification confirmed all five of its round-1 findings fixed, with a seven-mutant battery pinning every call site's flag independently and 571 marked buckets swept for label overlap. Then it broke round 2's own fix.
+
+**The ink inversion decided its side on `y >= barTop` alone.** `PAIR_STEP` is sized from the stop's head (10px), but `barW` shrinks as the window lengthens (`slot * 0.5`), so above ~14 buckets — a 99-day window — a paired rule sits *beside* the bar while its y still says "below the bar top". The whole rule body was drawn **white on white paper**: measured at 151 days, 154 of 182 marker pixels invisible, leaving a floating head and two nibs. Round 1's occluded stub reproduced in the opposite ink, and worse, because the head survives to point at nothing.
+
+`resolveScope`'s `since_visit` rung has no upper bound. A last visit fourteen weeks back is the ordinary annual-wellness case, and a same-week start and stop is exactly the taper the chart exists to show. Every marker fixture in the repo is ≤13 buckets — just under the threshold — so nothing could see it. The guard now states a bucket-count floor and asserts the fixture really is narrow enough before it checks anything.
+
+**And the head had drifted off its stem.** Round 2 pushed it down by a clearance on my guess that a bar tucked under a count digit would read as an underline on the number. The cold read measured what that produced on a max-height bar: the stem poked up *through* the head, rendering a white `+` instead of the legend's flat-topped mark, with a fleck of bar stranded above it — *"same mark, two glyphs on one chart"*. A guess about a rendering, lost to a measurement of it.
+
+**Both reviews independently asked for the withdrawal caveat to be rewritten.** It read *"One of them ending…"* directly after a caution saying *"attributed to **it alone**"* over a set of one. And at N=1 the post-withdrawal stretch is a **zero**-agent period, so *"not a single-agent period"* was true only on a technicality and read as *"something else is still running"* — which the page had just denied two clauses above. The live hazard at every N is carryover, and that was the one claim the sentence did not make, while the code comment beside it named carryover as its reason. It now states its warrant, and a withdrawn *permission* does not fire it: a treat leaving an allowed list is not an agent with an effect to outlast.
+
 ## Two things caught in the fix itself
 
 The adversarial pass found a **C-4 duplication inside the C-4 fix**: `buildConcurrentChanges` re-derived "did this row open after the trial started?" with a bare `dayNumber` comparison while `trial.ts`'s `openedAfter` already answers it and already ships as `TrialPermittedFood.addedAfterStart`. Exactly the duplication `isWindowChange`'s own docstring argues against. Now imported.
 
 And the test helper matched `<line class="([a-z]+)"`, which cannot see `class="mark on"` — so every absence assertion in the new suite would have been **green over a real leak**. Found by a mutation, not by reading.
+
+Round 3 added two more of the same family, both C-38 cheques written inside the fix. The comment paying for a dropped chart label claimed the legend carries every mark *"in the same order"* — false, because a change marked at both ends is **one** legend entry carrying two dates, so three marks can sit under two entries and a reader counting to the third finds nothing. And the shared `openedAfter` call was justified as *"the timezone-aware one"* — it is not, in practice: `localDayIndexOf` has a `YYYY-MM-DD` fast path that never consults the zone, and both columns behind the call are `DATE NOT NULL`, so the argument is inert. The change is right for a different reason (C-4), and an unearned justification is how the next edit preserves the wrong constraint.
 
 ## Measured, not argued
 
@@ -61,6 +75,7 @@ And the test helper matched `<line class="([a-z]+)"`, which cannot see `class="m
 | CUL-1027 | The count's unit vs the chart's. |
 | CUL-1028 | The unobserved-week ghost bar fails the same 1-bit fax test the stop glyph did — and B-532's whole point is that "not logged" must never read as a measured zero. |
 | CUL-1029 | The halves arrow invites a comparison across unequal denominators. |
+| CUL-1032 | The mirror of the endpoint this PR fixed — an ad-hoc course's START is the first dose *in window*, so a drug the animal was already on draws "started" on the window's own first day. Its parity with the count currently holds *because of* that defect, which is what makes it its own change. |
 
 CUL-860 (splitting the trend halves at the intervention date) stays out of scope by the issue's own §6.
 
@@ -69,3 +84,5 @@ CUL-860 (splitting the trend halves at the intervention date) stays out of scope
 Three of the six blocking findings share one shape: **a channel that carries a distinction in the renderer, and loses it in the artifact.** The dotted rule that vanished in a fax while the dashed one survived. The marker painted out by a bar. The label that overprinted its neighbour. None was visible from the code, from the tests, or from a greyscale render — all three needed the page rasterised and then degraded. The report's stated bar is a photocopy, and greyscale-proofing does not test for it.
 
 The fourth, `endIsDeclared`, is a different shape and the more dangerous one: **the glyph could not hedge.** Prose had been carrying an overstatement quietly for months ("stopped" over a logging fact), and drawing it is what made it a claim. A visual element has no room for "as far as the record shows", so promoting a fact to a glyph is a decision about whether the fact is certain enough to be stated flatly.
+
+And the fifth arrived in round 3, which is the one I would most want a future session to take: **the fix for a rendering defect is itself a rendering, and inherits the same blindness.** Inverting the ink to rescue a marker from a dark bar introduced a marker invisible against white paper, on a window length no fixture had — and it was strictly worse than what it replaced. The tell was available and I did not look for it: the inversion's condition named only one axis, while the geometry it was correcting varies on two. When a fix is expressed in the same medium as the bug, ask what its own failure mode looks like before shipping it, and build the fixture at the size the existing ones do not reach.
