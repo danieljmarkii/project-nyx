@@ -72,6 +72,10 @@ import type {
   NoticedBlock,
   NoticedWordCount,
 } from './report.ts'
+// The one intake TALLY (CUL-980) — same counting, same scale order, same treatment of a rating the
+// build has not been taught about. Imported rather than restated so the per-format trial line and
+// appendix E's intake cells can never order, or know about, a different set of ratings.
+import { intakeBreakdownOf } from './report.ts'
 import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -359,6 +363,29 @@ const STOOL_COLOUR_LABEL: Record<string, string> = {
   black_tarry: 'black / tarry',
   grey_pale: 'pale / clay-coloured',
   red_streaked: 'red-streaked',
+}
+
+/**
+ * vomit_colour enum (migration 013) → plain label, lowercased for mid-sentence use.
+ *
+ * `black_coffee_ground` KEEPS BOTH WORDS, where the app's own chip says just "Black". The chip is
+ * shortened for a 44pt control an owner taps; this line is read by a clinician standing beside a
+ * caveat that names coffee-ground blood in the next sentence, and dropping the second word there
+ * hides the appearance the caveat is about. Naming it in full errs toward escalation, which is the
+ * permitted direction — and it stays a description of the PHOTO, never a blood finding: the
+ * authoritative blood field is its own present-only column two paragraphs down.
+ */
+const VOMIT_COLOUR_LABEL: Record<string, string> = {
+  clear: 'clear',
+  white: 'white',
+  yellow: 'yellow',
+  green: 'green',
+  brown: 'brown',
+  tan: 'tan',
+  pink_red: 'pink / red',
+  dark_red: 'dark red',
+  black_coffee_ground: 'black / coffee-ground',
+  mixed: 'mixed',
 }
 
 /** A grayscale ramp for proportion-bar segments — NEVER colour (§5.8). Cycles if >6. */
@@ -3740,13 +3767,21 @@ function atAGlance(snap: ReportSnapshot): string {
   // number and so name no span, by design. "Not window counts" is true on all six,
   // including the ones that are not counts at all, and it is the only thing the
   // heading actually needs to stop: a reader applying the window denominator here.
+  //
+  // …AND IT NAMES THE TILES BY SCOPE, NOT BY TITLE (CUL-980). It used to enumerate "coverage &
+  // off-diet", which was the list of trial-scoped cells at the time; the row is ranked now, so
+  // coverage appears only when there is no weight to print and intake joins the trial-scoped set
+  // when a trial diet has ratings. An enumeration that has to be re-derived every time the row
+  // changes is an enumeration that will be wrong after the next change, and the reader only needs
+  // to be stopped from applying the window denominator — which the class does, on every branch.
   const aside = snap.diet.trial
-    ? `over the ${num(ag.windowDays)}-day window &mdash; except coverage &amp; off-diet, which are not window counts`
+    ? `over the ${num(ag.windowDays)}-day window &mdash; except the trial-scoped tiles, which are not window counts`
     : `symptom trajectory over the window`
   return `
   <div class="sec">
     <h2>At a glance <span class="aside">${aside}</span></h2>
     <div class="tiles">${tiles.join('')}</div>
+    ${intakeLine(snap)}
     ${noticedLine(snap)}
     ${noticedGraph(snap)}
   </div>`
@@ -4194,52 +4229,25 @@ function trialTiles(snap: ReportSnapshot): string[] {
     ),
   )
 
-  // Tile 2 — COVERAGE (§5.1). "How completely was this tracked?" — distinct days in
-  // the trial's overlap range carrying a logged meal, over days elapsed in the SAME
-  // range. Treats are excluded from the numerator: 82% of live feedings are treats
-  // and 15.7% of covered days are treat-only, so a "days with food logged" count is
-  // clearable entirely by treat data.
+  // Tile 2 — INTAKE. THE HEADLINE ROW IS RANKED NOW, AND THIS SLOT IS WHAT IT COST (CUL-980).
+  //
+  // The row had four slots and spent one on a dash for a weight never taken and one on a coverage
+  // figure the page states three more times (the trial block's "Meals logged on N of N days", the
+  // symptoms-vs-logging split, and the interpretability line that names it). Meanwhile a cat who
+  // had never once finished the wet half of her prescription diet — twelve servings, twelve left
+  // — had that fact nowhere on page 1, and the single meal she refused outright reached one table
+  // on page 12. A prescription diet going uneaten is both a welfare question and the reason the
+  // trial cannot be read, so it outranks both of the cells it displaces.
+  //
+  // WHAT THE RANKING IS. symptom events · intake · exposures, then weight IF it has a number to
+  // print and the trial's coverage otherwise — so a report with a real weight trend keeps the
+  // %-of-body-weight cell (which is the most action-forcing number on a refusing cat's page) and
+  // a report with no weigh-ins spends the slot on coverage instead of on an em dash. The weight
+  // PROMPT is not lost and is deliberately not restated here: `weightBlock` renders "No home
+  // weigh-ins recorded…" as a line immediately above this row, and a second copy under the tiles
+  // would be the one-page-two-renderings defect this file keeps having to undo.
   const intake = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
-  if (snap.trial?.coverage) {
-    // TWO WORDS THE COLD READ CAUGHT. "Days with a meal logged" is one word from "days
-    // the cat ate", and on the refused-trial artifact the tile read 19/19 over an animal
-    // that ate almost nothing — coverage deliberately does not read intake (§5.1: a bowl
-    // put down and refused is a day the owner kept the record), so the label has to say
-    // so. And the denominator is the trial's LOGGED SPAN, not its target length, so the
-    // range is named rather than left to collide with "of a 56-day window" elsewhere.
-    const span = h(fmtRange(snap.trial.rangeStartDate, snap.trial.rangeEndDate))
-    tiles.push(
-      tile(
-        `${snap.trial.coverage.daysLogged}`,
-        `<small>&nbsp;/&nbsp;${snap.trial.coverage.daysElapsed}</small>`,
-        `Days a meal was logged &middot; ${span}<br/>record coverage &mdash; not intake, not a clean-elimination count`,
-      ),
-    )
-  } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'consecutive_low') {
-    tiles.push(
-      tile(
-        `${intake.daysBelowBaseline}`,
-        `<small>&nbsp;d</small>`,
-        `Consecutive days below intake baseline<br/>a health signal, not preference`,
-      ),
-    )
-  } else if (snap.diet.mealCompletion) {
-    // A proper finished/rated denominator (avoids a bare, denominator-less count that
-    // clashes with the feeding line, cold-read nit). When an intake flag is present the
-    // decline itself leads the safety band — the tile points there rather than restating it.
-    const mc = snap.diet.mealCompletion
-    tiles.push(
-      tile(
-        `${mc.finishedMeals}`,
-        `<small>&nbsp;/&nbsp;${mc.ratedMeals}</small>`,
-        `Meals fully eaten (rated meals only)${intake ? '<br/>recent decline flagged above' : ''}`,
-      ),
-    )
-  } else if (intake && intake.kind === 'intake_decline') {
-    tiles.push(tile('—', '', `A normally-eaten food was refused<br/>a health signal — see the flags above`))
-  } else {
-    tiles.push(tile('—', '', `No rated meals in this window`))
-  }
+  tiles.push(trialIntakeTile(snap, intake))
 
   // Tile 3 — EXPOSURES, the OTHER §5.1 fact, on its own denominator. Coverage and
   // adherence are two questions ("how completely was this tracked?" vs "was the
@@ -4248,8 +4256,242 @@ function trialTiles(snap: ReportSnapshot): string[] {
   // they never share a denominator: coverage counts DAYS WITH MEALS, exposure counts
   // ALL FEEDINGS, and a treat-only day is in one and not the other.
   tiles.push(snap.trial ? trialExposureTile(snap.trial) : coverageTile(ag))
-  tiles.push(weightTile(snap))
+
+  // Tile 4 — weight, or the coverage cell it displaced when there is no weight to print.
+  tiles.push(weightTile(snap) ?? trialCoverageTile(snap) ?? coverageTile(ag))
   return tiles
+}
+
+/**
+ * The intake tile, in rank order — a FIRED health signal, then the trial diet, then the window.
+ *
+ * Branch 1 is the intake-decline flag and it leads because a detector that fired is a finding and
+ * the rest of this function is a tally. It was previously unreachable on a trial report (the
+ * coverage cell held this slot and returned first), so a consecutive-low decline could fire, lead
+ * the safety band, and leave the headline row showing a coverage ratio.
+ *
+ * Branch 2 is CUL-980's: the trial diet's own rated meals, on the trial's evidence range. Its
+ * numbers come from `trialDietIntake` — the same derivation the line under the tiles prints, so
+ * the cell and the sentence four lines below it cannot state different totals. The B-532 lesson
+ * (one page, two renders of one number, the reassuring one in the prominent slot) applied before
+ * it has a chance to happen rather than after.
+ *
+ * Branches 3–5 are the previous behaviour, unchanged, for every report with no trial-diet ratings.
+ */
+function trialIntakeTile(snap: ReportSnapshot, intake: SafetyFlag | undefined): string {
+  if (intake && intake.kind === 'intake_decline' && intake.trigger === 'consecutive_low') {
+    return tile(
+      `${intake.daysBelowBaseline}`,
+      `<small>&nbsp;d</small>`,
+      `Consecutive days below intake baseline<br/>a health signal, not preference`,
+    )
+  }
+  const ti = trialDietIntake(snap)
+  if (ti && ti.ratedMeals > 0) {
+    // "FULLY EATEN", NEVER "FINISHED", AND THE TWO ARE NOT THE SAME BAR. Page 1 counts
+    // `intakeRating === 'all'`; `lib/dietTrial.feedingWasFinished` — the predicate behind the
+    // trial block's "38 of 38 left unfinished" — counts most-OR-all. They disagree by exactly the
+    // "ate most ×11" this tile exists to surface, so this cell takes page 1's predicate and page
+    // 1's words, and the word "finished" stays on the sentence that owns the other bar (C-3: the
+    // predicate the neighbouring sentence uses).
+    return tile(
+      `${ti.fullyEaten}`,
+      `<small>&nbsp;/&nbsp;${ti.ratedMeals}</small>`,
+      `Trial-diet meals fully eaten &middot; ${h(ti.span)}<br/>rated meals only &mdash; each format below`,
+    )
+  }
+  if (snap.diet.mealCompletion) {
+    // A proper finished/rated denominator (avoids a bare, denominator-less count that
+    // clashes with the feeding line, cold-read nit). When an intake flag is present the
+    // decline itself leads the safety band — the tile points there rather than restating it.
+    const mc = snap.diet.mealCompletion
+    return tile(
+      `${mc.finishedMeals}`,
+      `<small>&nbsp;/&nbsp;${mc.ratedMeals}</small>`,
+      `Meals fully eaten (rated meals only)${intake ? '<br/>recent decline flagged above' : ''}`,
+    )
+  }
+  if (intake && intake.kind === 'intake_decline') {
+    return tile('—', '', `A normally-eaten food was refused<br/>a health signal — see the flags above`)
+  }
+  return tile('—', '', `No rated meals in this window`)
+}
+
+/**
+ * The trial diet's intake, per allowed FORMAT — one derivation, two renders (CUL-980).
+ *
+ * A prescription diet is routinely stocked as a wet AND a dry, which is two `primary_diet` rows on
+ * one trial, and every aggregate the report prints sums them. A cat who eats the dry and never
+ * once finishes the wet therefore reads as eating: "27 of 45 rated meals fully eaten" is true,
+ * and "12 of 12 of the wet left unfinished" is the sentence a vet needs — the shortfall's SHAPE,
+ * not its total. `lib/dietTrial.ts`'s own header names this as the reason food identity matters.
+ *
+ * DESCRIPTIVE, WITH NO FLOOR, AND THAT IS THE POINT. The relative reduced-intake detector staying
+ * quiet is a statement about a THRESHOLD, not about the record — the report already discloses that
+ * correctly four pages later — so nothing here waits on a detector, a floor or a model. It is a
+ * count with a denominator. CUL-60's refusal floors are not consulted and not touched.
+ *
+ * A format with no RATED meals is dropped rather than printed at zero: "0 rated meals" is a fact
+ * about the owner's tapping, and beside a format that was eaten it reads as a format that was
+ * never offered. The single-format trial therefore renders one entry, never an empty second.
+ *
+ * The span is the trial's EVIDENCE range, because that is the range `trial.ts` classifies over —
+ * not the coverage range the tile beside it names, which is clipped at both ends. The two are
+ * never conflated and each cell prints its own (CUL-746).
+ */
+interface TrialFormatIntake {
+  label: string
+  ratedMeals: number
+  fullyEaten: number
+  breakdown: Array<{ rating: string; count: number }>
+}
+
+interface TrialDietIntake {
+  formats: TrialFormatIntake[]
+  ratedMeals: number
+  fullyEaten: number
+  span: string
+}
+
+function trialDietIntake(snap: ReportSnapshot): TrialDietIntake | null {
+  const t = snap.trial
+  if (!t) return null
+  const formats: TrialFormatIntake[] = t.permittedFoods
+    .filter((f) => f.role === 'primary_diet')
+    .map((f) => ({
+      label: f.label,
+      ratedMeals: f.intakeRatings.length,
+      // `=== 'all'`, the predicate page 1's "N of M rated meals fully eaten" uses — NOT
+      // `feedingWasFinished`, which counts most-or-all and would score eleven "ate most" servings
+      // of a never-finished diet as finished.
+      fullyEaten: f.intakeRatings.filter((r) => r === 'all').length,
+      breakdown: intakeBreakdownOf(f.intakeRatings),
+    }))
+    .filter((f) => f.ratedMeals > 0)
+  if (formats.length === 0) return null
+  return {
+    formats,
+    ratedMeals: formats.reduce((a, f) => a + f.ratedMeals, 0),
+    fullyEaten: formats.reduce((a, f) => a + f.fullyEaten, 0),
+    span: fmtRange(t.evidenceStartDate, t.evidenceEndDate),
+  }
+}
+
+/**
+ * The page-1 intake line under the headline tiles — the per-format shape, and the refusal.
+ *
+ * TWO FACTS, ONE BLOCK, AND THEY HAVE DIFFERENT SCOPES. The formats are the trial diet's, counted
+ * over the trial's evidence range; the refusal is over the report window's rated meals, the same
+ * 45 page 1 already prints. Each names its own denominator where the reader meets it (C-3) rather
+ * than sharing one heading's, which is how a trial-scoped count last read as a window count.
+ *
+ * THE PARTITION (C-3 / CUL-746). The per-format counts are a strict SUBSET of that 45 by
+ * construction — `trial.ts` filters the same `windowMeals` array on the same `foodType === 'meal'`
+ * and non-null `intakeRating`, then narrows by the classifier — so "these are 33 of the 45" is
+ * arithmetic, not a claim. What the line does NOT say is what the other twelve were: that set
+ * mixes meals outside the trial's dated range with meals off its list, and the record cannot
+ * settle which per row. The exposure tile beside it answers the off-diet question with its own
+ * predicate; this line does not answer it twice, worse.
+ *
+ * THE ASYMMETRY (clinical-guardrails Pattern 1). Nothing here congratulates. A record where every
+ * trial serving was fully eaten renders the same counts in the same shape with no affirmative
+ * sentence appended, and the refusal sentence is PRESENT-only — at zero it is absent, never "0
+ * refused", because a zero there is reassurance drawn from an absence on the one field most worth
+ * escalating on. Emphasis does not vary with the numbers either: bolding the bad row would be a
+ * verdict rendered in typography, and the vet draws the conclusion.
+ */
+function intakeLine(snap: ReportSnapshot): string {
+  const ti = trialDietIntake(snap)
+  const mc = snap.diet.mealCompletion
+  const sentences: string[] = []
+
+  if (ti) {
+    const items = ti.formats.map((f) => {
+      // The tally is omitted only when it would restate the count beside it — a format whose every
+      // rating is "ate it all" already says so in "21 of 21 fully eaten". Anything else prints in
+      // full: the eleven "ate most" and the one "ate some" behind a never-finished wet diet ARE
+      // the finding, and a mode word in their place deleted them once already (B-532).
+      const onlyAll = f.breakdown.length === 1 && f.breakdown[0].rating === 'all'
+      const tally = onlyAll
+        ? ''
+        : ` (${f.breakdown.map((b) => `${h(intakeLabel(b.rating).toLowerCase())} &times;${num(b.count)}`).join(' &middot; ')})`
+      return `<b>${h(f.label)}</b> &mdash; ${num(f.ratedMeals)} rated meal${
+        f.ratedMeals === 1 ? '' : 's'
+      }, ${num(f.fullyEaten)} fully eaten${tally}`
+    })
+    sentences.push(`Trial diet by format, ${h(ti.span)}: ${items.join(' &middot; ')}.`)
+  }
+
+  // PRESENT-ONLY, AND SEPARATE FROM THE FORMATS ABOVE. A refused meal is a distinct outcome from
+  // "ate some" and until now it reached nothing but appendix E — the word appeared once in
+  // eighteen pages, in a table on page 12. It is counted over the window's rated meals, so it
+  // renders on a monitoring report too: the line lives under the tiles on every shape, and there
+  // is no honest reason a refusal would be worth stating only when a trial is running.
+  // NEVER "1 of the 1" (§6.11's rule, as the Noticed line already applies it): a single sample
+  // dressed as a ratio reads as a rate. At a denominator of one the fact is stated as a fact.
+  const refusedBit = !mc || mc.refusedMeals === 0
+    ? ''
+    : mc.ratedMeals === 1
+      ? `<b>The one rated meal in this window is recorded as refused.</b>`
+      : `<b>${num(mc.refusedMeals)} of the ${num(mc.ratedMeals)} rated meals in this window ${
+          mc.refusedMeals === 1 ? 'is' : 'are'
+        } recorded as refused.</b>`
+  if (refusedBit) sentences.push(refusedBit)
+  if (sentences.length === 0) return ''
+
+  // THE PARTITION CLAUSE, AND ONLY WHEN THERE IS SOMETHING TO RECONCILE. At equality every rated
+  // meal in the window is already itemised above, so the sentence would restate the denominator a
+  // reader just read — on the refused artifact it printed "34 of the 38 rated meals … refused"
+  // and "these are 38 of the 38 rated meals" back to back. It is spelled out rather than leaning
+  // on "those": a pronoun here binds to whichever plural rendered last, which is the refusal
+  // count on one branch and nothing at all on another.
+  const partition =
+    ti && mc && ti.ratedMeals < mc.ratedMeals
+      ? `The per-format counts above cover ${num(ti.ratedMeals)} of the ${num(
+          mc.ratedMeals,
+        )} rated meals in this window. `
+      : ''
+  // THE GRAZER'S QUALIFIER, COMPOSED WITH THE COUNT RATHER THAN REPLACING IT (Sam's lens; the
+  // B-532 round-7 resolution of R2-3). "0 fully eaten" over a cat with a bowl down all day is a
+  // true statement about her rated meals and an incomplete one about her intake, and the earlier
+  // fix for that — dropping the number for an adverb — turned out to run vague only in the
+  // reassuring direction. So the counts stay and the limitation sits beside them, in B-040's own
+  // verbatim words rather than a second phrasing of them.
+  const freeFed = snap.diet.intakeNotDirectlyObserved
+    ? `Food was also available free-choice in this window. <b>Intake not directly observed.</b> `
+    : ''
+  const note = `${partition}${freeFed}The intake recorded against every food is in appendix&nbsp;E.`
+  return `
+    <div class="subline">
+      <div class="subline-h">Intake recorded</div>
+      <div class="subline-counts">${sentences.join(' ')}</div>
+      <div class="subline-note">${note}</div>
+    </div>`
+}
+
+/**
+ * The trial's record-coverage cell (§5.1) — "how completely was this tracked?".
+ *
+ * TWO WORDS THE COLD READ CAUGHT. "Days with a meal logged" is one word from "days the cat ate",
+ * and on the refused-trial artifact the tile read 19/19 over an animal that ate almost nothing —
+ * coverage deliberately does not read intake (§5.1: a bowl put down and refused is a day the owner
+ * kept the record), so the label has to say so. And the denominator is the trial's LOGGED SPAN,
+ * not its target length, so the range is named rather than left to collide with "of a 56-day
+ * window" elsewhere.
+ *
+ * It counts over the trial's COVERAGE range — clipped at both ends — which is a different span
+ * from the evidence range the intake and exposure cells count over. The two must never be
+ * conflated (CUL-746), which is why each cell renders its own dates rather than inheriting the
+ * heading's.
+ */
+function trialCoverageTile(snap: ReportSnapshot): string | null {
+  if (!snap.trial?.coverage) return null
+  const span = h(fmtRange(snap.trial.rangeStartDate, snap.trial.rangeEndDate))
+  return tile(
+    `${snap.trial.coverage.daysLogged}`,
+    `<small>&nbsp;/&nbsp;${snap.trial.coverage.daysElapsed}</small>`,
+    `Days a meal was logged &middot; ${span}<br/>record coverage &mdash; not intake, not a clean-elimination count`,
+  )
 }
 
 /**
@@ -4386,7 +4628,9 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
       tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Entries, first &rarr; last half<br/>${sub}`),
     )
   } else {
-    tiles.push(weightTile(snap))
+    // The monitoring row keeps four filled cells whatever the weight record holds, so a blank
+    // weight still draws its cell here — this set has nothing better to put in the slot.
+    tiles.push(weightTile(snap) ?? weightBlankTile(snap))
   }
 
   // Tile 3 — days since the most recent episode. ADVERSARIAL GUARD (spec §5.3 / this PR's gate):
@@ -4430,11 +4674,18 @@ function tileHtml(valueHtml: string, label: string): string {
   return `<div class="tile"><div class="v num">${valueHtml}</div><div class="l">${label}</div></div>`
 }
 
-/** §3.4 weight tile (trend delta / single reading / empty) — shared by both tile sets. */
-function weightTile(snap: ReportSnapshot): string {
-  if (snap.weight.isEmpty) {
-    return tile('—', '', `Weight<br/>no weigh-ins yet — a useful trend to log`)
-  }
+/**
+ * §3.4 weight tile (trend delta / single reading) — shared by both tile sets.
+ *
+ * NULL WHEN THERE IS NO NUMBER TO PRINT, which is how the trial row decides whether this cell is
+ * worth a quarter of the headline (CUL-980). Returning the blank cell from here too would put that
+ * decision in two places, and the caller would then be re-deriving "is it blank" from the same
+ * three branches — the mirrored-predicate shape (C-34) that ends with one copy learning about a
+ * state the other does not. One function answers "is there a reading"; `weightBlankTile` answers
+ * "what does the empty cell say", and only the caller that still wants a cell asks it.
+ */
+function weightTile(snap: ReportSnapshot): string | null {
+  if (snap.weight.isEmpty) return null
   const tr = snap.weight.trend
   if (tr && tr.readingCount >= 2 && tr.deltaKg !== null) {
     const d = tr.deltaKg
@@ -4463,8 +4714,22 @@ function weightTile(snap: ReportSnapshot): string {
   // caveat, so a months-old weight would read as current in the 60-second scan (code-review find).
   const kg = tr?.latestKg ?? null
   return kg === null
-    ? tile('—', '', `Weight<br/>no reading in this window`)
+    ? null
     : tile(`${kg.toFixed(1)}`, `<small>&nbsp;kg</small>`, `Latest weigh-in<br/>single reading — no trend yet`)
+}
+
+/**
+ * The weight cell when there is no reading to print — two states, kept distinct.
+ *
+ * "No weigh-ins recorded" and "none inside this window" are different facts about the record and a
+ * vet reads them differently: the second says a weight exists and the Weight block above names its
+ * date. The copy is the FACT and nothing else (CUL-857) — "a useful trend to log" was the app
+ * addressing the owner on the vet's page, and the prompt to log one lives in the app.
+ */
+function weightBlankTile(snap: ReportSnapshot): string {
+  return snap.weight.isEmpty
+    ? tile('—', '', `Weight<br/>no weigh-ins recorded`)
+    : tile('—', '', `Weight<br/>no reading in this window`)
 }
 
 /** §3.4 logging-coverage tile — shared by both tile sets. */
@@ -4825,6 +5090,16 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   // and watery are 2–2 is a false majority (cold-read).
   const consistBit = predominantBit(p.consistencyDistribution, 'Consistency, where legible,', (k) => k.replace(/_/g, ' '))
 
+  // COLOUR, TALLIED — the field the box was aggregating everything BUT (CUL-981). It sits here,
+  // beside the blood caveat, because that is the sentence a clinician reads immediately before
+  // reaching for colour; scattered across appendix A it had to be tallied by eye. A tally, never a
+  // finding: no rank, no flag, no colour-derived verdict, and nothing downstream reads it.
+  const colourBit = distributionBit(
+    p.colourDistribution,
+    'Colour, where legible:',
+    (k) => VOMIT_COLOUR_LABEL[k] ?? k.replace(/_/g, ' '),
+  )
+
   // The four-state denominator disclosure (§5.10) — kept distinct, never collapsed.
   const noPhoto = p.totalIncidents - p.withAnalysis
   const stateBits: string[] = []
@@ -4835,7 +5110,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
   const denom = `Across ${p.totalIncidents === 1 ? 'the' : 'all'} ${num(p.totalIncidents)} vomiting incident${
     p.totalIncidents === 1 ? '' : 's'
-  }; ${legibleReadCount(assessed)} a legible AI read${stateDisclosure}.${consistBit} Per-incident detail in appendix&nbsp;A.`
+  }; ${legibleReadCount(assessed)} a legible AI read${stateDisclosure}.${consistBit}${colourBit} Per-incident detail in appendix&nbsp;A.`
 
   // COLLAPSE THE EMPTY BLOCK TO A LINE (B-502). With nothing photographed the section said
   // "no photo" three ways — a lead describing a read that never happened, a chart-shaped grey
@@ -4901,7 +5176,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   return `
   <div class="sec">
     <h2>Vomit characteristics <span class="aitag">Automated photo analysis &middot; owner-reviewable</span></h2>
-    <p class="note lead">Colour, contents, and consistency are read automatically from the photo the owner took of each incident, then aggregated below. Each read is shown for the owner to confirm; none carries a diagnosis or a verdict on a single incident.</p>
+    <p class="note lead">Colour, contents, and consistency are read automatically from the photo the owner took of each incident, then aggregated below &mdash; a read the owner has corrected counts the same as one they have not. Each read is shown for the owner to confirm; none carries a diagnosis or a verdict on a single incident.</p>
     <div class="pheno">
       ${body}
       ${sideHtml}
@@ -4926,6 +5201,27 @@ function predominantBit(
   return tied.length === 1
     ? ` ${lead} was most often ${h(tied[0])}.`
     : ` ${lead} had no single predominant reading (${h(tied.slice(0, 3).join(', '))}).`
+}
+
+/**
+ * The same distribution, TALLIED rather than ranked — `lead: a ×6 · b ×1 · c ×1.`
+ *
+ * WHY NOT `predominantBit` (CUL-981). Its sibling above states a majority, which is a claim about
+ * which reading dominates; the colour tally is explicitly forbidden from ranking, interpreting or
+ * flagging, and "was most often tan" is a ranking with the other three readings deleted. A vet
+ * reaching for colour after the blood caveat wants the whole spread — one green in nine is the
+ * datum, and it is exactly the datum a modal sentence drops. So this prints every entry with its
+ * count, ordered by count and then by key so the same distribution always renders identically.
+ *
+ * It states no denominator of its own: the caller's neighbouring sentence already names the
+ * assessed set, and a second denominator here would be a second population for one reader to
+ * reconcile (C-3 — the scope belongs where the reader meets the claim, once). Empty ⇒ ''.
+ */
+function distributionBit(dist: Record<string, number>, lead: string, label: (k: string) => string): string {
+  const entries = Object.entries(dist).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  if (entries.length === 0) return ''
+  const bits = entries.map(([k, n]) => `${h(label(k))} &times;${num(n)}`).join(' &middot; ')
+  return ` ${lead} ${bits}.`
 }
 
 /**
@@ -7629,10 +7925,14 @@ const STYLE = `
      LABELS, NO COLOUR ON A DAY (§5 rule 8): every mark here is --ink / --muted /
      --faint, so the strip and the bars read identically in a B&W photocopy, which is
      what most of these documents become. Nothing below encodes a datum in colour. */
-  .noticed-line{margin-top:14px;border-top:1px solid var(--hair);padding-top:11px;}
-  .noticed-h{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);}
-  .noticed-counts{font-size:12.5px;line-height:1.55;margin-top:4px;}
-  .noticed-note{font-size:11px;line-height:1.5;color:var(--muted);margin-top:4px;}
+  /* The .subline* family is the same titled block under the tiles, named for its POSITION rather
+     than for Noticed, so a second one (the CUL-980 intake line) shares the treatment instead of
+     copying four declarations that then drift apart. Noticed keeps its names; nothing is renamed.
+     No backticks in here: this stylesheet is a template literal, and one ends it. */
+  .noticed-line,.subline{margin-top:14px;border-top:1px solid var(--hair);padding-top:11px;}
+  .noticed-h,.subline-h{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);}
+  .noticed-counts,.subline-counts{font-size:12.5px;line-height:1.55;margin-top:4px;}
+  .noticed-note,.subline-note{font-size:11px;line-height:1.5;color:var(--muted);margin-top:4px;}
   .noticed-graph{margin-top:11px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
   /* Below the bars' floor there is one column, so the strip gets the full width instead
      of 28 cells in half a page beside an empty white half. */
@@ -7842,7 +8142,7 @@ const STYLE = `
        second safety flag brought the LEGEND within 6px of the same fold. A 28-cell glyph
        row on one sheet with its key on the next is unreadable, and it survived only by
        luck. (The cold re-read, which rendered to A4 rather than estimating.) */
-    tr,.kv,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard,.noticed-line,.noticed-graph,.noticed-conflict,.nb,.ns{page-break-inside:avoid;}
+    tr,.kv,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard,.noticed-line,.subline,.noticed-graph,.noticed-conflict,.nb,.ns{page-break-inside:avoid;}
     /* CUL-993 A.1 — a section's tail (its last block + its footer, see sectionTail) is one
        unbreakable unit, so the running footer can never open a sheet alone. The break-before
        on .foot is the belt: Blink honours it, WebKit (the device PDF) does not, which is why

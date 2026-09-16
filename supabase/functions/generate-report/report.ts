@@ -1511,6 +1511,20 @@ export interface VomitPhenotype {
   /** Primary contents category per assessed incident; the counts sum to assessedCount. */
   contentsMix: Record<VomitContentCategory, number>
   consistencyDistribution: Record<string, number>
+  /**
+   * Colour distribution over ASSESSED incidents; 'unsure' excluded (no legible colour) — the
+   * stool sibling's field, one enum over (CUL-981).
+   *
+   * THE PIPELINE ALREADY READ THIS AND THE AGGREGATE SKIPPED THE COLUMN. `event_ai_analysis.colour`
+   * is populated on every legible vomit read and reached only the per-incident rows in appendix A,
+   * so a vet tallied "tan, tan, green, tan, yellow" by eye from a page of rows while the box
+   * directly above did contents and consistency for them — in the same box that raises the blood
+   * question ("digested (coffee-ground) blood photographs poorly"), which is the one place colour
+   * is worth most. DESCRIPTIVE ONLY: nothing keys an escalation off a colour. The authoritative
+   * blood field is `bloodPresent`, present-only and derived from the owner-editable structured
+   * column (clinical-guardrails Pattern 9) — a colour is never a second, weaker route to that flag.
+   */
+  colourDistribution: Record<string, number>
   /** PRESENT-only (§5.9) — arrays of the incidents where it was actually seen. Empty ⇒ render a de-weighted limitation note, NEVER "0 of N". */
   bloodPresent: Array<{ eventId: string; occurredAt: string; kind: 'fresh_red' | 'coffee_ground' }>
   foreignPresent: Array<{ eventId: string; occurredAt: string; note: string | null }>
@@ -1743,7 +1757,23 @@ export interface DietSummary {
    * a grazing cat's discrete meals read "typically partly eaten" instead of a scary "0 of N fully
    * eaten." Descriptive texture, never a scored completion figure and never reassurance.
    */
-  mealCompletion: { ratedMeals: number; finishedMeals: number; rate: number; intakeMode: IntakeRating | null } | null
+  mealCompletion: {
+    ratedMeals: number
+    finishedMeals: number
+    /**
+     * Rated meals the owner recorded as `refused` — PRESENT-only at the render (CUL-980).
+     *
+     * A distinct outcome from "ate some", and until now it reached nothing but appendix E: the
+     * word "Refused" appeared once in an eighteen-page document, in a table on page 12. It is a
+     * count over the same 45 as the two fields above, so it can be stated beside them without a
+     * second denominator. Zero is never rendered — "0 refused" is the negative claim about the
+     * world §5.2 removes from every surface, and here it would be reassurance drawn from an
+     * absence (clinical-guardrails Pattern 1) on the one field most worth escalating on.
+     */
+    refusedMeals: number
+    rate: number
+    intakeMode: IntakeRating | null
+  } | null
   /**
    * Grouped rated-meal items (#7/#8) — the actual foods eaten AS MEALS (e.g. a wet diet),
    * grouped by food item like Appendix B treats: label · protein · feeding count · date span ·
@@ -2481,8 +2511,14 @@ function strictPluralityIntake(ratings: IntakeRating[]): IntakeRating | null {
  * The intake scale, most-eaten first. Kept here rather than imported from detection's
  * `INTAKE_SCORE` because this is a RENDER ORDER, not a score: the report never scores
  * intake, and a shared constant would invite one to be derived from the other.
+ *
+ * EXPORTED, NOT MIRRORED (CUL-980). The per-format trial-intake line reads the same order, and a
+ * second copy of these five strings in the renderer would be the C-34 shape — same value, same
+ * question, two homes — waiting for one of them to gain a rating the other does not know about.
+ * The import runs render → report, the direction that already exists; `trial.ts` cannot take it
+ * (report imports trial), which is why that file returns its ratings raw.
  */
-const INTAKE_SCALE: readonly IntakeRating[] = ['all', 'most', 'some', 'picked', 'refused']
+export const INTAKE_SCALE: readonly IntakeRating[] = ['all', 'most', 'some', 'picked', 'refused']
 
 /**
  * Did the owner record this meal as LEFT — picked at or refused (CUL-875, §5 rule 12)?
@@ -2509,8 +2545,8 @@ function leftMostOfIt(rating: IntakeRating): boolean {
  * feedings are omitted — a "0 refused" cell is a negative claim, and this report does not
  * make those.
  */
-function intakeBreakdownOf(ratings: IntakeRating[]): Array<{ rating: IntakeRating; count: number }> {
-  const counts = new Map<IntakeRating, number>()
+export function intakeBreakdownOf(ratings: readonly string[]): Array<{ rating: IntakeRating; count: number }> {
+  const counts = new Map<string, number>()
   for (const r of ratings) counts.set(r, (counts.get(r) ?? 0) + 1)
   const out: Array<{ rating: IntakeRating; count: number }> = []
   for (const r of INTAKE_SCALE) {
@@ -2520,8 +2556,14 @@ function intakeBreakdownOf(ratings: IntakeRating[]): Array<{ rating: IntakeRatin
   // A rating outside the known scale (a future enum value) is rendered rather than dropped:
   // a value this file has not been taught about must never become a silent blank on a
   // clinical page. Appended after the scale, in first-seen order.
+  //
+  // THE PARAMETER IS WIDENED TO `string[]` FOR EXACTLY THAT BRANCH (CUL-980). The trial's
+  // per-format ratings arrive from `trial.ts` as raw column values, and they are the same
+  // population this already tolerates — so they go through this function rather than a second
+  // copy of it in the renderer. The cast below is where the widening is paid for, at the one
+  // place the function already documents as a value it has not been taught about.
   for (const [r, c] of counts) {
-    if (!INTAKE_SCALE.includes(r)) out.push({ rating: r, count: c })
+    if (!(INTAKE_SCALE as readonly string[]).includes(r)) out.push({ rating: r as IntakeRating, count: c })
   }
   return out
 }
@@ -3180,6 +3222,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       unsure: 0,
     }
     const consistencyDistribution: Record<string, number> = {}
+    const colourDistribution: Record<string, number> = {}
     const bloodPresent: VomitPhenotype['bloodPresent'] = []
     const foreignPresent: VomitPhenotype['foreignPresent'] = []
     let withAnalysis = 0
@@ -3217,6 +3260,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (a.status === 'completed') {
         contentsMix[classifyVomitContents(a)]++
         if (a.consistency) consistencyDistribution[a.consistency] = (consistencyDistribution[a.consistency] ?? 0) + 1
+        // 'unsure' is NOT a legible colour and never enters the tally — the stool loop's rule
+        // (below), applied to the enum migration 013 gives this field. A read that could not
+        // name a colour is already disclosed by the assessed denominator; counting it as a
+        // category would invent a reading the photo does not carry.
+        if (a.colour && a.colour !== 'unsure') colourDistribution[a.colour] = (colourDistribution[a.colour] ?? 0) + 1
         if (a.editedAt) reviewedCount++
       }
     }
@@ -3227,6 +3275,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       assessedCount: states.completed,
       contentsMix,
       consistencyDistribution,
+      colourDistribution,
       bloodPresent,
       foreignPresent,
       reviewedCount,
@@ -3537,6 +3586,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const windowMeals = windowEvents.filter((e) => e.type === 'meal' && e.meal)
   const ratedMeals = windowMeals.filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
   const finishedMeals = ratedMeals.filter((e) => e.meal!.intakeRating === 'all').length
+  const refusedMeals = ratedMeals.filter((e) => e.meal!.intakeRating === 'refused').length
   // R2-3 — the descriptive intake MODE (strict plurality only): "typically <mode>" texture for the
   // free-fed grazer's discrete meals, never a scored figure. A tie yields null (no honest "typical").
   // NOTE: this is descriptive display data only — it does NOT touch the intake-decline engine or the
@@ -3544,7 +3594,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const intakeMode = strictPluralityIntake(ratedMeals.map((e) => e.meal!.intakeRating as IntakeRating))
   const mealCompletion =
     ratedMeals.length > 0
-      ? { ratedMeals: ratedMeals.length, finishedMeals, rate: finishedMeals / ratedMeals.length, intakeMode }
+      ? { ratedMeals: ratedMeals.length, finishedMeals, refusedMeals, rate: finishedMeals / ratedMeals.length, intakeMode }
       : null
 
   // Grouped rated-meal items (#7/#8) — surface the ACTUAL foods eaten as meals (e.g. a wet diet),

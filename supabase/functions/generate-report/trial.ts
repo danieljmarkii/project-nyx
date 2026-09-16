@@ -193,6 +193,21 @@ export interface TrialPermittedFood {
   allowedUntil: string | null
   /** In-range feedings that rung 1 permitted via this row. */
   feedings: number
+  /**
+   * The owner's intake ratings for the RATED MEALS this row permitted, raw and unordered
+   * (CUL-980). A strict subset of `feedings`: a treat, and a bowl the owner logged without
+   * rating it, are both in that count and neither is here.
+   *
+   * WHY IT EXISTS. `feedings` is a count of servings OFFERED, and on a trial diet that is a
+   * different clinical question from what was eaten — the allowed list already renders
+   * "Hill's z/d ×38 offered" for exactly that reason. What no surface carried was the shape
+   * PER ROW: a prescription diet stocked as a wet and a dry is two rows, and a cat eating the
+   * dry while never once finishing the wet reads as eating on every aggregate the report
+   * prints. Twelve of twelve unfinished is a descriptive fact with a denominator — it needs no
+   * floor, no threshold and no detector, which is the whole reason the refusal lane staying
+   * quiet says nothing about it.
+   */
+  intakeRatings: string[]
   /** The row opened after the trial did — §7's "the set changed after started_at". */
   addedAfterStart: boolean
   /** The row's membership was closed before the window ended. */
@@ -861,6 +876,12 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // disagree — and the alternative, widening PR 5's return shape from a consumer,
   // is how a shared module stops being shared.
   const permittedCounts = new Map<string, number>()
+  // CUL-980 — the per-row INTAKE shape, accumulated in this same pass for the same reason the
+  // counts above are: a second walk is a second predicate, and two predicates over one population
+  // is how the page starts disagreeing with itself. The ratings come back RAW and unordered;
+  // report.ts owns the scale they are read in (`INTAKE_SCALE`) and this file cannot import it
+  // without a cycle, so ordering happens at the render, once.
+  const permittedIntake = new Map<string, string[]>()
   const symptomDays = [...new Set(args.symptomDayIndices)]
   const exposures: TrialExposure[] = []
   for (const e of args.meals) {
@@ -871,6 +892,18 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     if (classification.verdict === 'permitted' && classification.permittedBy) {
       const key = allowedRowKey(classification.permittedBy)
       permittedCounts.set(key, (permittedCounts.get(key) ?? 0) + 1)
+      // THE PREDICATE IS PAGE 1'S, CHARACTER FOR CHARACTER — `foodType === 'meal'` AND a non-null
+      // `intakeRating`, which is how report.ts builds the "N of M rated meals fully eaten" the
+      // per-format lines have to partition. Same source array (`windowMeals`), same filter, then
+      // narrowed by this classifier: a strict SUBSET by construction, so the render may say "these
+      // 33 are part of the 45" without the two counts ever being able to drift. Widening this test
+      // (treats, unrated bowls) silently breaks that relation — the partition test is what holds it.
+      const m = e.meal
+      if (m.foodType === 'meal' && m.intakeRating != null) {
+        const seen = permittedIntake.get(key)
+        if (seen) seen.push(m.intakeRating)
+        else permittedIntake.set(key, [m.intakeRating])
+      }
     }
     if (!classification.offDiet) continue
     const permittedLater = ((): { from: string; role: TrialFoodRole | null } | null => {
@@ -1019,6 +1052,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       allowedFrom: f.allowedFrom,
       allowedUntil: f.allowedUntil,
       feedings: permittedCounts.get(allowedRowKey(f)) ?? 0,
+      intakeRatings: [...(permittedIntake.get(allowedRowKey(f)) ?? [])],
       addedAfterStart: openedAfter(f.allowedFrom, trial.startedAt, tz),
       // EVIDENCE, not coverage: "this permit was withdrawn before the window
       // ended" is a statement about the record the vet is reading.
