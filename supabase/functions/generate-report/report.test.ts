@@ -17,6 +17,7 @@ import {
   assembleReport,
   buildDetectionInput,
   dedupeEvents,
+  drawsStopMark,
   resolveScope,
   FALLBACK_DAYS,
   INTAKE_LOG_CAP,
@@ -1784,6 +1785,67 @@ Deno.test('R-14 — a permit WITHDRAWN inside the window is a stop on the diet l
   assert.equal(d.endInWindow, '2026-05-02')
   assert.ok(d.endBucketIndex !== null, 'and it draws a stop')
   assert.equal(d.bucketIndex, null, 'its permit began before the window, so there is no start to draw')
+})
+
+Deno.test('R-14 — an AD-HOC course\'s end is not declared; a regimen\'s is (the source decides, not the value)', () => {
+  // The adversarial pass\'s highest-severity finding, guarded at the source rather than only at
+  // the renderer: an ad-hoc course has no regimen row, so its span ends at the LAST DOSE THE
+  // RECORD CARRIES. An owner still giving the drug who stops logging it produces exactly the
+  // value an owner who stopped it produces. §4.4\'s lifetime table, over these same dose rows,
+  // prints that distinction verbatim; drawing a stop glyph here would contradict it on one page.
+  //
+  // Both lanes are asserted together, because "endIsDeclared is false" is only meaningful beside
+  // a case where it is true — a flag hardwired either way passes half of this.
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-06-20', clinicName: null, vetName: null, reason: null }],
+      events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-29') })],
+      // A regimen the owner ENDED: an End tap wrote `ended_at`.
+      medications: [med('Prednisolone', '2026-06-22', '2026-06-26')],
+      // …and an ad-hoc course with no regimen at all, whose last logged dose is Jun 27.
+      doses: [
+        { eventId: nextId('dose'), occurredAt: at('2026-06-24', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: 'given', doseAmount: null, pairedEventId: null },
+        { eventId: nextId('dose'), occurredAt: at('2026-06-27', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: 'given', doseAmount: null, pairedEventId: null },
+      ],
+      medicationItems: [
+        { id: 'mi-zyrtec', genericName: 'Cetirizine HCl', brandName: 'Zyrtec', strength: '5 mg', route: 'oral', isPrescription: false },
+      ],
+    }),
+  )
+  const adhoc = snap.concurrentChanges.find((c) => c.label.startsWith('Cetirizine'))
+  assert.ok(adhoc, 'the ad-hoc course reaches the confounder set (B-417 PR 7 round 3)')
+  assert.equal(adhoc.endInWindow, '2026-06-27', 'its span still ends at the last dose the record holds')
+  assert.equal(adhoc.endIsDeclared, false, 'but that is the logging stopping, not the owner declaring an end')
+  assert.equal(drawsStopMark(adhoc), false, 'so it draws no stop glyph')
+
+  const regimen = snap.concurrentChanges.find((c) => c.label === 'Prednisolone')
+  assert.ok(regimen, 'the regimen overlaps the window')
+  assert.equal(regimen.endInWindow, '2026-06-26')
+  assert.equal(regimen.endIsDeclared, true, 'an End tap IS an owner declaration')
+  assert.equal(drawsStopMark(regimen), true, 'so it draws')
+})
+
+Deno.test('R-14 — a trial end, a withdrawn bowl and a closed permit are all owner-declared', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        {
+          id: 'dt', foodItemId: 'fi', startedAt: '2026-04-22', targetDurationDays: 56, status: 'completed',
+          completedAt: '2026-05-10', vetName: null, foodLabel: 'RC HP', primaryProtein: 'hydrolyzed',
+          allowedFoods: [allowed('RC HP', '2026-04-22', null, 'primary_diet'), allowed('Dentastix', '2026-04-28', '2026-05-04')],
+        },
+      ],
+      // `lib/feedingArrangements.ts`'s toggle-off stamps `active_until` on an owner tap.
+      feedingArrangements: [{ id: 'fa1', foodItemId: 'fi-kibble', method: 'free_choice', foodLabel: 'Kibble', activeFrom: null, activeUntil: '2026-05-02', isShared: false, primaryProtein: null }],
+    }),
+  )
+  for (const label of ['RC HP', 'Dentastix', 'Kibble']) {
+    const c = snap.concurrentChanges.find((x) => x.label === label)
+    assert.ok(c, `${label} is a concurrent change`)
+    assert.equal(c.endIsDeclared, true, `${label}'s end comes from an owner action`)
+    assert.equal(drawsStopMark(c), true, `${label} draws its stop`)
+  }
 })
 
 // ── PM feedback round 1 (2026-07-03) — fixes from the first real on-device artifact ──

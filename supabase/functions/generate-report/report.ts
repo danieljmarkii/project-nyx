@@ -131,6 +131,7 @@ import { attributeDoses, type AttributableDose, type DoseAttribution } from '../
 import {
   buildTrialBlock,
   halfPartition,
+  openedAfter,
   selectReportTrial,
   trialEndValue,
   trialLastDayNum,
@@ -2010,6 +2011,24 @@ export interface ConcurrentChange {
    * argued equal — this way they are the same call.
    */
   endBucketIndex: number | null
+  /**
+   * Did the OWNER declare this end, or did the logging merely stop? (R-14 adversarial finding,
+   * the highest-severity one this change turned up.)
+   *
+   * An ad-hoc course has no regimen row, so its span is derived from doses and its end is
+   * `UnlinkedMedicationGroup.lastDate` — "the latest dose in window", a LOGGING fact over rows
+   * that include refusals. An owner who keeps giving a drug and stops logging it produces the
+   * same value as one who stopped the drug. §4.4's H1 invariant already refuses to let silence
+   * fill that field — *"a course shown with no end date is one whose end the owner never
+   * recorded, not one still under way"* — and R-14's first cut would have drawn `med stop ·
+   * May 20` for a drug still on board, in the most-read element on the page, contradicting the
+   * lifetime table over the same dose rows on the same document.
+   *
+   * So the chart draws a stop only where this is true, and `changeTiming` says "last dose
+   * logged" rather than "stopped" where it is false. False is not "still running" either — it
+   * is "the record does not say", which is why the date is still printed.
+   */
+  endIsDeclared: boolean
 }
 
 /**
@@ -2028,6 +2047,17 @@ export interface ConcurrentChange {
  */
 export function isWindowChange(c: ConcurrentChange): boolean {
   return !c.ongoing || c.endInWindow !== null
+}
+
+/**
+ * Does this change draw a STOP glyph? An in-window end the owner DECLARED (R-14).
+ *
+ * Deliberately narrower than `isWindowChange`: a dose-derived end is a real dated fact and
+ * belongs in the prose with an honest verb, but it is not an ending, and a glyph cannot hedge.
+ * A change with an undeclared end is still a change — it just draws only its start.
+ */
+export function drawsStopMark(c: ConcurrentChange): boolean {
+  return c.endBucketIndex !== null && c.endInWindow !== null && c.endIsDeclared
 }
 
 export interface SymptomLogPhenotype {
@@ -5218,6 +5248,12 @@ function buildConcurrentChanges(
     startDate: string | null,
     endDate: string | null,
     /**
+     * Is `endDate` an end the OWNER declared, or the last day the record happens to carry?
+     * Every caller states it, because the answer is a property of the SOURCE COLUMN and
+     * cannot be recovered from the value. See `ConcurrentChange.endIsDeclared`.
+     */
+    endIsDeclared: boolean,
+    /**
      * R-14. Drop the entry unless it carries a real in-window TRANSITION (a start or a stop
      * inside the window). Only the allowed-set rows pass this: a treat permitted before the
      * report window is part of the standing protocol, and framing a snack as a confounder the
@@ -5254,6 +5290,7 @@ function buildConcurrentChanges(
       // the overlap gate above drops a span ending before `startDayNum`, and `endInWindow` is
       // only set strictly before `endDayNum` — so this is a real index, never a clamp artefact.
       endBucketIndex: endInWindow !== null ? bucketIndexOfDay(activeEndDn as number) : null,
+      endIsDeclared,
     })
   }
   for (const t of input.dietTrials) {
@@ -5263,7 +5300,9 @@ function buildConcurrentChanges(
     // said "the trial diet (Royal Canin HP) — ongoing since 3 June" about a diet the
     // cat came off three weeks ago. §3.1 writes `ended_at` on BOTH outcomes precisely
     // so this reader has an end; it just never selected the column.
-    consider('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt, trialEndValue(t))
+    // `ended_at` / `completed_at` are written by an owner action on BOTH outcomes (§3.1), so a
+    // trial's end is declared.
+    consider('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt, trialEndValue(t), true)
     // R-14 (CUL-291). A food added to the allowed set AFTER the trial started is a diet change
     // by the chart legend's own definition, and it was the one class of change no surface drew:
     // the cold read found a chicken-bearing treat permitted on Jun 8 and fed 25 times, with no
@@ -5279,21 +5318,27 @@ function buildConcurrentChanges(
     // Deliberately NOT here: withdrawal of an ORIGINAL-set food (allowed from day one, permit
     // closed mid-trial). Whether that is a change distinct from the trial itself ending is its
     // own ruling, and §7's allowed list already carries it as `endedBeforeWindowEnd`. CUL-1018.
-    const trialStartDn = dayNumber(t.startedAt)
+    // `openedAfter` is `trial.ts`'s own predicate — the one §7's allowed list already renders as
+    // `addedAfterStart`. Re-deriving it here with a bare `dayNumber` comparison would be a second
+    // answer to a question the report has already answered, equal until one of them is edited;
+    // it is also the timezone-aware one, and this module's day keys are not.
     for (const f of t.allowedFoods ?? []) {
-      const fromDn = dayNumber(f.allowedFrom)
-      if (trialStartDn === null || fromDn === null || fromDn <= trialStartDn) continue
-      consider('diet_allowed', f.foodLabel, f.allowedFrom, f.allowedUntil, true)
+      if (!openedAfter(f.allowedFrom, t.startedAt, input.timezone ?? undefined)) continue
+      consider('diet_allowed', f.foodLabel, f.allowedFrom, f.allowedUntil, true, true)
     }
   }
   for (const m of input.medications) {
-    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)
+    // A regimen's `ended_at` is an owner action (the End tap), so its end is declared.
+    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt, true)
   }
   for (const u of unlinkedMedications) {
     // `lastDate` is the last dose IN WINDOW, so an ongoing ad-hoc course reads as
     // ending at its last logged dose rather than running open-ended. That is the
     // honest direction for a dose-derived span: the record ends where the logging does.
-    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate)
+    // NOT DECLARED. `lastDate` is the latest dose IN THE RECORD, so an owner who keeps giving a
+    // drug and stops logging it produces the same value as one who stopped it. It stays a dated
+    // fact in the prose ("last dose logged"), and draws no stop glyph.
+    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate, false)
   }
   for (const a of input.feedingArrangements) {
     // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,
@@ -5303,7 +5348,10 @@ function buildConcurrentChanges(
     // So pass a NULL start: the diet is a STANDING confounder present across the window with an
     // unrecorded start (no chart marker, framed as context — not a change). `activeUntil` (a
     // deliberate "stopped feeding this" action) is kept, since a stop IS a real signal.
-    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', null, a.activeUntil)
+    // DECLARED: `lib/feedingArrangements.ts`'s toggle-off stamps `active_until = today` on an
+    // owner tap. Verified at the writer, not taken from the comment above — R-14's adversarial
+    // pass named this lane's provenance as the one it had not checked.
+    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', null, a.activeUntil, true)
   }
   // Explicit total order (matches the determinism discipline of every other sort here) —
   // by start date, then kind, then label, so same-day interventions never depend on push order.

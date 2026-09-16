@@ -75,7 +75,7 @@ import type {
 // The ONE change predicate (R-14): the chart's marker set, the marker legend's gate and
 // "Reading the trend"'s count all switch on it, so they cannot disagree about how many
 // changes overlap the window.
-import { isWindowChange } from './report.ts'
+import { drawsStopMark, isWindowChange } from './report.ts'
 import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -411,12 +411,81 @@ function evenAxisMax(values: number[]): number {
  * treat entering the trial's allowed set on Jun 8 did not start the diet, and a face that said
  * so would contradict the diet block eight lines down.
  */
+/**
+ * The legend's two marks, DRAWN rather than described (cold read: a 60-second scan should not have
+ * to translate "a dotted vertical with a flat head" into a glyph it then hunts for). The words stay
+ * beside them — a swatch alone is no use to a reader whose images failed — but the reader can now
+ * compare the two shapes side by side, which is the whole question the change turns on.
+ *
+ * Inline, self-contained, no shared defs: this file ships one document with no subresources (§8).
+ */
+const MARK_KEY_START =
+  '<svg viewBox="0 0 12 13" width="12" height="13" aria-hidden="true" style="vertical-align:-2px"><line x1="6" y1="1" x2="6" y2="12" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3"/></svg>'
+const MARK_KEY_STOP =
+  '<svg viewBox="0 0 12 13" width="12" height="13" aria-hidden="true" style="vertical-align:-2px"><line x1="6" y1="1.5" x2="6" y2="12" stroke="currentColor" stroke-width="1" stroke-dasharray="6 3"/><line x1="1.5" y1="1.5" x2="10.5" y2="1.5" stroke="currentColor" stroke-width="2.25"/></svg>'
+
 const MARKER_FACE: Record<ConcurrentChange['kind'], { start: string; stop: string }> = {
   diet_trial: { start: 'diet start', stop: 'diet stop' },
   medication: { start: 'med start', stop: 'med stop' },
   supplement: { start: 'supplement start', stop: 'supplement stop' },
   free_fed: { start: 'free-fed start', stop: 'free-fed stop' },
-  diet_allowed: { start: 'diet added', stop: 'diet removed' },
+  // NOT "diet added": the cold read parsed that as a second diet being introduced, or the trial
+  // diet being changed — a materially different clinical fact, and on the real artifact the added
+  // item was a chicken-bearing treat, i.e. the thing invalidating the elimination. "Permitted" is
+  // the word §7's own allowed list already teaches the reader two inches below.
+  diet_allowed: { start: 'permitted', stop: 'permit ended' },
+}
+
+/**
+ * Approximate rendered width of a `.ann` label — 10px, weight 600, the report's sans stack.
+ *
+ * An SVG emitter cannot measure text, so the layout below needs a model. It is deliberately a
+ * slight OVER-estimate (a wide-ish average advance plus a pad): erring high spends a little
+ * headroom and erring low prints one label through another, which is what this exists to stop.
+ * Digits and the middot are narrower than letters, so a date-heavy label has margin in hand.
+ */
+function annWidth(plain: string): number {
+  return plain.length * 5.6 + 3
+}
+
+/**
+ * Place one marker label in the chart's single 10px headroom row, left to right.
+ *
+ * Tries each candidate text in order (the full label, then whatever shortened forms the caller
+ * offers) on each side of the mark, taking the first that clears both the previous label's right
+ * edge and the plot's own bounds. Returns null when nothing fits — the caller then draws the mark
+ * with no label, which is legible because the legend directly above enumerates every mark with
+ * its kind and exact date in the same left-to-right order.
+ *
+ * Side preference is LEFT first: a label hanging left of its mark cannot be mistaken for the next
+ * mark's, while one hanging right reaches toward it.
+ */
+function placeAnnotation(
+  mx: number,
+  nextMx: number | null,
+  prevRight: number,
+  candidates: { html: string; plain: string }[],
+  L: number,
+  R: number,
+): { x: number; anchor: 'start' | 'end'; html: string; right: number } | null {
+  const GAP = 5
+  // A label may not reach past the NEXT mark: beyond it, it starts labelling someone else's rule,
+  // and it also eats the room that mark needs. Without this the greedy pass spent the whole row
+  // on the earliest labels and dropped the last one — on the clean fixture that was the
+  // mid-trial permit, which is the most decision-relevant mark on the page.
+  const ceiling = nextMx === null ? R : Math.min(R, nextMx - GAP)
+  for (const cand of candidates) {
+    const w = annWidth(cand.plain)
+    const endLeft = mx - 3 - w
+    if (endLeft >= Math.max(L, prevRight + GAP)) {
+      return { x: mx - 3, anchor: 'end', html: cand.html, right: mx - 3 }
+    }
+    const startLeft = mx + 3
+    if (startLeft >= prevRight + GAP && startLeft + w <= ceiling) {
+      return { x: startLeft, anchor: 'start', html: cand.html, right: startLeft + w }
+    }
+  }
+  return null
 }
 
 function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], windowEndDate: string): string {
@@ -451,10 +520,12 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   // A STOP IS ITS OWN GLYPH (R-14, CUL-291). The legend promised the week something "started" and
   // delivered exactly that, so a steroid coming off as the flares fell — the strongest argument
   // the record holds for a diet working — was drawn by nothing, while "Reading the trend" counted
-  // it as a change. The two surfaces disagreed on the page. A stop is now a DOTTED rule with a
-  // flat head: two independent non-colour channels, because §5.8's bar is a photocopy and a dash
-  // pattern is the first thing a photocopy loses. The head is a flat cap at the TOP of the plot,
-  // clear of the bars — the R2-6 lesson is that a glyph in the data area is read as data.
+  // it as a change. The two surfaces disagreed on the page. A stop is a LONG-DASHED rule with a
+  // heavy flat head: two independent non-colour channels, because §5.8's bar is a photocopy and a
+  // dash pattern is the first thing a photocopy loses. The first cut used a fine dotted rule and
+  // an 8px head, and the cold read's 1-bit fax simulation lost the rule entirely while the start's
+  // dashes survived — so the head, not the rhythm, is the primary discriminator and is sized like
+  // one. It is a flat cap, never a triangle.
   //
   // The mark is WEEK-GRANULAR — drawn at the centre of the 7-day bucket the transition falls in —
   // so the legend promises the WEEK, not the day (B-496). Several transitions of one direction in
@@ -471,13 +542,16 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   }
   for (const m of markers) {
     // The SAME predicate "Reading the trend" counts on and the legend gates on, so the chart can
-    // never draw a different number of changes than the sentence beside it claims (C-4).
+    // never draw a different set of changes than the sentence beside it claims (C-4).
     if (!isWindowChange(m)) continue
     // A mark's label prints its date, so a transition with no date cannot be drawn — an
     // invariant of `buildConcurrentChanges` (a bucket is only assigned where a date parsed),
     // restated here because the marker list is also built by hand in tests.
     if (inPlot(m.bucketIndex) && m.startDate !== null) addTo(startsByBucket, m.bucketIndex, m)
-    if (inPlot(m.endBucketIndex) && m.endInWindow !== null) addTo(stopsByBucket, m.endBucketIndex, m)
+    // `drawsStopMark`, NOT `endInWindow`: an ad-hoc course's end is the last dose the record
+    // carries, which an owner who simply stopped logging produces too. A glyph cannot hedge, so
+    // an undeclared end draws nothing and keeps its honest "last dose logged" in the prose.
+    if (inPlot(m.endBucketIndex) && drawsStopMark(m)) addTo(stopsByBucket, m.endBucketIndex, m)
   }
   // The y of a bucket's count label baseline — the band the marker line must NOT cross (CUL-993
   // A.3). The white halo on the label is kept as a belt, but the R-11 cold read zoomed the
@@ -488,12 +562,17 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     if (c > 0) return yFor(c) - 6
     return (loggedByBucket[i] ?? 0) > 0 ? BASE - 7 : BASE - 13
   }
+  /** The top edge of this bucket's bar, or the baseline where there is no bar to cross. */
+  const barTopAt = (i: number): number => (buckets[i] > 0 ? yFor(buckets[i]) : BASE)
   const MARK_TOP = 18
   // How far a start and a stop sharing one week step apart. Small against the narrowest slot the
-  // axis ever draws, so the pair still reads as one week rather than two.
-  const PAIR_STEP = 4
-  const CAP_HALF = 4
-  const CAP_CLEARANCE = 3
+  // axis ever draws, so the pair still reads as one week rather than two — but wider than the
+  // stop's head is half-wide, or the head reaches across to the start's rule and the pair reads
+  // as one bracketed glyph rather than two marks (measured on the completed fixture: at a 4px
+  // step the 14px head came within 1px of the start rule).
+  const CAP_HALF = 7
+  const PAIR_STEP = CAP_HALF + 3
+  const CAP_CLEARANCE = 6
   /** A marker's own date — the start's for a start rule, the stop's for a stop rule. */
   const dateOf = (c: ConcurrentChange, dir: 'start' | 'stop'): string =>
     (dir === 'start' ? c.startDate : c.endInWindow) ?? ''
@@ -501,82 +580,130 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   const earliest = (group: ConcurrentChange[], dir: 'start' | 'stop'): string =>
     group.reduce((min, c) => (min === '' || dateOf(c, dir) < min ? dateOf(c, dir) : min), '')
   /**
-   * One bucket's label clause for one direction. A shared week lists EVERY date (CUL-982 item 4):
-   * "2 starts · Jul 26" labelled the bucket with the earliest start's date, and read as both
-   * starting on Jul 26 when the second was Aug 1 — a number that labels a bucket spoken as a
-   * record fact (C-3). Past three the label says the count and the week, which does not
-   * masquerade as a date; the legend above the chart carries every date regardless.
+   * One bucket's label clause for one direction, as the markup AND the plain text it measures to
+   * (the layout below needs a width, and an entity is one glyph, not seven characters).
+   *
+   * A shared week lists EVERY date (CUL-982 item 4): "2 starts · Jul 26" labelled the bucket with
+   * the earliest start's date, and read as both starting on Jul 26 when the second was Aug 1 — a
+   * number that labels a bucket spoken as a record fact (C-3). Past three DATES the label says
+   * the count and the week, which does not masquerade as a date; the legend above the chart
+   * carries every date regardless.
+   *
+   * THE COUNT RIDES WHENEVER IT EXCEEDS THE DATES. Four stops on three distinct days rendered
+   * "stops · May 16, May 17, May 18" — three dates for four marks, which is CUL-982's own defect
+   * reproduced on the new lane (R-14 adversarial finding 3). Where the two differ, the count is
+   * stated; where they agree, it would be noise.
    *
    * The face names the KIND (cold read round 2): two bare "start ·" labels were visually
    * identical on the one chart whose question is "diet or drug?", and the kind lived only in
    * the legend paragraph above the section. The legend still carries the name and the date.
    */
-  const clauseFor = (group: ConcurrentChange[], dir: 'start' | 'stop'): string => {
+  const clauseFor = (group: ConcurrentChange[], dir: 'start' | 'stop'): { html: string; plain: string } => {
     const dated = [...group].sort((a, b) => (dateOf(a, dir) < dateOf(b, dir) ? -1 : 1))
-    if (dated.length === 1) return `${MARKER_FACE[dated[0].kind][dir]} &middot; ${h(fmtDay(dateOf(dated[0], dir)))}`
-    // DISTINCT dates. Two interventions that genuinely began on the SAME day printed
-    // "starts · May 8, May 8" on the completed-trial artifact — a list that reads as two
-    // separate days because it is a list. Where the dates collapse to one, the count is what
-    // the second slot is for, and "2 starts · May 8" is TRUE of both: this is not CUL-982's
-    // rejected form, which attached ONE date to starts that fell on two different days.
-    const dates = [...new Set(dated.map((c) => dateOf(c, dir)))]
-    if (dates.length === 1) return `${dated.length} ${dir}s &middot; ${h(fmtDay(dates[0]))}`
-    if (dates.length <= 3) return `${dir}s &middot; ${dates.map((d) => h(fmtDay(d))).join(', ')}`
-    return `${dated.length} ${dir}s this week`
+    const days = [...new Set(dated.map((c) => dateOf(c, dir)))].map((d) => fmtDay(d))
+    const n1 = dated.length === 1
+    const body = days.length <= 3 ? days.join(', ') : ''
+    const head = n1
+      ? MARKER_FACE[dated[0].kind][dir]
+      : `${dated.length > days.length || days.length === 1 ? `${dated.length} ` : ''}${dir}s`
+    const plain = body === '' ? `${dated.length} ${dir}s this week` : `${head} · ${body}`
+    return { html: h(plain).replace(' · ', ' &middot; '), plain }
   }
-  /** One vertical rule, split around the count label's band; the stop carries the flat head. */
-  const rule = (x: number, dir: 'start' | 'stop', ly: number): void => {
+  /**
+   * One vertical rule, split around the count label's band AND at the bar's top edge.
+   *
+   * The ink inverts over the bar. Markers used to be emitted before the bars and `--bar` is
+   * near-black, so on any tall column the rule was painted over and only the few pixels of
+   * headroom above the bar survived — the cold read measured a ~3px stub and could not find the
+   * prednisolone stop at all, on the one chart this whole change exists for. It is worst exactly
+   * where it matters most: a trial's intervention starts in the week with the most events,
+   * because that is why the trial was started. Paper-on-ink over the bar costs no colour (§5.8) —
+   * white against black is what a photocopy preserves best of anything on the page.
+   */
+  const rule = (x: number, dir: 'start' | 'stop', ly: number, barTop: number): void => {
     const cls = dir === 'start' ? 'mark' : 'markend'
+    const xs = x.toFixed(1)
+    const seg = (y1: number, y2: number): void => {
+      if (y2 <= y1) return
+      const cut = Math.min(Math.max(barTop, y1), y2)
+      if (cut > y1) markerParts.push(`<line class="${cls}" x1="${xs}" y1="${y1.toFixed(1)}" x2="${xs}" y2="${cut.toFixed(1)}"/>`)
+      if (y2 > cut) markerParts.push(`<line class="${cls} on" x1="${xs}" y1="${cut.toFixed(1)}" x2="${xs}" y2="${y2.toFixed(1)}"/>`)
+    }
     const bandTop = ly - 11
     const bandBottom = ly + 3
-    const xs = x.toFixed(1)
     const topDrawn = bandTop > MARK_TOP
-    if (topDrawn) parts.push(`<line class="${cls}" x1="${xs}" y1="${MARK_TOP}" x2="${xs}" y2="${bandTop.toFixed(1)}"/>`)
-    if (bandBottom < BASE) parts.push(`<line class="${cls}" x1="${xs}" y1="${bandBottom.toFixed(1)}" x2="${xs}" y2="${BASE}"/>`)
+    if (topDrawn) seg(MARK_TOP, bandTop)
+    seg(bandBottom, BASE)
     if (dir === 'stop') {
-      // The head sits on whichever segment actually starts the rule — on the tallest bar in the
-      // window the label's band swallows the upper segment (there is no room above a peak-week
-      // count), and a cap floating over that gap would read as a stray tick rather than the top
-      // of this line. In that branch it clears the band by `CAP_CLEARANCE` rather than sitting
-      // on it: the count label carries a 3px white halo (CUL-993 A.3), and a horizontal bar
-      // tucked right under a digit reads as an underline on the number, not as a marker head.
+      // The head sits at the top of the rule. On the tallest bar in the window the label's band
+      // swallows the upper segment — there is no room above a peak-week count — so it drops
+      // below the band by `CAP_CLEARANCE`, clear of the label's 3px white halo (CUL-993 A.3): a
+      // horizontal bar tucked right under a digit reads as an underline on the number.
       const capY = topDrawn ? MARK_TOP : bandBottom + CAP_CLEARANCE
-      parts.push(
-        `<line class="markcap" x1="${(x - CAP_HALF).toFixed(1)}" y1="${capY.toFixed(1)}" x2="${(x + CAP_HALF).toFixed(1)}" y2="${capY.toFixed(1)}"/>`,
+      const capCls = capY >= barTop ? 'markcap on' : 'markcap'
+      markerParts.push(
+        `<line class="${capCls}" x1="${(x - CAP_HALF).toFixed(1)}" y1="${capY.toFixed(1)}" x2="${(x + CAP_HALF).toFixed(1)}" y2="${capY.toFixed(1)}"/>`,
       )
     }
   }
+  // Emitted AFTER the bars (see `rule`), so they are collected rather than pushed.
+  const markerParts: string[] = []
   const markedBuckets = [...new Set([...startsByBucket.keys(), ...stopsByBucket.keys()])].sort((a, b) => a - b)
+  // The label row is ONE line of 10px type in the plot's headroom, and R-14 roughly doubles how
+  // many buckets can carry a label while adding a two-clause joined form. On the real clean
+  // fixture two marks three days apart landed in adjacent buckets and their labels overprinted
+  // into "med start · Jundiet added · Jun 8" — garbled text on a clinical figure, which costs the
+  // whole page its credibility. So the row is LAID OUT rather than placed: left to right, each
+  // label taking the side that clears its neighbour, degrading to the bare dates and then to
+  // nothing rather than overlapping. A dropped label is not a dropped fact — the legend directly
+  // above carries every mark with its kind and its exact date, in the same order.
+  let prevRight = L
   for (const bucketIndex of markedBuckets) {
     const starts = startsByBucket.get(bucketIndex) ?? []
     const stops = stopsByBucket.get(bucketIndex) ?? []
     const mx = centerX(bucketIndex)
     const ly = labelBaseline(bucketIndex)
+    const barTop = barTopAt(bucketIndex)
+    // Both directions in one week step apart IN DATE ORDER, so the rules never place a stop left
+    // of a start that happened after it — the labels beside them carry the exact dates, and a
+    // position that contradicts them would be a false claim for free. The step is ordering only:
+    // it asserts no day, and the legend's week promise is unchanged.
+    const startsFirst = starts.length === 0 || stops.length === 0 || earliest(starts, 'start') <= earliest(stops, 'stop')
     if (starts.length > 0 && stops.length > 0) {
-      // Both directions in one week. They step apart IN DATE ORDER, so the rules never place a
-      // stop left of a start that happened after it — the labels beside them carry the exact
-      // dates, and a position that contradicts them would be a false claim for free. The step is
-      // ordering only: it asserts no day, and the legend's week promise is unchanged.
-      const startsFirst = earliest(starts, 'start') <= earliest(stops, 'stop')
-      rule(mx + (startsFirst ? -PAIR_STEP : PAIR_STEP), 'start', ly)
-      rule(mx + (startsFirst ? PAIR_STEP : -PAIR_STEP), 'stop', ly)
+      rule(mx + (startsFirst ? -PAIR_STEP : PAIR_STEP), 'start', ly, barTop)
+      rule(mx + (startsFirst ? PAIR_STEP : -PAIR_STEP), 'stop', ly, barTop)
     } else if (starts.length > 0) {
-      rule(mx, 'start', ly)
+      rule(mx, 'start', ly, barTop)
     } else {
-      rule(mx, 'stop', ly)
+      rule(mx, 'stop', ly, barTop)
     }
-    // Anchor the date label so it stays inside the plot (end-anchor in the right third).
-    const anchor = mx > L + plotW * 0.66 ? 'end' : 'start'
-    const lx = anchor === 'end' ? mx - 3 : mx + 3
-    const label = [
-      starts.length > 0 ? clauseFor(starts, 'start') : '',
-      stops.length > 0 ? clauseFor(stops, 'stop') : '',
-    ]
-      .filter((s) => s.length > 0)
-      .join('; ')
-    parts.push(`<text class="ann" x="${lx.toFixed(1)}" y="11" text-anchor="${anchor}">${label}</text>`)
+    // The clauses read in the SAME order the rules are drawn, so the first clause always belongs
+    // to the left-hand rule. Assembled starts-first unconditionally, a week where a course ended
+    // before another began printed "med start · May 20; med stop · May 16" over a stop drawn on
+    // the left — inverting the only reading channel that survives a photocopy (adversarial
+    // finding 2, and a branch no fixture exercised).
+    const startClause = starts.length > 0 ? clauseFor(starts, 'start') : null
+    const stopClause = stops.length > 0 ? clauseFor(stops, 'stop') : null
+    const ordered = (startsFirst ? [startClause, stopClause] : [stopClause, startClause]).filter(
+      (c): c is { html: string; plain: string } => c !== null,
+    )
+    const full = { html: ordered.map((c) => c.html).join('; '), plain: ordered.map((c) => c.plain).join('; ') }
+    // The bare dates, as the one step of degradation before the label is dropped: the glyph still
+    // says start-or-stop and the legend still says which intervention.
+    const dates = [
+      ...new Set(
+        (startsFirst ? [...starts.map((c) => dateOf(c, 'start')), ...stops.map((c) => dateOf(c, 'stop'))] : [...stops.map((c) => dateOf(c, 'stop')), ...starts.map((c) => dateOf(c, 'start'))]).map(
+          (d) => fmtDay(d),
+        ),
+      ),
+    ].join(', ')
+    const short = { html: h(dates), plain: dates }
+    const nextIndex = markedBuckets[markedBuckets.indexOf(bucketIndex) + 1]
+    const placed = placeAnnotation(mx, nextIndex === undefined ? null : centerX(nextIndex), prevRight, [full, short], L, R)
+    if (placed === null) continue
+    prevRight = placed.right
+    markerParts.push(`<text class="ann" x="${placed.x.toFixed(1)}" y="11" text-anchor="${placed.anchor}">${placed.html}</text>`)
   }
-
   // X-axis: week-start date labels (PM) via the shared helper the protein chart also uses, so the
   // two weekly charts align on identical dates. Replaces the month-only ticks (R2-6) with per-week
   // orientation ("May 11, May 18 …"); the exact window bounds stay in the range box + caption.
@@ -618,6 +745,12 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
       parts.push(`<text class="z num" x="${cx.toFixed(1)}" y="${BASE - 13}" text-anchor="middle">&ndash;</text>`)
     }
   }
+  // THE MARKERS GO ON LAST. They used to be emitted before the bars, and `--bar` is near-black:
+  // every rule crossing a column was simply painted out, which is why the stop this change exists
+  // to show could not be found on the one fixture that carries it. `rule` inverts the ink over
+  // the bar; the paint order is what lets it.
+  parts.push(...markerParts)
+
   // The marker is only legible where the sheet defines it, and only emitted when one was drawn.
   if (unobserved.length > 0) {
     parts.push(
@@ -4615,13 +4748,18 @@ function symptomTrend(snap: ReportSnapshot): string {
   // Each entry names only the dates that are actually MARKED. A pre-window start is deliberately
   // not repeated here — its "from <date>, before this window" belongs to the prose below; this
   // line exists to tell a reader what the verticals in front of them mean.
+  //
+  // The gate is per-MARK, not per-change: a change whose only in-window end is undeclared draws
+  // only its start, so `markedSpan` names only its start, and a change that draws nothing at all
+  // is not in this list. B-599's rule runs in both directions — the legend may not explain a line
+  // the page does not carry, nor leave one it does carry unexplained.
   const marked = snap.concurrentChanges
-    .filter((c) => isWindowChange(c) && (c.startDate !== null || c.endInWindow !== null))
+    .filter((c) => (c.bucketIndex !== null && c.startDate !== null) || drawsStopMark(c))
     .map((c) => ({ c, at: (c.bucketIndex !== null ? c.startDate : null) ?? c.endInWindow ?? '' }))
     .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
   const markerLegend =
     marked.length > 0
-      ? `<div class="chartlegend">A dashed vertical marks the <b>week</b> a diet, medication, or supplement started; a dotted vertical with a flat head marks the <b>week</b> one stopped: ${marked
+      ? `<div class="chartlegend">${MARK_KEY_START} A dashed vertical marks the <b>week</b> a treatment or diet change started; ${MARK_KEY_STOP} a flat-headed vertical marks the <b>week</b> one stopped: ${marked
           .map(({ c }) => `${legendLabel(c)}${markedSpan(c)}`)
           .join('; ')}. Timing and overlap are in &ldquo;Reading the trend&rdquo; below.</div>`
       : ''
@@ -4828,10 +4966,22 @@ function readingTheTrend(snap: ReportSnapshot): string {
     changes.length > 1
       ? ` A shift in signs over this period <b>cannot be attributed to any one of them alone</b> — they overlap in time.`
       : ` A shift in signs over this period <b>cannot be attributed to it alone</b> while it overlaps.`
+  // THE STOP MARKER CARVES OUT AN APPARENTLY DE-CONFOUNDED STRETCH, AND THE CAUTION'S OWN
+  // RATIONALE TELLS A SHARP READER THE PROHIBITION LAPSES THERE (cold read, blocking). "They
+  // overlap in time" was true of the whole window while the chart drew only starts; it is not
+  // true after a withdrawal, and R-14's entire purpose is to make that withdrawal visible. The
+  // reading it invites — steroid off May 14, signs stayed low, so the diet is carrying it — is
+  // wrong for reasons this report documents elsewhere and the trend section never surfaced: a
+  // course stopped on a date does not stop acting on it, and the exposure behind it may itself
+  // be thin. So the caveat is stated where the marker is, and only when one is drawn. It REFUSES
+  // an attribution rather than making one — no sentence here says what the fall means.
+  const withdrawal = started.some((c) => drawsStopMark(c))
+    ? ` One of them ending inside this window does not make the rest of it a single-agent period.`
+    : ''
   return `
     <div class="callout">
       <span class="k">Reading the trend</span>
-      ${parts.join(' ')}${caution}${gapBit}</div>`
+      ${parts.join(' ')}${caution}${withdrawal}${gapBit}</div>`
 }
 
 /**
@@ -4843,9 +4993,25 @@ function readingTheTrend(snap: ReportSnapshot): string {
 function changeTiming(c: ConcurrentChange): string {
   const start = c.startDate ? h(fmtDay(c.startDate)) : null
   const end = c.endInWindow ? h(fmtDay(c.endInWindow)) : null
+  // A PERMISSION IS NOT AN EXPOSURE (R-14 adversarial finding 5 + the cold read). A row on the
+  // trial's allowed list records that a food became permitted, not that it was fed — the count
+  // of feedings is §7's, and may be zero. "Started" over that row manufactures the appearance of
+  // a food challenge with a negative result over zero trials, which a vet can rationally read as
+  // "those were fine, keep them" — and if that food is the trigger, the next real feeding is an
+  // unrecorded relapse. So this lane gets its own verb and never borrows the exposure one.
+  if (c.kind === 'diet_allowed') {
+    if (!c.ongoing) return end ? `permitted ${start} to ${end}` : `permitted from ${start}`
+    return end ? `permitted before this window, until ${end}` : `permitted before this window`
+  }
+  // AN END THE OWNER NEVER DECLARED IS NOT A STOP. An ad-hoc course's span ends at its last
+  // logged dose, so an owner who keeps giving a drug and stops logging it produces the same
+  // value as one who stopped it — and §4.4's lifetime table, over the same rows, prints exactly
+  // that distinction ("a course shown with no end date is one whose end the owner never
+  // recorded, not one still under way"). This is the sentence that has to agree with it.
+  const stopClause = (d: string): string => (c.endIsDeclared ? `stopped ${d}` : `last dose logged ${d}`)
   if (!c.ongoing) {
     // Started in-window.
-    return end ? `started ${start}, stopped ${end}` : `started ${start}`
+    return end ? `started ${start}, ${stopClause(end)}` : `started ${start}`
   }
   // Started before the window (or unrecorded start). SAME ASSUMPTION AS THE WEIGHT
   // STRIP'S (B-600 round 11), and the same fix in waiting: `ongoing` here means the
@@ -4854,7 +5020,10 @@ function changeTiming(c: ConcurrentChange): string {
   // confined to the unrecorded-start branch — named rather than left as a silent
   // assumption, and left for the pass that has an artifact exercising it (no fixture
   // pairs a hand-picked past window with a medication course).
-  if (end) return start ? `from ${start}, before this window, until ${end}` : `until ${end}`
+  if (end) {
+    const tail = c.endIsDeclared ? `until ${end}` : `last dose logged ${end}`
+    return start ? `from ${start}, before this window, ${tail}` : tail
+  }
   return start ? `ongoing since ${start}` : 'ongoing, start not recorded'
 }
 
@@ -4887,7 +5056,18 @@ function legendLabel(c: ConcurrentChange): string {
  */
 function markedSpan(c: ConcurrentChange): string {
   const start = c.bucketIndex !== null && c.startDate !== null ? h(fmtDay(c.startDate)) : null
-  const stop = c.endInWindow !== null ? h(fmtDay(c.endInWindow)) : null
+  // `drawsStopMark`, so the legend and the chart cannot disagree about what is on the page: an
+  // undeclared end draws no glyph, so it is named here by nothing either. Its date still reaches
+  // the reader, in "Reading the trend", with the verb the record supports.
+  const stop = drawsStopMark(c) ? h(fmtDay(c.endInWindow as string)) : null
+  // The enumeration hangs off a sentence whose only verbs are "started" and "stopped", so a bare
+  // " on Jun 8" after a permission row is read as "Dentastix started Jun 8" — which the report's
+  // own page 1 refutes ("1 was fed before that food was permitted"). The verb comes with it.
+  if (c.kind === 'diet_allowed') {
+    if (start && stop) return `, permitted ${start} to ${stop}`
+    if (start) return `, permitted from ${start}`
+    return stop ? `, permit ended ${stop}` : ''
+  }
   if (start && stop) return ` from ${start} to ${stop}`
   if (start) return ` on ${start}`
   return stop ? `, stopped ${stop}` : ''
@@ -7847,8 +8027,13 @@ const STYLE = `
      Two independent non-colour channels, because §5.8's bar is a photocopy and the dash pattern
      is the first thing a photocopy blurs — the head still reads when the dots have merged. The
      head is a flat cap, never a triangle: R2-6's ▲ was read as a data spike on the chart. */
-  svg .markend{stroke:var(--ink);stroke-width:1;stroke-dasharray:1 3;}
-  svg .markcap{stroke:var(--ink);stroke-width:1.5;}
+  svg .markend{stroke:var(--ink);stroke-width:1;stroke-dasharray:6 3;}
+  svg .markcap{stroke:var(--ink);stroke-width:2.25;}
+  /* Paper-on-ink where a rule crosses a bar. The bar fill is near-black, so a dark rule drawn
+     over a column is invisible and one drawn under it is painted out; inverting is the only way
+     the mark survives a tall week, which is exactly the week an intervention starts in. Not
+     colour (§5.8): white against black is the highest-contrast pair a photocopy has. */
+  svg .mark.on, svg .markend.on, svg .markcap.on{stroke:var(--surface);}
   svg text.yl{font-size:10px;fill:var(--faint);}
   svg text.xl{font-size:10.5px;fill:var(--muted);}
   /* A white halo under the count labels (CUL-993 A.3): the dashed intervention marker runs the
