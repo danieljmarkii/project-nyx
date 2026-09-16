@@ -63,7 +63,11 @@ Page 1 and the legend: **clinic-ready** on the first round. The medication lines
 
 ## Round two
 
-_(appended when the round-2 adversarial pass and cold read return)_
+**The cold read, round two (Dr. Chen on the rebuilt sample):** the marker fix confirmed at 3× (the "3" over May 18 and Jun 1 legible, the dash in two segments, both charts); *(end recorded by owner)* resolves the discontinuation misread; the parenthetical *(28 doses at 2×/day take 14 days)* is plain English, not jargon; Appendix A's count and five-class gloss scan in one pass; Metronidazole, Motozol and Clavamox read correctly. **One blocker, and it was the structural one:** the Prednisolone line — *fell on 10 days, Jul 1 – Jul 29 (28 doses at 1×/day take 28 days)* — read cold as a course that ran roughly its prescribed length at modest under-adherence, because the 29-day span matched the 28-day need and the discriminating "10 days" read as a gloss on the range. The sentence's power was inverse to the clinical risk: a crammed course loud, an interrupted steroid silent. The density is now a ratio over the span — *fell on 10 of the 29 days from Jul 1 to Jul 29* — the reviewer's own suggested shape, and the reference course reads *14 of the 14 days from Jul 17 to Jul 30*.
+
+The rest of that round, in this pass's regions and fixed: the marker faces name their kind (*diet start · May 18* / *med start · Jun 5*), so "diet or drug?" is answered on the chart; Appendix A's count carries its denominator adjacent (*4 of the 5 events below*); an `unspecified` time is drawn `~10:00`, not at minute precision beside a witnessed one; the stool key prints both categories (*Normal / formed ×0 · Loose / watery ×1*, so one loose of one never reads as one of forty) and its coverage clause says what it is the coverage of; Appendix D prints the route as page 1 does. Outside them, filed: **CUL-1013** (Appendix D's "never a bare — beside a non-zero count" is a docstring with no guard — and it is where the span sentence points a vet for the holes) and a note on **CUL-992** (a dose before the recorded start is the mirror of a dose after its end). Left for Part 1's DISCOVERY: the medication block's lack of emphasis (four near-identical grey paragraphs describing opposite clinical situations) and the arithmetic parenthetical on a course that never happened (Clavamox).
+
+**The adversarial pass, round two:** _(its line is appended below when it returns)_
 
 ## Persona sign-off
 

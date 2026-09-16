@@ -391,6 +391,14 @@ function evenAxisMax(values: number[]): number {
  * cannot miss that "something changed here" — the full enumeration lives in the
  * `Reading the trend` note below the chart (GP-0).
  */
+/** The one-word kind on a marker's face — short enough to sit beside its date inside the plot. */
+const MARKER_KIND_WORD: Record<ConcurrentChange['kind'], string> = {
+  diet_trial: 'diet',
+  medication: 'med',
+  supplement: 'supplement',
+  free_fed: 'free-fed',
+}
+
 function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], windowEndDate: string): string {
   const buckets = sym.weeklyBuckets
   const loggedByBucket = sym.loggedDaysByBucket
@@ -462,9 +470,12 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     // the label says the count and the week, which does not masquerade as a date; the legend
     // above the chart carries every date regardless.
     const dated = [...group].sort((a, b) => ((a.startDate ?? '') < (b.startDate ?? '') ? -1 : 1))
+    // The face names the KIND (cold read round 2): two bare "start ·" labels were visually
+    // identical on the one chart whose question is "diet or drug?", and the kind lived only in
+    // the legend paragraph above the section. The legend still carries the name and the date.
     const label =
       dated.length === 1
-        ? `start &middot; ${h(fmtDay(dated[0].startDate))}`
+        ? `${MARKER_KIND_WORD[dated[0].kind]} start &middot; ${h(fmtDay(dated[0].startDate))}`
         : dated.length <= 3
           ? `starts &middot; ${dated.map((c) => h(fmtDay(c.startDate))).join(', ')}`
           : `${dated.length} starts this week`
@@ -4845,10 +4856,11 @@ function predominantBit(
 function stoolCharacteristics(snap: ReportSnapshot): string {
   const st: StoolCharacteristics | null = snap.stool
   if (!st) return ''
-  const cats = [
+  const allCats = [
     { n: st.normalCount, label: 'Normal / formed', bg: '#5f636c' },
     { n: st.looseCount, label: 'Loose / watery', bg: '#1a1c22' },
-  ].filter((c) => c.n > 0)
+  ]
+  const cats = allCats.filter((c) => c.n > 0)
   // A PROPORTION BAR OF ONE CATEGORY IS A NUMBER, NOT A CHART (CUL-993 A.6). With one category
   // the strip drew a full-width black bar labelled "1" over "Loose / watery ×1" — a distribution
   // with no second part, which three cold-read lenses each named. One category prints as its
@@ -4859,7 +4871,11 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     : `<div class="barmix">${cats
         .map((c) => `<div class="seg" style="flex:${c.n};background:${c.bg}">${c.n}</div>`)
         .join('')}</div>`
-  const keyLine = cats
+  // BOTH categories always, a zero included (cold read round 2): "Loose / watery ×1" alone
+  // could be one loose stool of one or of forty, and those are opposite consults. A zero here
+  // is a count of the owner's normal-stool logs, stated as a count beside its sibling — not a
+  // present-only category and not a clearance.
+  const keyLine = allCats
     .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
     .join('&nbsp;&middot;&nbsp; ')
 
@@ -4951,8 +4967,13 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     // C-3: a coverage density beside a count is the UN-LOGGED days only, and nothing when
     // fully covered. "Owner-described over 43 of 46 days logged" read as a stool denominator
     // (the R-11 cold read: one loose stool out of forty-three), when 43/46 was record coverage.
+    // …and it says what the coverage is OF (cold read round 2): beside "1 stool event" a bare
+    // "3 of 46 days had no log" implied 43 days of stool coverage, when the record has no
+    // per-day stool coverage at all — only days with any log.
     st.windowDays - st.loggedDays > 0
-      ? `; ${num(st.windowDays - st.loggedDays)} of ${num(st.windowDays)} days had no log of any kind`
+      ? `; nothing of any kind was logged on ${num(st.windowDays - st.loggedDays)} of ${num(
+          st.windowDays,
+        )} days, so a stool on those days is not in this count`
       : ''
   }. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.${aiLine}</div>
       </div>
@@ -5386,8 +5407,16 @@ function medicationLine(m: MedicationAdherence): string {
  * DENSITY + SPAN beside the plan's own arithmetic, so a vet can see a tail hole, an interior
  * hole or a faster-than-prescribed pace without the page adjudicating any of them.
  *
- *   "Those doses fell on 14 days, Jul 17 – Jul 30 (28 doses at 1×/day take 28 days); the
- *    course's recorded end is Aug 14."
+ *   "Those doses fell on 14 of the 14 days from Jul 17 to Jul 30 (28 doses at 1×/day take
+ *    28 days); the course's recorded end is Aug 14."
+ *
+ * The day count is stated AS A RATIO OVER THE SPAN, not as a bare number beside a date range:
+ * the second cold read found that "fell on 10 days, Jul 1 – Jul 29 (28 doses at 1×/day take 28
+ * days)" read as a course that ran roughly its prescribed length, because the 29-day span
+ * matched the 28-day need and the discriminating "10 days" read as a gloss on the range. "10 of
+ * the 29 days from Jul 1 to Jul 29" is the same two facts with the hole in the numerator's
+ * face — and the sentence's power is otherwise inverse to the clinical risk: a crammed course
+ * is loud (14 days against 28) and an interrupted one silent (29 against 28).
  *
  * "Those doses" binds to the adherence claim printed just before it, which is the same
  * population (administered, whole record) — one population, both endpoints and the day count
@@ -5448,7 +5477,8 @@ function dosingSpan(m: MedicationAdherence): string {
   const endBit = `; the course&rsquo;s recorded end is ${h(fmtDay(m.endedAt.slice(0, 10)))}.`
   if (m.lifetimeDosesLogged === 1) return ` That dose was administered on ${h(fmtDay(first))} ${needBit}${endBit}`
   if (days === 1) return ` Those doses all fell on ${h(fmtDay(first))} ${needBit}${endBit}`
-  return ` Those doses fell on ${num(days)} days, ${h(fmtDay(first))} &ndash; ${h(fmtDay(last))} ${needBit}${endBit}`
+  const span = daysBetweenDayKeys(first, last) + 1
+  return ` Those doses fell on ${num(days)} of the ${num(span)} days from ${h(fmtDay(first))} to ${h(fmtDay(last))} ${needBit}${endBit}`
 }
 
 /** The days N doses at `perDay` occupy when given at that pace — exact for fractional paces too. */
@@ -5765,7 +5795,7 @@ function appendixA(snap: ReportSnapshot): string {
   const eN = snap.provenance.symptomLog.filter((e) => timeConfidence(e) !== 'seen').length
   const estBit =
     eN > 0
-      ? ` ${num(eN)} of them ${eN === 1 ? 'carries' : 'carry'} no witnessed time (an estimate, a window, or none recorded); treat ${
+      ? ` ${num(eN)} of the ${num(count)} events below ${eN === 1 ? 'carries' : 'carry'} no witnessed time (an estimate, a window, or none recorded); treat ${
           eN === 1 ? 'it' : 'those'
         } as approximate.`
       : ''
@@ -5920,8 +5950,11 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
     case 'unspecified':
       // null confidence (legacy rows logged before B-010) — tag it explicitly. A bare time in a
       // column of tagged rows reads as MORE certain than a witnessed one, the reassuring
-      // direction; the honest render says the confidence was never recorded.
-      return `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">unspecified</span>`
+      // direction; the honest render says the confidence was never recorded. Drawn with the
+      // estimate's "~" as well (cold read round 2): at minute precision it was visually
+      // identical to a witnessed time, distinguished only by a small grey chip, on the block
+      // whose own closing note explains why a wrong minute changes the clinical picture.
+      return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">unspecified</span>`
   }
 }
 
@@ -6991,7 +7024,7 @@ function medicationAppendix(snap: ReportSnapshot): string {
     .map((m) => {
       const regimen = [
         m.strength ? h(m.strength) : null,
-        m.route ? h(m.route) : null,
+        m.route ? h(routeLabel(m.route)) : null,
         m.dosesPerDay != null ? `${m.dosesPerDay}×/day` : 'as needed',
       ]
         .filter(Boolean)
