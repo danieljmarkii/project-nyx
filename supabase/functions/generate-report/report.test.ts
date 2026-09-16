@@ -304,6 +304,24 @@ Deno.test('Nyx dry-run — signalment: owner name present, neuter NOT recorded, 
   assert.equal(snap.atAGlance.weightState, 'empty')
 })
 
+Deno.test('CUL-979 — the household passes through assembly as counts by species; absent ⇒ null, never "one pet"', () => {
+  const two = assembleReport(
+    baseInput({ household: { others: [{ species: 'dog', count: 1 }, { species: 'cat', count: 1 }, { species: 'other', count: 0 }], complete: true } }),
+  )
+  // The subject's own species leads (it is the "other cat" a vet asks about first), a zero
+  // count is dropped (a species with nobody in it is not a fact about the household), and
+  // the shape carries nothing a name or an id could hide in.
+  assert.deepEqual(two.signalment.household, {
+    others: [{ species: 'cat', count: 1 }, { species: 'dog', count: 1 }],
+    complete: true,
+  })
+  assert.equal(assembleReport(baseInput()).signalment.household, null)
+  assert.deepEqual(
+    assembleReport(baseInput({ household: { others: [], complete: true } })).signalment.household,
+    { others: [], complete: true },
+  )
+})
+
 Deno.test('Nyx dry-run — de-dup collapses the 3 same-minute duplicate vomit logs (26 raw → 23)', () => {
   const snap = assembleReport(buildNyxInput())
   const vomit = snap.symptoms.find((s) => s.type === 'vomit')

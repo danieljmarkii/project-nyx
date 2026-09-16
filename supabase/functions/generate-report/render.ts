@@ -1113,6 +1113,32 @@ function scopeBasisLabel(scope: ScopeInfo): string {
   }
 }
 
+/**
+ * CUL-979 — "1 other cat" · "2 other cats and 1 dog" · "at least 1 other cat".
+ *
+ * A count and a species, and nothing else — the `Household` shape cannot carry more, so
+ * this cannot print more. "Other" is earned only where it is true: another animal of the
+ * SUBJECT's species is "1 other cat"; a dog in a cat's home is "1 dog"; a species the enum
+ * files as `other` is "1 other animal" whatever the subject, because the record has no word
+ * for it. `null` for a one-pet home and for an unknown household alike: a single pet is
+ * NEVER given a line saying so (the common case gains no noise), and the two are
+ * indistinguishable on the page by design — silence is not a claim.
+ *
+ * "At least" when the pull came up short — the count is then a floor and says so, the same
+ * register §5.2 uses for off-diet exposures; with a short pull and nothing read there is no
+ * count to speak, and the page-1 partial-record disclosure carries the fact instead.
+ */
+function householdPhrase(s: Signalment): string | null {
+  const hh = s.household
+  if (!hh || hh.others.length === 0) return null
+  const parts = hh.others.map((o) => {
+    const word = o.species === 'dog' ? 'dog' : o.species === 'cat' ? 'cat' : 'animal'
+    const other = o.species === s.species || o.species === 'other' ? 'other ' : ''
+    return `${num(o.count)} ${other}${word}${o.count === 1 ? '' : 's'}`
+  })
+  return `lives with ${hh.complete ? '' : 'at least '}${joinList(parts)}`
+}
+
 function signalmentBlock(snap: ReportSnapshot): string {
   const s: Signalment = snap.signalment
   const sexBit = s.sex === 'unknown' ? 'sex not recorded' : s.sex
@@ -1127,9 +1153,20 @@ function signalmentBlock(snap: ReportSnapshot): string {
       : s.dateOfBirthPrecision === 'approximate'
         ? `~${s.ageYears}&nbsp;yr`
         : `${s.ageYears}&nbsp;yr${s.dateOfBirth ? ` (b.&nbsp;${h(dayParts(s.dateOfBirth)?.y ?? '')})` : ''}`
-  const sig = [speciesLabel(s.species), s.breed ? h(s.breed) : 'breed not recorded', `${h(sexBit)}, ${h(neuterBit)}`, ageBit].join(
-    ' &middot; ',
-  )
+  // CUL-979 — THE HOUSEHOLD RIDES THE SIGNALMENT LINE. "Can she get at the other animal's
+  // food?" is the first thing a vet running an elimination trial asks, and the cold read
+  // named its absence the report's top withholding finding: the account held two cats and
+  // the document's only trace of the second was three owner notes in an appendix table.
+  // Stated where a clinician reads species and age, in that line's own register — a
+  // fragment, not a box — and absent for a one-pet home (see `householdPhrase`).
+  const household = householdPhrase(s)
+  const sig = [
+    speciesLabel(s.species),
+    s.breed ? h(s.breed) : 'breed not recorded',
+    `${h(sexBit)}, ${h(neuterBit)}`,
+    ageBit,
+    ...(household ? [household] : []),
+  ].join(' &middot; ')
   const ownerBit = s.ownerName ? `Owner: ${h(s.ownerName)}` : 'Owner: not recorded'
   const weightBit = s.latestWeight
     ? ` &middot; latest weight ${num(s.latestWeight.kg.toFixed(1))}&nbsp;kg (${h(fmtDay(s.latestWeight.date))})`
@@ -1230,6 +1267,10 @@ const TRUNCATION_NOUNS: Record<string, string> = {
   conditions: 'recorded conditions',
   diet_trials: 'diet trials',
   vet_visits: 'vet visits',
+  // CUL-979 — the household pull. A short read here is not an under-count of anything on
+  // the page, it is a MISSING CONFOUNDER (the second animal), which is exactly the class the
+  // sentence above names as "context which would qualify a finding".
+  pets: 'household',
 }
 
 /** "a", "a and b", "a, b and c" — a list a clinician reads as a sentence. */
@@ -2674,6 +2715,33 @@ function dietTrialSection(snap: ReportSnapshot): string {
     const names = drugs.map((m) => h(m.drugName)).join(', ')
     caveats.push(
       `${names} overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
+    )
+  }
+  // CUL-979 — THE HOUSEHOLD, AS THE FIFTH ITEM ON THIS LIST. The central compliance
+  // question of an elimination trial is whether the pet can get at another animal's food,
+  // and the cold read named its absence the report's top withholding finding: the account
+  // held a second cat and the only trace on the document was three owner notes ("likely
+  // had a few bites of her sisters dry") in an appendix table, below the verdict they
+  // undermine. The account holds the structural fact, so the block states it — in the
+  // register this list already uses, as a caveat on reading the record, never as a
+  // finding.
+  //
+  // AVAILABILITY, NEVER INTAKE. `trialProteinBreaches` draws that line for a shared bowl
+  // ("in a bowl shared with another pet; intake not directly observed"), and this sentence
+  // reuses its verbatim qualifier rather than minting a second. The record has no
+  // "feeding kept separate" fact, so the sentence says the record does not say — it does
+  // not guess in either direction. Whether a PARTICULAR feeding came from the other
+  // animal's bowl is owner free text today and is the CUL-974 / CUL-848 ruling, not this.
+  //
+  // Placed after the RECORDED confounders and before the record GAP: what the record
+  // positively shows, then what the household structurally permits, then what the record
+  // could not check. And like every item here it suppresses the affirmative variant — a
+  // clean two-dog trial loses "…and supports interpreting it", because a paragraph must
+  // not open with a sentence it then dismantles.
+  const household = householdPhrase(snap.signalment)
+  if (household) {
+    caveats.push(
+      `${h(snap.signalment.name)} ${household}, so another animal&rsquo;s food may have been available during the trial (intake not directly observed) &mdash; this record does not say whether feeding was kept separate.`,
     )
   }
   // DO NOT OPEN WITH A SENTENCE THE PARAGRAPH THEN DISMANTLES. The affirmative variant

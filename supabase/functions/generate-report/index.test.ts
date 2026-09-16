@@ -24,6 +24,7 @@ import {
   mapFeedingArrangementRows,
   mapConditionRows,
   mapAttachmentRows,
+  mapHouseholdRows,
   detectPhotoMediaType,
   bytesToBase64,
   embedIncidentPhotos,
@@ -554,7 +555,18 @@ function fakeClient(tables: Record<string, FakeTable | undefined>, serverMaxRows
       if (opts?.count === 'exact') wantsCount = true
       return chain
     }
-    chain.eq = ret
+    // CUL-979 — `.eq()` FILTERS, on rows that carry the column. The household pull's
+    // `is_active = true` is the only thing between an archived pet and the signalment
+    // line, and a fake whose `.eq` is a no-op cannot see that filter deleted (C-39: a mock
+    // narrower than its API makes the missing half untestable). A row WITHOUT the column
+    // passes — every pre-existing canned row here carries no `pet_id` — and that is a
+    // STATED blind spot, not a feature: a fixture that wants a filter proven puts the
+    // column on its rows.
+    const eqs: [string, unknown][] = []
+    chain.eq = (col: string, val: unknown) => {
+      eqs.push([col, val])
+      return chain
+    }
     chain.is = ret
     chain.gte = ret
     chain.in = ret
@@ -574,10 +586,16 @@ function fakeClient(tables: Record<string, FakeTable | undefined>, serverMaxRows
       // for. This one line is the entire CUL-975 defect, and it is why a fixed-stride
       // reader is unsound and an advance-by-what-you-received reader is not.
       const end = Math.min(to + 1, from + serverMaxRows)
+      const matching = list.filter((r) =>
+        eqs.every(([col, val]) => {
+          const cell = (r as Record<string, unknown>)[col]
+          return cell === undefined || cell === val
+        })
+      )
       return Promise.resolve({
-        data: err ? null : list.slice(from, end),
+        data: err ? null : matching.slice(from, end),
         error: err,
-        count: wantsCount ? list.length : null,
+        count: wantsCount ? matching.length : null,
       }).then(onF)
     }
     return chain
@@ -1222,3 +1240,112 @@ Deno.test('reachedLookbackIso: an INCOMPLETE pull reports the floor it REACHED, 
   // claimed reach further back than the query went.
   assert.equal(reachedLookbackIso(asked, false, Date.parse('2025-06-01T00:00:00.000Z')), asked)
 })
+
+// ── CUL-979 (R-5) — the household pull: the first read outside the subject pet's row ──
+//
+// Two facts, kept apart on purpose (the issue's own framing). (1) "This account holds
+// another live animal" is structural and certain; it is what these tests cover. (2) "This
+// feeding came from the other animal's bowl" is per-exposure and is NOT built here.
+
+Deno.test('mapHouseholdRows: drops the subject, counts the rest by species, carries NOTHING else', () => {
+  const h = mapHouseholdRows(
+    [
+      { id: 'p1', species: 'cat' },
+      { id: 'p2', species: 'cat' },
+      { id: 'p3', species: 'dog' },
+    ],
+    'p1',
+    true,
+  )
+  assert.deepEqual(h, { others: [{ species: 'cat', count: 1 }, { species: 'dog', count: 1 }], complete: true })
+  // The shape has no field an id or a name could travel in — checked as a property of the
+  // OUTPUT, not of this fixture: every key of every entry is one of two.
+  for (const o of h.others) assert.deepEqual(Object.keys(o).sort(), ['count', 'species'])
+})
+
+Deno.test('mapHouseholdRows: a subject-only list is an EMPTY household, and an unknown species is not invented', () => {
+  assert.deepEqual(mapHouseholdRows([{ id: 'p1', species: 'cat' }], 'p1', true), { others: [], complete: true })
+  // A species the enum does not know reads as `other` — never as the subject's own species,
+  // which would print "another cat" about an animal the record cannot place.
+  assert.deepEqual(mapHouseholdRows([{ id: 'p1', species: 'cat' }, { id: 'p9', species: 'ferret' }], 'p1', false), {
+    others: [{ species: 'other', count: 1 }],
+    complete: false,
+  })
+})
+
+/** A UUID, so "the other pet's id never reaches the page" is a real substring test and not
+ *  a two-character coincidence. */
+const OTHER_PET_ID = '7d2f7a0e-2c58-4a1b-9c33-0f6e2b5c1a44'
+const OTHER_PET_NAME = 'Schrodingers Cat'
+
+function householdTables(others: { id: string; species: string; is_active: boolean; name: string }[]) {
+  return {
+    ...PET_TABLES,
+    pets: {
+      single: PET_TABLES.pets.single,
+      list: [{ id: 'p1', species: 'cat', is_active: true, name: 'Nyx' }, ...others],
+    },
+  }
+}
+
+/** A service-role client that FAILS on any use. The household read is the first query in
+ *  this function to reach outside the subject pet's row, and the issue's rule is that it
+ *  stays on the user-scoped, RLS-gated client — so the admin client is handed in as a
+ *  tripwire rather than left null, and a data query on it is a test failure. */
+const ADMIN_TRIPWIRE = {
+  from: () => {
+    throw new Error('the service-role client issued a DATA query')
+  },
+  storage: {
+    from: () => {
+      throw new Error('the service-role client touched Storage with no photos to fetch')
+    },
+  },
+} as unknown as Parameters<typeof generateReportForPet>[6]
+
+Deno.test('generateReportForPet: a second live pet reaches the report as a COUNT and a SPECIES — never its name or id', async () => {
+  const client = fakeClient(householdTables([{ id: OTHER_PET_ID, species: 'cat', is_active: true, name: OTHER_PET_NAME }]))
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, null, ADMIN_TRIPWIRE)
+  assert.equal(res.status, 200)
+  const html = res.body.html as string
+  assert.ok(/lives with <span class="num">1<\/span> other cat/.test(html), 'the household line rendered')
+  // THE PRIVACY ASSERTION, through the real reader and the real renderer (C-34): the other
+  // animal's name and id were on the canned rows the pull read, and neither is anywhere in
+  // what the function returns.
+  const returned = JSON.stringify(res.body)
+  assert.ok(!returned.includes(OTHER_PET_NAME), 'the other pet is never named')
+  assert.ok(!returned.includes('Schrodinger'), 'nor partially named')
+  assert.ok(!returned.includes(OTHER_PET_ID), 'the other pet is never identified')
+})
+
+Deno.test('generateReportForPet: an ARCHIVED second pet does not count toward the household', async () => {
+  const client = fakeClient(householdTables([{ id: OTHER_PET_ID, species: 'cat', is_active: false, name: OTHER_PET_NAME }]))
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, null, ADMIN_TRIPWIRE)
+  assert.equal(res.status, 200)
+  const html = res.body.html as string
+  assert.ok(!/lives with/.test(html), 'an archived pet is not a housemate')
+  assert.ok(!JSON.stringify(res.body).includes(OTHER_PET_NAME))
+})
+
+Deno.test('generateReportForPet: a ONE-pet account renders no household line at all', async () => {
+  const client = fakeClient(householdTables([]))
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, null, ADMIN_TRIPWIRE)
+  assert.equal(res.status, 200)
+  assert.ok(!/lives with/.test(res.body.html as string))
+  // And the pull was COMPLETE, so no partial-record disclosure names the household either.
+  assert.ok(!/Partial record/.test(res.body.html as string))
+})
+
+Deno.test('generateReportForPet: a household pull that falls short is DISCLOSED, and the count says "at least"', async () => {
+  // The server caps at one row, so the pull reads the subject and stops short of the
+  // second animal's row — the shortfall must be visible, never a silent one-pet report.
+  const tables = householdTables([{ id: OTHER_PET_ID, species: 'cat', is_active: true, name: OTHER_PET_NAME }])
+  const client = fakeClient(tables, 1)
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, null, ADMIN_TRIPWIRE)
+  // The events pull is empty here, so the window cannot have been cut and the (a′) arm
+  // renders with a disclosure rather than refusing.
+  assert.equal(res.status, 200)
+  const html = res.body.html as string
+  assert.ok(/Partial record\.[^.]*household/.test(html.replace(/<[^>]*>/g, '')), 'page 1 names the household as a short read')
+})
+
