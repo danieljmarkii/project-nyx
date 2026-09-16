@@ -3720,3 +3720,73 @@ Deno.test('R-13 item 5 — per-food breakdowns sum to the window breakdown, and 
   const allInBreakdown = snap.diet.mealCompletion!.intakeBreakdown.find((b) => b.rating === 'all')?.count ?? 0
   assert.equal(snap.diet.mealCompletion!.finishedMeals, allInBreakdown, 'the count beside the split is the split')
 })
+
+// ── R-13 item 4 (CUL-292) — the partition, driven through the REAL assembly ────────────
+//
+// The render-level tests hand `renderReport` an already-computed `proteinTimeline`, so the
+// production accumulators that decide which confounders ARE home food were covered by
+// nothing: a swapped `FoodFormat` literal on either line survives the whole suite, and the
+// report quietly reverts to the "3 of 4 feedings unverified" miscount this item removes.
+// Found by mutation in review, and this is the test that reds on it (C-18).
+
+Deno.test('R-13 item 4 — proteinTimeline partitions home-prepared from packaged, over real events', () => {
+  idSeq = 0
+  const feeding = (
+    date: string,
+    o: { label: string; format: FoodFormat; foodType: 'meal' | 'treat' | 'other'; proteins: string[] | null; panel?: string },
+  ): ReportEventInput =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '12:00:00'),
+      meal: {
+        foodItemId: o.label,
+        intakeRating: null,
+        quantity: null,
+        foodType: o.foodType,
+        format: o.format,
+        primaryProtein: o.proteins?.[0] ?? null,
+        proteins: o.proteins,
+        brand: null,
+        productName: o.label,
+        // `complete` needs BOTH captured panel text and a confident read — the same gate the
+        // client's Tier-1 disclosure runs.
+        ingredientsNotes: o.panel ?? null,
+        extractionConfidence: o.panel ? { proteins: 0.9 } : null,
+      },
+    })
+
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        // Packaged, panel never read → the numerator this disclosure is actually about.
+        feeding('2026-06-01', { label: 'Jerky', format: 'treat', foodType: 'treat', proteins: ['chicken'] }),
+        // Packaged, panel read → in the denominator, out of the numerator.
+        feeding('2026-06-02', { label: 'Biscuit', format: 'treat', foodType: 'treat', proteins: ['beef'], panel: 'Beef, wheat, rice' }),
+        // Home food: no panel exists to read, which is the whole point.
+        feeding('2026-06-03', { label: 'Roast pork', format: 'human_food', foodType: 'other', proteins: ['pork'] }),
+        feeding('2026-06-04', { label: 'Lamb scraps', format: 'human_food', foodType: 'other', proteins: ['lamb'] }),
+        // Home food with NO protein captured at all: counted as unknown and skipped before
+        // the incompleteness check — so it is home food WITHOUT being an incomplete read,
+        // which is exactly where the two accumulators must not be written as one.
+        feeding('2026-06-05', { label: 'Table scraps', format: 'human_food', foodType: 'other', proteins: null }),
+      ],
+    }),
+  )
+
+  const pt = snap.proteinTimeline
+  assert.equal(pt.totalFeedings, 5, 'every off-diet feeding is in the population')
+  assert.equal(pt.incompleteFeedings, 3, 'three reads are incomplete (the no-protein row is unknown, not incomplete)')
+  assert.equal(pt.humanFoodFeedings, 3, 'three of the five are home-prepared')
+  assert.equal(pt.incompleteHumanFoodFeedings, 2, 'two of THOSE are incomplete reads')
+  assert.equal(snap.provenance.proteinUnknownCount, 1, 'and the protein-less one is disclosed as unknown')
+
+  // THE PARTITION the render divides by: packaged = total − home, and the packaged numerator
+  // is never larger than its own denominator.
+  const packagedTotal = pt.totalFeedings - pt.humanFoodFeedings
+  const packagedIncomplete = pt.incompleteFeedings - pt.incompleteHumanFoodFeedings
+  assert.equal(packagedTotal, 2)
+  assert.equal(packagedIncomplete, 1)
+  assert.ok(packagedIncomplete <= packagedTotal, 'the ratio can never exceed 1')
+  assert.ok(pt.incompleteHumanFoodFeedings <= pt.humanFoodFeedings, 'nor can the home-food one')
+})

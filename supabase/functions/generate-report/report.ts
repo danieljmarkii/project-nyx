@@ -1738,10 +1738,10 @@ export interface DietSummary {
   intakeNotDirectlyObserved: boolean
   /**
    * MEALS-ONLY completion (treats + free-fed excluded, B-040). Null when no rated meals.
-   * `intakeMode` is the strict-plurality intake rating across the rated meals (null on a tie or
-   * when there are none) — used ONLY by the render's descriptive free-fed feeding line (R2-3), so
-   * a grazing cat's discrete meals read "typically partly eaten" instead of a scary "0 of N fully
-   * eaten." Descriptive texture, never a scored completion figure and never reassurance.
+   *
+   * The ratings feed the render's descriptive free-fed feeding line (R2-3), so a grazing cat's
+   * discrete meals read "typically ate some" rather than a scary bare "0 of N fully eaten."
+   * Descriptive texture, never a scored completion figure and never reassurance.
    */
   mealCompletion: {
     ratedMeals: number
@@ -3706,9 +3706,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     } else {
       mealGroups.set(key, {
         foodLabel: mealFoodLabel(m),
-        // The first member's format, on the same footing as its protein set above: the group
-        // key is food identity, so every member is the same food (CUL-292 needs it only to
-        // pick which incompleteness marker is TRUE of the row).
+        // The first member's format, on exactly the footing the protein set below already has
+        // — and inheriting its one known edge, stated rather than left to be rediscovered: in
+        // the fixed `__unlabeled__` bucket the members are NOT one food, so a group mixing a
+        // home-cooked and a packaged meal, both with no item id and no label, takes its marker
+        // from whichever was logged first. The cost is bounded to which of two incompleteness
+        // phrasings an unnamed row carries (CUL-292 uses this for nothing else), which is why
+        // it rides the accepted trade-off rather than re-opening it.
         format: m.format ?? null,
         // A junk sentinel ("null"/"unknown") is not a protein — null it so no consumer prints it.
         primaryProtein: canonicalizeProtein(m.primaryProtein) ? m.primaryProtein : null,
