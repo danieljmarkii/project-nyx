@@ -1967,7 +1967,16 @@ export interface CorrelationSummary {
   timing: TimingFinding[]
 }
 
-export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed'
+/**
+ * `diet_allowed` (R-14, CUL-291) is a MID-TRIAL change to the trial's allowed set — a food the
+ * vet permitted after the trial started. It is a diet change by the chart legend's own
+ * definition, and the cold read's sharpest case: a chicken-bearing treat entered the allowed
+ * list on Jun 8 and was fed 25 times, while the chart drew nothing and "Reading the trend"
+ * still said two changes overlapped. It is its own kind rather than a second `diet_trial`
+ * because the label differs — "the trial diet (Greenies)" would be a false sentence about a
+ * treat — and because the chart's face says `diet added`, never `diet start`.
+ */
+export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed' | 'diet_allowed'
 
 export interface ConcurrentChange {
   kind: InterventionKind
@@ -1992,6 +2001,33 @@ export interface ConcurrentChange {
    * (adversarial finding) — the note must say "until <date>" instead.
    */
   endInWindow: string | null
+  /**
+   * The 7-day bucket index where this intervention STOPPED (the stop marker, §3.5) — non-null
+   * exactly when `endInWindow` is, and derived from the SAME `bucketIndexOfDay` closure that
+   * places `bucketIndex`. R-14 (CUL-291): the chart needs a bucket and `endInWindow` is a date,
+   * so the alternative was re-deriving the bucket in the renderer off `bucketStartDates`. That
+   * is a second answer to a question the report already answered, and the two can only be
+   * argued equal — this way they are the same call.
+   */
+  endBucketIndex: number | null
+}
+
+/**
+ * THE change predicate — "did this intervention transition inside the window?" (R-14, CUL-291).
+ *
+ * One function, three surfaces: the trend chart's marker set, the marker legend's gate, and
+ * "Reading the trend"'s `N changes overlap this window` count. They disagreed before this
+ * existed, and the disagreement was visible on the page: a drug that started before the window
+ * and stopped inside it was counted as a change in the prose and drawn by nothing, so a vet
+ * comparing the sentence to the chart found one more change than the chart had marks for.
+ *
+ * Because the count and the drawing now switch on the same call, inverting it reds both guards
+ * (C-4). Its complement is exactly the STANDING set — present across the window with no dated
+ * transition — which is why `readingTheTrend` can split on this one predicate rather than two
+ * filters that have to be kept each other's negation by hand.
+ */
+export function isWindowChange(c: ConcurrentChange): boolean {
+  return !c.ongoing || c.endInWindow !== null
 }
 
 export interface SymptomLogPhenotype {
@@ -5176,7 +5212,21 @@ function buildConcurrentChanges(
   // in-window-start-only gate) let the diet take its credit — adversarial finding A1, the
   // spec §4/B-117 highest-consequence misread. An open-ended (still-active) intervention
   // runs to the window end; one that ENDED before the window never overlaps and is dropped.
-  const consider = (kind: InterventionKind, label: string, startDate: string | null, endDate: string | null) => {
+  const consider = (
+    kind: InterventionKind,
+    label: string,
+    startDate: string | null,
+    endDate: string | null,
+    /**
+     * R-14. Drop the entry unless it carries a real in-window TRANSITION (a start or a stop
+     * inside the window). Only the allowed-set rows pass this: a treat permitted before the
+     * report window is part of the standing protocol, and framing a snack as a confounder the
+     * trend "cannot be attributed against" would be both noise and an over-claim. Every other
+     * caller keeps the default — a standing drug with no in-window transition is exactly what
+     * the A1 finding says must never be dropped.
+     */
+    onlyInWindowTransition = false,
+  ) => {
     // A NULL startDate = a standing arrangement whose start was never recorded (a free-fed bowl
     // "always down"). Treat it as active from before the window (spanStart -Infinity) so it is
     // never dropped from the confounder note just because its start date is missing (adversarial
@@ -5191,6 +5241,7 @@ function buildConcurrentChanges(
     // The end date ONLY when it stopped strictly before the window end — so the render says
     // "until <date>" instead of a false present-tense "ongoing since <start>" (adversarial finding).
     const endInWindow = activeEndDn !== null && activeEndDn < scope.endDayNum ? endDate : null
+    if (onlyInWindowTransition && !startedInWindow && endInWindow === null) return
     out.push({
       kind,
       label,
@@ -5199,6 +5250,10 @@ function buildConcurrentChanges(
       bucketIndex: startedInWindow ? bucketIndexOfDay(startDn as number) : null,
       ongoing: !startedInWindow,
       endInWindow,
+      // The stop marker's bucket (R-14). `endInWindow` is by construction inside the window —
+      // the overlap gate above drops a span ending before `startDayNum`, and `endInWindow` is
+      // only set strictly before `endDayNum` — so this is a real index, never a clamp artefact.
+      endBucketIndex: endInWindow !== null ? bucketIndexOfDay(activeEndDn as number) : null,
     })
   }
   for (const t of input.dietTrials) {
@@ -5209,6 +5264,27 @@ function buildConcurrentChanges(
     // cat came off three weeks ago. §3.1 writes `ended_at` on BOTH outcomes precisely
     // so this reader has an end; it just never selected the column.
     consider('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt, trialEndValue(t))
+    // R-14 (CUL-291). A food added to the allowed set AFTER the trial started is a diet change
+    // by the chart legend's own definition, and it was the one class of change no surface drew:
+    // the cold read found a chicken-bearing treat permitted on Jun 8 and fed 25 times, with no
+    // marker on the chart and "Reading the trend" still counting two changes. Routing it through
+    // `consider` is what makes the two agree — the chart and the count read one list.
+    //
+    // The `> trialStartDn` gate is load-bearing, not a nicety: `startDietTrial` writes
+    // `allowed_from = started_at` on the primary diet, so without it EVERY trial would draw a
+    // second, duplicate diet marker on its own start week. A row's `allowedUntil` rides along as
+    // the end, so a permit granted mid-trial and withdrawn again draws both transitions through
+    // the same path.
+    //
+    // Deliberately NOT here: withdrawal of an ORIGINAL-set food (allowed from day one, permit
+    // closed mid-trial). Whether that is a change distinct from the trial itself ending is its
+    // own ruling, and §7's allowed list already carries it as `endedBeforeWindowEnd`. CUL-1018.
+    const trialStartDn = dayNumber(t.startedAt)
+    for (const f of t.allowedFoods ?? []) {
+      const fromDn = dayNumber(f.allowedFrom)
+      if (trialStartDn === null || fromDn === null || fromDn <= trialStartDn) continue
+      consider('diet_allowed', f.foodLabel, f.allowedFrom, f.allowedUntil, true)
+    }
   }
   for (const m of input.medications) {
     consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)

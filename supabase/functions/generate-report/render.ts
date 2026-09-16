@@ -72,6 +72,10 @@ import type {
   NoticedBlock,
   NoticedWordCount,
 } from './report.ts'
+// The ONE change predicate (R-14): the chart's marker set, the marker legend's gate and
+// "Reading the trend"'s count all switch on it, so they cannot disagree about how many
+// changes overlap the window.
+import { isWindowChange } from './report.ts'
 import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -387,16 +391,32 @@ function evenAxisMax(values: number[]): number {
  * The symptom-frequency bar chart (§3.5, the hero) — non-colour, B&W-safe. Bars are
  * dark; a ZERO week renders as a short "nub" at the baseline with a `0` label (a
  * visible zero, never a blank). Dashed vertical intervention markers (§3.5) are drawn
- * at the bucket where a diet/drug/supplement/free-fed change started, so the reader
- * cannot miss that "something changed here" — the full enumeration lives in the
- * `Reading the trend` note below the chart (GP-0).
+ * at the bucket where a diet/drug/supplement/free-fed change started, and a DOTTED,
+ * flat-headed vertical where one stopped (R-14, CUL-291), so the reader cannot miss
+ * that "something changed here" — the full enumeration lives in the `Reading the
+ * trend` note below the chart (GP-0).
+ *
+ * The stop is what a clinician actually asks the chart. A steroid coming off as the
+ * flares fall is the strongest argument the record holds for a diet working, and it
+ * was undrawable: `endInWindow` reached the prose and nothing else. That reading must
+ * be DRAWABLE and must never be WRITTEN — no sentence on this page attributes the
+ * fall to the withdrawal, and none is added here.
  */
-/** The one-word kind on a marker's face — short enough to sit beside its date inside the plot. */
-const MARKER_KIND_WORD: Record<ConcurrentChange['kind'], string> = {
-  diet_trial: 'diet',
-  medication: 'med',
-  supplement: 'supplement',
-  free_fed: 'free-fed',
+/**
+ * The marker's face — the kind plus its transition, short enough to sit beside its date inside
+ * the plot. Two words, because one is ambiguous on the one chart whose question is "diet or
+ * drug, starting or stopping?".
+ *
+ * `diet_allowed` reads `diet added` / `diet removed` rather than `diet start` / `diet stop`: a
+ * treat entering the trial's allowed set on Jun 8 did not start the diet, and a face that said
+ * so would contradict the diet block eight lines down.
+ */
+const MARKER_FACE: Record<ConcurrentChange['kind'], { start: string; stop: string }> = {
+  diet_trial: { start: 'diet start', stop: 'diet stop' },
+  medication: { start: 'med start', stop: 'med stop' },
+  supplement: { start: 'supplement start', stop: 'supplement stop' },
+  free_fed: { start: 'free-fed start', stop: 'free-fed stop' },
+  diet_allowed: { start: 'diet added', stop: 'diet removed' },
 }
 
 function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], windowEndDate: string): string {
@@ -423,22 +443,41 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   parts.push(`<text class="yl num" x="30" y="${(TOP + BASE) / 2 + 3}" text-anchor="end">${yMax / 2}</text>`)
   parts.push(`<text class="yl num" x="30" y="${BASE + 3}" text-anchor="end">0</text>`)
 
-  // Intervention markers (dashed verticals + a short date at the top of each). The date carries a
-  // small "start" prefix and NO ▲ glyph — on the first real artifact the triangle read as a data
-  // spike/peak on the chart itself (R2-6); a dashed rule + a labelled "start ·" is unambiguously a
-  // divider, and the one-line legend below the panels spells out what it marks.
+  // Intervention markers (verticals + a short date at the top of each). The date carries a small
+  // "start"/"stop" prefix and NO ▲ glyph — on the first real artifact the triangle read as a data
+  // spike/peak on the chart itself (R2-6); a rule + a labelled "start ·" is unambiguously a
+  // divider, and the legend above the panels spells out what it marks.
   //
-  // The mark is WEEK-GRANULAR — drawn at the centre of the 7-day bucket the start falls in — so the
-  // legend promises the WEEK, not the day (B-496). Two interventions that start in the same week
-  // share one vertical: surface the COUNT rather than silently drop the second (the old de-dup
-  // discarded it from the chart entirely). Every start is still enumerated with its exact date in
-  // the "Reading the trend" note below.
-  const markersByBucket = new Map<number, ConcurrentChange[]>()
-  for (const m of markers) {
-    if (m.bucketIndex === null || m.bucketIndex < 0 || m.bucketIndex >= n) continue
-    const group = markersByBucket.get(m.bucketIndex) ?? []
+  // A STOP IS ITS OWN GLYPH (R-14, CUL-291). The legend promised the week something "started" and
+  // delivered exactly that, so a steroid coming off as the flares fell — the strongest argument
+  // the record holds for a diet working — was drawn by nothing, while "Reading the trend" counted
+  // it as a change. The two surfaces disagreed on the page. A stop is now a DOTTED rule with a
+  // flat head: two independent non-colour channels, because §5.8's bar is a photocopy and a dash
+  // pattern is the first thing a photocopy loses. The head is a flat cap at the TOP of the plot,
+  // clear of the bars — the R2-6 lesson is that a glyph in the data area is read as data.
+  //
+  // The mark is WEEK-GRANULAR — drawn at the centre of the 7-day bucket the transition falls in —
+  // so the legend promises the WEEK, not the day (B-496). Several transitions of one direction in
+  // one week share a vertical: surface the COUNT rather than silently drop the second (the old
+  // de-dup discarded it from the chart entirely). Every date is still enumerated in the legend
+  // above and in the "Reading the trend" note below.
+  const startsByBucket = new Map<number, ConcurrentChange[]>()
+  const stopsByBucket = new Map<number, ConcurrentChange[]>()
+  const inPlot = (i: number | null): i is number => i !== null && i >= 0 && i < n
+  const addTo = (map: Map<number, ConcurrentChange[]>, i: number, m: ConcurrentChange): void => {
+    const group = map.get(i) ?? []
     group.push(m)
-    markersByBucket.set(m.bucketIndex, group)
+    map.set(i, group)
+  }
+  for (const m of markers) {
+    // The SAME predicate "Reading the trend" counts on and the legend gates on, so the chart can
+    // never draw a different number of changes than the sentence beside it claims (C-4).
+    if (!isWindowChange(m)) continue
+    // A mark's label prints its date, so a transition with no date cannot be drawn — an
+    // invariant of `buildConcurrentChanges` (a bucket is only assigned where a date parsed),
+    // restated here because the marker list is also built by hand in tests.
+    if (inPlot(m.bucketIndex) && m.startDate !== null) addTo(startsByBucket, m.bucketIndex, m)
+    if (inPlot(m.endBucketIndex) && m.endInWindow !== null) addTo(stopsByBucket, m.endBucketIndex, m)
   }
   // The y of a bucket's count label baseline — the band the marker line must NOT cross (CUL-993
   // A.3). The white halo on the label is kept as a belt, but the R-11 cold read zoomed the
@@ -450,35 +489,91 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     return (loggedByBucket[i] ?? 0) > 0 ? BASE - 7 : BASE - 13
   }
   const MARK_TOP = 18
-  for (const [bucketIndex, group] of [...markersByBucket.entries()].sort((a, b) => a[0] - b[0])) {
-    const mx = centerX(bucketIndex)
-    const ly = labelBaseline(bucketIndex)
+  // How far a start and a stop sharing one week step apart. Small against the narrowest slot the
+  // axis ever draws, so the pair still reads as one week rather than two.
+  const PAIR_STEP = 4
+  const CAP_HALF = 4
+  const CAP_CLEARANCE = 3
+  /** A marker's own date — the start's for a start rule, the stop's for a stop rule. */
+  const dateOf = (c: ConcurrentChange, dir: 'start' | 'stop'): string =>
+    (dir === 'start' ? c.startDate : c.endInWindow) ?? ''
+  /** The earliest date in a group, for ordering two rules that share a week. */
+  const earliest = (group: ConcurrentChange[], dir: 'start' | 'stop'): string =>
+    group.reduce((min, c) => (min === '' || dateOf(c, dir) < min ? dateOf(c, dir) : min), '')
+  /**
+   * One bucket's label clause for one direction. A shared week lists EVERY date (CUL-982 item 4):
+   * "2 starts · Jul 26" labelled the bucket with the earliest start's date, and read as both
+   * starting on Jul 26 when the second was Aug 1 — a number that labels a bucket spoken as a
+   * record fact (C-3). Past three the label says the count and the week, which does not
+   * masquerade as a date; the legend above the chart carries every date regardless.
+   *
+   * The face names the KIND (cold read round 2): two bare "start ·" labels were visually
+   * identical on the one chart whose question is "diet or drug?", and the kind lived only in
+   * the legend paragraph above the section. The legend still carries the name and the date.
+   */
+  const clauseFor = (group: ConcurrentChange[], dir: 'start' | 'stop'): string => {
+    const dated = [...group].sort((a, b) => (dateOf(a, dir) < dateOf(b, dir) ? -1 : 1))
+    if (dated.length === 1) return `${MARKER_FACE[dated[0].kind][dir]} &middot; ${h(fmtDay(dateOf(dated[0], dir)))}`
+    // DISTINCT dates. Two interventions that genuinely began on the SAME day printed
+    // "starts · May 8, May 8" on the completed-trial artifact — a list that reads as two
+    // separate days because it is a list. Where the dates collapse to one, the count is what
+    // the second slot is for, and "2 starts · May 8" is TRUE of both: this is not CUL-982's
+    // rejected form, which attached ONE date to starts that fell on two different days.
+    const dates = [...new Set(dated.map((c) => dateOf(c, dir)))]
+    if (dates.length === 1) return `${dated.length} ${dir}s &middot; ${h(fmtDay(dates[0]))}`
+    if (dates.length <= 3) return `${dir}s &middot; ${dates.map((d) => h(fmtDay(d))).join(', ')}`
+    return `${dated.length} ${dir}s this week`
+  }
+  /** One vertical rule, split around the count label's band; the stop carries the flat head. */
+  const rule = (x: number, dir: 'start' | 'stop', ly: number): void => {
+    const cls = dir === 'start' ? 'mark' : 'markend'
     const bandTop = ly - 11
     const bandBottom = ly + 3
-    if (bandTop > MARK_TOP) {
-      parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="${MARK_TOP}" x2="${mx.toFixed(1)}" y2="${bandTop.toFixed(1)}"/>`)
+    const xs = x.toFixed(1)
+    const topDrawn = bandTop > MARK_TOP
+    if (topDrawn) parts.push(`<line class="${cls}" x1="${xs}" y1="${MARK_TOP}" x2="${xs}" y2="${bandTop.toFixed(1)}"/>`)
+    if (bandBottom < BASE) parts.push(`<line class="${cls}" x1="${xs}" y1="${bandBottom.toFixed(1)}" x2="${xs}" y2="${BASE}"/>`)
+    if (dir === 'stop') {
+      // The head sits on whichever segment actually starts the rule — on the tallest bar in the
+      // window the label's band swallows the upper segment (there is no room above a peak-week
+      // count), and a cap floating over that gap would read as a stray tick rather than the top
+      // of this line. In that branch it clears the band by `CAP_CLEARANCE` rather than sitting
+      // on it: the count label carries a 3px white halo (CUL-993 A.3), and a horizontal bar
+      // tucked right under a digit reads as an underline on the number, not as a marker head.
+      const capY = topDrawn ? MARK_TOP : bandBottom + CAP_CLEARANCE
+      parts.push(
+        `<line class="markcap" x1="${(x - CAP_HALF).toFixed(1)}" y1="${capY.toFixed(1)}" x2="${(x + CAP_HALF).toFixed(1)}" y2="${capY.toFixed(1)}"/>`,
+      )
     }
-    if (bandBottom < BASE) {
-      parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="${bandBottom.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${BASE}"/>`)
+  }
+  const markedBuckets = [...new Set([...startsByBucket.keys(), ...stopsByBucket.keys()])].sort((a, b) => a - b)
+  for (const bucketIndex of markedBuckets) {
+    const starts = startsByBucket.get(bucketIndex) ?? []
+    const stops = stopsByBucket.get(bucketIndex) ?? []
+    const mx = centerX(bucketIndex)
+    const ly = labelBaseline(bucketIndex)
+    if (starts.length > 0 && stops.length > 0) {
+      // Both directions in one week. They step apart IN DATE ORDER, so the rules never place a
+      // stop left of a start that happened after it — the labels beside them carry the exact
+      // dates, and a position that contradicts them would be a false claim for free. The step is
+      // ordering only: it asserts no day, and the legend's week promise is unchanged.
+      const startsFirst = earliest(starts, 'start') <= earliest(stops, 'stop')
+      rule(mx + (startsFirst ? -PAIR_STEP : PAIR_STEP), 'start', ly)
+      rule(mx + (startsFirst ? PAIR_STEP : -PAIR_STEP), 'stop', ly)
+    } else if (starts.length > 0) {
+      rule(mx, 'start', ly)
+    } else {
+      rule(mx, 'stop', ly)
     }
     // Anchor the date label so it stays inside the plot (end-anchor in the right third).
     const anchor = mx > L + plotW * 0.66 ? 'end' : 'start'
     const lx = anchor === 'end' ? mx - 3 : mx + 3
-    // A shared week lists EVERY start's date (CUL-982 item 4): "2 starts · Jul 26" labelled the
-    // bucket with the earliest start's date, and read as both starting on Jul 26 when the second
-    // was Aug 1 — a number that labels a bucket spoken as a record fact (C-3). Past three starts
-    // the label says the count and the week, which does not masquerade as a date; the legend
-    // above the chart carries every date regardless.
-    const dated = [...group].sort((a, b) => ((a.startDate ?? '') < (b.startDate ?? '') ? -1 : 1))
-    // The face names the KIND (cold read round 2): two bare "start ·" labels were visually
-    // identical on the one chart whose question is "diet or drug?", and the kind lived only in
-    // the legend paragraph above the section. The legend still carries the name and the date.
-    const label =
-      dated.length === 1
-        ? `${MARKER_KIND_WORD[dated[0].kind]} start &middot; ${h(fmtDay(dated[0].startDate))}`
-        : dated.length <= 3
-          ? `starts &middot; ${dated.map((c) => h(fmtDay(c.startDate))).join(', ')}`
-          : `${dated.length} starts this week`
+    const label = [
+      starts.length > 0 ? clauseFor(starts, 'start') : '',
+      stops.length > 0 ? clauseFor(stops, 'stop') : '',
+    ]
+      .filter((s) => s.length > 0)
+      .join('; ')
     parts.push(`<text class="ann" x="${lx.toFixed(1)}" y="11" text-anchor="${anchor}">${label}</text>`)
   }
 
@@ -4506,20 +4601,28 @@ function symptomTrend(snap: ReportSnapshot): string {
   </div>`
   }
   const panels = snap.symptoms.map((s) => symptomPanel(s, snap)).join('')
-  // One legend line for the dashed intervention markers on the charts (R2-6), ABOVE the first
+  // One legend line for the intervention markers on the charts (R2-6), ABOVE the first
   // chart that uses it (CUL-982 item 4): it sat after the charts, in the lightest grey on the
-  // page, and the cold read nearly missed it. It names each start with its exact date, because
+  // page, and the cold read nearly missed it. It names each mark with its exact date, because
   // the mark itself is week-granular (B-496) and the date has to live somewhere the reader
-  // meets the mark; "Reading the trend" below still carries the timing, the stops and the
-  // co-attribution caution. Only shown when there is at least one marker to explain. R-14
-  // (CUL-291) extends this line with the stops.
+  // meets the mark; "Reading the trend" below still carries the timing and the co-attribution
+  // caution. Only shown when there is at least one marker to explain.
+  //
+  // R-14 (CUL-291) extends it with the stops. The gate is the SAME predicate the chart draws on
+  // and the count below switches on, which is what keeps B-599's rule in both directions: the
+  // legend can neither explain a mark the charts do not carry, nor leave one unexplained.
+  //
+  // Each entry names only the dates that are actually MARKED. A pre-window start is deliberately
+  // not repeated here — its "from <date>, before this window" belongs to the prose below; this
+  // line exists to tell a reader what the verticals in front of them mean.
   const marked = snap.concurrentChanges
-    .filter((c) => c.bucketIndex !== null)
-    .sort((a, b) => ((a.startDate ?? '') < (b.startDate ?? '') ? -1 : (a.startDate ?? '') > (b.startDate ?? '') ? 1 : 0))
+    .filter((c) => isWindowChange(c) && (c.startDate !== null || c.endInWindow !== null))
+    .map((c) => ({ c, at: (c.bucketIndex !== null ? c.startDate : null) ?? c.endInWindow ?? '' }))
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
   const markerLegend =
     marked.length > 0
-      ? `<div class="chartlegend">A dashed vertical marks the <b>week</b> a diet, medication, or supplement started: ${marked
-          .map((c) => `${legendLabel(c)}${c.startDate ? ` on ${h(fmtDay(c.startDate))}` : ''}`)
+      ? `<div class="chartlegend">A dashed vertical marks the <b>week</b> a diet, medication, or supplement started; a dotted vertical with a flat head marks the <b>week</b> one stopped: ${marked
+          .map(({ c }) => `${legendLabel(c)}${markedSpan(c)}`)
           .join('; ')}. Timing and overlap are in &ldquo;Reading the trend&rdquo; below.</div>`
       : ''
   return `
@@ -4691,8 +4794,15 @@ function readingTheTrend(snap: ReportSnapshot): string {
   // backdrop the trend can't be cleanly attributed against; framing it as a change was the
   // "why call free-feeding an intervention" complaint (PM #6 / B-233). A pre-window drug that
   // ran throughout, or one that STOPPED mid-window (a dated transition), still counts as a change.
-  const started = changes.filter((c) => !c.ongoing || c.endInWindow)
-  const standing = changes.filter((c) => c.ongoing && !c.endInWindow)
+  //
+  // The split switches on `isWindowChange` — the SAME call the chart draws its markers from and
+  // the legend gates on (R-14). Before it, this filter and the chart's marker filter were two
+  // hand-kept statements of one rule, and they had already drifted: a drug that started before
+  // the window and stopped inside it was counted here and drawn by nothing, so the sentence
+  // claimed a change the chart above it did not show. Because `standing` is now the predicate's
+  // complement rather than a second filter, the two can no longer disagree either.
+  const started = changes.filter((c) => isWindowChange(c))
+  const standing = changes.filter((c) => !isWindowChange(c))
   const parts: string[] = []
   if (started.length > 0) {
     // changeTiming carries the dated transition ("started <date>" / "started <date>, stopped
@@ -4764,7 +4874,23 @@ function legendLabel(c: ConcurrentChange): string {
       return `the supplement ${h(c.label)}`
     case 'free_fed':
       return `free-fed ${h(c.label)}`
+    case 'diet_allowed':
+      return `the allowed food ${h(c.label)}`
   }
+}
+
+/**
+ * The dates the chart legend names for one intervention — ONLY the ones a mark was drawn for
+ * (R-14). A pre-window start has no vertical, so printing it here would send a reader looking
+ * for a line that is not on the chart; its real timing is one paragraph down in "Reading the
+ * trend", which is the surface that owns the full span.
+ */
+function markedSpan(c: ConcurrentChange): string {
+  const start = c.bucketIndex !== null && c.startDate !== null ? h(fmtDay(c.startDate)) : null
+  const stop = c.endInWindow !== null ? h(fmtDay(c.endInWindow)) : null
+  if (start && stop) return ` from ${start} to ${stop}`
+  if (start) return ` on ${start}`
+  return stop ? `, stopped ${stop}` : ''
 }
 
 function changeLabel(c: ConcurrentChange): string {
@@ -4777,6 +4903,10 @@ function changeLabel(c: ConcurrentChange): string {
       return `${h(c.label)} (a supplement)`
     case 'free_fed':
       return `free-fed ${h(c.label)}`
+    case 'diet_allowed':
+      // Named for the PERMISSION, not the diet: "the trial diet (Greenies)" would be a false
+      // sentence about a treat, and the §7 allowed list is where the vet meets this food again.
+      return `${h(c.label)} (an allowed food)`
   }
 }
 
@@ -7713,6 +7843,12 @@ const STYLE = `
      page to survive a black-and-white print, which is how most vets will read it. */
   svg .nolog{fill:none;stroke:var(--nub);stroke-width:1;stroke-dasharray:2 2;}
   svg .mark{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;}
+  /* An intervention STOP (R-14): a finer dotted rule, plus a flat head at the top of the plot.
+     Two independent non-colour channels, because §5.8's bar is a photocopy and the dash pattern
+     is the first thing a photocopy blurs — the head still reads when the dots have merged. The
+     head is a flat cap, never a triangle: R2-6's ▲ was read as a data spike on the chart. */
+  svg .markend{stroke:var(--ink);stroke-width:1;stroke-dasharray:1 3;}
+  svg .markcap{stroke:var(--ink);stroke-width:1.5;}
   svg text.yl{font-size:10px;fill:var(--faint);}
   svg text.xl{font-size:10.5px;fill:var(--muted);}
   /* A white halo under the count labels (CUL-993 A.3): the dashed intervention marker runs the

@@ -1654,6 +1654,138 @@ Deno.test('A1c — a pre-window intervention that ENDED mid-window carries endIn
   assert.equal(t.endInWindow, '2026-05-15', 'its mid-window end is carried, so the note says "until" not "ongoing"')
 })
 
+// ── R-14 (CUL-291): the stop marker's bucket, and the mid-trial allowed-list change ──────
+
+/** A regimen row, minimal but real — only the span matters to a concurrent change. */
+function med(drugName: string, startedAt: string, endedAt: string | null): ReportMedicationInput {
+  return {
+    id: `reg-${drugName.toLowerCase()}`, medicationItemId: `mi-${drugName.toLowerCase()}`, drugName,
+    doseAmount: '5 mg', route: 'oral', dosesPerDay: 1, scheduleNotes: null, indication: null,
+    prescribedBy: null, startedAt, targetDurationDays: null, status: endedAt ? 'completed' : 'active',
+    endedAt, isPrescription: true, strength: '5 mg',
+  }
+}
+
+/** A `diet_trial_foods` row for the allowed set, minimal but real. */
+function allowed(label: string, from: string, until: string | null = null, role = 'permitted_treat') {
+  return {
+    foodItemId: `fi-${label.toLowerCase()}`,
+    foodLabel: label,
+    role,
+    allowedFrom: from,
+    allowedUntil: until,
+    primaryProtein: null,
+    brand: null,
+    productName: null,
+  }
+}
+
+Deno.test('R-14 — a stop carries endBucketIndex, from the SAME bucket grid the start marker uses', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      medications: [
+        // Started inside the window and stopped inside it: both ends are marked, so the two
+        // indices are directly comparable against one grid.
+        med('Prednisolone', '2026-04-22', '2026-05-06'),
+      ],
+    }),
+  )
+  const m = snap.concurrentChanges.find((c) => c.label === 'Prednisolone')
+  assert.ok(m, 'the course overlaps the window')
+  assert.equal(m.endInWindow, '2026-05-06', 'it stopped strictly before the window end')
+  assert.ok(m.endBucketIndex !== null, 'and the stop carries a bucket, or the chart cannot draw it')
+  // Two weeks apart (Apr 22 → May 6), and the buckets are 7 days: the stop is two buckets on
+  // from the start. Derived, not restated — a hand-written index would pass over a wrong grid.
+  assert.equal(m.endBucketIndex, (m.bucketIndex as number) + 2, 'the two indices share one 7-day grid')
+})
+
+Deno.test('R-14 — a course still running at the window end carries NO stop bucket', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      medications: [med('Apoquel', '2026-04-22', null)],
+    }),
+  )
+  const m = snap.concurrentChanges.find((c) => c.label === 'Apoquel')
+  assert.ok(m, 'the course overlaps the window')
+  assert.equal(m.endInWindow, null, 'still on board at the window end')
+  assert.equal(m.endBucketIndex, null, 'so nothing to draw — a stop glyph here would say a drug was withdrawn')
+})
+
+Deno.test('R-14 — a food added to the allowed list MID-TRIAL is its own change (the CUL-291 case)', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        {
+          id: 'dt', foodItemId: 'fi', startedAt: '2026-04-25', targetDurationDays: 56, status: 'active',
+          completedAt: null, vetName: null, foodLabel: 'RC HP', primaryProtein: 'hydrolyzed',
+          allowedFoods: [
+            // The primary diet, permitted from the trial's own start — NOT a second change.
+            allowed('RC HP', '2026-04-25', null, 'primary_diet'),
+            // The treat the vet permitted a fortnight in. A diet change by the legend's own
+            // definition, and the one the chart drew nothing for.
+            allowed('Dentastix', '2026-05-09'),
+          ],
+        },
+      ],
+    }),
+  )
+  const added = snap.concurrentChanges.filter((c) => c.kind === 'diet_allowed')
+  assert.equal(added.length, 1, 'exactly one allowed-list change — the mid-trial addition')
+  assert.equal(added[0].label, 'Dentastix')
+  assert.equal(added[0].startDate, '2026-05-09')
+  assert.ok(added[0].bucketIndex !== null, 'it marks the chart')
+  assert.equal(added[0].ongoing, false, 'it is a dated in-window transition, not standing context')
+  // The primary diet permitted on the trial's start day must NOT double the trial's own marker.
+  assert.equal(
+    snap.concurrentChanges.filter((c) => c.label === 'RC HP').length,
+    1,
+    'the trial is one change, not two — `allowed_from = started_at` is the trial starting',
+  )
+})
+
+Deno.test('R-14 — a permit granted before the window, with no in-window transition, is not a confounder', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        {
+          id: 'dt', foodItemId: 'fi', startedAt: '2026-04-01', targetDurationDays: 90, status: 'active',
+          completedAt: null, vetName: null, foodLabel: 'RC HP', primaryProtein: 'hydrolyzed',
+          // Added mid-trial but BEFORE this report's window opened, and never withdrawn. It is
+          // part of the standing protocol by the time the window starts; listing it under
+          // "Present during this window" would frame a snack as a confounder the trend cannot
+          // be attributed against, and the §7 allowed list already names it.
+          allowedFoods: [allowed('RC HP', '2026-04-01', null, 'primary_diet'), allowed('Dentastix', '2026-04-10')],
+        },
+      ],
+    }),
+  )
+  assert.equal(snap.concurrentChanges.filter((c) => c.kind === 'diet_allowed').length, 0, 'no change, no marker, no mention')
+})
+
+Deno.test('R-14 — a permit WITHDRAWN inside the window is a stop on the diet lane', () => {
+  const snap = assembleReport(
+    baseInput({
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        {
+          id: 'dt', foodItemId: 'fi', startedAt: '2026-04-01', targetDurationDays: 90, status: 'active',
+          completedAt: null, vetName: null, foodLabel: 'RC HP', primaryProtein: 'hydrolyzed',
+          allowedFoods: [allowed('RC HP', '2026-04-01', null, 'primary_diet'), allowed('Dentastix', '2026-04-10', '2026-05-02')],
+        },
+      ],
+    }),
+  )
+  const d = snap.concurrentChanges.find((c) => c.kind === 'diet_allowed')
+  assert.ok(d, 'the withdrawal is an in-window transition, so the row is kept')
+  assert.equal(d.endInWindow, '2026-05-02')
+  assert.ok(d.endBucketIndex !== null, 'and it draws a stop')
+  assert.equal(d.bucketIndex, null, 'its permit began before the window, so there is no start to draw')
+})
+
 // ── PM feedback round 1 (2026-07-03) — fixes from the first real on-device artifact ──
 
 Deno.test('appendix B tally — canonical protein keys (B-052); junk sentinel counted as unknown, never a "null" protein', () => {
