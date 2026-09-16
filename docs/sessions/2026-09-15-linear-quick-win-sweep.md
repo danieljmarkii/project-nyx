@@ -144,6 +144,12 @@ which is why it is written down twice.
 
 Both stayed unclaimed — nothing touched, nothing pushed.
 
+**The PM then dropped the `Quick Win` label off both** (2026-09-16), which is the
+half a comment alone does not do: an issue that keeps the label keeps getting read
+and re-cut by the next sweep, at the cost of the read each time. Relabelling was
+left to the PM deliberately — it is a backlog-grooming call, not a build one — and
+the ruling is recorded on each issue so the suggestion above reads as settled.
+
 ## Verification
 
 `tsc --noEmit` clean. Full suite green: 8378 tests / 387 suites, and again under
