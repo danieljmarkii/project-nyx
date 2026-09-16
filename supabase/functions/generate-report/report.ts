@@ -1511,6 +1511,20 @@ export interface VomitPhenotype {
   /** Primary contents category per assessed incident; the counts sum to assessedCount. */
   contentsMix: Record<VomitContentCategory, number>
   consistencyDistribution: Record<string, number>
+  /**
+   * Colour distribution over ASSESSED incidents; 'unsure' excluded (no legible colour) — the
+   * stool sibling's field, one enum over (CUL-981).
+   *
+   * THE PIPELINE ALREADY READ THIS AND THE AGGREGATE SKIPPED THE COLUMN. `event_ai_analysis.colour`
+   * is populated on every legible vomit read and reached only the per-incident rows in appendix A,
+   * so a vet tallied "tan, tan, green, tan, yellow" by eye from a page of rows while the box
+   * directly above did contents and consistency for them — in the same box that raises the blood
+   * question ("digested (coffee-ground) blood photographs poorly"), which is the one place colour
+   * is worth most. DESCRIPTIVE ONLY: nothing keys an escalation off a colour. The authoritative
+   * blood field is `bloodPresent`, present-only and derived from the owner-editable structured
+   * column (clinical-guardrails Pattern 9) — a colour is never a second, weaker route to that flag.
+   */
+  colourDistribution: Record<string, number>
   /** PRESENT-only (§5.9) — arrays of the incidents where it was actually seen. Empty ⇒ render a de-weighted limitation note, NEVER "0 of N". */
   bloodPresent: Array<{ eventId: string; occurredAt: string; kind: 'fresh_red' | 'coffee_ground' }>
   foreignPresent: Array<{ eventId: string; occurredAt: string; note: string | null }>
@@ -3180,6 +3194,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       unsure: 0,
     }
     const consistencyDistribution: Record<string, number> = {}
+    const colourDistribution: Record<string, number> = {}
     const bloodPresent: VomitPhenotype['bloodPresent'] = []
     const foreignPresent: VomitPhenotype['foreignPresent'] = []
     let withAnalysis = 0
@@ -3217,6 +3232,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (a.status === 'completed') {
         contentsMix[classifyVomitContents(a)]++
         if (a.consistency) consistencyDistribution[a.consistency] = (consistencyDistribution[a.consistency] ?? 0) + 1
+        // 'unsure' is NOT a legible colour and never enters the tally — the stool loop's rule
+        // (below), applied to the enum migration 013 gives this field. A read that could not
+        // name a colour is already disclosed by the assessed denominator; counting it as a
+        // category would invent a reading the photo does not carry.
+        if (a.colour && a.colour !== 'unsure') colourDistribution[a.colour] = (colourDistribution[a.colour] ?? 0) + 1
         if (a.editedAt) reviewedCount++
       }
     }
@@ -3227,6 +3247,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       assessedCount: states.completed,
       contentsMix,
       consistencyDistribution,
+      colourDistribution,
       bloodPresent,
       foreignPresent,
       reviewedCount,

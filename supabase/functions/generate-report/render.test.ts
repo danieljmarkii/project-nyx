@@ -355,6 +355,7 @@ const emptyPhenotype = (over: Partial<VomitPhenotype> = {}): VomitPhenotype => (
   assessedCount: 8,
   contentsMix: { food: 2, bile: 6, hairball: 0, foam_liquid: 0, grass: 0, unsure: 0 },
   consistencyDistribution: { foamy: 6, chunky: 2 },
+  colourDistribution: { tan: 5, green: 2, yellow: 1 },
   bloodPresent: [],
   foreignPresent: [],
   reviewedCount: 0,
@@ -1110,9 +1111,21 @@ Deno.test('print-color-adjust on fills + @page + zero third-party subresources',
 Deno.test('proportion bars use a grayscale ramp only (no load-bearing colour)', () => {
   const html = renderReport(base({ vomitPhenotype: emptyPhenotype() }))
   assert.ok(html.includes('#1a1c22'), 'darkest gray used for the leading segment')
-  // No saturated wellness/alarm colours anywhere in the artifact.
-  assert.ok(!/#[0-9a-f]*(00ff00|ff0000)/i.test(html))
-  assert.ok(!/(green|crimson|tomato)\b/i.test(html))
+  // SCOPED TO WHAT IS PAINTED (CUL-981). This scanned the whole document for colour words on the
+  // reasoning that §5.8 forbids encoding a datum in colour — and then the vomit box started
+  // PRINTING colour as data ("Colour, where legible: tan ×6 · green ×1"), which a document-wide
+  // word scan reads as a fill. The rule is about the stylesheet and the inline `style` attributes
+  // the bars are drawn with, so the assertion is sliced to those and anchored there (C-36: a
+  // guard that matches the whole object is measuring something other than the rule).
+  const painted = [
+    ...(html.match(/<style[\s\S]*?<\/style>/g) ?? []),
+    ...(html.match(/style="[^"]*"/g) ?? []),
+  ].join('\n')
+  assert.ok(painted.length > 0, 'the slice is non-empty — a scan over nothing passes everything')
+  assert.ok(!/#[0-9a-f]*(00ff00|ff0000)/i.test(painted))
+  assert.ok(!/(green|crimson|tomato)\b/i.test(painted))
+  // And the words that ARE in the document are the owner's photo read, not a fill.
+  assert.ok(/green/i.test(html), 'the colour tally still prints its words as data')
 })
 
 // ── Signalment age honesty (B-251 PR 9 — approximate DOB never a witnessed birthday) ──
@@ -4521,6 +4534,7 @@ Deno.test('B-532/B-502 — with no photographed incident, the block collapses to
         assessedCount: 0,
         contentsMix: { food: 0, bile: 0, hairball: 0, foam_liquid: 0, grass: 0, unsure: 0 },
         consistencyDistribution: {},
+        colourDistribution: {},
         bloodPresent: [],
         foreignPresent: [],
         reviewedCount: 0,
@@ -5298,3 +5312,113 @@ Deno.test('CUL-994 Part 2 — adversarial round 4: the sentence never restates t
   assert.ok(/administered doses fell on/.test(line) && /prescribed doses at/.test(line), 'both populations named')
 })
 
+// ── CUL-981 — the vomit colour tally ──────────────────────────────────────────
+//
+// Each test below reproduces a finding the v15 cold read made on the real artifact, and each was
+// RED against the render that shipped it.
+
+/**
+ * The rendered document sliced to one region, because a no-reassurance scan over a WHOLE report
+ * measures the wrong thing (C-36). The glossary says "a clear photo is never an all-clear" and the
+ * vomit caveat says "This is not a clearance" — both are the rule, and a document-wide word scan
+ * reads them as violations of it. The assertion belongs where the new copy is.
+ */
+function sliceSection(html: string, heading: string): string {
+  const i = html.indexOf(heading)
+  assert.ok(i >= 0, `section not found: ${heading}`)
+  const rest = html.slice(i)
+  const end = rest.indexOf('<h2', 1)
+  const out = end > 0 ? rest.slice(0, end) : rest
+  assert.ok(out.length > 40, 'the slice is non-empty — a scan over nothing passes everything')
+  return plain(out)
+}
+
+
+Deno.test('CUL-981 — the vomit box tallies colour beside the blood caveat, over LEGIBLE READS', () => {
+  const t = plain(
+    renderReport(
+      base({
+        vomitPhenotype: emptyPhenotype({
+          totalIncidents: 9, withAnalysis: 8, states: { completed: 6, uncertain: 1, failed: 1, pending: 0 },
+          assessedCount: 6, colourDistribution: { tan: 4, green: 1, yellow: 1 },
+        }),
+      }),
+    ),
+  )
+  assert.ok(
+    /Colour, from the 6 reads where it was legible: tan ×4 · green ×1 · yellow ×1\./.test(t),
+    'a tally, with counts AND its own denominator — never one the reader has to reconstruct by summing',
+  )
+  // THE DENOMINATOR IS THE NEIGHBOURING SENTENCE'S, and it is reads, not incidents.
+  assert.ok(/Across all 9 vomiting incidents; 6 have a legible AI read/.test(t))
+  assert.ok(!/Colour[^.]*9 (reads|incidents)/.test(t), 'the tally is never spoken over the incident count')
+  // NOT A RANKING. `predominantBit`'s "was most often" is a claim about which reading dominates,
+  // and this field is explicitly forbidden from ranking, interpreting or flagging.
+  assert.ok(!/Colour, from the.*was most often/.test(t))
+  assert.ok(!/bile present in/i.test(t), 'green is not re-read as a bile finding')
+  // The blood caveat is untouched and still refuses to clear.
+  assert.ok(/This is not a clearance/.test(t))
+})
+
+Deno.test('CUL-981 — a page of one colour is a tally and never an all-clear', () => {
+  const t = sliceSection(
+    renderReport(
+      base({
+        vomitPhenotype: emptyPhenotype({
+          totalIncidents: 6, withAnalysis: 6, states: { completed: 6, uncertain: 0, failed: 0, pending: 0 },
+          assessedCount: 6, colourDistribution: { tan: 6 }, bloodPresent: [], foreignPresent: [],
+        }),
+      }),
+    ),
+    'Vomit characteristics',
+  )
+  assert.ok(/Colour, from the 6 reads where it was legible: tan ×6\./.test(t), 'the tally renders')
+  for (const reassurance of [/normal colour/i, /unremarkable/i, /reassuring/i, /no concern/i, /all clear/i, /\bnothing to worry\b/i]) {
+    assert.ok(!reassurance.test(t), `a page of tan is not an all-clear: ${reassurance}`)
+  }
+  assert.ok(/This is not a clearance/.test(t), 'and the caveat beside it still says so')
+})
+
+Deno.test('CUL-981 — no legible read means no colour line at all', () => {
+  const some = plain(renderReport(base({ vomitPhenotype: emptyPhenotype({ colourDistribution: { tan: 2 } }) })))
+  assert.ok(/Colour, from the 2 reads where it was legible: tan ×2\./.test(some), 'the line renders when there is something to tally')
+  // PER-FIELD LEGIBILITY, NOT PER-READ: eight assessed reads, two with a legible colour. The
+  // tally's denominator is its own, so the counts still sum to it and nothing goes silent.
+  assert.ok(/8 have a legible AI read/.test(some), 'and it does not borrow the assessed denominator')
+  const one = plain(renderReport(base({ vomitPhenotype: emptyPhenotype({ colourDistribution: { tan: 1 } }) })))
+  assert.ok(/Colour, from the one read where it was legible: tan ×1\./.test(one), 'never "the 1 reads"')
+  const none = plain(renderReport(base({ vomitPhenotype: emptyPhenotype({ colourDistribution: {} }) })))
+  assert.ok(!/Colour, from the/.test(none), 'and is absent rather than empty when there is not')
+})
+
+Deno.test('CUL-981 — the edited-read rule is stated once, in the wording the box already uses', () => {
+  const t = plain(renderReport(base({ vomitPhenotype: emptyPhenotype() })))
+  assert.ok(
+    /a read the owner has corrected counts the same as one they have not/.test(t),
+    'an owner-corrected read counts the same — the rule contents and consistency already follow',
+  )
+  assert.equal(t.split('owner has corrected').length - 1, 1, 'said once, not restated in different words')
+  assert.ok(/owner-reviewable/.test(t), 'and the existing framing is unchanged')
+})
+
+Deno.test('CUL-981 — a black read is a colour, never the blood caveat’s own word', () => {
+  const t = sliceSection(
+    renderReport(
+      base({
+        vomitPhenotype: emptyPhenotype({
+          totalIncidents: 4, withAnalysis: 4, states: { completed: 4, uncertain: 0, failed: 0, pending: 0 },
+          assessedCount: 4, colourDistribution: { tan: 3, black_coffee_ground: 1 },
+        }),
+      }),
+    ),
+    'Vomit characteristics',
+  )
+  assert.ok(/Colour, from the 4 reads where it was legible: tan ×3 · black ×1\./.test(t), 'the value renders as a colour')
+  // THE CAVEAT OWNS THAT TERM. "Coffee-ground" is not a colour word in veterinary usage, it is THE
+  // descriptor for digested blood — and the box on the same line of sight uses it while asserting
+  // "Not seen". A vet reading both in one pass gets a contradiction and resolves it as either
+  // missed blood or two untrustworthy fields. The authoritative blood field stays the sole route.
+  assert.equal(t.split('coffee-ground').length - 1, 1, 'the term appears once, in the blood caveat')
+  assert.ok(/digested \(coffee-ground\) blood photographs poorly/.test(t), 'and that once is the caveat')
+  assert.ok(/Not seen/.test(t), 'which still refuses to clear')
+})
