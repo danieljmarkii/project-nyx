@@ -439,8 +439,8 @@
             <span class="chip">Something else</span>
           </div>
           <div class="resolve">
-            <b>12 weeks &mdash; ends 18 October.</b>
-            <span class="sub">That is 31 more days than the window you set.</span>
+            <b>12 weeks &mdash; ends 17 October.</b>
+            <span class="sub">That is 28 more days than the window you set.</span>
           </div>
           <div class="checkrow"><span class="box"></span><span>My vet asked for this</span></div>
           <div class="btn pri block" style="margin-top:12px">Save the new window</div>
@@ -469,7 +469,7 @@
             <span class="chip">Something else</span>
           </div>
           <div class="resolve">
-            <b>4 more weeks &mdash; ends 18 October.</b>
+            <b>4 more weeks &mdash; ends 17 October.</b>
             <span class="sub">The window becomes 84 days.</span>
           </div>
           <div class="btn pri block" style="margin-top:12px">Save</div>
@@ -478,8 +478,12 @@
           <b>(b) Option &mdash; deltas</b>
           <em>Option, drawn for the decision.</em> Consistent with the milestone&rsquo;s
           <code>Keep going &mdash; N more weeks</code>. But it makes the owner convert a twelve-week
-          instruction into a delta against a day counter &mdash; at the exact moment an arithmetic slip
-          costs four weeks of a restrictive diet.
+          instruction into a delta against a day counter, at the exact moment an arithmetic slip costs four
+          weeks of a restrictive diet &mdash; <strong>and before the milestone it is ambiguous on its
+          face.</strong> <code>nextTargetDays</code> extends from <code>max(currentTarget, dayCounter)</code>,
+          so on day 53 this writes <strong>84</strong> (four weeks past the window&rsquo;s end) while the
+          owner reads day <strong>81</strong> (four weeks past today). At the milestone the two coincide,
+          which is exactly why the milestone can keep its delta and this sheet cannot.
         </figcaption>
       </figure>
     </div>
@@ -513,7 +517,7 @@
             <div class="food-line">Royal Canin Selected Protein PR, Dry</div>
             <div class="bar"><span style="width:63%"></span></div>
             <div class="fact">51 of 53 days logged &middot; 2 feedings outside the trial diet</div>
-            <div class="fwd">The window now runs to 18 October.</div>
+            <div class="fwd">The window now runs to 17 October.</div>
             <div class="card-actions"><span class="btn link">What Nyx can eat</span></div>
           </div>
         </div>

@@ -158,7 +158,7 @@ Denominated in totals (TE-2). For the worked case, opened on day 53 of 56:
 >
 > `8 weeks` *(current)* · `10 weeks` · **`12 weeks`** · `16 weeks` · `Something else`
 >
-> **12 weeks — ends 18 October.** That is 31 more days than the window you set.
+> **12 weeks — ends 17 October.** That is 28 more days than the window you set.
 >
 > ☐ My vet asked for this
 >
@@ -192,7 +192,7 @@ The card re-reads immediately (`notifyTrialChanged` already does this). For the 
 **That retreat must not be dressed as a setback (TE-6).** It is the truth: the window is longer. The card
 adds one line for the rest of the day the window changed, and no longer:
 
-> The window now runs to 18 October.
+> The window now runs to 17 October.
 
 No celebration, no `!`, no "great — keep going", no restatement of coverage next to it. The state machine is
 untouched: the card is in whatever state §4.2 of the trial spec says it is in, with one extra `forward` line.
@@ -353,7 +353,12 @@ longer?"* (+2/+4/+8 weeks).
 - (b) Deltas. Consistent with the milestone's `Keep going — 4 more weeks`, but requires the owner to do
   arithmetic against a day counter to honour a vet instruction. Mock frame 4b.
 **Why (a):** the one input the owner actually possesses is the total. (b) makes them convert it, at the
-exact moment an error costs four weeks of a restrictive diet.
+exact moment an error costs four weeks of a restrictive diet — **and before the milestone, (b) is
+ambiguous on its face.** `nextTargetDays` extends from `max(currentTarget, dayCounter)`, so on day 53 of a
+56-day trial *"4 more weeks"* writes **84** (four weeks past the window's end) while the owner reads it as
+day 81 (four weeks past today). At the milestone the two coincide, which is why the milestone can keep its
+delta; mid-trial they never do, and a sheet cannot be honest about which it means without naming the
+total anyway.
 **Consequence:** rules the sheet's copy and chips; does not touch the milestone, which keeps its delta.
 
 ### D2 — How the record keeps the fact that the window moved
