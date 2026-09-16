@@ -6065,11 +6065,27 @@ function appendixA(snap: ReportSnapshot): string {
           .map(([, text]) => text)
           .join(' &middot; ')}.`
       : ''
+  // R-15 brief 7(b) — SAID WHERE THE OVER-CLAIM IS. This preamble opens "Every symptom event
+  // in the window, in order", and that is false while an `other` row exists: the allow-list
+  // has eight leaves and `other` is not one, so the row reaches no count and no table. A
+  // count, never the content — the notes are un-normalised owner text, and putting them in
+  // front of a clinician is CUL-848's question rather than this ruling's.
+  const uncat = snap.provenance.uncategorisedObservations
+  const uncatBit =
+    uncat > 0
+      ? ` ${num(uncat)} further observation${uncat === 1 ? '' : 's'} in this window ${
+          uncat === 1 ? 'was' : 'were'
+        } logged under a type this report does not categorise, so ${
+          uncat === 1 ? 'it is' : 'they are'
+        } in none of the counts above and none of the rows below; what the owner wrote ${
+          uncat === 1 ? 'for it' : 'for them'
+        } is in the Culprit app.`
+      : ''
   return `
 <section class="page">
   ${appendixDivider(snap)}
   <p class="appx-title serif">Appendix A — Symptom event log</p>
-  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed. &ldquo;Logged&rdquo; is when the owner recorded it, and carries a date whenever that fell on a different day from the event; a gap between the two is expected and is itself information, since the longer it is, the more of the reported time is recall.${estBit}${glossBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
+  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed. &ldquo;Logged&rdquo; is when the owner recorded it, and carries a date whenever that fell on a different day from the event; a gap between the two is expected and is itself information, since the longer it is, the more of the reported time is recall.${estBit}${glossBit}${uncatBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
   <table>
     <caption>${num(count)} symptom event${count === 1 ? '' : 's'} &middot; ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}</caption>
     <thead>

@@ -3999,3 +3999,68 @@ Deno.test('CUL-852 — a dose paired to a de-duplicated meal twin still names it
   assert.deepEqual(dropped.labels, survivor.labels)
   assert.equal(dropped.feedings, survivor.feedings)
 })
+
+// ── R-15 brief 7(b), PM-ruled 2026-09-16 — the uncategorised observations are COUNTED ──
+//
+// `REPORT_SYMPTOM_TYPES` is an allow-list of eight leaves and `other` is not among it, so an
+// `other` row reaches no count, no chart and no appendix — while Appendix A's own preamble
+// claims "every symptom event in the window". On the PM's record the day before a real
+// appointment that silently dropped two dated rows naming the ear ("Tipping ear down",
+// "Shaking her head"), which is the sign that separates otitis from general pruritus.
+//
+// The ruling is (c) WITH (b): the owner is told at Send (client, separate) and the vet is
+// given a COUNT with no content. This is the (b) half — a number, never the notes.
+
+Deno.test('R-15 brief 7(b) — an `other` observation is counted, and only counted', () => {
+  idSeq = 0
+  const other = (date: string, note: string) =>
+    makeEvent({ type: 'other', occurredAt: at(date, '16:41:00'), notes: note })
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        other('2026-06-20', 'Tipping ear down'),
+        other('2026-06-21', 'Shaking her head- ear is bothering her'),
+        makeEvent({ type: 'vomit', occurredAt: at('2026-06-22', '09:00:00') }),
+      ],
+    }),
+  )
+  assert.equal(snap.provenance.uncategorisedObservations, 2, 'both `other` rows are counted')
+  assert.equal(snap.provenance.symptomLog.length, 1, 'and neither reaches the symptom log')
+  assert.equal(snap.provenance.totalSymptomIncidents, 1, 'nor any symptom count')
+
+  const t = plainText(renderReport(snap))
+  assert.ok(/2 further observations/.test(t), 'the count is disclosed')
+  assert.ok(/does not categorise/.test(t), 'and what it means')
+  // (b) IS A COUNT AND NO CONTENT. The notes are un-normalised owner text of unknown
+  // clinical quality; promoting them into the clinical artifact is the CUL-848 question and
+  // was NOT what was ruled.
+  assert.ok(!/Tipping ear down/.test(t), 'the note never reaches the report')
+  assert.ok(!/Shaking her head/.test(t), 'nor the second one')
+})
+
+Deno.test('R-15 brief 7(b) — a record with no `other` row gains no line', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({ now: '2026-07-02T12:00:00Z', events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-22', '09:00:00') })] }),
+  )
+  assert.equal(snap.provenance.uncategorisedObservations, 0)
+  assert.ok(!/further observation/.test(plainText(renderReport(snap))), 'present-only, like every other disclosure on this page')
+})
+
+Deno.test('R-15 brief 7(b) — the daily look is not an uncategorised observation', () => {
+  // `check_in` is the look, already excluded from every type-agnostic count as the third
+  // exclusion at report.ts's `LOCAL_LOOK` note. Counting it here would tell a vet the record
+  // holds observations the report dropped, when what it holds is the owner answering Noticed.
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-07-02T12:00:00Z',
+      events: [
+        makeEvent({ type: 'check_in', occurredAt: at('2026-06-20', '20:00:00') }),
+        makeEvent({ type: 'vomit', occurredAt: at('2026-06-22', '09:00:00') }),
+      ],
+    }),
+  )
+  assert.equal(snap.provenance.uncategorisedObservations, 0, 'a look is not an uncategorised observation')
+})

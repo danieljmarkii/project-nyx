@@ -265,6 +265,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       totalSymptomIncidents: 0,
       estimatedOrWindowCount: 0,
       deletedExcluded: true,
+      uncategorisedObservations: 0,
       symptomLog: [],
       intakeLog: [],
       intakeLogHiddenOlder: 0,
@@ -543,7 +544,7 @@ Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread 
     base({
       safetyFlags: [flag],
       provenance: {
-        ownerReported: true, totalSymptomIncidents: 0, estimatedOrWindowCount: 0, deletedExcluded: true,
+        ownerReported: true, totalSymptomIncidents: 0, estimatedOrWindowCount: 0, deletedExcluded: true, uncategorisedObservations: 0,
         symptomLog: [],
         intakeLogScope: 'intake_flag',
         intakeLog: [
@@ -601,6 +602,7 @@ Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last
         totalSymptomIncidents: 0,
         estimatedOrWindowCount: 0,
         deletedExcluded: true,
+        uncategorisedObservations: 0,
         symptomLog: [],
         intakeLogScope: 'intake_flag',
         intakeLog: [
@@ -850,6 +852,7 @@ Deno.test('severity never reaches the report — no column, no x/5, no "Severity
         totalSymptomIncidents: 2,
         estimatedOrWindowCount: 0,
         deletedExcluded: true,
+        uncategorisedObservations: 0,
         symptomLog: [
           logEntry({ type: 'vomit', occurredAt: '2026-06-01T14:00:00Z', severity: null }),
           logEntry({ type: 'diarrhea', occurredAt: '2026-06-02T12:00:00Z', severity: 3 }),
@@ -880,6 +883,7 @@ Deno.test('B-010 — windowed event renders a time RANGE, estimated an ~time, ne
         totalSymptomIncidents: 2,
         estimatedOrWindowCount: 2,
         deletedExcluded: true,
+        uncategorisedObservations: 0,
         symptomLog: [
           logEntry({
             type: 'vomit',
@@ -1726,6 +1730,7 @@ Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with 
         totalSymptomIncidents: 0,
         estimatedOrWindowCount: 0,
         deletedExcluded: true,
+        uncategorisedObservations: 0,
         symptomLog: [],
         intakeLog: [],
         intakeLogHiddenOlder: 0,

@@ -2178,6 +2178,22 @@ export interface Provenance {
   /** Appendix A — every in-window symptom incident, occurred-vs-logged, with per-event phenotype. */
   symptomLog: SymptomLogEntry[]
   /**
+   * In-window observations the owner logged as `other` (R-15 brief 7(b), PM-ruled 2026-09-16).
+   *
+   * `REPORT_SYMPTOM_TYPES` is an allow-list of eight leaves and `other` is not among them, so
+   * such a row reaches no count, no chart and no appendix — while Appendix A's preamble claims
+   * "every symptom event in the window". On the PM's own record, the day before a real
+   * appointment, that silently dropped two dated rows naming the ear ("Tipping ear down",
+   * "Shaking her head"), which is the sign a clinician most wants because it separates otitis
+   * from general pruritus.
+   *
+   * A COUNT, AND ONLY A COUNT. The ruling was (c) with (b): the owner is told at Send so the
+   * cause is fixed, and the vet is told the record is wider than the page. The notes
+   * themselves are un-normalised owner text of unknown clinical quality — promoting them into
+   * the clinical artifact is CUL-848's question and was explicitly not what was ruled.
+   */
+  uncategorisedObservations: number
+  /**
    * B-213 — rated meals for the intake appendix, most-recent-first. Capped; older rated meals
    * beyond the cap are counted in intakeLogHiddenOlder, never silently dropped.
    *
@@ -4222,6 +4238,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         phenotype,
       }
     })
+  // R-15 brief 7(b). Scoped to `other` rather than "anything not in the allow-list", because
+  // the other non-symptom types are all reported in their own right — a meal, a dose, a
+  // weigh-in and the daily look each have a home on this document. `other` is the one type
+  // the app invites the owner to use and the report then declines to carry.
+  const uncategorisedObservations = windowEvents.filter((e) => e.type === 'other').length
+
   const estimatedOrWindowCount = symptomLog.filter(
     (e) => e.occurredAtConfidence === 'estimated' || e.occurredAtConfidence === 'window',
   ).length
@@ -4518,6 +4540,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     estimatedOrWindowCount,
     deletedExcluded: true,
     symptomLog,
+    uncategorisedObservations,
     intakeLog,
     intakeLogHiddenOlder,
     intakeLogScope,

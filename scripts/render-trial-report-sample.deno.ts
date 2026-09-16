@@ -206,6 +206,15 @@ function cleanCase(): ReportInput {
   events.push(meal({ date: '2026-06-27', time: '19:20:00', brand: 'Home', product: 'Roast chicken', foodItemId: 'f-hf', foodType: 'other', format: 'human_food', proteins: ['chicken'] }))
   events.push(meal({ date: '2026-06-21', time: '07:40:00', brand: 'Purina', product: 'Pro Plan Sensitive Skin', foodItemId: 'f-pp', foodType: 'meal', format: 'kibble', proteins: ['salmon', 'chicken'], ingredientsNotes: 'Salmon, rice, chicken by-product meal, fish oil', intakeRating: 'all', notes: 'ran out of the HP, one breakfast' }))
 
+  // Two observations the owner logged as `other`, because the app offers no leaf for them —
+  // the shape R-10 (CUL-974) found on the PM's own record the day before a real appointment.
+  // They reach no count, no chart and no appendix row, and R-15 brief 7(b) is why the report
+  // now says so: without a fixture carrying one, the disclosure renders in no artifact and
+  // the cold read that follows the deploy cannot see it. The NOTES are deliberately here and
+  // deliberately never printed — (b) is a count and no content.
+  events.push(sym('other', '2026-06-28', '16:41:00', 'Tipping ear down'))
+  events.push(sym('other', '2026-06-28', '21:10:00', 'Shaking her head - ear is bothering her'))
+
   // Itch and ear-scratching, falling through the trial.
   for (const d of ['2026-05-21', '2026-05-22', '2026-05-23', '2026-05-25', '2026-05-26', '2026-05-28', '2026-05-30', '2026-05-31', '2026-06-02', '2026-06-04', '2026-06-06']) {
     events.push(sym('itch', d))
