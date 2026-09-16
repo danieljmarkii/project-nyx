@@ -20,8 +20,10 @@ intake per format with its own denominator, and the refusal, present-only. On th
 
 > Trial diet by format, May 25 – Jul 2, 2026. Purina HA Hydrolyzed — dry — 23 rated meals: ate
 > it all ×23. Purina HA Hydrolyzed — wet — 12 rated meals: ate most ×11 · ate some ×1.
-> **1 of the 36 rated meals in this window is recorded as refused.** It was not one of the
-> formats above.
+> **1 of the 36 rated meals in this window is recorded as refused.**
+> Across the formats above, 23 of 35 were fully eaten. These counts are over May 25 – Jul 2,
+> 2026, and over each food while it was on the trial's list; the window's other 1 rated meal is
+> not in them.
 
 Nothing here waits on a detector. The relative reduced-intake detector staying quiet is a
 statement about a *threshold*, not about the record — the report already discloses that
@@ -104,12 +106,13 @@ PR added and every one of those in the reassuring direction.**
 3. **The partition sentence implied the remainder was other foods.** *"Cover 20 of the 32"* — and
    on an ended trial whose diet the owner kept offering and the cat kept picking at, the excluded
    twelve were the **same** food, dropped because the counted span closes when the trial does.
-   C-37's tell exactly: the span reached outside the window and the accusing count did not. It
-   names the span first now, and both reasons a meal is not in it, asserting neither of any row.
+   C-37's tell exactly: the span reached outside the window and the accusing count did not. *(The
+   fix for this — naming the span and two causes — was itself falsified on re-run; see below.)*
 4. **Two permissions of one food rendered as two identically-named formats.** Migration 040's own
    remove-then-re-add workflow produces that, and the Allowed list two inches below was
-   disambiguating them correctly while this line was not. A repeated label carries its dates; a
-   duplicate permission key is counted once (`trial.ts` reads its per-row map *by key*, so an
+   disambiguating them correctly while this line was not. A repeated label carries its dates.
+   *(The dedupe added alongside it was the re-run's worst finding; see below.)* (`trial.ts`
+   reads its per-row map *by key*, so an
    identical pair would take the same ratings twice and print a total larger than the window's
    rated meals — the one direction the partition sentence fails quiet in).
 
