@@ -14,7 +14,7 @@
 // deterministic and do not depend on detection thresholds.
 
 import { strict as assert } from 'node:assert'
-import { renderReport } from './render.ts'
+import { renderReport, SHIPPED_STYLE } from './render.ts'
 import { LANE_SYMPTOM_TYPES } from '../generate-signal/detection.ts'
 import { REPORT_SYMPTOM_TYPES } from './report.ts'
 import type {
@@ -5029,8 +5029,24 @@ Deno.test('CUL-993 A.1 — the photo grid keeps only its last row with the foote
 // ── A.3: the count label paints over the marker ──
 Deno.test('CUL-993 A.3 — count labels carry a white halo so a marker line never runs through the number', () => {
   const html = renderReport(base())
-  assert.ok(/svg text\.cap\{font-size:11px;fill:var\(--muted\);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;\}/.test(html))
-  assert.ok(/svg text\.z\{font-size:11px;fill:var\(--faint\);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;\}/.test(html))
+  // The halo is the paper colour, written as the token (CUL-999 item 4 — no hex outside
+  // :root), and text.z's FILL came up off --faint to --muted with the no-data mark it
+  // labels (CUL-999 items 1 + 2). The halo itself is unchanged in effect: white on white
+  // paper, so it still survives a B&W print.
+  assert.ok(/svg text\.cap\{font-size:11px;fill:var\(--muted\);paint-order:stroke;stroke:var\(--surface\);stroke-width:3px;stroke-linejoin:round;\}/.test(html))
+  assert.ok(/svg text\.z\{font-size:11px;fill:var\(--muted\);paint-order:stroke;stroke:var\(--surface\);stroke-width:3px;stroke-linejoin:round;\}/.test(html))
+})
+
+// ── The stylesheet the guards measure is the stylesheet that ships ──
+Deno.test('CUL-999 / CUL-1000 — style.test.ts guards the bytes the document actually carries', () => {
+  // `style.test.ts` measures contrast, the type scale, the hex rule and the container rules
+  // against the exported SHIPPED_STYLE. That is only worth anything while SHIPPED_STYLE is
+  // what `renderReport` interpolates: detached, every guard over there would keep passing
+  // over a constant no document contains. This is the one assertion joining them, and it
+  // lives here because this is where the snapshot builders are.
+  const html = renderReport(base())
+  assert.ok(html.includes(`<style>${SHIPPED_STYLE}</style>`), 'the guarded stylesheet is the rendered one, verbatim')
+  assert.ok(SHIPPED_STYLE.length > 5000, 'and it is the whole sheet, not an empty string that trivially "includes"')
 })
 
 // ── A.4: "1 entry" ──
@@ -5086,7 +5102,7 @@ Deno.test('CUL-982 item 4 — the marker legend precedes the first chart and nam
     /started: the trial diet RC HP on May 2; the medication Metronidazole on May 4\. Timing and overlap are in &ldquo;Reading the trend&rdquo; below\./.test(html),
     'each start is named with its own date, in date order, kind first (no double parenthetical)',
   )
-  assert.ok(/\.chartlegend\{font-size:10\.5px;color:var\(--muted\);margin:0 0 9px/.test(html), 'the legend is --muted, not the lightest grey on the page')
+  assert.ok(/\.chartlegend\{font-size:11px;color:var\(--muted\);margin:0 0 9px/.test(html), 'the legend is --muted, not the lightest grey on the page')
 })
 
 Deno.test('CUL-982 item 4 — a week with more than three starts says the count and the week, never one date', () => {

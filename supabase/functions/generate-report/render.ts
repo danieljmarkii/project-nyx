@@ -7964,20 +7964,37 @@ ${appendixF(snap)}
 // is letterhead furniture only and degrades to dark gray in B&W. Every fill/swatch
 // carries print-color-adjust:exact so it survives a default clinic printer.
 const STYLE = `
+  /* THE TOKENS ARE THE WHOLE PALETTE (CUL-999 item 4). No hex appears below this block —
+     guards/../style.test.ts fails the build on one — because the app has enforced
+     theme-tokens-only since day one and this stylesheet was the single place it did not:
+     eight raw hexes over twenty-eight uses sat beside the tokens, four of them near-white
+     tints a reader cannot tell apart and two near-inks nobody chose deliberately.
+     --ink2 collapses #25272d and #2a2c31, which were the same intent typed twice.
+     Deleted rather than tokenised: --hair2 and --brand-soft had ZERO consumers; --nub
+     lost its last two to item 2 below; and the four near-white tints were not tokenised
+     at all, because the container pass (CUL-1000 item 3) removes every one of them — a
+     token minted for a value nothing may use is a hole, not a rule. */
   :root{
-    --ink:#16181d;--muted:#565961;--faint:#8a8d94;--hair:#e4e5e8;--hair2:#eef0f2;
-    --bar:#1a1c22;--nub:#c7c9ce;--fill:#f4f5f7;--surface:#ffffff;--brand:#2e3a4f;--brand-soft:#eef1f5;
+    --ink:#16181d;--ink2:#25272d;--muted:#565961;--faint:#8a8d94;--hair:#e4e5e8;
+    --bar:#1a1c22;--fill:#f4f5f7;--surface:#ffffff;--brand:#2e3a4f;--desk:#eceef1;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:#eceef1;color:var(--ink);
+    background:var(--desk);color:var(--ink);
     font-family:ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-size:13.5px;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    /* CUL-999 item 5. Inherited, so every block of prose on the sheet carries it and no
+       single line is left alone at a fold. */
+    orphans:3;widows:3;
   }
   .num{font-variant-numeric:tabular-nums;}
   .serif{font-family:"Newsreader",Georgia,"Iowan Old Style","Palatino Linotype",serif;}
 
+  /* The page's radius and shadow are the IN-APP PREVIEW's, not the sheet's: they draw a
+     sheet of paper lying on the desk behind it. The print block below flattens both, so
+     the printed document has no radius anywhere — which is why this is the one registered
+     exemption to the no-radius rule (CUL-1000 item 2 permits it in exactly these words). */
   .page{
     width:210mm;min-height:297mm;margin:16px auto;padding:15mm 16mm 12mm;
     background:var(--surface);box-shadow:0 1px 3px rgba(20,24,34,.10),0 8px 28px rgba(20,24,34,.10);border-radius:3px;
@@ -7987,47 +8004,55 @@ const STYLE = `
   .letter{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;}
   .brand{display:flex;align-items:center;gap:10px;}
   .brand .cmark{width:30px;height:30px;flex:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .wordmark{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:27px;letter-spacing:.005em;color:var(--brand);line-height:1;}
-  .brand .kind{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;}
+  .wordmark{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:27px;letter-spacing:0;color:var(--brand);line-height:1;}
+  .brand .kind{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600;}
   .lh-right{display:flex;align-items:flex-start;gap:16px;}
   .letter .stamp{text-align:right;font-size:11px;line-height:1.55;color:var(--muted);}
   .letter .stamp b{color:var(--ink);font-weight:600;}
   /* Brand QR → getculprit.app. Black-on-white, crisp modules, prints exact. Carries no data (§5.8). */
   .hqrblock{display:flex;flex-direction:column;align-items:center;gap:3px;flex:none;}
   .hqr{display:block;shape-rendering:crispEdges;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .hqrcap{font-size:8px;line-height:1.32;letter-spacing:.02em;color:var(--faint);text-align:center;white-space:nowrap;}
-  .rule-brand{height:2px;background:var(--brand);margin:9px 0 0;border-radius:2px;opacity:.9;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  /* 9px, not 8: the smallest size on the sheet was this caption, and the type scale has no
+     8. It is furniture (it names the QR, it carries no clinical datum), which is why it is
+     allowed under the 10px informational floor at all — see the registry in the test. */
+  .hqrcap{font-size:9px;line-height:1.32;letter-spacing:0;color:var(--faint);text-align:center;white-space:nowrap;}
+  .rule-brand{height:2px;background:var(--brand);margin:9px 0 0;border-radius:0;opacity:.9;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 
   /* Signalment + range */
   .ident{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-top:14px;}
-  .ident .name{font-size:22px;font-weight:700;letter-spacing:.005em;line-height:1.05;}
-  .ident .sig{font-size:12.5px;color:#25272d;margin-top:3px;}
+  .ident .name{font-size:22px;font-weight:700;letter-spacing:0;line-height:1.05;}
+  .ident .sig{font-size:12px;color:var(--ink2);margin-top:3px;}
   .ident .wt{font-size:12px;color:var(--muted);margin-top:2px;}
   /* The active problem list, beside the signalment (B-532). Same weight as the rest of the
      identity block — it is history a clinician reads before the numbers, not an alert. */
   .ident .cond{font-size:12px;color:var(--muted);margin-top:3px;}
-  .rangebox{flex:0 0 auto;text-align:right;border:1px solid var(--hair);border-radius:8px;padding:8px 12px;min-width:190px;background:#fcfcfd;}
-  .rangebox .win{font-size:14px;font-weight:700;letter-spacing:.005em;}
-  .rangebox .days{font-size:11.5px;color:var(--muted);margin-top:1px;}
-  .rangebox .basis{display:inline-block;margin-top:6px;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:2px 7px;background:#fff;}
-  .cherry{margin-top:9px;border:1px solid var(--hair);border-left:3px solid var(--ink);border-radius:0 7px 7px 0;padding:7px 11px;font-size:11.5px;background:#fcfcfd;}
+  /* CUL-1000 item 1: a hairline RULE separating the window from the signalment, in place of
+     the tinted, rounded card. The rule does the separating a box was doing; the box was also
+     claiming the window is a thing apart from the identity block, which it is not. */
+  .rangebox{flex:0 0 auto;text-align:right;border-left:1px solid var(--hair);padding:0 0 0 16px;min-width:190px;}
+  .rangebox .win{font-size:13.5px;font-weight:700;letter-spacing:0;}
+  .rangebox .days{font-size:11px;color:var(--muted);margin-top:1px;}
+  .rangebox .basis{display:inline-block;margin-top:6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:0;padding:2px 7px;}
+  .cherry{margin-top:9px;border-left:3px solid var(--ink);padding:0 0 0 11px;font-size:11px;}
 
-  /* Safety band — leads the page. Mono-prominent: heavy border + weight, never colour. */
-  .safetyband{border:2px solid var(--ink);border-radius:9px;padding:10px 14px 6px;margin-top:14px;}
-  .safetyband > .h{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:8px;padding-bottom:7px;border-bottom:1.5px solid var(--ink);}
+  /* Safety band — leads the page. Mono-prominent: heavy border + weight, never colour.
+     THE ONLY BOX ON THE SHEET (CUL-1000 item 1). Everything else that was boxed is now
+     ruled, which is what makes this one read as loud: its prominence is now carried by
+     being the exception rather than by being the heaviest of nine containers. */
+  .safetyband{border:2px solid var(--ink);border-radius:0;padding:10px 14px 6px;margin-top:14px;}
+  .safetyband > .h{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:8px;padding-bottom:7px;border-bottom:1.5px solid var(--ink);}
   .safetyband > .h svg{width:16px;height:16px;flex:0 0 auto;}
   .safetyband > .h .sub{margin-left:auto;font-weight:500;letter-spacing:0;text-transform:none;font-size:10px;color:var(--muted);}
-  .safetyband .flag{padding:8px 0;font-size:12.5px;line-height:1.5;}
+  .safetyband .flag{padding:8px 0;font-size:12px;line-height:1.5;}
   .safetyband .flag + .flag{border-top:1px solid var(--hair);}
-  .safetyband .flag .tag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);border:1.5px solid var(--ink);border-radius:4px;padding:1px 6px;margin-right:4px;vertical-align:2px;}
+  .safetyband .flag .tag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);border:1.5px solid var(--ink);border-radius:0;padding:1px 6px;margin-right:4px;vertical-align:2px;}
   .safetyband .flag b{font-weight:700;}
 
-  .headline{margin-top:14px;font-size:14px;line-height:1.45;border-left:3px solid var(--ink);padding:2px 0 2px 12px;}
+  .headline{margin-top:14px;font-size:13.5px;line-height:1.45;border-left:3px solid var(--ink);padding:2px 0 2px 12px;}
   .headline b{font-weight:700;}
 
-  /* Weight strip */
-  .weight{display:flex;align-items:center;gap:14px;margin-top:12px;border:1px solid var(--hair);border-radius:9px;padding:9px 13px;background:#fcfcfd;}
-  .weight.weight-empty{background:#fbfbfc;}
+  /* Weight strip — ruled above and below (CUL-1000 item 1), not boxed and tinted. */
+  .weight{display:flex;align-items:center;gap:14px;margin-top:12px;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:9px 0;}
   .weight .spark{flex:0 0 auto;}
   .weight .wt-read{font-size:12px;line-height:1.45;}
   .weight .wt-read .v{font-weight:700;font-size:15px;}
@@ -8038,18 +8063,26 @@ const STYLE = `
   /* Sections — the clinical summary gets vertical breathing room (PM #4: don't crowd the summary;
      appendices stay dense). Print keeps the same rhythm; page 1/2 have the room to spare. */
   .sec{margin-top:19px;}
-  .sec > h2{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 11px;padding-bottom:6px;border-bottom:1px solid var(--hair);display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
-  .sec > h2 .aside{font-weight:500;letter-spacing:0;text-transform:none;font-size:10.5px;color:var(--faint);}
-  .note{font-size:11.5px;color:var(--muted);margin:6px 0 0;}
+  .sec > h2{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:0 0 11px;padding-bottom:6px;border-bottom:1px solid var(--hair);display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
+  /* --muted, not --faint (CUL-999 item 1). This aside carries the sentence that tells a
+     reader what the section's numbers are NOT — "the record, not a result", "except
+     coverage & off-diet, which are not window counts". A caveat set below the legibility
+     floor is a caveat the page can claim it made and the reader never received. */
+  .sec > h2 .aside{font-weight:500;letter-spacing:0;text-transform:none;font-size:10px;color:var(--muted);}
+  .note{font-size:11px;color:var(--muted);margin:6px 0 0;max-width:140mm;}
   .note b{color:var(--ink);}
-  .ref{font-size:11px;color:var(--faint);font-style:italic;margin:6px 0 0;}
-  .empty{font-size:12px;color:var(--muted);border:1px dashed var(--hair);border-radius:8px;padding:11px 13px;background:#fcfcfd;}
+  .ref{font-size:11px;color:var(--muted);font-style:italic;margin:6px 0 0;max-width:140mm;}
+  .empty{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:11px 0;}
 
-  /* Stat tiles */
-  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
-  .tile{border:1px solid var(--hair);border-radius:9px;padding:13px 13px;background:#fcfcfd;}
-  .tile .v{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.05;}
-  .tile .v small{font-size:13px;color:var(--muted);font-weight:600;}
+  /* Stat tiles — ONE RULED ROW (CUL-1000 item 5), not four cards. The row's own hairlines
+     above and below hold it together and a hairline between cells does the separating the
+     borders used to; the gap is now zero, because a gap between borderless cells is the
+     thing that stops four numbers reading as one row. */
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);}
+  .tile{padding:11px 13px;}
+  .tile + .tile{border-left:1px solid var(--hair);}
+  .tile .v{font-size:22px;font-weight:600;letter-spacing:0;line-height:1.05;}
+  .tile .v small{font-size:12px;color:var(--muted);font-weight:600;}
   .tile .l{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35;}
 
   /* Noticed — the owner's daily looks (CUL-875 / N-6). ONE HUE, THIN MARKS, DIRECT
@@ -8057,28 +8090,31 @@ const STYLE = `
      --faint, so the strip and the bars read identically in a B&W photocopy, which is
      what most of these documents become. Nothing below encodes a datum in colour. */
   .noticed-line{margin-top:14px;border-top:1px solid var(--hair);padding-top:11px;}
-  .noticed-h{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);}
-  .noticed-counts{font-size:12.5px;line-height:1.55;margin-top:4px;}
-  .noticed-note{font-size:11px;line-height:1.5;color:var(--muted);margin-top:4px;}
+  .noticed-h{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+  .noticed-counts{font-size:12px;line-height:1.55;margin-top:4px;}
+  .noticed-note{font-size:11px;line-height:1.5;color:var(--muted);margin-top:4px;max-width:140mm;}
   .noticed-graph{margin-top:11px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
   /* Below the bars' floor there is one column, so the strip gets the full width instead
      of 28 cells in half a page beside an empty white half. */
   .noticed-graph-1{grid-template-columns:1fr;}
-  .nb-title{font-size:10.5px;font-weight:700;color:var(--ink);margin-bottom:6px;}
-  .nb-title .aside{font-weight:500;color:var(--faint);letter-spacing:0;text-transform:none;font-size:10px;}
+  .nb-title{font-size:11px;font-weight:700;color:var(--ink);margin-bottom:6px;}
+  .nb-title .aside{font-weight:500;color:var(--muted);letter-spacing:0;text-transform:none;font-size:10px;}
   .nb-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
   .nb-lab{flex:0 0 116px;font-size:11px;line-height:1.25;}
-  .nb-first{display:block;font-size:9.5px;color:var(--faint);}
-  .nb-track{flex:1 1 auto;height:9px;background:var(--fill);border:1px solid var(--hair);border-radius:2px;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  /* --muted (CUL-999 item 1): this is the DATE a word was first marked, and C-37 makes it
+     the load-bearing half of a sentence that mixes two spans. A date that qualifies a count
+     cannot be fainter than the count it qualifies. */
+  .nb-first{display:block;font-size:10px;color:var(--muted);}
+  .nb-track{flex:1 1 auto;height:9px;background:var(--fill);border:1px solid var(--hair);border-radius:0;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .nb-fill{height:100%;background:var(--bar);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .nb-val{flex:0 0 auto;font-size:10.5px;color:var(--muted);white-space:nowrap;}
+  .nb-val{flex:0 0 auto;font-size:10px;color:var(--muted);white-space:nowrap;}
   /* The record contradicting the owner's claim. Body weight and primary ink, with a rule
      on the left in the headline's register: it is the most actionable sentence the block
      can produce and it rendered as 11px muted grey once. */
   .noticed-conflict{margin-top:6px;border-left:3px solid var(--ink);padding:2px 0 2px 10px;font-size:12px;line-height:1.5;}
   /* Why a per-word breakdown is not drawn. A withheld figure says so; a blank half-row
      is indistinguishable from a clipped page. */
-  .nb-held{font-size:10.5px;line-height:1.5;color:var(--muted);}
+  .nb-held{font-size:11px;line-height:1.5;color:var(--muted);}
   /* The strip. Each cell is a fixed column so 28 days sit on one row at page width; the
      vomit mark rides ABOVE the day's own glyph rather than replacing it, so a vomit mark
      never hides whether the day was answered.
@@ -8092,7 +8128,7 @@ const STYLE = `
      the only one standing for a hard clinical event, and it is the one a reader most wants
      to cross-reference against the circles; it would not have survived the photocopy this
      document is designed for (the cold read). */
-  .ns-v{display:block;font-size:9.5px;height:11px;color:var(--ink);}
+  .ns-v{display:block;font-size:10px;height:11px;color:var(--ink);}
   .ns-vn{visibility:hidden;}
   .ns-o{font-size:10px;color:var(--muted);}
   .ns-f{font-size:10px;color:var(--ink);}
@@ -8105,121 +8141,171 @@ const STYLE = `
   /* Keep each legend key whole: the triangle was orphaning onto its own line above the
      words it labels. */
   .ns-key{white-space:nowrap;margin-right:10px;}
-  .ns-vi{display:inline;height:auto;font-size:9px;}
-  .ns-legend{font-size:9.5px;color:var(--muted);margin-top:6px;line-height:1.5;}
-  .ns-words{font-size:10.5px;color:var(--ink);margin-top:5px;line-height:1.45;}
-  .ns-cap{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.45;}
+  .ns-vi{display:inline;height:auto;font-size:10px;}
+  .ns-legend{font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5;}
+  .ns-words{font-size:11px;color:var(--ink);margin-top:5px;line-height:1.45;}
+  .ns-cap{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.45;}
   /* The Noticed appendix. A day heading spans the table so two entries under one day can
-     never be read as two rows a vet counts as two episodes. */
-  .ng-day td{font-weight:700;background:var(--fill);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+     never be read as two rows a vet counts as two episodes. The BOLD does that work; the
+     tint behind it went with the zebra (CUL-1000 item 6) for the same reason — a light
+     grey band is noise at 200 dpi, and it was the only thing separating this heading from
+     a data row that also spans. */
+  .ng-day td{font-weight:700;}
   .ng-hour{white-space:nowrap;width:58px;color:var(--muted);}
   .ng-vom{font-weight:500;font-size:10px;color:var(--muted);margin-left:8px;}
   .ng-abs{color:var(--muted);}
-  .ng-note{margin-top:3px;font-size:11px;line-height:1.5;color:var(--ink);}
-  .ng-trunc{color:var(--faint);font-size:10px;}
+  .ng-note{margin-top:3px;font-size:11px;line-height:1.5;color:var(--ink);max-width:140mm;}
+  /* --muted (CUL-999 item 1): this marks that the owner's own words were CUT. A disclosure
+     of loss, set below the legibility floor, is the loss happening twice. */
+  .ng-trunc{color:var(--muted);font-size:10px;}
 
-  /* Trend charts (the hero) */
-  .trend{border:1px solid var(--hair);border-radius:10px;padding:10px 15px 4px;background:#fff;}
-  .trend + .trend{margin-top:8px;}
+  /* Trend charts (the hero) — ruled apart, not boxed (CUL-1000 item 1). The chart's own
+     axis and bars are its frame; a border around a chart is a second frame. */
+  .trend{padding:0;}
+  .trend + .trend{margin-top:10px;border-top:1px solid var(--hair);padding-top:10px;}
   .trend .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;}
   .trend .who{font-size:13.5px;font-weight:700;}
-  .trend .who .win{font-weight:500;color:var(--faint);font-size:11.5px;margin-left:2px;}
+  /* --muted (CUL-999 item 1): the window this chart covers. Every bar in the chart is
+     meaningless without it. */
+  .trend .who .win{font-weight:500;color:var(--muted);font-size:11px;margin-left:2px;}
   .trend .big{text-align:right;line-height:1.1;}
-  .trend .big .n{font-size:24px;font-weight:600;letter-spacing:-.01em;}
-  .trend .big .n small{font-size:13px;color:var(--muted);font-weight:600;}
-  .trend .big .delta{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .trend .big .n{font-size:22px;font-weight:600;letter-spacing:0;}
+  .trend .big .n small{font-size:12px;color:var(--muted);font-weight:600;}
+  .trend .big .delta{font-size:11px;color:var(--muted);margin-top:1px;}
   .trend .big .delta b{color:var(--ink);font-weight:700;}
   .trend svg{display:block;width:100%;height:auto;margin-top:4px;}
   .trend .subnote{font-size:11px;color:var(--muted);margin:2px 0 6px;}
   svg .grid{stroke:var(--hair);stroke-width:1;}
   svg .axis{stroke:var(--ink);stroke-width:1.25;}
   svg .bar{fill:var(--bar);}
-  svg .nub{fill:var(--nub);}
+  /* BOTH no-count marks now read (CUL-999 item 2, extended). .nolog was the issue's target
+     at 1.66:1; .nub is its twin and sat at the same value, so recolouring only one would
+     have left the mark meaning "we have no data" DARKER than the mark meaning "we measured
+     a zero" — the emphasis inverted, and inverted in the direction that reassures. Both are
+     --muted now and the distinction is carried where §5 rule 8 requires it: solid versus
+     hollow-and-dashed, a shape, which survives the photocopy and the colour-blind reader
+     alike. --nub had no other consumer and is gone. */
+  svg .nub{fill:var(--muted);}
   /* An unobserved week (B-532): HOLLOW, so it reads as "no data" and can never be mistaken for
      the solid nub that means a measured zero. Shape + fill, never colour — §5.8 requires this
      page to survive a black-and-white print, which is how most vets will read it. */
-  svg .nolog{fill:none;stroke:var(--nub);stroke-width:1;stroke-dasharray:2 2;}
+  svg .nolog{fill:none;stroke:var(--muted);stroke-width:1;stroke-dasharray:2 2;}
   svg .mark{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;}
-  svg text.yl{font-size:10px;fill:var(--faint);}
-  svg text.xl{font-size:10.5px;fill:var(--muted);}
+  svg text.yl{font-size:10px;fill:var(--muted);}
+  svg text.xl{font-size:10px;fill:var(--muted);}
   /* A white halo under the count labels (CUL-993 A.3): the dashed intervention marker runs the
      full plot height through the column its start falls in, and a tall bar's count sits in
      that column, so the number printed with dashes through it. paint-order draws the stroke
      beneath the glyphs; white on white paper, so it survives a B&W print unchanged. */
-  svg text.cap{font-size:11px;fill:var(--muted);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;}
-  svg text.z{font-size:11px;fill:var(--faint);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;}
+  svg text.cap{font-size:11px;fill:var(--muted);paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round;}
+  svg text.z{font-size:11px;fill:var(--muted);paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round;}
   svg text.ann{font-size:10px;fill:var(--ink);font-weight:600;}
 
-  /* Reading-the-trend callout — the GP-0 confound guard */
-  .callout{margin-top:11px;background:var(--fill);border-left:3px solid var(--ink);border-radius:0 7px 7px 0;padding:9px 13px;font-size:12px;line-height:1.5;}
-  .callout .k{font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10px;color:var(--muted);display:block;margin-bottom:2px;}
+  /* Reading-the-trend callout — the GP-0 confound guard. A rule-bounded paragraph, not a
+     tinted panel (CUL-1000 item 3): the 3px left ink rule is its whole signature now. */
+  .callout{margin-top:11px;border-left:3px solid var(--ink);border-radius:0;padding:0 0 0 13px;font-size:12px;line-height:1.5;max-width:140mm;}
+  .callout .k{font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:10px;color:var(--muted);display:block;margin-bottom:2px;}
 
   /* Phenotype strips */
-  .aitag{font-weight:500;letter-spacing:0;text-transform:none;font-size:9.5px;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:1px 7px;white-space:nowrap;}
+  .aitag{font-weight:500;letter-spacing:0;text-transform:none;font-size:10px;color:var(--muted);border:1px solid var(--hair);border-radius:0;padding:1px 7px;white-space:nowrap;}
   .pheno{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;align-items:start;}
-  .barmix{display:flex;height:26px;border-radius:6px;overflow:hidden;background:#fff;border:1px solid var(--hair);}
-  .barmix .seg{position:relative;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600;border-right:2px solid #fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;min-width:18px;}
+  .barmix{display:flex;height:26px;border-radius:0;overflow:hidden;background:var(--surface);border:1px solid var(--hair);}
+  .barmix .seg{position:relative;display:flex;align-items:center;justify-content:center;color:var(--surface);font-size:11px;font-weight:600;border-right:1px solid var(--surface);-webkit-print-color-adjust:exact;print-color-adjust:exact;min-width:18px;}
   .barmix .seg:last-child{border-right:0;}
   .mixkey{margin-top:8px;font-size:11px;color:var(--muted);line-height:1.7;}
-  .mixkey .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .limit{border:1px solid var(--hair);border-left:3px solid var(--faint);border-radius:0 8px 8px 0;padding:9px 12px;background:#fcfcfd;font-size:11.5px;line-height:1.5;color:var(--muted);}
+  .mixkey .sw{display:inline-block;width:9px;height:9px;border-radius:0;margin-right:5px;vertical-align:middle;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  /* The limitation note keeps its left rule and loses its box and tint (CUL-1000 item 3).
+     The rule stays --faint deliberately: this block is DE-WEIGHTED against the findings it
+     qualifies, and a 3px rule is a non-text mark, where --faint clears the 3:1 target its
+     own text never could. The text inside is --muted and always was. */
+  .limit{border-left:3px solid var(--faint);padding:0 0 0 12px;font-size:11px;line-height:1.5;color:var(--muted);max-width:140mm;}
   .limit b{color:var(--ink);}
-  .limit .h{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:9.5px;color:var(--muted);margin-bottom:3px;}
-  .present{border:1.5px solid var(--ink);border-radius:8px;padding:9px 12px;font-size:11.5px;line-height:1.5;}
-  .present .h{display:block;font-weight:800;text-transform:uppercase;letter-spacing:.05em;font-size:9.5px;color:var(--ink);margin-bottom:3px;}
+  .limit .h{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:10px;color:var(--muted);margin-bottom:3px;}
+  /* Present findings — blood or foreign material SEEN. Present-only escalation, adjacent to
+     the band, so it loses the four-sided border and keeps the emphasis (CUL-1000 item 4).
+     3px, and the call was made on a render, because item 4 asks whether 2px is enough and
+     NO FIXTURE DRAWS THIS BLOCK (all five carry the absent case, the de-weighted .limit
+     below) — so it was drawn against the shipped sheet beside the two blocks it competes
+     with. At 2px it reads LIGHTER than the confound callout sitting above it, which is the
+     wrong direction for the only block on the sheet whose contents are an escalation rather
+     than a caveat. At 3px the two rules match, and the separation is then carried where the
+     issue says it should be: the header. .present .h is --ink at 800; .callout .k is --muted
+     at 700; .limit .h is --muted over a --faint rule. Read down the three and the hierarchy
+     is escalation, caveat, limitation — which is the order they should be read in. */
+  .present{border-left:3px solid var(--ink);padding:0 0 0 12px;font-size:11px;line-height:1.5;}
+  .present .h{display:block;font-weight:800;text-transform:uppercase;letter-spacing:.05em;font-size:10px;color:var(--ink);margin-bottom:3px;}
   .present b{color:var(--ink);}
 
   /* Diet / meds key-value */
   .cols2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-  .kv{display:flex;gap:8px;margin:4px 0;font-size:12.5px;}
-  .kv .k{flex:0 0 auto;font-weight:600;color:#25272d;}
+  .kv{display:flex;gap:8px;margin:4px 0;font-size:12px;}
+  .kv .k{flex:0 0 auto;font-weight:600;color:var(--ink2);}
   /* Single aligned column for the diet/feeding/meds list — values align off a fixed label gutter. */
   .kvcol .kv{margin:6px 0;}
   .kvcol .kv .k{flex:0 0 132px;}
 
   /* Appendix */
-  .appx-title{font-size:14px;font-weight:700;margin:0 0 2px;}
-  .appx-title.serif{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:16px;}
-  .appx-sub{font-size:11.5px;color:var(--muted);margin:0 0 11px;line-height:1.5;}
-  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px;}
+  .appx-title{font-size:13.5px;font-weight:700;margin:0 0 2px;}
+  .appx-title.serif{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:15px;}
+  /* CUL-999 item 6 — the preamble is prose and was running the full 188mm measure, MEASURED
+     at 129 characters a line, which is what the issue estimated at "about 130".
+     140mm, not the issue's 120mm, and the difference is not a liberty: the issue asked for
+     "~120 mm (about 95 characters)", and those two figures stopped agreeing the moment item
+     3 moved prose from 11.5px to 11px. Measured in the browser at the shipped size, 120mm is
+     82 characters and 140mm is 96 — so 140mm is the figure that delivers what was asked for.
+     The character count is the goal; the millimetre was the estimate of it.
+     Tables, charts and the tile row are data and keep the full width. */
+  .appx-sub{font-size:11px;color:var(--muted);margin:0 0 11px;line-height:1.5;max-width:140mm;}
+  table{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px;}
   caption{caption-side:top;text-align:left;font-size:11px;color:var(--muted);margin-bottom:5px;}
   th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--hair);vertical-align:top;}
-  thead th{border-bottom:1.5px solid var(--ink);font-weight:700;font-size:10.5px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);}
-  tbody tr:nth-child(even){background:#f8f9fa;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  thead th{border-bottom:1.5px solid var(--ink);font-weight:700;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+  /* No zebra (CUL-1000 item 6). The row hairline already separates rows, and a tint this
+     light is noise on the 200 dpi grayscale scan these documents become — the vet tech read
+     banded rows as an artefact of the fax, not as structure. */
   td.r,th.r{text-align:right;}
   td.c,th.c{text-align:center;}
-  td.omit{text-align:center;font-size:10.5px;font-style:italic;color:var(--faint);background:#fafbfc;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .conf{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:0 4px;white-space:nowrap;}
-  .fields{display:block;color:var(--muted);font-size:10.5px;margin-top:2px;}
-  .fields b{color:#25272d;font-weight:600;}
-  .legend{font-size:11.5px;margin-bottom:0;}
+  /* The omitted cell keeps its italic and its centring, which is what carried the meaning;
+     the tint behind it went with the zebra, and the colour came up off the floor (CUL-999
+     item 1) because "omitted" is a disclosure. */
+  td.omit{text-align:center;font-size:11px;font-style:italic;color:var(--muted);}
+  .conf{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:0;padding:0 4px;white-space:nowrap;}
+  .fields{display:block;color:var(--muted);font-size:10px;margin-top:2px;}
+  .fields b{color:var(--ink2);font-weight:600;}
+  .legend{font-size:11px;margin-bottom:0;}
   /* The legend's last entry sits in the tail container (sectionTail) as a second list; with the
      lists' own margins zeroed the gap between entries stays the dd's 6px, exactly as one list. */
   .tail > .legend{margin-top:0;}
-  .legend dt{font-weight:700;float:left;clear:left;width:120px;color:#25272d;}
-  .legend dd{margin:0 0 6px 132px;color:#2a2c31;}
+  .legend dt{font-weight:700;float:left;clear:left;width:120px;color:var(--ink2);}
+  .legend dd{margin:0 0 6px 132px;color:var(--ink2);max-width:140mm;}
 
   /* Footer letterhead */
-  .foot{margin-top:20px;border-top:1px solid var(--hair);padding-top:9px;display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:10.5px;color:var(--muted);}
+  .foot{margin-top:20px;border-top:1px solid var(--hair);padding-top:9px;display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:10px;color:var(--muted);}
   .foot .fbrand{display:flex;align-items:center;gap:9px;}
   .foot .fbrand .fw{line-height:1.35;}
-  .foot .fbrand .fw .w{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:14px;color:var(--brand);}
+  .foot .fbrand .fw .w{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:13.5px;color:var(--brand);}
   .foot .fbrand .fw .scan{color:var(--muted);}
-  .foot .pg{text-align:right;color:var(--faint);}
+  /* --muted (CUL-999 item 1). This is the FILING KEY — the range and the section name a
+     reader uses to put a loose sheet back with the right patient. It was the palest text on
+     the page, on the one line that survives being photocopied out of context. */
+  .foot .pg{text-align:right;color:var(--muted);}
 
   /* Round-2 (B-221) additions */
-  .orient{margin-top:7px;font-size:10.5px;color:var(--faint);letter-spacing:.01em;}
-  .aibadge{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:1px 5px;white-space:nowrap;vertical-align:baseline;}
+  .orient{margin-top:7px;font-size:10px;color:var(--muted);letter-spacing:0;}
+  .aibadge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:0;padding:1px 5px;white-space:nowrap;vertical-align:baseline;}
   .tile .v .arw{color:var(--faint);font-weight:400;}
-  .trend .big .delta-caveat{font-size:10px;color:var(--faint);margin-top:1px;font-style:italic;}
+  /* --muted (CUL-999 item 1). This is the line that corrects the most misread number on the
+     sheet: the tile that reads "3 to 20" is a logging artefact, and this sentence is the
+     only thing that says so. The cold read described it as "nine-point grey under it". */
+  .trend .big .delta-caveat{font-size:10px;color:var(--muted);margin-top:1px;font-style:italic;}
   /* Above the charts it introduces, in --muted rather than --faint (CUL-982 item 4: the cold
      read nearly missed it in the lightest grey on the page). */
-  .chartlegend{font-size:10.5px;color:var(--muted);margin:0 0 9px;padding-left:2px;}
+  .chartlegend{font-size:11px;color:var(--muted);margin:0 0 9px;padding-left:2px;}
   /* Protein-over-time legend (#9) — swatch (hue + texture) · protein · count, wrapping. */
-  .ptlegend{margin-top:9px;font-size:10.5px;color:var(--muted);line-height:1.9;}
+  .ptlegend{margin-top:9px;font-size:10px;color:var(--muted);line-height:1.9;}
   .ptleg{display:inline-block;margin-right:13px;white-space:nowrap;}
   .ptleg svg{display:inline-block;width:12px;height:12px;vertical-align:-2px;margin-right:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .ptlegend .num{color:#25272d;font-weight:600;}
+  .ptlegend .num{color:var(--ink2);font-weight:600;}
   /* Appendix B "Proteins in the diet" — one row per food, food name left, set right.
      Two columns so a vet scanning for protein overlap reads down a single aligned
      edge instead of hunting the set inside prose (§9 condition 2). */
@@ -8228,36 +8314,42 @@ const STYLE = `
   .ptrow .ptset{flex:1 1 auto;}
   .chartlegend b{color:var(--ink);font-weight:600;}
   .note.lead{margin:0 0 9px;}
-  .rnote{color:var(--faint);font-style:italic;}
-  .divider{margin:0 0 16px;border:1px solid var(--hair);border-left:3px solid var(--ink);border-radius:0 8px 8px 0;padding:9px 13px;font-size:11.5px;line-height:1.5;color:var(--muted);background:#fcfcfd;}
-  .divider .k{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10px;color:var(--ink);margin-bottom:2px;}
+  /* --muted (CUL-999 item 1): "no protein recorded", "ingredient list not captured",
+     "nothing else on the label". Every one of these is a statement about what the record
+     does NOT contain, which is precisely the class a reader must not skim past. */
+  .rnote{color:var(--muted);font-style:italic;}
+  .divider{margin:0 0 16px;border-left:3px solid var(--ink);padding:0 0 0 13px;font-size:11px;line-height:1.5;color:var(--muted);max-width:140mm;}
+  .divider .k{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:10px;color:var(--ink);margin-bottom:2px;}
   svg .mtick{stroke:var(--faint);stroke-width:1;}
 
   /* Incident-photos appendix (PR 7). The chrome is grayscale (§5.8); the photos are the
-     source datum, not a colour-coded encoding, so they carry no §5.8 concern. */
+     source datum, not a colour-coded encoding, so they carry no §5.8 concern. Ruled off
+     rather than carded (CUL-1000 item 1); the photo's own letterbox ground stays, because
+     it is what gives a pale image an edge on a white sheet. */
   .phgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px;margin-top:6px;}
   /* The grid's last row lives in the tail container (sectionTail); when a grid precedes it the
      gap between the two is the grid's own row gap, so the split is invisible. */
   .phgrid + .tail > .phgrid-tail{margin-top:13px;}
-  .phcard{margin:0;border:1px solid var(--hair);border-radius:9px;overflow:hidden;background:#fcfcfd;}
+  .phcard{margin:0;border-top:1px solid var(--hair);border-radius:0;overflow:hidden;padding-top:8px;}
   .phimg{display:block;width:100%;height:auto;max-height:340px;object-fit:contain;background:var(--fill);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .phimg-missing{display:flex;align-items:center;justify-content:center;min-height:120px;font-size:11px;color:var(--faint);font-style:italic;border-bottom:1px solid var(--hair);}
-  .phcap{padding:8px 11px 10px;font-size:11.5px;line-height:1.45;}
+  .phimg-missing{display:flex;align-items:center;justify-content:center;min-height:120px;font-size:11px;color:var(--muted);font-style:italic;border-bottom:1px solid var(--hair);}
+  .phcap{padding:8px 0 10px;font-size:11px;line-height:1.45;}
   .phhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .phhead .phdate{font-weight:700;}
   .phhead .phtype{color:var(--muted);}
-  .phtag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);border:1.5px solid var(--ink);border-radius:4px;padding:1px 6px;}
-  .phread{color:var(--muted);font-size:10.5px;margin-top:4px;}
-  .phread b{color:#25272d;font-weight:600;}
-  .phnote{margin-top:4px;color:#2a2c31;}
+  .phtag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);border:1px solid var(--ink);border-radius:0;padding:1px 6px;}
+  .phread{color:var(--muted);font-size:10px;margin-top:4px;}
+  .phread b{color:var(--ink2);font-weight:600;}
+  .phnote{margin-top:4px;color:var(--ink2);}
 
-  /* Safety-band photo lead — a small thumbnail row inside the flag, on page 1. */
+  /* Safety-band photo lead — a small thumbnail row inside the flag, on page 1. The 1.5px ink
+     frame is the BAND's register, not a card: these sit inside the one box on the sheet. */
   .sbthumbs{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:7px;}
-  .sbthumb{width:66px;height:66px;object-fit:cover;border:1.5px solid var(--ink);border-radius:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .sbthumb{width:66px;height:66px;object-fit:cover;border:1.5px solid var(--ink);border-radius:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .sbthumbnote{font-size:10px;color:var(--muted);font-style:italic;}
 
   @media print{
-    body{background:#fff;font-size:10.4pt;}
+    body{background:var(--surface);font-size:10.4pt;}
     .no-print{display:none !important;}
     .page{width:auto;min-height:0;margin:0;padding:0;box-shadow:none;border-radius:0;}
     .page + .page{page-break-before:always;}
@@ -8270,6 +8362,11 @@ const STYLE = `
        row on one sheet with its key on the next is unreadable, and it survived only by
        luck. (The cold re-read, which rendered to A4 rather than estimating.) */
     tr,.kv,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard,.noticed-line,.noticed-graph,.noticed-conflict,.nb,.ns{page-break-inside:avoid;}
+    /* CUL-999 item 5 — a heading never sits alone at the foot of a sheet. Same class as
+       R-11's orphaned footer: a title whose content is on the next sheet is a title the
+       reader has to hold in their head across a page turn, and the appendix titles are
+       exactly the labels a vet uses to navigate back to a figure. */
+    .sec > h2,.appx-title,caption,.trend .top{page-break-after:avoid;break-after:avoid;}
     /* CUL-993 A.1 — a section's tail (its last block + its footer, see sectionTail) is one
        unbreakable unit, so the running footer can never open a sheet alone. The break-before
        on .foot is the belt: Blink honours it, WebKit (the device PDF) does not, which is why
@@ -8295,5 +8392,14 @@ const STYLE = `
  * identifier guard forbids anywhere in the rendered HTML. The rules are byte-identical; only
  * the commentary stays in this file, where it belongs. A CSS comment never nests, so the
  * non-greedy match is the whole grammar.
+ *
+ * EXPORTED for `style.test.ts` (CUL-999 / CUL-1000), which is the whole reason this is not
+ * a private const. The guards there measure contrast, the type scale, the hex rule and the
+ * container rules, and they measure them on THIS value rather than on `STYLE` deliberately:
+ * a hex or a font-size inside a CSS comment is not a shipped declaration, and a guard that
+ * counted one would fail on prose and pass on a real violation hidden behind it. What the
+ * vet's printer receives is this string; what the guards read is this string. The link
+ * between it and the rendered document — that `renderReport` still interpolates exactly
+ * this — is asserted in `render.test.ts`, where the snapshot builders live.
  */
-const SHIPPED_STYLE = STYLE.replace(/\/\*[\s\S]*?\*\//g, '')
+export const SHIPPED_STYLE = STYLE.replace(/\/\*[\s\S]*?\*\//g, '')
