@@ -314,6 +314,8 @@ function med(over: Partial<MedicationAdherence>): MedicationAdherence {
     doseDays: [],
     prescribedDoses: 90,
     lifetimeDosesLogged: 82,
+    lifetimeFirstDoseDay: null,
+    lifetimeLastDoseDay: null,
     windowDosesLogged: 82,
     windowDosesTotal: 90,
     courseEnded: false,
@@ -1094,6 +1096,10 @@ Deno.test('print-color-adjust on fills + @page + zero third-party subresources',
   const html = renderReport(base({ vomitPhenotype: emptyPhenotype() }))
   assert.ok(html.includes('print-color-adjust:exact'), 'fills survive a B&W clinic printer')
   assert.ok(html.includes('@page'), 'print page CSS present')
+  // CUL-993 A.2 / CUL-855 — the paper the device produces: expo-print's page box is US Letter
+  // and it never reads @page, so the declaration matches it rather than contradicting it.
+  assert.ok(/@page\{size:letter portrait/.test(html), 'the print stylesheet declares Letter')
+  assert.ok(!/size:A4/.test(html), 'no A4 declaration anywhere in the shipped document')
   assert.ok(!/https?:\/\//.test(html), 'no external subresource can leak the token in a Referer')
 })
 
@@ -1574,23 +1580,25 @@ Deno.test('B-010 one-sided window → "before/after <bound>" + range tag, never 
   )
   assert.ok(/before 03:09/.test(html), 'one-sided (latest) renders "before <time>"')
   assert.ok(/after 05:00/.test(html), 'one-sided (earliest) renders "after <time>"')
-  // Both carry the range tag — the artifact rendered these as bare precise-looking points.
-  const rangeTags = html.match(/<span class="conf">range<\/span>/g) ?? []
-  assert.ok(rangeTags.length >= 2, 'both one-sided windows are tagged range')
+  // CUL-634 — the words ARE the tag: a `range` chip beside "before 03:09" restated the cell.
+  // (The one-sided rows still count as non-witnessed in the preamble — asserted below.)
+  assert.ok(!/before 03:09<\/span>\s*<span class="conf">range/.test(html), '"before" carries no range chip')
+  assert.ok(!/after 05:00<\/span>\s*<span class="conf">range/.test(html), '"after" carries no range chip')
+  assert.ok(/<span class="num">2<\/span> of them carry no witnessed time/.test(html), 'both one-sided rows are counted as non-witnessed')
 })
 
 Deno.test('B-010 null confidence → explicit "unspecified" tag, and the legend defines it', () => {
-  const legacy = logEntry({
-    type: 'vomit',
-    occurredAt: '2026-06-21T21:06:00Z',
-    occurredAtConfidence: null,
-  })
+  // Built past `logEntry`'s `?? 'witnessed'` default, which had been turning this null into a
+  // witnessed row — and the assertion below used to be satisfied by the LEGEND's own chip, so
+  // the test was green while the fixture never exercised the branch (CUL-993, found while
+  // adding the CUL-634 count). It now reads the table cell.
+  const legacy = { ...logEntry({ type: 'vomit', occurredAt: '2026-06-21T21:06:00Z' }), occurredAtConfidence: null }
   const html = renderReport(
     base({
       provenance: { ...base().provenance, symptomLog: [legacy], totalSymptomIncidents: 1 },
     }),
   )
-  assert.ok(html.includes('<span class="conf">unspecified</span>'), 'null confidence is tagged, not bare')
+  assert.ok(/<td><span class="num">17:06<\/span> <span class="conf">unspecified<\/span><\/td>/.test(html), 'null confidence is tagged in the ROW, not bare')
   assert.ok(/logged without a time confidence/.test(html), 'legend explains the unspecified tag')
 })
 
@@ -1945,7 +1953,10 @@ Deno.test('R2-1 — Appendix B groups repeated treats (count + span); human food
 
 Deno.test('R2-5 — page 1 carries an orientation line; the appendices open with a divider', () => {
   const html = renderReport(base())
-  assert.ok(/Clinical summary: this page/.test(html), 'orientation line on page 1')
+  // CUL-993 A.5 — the line says the summary comes FIRST; it never says "this page", because the
+  // summary is two to three printed sheets on every fixture.
+  assert.ok(/Clinical summary first; appendices A&ndash;[A-G] \(\+ a legend\) follow/.test(html), 'orientation line on page 1, true')
+  assert.ok(!/Clinical summary: this page/.test(html), 'the false one-page promise is gone')
   assert.ok(/End of clinical summary/.test(html), 'divider before the appendices')
   assert.ok(/reference record behind every figure/.test(html), 'divider explains the appendices')
 })
@@ -2250,8 +2261,10 @@ Deno.test('B-496 — two starts in the same week render one marker with a count,
       ],
     }),
   )
-  // The second start is no longer invisible: the collapsed marker carries a count + the earliest date.
-  assert.ok(/2 starts &middot; May 2/.test(html), 'a two-start week is marked "2 starts · <earliest>", never silently one')
+  // The second start is no longer invisible: the shared marker lists BOTH dates (CUL-982 item 4 —
+  // "2 starts · May 2" labelled the bucket with one start's date and read as both starting then).
+  assert.ok(/starts &middot; May 2, May 4/.test(html), 'a two-start week is marked with every start\'s date, never one date for two starts')
+  assert.ok(!/2 starts &middot; May 2/.test(html), 'the bucket is never labelled with a single date')
   // Exactly one dashed vertical for that week (both starts share it — the count says so).
   assert.equal((html.match(/class="mark"/g) ?? []).length, 1, 'one vertical for the shared week')
   // The legend now promises the WEEK, not the day (the mark is bucket-granular).
@@ -2330,7 +2343,9 @@ Deno.test('cold-read coherence — a completed/stopped medication carries its en
   })
   const html = renderReport(snap)
   // The end date appears (not a bare "since May 12" that reads as still-active), on BOTH surfaces.
-  assert.ok(/May 12 &ndash; May 26 \(course complete\)/.test(html), 'completed course shows its date span + "course complete"')
+  // CUL-982 item 1 — "ended by owner", never "course complete": the status is the End tap.
+  assert.ok(/May 12 &ndash; May 26 \(ended by owner\)/.test(html), 'completed course shows its date span + "ended by owner"')
+  assert.ok(!/course complete/.test(html), '"course complete" is never printed — the status says nothing about doses')
   assert.ok(!/Metronidazole.*since <span class="num">May 12/.test(html), 'the ended course does not read "since May 12" as if still active')
 })
 
@@ -4637,4 +4652,337 @@ Deno.test('B-532 COLD⑦ — "None recorded" in the diet history says whose log 
     /nothing of this kind was logged in this window, which is not evidence none was fed/.test(t),
     'the absence caveat rides the diet-history rows an elimination trial rests on',
   )
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// CUL-993 — R-11, the vet-report design quick-win pass (carries CUL-982's four items,
+// CUL-857, CUL-855's corrected premise, CUL-634's three render rows, and CUL-994 Part 2).
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+/** Every conditional section ON, so a guard over "the document" sees every sheet it can grow. */
+function everythingOnSnap(): ReportSnapshot {
+  return monitoringSnap({
+    medications: [med({ drugName: 'Metronidazole' })],
+    unlinkedMedications: [unlinkedMed()],
+    medicationHistory: mhTable(
+      [mhEntry({ drugName: 'Metronidazole', startedDay: '2026-05-08', isActive: true, dosesLogged: 82, plannedDoses: 90, dosesPerDay: 2 })],
+      '2026-05-08',
+    ),
+    stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null },
+    vomitPhenotype: emptyPhenotype(),
+    incidentPhotos: [photo({ eventId: 'ev-p1', occurredAt: '2026-06-01T10:00:00Z', dataUri: PNG_1PX })],
+    concurrentChanges: [
+      { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 4, ongoing: false, endInWindow: null },
+      { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 5, ongoing: false, endInWindow: null },
+    ],
+    provenance: {
+      ...base().provenance,
+      symptomLog: [
+        logEntry({ eventId: 'ev-1', type: 'vomit', occurredAt: '2026-05-01T14:00:00Z' }),
+        logEntry({ eventId: 'ev-2', type: 'vomit', occurredAt: '2026-05-02T14:00:00Z', occurredAtConfidence: 'window', occurredAtLatest: '2026-05-02T14:00:00Z' }),
+        { ...logEntry({ eventId: 'ev-3', type: 'vomit', occurredAt: '2026-05-03T14:00:00Z' }), occurredAtConfidence: null },
+      ],
+      totalSymptomIncidents: 3,
+    },
+  })
+}
+
+// ── CUL-982 item 2: no internal identifier reaches the rendered document ──
+const INTERNAL_ID = /\b(?:HR|CUL|B)-\d+\b|§/
+
+Deno.test('CUL-982 item 2 — no internal identifier (HR-, CUL-, B-NNN, §) anywhere in the rendered HTML', () => {
+  const fixtures: Array<[string, ReportSnapshot]> = [
+    ['base', base()],
+    ['monitoring', monitoringSnap()],
+    ['everything on', everythingOnSnap()],
+  ]
+  for (const [name, snap] of fixtures) {
+    const html = renderReport(snap)
+    const m = INTERNAL_ID.exec(html)
+    assert.equal(
+      m,
+      null,
+      `${name}: "${m?.[0]}" reached the document near …${html.slice(Math.max(0, (m?.index ?? 0) - 80), (m?.index ?? 0) + 40)}…`,
+    )
+  }
+})
+
+Deno.test('CUL-982 item 2 — the shipped stylesheet carries no comments, and its rules survive the strip', () => {
+  const html = renderReport(base())
+  const css = /<style>([\s\S]*?)<\/style>/.exec(html)![1]
+  assert.ok(!/\/\*/.test(css), 'no CSS comment ships (they carried §5.8, B-532, CUL-875 …)')
+  assert.ok(/\.tail\{page-break-inside:avoid/.test(css), 'the tail rule survives')
+  assert.ok(/@page\{size:letter portrait;margin:11mm;\}/.test(css), 'the page rule survives')
+  assert.ok(/print-color-adjust:exact/.test(css), 'print-color-adjust survives')
+  assert.ok(/\.page \+ \.page\{page-break-before:always;\}/.test(css), 'the section break survives')
+})
+
+// ── A.1: the orphaned footer ──
+Deno.test('CUL-993 A.1 — every running footer sits inside a section tail with a real anchor, and the tail is unbreakable in print', () => {
+  const html = renderReport(everythingOnSnap())
+  const foots = [...html.matchAll(/<div class="foot">/g)].map((m) => m.index!)
+  // page 1 · A · B–D · incident photos · the legend (no meals, no Noticed on this fixture).
+  assert.equal(foots.length, 5, 'one footer per section')
+  for (const i of foots) {
+    const before = html.slice(0, i)
+    const tailAt = before.lastIndexOf('<div class="tail">')
+    const sectionAt = before.lastIndexOf('<section class="page">')
+    assert.ok(tailAt > sectionAt, 'a tail opened in this section before its footer')
+    assert.ok(!before.slice(tailAt).includes('<div class="foot">'), 'one tail per footer')
+    assert.ok(/\S/.test(before.slice(tailAt + '<div class="tail">'.length)), 'the tail holds an anchor before the footer, never an empty wrapper')
+  }
+  assert.ok(/\.tail\{page-break-inside:avoid;break-inside:avoid;\}/.test(html), 'the tail is atomic in print')
+  assert.ok(/\.foot\{page-break-before:avoid;break-before:avoid;\}/.test(html), 'the footer avoids a break before it (belt)')
+})
+
+Deno.test('CUL-993 A.1 — the Noticed appendix carries the running footer like every other sheet', () => {
+  // Proven through the section the Noticed tests already build: its <section> holds a footer.
+  const src = Deno.readTextFileSync(new URL('./render.ts', import.meta.url))
+  const fn = src.slice(src.indexOf('function noticedAppendix('), src.indexOf('function appendixBCD('))
+  assert.ok(/const noticedFoot = footer\(snap, `Appendix \$\{letter\} — Noticed/.test(fn), 'the Noticed appendix builds its footer')
+  assert.ok(/sectionTail\(\s*`<p class="appx-foot">/.test(fn), 'its closing paragraph anchors the footer')
+})
+
+Deno.test('CUL-993 A.1 — the photo grid keeps only its last row with the footer; the rest still breaks between cards', () => {
+  const photos = [1, 2, 3].map((n) => photo({ eventId: `ev-p${n}`, occurredAt: `2026-06-0${n}T10:00:00Z`, dataUri: PNG_1PX }))
+  const html = renderReport(base({ incidentPhotos: photos }))
+  assert.deepEqual(
+    html.match(/<div class="phgrid( phgrid-tail)?">/g),
+    ['<div class="phgrid">', '<div class="phgrid phgrid-tail">'],
+    'two grids: the head and the last row',
+  )
+  const tail = html.slice(html.indexOf('<div class="tail"><div class="phgrid phgrid-tail">'))
+  assert.equal((tail.match(/class="phcard"/g) ?? []).length, 1, 'an odd count leaves ONE card in the tail row')
+  const two = renderReport(base({ incidentPhotos: photos.slice(0, 2) }))
+  assert.ok(!/<div class="phgrid">/.test(two) && /<div class="tail"><div class="phgrid phgrid-tail">/.test(two), 'two cards are one row, all of it in the tail')
+  assert.ok(/\.phgrid \+ \.tail > \.phgrid-tail\{margin-top:13px;\}/.test(html), 'the split keeps the grid\'s own row gap')
+})
+
+// ── A.3: the count label paints over the marker ──
+Deno.test('CUL-993 A.3 — count labels carry a white halo so a marker line never runs through the number', () => {
+  const html = renderReport(base())
+  assert.ok(/svg text\.cap\{font-size:11px;fill:var\(--muted\);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;\}/.test(html))
+  assert.ok(/svg text\.z\{font-size:11px;fill:var\(--faint\);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;\}/.test(html))
+})
+
+// ── A.4: "1 entry" ──
+Deno.test('CUL-993 A.4 — a single entry reads "1 entry", never "1 entries"', () => {
+  const one = renderReport(base({ symptoms: [aggregate({ type: 'vomit', count: 1 })] }))
+  assert.ok(/1<small>&nbsp;entry&nbsp;\/&nbsp;91&nbsp;d<\/small>/.test(one), '"1 entry"')
+  assert.ok(!/1 entries|1&nbsp;entries/.test(one))
+  const two = renderReport(base({ symptoms: [aggregate({ type: 'vomit', count: 2 })] }))
+  assert.ok(/2<small>&nbsp;entries&nbsp;\//.test(two), '"2 entries"')
+})
+
+// ── A.6: a proportion bar of one category is a number ──
+Deno.test('CUL-993 A.6 — a one-category stool distribution is a count line, not a full-width bar', () => {
+  const one = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null } }))
+  const sec = one.slice(one.indexOf('<h2>Stool characteristics'), one.indexOf('<h2>Diet, feeding'))
+  assert.ok(!/class="barmix"/.test(sec), 'no proportion bar for one category')
+  assert.ok(!/class="sw"/.test(sec), 'no swatch without a bar to key')
+  assert.ok(/Loose \/ watery &times;1/.test(sec), 'the count line stands')
+  const two = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null } }))
+  const sec2 = two.slice(two.indexOf('<h2>Stool characteristics'), two.indexOf('<h2>Diet, feeding'))
+  assert.equal((sec2.match(/class="seg"/g) ?? []).length, 2, 'two categories draw the bar')
+  assert.equal((sec2.match(/class="sw"/g) ?? []).length, 2, 'and key it')
+})
+
+Deno.test('CUL-993 A.6 — the vomit contents bar follows the same rule', () => {
+  const one = renderReport(
+    base({ vomitPhenotype: emptyPhenotype({ contentsMix: { food: 0, bile: 6, hairball: 0, foam_liquid: 0, grass: 0, unsure: 0 } }) }),
+  )
+  const sec = one.slice(one.indexOf('<h2>Vomit characteristics'), one.indexOf('<h2>Diet, feeding'))
+  assert.ok(!/class="barmix"/.test(sec), 'no bar for one category')
+  assert.ok(!/class="sw"/.test(sec), 'no swatch without a bar')
+  assert.ok(/&times;6/.test(sec), 'the count stands')
+  const two = renderReport(base({ vomitPhenotype: emptyPhenotype() }))
+  const sec2 = two.slice(two.indexOf('<h2>Vomit characteristics'), two.indexOf('<h2>Diet, feeding'))
+  assert.ok(/class="barmix"/.test(sec2), 'two categories draw the bar')
+})
+
+// ── CUL-982 item 4: the marker legend ──
+Deno.test('CUL-982 item 4 — the marker legend precedes the first chart and names each start with its own date', () => {
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [3, 0, 0], bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15'], windowDays: 21 })],
+      concurrentChanges: [
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-04', bucketIndex: 0, ongoing: false, endInWindow: null },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-02', bucketIndex: 0, ongoing: false, endInWindow: null },
+      ],
+    }),
+  )
+  const legendAt = html.indexOf('class="chartlegend"')
+  const chartAt = html.indexOf('<svg viewBox="0 0 648 158"')
+  assert.ok(legendAt > 0 && chartAt > 0 && legendAt < chartAt, 'the legend sits above the first chart that uses it')
+  assert.ok(
+    /started: the trial diet \(RC HP\) on May 2; Metronidazole \(medication\) on May 4\. Timing and overlap are in &ldquo;Reading the trend&rdquo; below\./.test(html),
+    'each start is named with its own date, in date order',
+  )
+  assert.ok(/\.chartlegend\{font-size:10\.5px;color:var\(--muted\);margin:0 0 9px/.test(html), 'the legend is --muted, not the lightest grey on the page')
+})
+
+Deno.test('CUL-982 item 4 — a week with more than three starts says the count and the week, never one date', () => {
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [3, 0], bucketStartDates: ['2026-05-01', '2026-05-08'], windowDays: 14 })],
+      concurrentChanges: ['a', 'b', 'c', 'd'].map((label, i) => ({
+        kind: 'supplement' as const, label, startDate: `2026-05-0${i + 1}`, bucketIndex: 0, ongoing: false, endInWindow: null,
+      })),
+    }),
+  )
+  assert.ok(/4 starts this week/.test(html), 'count + week')
+  assert.ok(!/starts &middot; May/.test(html), 'no date list past three starts')
+  assert.ok(/a \(a supplement\) on May 1; b \(a supplement\) on May 2; c \(a supplement\) on May 3; d \(a supplement\) on May 4/.test(html), 'the legend still carries every date')
+})
+
+// ── CUL-857: the weigh-in nudge ──
+Deno.test('CUL-857 — the empty weight strip states the fact and never addresses the owner', () => {
+  const html = renderReport(base())
+  assert.ok(/No home weigh-ins recorded\./.test(html))
+  assert.ok(/No weight trend can be shown; body condition not assessed\./.test(html))
+  assert.ok(!/weigh-ins in Culprit/.test(html) && !/the owner can log/.test(html), 'no owner nudge on the vet page')
+})
+
+// ── CUL-634: the three render rows ──
+Deno.test('CUL-634 — Appendix A counts every row without a witnessed time, including unspecified and one-sided rows, and glosses the tags', () => {
+  const rows = [
+    logEntry({ eventId: 'a', type: 'vomit', occurredAt: '2026-05-01T14:00:00Z' }),
+    logEntry({ eventId: 'b', type: 'vomit', occurredAt: '2026-05-02T14:00:00Z', occurredAtConfidence: 'estimated' }),
+    logEntry({ eventId: 'c', type: 'vomit', occurredAt: '2026-05-03T14:00:00Z', occurredAtConfidence: 'window', occurredAtEarliest: '2026-05-03T10:00:00Z', occurredAtLatest: '2026-05-03T14:00:00Z' }),
+    logEntry({ eventId: 'd', type: 'vomit', occurredAt: '2026-05-04T14:00:00Z', occurredAtConfidence: 'window', occurredAtLatest: '2026-05-04T14:00:00Z' }),
+    // `logEntry`'s `?? 'witnessed'` default swallows an explicit null, so the legacy row is
+    // built past the helper — a fixture the production shape can actually produce (C-35).
+    { ...logEntry({ eventId: 'e', type: 'vomit', occurredAt: '2026-05-05T14:00:00Z' }), occurredAtConfidence: null },
+  ]
+  // The snapshot's own count says 3 (estimated + window); the preamble no longer reads it.
+  const html = renderReport(base({ provenance: { ...base().provenance, symptomLog: rows, totalSymptomIncidents: 5, estimatedOrWindowCount: 3 } }))
+  // RED PRE-FIX: "3 of them have an estimated or windowed time" left out the unspecified row.
+  assert.ok(
+    /<span class="num">4<\/span> of them carry no witnessed time \(an estimate, a window, or none recorded\); treat those as approximate\./.test(html),
+    'four of five rows carry no witnessed time',
+  )
+  assert.ok(!/estimated or windowed time/.test(html), 'the old undercounting sentence is gone')
+  assert.ok(
+    /Time tags: <span class="conf">seen<\/span> witnessed &middot; <span class="conf">est<\/span> estimated &middot; <span class="conf">range<\/span> found later, the window it occurred in &middot; before\/after a time, one known bound &middot; <span class="conf">unspecified<\/span> no confidence recorded\./.test(html),
+    'the tags are glossed where they are first used',
+  )
+  assert.ok(/<td><span class="num">before 10:00<\/span><\/td>/.test(html), 'a one-sided bound prints its words and no chip')
+  assert.ok(/<span class="num">~10:00–10:00<\/span> <span class="conf">range<\/span>/.test(html) || /<span class="conf">range<\/span>/.test(html.slice(html.indexOf('<tbody>'))), 'a two-sided window keeps its chip')
+  const single = renderReport(base({ provenance: { ...base().provenance, symptomLog: [rows[0], rows[4]], totalSymptomIncidents: 2 } }))
+  assert.ok(/<span class="num">1<\/span> of them carries no witnessed time[^.]*; treat it as approximate\./.test(single), 'singular agreement')
+  assert.ok(/<td><span class="num">10:00<\/span> <span class="conf">unspecified<\/span><\/td>/.test(single), 'the unspecified row is tagged in the table, not only defined in the legend')
+  const clean = renderReport(base({ provenance: { ...base().provenance, symptomLog: [rows[0]], totalSymptomIncidents: 1 } }))
+  assert.ok(!/of them carr/.test(clean), 'an all-witnessed log carries no count')
+  assert.ok(/Time tags:/.test(clean), 'but still the gloss, since rows render')
+  const empty = renderReport(base())
+  assert.ok(!/Time tags:/.test(empty), 'no gloss over an empty log')
+  // The legend says the one-sided form carries no tag.
+  assert.ok(/prints as &ldquo;before&rdquo; or &ldquo;after&rdquo; its one known bound, with no tag beside it/.test(html))
+})
+
+// ── CUL-982 item 1: the status verb ──
+Deno.test('CUL-982 item 1 — a stopped course reads "stopped by owner"; neither status ever reads "complete"', () => {
+  const html = renderReport(base({ medications: [med({ status: 'stopped', endedAt: '2026-05-26', startedAt: '2026-05-12', courseEnded: true })] }))
+  assert.ok(/May 12 &ndash; May 26 \(stopped by owner\)/.test(html))
+  assert.ok(!/complete/.test(html.slice(html.indexOf('Metronidazole'), html.indexOf('Metronidazole') + 600)), 'no "complete" beside the course')
+})
+
+// ── CUL-994 Part 2: the dosing gap ──
+/** CUL-976's record: a 28-dose otic course at 2×/day, dosed Jul 17–30, ended by the owner Aug 9. */
+function endedCourse(over: Partial<MedicationAdherence> = {}): MedicationAdherence {
+  return med({
+    drugName: 'Motozol', route: 'otic', strength: null, doseAmount: '1 drop', indication: 'ear infection', scheduleNotes: null,
+    startedAt: '2026-07-16', endedAt: '2026-08-09', status: 'completed', courseEnded: true,
+    dosesPerDay: 2, prescribedDoses: 28, lifetimeDosesLogged: 28,
+    lifetimeFirstDoseDay: '2026-07-17', lifetimeLastDoseDay: '2026-07-30',
+    elapsedDaysInWindow: 25, daysWithDose: 14, windowDosesLogged: 28, windowDosesTotal: 28,
+    givenDoses: 28, partialDoses: 0, missedDoses: 0, refusedDoses: 0, unconfirmedDoses: 0,
+    ...over,
+  })
+}
+// Lazy on the span: `&ndash;` carries a semicolon of its own, so `[^;]+` would stop inside a date range.
+const GAP = /Doses administered (.+?); the course&rsquo;s recorded end is ([A-Z][a-z]{2} \d+)\./
+
+Deno.test('CUL-994 Part 2 — CUL-976\'s reference record: 28 of 28 at 2×/day over 14 days is full delivery at pace, so no gap (the End tap may simply be late)', () => {
+  const html = renderReport(base({ medications: [endedCourse()] }))
+  assert.ok(!GAP.test(html), 'no gap sentence on full delivery at the prescribed pace')
+  assert.ok(/Jul 16 &ndash; Aug 9 \(ended by owner\)/.test(html), 'the status verb still says the owner ended it')
+  assert.ok(/Adherence: <span class="num">28<\/span> of <span class="num">28<\/span> prescribed doses administered across the whole course\./.test(html))
+})
+
+Deno.test('CUL-994 Part 2 — a DAYS-denominated plan dosed in half its days renders the gap (RED PRE-FIX: the count-only suppression hid it)', () => {
+  // 28 planned at 1×/day → 28 days expected; dosed Jul 17–Jul 30 (14 days), then nothing to Aug 14.
+  const html = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, endedAt: '2026-08-14' })] }))
+  const m = GAP.exec(html)
+  assert.ok(m, 'the gap renders')
+  assert.equal(m![1], 'Jul 17 &ndash; Jul 30')
+  assert.equal(m![2], 'Aug 14')
+  assert.ok(!/logged/.test(m![0]), '"logged" never appears in the gap sentence — it says "administered"')
+  // Placed beside the status verb, after the one adherence claim, before the window clause.
+  const line = html.slice(html.indexOf('Motozol'), html.indexOf('In this window'))
+  assert.ok(/\(ended by owner\)\. Adherence: .*? Doses administered Jul 17/.test(line), 'the gap follows the adherence claim on the same line')
+})
+
+Deno.test('CUL-994 Part 2 — over-delivered at a faster pace: suppressed under the issue\'s STATED predicate (its worked row 3 says otherwise — a decision brief on CUL-994)', () => {
+  // 40 logged vs 28 planned at 2×/day, dosed Jul 17–Jul 31 (15 days). The stated predicate divides
+  // the PRESCRIBED count by the pace: ceil(28 / 2) = 14 ≤ 15 → full delivery at pace → withheld.
+  // CUL-994's table row 3 gives "expected 20" (= ceil(40 / 2), the DELIVERED count) and "gap
+  // renders". The two disagree only on over-delivery; the formula is what was dispatched, the
+  // row is raised for a ruling, and this test pins the formula so the flip is a visible change.
+  const html = renderReport(base({ medications: [endedCourse({ lifetimeDosesLogged: 40, lifetimeLastDoseDay: '2026-07-31', givenDoses: 40, windowDosesLogged: 40, windowDosesTotal: 40, daysWithDose: 15 })] }))
+  assert.ok(!GAP.test(html), 'withheld under the stated predicate')
+  assert.ok(/more than the <span class="num">28<\/span> prescribed/.test(html), 'the over-delivery itself is still stated by the adherence claim')
+})
+
+Deno.test('CUL-994 Part 2 — both endpoints come from the ADMINISTERED population: one dose then twenty refusals prints one day, never a span to the last refusal', () => {
+  const html = renderReport(
+    base({
+      medications: [endedCourse({
+        lifetimeDosesLogged: 1, lifetimeFirstDoseDay: '2026-07-17', lifetimeLastDoseDay: '2026-07-17',
+        givenDoses: 1, refusedDoses: 20, windowDosesLogged: 1, windowDosesTotal: 21, daysWithDose: 1,
+      })],
+    }),
+  )
+  const m = GAP.exec(html)
+  assert.ok(m, 'the gap renders (1 of 28 is nowhere near full delivery)')
+  assert.equal(m![1], 'on Jul 17', 'a single administered day prints as one date')
+  assert.ok(!/no dose logged after/.test(html), 'the removed version\'s false clause never returns (refusals WERE logged after)')
+  assert.ok(/<span class="num">20<\/span> refused|20 refused/.test(html), 'the refusals are still stated in the window clause')
+})
+
+Deno.test('CUL-994 Part 2 — no plan, no gap: the record cannot tell an early stop from a late End tap', () => {
+  const html = renderReport(base({ medications: [endedCourse({ prescribedDoses: null, lifetimeDosesLogged: 10, dosesPerDay: 2 })] }))
+  assert.ok(!GAP.test(html))
+  assert.ok(/no planned total recorded for this course/.test(html), 'the claim still says why no ratio is stated')
+})
+
+Deno.test('CUL-994 Part 2 — no owner-recorded end, no gap (H1: silence never becomes an ending)', () => {
+  const html = renderReport(base({ medications: [endedCourse({ courseEnded: false, status: 'active', endedAt: null, lifetimeDosesLogged: 10 })] }))
+  assert.ok(!GAP.test(html))
+  // Belt: an ended flag with no date is not an end either.
+  const noDate = renderReport(base({ medications: [endedCourse({ endedAt: null, lifetimeDosesLogged: 10 })] }))
+  assert.ok(!GAP.test(noDate))
+  // And the converse — the case a mutation of the guard survived: a date with no owner action.
+  // A paused regimen can carry `ended_at`; H1 says an ending reads SOLELY from the status, so
+  // the gap must not read one off the date. RED when `courseEnded` is dropped from the guard.
+  const dateNoAction = renderReport(
+    base({ medications: [endedCourse({ courseEnded: false, status: 'paused', endedAt: '2026-08-09', lifetimeDosesLogged: 10 })] }),
+  )
+  assert.ok(!GAP.test(dateNoAction), 'a recorded date without an owner End is not an end (H1)')
+})
+
+Deno.test('CUL-994 Part 2 — PRN keeps the count-only suppression: plan met withholds, plan short renders', () => {
+  const met = renderReport(base({ medications: [endedCourse({ dosesPerDay: null, prescribedDoses: 10, lifetimeDosesLogged: 10, lifetimeLastDoseDay: '2026-07-20' })] }))
+  assert.ok(!GAP.test(met), 'PRN, 10 of 10: no pace to check, withheld')
+  const short = renderReport(base({ medications: [endedCourse({ dosesPerDay: null, prescribedDoses: 10, lifetimeDosesLogged: 6, lifetimeLastDoseDay: '2026-07-20' })] }))
+  assert.ok(GAP.test(short), 'PRN, 6 of 10, dosing ended Jul 20 of a course recorded to Aug 9: renders')
+})
+
+Deno.test('CUL-994 Part 2 — dosing that reaches the recorded end is no gap, whatever the count', () => {
+  const onEnd = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, lifetimeDosesLogged: 5, lifetimeLastDoseDay: '2026-08-09' })] }))
+  assert.ok(!GAP.test(onEnd), 'last administered dose ON the recorded end')
+  const past = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, lifetimeDosesLogged: 5, lifetimeLastDoseDay: '2026-08-12' })] }))
+  assert.ok(!GAP.test(past), 'last administered dose AFTER the recorded end (CUL-992\'s shape) is not a gap either')
+  const none = renderReport(base({ medications: [endedCourse({ lifetimeDosesLogged: 0, lifetimeFirstDoseDay: null, lifetimeLastDoseDay: null, adherenceState: 'not_tracked' })] }))
+  assert.ok(!GAP.test(none), 'nothing administered: "adherence not tracked" already says it')
 })
