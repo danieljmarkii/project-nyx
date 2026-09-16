@@ -1819,6 +1819,13 @@ export interface MedicationAdherence {
    */
   lifetimeFirstDoseDay: string | null
   lifetimeLastDoseDay: string | null
+  /**
+   * How many DISTINCT local days carry an administered dose across the whole record — the
+   * density the span alone cannot carry (CUL-994 Part 2, adversarial round 3): a first and a
+   * last date read as a continuous range, and ten dosing days with a nineteen-day hole between
+   * them printed as a 29-day span. Same population and same writer as the two endpoints.
+   */
+  lifetimeDoseDayCount: number
   /** Administered doses inside the report window. A count, never a ratio's numerator. */
   windowDosesLogged: number
   /**
@@ -4793,6 +4800,7 @@ function buildMedicationAdherence(
   let lifetimeDosesLogged = 0
   let lifetimeFirstDoseDay: string | null = null
   let lifetimeLastDoseDay: string | null = null
+  const lifetimeDoseDayKeys = new Set<string>()
 
   for (const d of attributedDoses) {
     const administered = d.adherence === 'given' || d.adherence === 'partial'
@@ -4806,6 +4814,7 @@ function buildMedicationAdherence(
       if (dk !== null) {
         if (lifetimeFirstDoseDay === null || dk < lifetimeFirstDoseDay) lifetimeFirstDoseDay = dk
         if (lifetimeLastDoseDay === null || dk > lifetimeLastDoseDay) lifetimeLastDoseDay = dk
+        lifetimeDoseDayKeys.add(dk)
       }
     }
     if (!inWindow(d)) continue
@@ -4871,6 +4880,7 @@ function buildMedicationAdherence(
     lifetimeDosesLogged,
     lifetimeFirstDoseDay,
     lifetimeLastDoseDay,
+    lifetimeDoseDayCount: lifetimeDoseDayKeys.size,
     windowDosesLogged: given + partial,
     windowDosesTotal: given + partial + missed + refused + unconfirmed,
     courseEnded: courseEnded === true,

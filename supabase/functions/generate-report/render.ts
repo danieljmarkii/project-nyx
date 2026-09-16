@@ -432,9 +432,27 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     group.push(m)
     markersByBucket.set(m.bucketIndex, group)
   }
+  // The y of a bucket's count label baseline — the band the marker line must NOT cross (CUL-993
+  // A.3). The white halo on the label is kept as a belt, but the R-11 cold read zoomed the
+  // printed chart and the dashes still ran through the "3" on the marked week, so the line is
+  // drawn in two segments with the label's band left open. Mirrors the bar loop's placement.
+  const labelBaseline = (i: number): number => {
+    const c = buckets[i]
+    if (c > 0) return yFor(c) - 6
+    return (loggedByBucket[i] ?? 0) > 0 ? BASE - 7 : BASE - 13
+  }
+  const MARK_TOP = 18
   for (const [bucketIndex, group] of [...markersByBucket.entries()].sort((a, b) => a[0] - b[0])) {
     const mx = centerX(bucketIndex)
-    parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="18" x2="${mx.toFixed(1)}" y2="${BASE}"/>`)
+    const ly = labelBaseline(bucketIndex)
+    const bandTop = ly - 11
+    const bandBottom = ly + 3
+    if (bandTop > MARK_TOP) {
+      parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="${MARK_TOP}" x2="${mx.toFixed(1)}" y2="${bandTop.toFixed(1)}"/>`)
+    }
+    if (bandBottom < BASE) {
+      parts.push(`<line class="mark" x1="${mx.toFixed(1)}" y1="${bandBottom.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${BASE}"/>`)
+    }
     // Anchor the date label so it stays inside the plot (end-anchor in the right third).
     const anchor = mx > L + plotW * 0.66 ? 'end' : 'start'
     const lx = anchor === 'end' ? mx - 3 : mx + 3
@@ -1059,7 +1077,7 @@ function letterhead(snap: ReportSnapshot): string {
     </div>
   </div>
   <div class="rule-brand"></div>
-  <div class="orient">Clinical summary first; appendices A&ndash;${lastAppendix} (+ a legend) follow: the reference record behind every figure.</div>`
+  <div class="orient">Clinical summary first; appendices A&ndash;${lastAppendix} and a legend follow: the reference record behind every figure.</div>`
 }
 
 /**
@@ -4408,7 +4426,7 @@ function symptomTrend(snap: ReportSnapshot): string {
   const markerLegend =
     marked.length > 0
       ? `<div class="chartlegend">A dashed vertical marks the <b>week</b> a diet, medication, or supplement started: ${marked
-          .map((c) => `${changeLabel(c)}${c.startDate ? ` on ${h(fmtDay(c.startDate))}` : ''}`)
+          .map((c) => `${legendLabel(c)}${c.startDate ? ` on ${h(fmtDay(c.startDate))}` : ''}`)
           .join('; ')}. Timing and overlap are in &ldquo;Reading the trend&rdquo; below.</div>`
       : ''
   return `
@@ -4637,6 +4655,25 @@ function changeTiming(c: ConcurrentChange): string {
   return start ? `ongoing since ${start}` : 'ongoing, start not recorded'
 }
 
+/**
+ * The legend's label — kind FIRST, so "afoxolaner (NexGard) (medication)" never happens (the
+ * R-11 cold read's double parenthetical): "the medication afoxolaner (NexGard) on Jun 5".
+ * `changeLabel` keeps the kind-after form for the "Reading the trend" note, where the label is
+ * the subject of a clause.
+ */
+function legendLabel(c: ConcurrentChange): string {
+  switch (c.kind) {
+    case 'diet_trial':
+      return `the trial diet ${h(c.label)}`
+    case 'medication':
+      return `the medication ${h(c.label)}`
+    case 'supplement':
+      return `the supplement ${h(c.label)}`
+    case 'free_fed':
+      return `free-fed ${h(c.label)}`
+  }
+}
+
 function changeLabel(c: ConcurrentChange): string {
   switch (c.kind) {
     case 'diet_trial':
@@ -4648,6 +4685,12 @@ function changeLabel(c: ConcurrentChange): string {
     case 'free_fed':
       return `free-fed ${h(c.label)}`
   }
+}
+
+/** "none has" / "1 has" / "N have" — the assessed-count subject, agreeing at zero and one. */
+function legibleReadCount(n: number): string {
+  if (n === 0) return 'none has'
+  return `${num(n)} ${n === 1 ? 'has' : 'have'}`
 }
 
 /** Vomit characteristics (§3.6) — assessed denominators + present-only blood/foreign. */
@@ -4697,9 +4740,9 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   if (p.states.pending) stateBits.push(`${p.states.pending} still processing`)
   if (noPhoto > 0) stateBits.push(`${noPhoto} without a photo`)
   const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
-  const denom = `Across all ${num(p.totalIncidents)} vomiting incident${
+  const denom = `Across ${p.totalIncidents === 1 ? 'the' : 'all'} ${num(p.totalIncidents)} vomiting incident${
     p.totalIncidents === 1 ? '' : 's'
-  }; ${num(assessed)} ${assessed === 1 ? 'has' : 'have'} a legible AI read${stateDisclosure}.${consistBit} Per-incident detail in appendix&nbsp;A.`
+  }; ${legibleReadCount(assessed)} a legible AI read${stateDisclosure}.${consistBit} Per-incident detail in appendix&nbsp;A.`
 
   // COLLAPSE THE EMPTY BLOCK TO A LINE (B-502). With nothing photographed the section said
   // "no photo" three ways — a lead describing a read that never happened, a chart-shaped grey
@@ -4893,9 +4936,9 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     if (ai.states.pending) stateBits.push(`${ai.states.pending} still processing`)
     if (noPhoto > 0) stateBits.push(`${noPhoto} without a photo`)
     const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
-    aiLine = `<br/>Across all ${num(ai.totalIncidents)} stool event${
+    aiLine = `<br/>Across ${ai.totalIncidents === 1 ? 'the' : 'all'} ${num(ai.totalIncidents)} stool event${
       ai.totalIncidents === 1 ? '' : 's'
-    }; ${num(ai.assessedCount)} ${ai.assessedCount === 1 ? 'has' : 'have'} a legible AI read${stateDisclosure}.${bristolBit}${colourBit} Bristol type is the AI's read of the photo, for the owner to confirm; it is not a diagnosis.`
+    }; ${legibleReadCount(ai.assessedCount)} a legible AI read${stateDisclosure}.${bristolBit}${colourBit} Bristol type is the AI's read of the photo, for the owner to confirm; it is not a diagnosis.`
   }
 
   return `
@@ -4904,9 +4947,14 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     <div class="pheno">
       <div>
         ${barHtml}
-        <div class="mixkey">${keyLine}<br/>Owner-described over ${num(st.loggedDays)} of ${num(
-    st.windowDays,
-  )} days logged. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.${aiLine}</div>
+        <div class="mixkey">${keyLine}<br/>Owner-described${
+    // C-3: a coverage density beside a count is the UN-LOGGED days only, and nothing when
+    // fully covered. "Owner-described over 43 of 46 days logged" read as a stool denominator
+    // (the R-11 cold read: one loose stool out of forty-three), when 43/46 was record coverage.
+    st.windowDays - st.loggedDays > 0
+      ? `; ${num(st.windowDays - st.loggedDays)} of ${num(st.windowDays)} days had no log of any kind`
+      : ''
+  }. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.${aiLine}</div>
       </div>
       ${sideHtml}
     </div>
@@ -5239,16 +5287,39 @@ function kv(k: string, v: string): string {
  */
 function regimenDates(m: MedicationAdherence): string {
   if (m.endedAt && (m.status === 'completed' || m.status === 'stopped')) {
-    // "ended by owner", never "course complete" (CUL-982 item 1): `endRegimen` writes
-    // `completed` on every End tap, so the status says the owner ended the course and nothing
-    // about whether its doses reached the target — the H1 register the lifetime table already
-    // uses. On the cold read's record it printed "course complete" over a course with no dose
-    // logged for its final ten days. Whether dosing stopped short of the recorded end is the
-    // gap sentence's to say (`dosingGap`, CUL-994 Part 2), beside this clause.
-    const verb = m.status === 'completed' ? ' (ended by owner)' : ' (stopped by owner)'
+    // "end recorded by owner", never "course complete" (CUL-982 item 1): `endRegimen` writes
+    // `completed` on every End tap, so the status says the owner RECORDED an end and nothing
+    // about whether its doses reached the target. On the cold read's record it printed "course
+    // complete" over a course with no dose logged for its final ten days. Not "ended by owner"
+    // either (the R-11 cold read): to a vet that reads as "the owner stopped the drug", which
+    // on a one-dose, twenty-refusal course tells the opposite clinical story from the truth.
+    // What the doses actually covered is the span sentence's to say (`dosingSpan`, CUL-994
+    // Part 2), beside this clause.
+    const verb = m.status === 'completed' ? ' (end recorded by owner)' : ' (stopped by owner)'
     return `${h(fmtDay(m.startedAt))} &ndash; ${h(fmtDay(m.endedAt))}${verb}`
   }
   return `since ${h(fmtDay(m.startedAt))}`
+}
+
+/**
+ * The route as a clinician writes it (R-11 cold read: "by oral" and "by otic" are not things a
+ * vet writes, and the inconsistency reads as a data-layer tell). Keyed on the app's stored
+ * values (`lib/medications.ts` ROUTE options) plus the older free-text spellings; anything
+ * unknown prints as it was entered.
+ */
+const ROUTE_LABEL: Record<string, string> = {
+  oral: 'by mouth',
+  mouth: 'by mouth',
+  topical: 'on the skin',
+  otic: 'in the ear',
+  ophthalmic: 'in the eye',
+  injectable: 'by injection',
+  inhaled: 'inhaled',
+  rectal: 'rectally',
+  other: 'other route',
+}
+function routeLabel(route: string): string {
+  return ROUTE_LABEL[route.trim().toLowerCase()] ?? `by ${route}`
 }
 
 /** The B-117 adherence line — "adherence not tracked" on zero doses, NEVER "compliant". */
@@ -5259,7 +5330,7 @@ function medicationLine(m: MedicationAdherence): string {
   const regimen = [
     m.strength ? h(m.strength) : null,
     doseBit,
-    m.route ? `by ${h(m.route)}` : null,
+    m.route ? h(routeLabel(m.route)) : null,
     m.dosesPerDay != null ? `${m.dosesPerDay}×/day` : 'as needed',
     m.indication ? `for ${h(m.indication)}` : null,
     regimenDates(m),
@@ -5306,64 +5377,83 @@ function medicationLine(m: MedicationAdherence): string {
             m.windowDosesLogged === 1 ? '' : 's'
           } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course; ${extras.join(', ')}.`
 
-  return `${regimen}. ${adherenceClaim(m)}${dosingGap(m)} ${windowClause}`
+  return `${regimen}. ${adherenceClaim(m)}${dosingSpan(m)} ${windowClause}`
 }
 
 /**
- * The dosing GAP (CUL-994 Part 2) — the sentence that says a course's administered doses
- * stopped short of its recorded end, rendered only where the record can settle it.
+ * The dosing SPAN (CUL-994 Part 2, after adversarial round 3 and the R-11 cold read): what the
+ * administered doses of an owner-ended, planned, paced course actually covered, stated as
+ * DENSITY + SPAN beside the plan's own arithmetic, so a vet can see a tail hole, an interior
+ * hole or a faster-than-prescribed pace without the page adjudicating any of them.
  *
- *   "Doses administered Jul 17 – Jul 30; the course's recorded end is Aug 14."
+ *   "Those doses fell on 14 days, Jul 17 – Jul 30 (28 doses at 1×/day take 28 days); the
+ *    course's recorded end is Aug 14."
  *
- * Two dates and no duration (C-19: a record-anchored date is free, a duration is guarded), and
- * NO VERDICT — it does not say "stopped early", because on the record that motivated it the
- * page could not know: `endRegimen` writes TODAY's local day when the owner taps End, so a
- * recorded end is when they got round to it, and a 28-dose course dosed 28 times over fourteen
- * days then ended on the twenty-fifth is equally a late tap. R-2 (CUL-976) built this clause,
- * had to suppress it on every fully-delivered course, and then had the suppression falsified
- * by mutation: it keyed on the COUNT alone while its own reasoning argued only the
- * dose-denominated case. A DAYS-denominated plan states its length, and the record can then
- * tell 28 doses over 14 days from 28 over 28 — the pet that received nothing for the final
- * fifteen days of an otic course while the page said "28 of 28".
+ * "Those doses" binds to the adherence claim printed just before it, which is the same
+ * population (administered, whole record) — one population, both endpoints and the day count
+ * (`lifetimeFirstDoseDay` / `lifetimeLastDoseDay` / `lifetimeDoseDayCount`, one writer each in
+ * report.ts, inside `if (administered)`). The word "logged" never appears in it. Two dates and
+ * no duration (C-19); the parenthetical is arithmetic the record carries, not a verdict.
  *
- * So the gap is withheld only where the record shows FULL DELIVERY AT THE PRESCRIBED PACE:
+ * WHY IT ALWAYS RENDERS on that class of course, and why the earlier shapes did not survive:
  *
- *   count >= plan  AND  ( PRN  OR  spanDays(first → last, inclusive) >= ceil(plan / dosesPerDay) )
+ *   • R-2's version was suppressed wherever the record showed full delivery, because
+ *     `endRegimen` writes TODAY's local day when the owner taps End and two bare dates
+ *     ("dosed Jul 17 – Jul 30", "end Aug 9") read as an early stop that might be a late tap.
+ *     The cold read then found the silence itself misleading: a "28 of 28" beside an
+ *     unexplained "14 of 25 days" resolved the same ambiguity in the reassuring direction by
+ *     omission. Stating the plan's need ("28 doses at 2×/day take 14 days") beside the 14
+ *     dosing days is the positive fact the record does hold, and it needs no suppression.
+ *   • The stated predicate (withhold when `count ≥ plan AND span ≥ ceil(plan / dosesPerDay)`)
+ *     failed in both directions under falsification: a ONE-dose shortfall over the full
+ *     prescribed length re-armed the sentence and read as a ten-day abandonment; ONE linked
+ *     dose logged after the End tap moved the last endpoint past the end and deleted the
+ *     sentence over a fifteen-day hole; and a first–last range printed ten dosing days with a
+ *     nineteen-day hole between them as a 29-day span. All three are the same defect: two
+ *     endpoints cannot carry density, and a count condition is a cliff. The day count carries
+ *     the density; the need is printed rather than tested.
  *
- * — CUL-994's stated predicate. PRN (no `dosesPerDay`) has no pace to check, so it keeps the
- * count-only suppression. And with NO PLAN there is nothing to be short of and nothing to
- * disambiguate the End tap against, so the record cannot say which the gap is and the page
- * does not answer (C-4 rule 4): no plan, no sentence.
+ * THE NEED is exact for any pace, not `ceil(N / r)`: N doses at r per day occupy
+ * `floor((N − 1) / r) + 1` days (28 at 2 → 14; 28 at 1 → 28; 10 at 0.5 → 19, every other day),
+ * and the ceiling form over-demands a day on every fractional pace. N is the LARGER of the
+ * doses administered and the doses planned (CUL-994's worked row 3, its delivered divisor):
+ * the arithmetic is about the doses that exist, and the prescribed divisor made the bar easier
+ * to clear the more a course was over-counted — the reassuring direction.
  *
- * The two rules R-2's second review established, both structural here:
- *   • BOTH ENDPOINTS COME FROM ONE POPULATION — `lifetimeFirstDoseDay` / `lifetimeLastDoseDay`
- *     are the administered (given | partial) rows across the whole record, the same population
- *     as the claim's numerator beside it. The removed version took its start from administered
- *     rows and its end from any row, and printed "Dosed Jul 17 – Jul 27" over one administered
- *     dose and twenty refusals — C-37's asymmetry, reaching outside the population for the
- *     flattering endpoint only.
- *   • "LOGGED" MEANS ONE THING PER SENTENCE — this sentence says "administered" and never
- *     "logged", so it cannot contradict a refusal printed in the window clause after it.
+ * WHAT STAYS SILENT, and why (C-4 rule 4 — where the record cannot settle it the page does not
+ * answer): no owner-recorded end (H1: silence never becomes an ending); no planned total; no
+ * daily pace (PRN — an as-needed course measured against a schedule is a category error, and
+ * without a need to print beside them the two dates would be R-2's bare gap again); nothing
+ * administered (the claim's "0 of N" already says it).
  *
- * Record-scoped on purpose (the lifetime rows, not the window's): a window that truncates a
- * course would otherwise manufacture a gap. Silence never becomes an ending (H1): no owner-
- * recorded end, no gap.
+ * KNOWN BLIND SPOT, stated rather than implied: a day count cannot tell WHERE the holes are.
+ * "14 days, Jul 17 – Aug 9" says the dosing was sparse over a 24-day span; it does not say
+ * whether the missing days were the middle or the end. Appendix D lists the dose dates.
  */
-function dosingGap(m: MedicationAdherence): string {
+function dosingSpan(m: MedicationAdherence): string {
   if (!m.courseEnded || !m.endedAt) return ''
   if (m.prescribedDoses == null) return ''
+  if (m.dosesPerDay == null || !(m.dosesPerDay > 0)) return ''
   const first = m.lifetimeFirstDoseDay
   const last = m.lifetimeLastDoseDay
-  if (!first || !last) return ''
-  // `daysBetweenDayKeys` takes bare day keys; a regimen's `endedAt` is a DATE, sliced defensively.
-  const endDay = m.endedAt.slice(0, 10)
-  if (daysBetweenDayKeys(last, endDay) <= 0) return ''
-  const spanDays = daysBetweenDayKeys(first, last) + 1
-  const pacedDays = m.dosesPerDay != null && m.dosesPerDay > 0 ? Math.ceil(m.prescribedDoses / m.dosesPerDay) : null
-  const fullyDelivered = m.lifetimeDosesLogged >= m.prescribedDoses && (pacedDays === null || spanDays >= pacedDays)
-  if (fullyDelivered) return ''
-  const span = first === last ? `on ${h(fmtDay(first))}` : `${h(fmtDay(first))} &ndash; ${h(fmtDay(last))}`
-  return ` Doses administered ${span}; the course&rsquo;s recorded end is ${h(fmtDay(endDay))}.`
+  const days = m.lifetimeDoseDayCount
+  if (!first || !last || days < 1 || m.lifetimeDosesLogged < 1) return ''
+  const n = Math.max(m.lifetimeDosesLogged, m.prescribedDoses)
+  const need = dosingDaysFor(n, m.dosesPerDay)
+  const rate = h(String(m.dosesPerDay))
+  const needBit = `(${num(n)} dose${n === 1 ? '' : 's'} at ${rate}×/day take${n === 1 ? 's' : ''} ${num(need)} day${
+    need === 1 ? '' : 's'
+  })`
+  // `endedAt` is a DATE; sliced defensively so an instant could never print as a time.
+  const endBit = `; the course&rsquo;s recorded end is ${h(fmtDay(m.endedAt.slice(0, 10)))}.`
+  if (m.lifetimeDosesLogged === 1) return ` That dose was administered on ${h(fmtDay(first))} ${needBit}${endBit}`
+  if (days === 1) return ` Those doses all fell on ${h(fmtDay(first))} ${needBit}${endBit}`
+  return ` Those doses fell on ${num(days)} days, ${h(fmtDay(first))} &ndash; ${h(fmtDay(last))} ${needBit}${endBit}`
+}
+
+/** The days N doses at `perDay` occupy when given at that pace — exact for fractional paces too. */
+function dosingDaysFor(n: number, perDay: number): number {
+  return Math.floor((n - 1) / perDay) + 1
 }
 
 /**
@@ -5436,7 +5526,7 @@ function unlinkedSpan(u: UnlinkedMedicationGroup): string {
 /** Page-1 line for a drug the owner dosed with no configured regimen (§3.8). Factual counts only —
  *  no adherence RATE (no schedule to divide by), and an unconfirmed dose is never read as given. */
 function unlinkedMedLine(u: UnlinkedMedicationGroup): string {
-  const meta = [u.strength ? h(u.strength) : null, u.route ? h(u.route) : null]
+  const meta = [u.strength ? h(u.strength) : null, u.route ? h(routeLabel(u.route)) : null]
     .filter(Boolean)
     .join(' &middot; ')
   const prefix = meta ? `${meta}. ` : ''
@@ -5681,9 +5771,24 @@ function appendixA(snap: ReportSnapshot): string {
       : ''
   // The vocabulary, where it is first used (CUL-634): the tags were defined only on the last
   // sheet and used from sheet 2. One line here; the full key stays in "How to read this report".
+  // Only the classes the rows below actually use (R-11 cold read: five definitions over a
+  // column of nothing but SEEN is forty words a reader has to discount), in the tag column's
+  // own order; the untagged one-sided form is named as untagged so it cannot read as part of
+  // the `range` entry.
+  const present = new Set(snap.provenance.symptomLog.map(timeConfidence))
+  const glossEntries: Array<[ReturnType<typeof timeConfidence>, string]> = [
+    ['seen', '<span class="conf">seen</span> witnessed'],
+    ['est', '<span class="conf">est</span> estimated'],
+    ['range', '<span class="conf">range</span> found later, the window it occurred in'],
+    ['bound', 'a bare &ldquo;before&rdquo; or &ldquo;after&rdquo; time is one known bound and carries no tag'],
+    ['unspecified', '<span class="conf">unspecified</span> no confidence recorded'],
+  ]
   const glossBit =
     count > 0
-      ? ` Time tags: <span class="conf">seen</span> witnessed &middot; <span class="conf">est</span> estimated &middot; <span class="conf">range</span> found later, the window it occurred in &middot; before/after a time, one known bound &middot; <span class="conf">unspecified</span> no confidence recorded.`
+      ? ` Time tags: ${glossEntries
+          .filter(([k]) => present.has(k))
+          .map(([, text]) => text)
+          .join(' &middot; ')}.`
       : ''
   return `
 <section class="page">

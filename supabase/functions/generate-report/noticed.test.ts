@@ -653,7 +653,7 @@ Deno.test('the appendix letter is COMPUTED — E with no meals and no photos, ne
   assert.ok(/Appendix E &mdash; Noticed/.test(html))
   // …and the letterhead's own range agrees with it, which is the whole reason the letter
   // is computed: the first round-2 artifact said "A–F" over a report ending at D.
-  assert.ok(/appendices A&ndash;E \(\+ a legend\) follow/.test(html), 'the letterhead promises A–E')
+  assert.ok(/appendices A&ndash;E and a legend follow/.test(html), 'the letterhead promises A–E')
 })
 
 Deno.test('activity words reach the appendix even though they never reach page 1', () => {
@@ -938,7 +938,7 @@ Deno.test('CUL-993 A.1 — the Noticed appendix carries the running footer, anch
 Deno.test('a window with no look renders no Noticed anything — no empty state, by design', () => {
   const html = renderWithLooks([])
   assert.ok(!/Noticed/.test(html), 'no heading, no appendix, no legend entry')
-  assert.ok(/appendices A&ndash;D \(\+ a legend\) follow/.test(html), 'and the letterhead does not promise one')
+  assert.ok(/appendices A&ndash;D and a legend follow/.test(html), 'and the letterhead does not promise one')
 })
 
 Deno.test('a look OUTSIDE the window does not make a block', () => {

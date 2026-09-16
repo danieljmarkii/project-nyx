@@ -3510,6 +3510,7 @@ Deno.test('CUL-994 Part 2 — lifetimeFirst/LastDoseDay are drawn from ADMINISTE
   assert.equal(otic.lifetimeFirstDoseDay, '2026-07-17', 'first ADMINISTERED day — the unconfirmed Jul 16 row does not count')
   assert.equal(otic.lifetimeLastDoseDay, '2026-07-30', 'last ADMINISTERED day — the refused Aug 8 row does not count')
   assert.equal(otic.lifetimeDosesLogged, 28, 'the same population as the numerator beside it')
+  assert.equal(otic.lifetimeDoseDayCount, 14, '28 doses at 2×/day on 14 DISTINCT days — the density, not the count')
   // Nothing administered → null, never a fabricated day.
   const refused = rec.lifetimeDoses.map((d) => ({ ...d, adherence: 'refused' }))
   const refusedAll = assembleReport(baseInput({ now: MED_NOW, ...rec, doses: refused, lifetimeDoses: refused }))
@@ -3517,4 +3518,5 @@ Deno.test('CUL-994 Part 2 — lifetimeFirst/LastDoseDay are drawn from ADMINISTE
   assert.equal(none.lifetimeFirstDoseDay, null)
   assert.equal(none.lifetimeLastDoseDay, null)
   assert.equal(none.lifetimeDosesLogged, 0)
+  assert.equal(none.lifetimeDoseDayCount, 0)
 })
