@@ -6261,3 +6261,21 @@ Deno.test('R-13 item 9 — a MIXED column keeps every chip, including the witnes
   assert.equal((body.match(/class="conf">seen</g) ?? []).length, 2, 'the witnessed rows keep their tag')
   assert.equal((body.match(/class="conf">est</g) ?? []).length, 1, 'so the estimated one is visible BY CONTRAST')
 })
+
+Deno.test('R-13 item 1 — no report points at appendix E when appendix E does not render', () => {
+  // The dangling-reference class this document keeps paying for, asserted as an EMPTY SET
+  // (C-32): every call site of `mealsAppendixPointer` is gated today, and this is what reds
+  // if a future one is not. The helper itself cannot refuse — a caller would print "Meals
+  // are ." — so the guard lives here, over the rendered document.
+  const b = base()
+  const html = renderReport(
+    base({
+      diet: { ...b.diet, mealItems: [], mealCompletion: null },
+      provenance: { ...b.provenance, intakeLog: [], intakeLogScope: null, intakeLogHiddenOlder: 0 },
+    }),
+  )
+  assert.ok(!/Appendix E — Meals/.test(html), 'the appendix is genuinely absent on this record')
+  assert.ok(!/grouped by food in appendix/.test(plain(html)), 'and nothing points a reader at it')
+  // The letterhead's own range must not advertise an E either.
+  assert.ok(!/appendices A&ndash;E/.test(html), 'the orient line stops at the last appendix that renders')
+})

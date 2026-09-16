@@ -3668,3 +3668,55 @@ Deno.test('R-13 item 3 — reporting the tally membership does not change it', (
     'and the off-diet member set is unchanged',
   )
 })
+
+// ── R-13 item 5 (CUL-497), Data Scientist lens — the two surfaces PARTITION one population ──
+//
+// The render-level test drives one food, which is the case a partition bug cannot show. The
+// hazard is that page 1 summarises the WHOLE window (`mealCompletion.intakeBreakdown`) while
+// appendix E summarises PER FOOD (`mealItems[].intakeBreakdown`), so "one predicate, both
+// surfaces" is only honest if the per-food multisets sum to the window's. Driven through the
+// real assembly rather than a hand-built snapshot: a fixture could satisfy the arithmetic
+// while production never produces it (C-35).
+
+Deno.test('R-13 item 5 — per-food breakdowns sum to the window breakdown, and each reads its own verdict', () => {
+  idSeq = 0
+  const mealOf = (date: string, label: string, rating: 'all' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '08:00:00'),
+      meal: { foodItemId: label, intakeRating: rating, quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'tuna', brand: null, productName: label },
+    })
+  const events = [
+    ...['2026-06-01', '2026-06-02', '2026-06-03'].map((d) => mealOf(d, 'Refused Food', 'refused')),
+    ...['2026-06-04', '2026-06-05', '2026-06-06'].map((d) => mealOf(d, 'Eaten Food', 'all')),
+  ]
+  const snap = assembleReport(baseInput({ now: '2026-07-02T12:00:00Z', events }))
+
+  // Page 1 sees the window: an even split, and it picks no side.
+  const windowSummary = summariseIntake(snap.diet.mealCompletion!.intakeBreakdown)
+  assert.equal(windowSummary.kind, 'split', 'three refused against three finished is a tie')
+
+  // Appendix E sees each food: two unanimous verdicts, neither of them a split.
+  const perFood = snap.diet.mealItems.map((i) => summariseIntake(i.intakeBreakdown))
+  assert.deepEqual(
+    perFood.map((s) => s.kind).sort(),
+    ['mode', 'mode'],
+    'a food eaten every time is not a split, whatever the window says',
+  )
+
+  // THE PARTITION. Per-food counts sum to the window's, rating by rating — which is what
+  // makes the two densities reconcilable rather than merely different (C-4).
+  const sumPerFood = new Map<string, number>()
+  for (const i of snap.diet.mealItems) {
+    for (const b of i.intakeBreakdown) sumPerFood.set(b.rating, (sumPerFood.get(b.rating) ?? 0) + b.count)
+  }
+  for (const b of snap.diet.mealCompletion!.intakeBreakdown) {
+    assert.equal(sumPerFood.get(b.rating), b.count, `${b.rating} reconciles across the two surfaces`)
+  }
+  assert.equal(sumPerFood.size, snap.diet.mealCompletion!.intakeBreakdown.length, 'and no food carries a rating the window does not')
+
+  // And the figure printed BESIDE the split agrees with it: "N of M fully eaten" counts the
+  // same `all` rows the breakdown does.
+  const allInBreakdown = snap.diet.mealCompletion!.intakeBreakdown.find((b) => b.rating === 'all')?.count ?? 0
+  assert.equal(snap.diet.mealCompletion!.finishedMeals, allInBreakdown, 'the count beside the split is the split')
+})
