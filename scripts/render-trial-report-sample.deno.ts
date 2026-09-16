@@ -173,6 +173,17 @@ const DENTASTIX = {
 
 function cleanCase(): ReportInput {
   const events: ReportEventInput[] = []
+  // The diet BEFORE the trial — two weeks of the old kibble, logged right up to the vet
+  // visit that started the elimination. Entirely outside the report window, and that is the
+  // point: CUL-851's row is derived from the meal log rather than from a field the app does
+  // not capture, so the only artifact that can show it is one whose pull reaches back past
+  // the trial start. Without this, "Previous diet" prints "Not recorded." on every fixture
+  // while the record plainly holds the answer — which is the contradiction the row exists to
+  // remove, preserved in the very artifacts the cold read reads.
+  for (const d of days('2026-05-04', '2026-05-17')) {
+    events.push(meal({ date: d, brand: 'Purina', product: 'Pro Plan Sensitive Skin', foodItemId: 'f-pp', foodType: 'meal', format: 'kibble', proteins: ['salmon', 'chicken'], ingredientsNotes: 'Salmon, rice, chicken by-product meal, fish oil', intakeRating: 'all' }))
+    events.push(meal({ date: d, time: '18:15:00', brand: 'Purina', product: 'Pro Plan Sensitive Skin', foodItemId: 'f-pp', foodType: 'meal', format: 'kibble', proteins: ['salmon', 'chicken'], ingredientsNotes: 'Salmon, rice, chicken by-product meal, fish oil', intakeRating: 'all' }))
+  }
   // Two meals a day of the trial diet, dry + wet, from the day the owner started
   // logging (three days after the vet-set start date — the car-park case).
   for (const d of days('2026-05-21', '2026-07-02')) {
