@@ -361,6 +361,33 @@ const STOOL_COLOUR_LABEL: Record<string, string> = {
   red_streaked: 'red-streaked',
 }
 
+/**
+ * vomit_colour enum (migration 013) → plain label, lowercased for mid-sentence use.
+ *
+ * `black_coffee_ground` RENDERS AS "black", AND THE SECOND WORD IS THE POINT (Dr. Chen, cold read).
+ * This first shipped as "black / coffee-ground" on the reasoning that naming it in full errs toward
+ * escalation, which is the permitted direction. The cold read rejected it, and the argument is
+ * better than mine: "coffee-ground" is not a colour word in veterinary usage, it is THE descriptor
+ * for digested blood — and the caveat eight centimetres to the right uses the identical term while
+ * asserting "Not seen in the legible photos". A clinician takes both in one pass and gets a
+ * contradiction, resolving it as either blood the detector missed or two fields that cannot be
+ * trusted. Both are worse than the bare colour. The authoritative blood field stays the sole route
+ * to that finding (clinical-guardrails Pattern 9 — never a second, weaker one), and the app's own
+ * owner-facing chip has said "Black" all along.
+ */
+const VOMIT_COLOUR_LABEL: Record<string, string> = {
+  clear: 'clear',
+  white: 'white',
+  yellow: 'yellow',
+  green: 'green',
+  brown: 'brown',
+  tan: 'tan',
+  pink_red: 'pink / red',
+  dark_red: 'dark red',
+  black_coffee_ground: 'black',
+  mixed: 'mixed',
+}
+
 /** A grayscale ramp for proportion-bar segments — NEVER colour (§5.8). Cycles if >6. */
 // A calm mid-to-light grayscale ramp for the phenotype proportion bar + its key swatches. The
 // dominant segment used to render near-black (#1a1c22), which read as a heavy "chart" slab on the
@@ -4825,6 +4852,17 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   // and watery are 2–2 is a false majority (cold-read).
   const consistBit = predominantBit(p.consistencyDistribution, 'Consistency, where legible,', (k) => k.replace(/_/g, ' '))
 
+  // COLOUR, TALLIED — the field the box was aggregating everything BUT (CUL-981). It sits here,
+  // beside the blood caveat, because that is the sentence a clinician reads immediately before
+  // reaching for colour; scattered across appendix A it had to be tallied by eye. A tally, never a
+  // finding: no rank, no flag, no colour-derived verdict, and nothing downstream reads it.
+  const colourReads = Object.values(p.colourDistribution).reduce((a, b) => a + b, 0)
+  const colourBit = distributionBit(
+    p.colourDistribution,
+    `Colour, from ${colourReads === 1 ? 'the one read' : `the ${num(colourReads)} reads`} where it was legible:`,
+    (k) => VOMIT_COLOUR_LABEL[k] ?? k.replace(/_/g, ' '),
+  )
+
   // The four-state denominator disclosure (§5.10) — kept distinct, never collapsed.
   const noPhoto = p.totalIncidents - p.withAnalysis
   const stateBits: string[] = []
@@ -4835,7 +4873,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
   const denom = `Across ${p.totalIncidents === 1 ? 'the' : 'all'} ${num(p.totalIncidents)} vomiting incident${
     p.totalIncidents === 1 ? '' : 's'
-  }; ${legibleReadCount(assessed)} a legible AI read${stateDisclosure}.${consistBit} Per-incident detail in appendix&nbsp;A.`
+  }; ${legibleReadCount(assessed)} a legible AI read${stateDisclosure}.${consistBit}${colourBit} Per-incident detail in appendix&nbsp;A.`
 
   // COLLAPSE THE EMPTY BLOCK TO A LINE (B-502). With nothing photographed the section said
   // "no photo" three ways — a lead describing a read that never happened, a chart-shaped grey
@@ -4901,7 +4939,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   return `
   <div class="sec">
     <h2>Vomit characteristics <span class="aitag">Automated photo analysis &middot; owner-reviewable</span></h2>
-    <p class="note lead">Colour, contents, and consistency are read automatically from the photo the owner took of each incident, then aggregated below. Each read is shown for the owner to confirm; none carries a diagnosis or a verdict on a single incident.</p>
+    <p class="note lead">Colour, contents, and consistency are read automatically from the photo the owner took of each incident, then aggregated below &mdash; a read the owner has corrected counts the same as one they have not. Each read is shown for the owner to confirm; none carries a diagnosis or a verdict on a single incident.</p>
     <div class="pheno">
       ${body}
       ${sideHtml}
@@ -4926,6 +4964,29 @@ function predominantBit(
   return tied.length === 1
     ? ` ${lead} was most often ${h(tied[0])}.`
     : ` ${lead} had no single predominant reading (${h(tied.slice(0, 3).join(', '))}).`
+}
+
+/**
+ * The same distribution, TALLIED rather than ranked — `lead: a ×6 · b ×1 · c ×1.`
+ *
+ * WHY NOT `predominantBit` (CUL-981). Its sibling above states a majority, which is a claim about
+ * which reading dominates; the colour tally is explicitly forbidden from ranking, interpreting or
+ * flagging, and "was most often tan" is a ranking with the other three readings deleted. A vet
+ * reaching for colour after the blood caveat wants the whole spread — one green in nine is the
+ * datum, and it is exactly the datum a modal sentence drops. So this prints every entry with its
+ * count, ordered by count and then by key so the same distribution always renders identically.
+ *
+ * THE CALLER STATES THE TALLY'S OWN DENOMINATOR, and the first cut did not (Dr. Chen, cold read).
+ * Leaning on the neighbouring "6 have a legible AI read" worked only because 4+1+1 happened to sum
+ * to 6 — the reader was RECONSTRUCTING the denominator, and the reconstruction breaks silently the
+ * moment a read is legible for contents and not for colour. Per-read legibility and per-field
+ * legibility are different denominators; this one names the field's. Empty ⇒ ''.
+ */
+function distributionBit(dist: Record<string, number>, lead: string, label: (k: string) => string): string {
+  const entries = Object.entries(dist).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  if (entries.length === 0) return ''
+  const bits = entries.map(([k, n]) => `${h(label(k))} &times;${num(n)}`).join(' &middot; ')
+  return ` ${lead} ${bits}.`
 }
 
 /**

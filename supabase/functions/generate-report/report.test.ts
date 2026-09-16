@@ -3538,3 +3538,48 @@ Deno.test('CUL-994 Part 2 — lifetimeFirst/LastDoseDay are drawn from ADMINISTE
   assert.equal(none.lifetimeDosesLogged, 0)
   assert.equal(none.lifetimeDoseDayCount, 0)
 })
+
+// ── CUL-981 — the vomit colour aggregate ──────────────────────────────────────
+//
+// Both were RED against the assembly that shipped the v15 report: `VomitPhenotype` aggregated
+// everything but colour.
+
+Deno.test('CUL-981 — vomit colour is aggregated over the ASSESSED reads, unsure excluded', () => {
+  idSeq = 0
+  const days = ['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25']
+  const events = days.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d, '20:00:00') }))
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-06-27T12:00:00Z',
+      events,
+      aiAnalyses: [
+        mkAnalysis(events[0].id, { colour: 'tan' }),
+        mkAnalysis(events[1].id, { colour: 'tan' }),
+        mkAnalysis(events[2].id, { colour: 'green' }),
+        // An owner-CORRECTED read counts the same as a raw one — the rule contents and
+        // consistency already follow, not a second rule invented for colour.
+        mkAnalysis(events[3].id, { colour: 'tan', editedAt: '2026-06-23T21:00:00Z' }),
+        // 'unsure' is not a legible colour and never becomes a category.
+        mkAnalysis(events[4].id, { colour: 'unsure' }),
+        // An UNASSESSED read contributes no colour at all, whatever the column holds.
+        mkAnalysis(events[5].id, { colour: 'yellow', status: 'uncertain' }),
+      ],
+    }),
+  )
+  const p = snap.vomitPhenotype!
+  assert.deepEqual(p.colourDistribution, { tan: 3, green: 1 })
+  assert.equal(p.assessedCount, 5, 'five completed reads')
+  assert.equal(p.reviewedCount, 1, 'one of them owner-corrected — still counted above')
+  // THE DENOMINATOR IS READS, NEVER INCIDENTS. Six incidents, five assessed, four with a
+  // legible colour: the tally must never be spoken over the six.
+  assert.equal(p.totalIncidents, 6)
+  assert.equal(Object.values(p.colourDistribution).reduce((a, b) => a + b, 0), 4)
+})
+
+Deno.test('CUL-981 — no photographed incident means no colour distribution, not an empty one spoken', () => {
+  idSeq = 0
+  const events = [makeEvent({ type: 'vomit', occurredAt: at('2026-06-20', '20:00:00') })]
+  const snap = assembleReport(baseInput({ now: '2026-06-27T12:00:00Z', events, aiAnalyses: [] }))
+  assert.deepEqual(snap.vomitPhenotype!.colourDistribution, {})
+  assert.equal(snap.vomitPhenotype!.assessedCount, 0)
+})
