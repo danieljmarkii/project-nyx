@@ -2,7 +2,8 @@
 
 **Date:** 2026-09-16
 **Mode:** DISCOVERY · **Issue:** CUL-156 (re-scoped, promoted) · **Also touched:** CUL-367
-**Outcome:** spec + mock round 1, shipped via #865. Nothing built; six decisions on `Waiting on PM`.
+**Outcome:** spec + mock round 1, shipped via #865. Nothing built; **seven** decisions on `Waiting on PM`
+(six from the design pass, D7 from the adversarial one).
 
 ---
 
@@ -71,14 +72,15 @@ the report safe whichever way D3 is ruled.
 
 ## What was produced
 
-- **`docs/nyx-trial-extension-requirements.md`** v1.0 DRAFT — a seven-rule spine (TE-1…TE-7), the
-  surfaces, the record and report work, six decision briefs, a five-PR plan, draft acceptance criteria,
-  and the persona positions on record.
+- **`docs/nyx-trial-extension-requirements.md`** — v1.0 DRAFT, then **v1.1** the same session (below): a
+  seven-rule spine (TE-1…TE-7), the surfaces, the record and report work, seven decision briefs, a
+  six-PR plan, draft acceptance criteria, and the persona positions on record.
 - **`docs/culprit-trial-extension-mockups.html`** round 1 — every option whose difference is *visual*
   drawn side by side, per the 2026-08-07 directive; current frames tagged, live alternatives in labelled
   option boxes, §0 the ledger. One frame is drawn **to be rejected** (the cheerful post-extension card):
   it is the obvious thing to write there, and TE-7 plus the voice rule forbid all three of its moves.
-- **CUL-156** — re-titled, re-scoped, Low → High, `Waiting on PM`, with D1–D6 as its first comment.
+- **CUL-156** — re-titled, re-scoped, Low → High, `Waiting on PM`, with D1–D6 as its first comment and
+  D7 as its second.
 - **CUL-367** — commented with the observed case; deliberately *not* advanced. The numbers are Dr. Chen's
   ratification, so D5 is the one brief in the set that carries **no recommendation**.
 
@@ -91,7 +93,7 @@ the report safe whichever way D3 is ruled.
 - **No attachment on either Linear issue.** An attachment is a commitment that merging the PR finishes the
   issue (CUL-803, measured), and merging this finishes neither.
 - **No CLAUDE.md Read-These row.** `guards/claudeMdBudget.test.ts` makes an addition there cost a
-  deletion, and a DRAFT spec with six open decisions and nothing buildable has not earned one. The row
+  deletion, and a DRAFT spec with seven open decisions and nothing buildable has not earned one. The row
   lands when the rulings do.
 
 ## The adversarial pass came back FAIL, and broke one of the spec's own rules
