@@ -727,6 +727,317 @@ export async function endActiveTrial(params: {
 }
 
 /**
+ * A window change the record refused — CUL-1039 §7 PR 2, TE-3.
+ *
+ * Its own class rather than a bare `Error` so a caller can tell a refusal from a
+ * database failure, and can say something true about WHICH refusal it was. The
+ * fields are STRUCTURED, never a display string: `guards/ownerFacingCopy.test.ts`
+ * forbids a display sink reading a string off an error, so `message` here is a
+ * diagnostic and PR 3's sheet renders its own copy from `dayCounter` /
+ * `currentTargetDays` (*"Nyx is already on day 53"*). The `VetVisitLinkRefused`
+ * precedent, same reasoning.
+ */
+/** Postgres `integer` (int4) upper bound — `target_duration_days`' actual ceiling
+ *  on the server. Named here because the consequence of exceeding it is a sync
+ *  failure that never quarantines, not a rejected value. */
+const PG_INT4_MAX = 2147483647;
+
+export class TrialWindowRefused extends Error {
+  readonly reason: 'not_found' | 'not_running' | 'not_forward' | 'out_of_range';
+  /** The new total the caller asked for, floored. */
+  readonly requestedDays: number;
+  /** The strict floor the request had to clear — `max(currentTarget, dayCounter)`.
+   *  Null when the row could not be read, so there is no floor to speak of. */
+  readonly floorDays: number | null;
+  readonly currentTargetDays: number | null;
+  readonly dayCounter: number | null;
+
+  constructor(args: {
+    reason: 'not_found' | 'not_running' | 'not_forward' | 'out_of_range';
+    requestedDays: number;
+    floorDays?: number | null;
+    currentTargetDays?: number | null;
+    dayCounter?: number | null;
+  }) {
+    super(
+      `changeTrialWindow refused (${args.reason}): asked for ${args.requestedDays}, ` +
+        `floor ${args.floorDays ?? 'unknown'}`,
+    );
+    this.name = 'TrialWindowRefused';
+    this.reason = args.reason;
+    this.requestedDays = args.requestedDays;
+    this.floorDays = args.floorDays ?? null;
+    this.currentTargetDays = args.currentTargetDays ?? null;
+    this.dayCounter = args.dayCounter ?? null;
+  }
+}
+
+/**
+ * Change a running trial's window — CUL-1039 (spec §7 PR 2, TE-1/TE-3/TE-4, §5.1).
+ *
+ * THE ONE WRITE PATH FOR A WINDOW THAT MOVES. `extendTrial` delegates here, so the
+ * milestone's one-tap and the mid-trial sheet land on one clamp and one provenance
+ * contract. That is not tidiness: §5.1's own worked sentence — *"extended from 56
+ * days on 19 Sep (day 56)"* — describes the MILESTONE tap, and TE-4 is
+ * unconditional. A milestone extension that recorded nothing would leave the only
+ * door that exists today writing exactly the byte-identical row TE-4 exists to
+ * stop.
+ *
+ * ── TOTALS, NEVER DELTAS (TE-2/D1a) ──────────────────────────────────────────
+ *
+ * `targetDurationDays` is the trial's whole new length. The milestone converts its
+ * delta through `nextTargetDays` BEFORE calling — the arithmetic is not forked, it
+ * has one home in `lib/dietTrialCompletion.ts`.
+ *
+ * ── FORWARD-ONLY, IN THE PREDICATE AND NOT ONLY IN THE UI (TE-3/D3a) ─────────
+ *
+ * The floor is `max(currentTargetDays, dayCounter)` and the test is STRICT. Each
+ * half of that max earns its place, and so does the strictness:
+ *
+ *   • above the current TARGET closes §5.2's laundering path — a 56-day trial
+ *     shortened to 28 and marked complete prints "Ran its course — the full window
+ *     was completed" (`render.ts:3948`), rendering a trial abandoned at four weeks
+ *     as one that finished its course. Closed by construction here, not by a
+ *     render rule;
+ *   • above the current DAY is `nextTargetDays`' own criterion, and it is the
+ *     BINDING half in overrun (day 61 of 56), where the target alone would permit
+ *     a window that leaves the card in the state it was tapped from;
+ *   • STRICT, because equality is the no-op re-save — and a no-op that stamped
+ *     `target_duration_set_at` would make every downstream reader say the window
+ *     moved when it did not. The predicate is `set_at IS NOT NULL` (migration
+ *     068), so a false stamp is a false clinical claim, not a cosmetic one.
+ *
+ * `nextTargetDays` always returns strictly above both, so the milestone can never
+ * trip this — it is belt-and-braces there and the real gate for the sheet.
+ *
+ * ── THE FLOOR IS READ FROM THE RECORD, NOT TAKEN FROM THE CALLER ─────────────
+ *
+ * The SELECT is what makes the refusal true. A caller passing its own
+ * `currentTargetDays` hands over a value that may be a hydration behind the row —
+ * and a stale 56 against a stored 84 lets a "forward" 70 through, which is the
+ * shortening TE-3 forbids, arriving by the front door. C-12's rule: a one-shot
+ * control asks the record rather than the state.
+ *
+ * ── CONCURRENT CHANGES ARE LAST-WRITE-WINS, KNOWINGLY (§5.6, CUL-1039) ───────
+ *
+ * Two devices can change one window inside a sync gap; the column is LWW and the
+ * server's `updated_at` settles it. That is ACCEPTED here, and the reason is D1a:
+ * the sheet is denominated in TOTALS, so two caregivers each told "twelve weeks"
+ * both write 84 and converge on the right answer — where two deltas would collapse
+ * to one extension's worth of days with both believing theirs landed. The residual
+ * this does NOT cover is narrower and is filed rather than hidden: a device a
+ * hydration behind can write a total that is forward of what IT last saw and
+ * backward of what the other device already stored, which is a shortening through
+ * the one door TE-3 closes locally. The local floor cannot see it (the other
+ * device's write has not arrived) and nothing on this side can — it needs a
+ * monotonic guard at the server, which is its own migration and its own
+ * adversarial pass. CUL-1044.
+ *
+ * ── WHAT IT WRITES ──────────────────────────────────────────────────────────
+ *
+ * One statement, all four columns plus the quarantine trio:
+ *
+ *   • `target_duration_days` — the new total;
+ *   • `target_duration_days_initial` — `COALESCE(initial, target_duration_days)`,
+ *     so it captures the ORIGINAL on the first move and is never overwritten by a
+ *     second. In SQL every SET expression reads the PRE-UPDATE row, so the
+ *     COALESCE sees the old target even though the assignment above it names the
+ *     same column — that is load-bearing and is proved against real SQLite in
+ *     `lib/dietTrialWindow.test.ts`, not assumed. It is COALESCE and not a plain
+ *     assignment because migration 068's backfill leaves any trial created between
+ *     the apply and this shipping at NULL: no DEFAULT can reference a sibling
+ *     column (CUL-1037's handoff, point 3);
+ *   • `target_duration_set_at` — stamped on EVERY change. It is the predicate, so
+ *     it is never inferred by comparing `initial` against the current target: two
+ *     equal numbers are also what a corrected typo looks like;
+ *   • `target_duration_vet_directed` — `true → 1`, `false → 0`, absent/null → NULL.
+ *     The coercion never normalises NULL to 0 or 0 to NULL (SQLite has no BOOLEAN;
+ *     the server column is one). Downstream, 0 and NULL are INDISTINGUISHABLE and
+ *     both mean silence — §5.1's two-sided rule, an unchecked box is never
+ *     rendered as "the owner did this on their own".
+ *
+ * ── TWO OF THE THREE DESCRIBE THE LAST MOVE. `initial` DESCRIBES THE FIRST ────
+ *
+ * Read that boundary before rendering any sentence out of these columns, because
+ * it is the one place this shape can produce a confident falsehood:
+ *
+ *   • `set_at` and `vet_directed` are RE-STAMPED on every change and describe the
+ *     LATEST one. A stale `true` behind an untagged milestone tap would have the
+ *     report attribute to a vet a window the vet never named — the assertion §5.1
+ *     forbids outright — so the flag is re-written even when it is re-written to
+ *     silence;
+ *   • `initial` is the ORIGINAL and is captured ONCE. It is the predecessor of the
+ *     FIRST move, not of the last.
+ *
+ * So after 56 → 84 on day 28 and 84 → 112 on day 56, the row holds `initial = 56`
+ * beside a `set_at` of day 56 — and both are true, about different moves. A
+ * template that pairs them in one clause (*"extended from 56 days on ‹day 56›"*)
+ * asserts a 56 → 112 move on a day the window actually went 84 → 112. **That is a
+ * constraint on PR 4's render, and it is recorded on CUL-1041.** The honest pairing
+ * is `initial` with the CURRENT target (*"originally 56 days, now 112"*) and
+ * `set_at` on its own (*"most recently extended on ‹date›"*).
+ *
+ * This is not a defect to fix here: D2(a) ruled three columns over a
+ * `diet_trial_window_changes` history table precisely because the middle steps of
+ * a multi-step extension are marginal, on `target_protein_set_at`'s contract —
+ * *an edit is disclosed here, never versioned; one value, whole-trial* (TP-3). The
+ * middle step is absent BY RULING. What is owed is that no reader pretend it is
+ * present. (Found by the `adversarial-reviewer` pass on this PR; the earlier
+ * wording of this very comment claimed all three described the last move, which is
+ * the C-38 shape — a comment writing a cheque the code does not cash — sitting
+ * inside the contract it was describing.)
+ *
+ * `synced = 0, sync_attempts = 0, sync_error = NULL` in the same statement (the
+ * mirror's contract for every local mutation, and what re-arms a row quarantined
+ * on a 23505), and `updated_at` MOVES — markSynced matches on it, so a write that
+ * left it still would strand an owner edit made inside the network gap at
+ * `synced = 1` (C-23, scanned by `syncQueue.test.ts`).
+ *
+ * `changes === 0` throws rather than resolving silently: a by-id local UPDATE that
+ * matches nothing is the failure mode C-39 was written for, and `lib/db.ts`'s four
+ * by-id updates all throw on it.
+ *
+ * ── WHAT IT DOES NOT FIX ────────────────────────────────────────────────────
+ *
+ * §5.5's unbounded divergence is still live on the DELTA path. `nextTargetDays`
+ * extends from `max(currentTarget, dayCounter)`, which is right for the owner-
+ * facing promise ("4 more weeks" means four weeks from today) and wrong for the
+ * report, which reads the same integer as *the prescribed window*: a 56-day trial
+ * tapped on day 140 writes 168, rendered to a clinician as a 24-week elimination
+ * prescription. The totals path sidesteps it — a total is what the owner said —
+ * and this function cannot repair it, because by the time the value arrives here
+ * the two meanings are one integer. It is named where it is created, not here.
+ *
+ * And §5.4's coverage gate still moves under an extension. Nothing in this PR
+ * makes that better or worse — the repair is D7(a)'s disclosure, PR 1b.
+ */
+export async function changeTrialWindow(params: {
+  trialId: string;
+  /** The trial's new TOTAL length in days (TE-2) — never a delta. */
+  targetDurationDays: number;
+  /** The owner's optional statement that their vet directed this (D4a). Omitted
+   *  or null is SILENCE, and silence is never a claim in either direction. */
+  vetDirected?: boolean | null;
+  /** Injected only so tests pin the exact `set_at` written; production passes
+   *  now. */
+  now?: Date;
+}): Promise<void> {
+  const requested = Math.floor(params.targetDurationDays);
+  const db = getDb();
+
+  // The record, not the caller's copy of it. `status = 'active'` is the right
+  // question HERE and is not B-422's trap: this asks "is this trial still open to
+  // having its window changed", which a trial past its target but un-ended
+  // genuinely is — that overrun case is the one §5.5 is about. What it excludes is
+  // a completed/abandoned trial, whose window is a finished fact and whose day
+  // counter goes on climbing with the clock, making any floor derived from it a
+  // number about nothing.
+  const row = await db.getFirstAsync<{
+    started_at: string;
+    target_duration_days: number;
+    status: string;
+    ended_at: string | null;
+  }>(
+    `SELECT started_at, target_duration_days, status, ended_at
+       FROM diet_trials WHERE id = ?`,
+    [params.trialId],
+  );
+  if (!row) {
+    throw new TrialWindowRefused({ reason: 'not_found', requestedDays: requested });
+  }
+  // BOTH halves, and the second is not redundant: `lib/dietTrial.ts:391` treats an
+  // `ended_at` on a row still marked `active` as a sync artefact that is
+  // nevertheless an OWNER-AUTHORED FACT, and honours it as the trial's end. A write
+  // path reading only `status` would go on extending a trial every read surface
+  // already considers over. (The mutant that drops this half was green across the
+  // whole suite until the adversarial pass found it — the one "ended" fixture set
+  // both fields, so the half that matters was never exercised.)
+  if (row.status !== 'active' || (row.ended_at != null && row.ended_at !== '')) {
+    throw new TrialWindowRefused({
+      reason: 'not_running',
+      requestedDays: requested,
+      currentTargetDays: row.target_duration_days,
+    });
+  }
+
+  // THE COLUMN'S OWN BOUND, not a clinical one. `target_duration_days` is INTEGER
+  // (int4) on the server, and a value above it earns PostgREST `22003` — which is
+  // NOT in `TERMINAL_SYNC_ERROR_CODES` (`lib/syncQueue.ts`). So an out-of-range
+  // window does not quarantine: the row retries forever, and everything that
+  // happens to that trial afterwards, its completion and outcome included, never
+  // reaches the server. A mistyped digit would cost the whole row's sync, silently.
+  //
+  // This is deliberately NOT a sane-maximum. How long a trial may be is a product
+  // question §4.2 owns, and PR 3's sheet is where a mistyped `840` should be caught
+  // (recorded on CUL-1040) — this only refuses what the column cannot hold.
+  if (requested > PG_INT4_MAX) {
+    throw new TrialWindowRefused({
+      reason: 'out_of_range',
+      requestedDays: requested,
+      currentTargetDays: row.target_duration_days,
+    });
+  }
+
+  const at = params.now ?? new Date();
+  const progress = getDietTrialProgress(
+    { startedAt: row.started_at, targetDurationDays: row.target_duration_days },
+    at.getTime(),
+  );
+  // An unparseable `started_at` yields no progress and therefore no day floor. The
+  // target floor still applies — refusing on the half that survives beats writing
+  // on none of it.
+  const dayCounter = progress?.dayCounter ?? null;
+  const floor = Math.max(row.target_duration_days, dayCounter ?? 0);
+  if (!Number.isFinite(requested) || requested <= floor) {
+    throw new TrialWindowRefused({
+      reason: 'not_forward',
+      requestedDays: requested,
+      floorDays: floor,
+      currentTargetDays: row.target_duration_days,
+      dayCounter,
+    });
+  }
+
+  const nowIso = at.toISOString();
+  // true → 1, false → 0, absent → NULL. Three states, and the two falsy ones are
+  // NOT collapsed into each other (see the docstring) — a reader that needs them
+  // apart has already lost, but the column is not where that is decided.
+  const vetDirected =
+    params.vetDirected === true ? 1 : params.vetDirected === false ? 0 : null;
+
+  const result = await db.runAsync(
+    `UPDATE diet_trials
+        SET target_duration_days = ?,
+            target_duration_days_initial = COALESCE(target_duration_days_initial, target_duration_days),
+            target_duration_set_at = ?, target_duration_vet_directed = ?,
+            updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
+      WHERE id = ?`,
+    [requested, nowIso, vetDirected, nowIso, params.trialId],
+  );
+  // A by-id UPDATE that matched nothing resolves `{ changes: 0 }` and says nothing
+  // (C-39). The SELECT above makes it near-impossible, which is exactly why it is
+  // worth asserting rather than assuming.
+  if (result.changes === 0) {
+    throw new TrialWindowRefused({
+      reason: 'not_found',
+      requestedDays: requested,
+      floorDays: floor,
+      currentTargetDays: row.target_duration_days,
+      dayCounter,
+    });
+  }
+
+  notifyTrialChanged();
+
+  // Fire-and-forget, same contract as every trial write here: offline the row stays
+  // queued at `synced = 0` and the next cycle picks it up. A parent update only —
+  // no `diet_trial_foods` children change — so there is no ordering hazard.
+  syncPendingDietTrials().catch((err) =>
+    console.warn('[dietTrialSetup] change-trial-window sync failed (queued):', err),
+  );
+}
+
+/**
  * `Keep going` — the milestone's extension (PR 6, §4.3).
  *
  * WHY THIS IS A WRITE AND NOT A NEW TRIAL. Extending keeps ONE continuous window:
@@ -735,30 +1046,29 @@ export async function endActiveTrial(params: {
  * 84-day elimination as a 28-day trial. It is the same reasoning that made P-2
  * refuse a `paused` state.
  *
- * The caller computes the new target through `nextTargetDays`, which is where the
- * "cannot set a target at or below the current day" criterion is enforced and
- * tested. This function refuses a non-positive value and otherwise writes what it
- * is given — the arithmetic has one home, not two.
+ * A THIN DELEGATE SINCE CUL-1039. The caller still computes the new target through
+ * `nextTargetDays` — one arithmetic home — and this hands that total to
+ * `changeTrialWindow`, so the milestone and the mid-trial sheet share one clamp and
+ * one provenance contract. `vetDirected` is null here BY CONSTRUCTION: the
+ * milestone's affordance is a named default with no box to check, and silence is
+ * the honest record of that (§5.1).
+ *
+ * It inherits the forward-only refusal, which `nextTargetDays` can never trip — its
+ * result is strictly above both the current target and the current day. What it
+ * CAN now trip is a stale re-tap: a second call carrying a target already written
+ * is the no-op re-save, and refusing it is right, because writing it would stamp
+ * `target_duration_set_at` a second time and move the day the report says the
+ * window moved.
  */
 export async function extendTrial(params: {
   trialId: string;
   targetDurationDays: number;
 }): Promise<void> {
-  const target = Math.floor(params.targetDurationDays);
-  if (!Number.isFinite(target) || target < 1) {
-    throw new Error(`extendTrial: refusing a target of ${params.targetDurationDays}`);
-  }
-  const db = getDb();
-  await db.runAsync(
-    `UPDATE diet_trials
-        SET target_duration_days = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
-      WHERE id = ?`,
-    [target, new Date().toISOString(), params.trialId],
-  );
-  notifyTrialChanged();
-  syncPendingDietTrials().catch((err) =>
-    console.warn('[dietTrialSetup] extend-trial sync failed (queued):', err),
-  );
+  await changeTrialWindow({
+    trialId: params.trialId,
+    targetDurationDays: params.targetDurationDays,
+    vetDirected: null,
+  });
 }
 
 /**

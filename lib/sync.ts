@@ -2250,6 +2250,12 @@ interface RemoteDietTrial {
   ended_at: string | null; transition_started_at: string | null;
   // migration 053 (B-704) — owner-stated trial protein + its provenance stamp.
   target_protein: string | null; target_protein_set_at: string | null;
+  // migration 068 (CUL-1039) — window provenance. `vet_directed` arrives as a JSON
+  // BOOLEAN and is stored as INTEGER (SQLite has none); NULL stays NULL on the way
+  // down, never normalised to false (§5.1's two-sided rule).
+  target_duration_days_initial: number | null;
+  target_duration_set_at: string | null;
+  target_duration_vet_directed: boolean | null;
   vet_visit_id: string | null; // CUL-899 VV-1 — provenance only (migration 066)
   created_at: string; updated_at: string;
 }
@@ -2906,7 +2912,8 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
     'id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at, ' +
       'vet_name, notes, food_label, indication, phase, outcome, outcome_notes, ' +
       'stopped_reason, ended_at, transition_started_at, target_protein, ' +
-      'target_protein_set_at, vet_visit_id, created_at, updated_at',
+      'target_protein_set_at, target_duration_days_initial, target_duration_set_at, ' +
+      'target_duration_vet_directed, vet_visit_id, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2920,8 +2927,9 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         (id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at,
          vet_name, notes, food_label, indication, phase, outcome, outcome_notes,
          stopped_reason, ended_at, transition_started_at, target_protein, target_protein_set_at,
+         target_duration_days_initial, target_duration_set_at, target_duration_vet_directed,
          vet_visit_id, created_at, updated_at, synced, sync_error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, food_item_id=excluded.food_item_id,
          started_at=excluded.started_at, target_duration_days=excluded.target_duration_days,
@@ -2931,6 +2939,9 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
          outcome_notes=excluded.outcome_notes, stopped_reason=excluded.stopped_reason,
          ended_at=excluded.ended_at, transition_started_at=excluded.transition_started_at,
          target_protein=excluded.target_protein, target_protein_set_at=excluded.target_protein_set_at,
+         target_duration_days_initial=excluded.target_duration_days_initial,
+         target_duration_set_at=excluded.target_duration_set_at,
+         target_duration_vet_directed=excluded.target_duration_vet_directed,
          vet_visit_id=excluded.vet_visit_id,
          updated_at=excluded.updated_at, synced=1, sync_error=NULL
        WHERE diet_trials.synced = 1`,
@@ -2941,6 +2952,13 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
         t.outcome ?? null, t.outcome_notes ?? null, t.stopped_reason ?? null,
         t.ended_at ?? null, t.transition_started_at ?? null,
         t.target_protein ?? null, t.target_protein_set_at ?? null,
+        // BOOLEAN → INTEGER, and `?? null` is NOT enough on its own here: `false`
+        // is falsy, so a nullish-coalesce alone would let it through, and `false`
+        // is not a value SQLite will bind. Three states, mapped one to one —
+        // true→1, false→0, null/undefined→NULL — because §5.1 needs NULL and false
+        // to mean the same thing downstream WITHOUT the pull inventing either.
+        t.target_duration_days_initial ?? null, t.target_duration_set_at ?? null,
+        t.target_duration_vet_directed == null ? null : t.target_duration_vet_directed ? 1 : 0,
         t.vet_visit_id ?? null,
         t.created_at, t.updated_at,
       ],
