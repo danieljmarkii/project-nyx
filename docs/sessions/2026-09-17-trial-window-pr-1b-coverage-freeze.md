@@ -2,9 +2,15 @@
 
 **Date:** 2026-09-17
 
-CUL-1038, shipped via #TBD. The second behaviour change of the diet-trial window
+CUL-1038, shipped via #870. The second behaviour change of the diet-trial window
 track (CUL-156) and the first repair on it: everything before this pinned or
 recorded the defect, and this closes it.
+
+**The session ran long enough that the track overtook it.** PRs 2, 3 and 4
+(CUL-1039 / 1040 / 1041) merged to `main` while this was open, and #870 merged
+them back in. The freeze is still the only fix for §5.4 — `origin/main` carries no
+`trialCoverageWindowEndDayIndex` — so it rebased on top rather than being
+superseded. See item 13.
 
 Spec: `docs/nyx-trial-extension-requirements.md` **v2.5** §5.4 (both ⚠ blocks),
 **TE-6 (amended — the rule is directional)**, §6 D7(c). Mock:
@@ -264,6 +270,35 @@ held.
 - `deno test`: **1,800 passed / 29 suites**.
 - The report path is executed end to end (raw events → `assembleReport` →
   `renderReport`), on the default and since-visit scopes, both sides of the tap.
+
+**13. The track overtook the session, and one conflict was not mechanical.** PR 1b
+forbade pushing `target_duration_days_initial` (the clobber); PR 2 shipped the
+push. That is the case the PR rules name as "ask rather than resolve" — picking
+either side loses behaviour. PM ruled PR 2's way: it merged, and reverting a
+merged write path from a feature branch is the wrong direction.
+
+**So the clobber is now LIVE on main**, and what it damages has changed. It no
+longer erases a freeze that had not landed — it erases **PR 4's shipped
+disclosure**, because `set_at` and `vet_directed` ride the same push and the same
+NULL. And `changeTrialWindow`'s `COALESCE(initial, target_duration_days)` cannot
+repair a clobbered row: the next window change stamps `initial` from the
+already-extended target, so the report would print *"extended from 64 days"* over a
+trial designed for 28. It looks like a self-healing path and is not. CUL-1051 is
+re-scoped and raised to Urgent; another session is already building it (#874).
+
+**And the design question was answered by rendering, not by argument.** Until this
+merge the two features had never been on one page — §5.4's fixture carried no
+provenance and CUL-1041's carried no silent tail. A test now renders both: they
+are adjacent, not overlapping. PR 4 says the window MOVED and when; PR 1b says
+what the ratio is MEASURED OVER; neither states the other's fact. That is the
+C-3 / one-record-two-answers risk closed by execution rather than by reasoning
+about it.
+
+**14. PR 4's C-32 registry caught the freeze.** `guards/dietTrialProvenance.test.ts`
+went red on `lib/dietTrial.ts` as an unregistered consumer of a provenance column
+— a guard written by a sibling session, catching a change from this one, across a
+merge. Worth noting because it is the registry pattern paying off in the case it
+was designed for and could not have anticipated.
 
 ## What this owes and leaves
 
