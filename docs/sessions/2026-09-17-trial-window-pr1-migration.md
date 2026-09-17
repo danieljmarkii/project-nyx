@@ -1,6 +1,6 @@
 # Trial window PR 1 — migration 068: the three columns that record a moved window
 
-**Date:** 2026-09-17 · **Issue:** CUL-1037 · **Shipped via** #866 (draft)
+**Date:** 2026-09-17 · **Issue:** CUL-1037 · shipped via #866
 
 The first build PR of the diet-trial extension track (CUL-156), against
 `docs/nyx-trial-extension-requirements.md` v2.1 §7's PR plan. Schema only,
