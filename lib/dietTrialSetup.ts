@@ -737,8 +737,13 @@ export async function endActiveTrial(params: {
  * `currentTargetDays` (*"Nyx is already on day 53"*). The `VetVisitLinkRefused`
  * precedent, same reasoning.
  */
+/** Postgres `integer` (int4) upper bound — `target_duration_days`' actual ceiling
+ *  on the server. Named here because the consequence of exceeding it is a sync
+ *  failure that never quarantines, not a rejected value. */
+const PG_INT4_MAX = 2147483647;
+
 export class TrialWindowRefused extends Error {
-  readonly reason: 'not_found' | 'not_running' | 'not_forward';
+  readonly reason: 'not_found' | 'not_running' | 'not_forward' | 'out_of_range';
   /** The new total the caller asked for, floored. */
   readonly requestedDays: number;
   /** The strict floor the request had to clear — `max(currentTarget, dayCounter)`.
@@ -748,7 +753,7 @@ export class TrialWindowRefused extends Error {
   readonly dayCounter: number | null;
 
   constructor(args: {
-    reason: 'not_found' | 'not_running' | 'not_forward';
+    reason: 'not_found' | 'not_running' | 'not_forward' | 'out_of_range';
     requestedDays: number;
     floorDays?: number | null;
     currentTargetDays?: number | null;
@@ -851,10 +856,36 @@ export class TrialWindowRefused extends Error {
  *     both mean silence — §5.1's two-sided rule, an unchecked box is never
  *     rendered as "the owner did this on their own".
  *
- * It is RE-STAMPED on every change, vet flag included, and that is deliberate:
- * all three describe the LAST move, the same scope `set_at` has. Leaving a stale
- * `true` behind an untagged milestone tap would have the report attribute to a vet
- * a window the vet never named — the one assertion §5.1 forbids outright.
+ * ── TWO OF THE THREE DESCRIBE THE LAST MOVE. `initial` DESCRIBES THE FIRST ────
+ *
+ * Read that boundary before rendering any sentence out of these columns, because
+ * it is the one place this shape can produce a confident falsehood:
+ *
+ *   • `set_at` and `vet_directed` are RE-STAMPED on every change and describe the
+ *     LATEST one. A stale `true` behind an untagged milestone tap would have the
+ *     report attribute to a vet a window the vet never named — the assertion §5.1
+ *     forbids outright — so the flag is re-written even when it is re-written to
+ *     silence;
+ *   • `initial` is the ORIGINAL and is captured ONCE. It is the predecessor of the
+ *     FIRST move, not of the last.
+ *
+ * So after 56 → 84 on day 28 and 84 → 112 on day 56, the row holds `initial = 56`
+ * beside a `set_at` of day 56 — and both are true, about different moves. A
+ * template that pairs them in one clause (*"extended from 56 days on ‹day 56›"*)
+ * asserts a 56 → 112 move on a day the window actually went 84 → 112. **That is a
+ * constraint on PR 4's render, and it is recorded on CUL-1041.** The honest pairing
+ * is `initial` with the CURRENT target (*"originally 56 days, now 112"*) and
+ * `set_at` on its own (*"most recently extended on ‹date›"*).
+ *
+ * This is not a defect to fix here: D2(a) ruled three columns over a
+ * `diet_trial_window_changes` history table precisely because the middle steps of
+ * a multi-step extension are marginal, on `target_protein_set_at`'s contract —
+ * *an edit is disclosed here, never versioned; one value, whole-trial* (TP-3). The
+ * middle step is absent BY RULING. What is owed is that no reader pretend it is
+ * present. (Found by the `adversarial-reviewer` pass on this PR; the earlier
+ * wording of this very comment claimed all three described the last move, which is
+ * the C-38 shape — a comment writing a cheque the code does not cash — sitting
+ * inside the contract it was describing.)
  *
  * `synced = 0, sync_attempts = 0, sync_error = NULL` in the same statement (the
  * mirror's contract for every local mutation, and what re-arms a row quarantined
@@ -914,9 +945,34 @@ export async function changeTrialWindow(params: {
   if (!row) {
     throw new TrialWindowRefused({ reason: 'not_found', requestedDays: requested });
   }
-  if (row.status !== 'active' || row.ended_at != null) {
+  // BOTH halves, and the second is not redundant: `lib/dietTrial.ts:391` treats an
+  // `ended_at` on a row still marked `active` as a sync artefact that is
+  // nevertheless an OWNER-AUTHORED FACT, and honours it as the trial's end. A write
+  // path reading only `status` would go on extending a trial every read surface
+  // already considers over. (The mutant that drops this half was green across the
+  // whole suite until the adversarial pass found it — the one "ended" fixture set
+  // both fields, so the half that matters was never exercised.)
+  if (row.status !== 'active' || (row.ended_at != null && row.ended_at !== '')) {
     throw new TrialWindowRefused({
       reason: 'not_running',
+      requestedDays: requested,
+      currentTargetDays: row.target_duration_days,
+    });
+  }
+
+  // THE COLUMN'S OWN BOUND, not a clinical one. `target_duration_days` is INTEGER
+  // (int4) on the server, and a value above it earns PostgREST `22003` — which is
+  // NOT in `TERMINAL_SYNC_ERROR_CODES` (`lib/syncQueue.ts`). So an out-of-range
+  // window does not quarantine: the row retries forever, and everything that
+  // happens to that trial afterwards, its completion and outcome included, never
+  // reaches the server. A mistyped digit would cost the whole row's sync, silently.
+  //
+  // This is deliberately NOT a sane-maximum. How long a trial may be is a product
+  // question §4.2 owns, and PR 3's sheet is where a mistyped `840` should be caught
+  // (recorded on CUL-1040) — this only refuses what the column cannot hold.
+  if (requested > PG_INT4_MAX) {
+    throw new TrialWindowRefused({
+      reason: 'out_of_range',
       requestedDays: requested,
       currentTargetDays: row.target_duration_days,
     });

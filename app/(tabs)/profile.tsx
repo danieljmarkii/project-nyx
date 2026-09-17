@@ -448,16 +448,25 @@ export default function ProfileScreen() {
       });
       reloadTrial();
     } catch (e) {
-      // A FORWARD-ONLY REFUSAL HERE IS NOT AN ERROR (CUL-1039). Since the write
-      // path became one clamp, a stale tap — the row already carries a window at or
-      // beyond what this tap would set, because another device extended it or this
-      // one re-read late — lands as `not_forward`. `nextTargetDays` always returns
-      // above the current day, so that refusal can only mean the stored window is
-      // ALREADY at least what the owner just asked for: their intent is satisfied,
-      // and the only thing wrong is what this card is showing. So re-read and let
-      // it say so. "That didn't save" over a window that is already longer is a
-      // false alarm, and "have another go" would be advice to repeat a no-op.
-      if (e instanceof TrialWindowRefused && e.reason === 'not_forward') {
+      // A REFUSAL IS NOT A FAILURE — IT MEANS THIS CARD IS STALE (CUL-1039).
+      //
+      // Since the write path became one clamp, this tap can be refused where it
+      // used to be a harmless no-op, and EVERY refusal arm says the same thing
+      // about the same fact: the row is not what the card was rendered from.
+      // `not_forward` — the stored window already meets or beats what this tap
+      // would set, so the owner's intent is already satisfied. `not_running` — the
+      // trial was ended, here or on another device. `not_found` — the row is gone.
+      // In all three the write correctly did nothing and the fix is the same: re-read,
+      // and let the card say what is true.
+      //
+      // So no alert on any of them. The existing copy is wrong twice over on the
+      // arms it used to reach: "The trial is still running on its current window"
+      // is FALSE when the refusal is `not_running`, and "have another go in a
+      // moment" is advice to repeat something that cannot succeed, on every arm.
+      // Re-routing without re-reading the copy is how a true string becomes a false
+      // one (C-28) — so the string keeps the one job it is still true for, a write
+      // that actually failed.
+      if (e instanceof TrialWindowRefused) {
         reloadTrial();
       } else {
         console.error('[DietTrial] extend failed:', e);

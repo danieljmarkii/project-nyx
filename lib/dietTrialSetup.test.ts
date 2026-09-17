@@ -71,7 +71,7 @@ import {
   type StartTrialInput,
 } from './dietTrialSetup';
 import { VetVisitLinkRefused } from './vetVisitLink';
-import { nextTargetDays } from './dietTrialCompletion';
+import { nextTargetDays, extensionDays } from './dietTrialCompletion';
 import { useSyncStore } from '../store/syncStore';
 import { toLocalDayKey } from './utils';
 
@@ -621,23 +621,39 @@ describe('extendTrial delegates to changeTrialWindow — one clamp, two doors (C
   });
 
   it('inherits the forward-only refusal, which nextTargetDays can never trip', async () => {
-    // THE CLAIM BEHIND THE DELEGATION, swept rather than argued. §5.6 already swept
-    // "strictly above the current DAY"; the half this PR adds is "strictly above the
-    // current TARGET", and both must hold or the milestone would start refusing its
-    // own arithmetic. Driven through the real function — a test that re-derived the
-    // rule would be a tautology with fixtures (C-34).
-    const offenders: string[] = [];
-    for (const currentTargetDays of [1, 14, 28, 42, 56, 84, 365]) {
-      for (const dayCounter of [1, 13, 27, 55, 56, 57, 140, 400]) {
-        for (const extraDays of [14, 28]) {
-          const next = nextTargetDays({ currentTargetDays, dayCounter, extraDays });
-          if (next <= Math.max(currentTargetDays, dayCounter)) {
-            offenders.push(`${currentTargetDays}/${dayCounter}/+${extraDays} → ${next}`);
+    // THE CLAIM BEHIND THE DELEGATION. §5.6 already swept "strictly above the
+    // current DAY"; the half this PR adds is "strictly above the current TARGET",
+    // and both must hold or the milestone would start refusing its own arithmetic.
+    //
+    // DRIVEN THROUGH THE REAL WRITE PATH, not re-derived. The first version of this
+    // test asserted `next <= Math.max(currentTargetDays, dayCounter)` — which is the
+    // production floor restated, i.e. a tautology with fixtures, under a comment
+    // claiming it was not one (C-34, caught by the adversarial pass). The floor has
+    // to be exercised by something that does not know it, so this calls
+    // `extendTrial` and counts refusals.
+    const refused: string[] = [];
+    for (const target of [1, 7, 14, 28, 42, 56, 84, 112]) {
+      for (const elapsed of [0, 1, 6, 13, 27, 41, 55, 60, 83, 139]) {
+        for (const indication of ['gi', 'skin', null] as const) {
+          mockGetFirstAsync.mockResolvedValue(
+            trialRow({ started_at: dayKeyDaysAgo(elapsed), target_duration_days: target }),
+          );
+          try {
+            await extendTrial({
+              trialId: 't-1',
+              targetDurationDays: nextTargetDays({
+                currentTargetDays: target,
+                dayCounter: elapsed + 1,
+                extraDays: extensionDays(indication),
+              }),
+            });
+          } catch (e) {
+            refused.push(`${target}/${elapsed + 1}/${indication}: ${(e as TrialWindowRefused).reason}`);
           }
         }
       }
     }
-    expect(offenders).toEqual([]);
+    expect(refused).toEqual([]);
   });
 
   it('still refuses a nonsense target rather than writing it', async () => {
