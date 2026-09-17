@@ -235,6 +235,45 @@ reader cannot see a sentence that is absent. Both cold reads independently recom
 rendering that absence positively. §5.1 says the clause is "simply absent", so it is a
 spec deviation and the PM's call, not this session's.
 
+## Rounds 4 and 5, and where it stopped
+
+Brief C was ruled (a) and the absence is now stated. Two more cold reads followed, and the
+diagnosis sharpened each time rather than repeating:
+
+**Round 4 — it was never a wording problem.** Given the repaired page the reviewer still
+bound at ~75–80% and said why: *"It separates them in the data and merges them on the page.
+This is a render defect, not a data defect."* Four mechanisms, every one a property of one
+joined paragraph: `identity.join(' ')` adjacency, an indefinite with a sole antecedent,
+disclaimer-before-name so the name back-fills, and a bolded claim beside an unbolded refusal.
+
+The fix was the first structural one of the four, and far smaller than "split the Trial row"
+sounds: the window change gets **its own labelled row, after the identity row**, and that row
+exists only when a window has moved — so every report that never had one renders
+byte-identically. It also un-camouflages the clause, which matters because the same read
+measured the block at **43% epistemics** and found the skip threshold at its halfway mark:
+*"over-hedging is the delivery mechanism for the attribution failure, not a separate
+complaint about it."*
+
+**Round 5 — the missing negative, and the root cause.** The disclaimer still could not be
+told apart from *"the app has no field for this"*: *"neither page ever says that an owner can
+move the window. Without that one fact, 'cannot say who' is indistinguishable from 'we forgot
+to write it down', and I will read it as the latter every time."* So it now names the
+capability. The parallel-shape test written in round 3 caught the first cut of that change
+breaking the matched construction — the second time in this session a test from an earlier
+round caught a later one.
+
+**And then it stopped.** The residual is attributed primarily to a line outside this diff:
+`Trial directed by <name>` is unhedged while everything around it is tagged, so it anchors and
+the hedge beside it reads as a small gap in a solid chain. Hedging it changes every trial
+report carrying a vet name. Also measured: `class="qual"` is emitted three times and **has no
+CSS rule at all**, so the qualifiers it wraps render at full weight beside the facts. Both are
+report-wide, both are filed (CUL-1047, CUL-1048), and neither is this PR's.
+
+Five rounds is the most this session spent on anything, and it was worth it — but the lesson
+is that the first four were copy fixes aimed at a layout cause. **The tell was that each fix
+moved the defect rather than shrinking it.** That pattern is diagnostic and should have been
+read as such two rounds earlier.
+
 ## Raised, not resolved here
 
 - **`extendTrial` stamps no provenance.** The shipped milestone path (`lib/dietTrialSetup.ts`)
