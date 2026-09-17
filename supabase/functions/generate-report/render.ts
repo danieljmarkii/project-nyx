@@ -2552,7 +2552,17 @@ function dietTrialSection(snap: ReportSnapshot): string {
         }.`,
   )
   if (t.indication) identity.push(`Indication: ${h(indicationLabel(t.indication))}.`)
-  if (t.vetName) identity.push(`Directed by ${h(t.vetName)}.`)
+  // "TRIAL directed by", because an unscoped attribution is BORROWED by the sentence
+  // beside it (CUL-1041, `vet-report-cold-read` 2026-09-17, verdict NOT READY on the
+  // extended-late artifact). This row now carries two attributable acts — starting the
+  // trial and moving its window — and a bare "Directed by Dr. A. Chen" names neither,
+  // so on a window that moved with NO recorded attribution the reader reaches for the
+  // only name in the paragraph: *"A vet concludes they authorised a 22-day-retroactive
+  // re-dating of a lapsed trial that they may never have seen. I would be signing off
+  // on my own supposed decision."* The two-sided rule (§5.1) makes the absence of an
+  // attribution silence; it cannot also make it immune to a neighbour. One word scopes
+  // the sentence to what it actually attributes.
+  if (t.vetName) identity.push(`Trial directed by ${h(t.vetName)}.`)
   if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason, t))}</b>`)
   rows.push(kv('Trial', identity.join(' ')))
 
@@ -3366,19 +3376,48 @@ function trialWindowChangeLine(
           ? `on trial day ${num(wc.movedOnDay)}`
           : 'on a date the record does not hold'
 
+  // ── THE OVERRUN, AND THE ONE PLACE IT IS NOT ALREADY ON THE PAGE ────────────
+  //
+  // A SEPARATE SENTENCE anchored on the trial, not a trailing clause anchored on the
+  // move: `trial.ts` re-based the number after the adversarial pass showed the
+  // move-anchored one accuses an owner of a delay the record cannot evidence.
+  //
+  // AND IT FIRES ONLY INTO THE HOLE THE EXTENSION MAKES. When the trial is past its
+  // CURRENT target the day phrase above already says so — "day 70 — 30 days past the
+  // 40-day window" — and adding a second, larger overrun against the original window
+  // put two "past the window" counts in adjacent sentences, where the nearest
+  // antecedent for a pronoun was the wrong one of the two. The extension's whole effect
+  // is to move the trial back INSIDE its window and take that sentence away; this
+  // replaces it exactly there, and stays silent where nothing was taken.
+  const dayPhraseAlreadyDiscloses = t.trialDaysElapsed > t.targetDurationDays
   const overrunBit =
-    wc.daysPastPriorWindowAtMove !== null
-      ? ` &mdash; ${num(wc.daysPastPriorWindowAtMove)} day${
-          wc.daysPastPriorWindowAtMove === 1 ? '' : 's'
-        } past that window`
+    wc.daysPastOriginalWindowNow !== null && !dayPhraseAlreadyDiscloses
+      ? ` The trial has run ${num(wc.daysPastOriginalWindowNow)} day${
+          wc.daysPastOriginalWindowNow === 1 ? '' : 's'
+        } past that original window.`
       : ''
 
   // Bolded like `stoppedReasonLine` two entries down this same array, and for the same
   // reason: it is a clinical fact about the trial's shape that a 60-second scan must
   // not step over. The attribution that follows is deliberately not bold.
-  const fact = `<b>Window ${verb}${fromBit}; last moved ${whenBit}${overrunBit}.</b>`
+  const fact = `<b>Window ${verb}${fromBit}; last moved ${whenBit}.${overrunBit}</b>`
+  // "A VET", NOT "THE VET" (rls-privacy-reviewer, CUL-1041, 2026-09-17). The definite
+  // article has exactly one available referent on this page — `Trial directed by
+  // <name>`, four sentences down — and the record cannot support that bind:
+  // `diet_trials.vet_name` is WHOLE-TRIAL while `target_duration_vet_directed` is
+  // PER-CHANGE, and 068 deliberately declined a richer provenance vocabulary. So a
+  // window moved at an ER visit, by a specialist, or by a second practice printed as
+  // though the named clinician directed it — an unverifiable instruction attributed to
+  // an identifiable, non-consenting person who does not use this app and has no way to
+  // correct the record. The mirror case is the same bug inverted: vet_directed TRUE
+  // with vet_name NULL said "the vet's" about a clinician the record never names.
+  //
+  // The indefinite article breaks the bind at zero schema cost, and is the more honest
+  // sentence either way: the record says a vet was involved, never which one. Per C-28
+  // the rewrite re-entered the voice pass — "Owner reports" still leads, because that
+  // hedge is the whole point of the sentence (§5.1 #3).
   const attribution = wc.vetDirected
-    ? ' Owner reports the change was at the vet&rsquo;s direction.'
+    ? ' Owner reports the change was directed by a vet.'
     : ''
   return `${fact}${attribution}`
 }

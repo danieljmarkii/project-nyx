@@ -795,6 +795,7 @@ function windowMoveCase(o: {
   petName: string
   ownerName: string
   breed: string
+  sex: 'male' | 'female'
   dayOfTrial: number
   priorWindowDays: number
   targetDurationDays: number
@@ -823,7 +824,7 @@ function windowMoveCase(o: {
       name: o.petName,
       species: 'dog',
       breed: o.breed,
-      sex: 'female',
+      sex: o.sex,
       dateOfBirth: '2021-06-14',
       neuterStatus: 'neutered',
       weightKg: 22.6,
@@ -877,6 +878,7 @@ function extendedCase(): ReportInput {
     petName: 'Nala',
     ownerName: 'Priya Raman',
     breed: 'Boxer',
+    sex: 'female',
     dayOfTrial: 60,
     priorWindowDays: 56,
     targetDurationDays: 84,
@@ -895,6 +897,7 @@ function extendedLateCase(): ReportInput {
     petName: 'Bruno',
     ownerName: 'Tom Ellery',
     breed: 'Cocker Spaniel',
+    sex: 'male',
     dayOfTrial: 50,
     priorWindowDays: 28,
     targetDurationDays: 64,
