@@ -3545,9 +3545,28 @@ function trialWindowChangeLine(
   // field, and a vet's default prior is that changes to a vet-directed plan are
   // vet-directed."* The report's own house pattern for this is Appendix D's unlogged
   // medication — say what the record cannot say, rather than leaving the gap to be read.
+  //
+  // ⚠️ AND IT NAMES THE CAPABILITY, WHICH IS WHAT MAKES IT INFORMATIVE (fifth cold read,
+  // 2026-09-17). The first cut said only "Culprit cannot say who asked for the change",
+  // and a reader could not tell that apart from three different situations: the app has
+  // no field for it, it has one and it was blank, or it has one and the value is
+  // unattributable. Only the last two say anything about THIS trial. The reviewer:
+  // *"neither page ever says that an owner can move the window in the app. Without that
+  // one fact, 'cannot say who' is indistinguishable from 'we forgot to write it down',
+  // and I will read it as the latter every time."*
+  //
+  // So the sentence now supplies the fact the reader cannot: an owner CAN move it. That
+  // is true today through the shipped milestone one-tap, not only through the mid-trial
+  // door. Without it the clause was boilerplate about the app; with it the clause is
+  // information about this animal's plan.
+  //
+  // The two arms keep ONE SHAPE — <fact>; Culprit cannot say <what is unknown> — because a
+  // clinician reading two reports should meet the same construction and see only the
+  // unknown differ. A test pins that, and it caught the first cut of this very change
+  // breaking it.
   const attribution = wc.vetDirected
     ? ' Owner reports a vet asked for the change; Culprit cannot say which.'
-    : ' Culprit cannot say who asked for the change.'
+    : ' A trial\u2019s window can be changed by its owner; Culprit cannot say who asked for this one.'
   return `${fact}${attribution}`
 }
 

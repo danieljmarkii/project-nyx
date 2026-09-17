@@ -4651,7 +4651,7 @@ Deno.test('CUL-1041 §5.1 — the spec’s worked case: extended from 56 on day 
   // THE TWO-SIDED RULE. With the box unchecked there is no attribution sentence at
   // all — not a sentence saying the owner acted alone, and not a hedge about not
   // knowing. Silence is the whole of it.
-  assert.match(page, /Culprit cannot say who asked for the change\./)
+  assert.match(page, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
   assert.ok(!/a vet asked for the change/.test(page), 'and no vet is credited')
   assert.ok(!/own initiative|on their own|owner decided/i.test(page), 'and no inverse claim either')
 })
@@ -4775,7 +4775,7 @@ Deno.test('CUL-1041 — an unattributed window move cannot borrow the trial\u201
     'no unscoped attribution is left in a paragraph holding an unattributed change',
   )
   // And the change itself still carries no attribution of any kind, in either direction.
-  assert.match(page, /Culprit cannot say who asked for the change\./)
+  assert.match(page, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
   assert.ok(!/a vet asked for the change/.test(page))
 })
 
@@ -5113,7 +5113,7 @@ Deno.test('CUL-1041 — the UNATTESTED extension is the dangerous one, and carri
   )
   assert.ok(!/Dr\. A\. Chen/.test(headline))
   // And still no attribution of any kind on the change itself, in either direction.
-  assert.match(unattested, /Culprit cannot say who asked for the change\./)
+  assert.match(unattested, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
   assert.ok(!/a vet asked for the change/.test(unattested))
   assert.ok(!/on their own|owner decided/i.test(unattested))
 })
@@ -5158,7 +5158,7 @@ Deno.test('CUL-1041 brief C — the unattested change says the record cannot say
     targetDurationVetDirected: false,
     vetName: 'Dr. Sarah Kim',
   })
-  assert.match(page, /Culprit cannot say who asked for the change\./)
+  assert.match(page, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
 
   // §8.8 STILL HOLDS, and this is the whole reason the sentence is allowed: it attributes
   // the change to NOBODY. Not to a vet, and — the rule §5.1 actually exists to enforce —
@@ -5185,7 +5185,7 @@ Deno.test('CUL-1041 brief C — the two arms are one sentence shape, differing o
   const attested = windowPage({ ...shared, targetDurationVetDirected: true })
   const not = windowPage({ ...shared, targetDurationVetDirected: false })
   assert.match(attested, /Owner reports a vet asked for the change; Culprit cannot say which\./)
-  assert.match(not, /Culprit cannot say who asked for the change\./)
+  assert.match(not, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
   // Same subject on both arms.
   for (const p of [attested, not]) assert.match(p, /Culprit cannot say/)
 })
@@ -5201,7 +5201,7 @@ Deno.test('CUL-1041 brief C — it fires on the window move, not on whether a ve
     movedOnDayOfTrial: 40,
     vetName: null,
   })
-  assert.match(noVet, /Culprit cannot say who asked for the change\./)
+  assert.match(noVet, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
 
   // And a window that never moved says nothing about attribution at all — there is no
   // change to be unable to attribute.
@@ -5233,4 +5233,29 @@ Deno.test('CUL-1041 — the change and the trial’s named vet are never in one 
     page.indexOf('Trial directed by Dr. Sarah Kim') < page.indexOf('Culprit cannot say'),
     'the record’s limit is read after the name, not before it',
   )
+})
+
+Deno.test('CUL-1041 — the unattested clause names the CAPABILITY, not just the gap', () => {
+  // The fifth cold read's mechanism 4, the "missing negative": a reader cannot tell
+  // "Culprit cannot say who asked" apart from "the app has no field for this" — and read
+  // as the latter it says nothing about this trial at all. *"Neither page ever says that
+  // an owner can move the window. Without that one fact, 'cannot say who' is
+  // indistinguishable from 'we forgot to write it down', and I will read it as the latter
+  // every time."*
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    targetDurationVetDirected: false,
+    vetName: 'Dr. Sarah Kim',
+  })
+  // The capability is stated, so the silence that follows it is about this record.
+  assert.match(page, /A trial\u2019s window can be changed by its owner/)
+  assert.match(page, /Culprit cannot say who asked for this one\./)
+
+  // It still blames nobody, which is why \u00a75.1's rule survives it.
+  assert.ok(!/the owner (changed|extended|moved) (it|this|the window)/i.test(page))
+  assert.ok(!/on their own|owner decided/i.test(page))
+  assert.ok(!/Dr\. Sarah Kim (asked|extended|changed)/.test(page))
 })
