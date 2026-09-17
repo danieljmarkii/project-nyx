@@ -300,14 +300,42 @@ went red on `lib/dietTrial.ts` as an unregistered consumer of a provenance colum
 merge. Worth noting because it is the registry pattern paying off in the case it
 was designed for and could not have anticipated.
 
+**15. The class this PR scoped OUT had been filed by someone else, a day earlier —
+and the code said it hadn't.** The head-clip block carried a careful ⚠ warning that
+the freeze closes one instance and not the class, with an executed counterexample,
+ending "and it is unfiled". True when written; false by the time it shipped. The v15
+cold read had filed exactly it as CUL-1020 / CUL-1021 the previous day, from a rendered
+PDF rather than from the module. Re-executed on the merged tree against CUL-1020's own
+record and it reproduces that issue's quoted sentence **verbatim** — `23 of 23`,
+`supports`, `mayStateRecordClean` TRUE.
+
+The half worth carrying: **the precedence split cannot reach the head clip by
+construction, not by omission.** `coverageOverWindow` applies the head allowance to
+*both* readings, so `gateCoverage` is also `23 of 23` and `leastReassuring` gets two
+equal inputs — S3 working as ruled. A future reader seeing a new, harsher second
+denominator would reasonably assume it catches this, which is precisely why the code
+now says it does not. Two generalisations:
+
+- **A warning that dead-ends is worth less than one that points somewhere.** "Unfiled"
+  invites the next reader to re-derive; an issue link hands them the open PM call
+  (CUL-1021's denominator brief) that actually gates the fix.
+- **Check the neighbouring track before writing "unfiled".** Two independent passes —
+  a cold read of a PDF and a falsification pass over the module — found the same
+  mechanism on different fixtures within twenty-four hours. That is the falsification
+  system working; the miss was bibliographic, not analytical.
+
+
 ## What this owes and leaves
 
-**CUL-1051 (PR 1c)** — the ratchet migration, which now blocks PR 2. Until it lands the
-server value is authoritative and the device cannot touch it, which is safe but means the
-freeze covers only the trials 068 backfilled: a trial created from now on carries a NULL
-designed window and keeps G5's documented fallback. It can only reach the hazard after it
-overruns its own window *and* is extended, so the exposure is bounded by a window length
-rather than being immediate.
+**CUL-1051 (PR 1c) — LANDED, same evening.** A sibling session shipped migration 069's
+ratchet trigger and applied it to production (#874, still draft). `target_duration_days_initial`
+is now immutable once non-NULL, so the push path PR 2 shipped can no longer erase the column
+this freeze reads, and the report — which reads the server — is protected as of that apply.
+What remains is narrower than this section first said: a *local* NULL is still possible until
+the row hydrates, and a trial created from now on carries a NULL designed window and keeps
+G5's documented fallback. Neither can reach the hazard without the trial first overrunning its
+own window *and* being extended, so the exposure is bounded by a window length rather than
+being immediate. The hydrate seam itself is CUL-1050's.
 
 
 
