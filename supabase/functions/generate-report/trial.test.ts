@@ -15,6 +15,7 @@ import {
   type ReportInput, type ReportEventInput,
 } from './report.ts'
 import { renderReport } from './render.ts'
+import { expectedFailure } from './expectedFailure.testutil.ts'
 import {
   buildTrialBlock, halfPartition, looksAntibacterial, selectReportTrial, trialAllowedListMissing,
 } from './trial.ts'
@@ -4866,3 +4867,155 @@ Deno.test('CUL-1041 — the overrun is silent where the day phrase already discl
   })
   assert.match(inWindow, /Window extended from 28 days;.*The trial has run 22 days past that original window\./)
 })
+// ════════════════════════════════════════════════════════════════════════════════
+// §5.4 ON THE REPORT PATH — what the vet actually reads across one extension tap
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// CUL-1036 (trial window PR 0) · `docs/nyx-trial-extension-requirements.md` §5.4,
+// TE-6, §5.6 · the repair is CUL-1038 (PR 1b), ruled D7(c) — freeze the denominator
+// at `target_duration_days_initial` AND disclose the window move. When it lands, the
+// expected failure at the foot of this block goes RED; that is the repair signal.
+//
+// ── WHY THIS BLOCK EXISTS SEPARATELY FROM `guards/trialWindow.test.ts` ──────────
+// That guard drives `computeTrialFacts` with no scope — the CLIENT read. The report
+// ALWAYS passes `scopeStart` / `scopeEnd` (`trial.ts:802`), so the numbers §5.4
+// quotes were never the numbers this page prints. §5.6 records the gap in its own
+// words: "no live Deno render — two report strings were TRANSCRIBED, not executed".
+//
+// This executes them. Raw events → `assembleReport` → `renderReport` → the text a
+// clinician reads, twice, with `targetDurationDays` as the only difference between
+// the two runs. Not one meal is added, removed or edited.
+//
+// ── WHAT IT FOUND ──────────────────────────────────────────────────────────────
+// The transcription was directionally right and numerically wrong, and the real
+// numbers are worse — because the scope a diet-trial owner actually gets is rung 1,
+// "since the most recent vet visit", and that is the shortest window on the page:
+//
+//   DEFAULT SCOPE      10 of 28 days → 32 of 50 days
+//   SINCE-VISIT SCOPE   0 of 9 days  → 22 of 31 days
+//
+// A literal ZERO becomes an affirmative "all 22 matched the trial diet or a
+// permitted food", on a tap that carries no information about the record. The owner
+// who is most likely to hit this is the one this product is for: sent home from a
+// vet visit on an elimination diet, which is exactly the record rung 1 scopes to.
+//
+// ── AND THE TAP DELETES THE PAGE'S OWN DISCLOSURE ──────────────────────────────
+// The day line goes from "day 50 — 22 days past the 28-day window" to "day 50 of
+// 64". The one sentence telling the clinician this trial had outrun its window is
+// what the tap removes — the same shape the owner's card shows, on the document
+// that matters more. §5.4's "nothing says the window moved" understates it: the
+// thing that did say so is the casualty.
+
+/** The §5.4 record as the report receives it: a GI trial on the shipped 28-day
+ *  default, 10 of days 1–28 logged, then every day to day 50, read on day 50.
+ *  Only `targetDurationDays` varies between the two runs. */
+function gateInput(targetDurationDays: number, over: Partial<ReportInput> = {}): ReportInput {
+  const events = [...days('2026-06-01', '2026-06-10'), ...days('2026-06-29', '2026-07-20')].map((d) =>
+    meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+  )
+  return baseInput({
+    now: '2026-07-20T18:00:00Z',
+    events,
+    dietTrials: [
+      {
+        id: 'trial-gi',
+        foodItemId: 'f-hp',
+        startedAt: '2026-06-01',
+        targetDurationDays,
+        status: 'active',
+        completedAt: null,
+        endedAt: null,
+        indication: 'gi',
+        vetName: 'Dr. Chen',
+        foodLabel: 'Royal Canin Hydrolyzed HP',
+        primaryProtein: 'soy',
+        proteins: ['soy'],
+        allowedFoods: [TRIAL_FOOD],
+      },
+    ],
+    ...over,
+  })
+}
+
+/** The tap: 28 + `extensionDays('gi')` from day 50, which the shipped arithmetic
+ *  resolves to 64. Written as a literal here because this file cannot import the
+ *  app's `lib/dietTrialCompletion.ts` without pulling it into the Edge Function's
+ *  module graph — `guards/trialWindow.test.ts` derives it from the real function and
+ *  asserts it equals 64, so the two cannot drift without that guard reding. */
+const GATE_TARGET_AFTER = 64
+
+/** The rung-1 scope every diet-trial owner gets: a vet visit inside the trial. Day
+ *  20 of the trial, which is where the owner was told to start the diet's recheck
+ *  clock — the ordinary case, not a contrived one. */
+const SINCE_VISIT: Partial<ReportInput> = {
+  vetVisits: [{ visitedAt: '2026-06-20', clinicName: 'Clinic', vetName: 'Dr. Chen', reason: 'recheck' }],
+}
+
+function gatePage(targetDurationDays: number, over: Partial<ReportInput> = {}): string {
+  return plain(renderReport(assembleReport(gateInput(targetDurationDays, over))))
+}
+
+Deno.test('§5.4 report path — the default scope: 10 of 28 becomes 32 of 50 on one tap', () => {
+  const before = gatePage(28)
+  const after = gatePage(GATE_TARGET_AFTER)
+
+  // The coverage sentence, as the vet reads it. Executed, not transcribed.
+  assert.match(before, /Meals logged on 10 of 28 days \(Jun 1 – Jun 28, 2026\)\./)
+  assert.match(after, /Meals logged on 32 of 50 days \(Jun 1 – Jul 20, 2026\)\./)
+
+  // And the verdict the page states over it, which is the thing that must not move.
+  assert.match(before, /too sparse to read that as a clean elimination/)
+  assert.ok(!/all \d+ matched the trial diet or a permitted food/.test(before))
+
+  assert.ok(!/too sparse to read that as a clean elimination/.test(after))
+  assert.match(after, /all 32 matched the trial diet or a permitted food/)
+})
+
+Deno.test('§5.4 report path — since the vet visit, ZERO becomes an all-clean claim', () => {
+  // The scope a diet-trial owner actually gets (rung 1), and the worst instance on
+  // this page: the before state is not "sparse", it is a record with no meal logged
+  // in the window at all.
+  const before = gatePage(28, SINCE_VISIT)
+  const after = gatePage(GATE_TARGET_AFTER, SINCE_VISIT)
+
+  assert.match(before, /Meals logged on 0 of 9 days \(Jun 20 – Jun 28, 2026\)\./)
+  assert.match(after, /Meals logged on 22 of 31 days \(Jun 20 – Jul 20, 2026\)\./)
+
+  assert.match(before, /too sparse to read that as a clean elimination/)
+  assert.ok(!/all \d+ matched the trial diet or a permitted food/.test(before))
+  assert.match(after, /all 22 matched the trial diet or a permitted food/)
+
+  // Both runs really are the narrowed scope — otherwise this test would be the one
+  // above wearing a different name.
+  assert.ok(!/Jun 1 – /.test(before))
+  assert.ok(!/Jun 1 – /.test(after))
+})
+
+Deno.test('§5.4 report path — the tap deletes the page’s own overrun disclosure', () => {
+  // The day line is the only place the document says this trial outran the window it
+  // was designed against. After the tap the page reads as an ordinary trial in
+  // progress, which is the §5.1 finding deleted rather than withheld (TE-4).
+  const before = gatePage(28)
+  const after = gatePage(GATE_TARGET_AFTER)
+
+  assert.match(before, /day 50 — 22 days past the 28-day window/)
+  assert.match(after, /day 50 of 64/)
+  assert.ok(!/days past the/.test(after), 'nothing on the page still says it overran')
+})
+
+expectedFailure(
+  '§5.4 report path — TE-6: one tap may not move what the vet report states [CUL-1038]',
+  () => {
+    // The requirement at the layer that matters, over BOTH scopes, because a repair
+    // that holds on the full window and not on the since-visit one has not held
+    // where the wedge's own owner reads it.
+    for (const over of [{}, SINCE_VISIT]) {
+      const before = gatePage(28, over)
+      const after = gatePage(GATE_TARGET_AFTER, over)
+      const sparse = (t: string) => /too sparse to read that as a clean elimination/.test(t)
+      const claim = (t: string) => /all \d+ matched the trial diet or a permitted food/.test(t)
+      assert.equal(sparse(after), sparse(before))
+      assert.equal(claim(after), claim(before))
+    }
+  },
+)

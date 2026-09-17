@@ -1,6 +1,12 @@
 # Diet-trial extension — changing a running trial's window
 
-**Version:** 2.1 (BUILD-READY — every decision ruled) | Last Updated: 2026-09-17
+**Version:** 2.2 (BUILD-READY — every decision ruled) | Last Updated: 2026-09-17
+**Changed at 2.2 (2026-09-17, after PR 0 shipped):** **D7 RE-RULED to (c) — freeze AND disclose.** PR 0
+(CUL-1036, #867) executed D7(a)'s premises and falsified two: (a) is a render and cannot move the gates it
+was ruled to repair, and the defect is neither reachable at the milestone nor mid-window — it is
+**overrun-only**, behind two taps. §5.4's table is corrected against the REAL report path (the old figures
+were the client read; the since-visit scope goes 0 of 9 → 22 of 31), §5.6's "no live Deno render" debt is
+paid, and **PR 1 is now a hard prerequisite for PR 1b**. Nothing else in the plan moved.
 **Changed at 2.1 (2026-09-17, second pass):** **D3 and D5 ruled to the team's recommendations** — the
 window is forward-only in v1, and `extensionDays('gi') = 14` is ratified as-is with CUL-367 left open for
 Dr. Chen. **Every decision in §6 is now closed and the whole PR plan is unblocked.**
@@ -281,6 +287,34 @@ on trial day 50:
 | before the tap | 10 / 28 (36%) | `does_not_support` | **true** | **false** |
 | after one `Keep going` (target → 64) | 32 / 50 (64%) | `partially_supports` | **false** | **true** |
 
+> ⚠ **CORRECTED 2026-09-17 by PR 0 (CUL-1036), which EXECUTED the report rather than transcribing it.**
+> The figures above are the CLIENT read — `computeTrialFacts` with no scope. `generate-report/trial.ts:802`
+> always passes `scopeStart`/`scopeEnd`, so these were never the numbers this page prints. §5.6 records
+> the gap in its own words ("two report strings were transcribed, not executed"); it is now paid off, and
+> **the real numbers are worse**, because the scope a diet-trial owner actually gets is rung 1 — *since the
+> most recent vet visit*, the shortest window on the page, and the scope that by construction fits an owner
+> who was just told to start an elimination diet:
+>
+> | scope | before the tap | after one tap |
+> |---|---|---|
+> | default | Meals logged on **10 of 28** days | **32 of 50** days |
+> | **since the visit (rung 1)** | Meals logged on **0 of 9** days | **22 of 31** days |
+>
+> A literal **zero** becomes *"all 22 matched the trial diet or a permitted food."*
+>
+> **And the tap deletes the page's own disclosure.** The day line goes from *"day 50 — 22 days past the
+> 28-day window"* to *"day 50 of 64"* — the one sentence telling the clinician this trial outran the window
+> it was designed against. The claim below that "nothing on any surface says the window moved" understates
+> it: the thing that did say so is the casualty. The owner's card does the same, from *"Culprit isn't
+> saying how many matched"* to *"all 32 matched"*.
+>
+> **The ceiling is also higher than this table.** An owner who logs nothing in the prescribed window and
+> every day after it goes **0 of 28 `does_not_support` → 22 of 22, fraction 1.0, `supports`**, clean claim
+> granted — the HEAD clip following the target once the tail clip releases, with
+> `untrackedDaysBeforeFirstLog` fabricated at 28 so the page asserts the first 28 days pre-date any
+> logging. They are ordinary un-logged trial days. That is the head clip's own documented forbidden
+> direction, re-entered through the target. D7(c)'s freeze closes it; D7(a) would not have.
+
 What the vet report prints across that tap:
 
 > *"The record is too sparse to read that as a clean elimination"* → **"32 feedings — all 32 matched the
@@ -340,9 +374,10 @@ Stated because a list of only failures is not a falsification pass:
 - LWW cannot strand an extension: `synced = 0` in the same statement, and `hydrateDietTrials`' `synced = 1`
   backstop means a pull cannot clobber an unpushed one.
 
-**Not tested, and owed:** no live Deno render (two report strings were transcribed, not executed — a
-`deno test` over `render.test.ts` with a mutated `targetDurationDays` closes it, and is the right guard to
-add with PR 4); and **concurrent extension from two devices**, which is an LWW column write where both
+**Not tested, and owed:** ~~no live Deno render (two report strings were transcribed, not executed…)~~ —
+**paid off 2026-09-17 by PR 0 (#867)**, which drives raw events → `assembleReport` → `renderReport` across
+a target move on both report scopes (`generate-report/trial.test.ts`). It corrected §5.4's table; see the
+⚠ block there. Still owed: **concurrent extension from two devices**, an LWW column write where both
 owners believe theirs landed. The mid-trial door makes that far likelier than a once-per-milestone path
 does — it belongs in PR 2's test plan.
 
@@ -476,11 +511,40 @@ the dangerous one's flow.
 
 ### D7 — The coverage gate that one tap can move (§5.4) — **new, and the most serious**
 
-> ⚠ **RULED 2026-09-17 — (a) disclose it.** PM took the recommendation. `range.closedByOverrun` is wired
-> to every surface that states a coverage figure, which is what `lib/dietTrial.ts:2223` has claimed since
-> B-422. (d) is rejected — the reassurance flip is not shipped knowingly. **This becomes PR 1b and it is
-> the first behaviour change of the track**, because it repairs something live today rather than gating
-> something new.
+> ⚠ **RE-RULED 2026-09-17 (second pass, same day) — (c) freeze AND disclose.** The first ruling was (a),
+> and it is kept below because the record of what was weighed is the point. It was superseded when PR 0
+> (CUL-1036) executed the premises it rested on and found two of them false:
+>
+> 1. **(a) cannot repair what it was ruled to repair.** D7(a) is a render, by its own words. But
+>    `belowCoverageFloor` is `interpretability === 'does_not_support'` and `mayStateRecordClean` reads
+>    `facts.interpretability`, both computed in `lib/dietTrial.ts`, and **neither reads
+>    `closedByOverrun`**. Executed both ways against the shipped module: a frozen denominator fires every
+>    one of PR 0's four §5.4 markers; (a)'s render-only change fires none. (a) would have landed with the
+>    suite green and the hazard fully intact.
+> 2. **"Already reachable at the milestone" and "only multiplied by this feature" are both false.** At
+>    `overrunDays === 0` the clip is not applying (`evidenceEnd > targetEnd` is false), so the milestone
+>    tap is **inert** — executed, day 28 of 28 → 42 moves nothing. A mid-window extension is inert too
+>    (day 20 of 56 → 84 moves nothing). The hazard is **overrun-only**, and it is reached by
+>    `Tell Culprit what's next` → the sheet, which is two taps behind a label naming nothing about a
+>    window — not "one tap of `Keep going`".
+>
+> (c) was the brief's own "right eventual answer and the wrong v1 scope"; that scoping rested on (a) being
+> sufficient. **PR 1b is therefore a mechanism change, and PR 1 is a hard prerequisite for it rather than a
+> parallel track** — the freeze needs D2a's `target_duration_days_initial`, which PR 1 is already adding.
+> `adversarial-reviewer` was already mandatory on 1b (§7) and is now mandatory for a second reason: this
+> changes a shipped clinical gate's arithmetic.
+>
+> **The freeze closes the head-clip route as a side effect, and that is load-bearing rather than lucky.**
+> §5.4's ceiling (recorded in the ⚠ block there) runs through the HEAD clip following the target once the
+> tail clip releases; with the denominator pinned at the original target the head clip has no log inside
+> the window to follow, so 0 of 28 stays 0 of 28. Verified by executing the freeze against PR 0's ceiling
+> marker. Had (a) shipped, that route would have stayed open and undisclosed.
+>
+> _The original ruling, superseded:_ ⚠ ~~**RULED 2026-09-17 — (a) disclose it.** PM took the
+> recommendation. `range.closedByOverrun` is wired to every surface that states a coverage figure, which
+> is what `lib/dietTrial.ts:2223` has claimed since B-422. (d) is rejected — the reassurance flip is not
+> shipped knowingly. **This becomes PR 1b and it is the first behaviour change of the track**, because it
+> repairs something live today rather than gating something new.~~
 
 **Deciding:** what happens to the coverage denominator, and to `belowCoverageFloor` / `mayStateRecordClean`,
 when the window moves. **This is already reachable today at the milestone; it is not created by this
@@ -512,14 +576,15 @@ sequencing constraint rather than a gate. PR 5 is the one exception: deferred by
 | PR | What | Gated on |
 |---|---|---|
 | **0** | `guards/` + tests pinning today's behaviour: no mid-trial route to `trial_extend` in any state; the `nextTargetDays` clamp; §5.2's shortening render and §5.4's gate flip each as a **failing** test that documents the hazard | — |
-| **1** | Migration: D2's three columns, additive + nullable + backfill `target_duration_days_initial = target_duration_days` for the 1 live row. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer` | ✅ D2a, D4a |
-| **1b** | **§5.4's repair** — D7(a)'s disclosure: wire `range.closedByOverrun` to every surface stating a coverage figure. Ahead of the door, because the door multiplies the defect, and it stands alone because it fixes a live one | ✅ D7a |
+| **1** | Migration: D2's three columns, additive + nullable + backfill `target_duration_days_initial = target_duration_days` for the 1 live row. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer`. **PR 1b now depends on this** (D7c), so it is no longer parallel to 1b | ✅ D2a, D4a |
+| **1b** | **§5.4's repair** — D7(c): **freeze** the coverage denominator at `target_duration_days_initial` AND disclose the window move (`range.closedByOverrun`). Ahead of the door because it fixes something live today. Turns PR 0's four §5.4 markers green; §5.2's stays red by D3a | ✅ D7c · **PR 1 (hard)** |
 | **2** | The predicate + write path: `changeTrialWindow` beside `extendTrial` (one arithmetic home — `nextTargetDays` is not forked), the paired-null provenance contract, the local mirror, **the concurrent-extension LWW case (§5.6)**, and the forward-only refusal | ✅ D2a, D3a |
 | **3** | The door + the sheet: `Manage`, `TrialWindowSheet`, the `trial_refusal` re-point, `ChipGroup` of **totals** (none at or below the current day), the end-date line, the vet-directed box, §4.3's forward line | ✅ D1a, D3a, D4a, D6a |
 | **4** | The vet report: §5.1's sentence, the attribution clause, **a `deno test` over `render.test.ts` with a mutated `targetDurationDays` (§5.6's untested half)**, `generate-report` redeploy (**note the standing deploy discipline — the function is at v15 and the ledger is `pending`**) | ✅ D2a, D4a · PR 1 |
 | **5** | D5's constant — **deferred, not cancelled.** Owned by CUL-367, unblocked by Dr. Chen's ratification, never by this spec | CUL-367 (Dr. Chen) |
 
-**PRs 0 through 4 are unblocked. PR 5 is deferred to CUL-367.**
+**PRs 0 through 4 are unblocked; PR 0 has shipped (#867). PR 5 is deferred to CUL-367.** The one ordering
+change since v2.1: **PR 1 → PR 1b is now a hard dependency**, not a convenience (D7c).
 
 **Adversarial review is mandatory on PRs 1b, 2 and 4** — the write moves a denominator the vet report
 renders, which is the clinically load-bearing class, and §5.4 is what happens when that is assumed rather
