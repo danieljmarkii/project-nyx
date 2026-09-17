@@ -18,7 +18,7 @@ repair can touch them.
 
 ## What shipped
 
-**`guards/trialWindow.test.ts`** (new, 47 tests) — three green guards:
+**`guards/trialWindow.test.ts`** (new, 50 tests) — three green guards:
 
 - **G1 · No mid-trial route to `trial_extend`, in any state.** Driven over
   `planTrialCard` / `resolveTrialCard`, never through a screen — C-41's lesson, and the
@@ -35,13 +35,23 @@ repair can touch them.
   `totalFeedings` / `offDiet` before and after, over a fixture *proven* to be clipped
   before and unclipped after — the half of TE-6 that held.
 
-**Two expected failures**, which is the point of the PR. `test.failing` in jest and an
+**Three expected failures**, which is the point of the PR. `test.failing` in jest and an
 `expectedFailure()` wrapper on the Deno side (Deno has no equivalent), never `skip`:
 
 - **§5.4 — the coverage gate flip** (jest). A dog 28-day trial logged 10 of days 1–28
   then daily to day 50: one extension tap moves coverage 10/28 → 32/50, flips
   `belowCoverageFloor` true→false and `mayStateRecordClean` false→true, on zero new
   evidence, retroactively over days already reported. **CUL-1038 (PR 1b) turns it green.**
+- **§5.4 again, in the OTHER direction** (jest). CUL-1036 named only the reassuring
+  flip. Probing the spec's claim that the mechanism "runs both ways" found it holds
+  exactly: a trial logged **every day** of its 28-day window and then silent to day 90
+  reads 28/28 `supports` with the clean claim granted, and one tap re-reads it as 28/90
+  `does_not_support` and **takes the claim away**. TE-6 is stated without a direction,
+  so pinning only the reassuring half would have under-stated the hazard in the PR
+  whose whole job is recording it — and a repair that only stops the movement one way
+  would have passed. This direction is also the one that cannot be argued: the days it
+  newly counts as gaps fall *after* the window the trial was designed against, and the
+  owner did not stop logging — the trial ran out.
 - **§5.2 — the shortening render** (Deno, in `render.test.ts` beside the B-532 block it
   extends). A 56-day trial shortened to 28 on day 28 and marked complete prints *"Ran
   its course — the full window was completed."* B-532 fixed the half the report can
@@ -84,7 +94,9 @@ Both expected-failure harnesses were additionally proven non-vacuous in both dir
 a simulated repair reds them; a non-assertion throw inside the Deno wrapper propagates
 rather than being absorbed as "still failing"; and a broken fixture (day 50 → 27, so no
 overrun and no clip) reds seven green companion tests rather than hiding inside the
-marker.
+marker. Every marker's name now opens with `EXPECTED FAILURE`, because jest reports
+`test.failing` with a ✓ and a scan of the output would otherwise read it as an
+ordinary pass.
 
 ## Two findings recorded in the files rather than left implicit
 
@@ -92,7 +104,7 @@ marker.
 `base` takes `Math.max(currentTargetDays, day)` and the return takes
 `Math.max(base + extra, day + 1)`; since `extra >= 1`, either alone is sufficient. So
 **no single-line mutation can red G2** — measured, not reasoned: removing the final
-clamp alone left all 47 tests green, and removing `base`'s max alone left the property
+clamp alone left every test green, and removing `base`'s max alone left the property
 green (it red only the §5.4 fixture's derived tap, a different assertion). What reds it
 is removing both, or removing `base`'s max together with `day + 1` → `day`, the
 off-by-one that turns "strictly greater" into "at or equal". Stated as a blind spot in
@@ -125,8 +137,8 @@ rather than spent unasked.
 ## Verification
 
 - `npx tsc --noEmit` clean
-- `npm test -- --ci` — 8437 passed / 389 suites
-- `TZ=Pacific/Chatham npm test -- --ci` — 8437 passed; the new guard also green under
+- `npm test -- --ci` — 8440 passed / 389 suites
+- `TZ=Pacific/Chatham npm test -- --ci` — 8440 passed; the new guard also green under
   `Pacific/Kiritimati` and `Pacific/Honolulu`
 - `deno test` over all 29 suites — 1795 passed
 

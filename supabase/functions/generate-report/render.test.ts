@@ -4335,7 +4335,7 @@ Deno.test('§5.2 — a window shortened to fit renders as a completed course (th
 })
 
 expectedFailure(
-  '§5.2 — a shortened window may never render as a completed course [D3 / CUL-156]',
+  'EXPECTED FAILURE · §5.2 — a shortened window may never render as a completed course [D3 / CUL-156]',
   () => {
     const laundered = plain(renderReport(shortenedToFit()))
     // The requirement, in the two forms a repair could take: refuse the claim, or

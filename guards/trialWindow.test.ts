@@ -684,7 +684,95 @@ describe('§5.4 — the coverage gate an owner can move with one tap (CUL-1038)'
   // `it` — and a repair that does not actually repair leaves it exactly as it is,
   // which is what stops the fix shipping quietly.
   test.failing(
-    'TE-6 — a target move may not flip belowCoverageFloor or mayStateRecordClean [CUL-1038]',
+    'EXPECTED FAILURE · TE-6 — a target move may not flip belowCoverageFloor or ' +
+      'mayStateRecordClean [CUL-1038]',
+    () => {
+      expect(after.belowCoverageFloor).toBe(before.belowCoverageFloor);
+      expect(mayStateRecordClean(after)).toBe(mayStateRecordClean(before));
+    },
+  );
+});
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// EXPECTED FAILURE 2 — §5.4 in the OTHER direction: one tap WITHDRAWS a clean claim
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// CUL-1036 names only the reassuring flip, and pinning only that would under-state
+// the hazard in the PR whose entire job is recording it. §5.4 says the mechanism
+// "runs both ways … one tap moves `supports` → `does_not_support` and WITHDRAWS a
+// clean claim", and TE-6 is stated without a direction: "an extension may not move a
+// claim about the record that the record did not change." So the requirement is the
+// same requirement, and it is tested here in the direction that has the opposite
+// sign — because a repair that only stops the movement one way satisfies neither
+// TE-6 nor this test.
+//
+// EXECUTED, on a record the app can produce: a trial logged EVERY day of its 28-day
+// window and then silent to day 90. That owner has a perfect record of the
+// prescribed window — and one tap of the extension she is offered re-reads it as
+// 28 of 90 and takes the claim away.
+//
+// It is also the direction that makes the shape unmistakable. The reassuring flip
+// can be argued as a denominator becoming "more honest"; this one cannot be argued
+// as anything, because the days it newly counts as gaps are days AFTER the window
+// the trial was designed against, and the owner did not stop logging — the trial
+// ran out.
+
+describe('§5.4 — the same tap, the other direction: a clean claim withdrawn (CUL-1038)', () => {
+  /** Logged every day of the prescribed window, then nothing. Read long after. */
+  const SILENT_SINCE_TODAY = 90;
+  const FEEDINGS = daysRange(1, GATE_TARGET).map(onDiet);
+
+  function factsAt(targetDurationDays: number): TrialFacts {
+    return computeTrialFacts({
+      trial: { id: 'trial-gate-rev', startedAt: '2026-05-01', targetDurationDays, species: 'dog' },
+      allowedFoods: [GATE_DIET],
+      feedings: FEEDINGS,
+      nowMs: trialDay(GATE_START, SILENT_SINCE_TODAY),
+    });
+  }
+
+  const before = factsAt(GATE_TARGET);
+  const after = factsAt(
+    nextTargetDays({
+      currentTargetDays: GATE_TARGET,
+      dayCounter: SILENT_SINCE_TODAY,
+      extraDays: extensionDays('gi'),
+    }),
+  );
+
+  it('the record is identical across the tap, and it is a perfect one', () => {
+    expect(FEEDINGS).toHaveLength(GATE_TARGET);
+    expect(before.coverage).toEqual({ daysLogged: 28, daysElapsed: 28, fraction: 1 });
+    expect(before.exposures.totalFeedings).toBe(after.exposures.totalFeedings);
+    expect(before.exposures.offDiet).toBe(0);
+    // The clip is what is holding the window at the trial's own length.
+    expect(before.range?.closedByOverrun).toBe(true);
+    expect(after.range?.closedByOverrun).toBe(false);
+  });
+
+  it('the denominator swells to the silence, and the claim is taken away', () => {
+    expect(after.coverage).toEqual({
+      daysLogged: 28,
+      daysElapsed: SILENT_SINCE_TODAY,
+      fraction: 28 / SILENT_SINCE_TODAY,
+    });
+    expect((before.coverage as { fraction: number }).fraction).toBeGreaterThanOrEqual(
+      COVERAGE_SUPPORTS,
+    );
+    expect((after.coverage as { fraction: number }).fraction).toBeLessThan(COVERAGE_FLOOR);
+    expect(before.interpretability).toBe('supports');
+    expect(after.interpretability).toBe('does_not_support');
+    // The mirror image of the first case, same mechanism, opposite sign.
+    expect(before.belowCoverageFloor).toBe(false);
+    expect(after.belowCoverageFloor).toBe(true);
+    expect(mayStateRecordClean(before)).toBe(true);
+    expect(mayStateRecordClean(after)).toBe(false);
+  });
+
+  test.failing(
+    'EXPECTED FAILURE · TE-6 — the rule has no direction: this move is forbidden too ' +
+      '[CUL-1038]',
     () => {
       expect(after.belowCoverageFloor).toBe(before.belowCoverageFloor);
       expect(mayStateRecordClean(after)).toBe(mayStateRecordClean(before));
