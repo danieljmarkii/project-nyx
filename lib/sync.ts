@@ -2242,7 +2242,12 @@ interface RemoteMedicationAdministration {
 }
 interface RemoteDietTrial {
   id: string; pet_id: string; food_item_id: string | null; started_at: string;
-  target_duration_days: number; status: string; completed_at: string | null;
+  target_duration_days: number;
+  // migration 068 (CUL-1037) — the window the trial was DESIGNED against. Pulled
+  // as of CUL-1038, whose coverage freeze reads it; NULL on a row nothing has
+  // stamped, which every reader treats as "not recorded" rather than a number.
+  target_duration_days_initial: number | null;
+  status: string; completed_at: string | null;
   vet_name: string | null; notes: string | null;
   // migration 040.
   food_label: string | null; indication: string | null; phase: string;
@@ -2903,7 +2908,11 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteDietTrial>(
     'diet_trials',
-    'id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at, ' +
+    'id, pet_id, food_item_id, started_at, target_duration_days, ' +
+      // migration 068 / CUL-1038 — the coverage freeze's input. The other two
+      // provenance columns (set_at, vet_directed) stay unpulled until PR 2 gives
+      // them a writer and a reader.
+      'target_duration_days_initial, status, completed_at, ' +
       'vet_name, notes, food_label, indication, phase, outcome, outcome_notes, ' +
       'stopped_reason, ended_at, transition_started_at, target_protein, ' +
       'target_protein_set_at, vet_visit_id, created_at, updated_at',
@@ -2917,14 +2926,16 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
   for (const t of toWrite) {
     await db.runAsync(
       `INSERT INTO diet_trials
-        (id, pet_id, food_item_id, started_at, target_duration_days, status, completed_at,
+        (id, pet_id, food_item_id, started_at, target_duration_days,
+         target_duration_days_initial, status, completed_at,
          vet_name, notes, food_label, indication, phase, outcome, outcome_notes,
          stopped_reason, ended_at, transition_started_at, target_protein, target_protein_set_at,
          vet_visit_id, created_at, updated_at, synced, sync_error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,NULL)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, food_item_id=excluded.food_item_id,
          started_at=excluded.started_at, target_duration_days=excluded.target_duration_days,
+         target_duration_days_initial=excluded.target_duration_days_initial,
          status=excluded.status, completed_at=excluded.completed_at,
          vet_name=excluded.vet_name, notes=excluded.notes, food_label=excluded.food_label,
          indication=excluded.indication, phase=excluded.phase, outcome=excluded.outcome,
@@ -2936,6 +2947,7 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
        WHERE diet_trials.synced = 1`,
       [
         t.id, t.pet_id, t.food_item_id ?? null, t.started_at, t.target_duration_days,
+        t.target_duration_days_initial ?? null,
         t.status, t.completed_at ?? null, t.vet_name ?? null, t.notes ?? null,
         t.food_label ?? null, t.indication ?? null, t.phase ?? 'elimination',
         t.outcome ?? null, t.outcome_notes ?? null, t.stopped_reason ?? null,

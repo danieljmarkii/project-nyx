@@ -95,6 +95,9 @@ export interface TrialSource {
   id: string
   startedAt: string
   targetDurationDays: number
+  /** migration 068 / CUL-1038 — the DESIGNED window. Read by the coverage freeze
+   *  and by nothing else here; absent is "not recorded", never a number. */
+  targetDurationDaysInitial?: number | null
   status: string
   completedAt: string | null
   endedAt?: string | null
@@ -362,6 +365,20 @@ export interface TrialBlock {
    *  the trial's own first day (B-600): a scope that opens the range mid-trial has
    *  no basis for the claim and does not get the allowance. */
   untrackedDaysBeforeFirstLog: number
+  /**
+   * CUL-1038 — `TrialRange.closedByOverrun`: this trial has a target, nobody
+   * ended it, and the calendar is past the window it was DESIGNED against, so the
+   * coverage ratio is measured over that window while the day counter keeps
+   * climbing. The disclosure B-422's own clip comment has cited since it shipped
+   * and no surface rendered (C-38).
+   *
+   * It describes the TRIAL's state, not the clip's arithmetic — true even where a
+   * narrow report scope was already the binding constraint — so a sentence built
+   * on it may say how coverage is MEASURED and may not assert that the printed
+   * range ends where the window did. And it is not "the window moved": that
+   * question is `target_duration_set_at`, which nothing writes yet (PR 2).
+   */
+  coverageClosedByOverrun: boolean
   /**
    * B-600 — ELAPSED TRIAL DAYS THIS REPORT'S SCOPE LEAVES OUT, either side.
    *
@@ -805,6 +822,19 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       startedAt: trial.startedAt,
       endedAt,
       targetDurationDays: trial.targetDurationDays,
+      // CUL-1038 / D7c — the coverage denominator is frozen at the window the
+      // trial was DESIGNED against, so an extension tap cannot move
+      // `belowCoverageFloor` / `mayStateRecordClean` / `interpretability` over a
+      // record that did not change (TE-6).
+      //
+      // ONLY HERE. `buildTrialContext` above builds a SECOND spec for this
+      // block's other readers, and they all want the LIVE target — the day line,
+      // the overrun phrase, the anchor and the stop-reason line describe the
+      // window in force today, which an extension is supposed to move. The first
+      // cut of this PR put the field on that literal by mistake and nothing read
+      // it: the suite stayed green and the freeze did nothing, which is the same
+      // shape of half-repair PR 0's markers exist to catch.
+      targetDurationDaysInitial: trial.targetDurationDaysInitial,
       species,
     },
     allowedFoods,
@@ -1082,6 +1112,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     evidenceStartDate: dayKeyFromIndex(evidence.startDayIndex),
     evidenceEndDate: dayKeyFromIndex(evidence.endDayIndex),
     rangeClipped: facts.range.clipped,
+    coverageClosedByOverrun: facts.range.closedByOverrun,
     untrackedDaysBeforeFirstLog: facts.untrackedDaysBeforeFirstLog,
     trialDaysOutsideRange: facts.trialDaysOutsideRange,
     trialDaysElapsed: facts.trialDaysElapsed,

@@ -526,6 +526,23 @@ export interface ReportDietTrialInput extends ReportFoodProteinInput {
   foodItemId: string | null
   startedAt: string // DATE
   targetDurationDays: number
+  /**
+   * `diet_trials.target_duration_days_initial` (migration 068, CUL-1037) — the
+   * window the trial was DESIGNED against, which `targetDurationDays` stops being
+   * the moment an owner extends.
+   *
+   * ONE READER: the coverage denominator's freeze (CUL-1038 / D7c, spec §5.4).
+   * The day line, the overrun phrase, the stop-reason line and the trial anchor
+   * all read `targetDurationDays` and must keep reading it — they describe the
+   * window in force today, and an extension is supposed to move them. It is the
+   * claims ABOUT THE RECORD that may not move (TE-6).
+   *
+   * Absent/null is "not recorded", never a number; it falls back to
+   * `targetDurationDays`, which is the pre-repair behaviour preserved exactly.
+   * Never compare the two to infer that the window moved — that predicate is
+   * `target_duration_set_at`, which nothing writes until PR 2.
+   */
+  targetDurationDaysInitial?: number | null
   status: string // 'active'|'completed'|'abandoned'
   completedAt: string | null
   /**

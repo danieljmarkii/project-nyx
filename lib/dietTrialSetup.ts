@@ -316,6 +316,15 @@ export interface NewTrialRows {
     food_item_id: string;
     started_at: string;
     target_duration_days: number;
+    /** CUL-1038 — migration 068's `target_duration_days_initial`, stamped at
+     *  CREATION so it is never NULL on a trial this app started. The freeze in
+     *  `trialCoverageWindowEndDayIndex` reads it, and a NULL row falls back to
+     *  the mutable target, which is the hazard the freeze exists to close: a
+     *  column only the backfill populates would cover every trial that already
+     *  existed and no trial started afterwards. Equal to `target_duration_days`
+     *  here by definition — at creation the designed window IS the window — and
+     *  the two diverge only when PR 2's write path moves one of them. */
+    target_duration_days_initial: number;
     status: 'active';
     food_label: string;
     indication: TrialIndication;
@@ -464,6 +473,7 @@ export function buildTrialRows(
       food_item_id: first.id,
       started_at: input.startedAt,
       target_duration_days: input.targetDurationDays,
+      target_duration_days_initial: input.targetDurationDays,
       status: 'active',
       // Denormalized display fallback (§3.1): `food_item_id` is ON DELETE SET NULL,
       // so archiving the trial food would otherwise blank the trial's identity on
@@ -963,14 +973,16 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO diet_trials
-         (id, pet_id, food_item_id, started_at, target_duration_days, status,
+         (id, pet_id, food_item_id, started_at, target_duration_days,
+          target_duration_days_initial, status,
           food_label, indication, phase, vet_name, transition_started_at,
           target_protein, target_protein_set_at, vet_visit_id,
           created_at, updated_at, synced, sync_error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
       [
         rows.trial.id, rows.trial.pet_id, rows.trial.food_item_id, rows.trial.started_at,
-        rows.trial.target_duration_days, rows.trial.status, rows.trial.food_label,
+        rows.trial.target_duration_days, rows.trial.target_duration_days_initial,
+        rows.trial.status, rows.trial.food_label,
         rows.trial.indication, rows.trial.phase, rows.trial.vet_name,
         rows.trial.transition_started_at,
         rows.trial.target_protein, rows.trial.target_protein_set_at,

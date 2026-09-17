@@ -2634,6 +2634,30 @@ function dietTrialSection(snap: ReportSnapshot): string {
         fmtRange(t.rangeStartDate, t.rangeEndDate),
       )}).`,
     )
+    // ── CUL-1038 / D7c — WHAT THAT DENOMINATOR IS, SAID OUT LOUD ─────────────
+    //
+    // The disclosure `lib/dietTrial.ts`'s tail clip has cited as its own
+    // justification since B-422 and that no surface rendered until now — C-38's
+    // "a comment writing a cheque the code does not cash", inside the clip whose
+    // whole argument was the disclosure. The freeze half of D7(c) stops an
+    // extension moving this figure; this half is why a clinician can see that it
+    // is pinned, and it is the sibling of the allowed-list sentence below
+    // ("The allowed list changed after the trial started"), which discloses the
+    // other mid-trial change to the comparator.
+    //
+    // IT DESCRIBES THE MEASURE, NOT THE PRINTED RANGE. `closedByOverrun` is true
+    // even where the clip itself did nothing — a since-visit scope that already
+    // ends before the target does — so a sentence claiming the dates above STOP
+    // at the window's end would be false on exactly that scope. And it never says
+    // the window MOVED: that is `target_duration_set_at`, which nothing writes
+    // yet, and §5.1's "extended from 56 days on 19 Sep" is PR 4's.
+    if (t.coverageClosedByOverrun) {
+      recordBits.push(
+        `<b>This trial has run past the window it was designed against</b> &mdash; coverage is ` +
+          `measured over that window, so the days since are not in the ratio above. Feedings ` +
+          `logged in them are still counted in the exposures below.`,
+      )
+    }
   }
   if (t.untrackedDaysBeforeFirstLog > 0) {
     // §10 S3. The normal vet-directed setup, not an edge case: the owner is handed
@@ -4546,11 +4570,19 @@ function trialTiles(snap: ReportSnapshot): string[] {
     // so. And the denominator is the trial's LOGGED SPAN, not its target length, so the
     // range is named rather than left to collide with "of a 56-day window" elsewhere.
     const span = h(fmtRange(snap.trial.rangeStartDate, snap.trial.rangeEndDate))
+    // CUL-1038 — the tile is the scan-grid twin of the coverage sentence, so it
+    // carries the same disclosure or the two surfaces say different things about
+    // one number. Compressed to the caption's register (the sentence above the
+    // fold has the full form): what it adds is that this denominator is the
+    // DESIGNED window, which the day counter beside it may already exceed.
+    const overrunNote = snap.trial.coverageClosedByOverrun
+      ? `<br/>over the trial&rsquo;s designed window &mdash; it has run past it`
+      : ''
     tiles.push(
       tile(
         `${snap.trial.coverage.daysLogged}`,
         `<small>&nbsp;/&nbsp;${snap.trial.coverage.daysElapsed}</small>`,
-        `Days a meal was logged &middot; ${span}<br/>record coverage &mdash; not intake, not a clean-elimination count`,
+        `Days a meal was logged &middot; ${span}<br/>record coverage &mdash; not intake, not a clean-elimination count${overrunNote}`,
       ),
     )
   } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'consecutive_low') {

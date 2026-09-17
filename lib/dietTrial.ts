@@ -145,6 +145,17 @@ export interface TrialSpec {
    *  is by definition the days before it. Carried so a surface can say so. */
   transitionStartedAt?: string | null;
   targetDurationDays?: number;
+  /** `diet_trials.target_duration_days_initial` (migration 068) — the window the
+   *  trial was DESIGNED against, which `target_duration_days` stops being the
+   *  moment an owner extends. It exists here for exactly one reader, the coverage
+   *  clip (`trialCoverageWindowEndDayIndex`); nothing else in this module may use
+   *  it, because every other question is about the window in force TODAY.
+   *
+   *  NULL / absent means "not recorded" and never a number (migration 068's own
+   *  column comment). Never compare it against `targetDurationDays` to ask
+   *  whether the window moved — two equal integers are also what a corrected typo
+   *  looks like, and `target_duration_set_at` is that predicate (PR 2). */
+  targetDurationDaysInitial?: number | null;
   species?: TrialSpecies;
 }
 
@@ -354,6 +365,62 @@ export function trialEffectiveEndDayIndex(
 ): number | null {
   const targetEnd = trialTargetEndDayIndex(trial, timeZone);
   return targetEnd === null ? null : targetEnd + TRIAL_OVERRUN_GRACE_DAYS;
+}
+
+/**
+ * The last local day the COVERAGE DENOMINATOR is measured over — the trial's
+ * window as it was DESIGNED, not as it stands today (CUL-1038, spec §6 D7c).
+ *
+ * ── WHY THIS IS NOT `trialTargetEndDayIndex` ────────────────────────────────
+ *
+ * They were the same function until an adversarial pass executed what an owner
+ * can do with them. The B-422 tail clip below bounds the coverage denominator at
+ * the target end, and `target_duration_days` is the exact integer the extension
+ * tap overwrites — so on an un-ended trial past its window, one extension moved
+ * `belowCoverageFloor`, `mayStateRecordClean` AND `interpretability` in the
+ * REASSURING direction, retroactively, over days already reported, on zero new
+ * evidence. Executed on the rendered report: *"Meals logged on 0 of 9 days"* +
+ * *"too sparse to read that as a clean elimination"* became **"all 22 matched the
+ * trial diet or a permitted food"**, on the since-visit scope a diet-trial owner
+ * actually gets. It runs the other way too, withdrawing a clean claim from a
+ * record that was logged every prescribed day.
+ *
+ * TE-6 is the rule that forbids it: **an extension may not move a claim about the
+ * record that the record did not change.** So the two ends split by the KIND of
+ * question they answer, and the split is the whole repair:
+ *
+ *   • `trialTargetEndDayIndex` / `trialEffectiveEndDayIndex` answer *is this
+ *     trial running today* — BELIEF, which an extension is SUPPOSED to move.
+ *     They keep reading `target_duration_days` and must keep reading it; the
+ *     extension tap's own docstring calls that "the sanctioned way to move the
+ *     window … for every reader at once", and that is still true of belief.
+ *   • this one answers *how much of the trial's window does the record cover* —
+ *     a CLAIM ABOUT THE RECORD, which no owner action may move.
+ *
+ * ── THE FALLBACK, AND WHY IT IS THE CURRENT TARGET ──────────────────────────
+ *
+ * `targetDurationDaysInitial` is NULL on a trial created between migration 068
+ * and the write path that stamps it. For those rows the designed window is not
+ * recorded, and there is no safe constant to substitute: the clipped window is
+ * the reassuring read on a record that went silent, and the unclipped one is the
+ * reassuring read on a record that started late, so a fail-safe cannot pick a
+ * side. Falling back to the current target is therefore the pre-repair behaviour
+ * preserved exactly — no new claim, no new hazard, and no pretence that the
+ * freeze covers a row it cannot. `startDietTrial` stamps the column on creation
+ * so the gap closes at its source rather than being lived with.
+ */
+export function trialCoverageWindowEndDayIndex(
+  trial: {
+    startedAt: string;
+    targetDurationDays?: number | null;
+    targetDurationDaysInitial?: number | null;
+  },
+  timeZone?: string,
+): number | null {
+  const initial = Math.floor(Number(trial.targetDurationDaysInitial ?? 0));
+  const designed =
+    Number.isFinite(initial) && initial > 0 ? initial : trial.targetDurationDays;
+  return trialTargetEndDayIndex({ startedAt: trial.startedAt, targetDurationDays: designed }, timeZone);
 }
 
 /**
@@ -1260,9 +1327,23 @@ export interface TrialRange {
    * Exposed rather than kept private because §5.1's "render the range
    * explicitly" cuts both ways: a card reading "Meals logged on 56 of 56 days"
    * under "Day 84 of 56" owes the owner the sentence that says why the two
-   * denominators differ. No surface consumes this yet — the copy needs a mock
-   * round, and this PR deliberately ships the behaviour without inventing
-   * undrawn strings (B-592).
+   * denominators differ.
+   *
+   * ⚠️ THE ORIGINAL PARAGRAPH HERE READ "no surface consumes this yet — the copy
+   * needs a mock round", and it stayed true for four months while the clip's own
+   * justification at the tail-clip comment cited the disclosure as the reason the
+   * clip was safe. C-38's *"a comment writing a cheque the code does not cash"*,
+   * sitting inside the clip whose whole argument was the disclosure. CUL-1038
+   * (PR 1b) cashes it: the vet report's coverage sentence, its scan-grid tile and
+   * `interpretabilityStatement` all read this, and so does the trial card.
+   *
+   * WHAT IT MEANS AND WHAT IT DOES NOT. True says *this trial has run past the
+   * window it was designed against, so the figure beside me is measured over that
+   * window and not over the days elapsed.* It does NOT say the window was moved —
+   * that question is `target_duration_set_at IS NOT NULL` (migration 068), which
+   * nothing writes yet and which PR 4's §5.1 sentence renders. A surface that
+   * turns this field into "the window changed" is making a claim the record
+   * cannot support.
    */
   closedByOverrun: boolean;
 }
@@ -2165,7 +2246,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // line: it is `target_duration_days`, which §4.3's milestone lets an owner move
   // with one tap ("Keep going — 4 more weeks"). That is the sanctioned way to
   // extend the window, it moves it for every reader at once, and it cannot be
-  // triggered by a stray meal. An owner who genuinely runs long without tapping
+  // triggered by a stray meal.
+  //
+  // ⚠️ CORRECTED 2026-09-17 (CUL-1038 / D7c). "It moves it for every reader at
+  // once" was the defect, not the feature — the sentence is kept because the
+  // reasoning above it is still right about WHY a log line cannot be the
+  // authority, and wrong about this clip following the tap. A tap that moves
+  // BELIEF (is this trial still running) is sanctioned; a tap that moves a
+  // CLAIM ABOUT THE RECORD is TE-6's violation, and this denominator is the
+  // second kind. The authority for coverage is now the window the trial was
+  // DESIGNED against — `target_duration_days_initial`, read through
+  // `trialCoverageWindowEndDayIndex`. Everything below about the stray meal, the
+  // 28/84 mirror harm and the C5 disclosure is unchanged and is why the clip
+  // still exists.
+  //
+  // An owner who genuinely runs long without tapping
   // has their COVERAGE measured over the window their vet prescribed — which is
   // the number that motivated this clip in the first place, since a vet who
   // prescribed eight weeks should not read a denominator of twelve. Everything
@@ -2198,7 +2293,16 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // old trial) the scope is already the binding constraint, and clipping there
   // collapsed the range below its own start and returned NO TRIAL BLOCK AT ALL,
   // taking an in-scope off-diet exposure with it.
-  const targetEnd = trialTargetEndDayIndex(ctx.trial, input.timeZone);
+  // ── CUL-1038 / D7(c) — THE WINDOW IS THE DESIGNED ONE, NOT TODAY'S ────────
+  //
+  // `trialCoverageWindowEndDayIndex`, never `trialTargetEndDayIndex`. Its
+  // docstring carries the executed finding; the short version is that
+  // `target_duration_days` is what the extension tap overwrites, so a clip bound
+  // on it let one owner action move a claim about the record (TE-6). BOTH reads
+  // below take the frozen end — bounding `endDayIndex` while leaving
+  // `overrunUnended` on the live target would release the clip entirely on an
+  // extended trial, which is the defect wearing a different shape.
+  const targetEnd = trialCoverageWindowEndDayIndex(ctx.trial, input.timeZone);
   const overrunUnended = !ctx.trial.endedAt && targetEnd !== null && evidenceEnd > targetEnd;
   let endDayIndex = evidenceEnd;
   if (overrunUnended && targetEnd !== null && targetEnd >= scopedStart) {
@@ -2213,6 +2317,17 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // of -88 days". A range whose end precedes its start is not a degraded answer,
   // it is a nonsense one, so the clip only moves the head for a log that is
   // actually inside the window being described.
+  //
+  // CUL-1038: the head clip was the SECOND route to §5.4's flip, and the freeze
+  // above closes it rather than a second guard doing so. It follows
+  // `endDayIndex`, so once the tail clip released, the head clip walked forward
+  // to the first log PAST the old window — an owner who logged nothing in the
+  // prescribed 28 days and every day after went 0 of 28 `does_not_support` to 22
+  // of 22, fraction 1.0, `supports`, with `untrackedDaysBeforeFirstLog`
+  // fabricated at 28 so the page asserted the first 28 days pre-dated any
+  // logging. They were ordinary un-logged trial days. With the window pinned at
+  // the designed target there is no log inside it for the head to follow, so
+  // 0 of 28 stays 0 of 28. Stated here because it reads as incidental and is not.
   const headCandidates = rangeOpensAtTrialStart ? loggedDays.filter((d) => d <= endDayIndex) : [];
   const startDayIndex = headCandidates.length > 0 ? Math.min(...headCandidates) : scopedStart;
   const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
@@ -2862,7 +2977,20 @@ export function interpretabilityStatement(facts: TrialFacts): string | null {
   const days = `${daysLogged} of ${daysElapsed} days`;
   const outside = facts.trialDaysOutsideRange.before + facts.trialDaysOutsideRange.after;
   const truncated = outside > 0;
-  const of = truncated ? 'of this report’s window' : 'of the trial window';
+  // CUL-1038 — WHICH WINDOW, on the one line a vet lifts for the bottom line.
+  // After the D7(c) freeze the denominator is the window the trial was DESIGNED
+  // against, and on an overrun trial the day counter two inches away reads past
+  // it ("day 50 of 64" beside "10 of 28 days of the trial window"). Naming it
+  // costs one word and removes the ambiguity where the reader meets it (C-37).
+  // It is NOT pushed into the report's `caveats` array: every entry there
+  // suppresses the affirmative variant, and an overrun is not a reason the record
+  // cannot carry a result — B-422 exists precisely so a trial logged on all 56
+  // prescribed days and then silent still reads `supports` over its own window.
+  const of = truncated
+    ? 'of this report’s window'
+    : facts.range.closedByOverrun
+      ? 'of the trial’s prescribed window'
+      : 'of the trial window';
   switch (facts.interpretability) {
     case 'supports':
       return truncated

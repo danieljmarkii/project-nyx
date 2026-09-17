@@ -84,6 +84,10 @@ function freshDb() {
       status TEXT NOT NULL, ended_at TEXT, completed_at TEXT,
       stopped_reason TEXT, outcome TEXT, indication TEXT, food_label TEXT,
       target_protein TEXT, target_protein_set_at TEXT,
+      -- migration 068 / CUL-1038 — the DESIGNED window the coverage freeze reads.
+      -- Nullable exactly as production is: a trial written before the create-stamp
+      -- lands here with no value, and TRIAL_FOR_CARD_SQL selects it either way.
+      target_duration_days_initial INTEGER,
       synced INTEGER NOT NULL DEFAULT 0
     );
   `);

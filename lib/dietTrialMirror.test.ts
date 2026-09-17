@@ -531,7 +531,13 @@ describe('COLUMN_UPGRADES — the ALTER path an already-installed device takes (
 describe('row → Supabase upsert mappers', () => {
   const trial: LocalDietTrial = {
     id: 't1', pet_id: 'p1', food_item_id: 'f1', started_at: '2026-07-01',
-    target_duration_days: 56, status: 'active', completed_at: null,
+    target_duration_days: 56,
+    // CUL-1038 — the DESIGNED window, forwarded as of PR 1b. Deliberately NOT
+    // equal to `target_duration_days` here: an extended trial is the only shape
+    // where the two differ, and a fixture that sets them equal cannot tell a
+    // mapper forwarding the right column from one forwarding the wrong one.
+    target_duration_days_initial: 42,
+    status: 'active', completed_at: null,
     vet_name: 'Dr Chen', notes: null, food_label: 'RC HP', indication: 'skin',
     phase: 'elimination', outcome: null, outcome_notes: null, stopped_reason: null,
     ended_at: null, transition_started_at: '2026-06-24',
@@ -558,9 +564,13 @@ describe('row → Supabase upsert mappers', () => {
   // apart. Keep this at zero entries; an entry is a dated exception, not a
   // parking space.
   const PENDING_MAPPER_COLUMNS: Readonly<Record<string, string>> = {
-    // CUL-1037 (migration 068) declared these; CUL-1039 / trial-window PR 2 owns
-    // the hydrate select, the push mapper and the INTEGER↔BOOLEAN coercion.
-    target_duration_days_initial: 'CUL-1039',
+    // CUL-1037 (migration 068) declared three. `target_duration_days_initial`
+    // LEFT this registry with CUL-1038 (PR 1b), which forwards it — the coverage
+    // freeze reads it, so a column the push never sends would be a freeze that
+    // repairs the report and not the device that wrote the row.
+    //
+    // The remaining two are CUL-1039 / trial-window PR 2's, with the write path
+    // that first gives them a value and the INTEGER↔BOOLEAN coercion.
     target_duration_set_at: 'CUL-1039',
     target_duration_vet_directed: 'CUL-1039',
   };

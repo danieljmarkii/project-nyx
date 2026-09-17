@@ -104,10 +104,22 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     -- anything building from the DDL constants, the upgrade reaches an already
     -- installed device (the 048 / 053 / 066 precedent).
     --
-    -- DECLARED, NOT YET SYNCED. Nothing reads or writes these three yet: the
-    -- hydrate select, the push mapper and the write path are PR 2's (spec §7).
-    -- They are here now so PR 2's local UPDATE cannot throw "no such column" on
-    -- an upgrading device.
+    -- ⚠ CORRECTED BY CUL-1038 (PR 1b). This said "nothing reads or writes these
+    -- three yet: the hydrate select, the push mapper and the write path are PR
+    -- 2's". The split is finer than that, and the line is where it matters:
+    --
+    --   • target_duration_days_initial is LIVE as of PR 1b. It is hydrated, it
+    --     rides the push mapper, startDietTrial() stamps it at creation, and
+    --     trialCoverageWindowEndDayIndex() freezes the coverage denominator on
+    --     it (spec §6 D7c). 1b owns making the column TRUE and READ, because a
+    --     freeze reading a column nothing populates repairs nothing.
+    --   • set_at and vet_directed are still PR 2's, untouched — they record that
+    --     the window MOVED, which is a write path, and the paired-null contract
+    --     is enforced there.
+    --
+    -- All three were declared by PR 1 so PR 2's local UPDATE cannot throw "no
+    -- such column" on an upgrading device; that is still why the other two sit
+    -- here unread.
     target_duration_days_initial INTEGER,
     target_duration_set_at       TEXT,
     target_duration_vet_directed INTEGER,
@@ -245,6 +257,12 @@ export interface LocalDietTrial {
   food_item_id: string | null;
   started_at: string;
   target_duration_days: number;
+  // migration 068 (CUL-1037) — the window the trial was DESIGNED against.
+  // CUL-1038 reads it (the coverage freeze) and `startDietTrial` stamps it; the
+  // other two provenance columns stay unmapped until PR 2's write path, because
+  // nothing writes or reads them yet and a mapper that forwards a column nobody
+  // fills is a completeness claim with no content.
+  target_duration_days_initial: number | null;
   status: string;
   completed_at: string | null;
   vet_name: string | null;
@@ -299,6 +317,7 @@ export interface RemoteDietTrialUpsert {
   food_item_id: string | null;
   started_at: string;
   target_duration_days: number;
+  target_duration_days_initial: number | null; // migration 068 (CUL-1038)
   status: string;
   completed_at: string | null;
   vet_name: string | null;
@@ -332,6 +351,7 @@ export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert
     food_item_id: row.food_item_id,
     started_at: row.started_at,
     target_duration_days: row.target_duration_days,
+    target_duration_days_initial: row.target_duration_days_initial,
     status: row.status,
     completed_at: row.completed_at,
     vet_name: row.vet_name,

@@ -103,6 +103,10 @@ export function trialBlockFixture(
     evidenceEndDate: '2026-07-02',
     rangeEndDate: '2026-07-02',
     rangeClipped: false,
+    // CUL-1038 — FALSE is the ordinary fixture: a trial inside its own window, so
+    // there is no second window to distinguish and no disclosure to render. A
+    // fixture exercising the overrun disclosure overrides it.
+    coverageClosedByOverrun: false,
     untrackedDaysBeforeFirstLog: 0,
     // The default is the UNTRUNCATED trial — range and trial coincide, which is
     // every first report and every client surface. A fixture exercising B-600

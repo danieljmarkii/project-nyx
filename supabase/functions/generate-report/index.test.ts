@@ -312,6 +312,11 @@ Deno.test('mapMedicationItemRows: renames catalog columns, preserving nulls', ()
 Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () => {
   const rows = mapDietTrialRows([{
     id: 't1', food_item_id: 'f1', started_at: '2026-05-01', target_duration_days: 56,
+    // CUL-1038 — the DESIGNED window, DIFFERENT from the live target on purpose:
+    // an extended trial is the only shape where the two diverge, and a fixture
+    // that sets them equal cannot tell a mapper reading the right column from one
+    // reading the wrong one.
+    target_duration_days_initial: 42,
     status: 'active', completed_at: null, ended_at: null, indication: 'skin',
     outcome: null, outcome_notes: null, stopped_reason: null, food_label: 'Royal Canin Hydrolyzed',
     vet_name: 'Dr Chen',
@@ -336,6 +341,10 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
   // B-704 — the owner's stored trial protein + set-at reach the pure layer (§7.4).
   assert.equal(rows[0].targetProtein, 'duck')
   assert.equal(rows[0].targetProteinSetAt, '2026-05-03T10:00:00Z')
+  // CUL-1038 — the DESIGNED window, and asserted against the LIVE one so a mapper
+  // reading `target_duration_days` twice cannot pass.
+  assert.equal(rows[0].targetDurationDaysInitial, 42)
+  assert.equal(rows[0].targetDurationDays, 56)
 })
 
 Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label survives an archived food (B-455)', () => {
@@ -345,6 +354,9 @@ Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label
   // trial losing its identity on the vet report at the same moment.
   const rows = mapDietTrialRows([{
     id: 't2', food_item_id: null, started_at: '2026-05-01', target_duration_days: 28,
+    // The un-stamped row — a trial created after 068 and before the create-stamp.
+    // NULL means "not recorded", never a number.
+    target_duration_days_initial: null,
     status: 'abandoned', completed_at: null, ended_at: '2026-05-19', indication: 'gi',
     outcome: null, outcome_notes: null, stopped_reason: 'refused',
     food_label: 'Purina HA', vet_name: null,

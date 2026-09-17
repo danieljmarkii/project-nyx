@@ -87,6 +87,10 @@ interface TrialRow {
   id: string;
   started_at: string;
   target_duration_days: number;
+  /** migration 068 / CUL-1038 — the DESIGNED window, and the coverage freeze's
+   *  only input. NULL means "not recorded" (a trial created before the stamp
+   *  shipped, or one that has never hydrated), never a number. */
+  target_duration_days_initial: number | null;
   status: string;
   ended_at: string | null;
   stopped_reason: string | null;
@@ -148,7 +152,8 @@ interface TrialRow {
  *  projection, which crosses a process boundary, persists on disk between sessions
  *  and renders nothing but a day counter. */
 export const TRIAL_FOR_CARD_SQL = `
-  SELECT t.id, t.started_at, t.target_duration_days, t.status,
+  SELECT t.id, t.started_at, t.target_duration_days,
+         t.target_duration_days_initial, t.status,
          t.ended_at, t.stopped_reason, t.outcome, t.indication, t.target_protein,
          COALESCE(
            NULLIF(TRIM(COALESCE(f.brand, '') || ' ' || COALESCE(f.product_name, '')), ''),
@@ -298,6 +303,11 @@ export async function loadTrialPredicateFacts(
     startedAt: row.started_at,
     endedAt: trial.status === 'active' ? null : row.ended_at,
     targetDurationDays: row.target_duration_days,
+    // CUL-1038 — the coverage denominator's window, frozen at the DESIGNED one so
+    // an extension cannot move a claim about the record (TE-6). Passed beside the
+    // live target rather than instead of it: the module needs both, and which
+    // question reads which is the module's call, not this loader's.
+    targetDurationDaysInitial: row.target_duration_days_initial,
     species: pet.species,
   };
 
