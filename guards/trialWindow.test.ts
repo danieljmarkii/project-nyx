@@ -1297,17 +1297,21 @@ describe('G4 — the freeze reaches the module\'s own downstream surfaces (CUL-1
 // G5 — THE RESIDUAL: an UNSTAMPED row keeps the pre-repair behaviour exactly
 // ════════════════════════════════════════════════════════════════════════════════
 //
-// `target_duration_days_initial` is NULL on a trial created between migration 068
-// and the create-stamp CUL-1038 adds to `startDietTrial`, and on any row written by
-// a client in that gap. The module treats NULL as "not recorded" — never as a
-// number — and falls back to the live target, which is the pre-repair arithmetic
-// preserved exactly.
+// `target_duration_days_initial` is NULL on any trial this app creates: CUL-1038
+// ships READS-ONLY, so nothing on the device writes the column (see
+// `dietTrialRowToRemote`'s clobber note). The module treats NULL as "not recorded"
+// — never as a number — and falls back to the live target, which is the pre-repair
+// arithmetic preserved exactly.
+//
+// ⚠️ THE POPULATION IS EVERY NEW TRIAL, NOT A LEGACY TAIL. This block first said
+// "a trial created between migration 068 and the create-stamp CUL-1038 adds", which
+// described the PR's first cut; the create-stamp was removed when the code review
+// traced the clobber. Until CUL-1051's ratchet and PR 2's write path land, 068's
+// backfill covers the rows that existed when it applied and nothing after.
 //
 // THIS IS A TEST AND NOT A COMMENT because "the fallback is the old behaviour" is a
-// claim about executed code, and because this is the one shape where the hazard
-// survives. Stating the blind spot is what stops it reading as coverage (C-38); the
-// create-stamp is what bounds it, and 068's backfill already covered every row that
-// existed when it applied.
+// claim about executed code, and because this is the shape where the hazard
+// survives. Stating the blind spot is what stops it reading as coverage (C-38).
 //
 // THERE IS NO SAFE CONSTANT TO SUBSTITUTE, which is why the fallback is what it is:
 // the clipped window is the reassuring read on a record that went silent, and the

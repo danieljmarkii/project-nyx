@@ -357,7 +357,11 @@ on trial day 50:
 >    exactly. There is no safe constant to substitute — the clipped window is the reassuring read on a record
 >    that went silent and the unclipped one is the reassuring read on a record that started late, so a
 >    fail-safe cannot pick a side. Pinned as a test (`guards/trialWindow.test.ts` G5) rather than left
->    implicit, and bounded by the create-stamp.
+>    implicit. **Its scope is NOT bounded by a create-stamp** — item 2's re-cut removed that, so
+>    every trial created until CUL-1051 + PR 2 land carries a NULL designed window, which is 100% of
+>    new trials rather than a legacy tail. And the reach is wider than first written: the condition is
+>    (the target moved) AND (the calendar is past the designed end), **in either order** — the day-28
+>    milestone tap reaches it 22 days later with no overrun ever having preceded it.
 >
 > **The disclosure half says what `closedByOverrun` knows and no more:** *"This trial has run past the window
 > it was designed against — coverage is measured over that window, so the days since are not in the ratio

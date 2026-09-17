@@ -4713,9 +4713,14 @@ Deno.test('§5.4 report path — an UNSTAMPED row keeps the pre-repair behaviour
   // target, which is the pre-repair arithmetic preserved exactly.
   //
   // It is a test rather than a comment because "the fallback is the old
-  // behaviour" is a claim about executed code, and because this is the one shape
-  // where the hazard survives. Its scope is bounded by the create-stamp; the
-  // rows already live were all backfilled by 068.
+  // behaviour" is a claim about executed code, and because this is the shape
+  // where the hazard survives.
+  //
+  // ⚠ ITS SCOPE IS NOT BOUNDED. This said "bounded by the create-stamp"; that
+  // stamp was removed when the code review traced a clobber through the push, so
+  // CUL-1038 is reads-only and EVERY trial created until CUL-1051 + PR 2 land
+  // carries NULL here. 068's backfill covers the rows that existed when it
+  // applied and nothing after.
   const unstamped = (targetDurationDays: number): string => {
     const input = gateInput(targetDurationDays)
     input.dietTrials[0].targetDurationDaysInitial = null

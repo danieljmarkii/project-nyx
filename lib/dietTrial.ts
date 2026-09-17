@@ -406,8 +406,22 @@ export function trialEffectiveEndDayIndex(
  * reassuring read on a record that started late, so a fail-safe cannot pick a
  * side. Falling back to the current target is therefore the pre-repair behaviour
  * preserved exactly — no new claim, no new hazard, and no pretence that the
- * freeze covers a row it cannot. `startDietTrial` stamps the column on creation
- * so the gap closes at its source rather than being lived with.
+ * freeze covers a row it cannot.
+ *
+ * ⚠️ THE GAP IS NOT BOUNDED, AND THIS DOCSTRING CLAIMED IT WAS. It read
+ * "`startDietTrial` stamps the column on creation so the gap closes at its
+ * source" — true of the first cut of CUL-1038 and false at HEAD, because the
+ * create-stamp was removed when the code review traced a clobber through the
+ * push (see `dietTrialRowToRemote`). So every trial created until CUL-1051's
+ * ratchet and PR 2's write path land carries NULL here, which is 100% of new
+ * trials rather than a legacy tail. C-38, written into the very sentence that
+ * justifies the fallback — and caught by the adversarial pass, not by re-reading.
+ *
+ * The reach is also wider than the session record first claimed: the condition
+ * is (the target moved) AND (the calendar is past the designed end), IN EITHER
+ * ORDER. Executed — the day-28 milestone tap (`overrunDays === 0`, the shipped
+ * one-tap no-confirm control, inert at the moment of the tap) reaches it 22 days
+ * later with no overrun ever having preceded it.
  */
 export function trialCoverageWindowEndDayIndex(
   trial: {
@@ -2337,6 +2351,17 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // logging. They were ordinary un-logged trial days. With the window pinned at
   // the designed target there is no log inside it for the head to follow, so
   // 0 of 28 stays 0 of 28. Stated here because it reads as incidental and is not.
+  //
+  // ⚠️ IT CLOSES ONE INSTANCE, NOT THE CLASS, and the first version of this
+  // comment (and §6 D7's "closes the head-clip route as a side effect") read as
+  // the latter. What the freeze closes is the route where the TAIL clip's release
+  // is what carried the head clip forward. The head clip is still free wherever
+  // the designed window extends past today — executed on the shipped dog·skin
+  // 56-day default, never extended, nothing logged days 1–28 then daily to day
+  // 50: `22 of 22`, fraction 1.0, `supports`, `mayStateRecordClean` TRUE, with
+  // `untrackedDaysBeforeFirstLog` at 28, so the report asserts the first 28 days
+  // pre-date any logging. Identical with the column absent, so it is not this
+  // PR's regression — it is every trial in its first half, and it is unfiled.
   const headCandidates = rangeOpensAtTrialStart ? loggedDays.filter((d) => d <= endDayIndex) : [];
   const startDayIndex = headCandidates.length > 0 ? Math.min(...headCandidates) : scopedStart;
   const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
