@@ -18,7 +18,7 @@ repair can touch them.
 
 ## What shipped
 
-**`guards/trialWindow.test.ts`** (new, 50 tests) — three green guards:
+**`guards/trialWindow.test.ts`** (new, 56 tests) — three green guards:
 
 - **G1 · No mid-trial route to `trial_extend`, in any state.** Driven over
   `planTrialCard` / `resolveTrialCard`, never through a screen — C-41's lesson, and the
@@ -121,6 +121,78 @@ mutation proves: half (a) of G1 is what covers `:1789`, so a guard asserting onl
 (b) would have left it unguarded. This is CUL-874's lesson applied early — verify a
 premised surface at file:line before building on it.
 
+## The adversarial pass returned FAIL, and it was right
+
+`adversarial-reviewer` over PR 0's fixtures, isolated context. It found **no false
+hazard** — both pinned defects reproduce exactly, and §5.2's fixture is genuinely
+un-shippable today (the only writer of `target_duration_days` is `extendTrial`, whose
+only caller clamps upward). Every finding was an **under-statement**, which in a PR
+whose entire job is recording the hazard is the defect class. Each was re-executed
+here before acting on it rather than taken on the reviewer's word.
+
+Six closed in `222b371`:
+
+1. **The harness asymmetry.** jest's `test.failing` passes on ANY throw — measured:
+   `TypeError`, `ReferenceError` and a bare thrown string all satisfy it. So a dead
+   fixture read as a live hazard, the one thing a marker must not do, and the header
+   presented it as equivalent to the Deno wrapper that *does* filter. Replaced with a
+   local `expectedFailure` filtering on jest's `matcherResult` (`err.name` is
+   `'Error'` for jest assertions, so name is useless as a discriminator).
+2. **The requirement was narrower than TE-6.** At 18 of 28 logged, `interpretability`
+   moves `partially_supports` → `supports` while *both* pinned booleans hold — and it
+   renders verbatim on the vet report. A conforming repair could still violate TE-6.
+3. **The recorded ceiling was wrong, materially.** Nothing logged in the window, daily
+   after it: one tap takes 0/28 `does_not_support` to **22 of 22, fraction 1.0,
+   `supports`, clean claim granted**, because once the tail clip releases the *head*
+   clip follows the target to the first logged day. `untrackedDaysBeforeFirstLog` is
+   fabricated at 28, so the app asserts the first 28 days pre-date any logging — they
+   are ordinary un-logged trial days. The head clip's own documented forbidden
+   direction, re-entered through the target.
+4. **Three of the spec's own claims are false**, executed: the tap is **inert at the
+   milestone** (`overrunDays === 0` ⇒ no clip applies), a **mid-window extension is
+   inert too**, and it is **not one tap of `Keep going`** but two, behind `Tell
+   Culprit what's next` — a link whose label names nothing about a window. The hazard
+   is overrun-only.
+5. **G1 did not hold the property it advertised.** It walked only the card's action
+   list, while `TrialCompletionSheet.tsx:246` fires `onExtend()` with no window gate
+   and the header affordance is not on `TrialCardModel` at all — so PR 3 could ship
+   the entire door without reding this file. That is the C-38 cheque the guard cited
+   one block earlier, written by the guard itself. Half (c) now pins the two facts
+   that do hold the door shut: exactly one `setCompletionEntry('decision')` call site,
+   and the header verb still `Replace`. Three mutations red it.
+6. **Scope and blast radius.** The fixture drives the client path under a heading
+   about what the vet reads; the report path passes a scope and reads differently.
+   Corrected — and the four surfaces the tap moves that this file does not pin (the
+   card's own disclosing sentence, `interpretabilityStatement`, `coveredDayIndices`,
+   and `pet.dietTrialActive` muting report detectors ⑧/⑨/⑩) are now stated rather
+   than omitted.
+
+## The seventh finding is a PM decision, and it is the serious one
+
+**"CUL-1038 (PR 1b) is what turns this green" is false under D7(a) as ruled.** D7(a)
+is a disclosure — *"a render, not a mechanism"*, in the spec's own words. But
+`belowCoverageFloor` is `interpretability === 'does_not_support'` and
+`mayStateRecordClean` reads `facts.interpretability`, both computed in
+`lib/dietTrial.ts`, and neither reads `closedByOverrun`. A render cannot move them.
+
+Executed both ways: a real frozen denominator (D7(b)) reds all three markers and their
+companions; D7(a)'s render-only change reds none. So PR 1b as specced would land with
+the suite green, the hazard fully intact, and — before this correction — a comment in
+this file telling the next session that green *was* the repair signal. That is exactly
+the C-38 failure this track exists to pay off, reproduced inside the guard written to
+pin it.
+
+The sentence came from CUL-1036's own description, so this is a falsified premise in
+the issue, not a slip in the build. D7's justification is falsified too (finding 4
+above: "already reachable at the milestone" and "multiplied by this feature" are both
+false). Decision brief posted on **CUL-1038**, which is raised to Urgent and
+`Waiting on PM`; recommendation is **D7(c)** — freeze *and* disclose — since the
+freeze's prerequisite column is already PR 1's job under D2a, and (c) is the only
+option under which PR 0's markers can ever go green.
+
+Not resolved here. PR 0's job is to state the requirement accurately, and TE-6 is
+stated without qualification in the spec's own spine.
+
 ## What did not need doing
 
 No `deploy-manifest.json` bump. A `.test.ts` is outside the fingerprint closure
@@ -137,8 +209,8 @@ rather than spent unasked.
 ## Verification
 
 - `npx tsc --noEmit` clean
-- `npm test -- --ci` — 8440 passed / 389 suites
-- `TZ=Pacific/Chatham npm test -- --ci` — 8440 passed; the new guard also green under
+- `npm test -- --ci` — 8446 passed / 389 suites
+- `TZ=Pacific/Chatham npm test -- --ci` — 8446 passed; the new guard also green under
   `Pacific/Kiritimati` and `Pacific/Honolulu`
 - `deno test` over all 29 suites — 1795 passed
 
