@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-17
 
-CUL-1036, shipped via #867 (draft). The first PR of the diet-trial window track
+CUL-1036, shipped via #867. The first PR of the diet-trial window track
 (CUL-156), and the only one that changes no behaviour. Test-only: nothing an owner
 sees moved, no production source was touched, and no deploy is owed.
 
@@ -292,8 +292,29 @@ rather than spent unasked.
   `Pacific/Kiritimati` and `Pacific/Honolulu`
 - `deno test` over all 29 suites — 1799 passed
 
+## The track moved underneath this PR, and that is good news
+
+**PR 1 shipped mid-session** — #866, migration 068, applied to production the same day.
+A parallel session built it while this one was running; `main` was fetched at wrap and
+merged in. No file overlap (that PR is the migration, the local mirror and the setup
+write path; this one is tests plus the spec's §6 D7), but the suites were re-run against
+the combined tree rather than the overlap check being taken as sufficient.
+
+So `target_duration_days_initial` **exists and is backfilled**, which means the D7(c)
+ruling recorded above is immediately actionable: **CUL-1038's hard blocker cleared the
+same session it was created.**
+
 ## Next
 
-PR 1 (the migration, CUL-156's three D2 columns) and PR 1b (CUL-1038, D7a's disclosure)
-are both unblocked. PR 1b is the one that turns §5.4's marker green, and when it does,
-that test going red is the signal to promote it.
+**PR 1b (CUL-1038) is fully unblocked and is the top of the track.** It freezes the
+coverage denominator at `target_duration_days_initial` and discloses the window move,
+and when it lands, the four §5.4 markers in this PR going RED is the repair signal.
+Then PR 2 (the write path, CUL-1039), PR 3 (the door, CUL-1040), PR 4 (the report,
+CUL-1041, which owes a `generate-report` redeploy).
+
+One residual worth naming: the four surfaces the tap moves that this PR does not pin —
+the trial card's own disclosing sentence, `interpretabilityStatement`,
+`coveredDayIndices` (the widget strip), and `pet.dietTrialActive` muting report
+detectors ⑧/⑨/⑩. They belong with 1b's repair, where there is something to assert them
+against. Listed in the guard rather than omitted, because an undocumented blind spot
+reads as coverage (C-38).
