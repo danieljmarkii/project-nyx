@@ -2,15 +2,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   /* ============================================================
-     Diet trial extension — mock ROUND 1 (low-fi).
-     Build contract: docs/nyx-trial-extension-requirements.md (CUL-156).
-     Seven decisions open (D1–D7); every one whose options differ
-     VISUALLY is drawn side by side here rather than described.
+     Diet trial extension — mock ROUND 2 (low-fi).
+     Build contract: docs/nyx-trial-extension-requirements.md v2.0.
+     D1/D2/D4/D6/D7 RULED 2026-09-17. D3 and D5 outstanding.
 
-     Page convention (PM directive 2026-09-09): ONE proposal.
-     Frames tagged `current` are the proposal. An alternative that is
-     still a live decision sits in a labelled OPTION box beside the
-     frame it competes with. §0 is the ledger.
+     Page convention (PM directive 2026-09-09): ONE proposal, and a
+     reaction round is not a second side-by-side. The options the
+     rulings retired have LEFT this page — git keeps them, at the
+     round-1 commits on branch claude/diet-trial-extension-3ad803
+     (D1's delta sheet, D6's card-body and inside-Replace doors).
+     What remains: the proposal, the two alternatives that are still
+     live decisions in labelled OPTION boxes, and the frames drawn to
+     be rejected. §0 maps each reaction to what moved.
 
      Document chrome matches the house mock system (protein /
      med-strip / food-library rounds). DEVICE FRAMES stay light in
@@ -210,38 +213,37 @@
   <header class="mast">
     <p class="eyebrow">
       <span>Culprit · Diet trial</span>
-      <span>Mock round 1</span>
-      <span>2026-09-16</span>
-      <span class="draft">7 decisions open</span>
+      <span>Mock round 2</span>
+      <span>2026-09-17</span>
+      <span class="draft">5 ruled &middot; 2 outstanding</span>
     </p>
     <h1>Changing a running trial&rsquo;s window</h1>
     <p class="standfirst">
-      A vet directs twelve weeks on day 53 of a 56-day elimination trial. <strong>The app has nowhere to put
-      that instruction.</strong> This round draws the door that records it, and puts the seven open calls
-      side by side rather than describing them. <strong>§8 was added after an adversarial pass returned
-      FAIL on a claim this page made in its first draft</strong> &mdash; it is the most serious of the seven.
-      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v1.1.
+      A vet directs twelve weeks on day 53 of a 56-day elimination trial and the app has nowhere to put that
+      instruction. <strong>Round 1 put seven calls side by side; five came back ruled on 17 September,</strong>
+      so this round is one proposal with the retired options removed. <strong>Two are still open:</strong>
+      D3 (§6) and D5 (§7), each boxed beside the frame it competes with. Build contract:
+      <code>docs/nyx-trial-extension-requirements.md</code> v2.0.
     </p>
   </header>
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">00</span><h2>The ledger</h2></div>
+    <div class="sec-head"><span class="sec-num">00</span><h2>What the rulings moved</h2></div>
     <div class="col">
-      <p>What is drawn as the proposal, what is drawn only as an option, and what is drawn to be rejected.</p>
+      <p>Each reaction from 17 September, what it settled, and what changed on this page because of it.</p>
     </div>
     <div class="tablewrap">
     <table class="ledger">
-      <thead><tr><th>Frame</th><th>Status</th><th>What it settles</th></tr></thead>
+      <thead><tr><th></th><th>The reaction</th><th>Ruled</th><th>What moved here</th></tr></thead>
       <tbody>
-        <tr><td>§1</td><td><span class="tag today">today</span></td><td>What a mid-trial owner actually has. Not a proposal &mdash; the problem.</td></tr>
-        <tr><td>§2</td><td><span class="tag now">current</span> + 2 options</td><td><b>D6</b> &mdash; where the door lives. Proposal: header <b>Manage</b> &rarr; two rows.</td></tr>
-        <tr><td>§3</td><td><span class="tag now">current</span> + 1 option</td><td><b>D1</b> &mdash; totals or deltas. Proposal: <b>totals</b>, with the end date always shown.</td></tr>
-        <tr><td>§4</td><td><span class="tag now">current</span></td><td>The card after the change. The bar retreats, and that is not dressed as a setback.</td></tr>
-        <tr><td>§5</td><td><span class="tag now">current</span> + 2 options</td><td><b>D2</b> &mdash; what the vet report can say. Also carries <b>D4</b>, the vet-directed clause.</td></tr>
-        <tr><td>§6</td><td><span class="tag never">executed</span></td><td><b>D3</b> &mdash; why moving the window <em>backward</em> cannot ride this path.</td></tr>
-        <tr><td>§7</td><td><span class="tag today">today</span> + 1 option</td><td><b>D5</b> &mdash; the GI preset (CUL-367), now with an observed case.</td></tr>
-        <tr><td>§8</td><td><span class="tag never">executed</span></td><td><b>D7</b> &mdash; one tap moves a reassurance gate. <b>Added after the adversarial pass returned FAIL</b>; the most serious decision in the set.</td></tr>
+        <tr><td>D6</td><td><em>&ldquo;let&rsquo;s go w A. Your header recommendation&rdquo;</em></td><td><b>(a)</b> header <b>Manage</b> &rarr; two rows</td><td>§2 keeps one frame. The card-body and inside-Replace doors left the page.</td></tr>
+        <tr><td>D1</td><td><em>&ldquo;let&rsquo;s go w the total duration approach&rdquo;</em></td><td><b>(a)</b> totals</td><td>§3 keeps one frame. The delta sheet left the page.</td></tr>
+        <tr><td>D2</td><td rowspan="2"><em>&ldquo;I like the idea of adding that the trial was extended&rdquo;</em></td><td><b>(a)</b> three columns on <code>diet_trials</code></td><td>§5&rsquo;s proposal specimens are now the proposal, not an option. <b>Read as (a), not (b)&rsquo;s full history</b> &mdash; flagged on CUL-156, and cheap to change until PR 1.</td></tr>
+        <tr><td>D4</td><td><b>(a)</b> ask, unchecked by default</td><td>§5&rsquo;s third specimen is current. The box stays optional, and its absence stays silence.</td></tr>
+        <tr><td>D7</td><td><em>&ldquo;we&rsquo;ll go w your recommendation&rdquo;</em></td><td><b>(a)</b> disclose it</td><td>§8 is no longer a decision. It becomes <b>PR 1b</b>, the first behaviour change of the track, because it repairs something live today.</td></tr>
+        <tr><td>D3</td><td>not addressed</td><td><span class="tag option">outstanding</span></td><td>§6 unchanged. Gates PRs 2&ndash;3 only; the recommendation stands at forward-only.</td></tr>
+        <tr><td>D5</td><td><em>&ldquo;I&rsquo;ll go w the recommendation&rdquo;</em></td><td><span class="tag option">outstanding</span></td><td><b>This brief carried none, deliberately</b> &mdash; the numbers are Dr. Chen&rsquo;s ratification. §7 keeps both frames and now states the recommendation D1&rsquo;s ruling made available.</td></tr>
       </tbody>
     </table>
     </div>
@@ -317,7 +319,7 @@
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">02</span><h2>D6 &mdash; where the door lives</h2></div>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The door &mdash; D6 ruled (a)</h2></div>
     <div class="col">
       <p>
         Two acts must never be confused: <strong>changing the window</strong> keeps one continuous episode;
@@ -350,68 +352,22 @@
           </div>
         </div>
         <figcaption>
-          <b>(a) Header <span class="tag now">current</span></b>
+          <b>Header <span class="tag now">ruled</span></b>
           <code>Manage</code> opens two rows. The destructive act keeps exactly the tap count it has today;
           the safe one is no cheaper and no more hidden. Fixes CUL-156&rsquo;s root &mdash; a header verb
-          that promised an edit it could not perform.
+          that promised an edit it could not perform. It also makes the <code>trial_refusal</code>
+          card&rsquo;s existing label, <em>&ldquo;Change or end the trial&rdquo;</em>, true for the first
+          time: that action re-points here.
         </figcaption>
       </figure>
 
-      <figure class="optbox">
-        <div class="phone">
-          <div class="card">
-            <div class="card-head">
-              <span class="card-title">Diet trial</span>
-              <span class="card-manage">Replace</span>
-            </div>
-            <div class="day-line">Day 53 of 56</div>
-            <div class="food-line">Royal Canin Selected Protein PR, Dry</div>
-            <div class="bar"><span style="width:95%"></span></div>
-            <div class="fact">51 of 53 days logged &middot; 2 feedings outside the trial diet</div>
-            <div class="card-actions">
-              <span class="btn sec">Change the window</span>
-              <span class="btn link">What Nyx can eat</span>
-            </div>
-          </div>
-        </div>
-        <figcaption>
-          <b>(b) Option &mdash; on the card body</b>
-          <em>Option, drawn for the decision, not the current proposal.</em> Fewer taps, but it puts a
-          settings-shaped control on an intelligence surface, competing with the card&rsquo;s own actions
-          &mdash; and leaves <em>Replace</em> in the header still promising an edit.
-        </figcaption>
-      </figure>
 
-      <figure class="optbox">
-        <div class="phone">
-          <div class="sheet-head">
-            <span class="sheet-cancel">Cancel</span>
-            <span class="sheet-title">Start a diet trial</span>
-            <span class="sheet-spacer"></span>
-          </div>
-          <p class="intro">Royal Canin Selected Protein PR, day 53 of 56.</p>
-          <div class="opt">
-            Just make it longer
-            <span class="o-sub">Keep this trial; change how long it runs</span>
-          </div>
-          <div class="opt danger">
-            End this trial and start a new one
-            <span class="o-sub">Nyx&rsquo;s 53 days are closed here.</span>
-          </div>
-        </div>
-        <figcaption>
-          <b>(c) Option &mdash; inside Replace</b>
-          <em>Option, drawn for the decision.</em> Hides the safe act inside the dangerous one&rsquo;s flow:
-          an owner who wants twelve weeks has to open &ldquo;end this trial&rdquo; to find out they
-          don&rsquo;t have to.
-        </figcaption>
-      </figure>
     </div>
   </section>
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">03</span><h2>D1 &mdash; the sheet: a total, or a delta</h2></div>
+    <div class="sec-head"><span class="sec-num">03</span><h2>The sheet &mdash; D1 ruled totals</h2></div>
     <div class="col">
       <p>
         A vet says <em>&ldquo;take it to twelve weeks&rdquo;</em>, never <em>&ldquo;add twenty-eight
@@ -446,46 +402,15 @@
           <div class="btn pri block" style="margin-top:12px">Save the new window</div>
         </div>
         <figcaption>
-          <b>(a) Totals <span class="tag now">current</span></b>
+          <b>Totals <span class="tag now">ruled</span></b>
           The owner picks the number the vet said. The app does the subtraction and shows the end date, which
-          is the thing they will actually plan around. <code>trialEndDayKey</code> already exists &mdash; no
-          new date math.
+          is the thing they will actually plan around. <code>trialEndDayKey</code> already exists, so there is
+          no new date math. The delta sheet that stood here in round 1 is gone: before the milestone it could
+          not say whether &ldquo;4 more weeks&rdquo; meant four weeks past today or past the window&rsquo;s
+          end, and those are different days.
         </figcaption>
       </figure>
 
-      <figure class="optbox">
-        <div class="phone">
-          <div class="sheet-head">
-            <span class="sheet-cancel">Cancel</span>
-            <span class="sheet-title">Keep going</span>
-            <span class="sheet-spacer"></span>
-          </div>
-          <p class="intro">Nyx is on day 53 of 56.</p>
-          <div class="f-label">How much longer?</div>
-          <div class="chips">
-            <span class="chip">2 more weeks</span>
-            <span class="chip on">4 more weeks</span>
-            <span class="chip">8 more weeks</span>
-            <span class="chip">Something else</span>
-          </div>
-          <div class="resolve">
-            <b>4 more weeks &mdash; ends 17 October.</b>
-            <span class="sub">The window becomes 84 days.</span>
-          </div>
-          <div class="btn pri block" style="margin-top:12px">Save</div>
-        </div>
-        <figcaption>
-          <b>(b) Option &mdash; deltas</b>
-          <em>Option, drawn for the decision.</em> Consistent with the milestone&rsquo;s
-          <code>Keep going &mdash; N more weeks</code>. But it makes the owner convert a twelve-week
-          instruction into a delta against a day counter, at the exact moment an arithmetic slip costs four
-          weeks of a restrictive diet &mdash; <strong>and before the milestone it is ambiguous on its
-          face.</strong> <code>nextTargetDays</code> extends from <code>max(currentTarget, dayCounter)</code>,
-          so on day 53 this writes <strong>84</strong> (four weeks past the window&rsquo;s end) while the
-          owner reads day <strong>81</strong> (four weeks past today). At the milestone the two coincide,
-          which is exactly why the milestone can keep its delta and this sheet cannot.
-        </figcaption>
-      </figure>
     </div>
 
     <div class="callout">
@@ -554,7 +479,7 @@
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">05</span><h2>D2 &amp; D4 &mdash; what the vet reads</h2></div>
+    <div class="sec-head"><span class="sec-num">05</span><h2>What the vet reads &mdash; D2 and D4 ruled (a)</h2></div>
     <div class="col">
       <p>
         <code>target_duration_days</code> is overwritten in place, so today an 8-week trial extended on day
@@ -614,7 +539,7 @@
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">06</span><h2>D3 &mdash; why backward is a different act</h2></div>
+    <div class="sec-head"><span class="sec-num">06</span><h2>D3 &mdash; why backward is a different act &middot; <em style="font-style:normal;color:var(--amber-ink)">outstanding</em></h2></div>
     <div class="col">
       <p>
         The report&rsquo;s completed-trial line is computed against the <strong>current</strong> window
@@ -643,7 +568,7 @@
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">07</span><h2>D5 &mdash; the GI preset, now observed</h2></div>
+    <div class="sec-head"><span class="sec-num">07</span><h2>D5 &mdash; the GI preset &middot; <em style="font-style:normal;color:var(--amber-ink)">outstanding</em></h2></div>
     <div class="col">
       <p>
         CUL-367 has been waiting since 2026-07-26 for a case. Here it is: the worked trial is
@@ -695,10 +620,14 @@
         </div>
         <figcaption>
           <b>Option &mdash; the preset reaches the named total</b>
-          <em>Option, drawn for the decision.</em> The button carries the window to the three months the note
-          beside it already names, exactly as <code>+28</code> already carries skin&rsquo;s 8wk&rarr;12wk.
-          <strong>No recommendation is offered here</strong> &mdash; the numbers are Dr. Chen&rsquo;s
-          ratification, and have been since CUL-367 was filed.
+          <em>Option, drawn for the decision, still live.</em> The button carries the window to the three
+          months the note beside it already names, exactly as <code>+28</code> already carries
+          skin&rsquo;s 8wk&rarr;12wk. The numbers stay Dr. Chen&rsquo;s ratification, as they have been
+          since CUL-367 was filed &mdash; <strong>but D1&rsquo;s ruling changed what is at stake.</strong>
+          The totals sheet now reaches any window on any day, so the ladder is no longer the only path to
+          twelve weeks. That is enough to recommend <strong>ratifying +14 as-is for v1</strong> and leaving
+          CUL-367 open, rather than moving a clinical default without a vet. The five stop-button exposures
+          CUL-367 counts are real, unfixed by that, and deferred to the ratification.
         </figcaption>
       </figure>
     </div>
@@ -706,7 +635,7 @@
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">08</span><h2>D7 &mdash; one tap moves a reassurance gate</h2></div>
+    <div class="sec-head"><span class="sec-num">08</span><h2>The reassurance gate one tap moves &mdash; D7 ruled (a)</h2></div>
     <div class="col">
       <p>
         Round 1 of this page asserted that coverage is untouched by an extension. <strong>The
@@ -778,9 +707,12 @@
     </div>
 
     <div class="callout warn">
-      <strong>D7&rsquo;s option (d) is &ldquo;do nothing&rdquo;, and it is drawn here so that it is ruled
-      rather than defaulted into.</strong> The recommendation is (a): wire the disclosure that already
-      exists, is already computed, is already tested, and is read by nothing.
+      <strong>Ruled (a) on 17 September: disclose it.</strong> <code>range.closedByOverrun</code> gets wired
+      to every surface that states a coverage figure, which is what <code>lib/dietTrial.ts:2223</code> has
+      claimed since B-422. Option (d), &ldquo;do nothing&rdquo;, was drawn so that it would be ruled rather
+      than defaulted into, and it was rejected. This is <strong>PR 1b</strong>, and it is the first thing the
+      track ships, ahead of the door &mdash; it repairs something live today rather than gating something
+      new.
     </div>
   </section>
 

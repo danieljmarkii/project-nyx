@@ -154,3 +154,41 @@ quietly made the target a bound on "days elapsed". A definition is not a denomin
 **PR 0 is the only ruling-independent piece** and can start immediately: guards pinning today's behaviour —
 no mid-trial route to `trial_extend` in any state, the `nextTargetDays` clamp, and §5.2's shortening render
 as a *failing* test that documents the hazard. Everything else waits on D1–D6.
+
+---
+
+## Addendum, 2026-09-17 — five rulings in, two still out
+
+Same session, resumed. The PM reacted in tweet form and ruled **D1, D2, D4, D6 and D7**: totals on the
+sheet, three columns on `diet_trials` for the provenance, the vet-directed box, the header `Manage` door,
+and the coverage disclosure. Spec to **v2.0**, mock to **round 2**.
+
+**The order of the build changed, and that is the notable part.** D7(a) makes the coverage disclosure
+**PR 1b**, which is now the first thing the track ships — ahead of the door it was written to protect,
+because it repairs something live today rather than gating something new. A track that began as "add a
+missing affordance" now opens by fixing a reassurance flip that predates it.
+
+Two did not land, and neither was quietly resolved:
+
+- **D3 was not addressed.** It gates PRs 2 and 3 only (whether the sheet offers totals below the current
+  one). Recommendation stands at forward-only.
+- **D5 could not be ruled as answered.** The PM wrote *"I'll go w the recommendation"*, and that brief
+  **deliberately carried none** — twice-stated, because the numbers are Dr. Chen's ratification and
+  CUL-367 has said so since 2026-07-26. Taking the sentence at face value would have meant inventing a
+  recommendation and attributing it to the PM.
+
+  What it did produce is a real one, and only D1's ruling made it available: **the totals sheet now reaches
+  any window on any day**, so the GI ladder is no longer the only path to twelve weeks. That is enough to
+  recommend **ratifying `+14` as-is for v1** and leaving CUL-367 open, rather than moving a clinical default
+  without a vet. CUL-367's five stop-button exposures are unfixed by that and are deferred to the
+  ratification, with the sheet as the escape hatch.
+
+**The generalisable bit:** a ruling on one brief can change the *answer* to another, not just unblock it.
+D5's brief was written when the ladder was the only path; D1's ruling gave it a competitor, and the
+recommendation that could not be made on 09-16 could be made on 09-17 without a vet weighing in at all.
+Re-read the still-open briefs after every ruling round rather than only the ones just answered.
+
+**Mock round 2 mechanics** (the 2026-09-09 one-proposal directive, first applied here): the retired options
+left the page — D1's delta sheet, D6's card-body and inside-Replace doors — with git named as their home;
+D3's and D5's alternatives stayed in labelled option boxes because they are still live; and §0 became a
+ledger mapping each reaction to what it ruled and what moved.

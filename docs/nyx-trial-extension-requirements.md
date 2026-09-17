@@ -1,7 +1,14 @@
 # Diet-trial extension — changing a running trial's window
 
-**Version:** 1.1 (DRAFT — seven decisions open) | Last Updated: 2026-09-16
-**Changed at 1.1, same session:** the `adversarial-reviewer` pass returned **FAIL** and falsified draft 1's TE-6.
+**Version:** 2.0 (BUILD-READY for PRs 0, 1, 1b and 4 — D3 and D5 outstanding) | Last Updated: 2026-09-17
+**Changed at 2.0 (2026-09-17 PM reactions):** **D1, D2, D4, D6 and D7 are RULED** — each brief keeps its
+options verbatim and carries a ⚠ stamp. The sheet is denominated in totals (D1a); the record gains three
+columns on `diet_trials` (D2a) including the vet-directed boolean (D4a); the door is the header's `Manage`
+(D6a); and **D7(a) makes the coverage disclosure PR 1b, the track's first behaviour change**, because it
+repairs something live today. **D3 was not addressed** and gates PRs 2–3. **D5 could not be ruled as
+answered** — it deliberately carried no recommendation — and §6 now offers one that only D1's ruling made
+available.
+**Changed at 1.1 (2026-09-16):** the `adversarial-reviewer` pass returned **FAIL** and falsified draft 1's TE-6.
 Coverage is *not* untouched by an extension (§5.4), so TE-6 is now a requirement rather than an assertion,
 §5.3 is narrowed to the exposure half that held, §5.4–§5.6 are new, and **D7 is new and is the most serious
 decision in the set**. Nothing was quietly corrected: draft 1's claim is named where it stood.
@@ -339,11 +346,15 @@ does — it belongs in PR 2's test plan.
 
 ---
 
-## 6. Decisions the PM owes
+## 6. Decisions — five ruled 2026-09-17, two outstanding
 
-Each is a decision brief: what changes, the options with a recommendation, what it unblocks.
+Each is a decision brief: what changes, the options with a recommendation, what it unblocks. **A ruled
+brief keeps its options verbatim** — the record of what was weighed is the point, and a rewritten brief
+loses it. The ruling is stamped at the top.
 
 ### D1 — Totals or deltas on the mid-trial sheet
+
+> ⚠ **RULED 2026-09-17 — (a) totals.** PM: *"let's go w the total duration approach"*.
 
 **Deciding:** whether the sheet asks *"how long is this trial now?"* (8/10/**12**/16 weeks) or *"how much
 longer?"* (+2/+4/+8 weeks).
@@ -363,6 +374,11 @@ total anyway.
 
 ### D2 — How the record keeps the fact that the window moved
 
+> ⚠ **RULED 2026-09-17 — (a) three columns on `diet_trials`.** PM: *"I like the idea of adding that the
+> trial was extended"*, ruled jointly with D4. (c) is rejected; the mechanism takes the recommendation,
+> on `target_protein_set_at`'s precedent. **If the intent was (b)'s full history, say so before PR 1** —
+> it is the one place this reading could be wrong, and the migration is the moment it is cheap.
+
 **Deciding:** the mechanism behind §5.1's report sentence.
 **Options:**
 - **(a) Three columns on `diet_trials` — recommended.** `target_duration_days_initial INTEGER`,
@@ -377,7 +393,10 @@ mirror, its `LOCAL_WIPE_TABLES` entry and its sync pass. (c) is what ships today
 **Consequence:** (a) or (b) gate the report work; (c) closes §5.1 and leaves the vet report unable to
 distinguish a 12-week trial from an extended 8-week one, permanently.
 
-### D3 — May the window move backward at all?
+### D3 — May the window move backward at all? — **OUTSTANDING**
+
+> ⚠ **NOT RULED.** Not addressed in the 2026-09-17 reactions. It gates PR 2 and PR 3 (whether the sheet
+> offers totals below the current one), and nothing else. Recommendation stands at (a) forward-only.
 
 **Deciding:** whether *Change the window* offers totals below the current one.
 **Options:**
@@ -393,6 +412,9 @@ path.
 
 ### D4 — Does the app ask whether the vet directed it?
 
+> ⚠ **RULED 2026-09-17 — (a) ask.** Ruled jointly with D2. The boolean joins D2's column set and the
+> attribution clause is rendered only when checked; an unchecked box stays silence (§5.1).
+
 **Deciding:** the §4.2 checkbox.
 **Options:**
 - **(a) One optional, unchecked checkbox — recommended.** Renders §5.1's attribution clause when checked;
@@ -403,7 +425,18 @@ different clinical facts, and Dr. Chen reads the report to decide what to do nex
 a deliberate surface.
 **Consequence:** (a) adds one boolean to D2's column set and one clause to the report. (b) drops both.
 
-### D5 — The GI extension arithmetic (CUL-367, now observed)
+### D5 — The GI extension arithmetic (CUL-367, now observed) — **OUTSTANDING**
+
+> ⚠ **NOT RULEABLE AS ANSWERED.** PM: *"I'll go w the recommendation"* — but this brief deliberately
+> carries **none**, because the numbers are Dr. Chen's ratification and CUL-367 has said so since
+> 2026-07-26. Surfaced rather than resolved by guessing.
+>
+> **What changed since the brief was written:** D1's ruling gives every owner a way to reach any total on
+> any day, which is what the GI ladder could not do. That weakens the case for touching a clinically
+> load-bearing default without a vet, and it is now enough to offer a recommendation the brief could not:
+> **(a) ratify as-is for v1**, ship the sheet, and leave CUL-367 open for Dr. Chen. The five stop-button
+> exposures CUL-367 counts are a real finding and are not fixed by (a) — they are deferred to the
+> ratification, with the sheet as the escape hatch in the meantime.
 
 **Deciding:** whether `extensionDays('gi') = 14` survives, given that the worked case needs **two** taps
 **two weeks apart** — and two more exposures of `This trial is done` — to honour a single vet instruction.
@@ -419,6 +452,9 @@ which raises D1's priority.
 
 ### D6 — Where *Change the window* lives
 
+> ⚠ **RULED 2026-09-17 — (a) header `Manage` → a two-row sheet.** PM: *"let's go w A. Your header
+> recommendation"*.
+
 **Deciding:** the door.
 **Options:**
 - **(a) Header `Manage` → two-row sheet — recommended.** Mock frame 3.
@@ -431,6 +467,12 @@ the dangerous one's flow.
 **Consequence:** (a) touches `trialManageVerb` / `trialManageLabel` and adds one sheet.
 
 ### D7 — The coverage gate that one tap can move (§5.4) — **new, and the most serious**
+
+> ⚠ **RULED 2026-09-17 — (a) disclose it.** PM took the recommendation. `range.closedByOverrun` is wired
+> to every surface that states a coverage figure, which is what `lib/dietTrial.ts:2223` has claimed since
+> B-422. (d) is rejected — the reassurance flip is not shipped knowingly. **This becomes PR 1b and it is
+> the first behaviour change of the track**, because it repairs something live today rather than gating
+> something new.
 
 **Deciding:** what happens to the coverage denominator, and to `belowCoverageFloor` / `mayStateRecordClean`,
 when the window moves. **This is already reachable today at the milestone; it is not created by this
@@ -454,7 +496,7 @@ that ruling, if it is the ruling, is made rather than defaulted into.
 
 ---
 
-## 7. PR plan — gated on D1–D4, D6 and D7
+## 7. PR plan — five rulings in; D3 gates PRs 2–3, D5 gates PR 5
 
 Five PRs, one per session, in this order. **Nothing here starts before the rulings**; PR 0 is the only one
 that is ruling-independent.
@@ -462,12 +504,14 @@ that is ruling-independent.
 | PR | What | Gated on |
 |---|---|---|
 | **0** | `guards/` + tests pinning today's behaviour: no mid-trial route to `trial_extend` in any state; the `nextTargetDays` clamp; §5.2's shortening render and §5.4's gate flip each as a **failing** test that documents the hazard | — |
-| **1** | Migration: D2's columns, additive + nullable + backfill `target_duration_days_initial = target_duration_days` for the 1 live row. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer` | D2 |
-| **1b** | **§5.4's repair** — D7's disclosure and/or freeze. Ahead of the door, because the door multiplies the defect | D7 (+ D2 if (b)/(c)) |
-| **2** | The predicate + write path: `changeTrialWindow` beside `extendTrial` (one arithmetic home — `nextTargetDays` is not forked), the paired-null provenance contract, the local mirror, **the concurrent-extension LWW case (§5.6)** | D2, D3 |
-| **3** | The door + the sheet: `Manage`, `TrialWindowSheet`, the `trial_refusal` re-point, `ChipGroup`, the end-date line, §4.3's forward line | D1, D3, D4, D6 |
-| **4** | The vet report: §5.1's sentence, the attribution clause, **a `deno test` over `render.test.ts` with a mutated `targetDurationDays` (§5.6's untested half)**, `generate-report` redeploy (**note the standing deploy discipline — the function is at v15 and the ledger is `pending`**) | D2, D4, PR 1 |
-| **5** | D5's constant, if ruled (a) is rejected | D5 (Dr. Chen) |
+| **1** | Migration: D2's three columns, additive + nullable + backfill `target_duration_days_initial = target_duration_days` for the 1 live row. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer` | ✅ D2a, D4a |
+| **1b** | **§5.4's repair** — D7(a)'s disclosure: wire `range.closedByOverrun` to every surface stating a coverage figure. Ahead of the door, because the door multiplies the defect, and it stands alone because it fixes a live one | ✅ D7a |
+| **2** | The predicate + write path: `changeTrialWindow` beside `extendTrial` (one arithmetic home — `nextTargetDays` is not forked), the paired-null provenance contract, the local mirror, **the concurrent-extension LWW case (§5.6)** | ✅ D2a · ⚠ **D3** |
+| **3** | The door + the sheet: `Manage`, `TrialWindowSheet`, the `trial_refusal` re-point, `ChipGroup` of **totals**, the end-date line, the vet-directed box, §4.3's forward line | ✅ D1a, D4a, D6a · ⚠ **D3** |
+| **4** | The vet report: §5.1's sentence, the attribution clause, **a `deno test` over `render.test.ts` with a mutated `targetDurationDays` (§5.6's untested half)**, `generate-report` redeploy (**note the standing deploy discipline — the function is at v15 and the ledger is `pending`**) | ✅ D2a, D4a · PR 1 |
+| **5** | D5's constant, if ratify-as-is is rejected | ⚠ **D5** (Dr. Chen) |
+
+**PRs 0, 1, 1b and 4 are unblocked today. PRs 2 and 3 wait on D3; PR 5 waits on D5.**
 
 **Adversarial review is mandatory on PRs 1b, 2 and 4** — the write moves a denominator the vet report
 renders, which is the clinically load-bearing class, and §5.4 is what happens when that is assumed rather
