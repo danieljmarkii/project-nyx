@@ -3,10 +3,17 @@
 <style>
   /* ============================================================
      Diet trial extension — mock ROUND 2 (low-fi).
-     Build contract: docs/nyx-trial-extension-requirements.md v2.1.
+     Build contract: docs/nyx-trial-extension-requirements.md v2.2.
      ALL SEVEN RULED 2026-09-17 (D1/D2/D4/D6/D7 first pass,
      D3/D5 second). D5 ratifies today's constant, so CUL-367's
      alternative stays drawn — deferred to Dr. Chen, not retired.
+
+     D7 WAS RE-RULED THE SAME DAY, (a) -> (c): PR 0 executed (a)'s
+     premises and falsified two, so PR 1b became a mechanism change
+     rather than a render. §8 is rewritten to show what SHIPPED
+     (CUL-1038) instead of a decision, and its numbers are the
+     corrected report-path ones — the round-1 table quoted the
+     client read, which is not what the page prints.
 
      Page convention (PM directive 2026-09-09): ONE proposal, and a
      reaction round is not a second side-by-side. The options the
@@ -225,7 +232,8 @@
       instruction. <strong>Round 1 put seven calls side by side; all seven came back ruled on 17
       September,</strong> so this round is one proposal with the retired options removed. The one frame still
       boxed is §7's, and it is boxed because D5 <em>deferred</em> it to Dr. Chen rather than rejecting it.
-      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v2.1.
+      <strong>D7 was then re-ruled the same day, (a) &rarr; (c)</strong>, and §8 now shows what shipped.
+      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v2.2.
     </p>
   </header>
 
@@ -243,7 +251,7 @@
         <tr><td>D1</td><td><em>&ldquo;let&rsquo;s go w the total duration approach&rdquo;</em></td><td><b>(a)</b> totals</td><td>§3 keeps one frame. The delta sheet left the page.</td></tr>
         <tr><td>D2</td><td rowspan="2"><em>&ldquo;I like the idea of adding that the trial was extended&rdquo;</em></td><td><b>(a)</b> three columns on <code>diet_trials</code></td><td>§5&rsquo;s proposal specimens are now the proposal, not an option. <b>Read as (a), not (b)&rsquo;s full history</b> &mdash; flagged on CUL-156, and cheap to change until PR 1.</td></tr>
         <tr><td>D4</td><td><b>(a)</b> ask, unchecked by default</td><td>§5&rsquo;s third specimen is current. The box stays optional, and its absence stays silence.</td></tr>
-        <tr><td>D7</td><td><em>&ldquo;we&rsquo;ll go w your recommendation&rdquo;</em></td><td><b>(a)</b> disclose it</td><td>§8 is no longer a decision. It becomes <b>PR 1b</b>, the first behaviour change of the track, because it repairs something live today.</td></tr>
+        <tr><td>D7</td><td><em>&ldquo;we&rsquo;ll go w your recommendation&rdquo;</em>, then re-ruled same day</td><td><b>(a)</b> disclose it &rarr; <b>RE-RULED (c)</b> freeze <em>and</em> disclose</td><td>§8 is rewritten. PR 0 executed (a)&rsquo;s premises and falsified two of them &mdash; a render cannot move the gates it was ruled to repair &mdash; so PR 1b became a mechanism change. <b>§8 now shows what shipped</b>, not a decision.</td></tr>
         <tr><td>D3</td><td rowspan="2"><em>&ldquo;I&rsquo;ll defer to the recommendation from the product team for the rest&rdquo;</em></td><td><b>(a)</b> forward-only in v1</td><td>§6 stands as the reason. The sheet offers no total at or below the current window, so the laundering path is closed by construction rather than by a render rule.</td></tr>
         <tr><td>D5</td><td><b>(a)</b> ratify <code>+14</code> as-is</td><td>§7&rsquo;s option stays drawn and is relabelled <b>deferred</b>: CUL-367&rsquo;s finding stands, PR 5 is deferred rather than cancelled, and Dr. Chen still owns the numbers. <b>The first pass could not be ruled</b> &mdash; that brief carried no recommendation, deliberately. D1&rsquo;s ruling is what made one available.</td></tr>
       </tbody>
@@ -453,7 +461,7 @@
           One added line, for the rest of the day only. No exclamation mark, no &ldquo;great &mdash; keep
           going&rdquo;, no coverage restated beside it. The <strong>off-diet count and its denominator</strong>
           are byte-identical &mdash; verified under the tap. <strong>Coverage is not</strong>, on a trial past
-          its target: see §8, which is why D7 exists.
+          its target &mdash; that was the defect §8 records, and PR 1b froze it.
         </figcaption>
       </figure>
 
@@ -639,84 +647,130 @@
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">08</span><h2>The reassurance gate one tap moves &mdash; D7 ruled (a)</h2></div>
+    <div class="sec-head"><span class="sec-num">08</span><h2>The reassurance gate one tap moved &mdash; D7 re-ruled (c), and shipped</h2></div>
     <div class="col">
       <p>
-        Round 1 of this page asserted that coverage is untouched by an extension. <strong>The
-        <code>adversarial-reviewer</code> pass falsified that the same session</strong>, and the finding is
-        serious enough to be the most consequential decision here. It is <em>already reachable today</em>
-        at the milestone &mdash; the mid-trial door does not create it, it multiplies it.
+        Round 1 of this page asserted that coverage is untouched by an extension. The
+        <code>adversarial-reviewer</code> pass falsified that the same session; <strong>PR 0 then
+        falsified the fix</strong>. D7 was first ruled <b>(a) disclose it</b> &mdash; described as
+        &ldquo;a render, not a mechanism&rdquo; &mdash; but <code>belowCoverageFloor</code> is
+        <code>interpretability === 'does_not_support'</code> and <code>mayStateRecordClean</code> reads
+        <code>facts.interpretability</code>, and <em>neither reads</em> <code>closedByOverrun</code>.
+        A render cannot move them. Executed both ways: a frozen denominator fires every one of PR 0&rsquo;s
+        markers; (a)&rsquo;s render-only change fires none.
       </p>
       <p>
-        On an <strong>un-ended trial past its target</strong>, the B-422 coverage tail clip bounds the
-        coverage denominator at the <em>current</em> target (<code>lib/dietTrial.ts:2201-2206</code>).
-        Extend, and the clip stops applying.
+        <strong>Re-ruled (c) on 17 September &mdash; freeze <em>and</em> disclose</strong>, and shipped as
+        PR 1b. The frames below are what the report prints now, not a proposal.
       </p>
     </div>
 
     <div class="tablewrap">
     <table class="ledger">
-      <thead><tr><th>dog&middot;gi, 28-day window, 10 of days 1&ndash;28 logged then daily to day 50</th><th>coverage</th><th>below floor</th><th>may state clean</th></tr></thead>
+      <thead><tr><th>dog&middot;gi, 28-day window, 10 of days 1&ndash;28 logged then daily to day 50, read on day 50</th><th>before the tap</th><th>after one tap &mdash; <b>shipped</b></th><th>after one tap &mdash; <span style="color:var(--rose-ink)">before PR 1b</span></th></tr></thead>
       <tbody>
-        <tr><td>before the tap</td><td><b>10 / 28</b> &mdash; 36%</td><td><b>true</b></td><td><b>false</b></td></tr>
-        <tr><td>after one <em>Keep going &mdash; 2 more weeks</em></td><td><b>32 / 50</b> &mdash; 64%</td><td><b>false</b></td><td><b>true</b></td></tr>
+        <tr><td>default scope &mdash; coverage</td><td><b>10 / 28</b></td><td><b>10 / 28</b></td><td><span class="bad">32 / 50</span></td></tr>
+        <tr><td><b>since the visit</b> (rung 1) &mdash; coverage</td><td><b>0 / 9</b></td><td><b>0 / 9</b></td><td><span class="bad">22 / 31</span></td></tr>
+        <tr><td>below floor</td><td><b>true</b></td><td><b>true</b></td><td><span class="bad">false</span></td></tr>
+        <tr><td>may state clean</td><td><b>false</b></td><td><b>false</b></td><td><span class="bad">true</span></td></tr>
       </tbody>
     </table>
     </div>
 
+    <div class="col">
+      <p class="s-note" style="margin-top:2px">
+        <strong>The right-hand column is the corrected record.</strong> §5.4&rsquo;s original table quoted
+        <code>10 / 28 &rarr; 32 / 50</code> from <code>computeTrialFacts</code> with no scope &mdash; the
+        <em>client</em> read. The report always passes a scope, so those were never the numbers the page
+        printed. PR 0 drove the real render, and <strong>the rung-1 row is the one that matters</strong>:
+        a diet-trial owner was just at the vet, so the report scopes to <em>since the most recent visit</em>,
+        and a literal <b>zero</b> bought an affirmative all-clean claim.
+      </p>
+    </div>
+
     <div class="stack">
       <div class="specimen">
-        <p class="s-k"><span class="tag never">executed</span> &nbsp; what the vet report prints across that one tap</p>
+        <p class="s-k"><span class="tag never">was</span> &nbsp; what the vet report printed across one tap</p>
         <p class="report-line" style="margin-bottom:10px">
           <span class="bad">The record is too sparse to read that as a clean elimination.</span>
         </p>
         <p class="report-line">
-          &darr;&nbsp; <span class="moved">32 feedings &mdash; all 32 matched the trial diet or a permitted food.</span>
+          &darr;&nbsp; <span class="moved">22 feedings &mdash; all 22 matched the trial diet or a permitted food.</span>
         </p>
         <p class="s-note">
-          <strong>Zero new evidence.</strong> No meal was logged, no exposure resolved; an owner tapped a
-          button about a calendar. It runs both ways &mdash; on a trial logged daily then silent, one tap
-          <em>withdraws</em> a clean claim. And nothing on any surface says the window moved.
+          <strong>Zero new evidence.</strong> No meal logged, no exposure resolved; an owner tapped a button
+          about a calendar. It ran both ways &mdash; on a trial logged daily then silent, one tap
+          <em>withdrew</em> a clean claim.
         </p>
       </div>
 
       <div class="specimen">
-        <p class="s-k">The disclosure the clip&rsquo;s own justification cites &mdash; and does not have</p>
+        <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 1 &mdash; the denominator is the window the trial was <em>designed</em> against</p>
+        <p class="report-line" style="margin-bottom:10px">
+          Meals logged on <b>0 of 9 days</b> (Jun 20 &ndash; Jun 28, 2026).
+          &nbsp;&rarr;&nbsp; Meals logged on <b>0 of 9 days</b> (Jun 20 &ndash; Jun 28, 2026).
+        </p>
+        <p class="s-note">
+          The clip bounds on <code>target_duration_days_initial</code> (migration 068) instead of the
+          mutable <code>target_duration_days</code>, so no owner action moves a claim about the record
+          (TE-6). It closes the <strong>head-clip route</strong> for free: with the window pinned there is
+          no logged day inside it for the head clip to follow, so the ceiling case &mdash;
+          <code>0 of 28</code> becoming <code>22 of 22, supports</code> &mdash; cannot be reached either.
+          <br><br>
+          <strong>What still moves, and should:</strong> the day line reads <em>day 50 of 64</em>. An
+          extension moves <em>belief</em> &mdash; how long this trial is running &mdash; and that is what the
+          tap is for. What it may not move is what the record is said to <em>show</em>.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 2 &mdash; the disclosure the clip has cited since B-422</p>
+        <p class="report-line">
+          Meals logged on <b>10 of 28 days</b> (Jun 1 &ndash; Jun 28, 2026).
+          <span class="moved">This trial has run past the window it was designed against</span> &mdash;
+          coverage is measured over that window, so the days since are not in the ratio above. Feedings
+          logged in them are still counted in the exposures below.
+        </p>
+        <p class="s-note">
+          Written in the register of the precedent one block away in the same document &mdash;
+          <em>&ldquo;The allowed list changed after the trial started&rdquo;</em> (<code>render.ts:2721</code>),
+          which discloses the other mid-trial change to the comparator. It also reaches the scan-grid tile,
+          and <code>interpretabilityStatement</code> now says <em>which</em> window it covered
+          (&ldquo;of the trial&rsquo;s prescribed window&rdquo;) because the day counter beside it may read
+          past that denominator.
+          <br><br>
+          <strong>It does not say the window moved.</strong> That is
+          <code>target_duration_set_at</code>, which nothing writes until PR 2, and §5&rsquo;s sentence
+          (&ldquo;Window extended from 56 days on 19 Sep&rdquo;) is PR 4&rsquo;s.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k">The debt this pays off</p>
         <p class="report-line" style="font-size:14px">
-          <code>lib/dietTrial.ts:2223</code> &mdash; <em>&ldquo;not the B-422 tail clip (that is the
+          <code>lib/dietTrial.ts</code> &mdash; <em>&ldquo;not the B-422 tail clip (that is the
           trial&rsquo;s own prescribed window closing, and <code>closedByOverrun</code> discloses it)&rdquo;</em>
         </p>
         <p class="s-note">
-          Repo-wide, <code>closedByOverrun</code> is read by <strong>nothing in production</strong> &mdash;
-          its definition, one comment, and its own test file. A comment writing a cheque the code does not
-          cash (C-38), sitting inside the clip whose whole justification is the disclosure.
-          <strong>D7(a) is to wire it up.</strong>
-        </p>
-      </div>
-
-      <div class="specimen">
-        <p class="s-k">The precedent that settles it &mdash; one block away in the same report</p>
-        <p class="report-line">
-          Allowed list: Royal Canin Selected Protein PR <span style="color:var(--ink-3)">primary diet</span>.
-          <span class="moved">The allowed list changed after the trial started</span> &mdash; the dates above
-          are when each food was permitted, and feedings are scored against the list in force on the day.
-        </p>
-        <p class="s-note">
-          The report <strong>already discloses</strong> the other mid-trial change to the comparator
-          (<code>render.ts:2721</code>), because a mid-trial change to the comparator invalidates a reading.
-          A mid-trial change to the <strong>window</strong> is the larger claim and has no equivalent
-          anywhere. §5 of this page is that equivalent; D7 is the gate behind it.
+          For four months <code>closedByOverrun</code> was read by <strong>nothing in production</strong> &mdash;
+          its definition, that comment, and its own test file. A comment writing a cheque the code does not
+          cash (C-38), sitting inside the clip whose whole justification was the disclosure. The cheque is
+          now cashed on the report.
         </p>
       </div>
     </div>
 
     <div class="callout warn">
-      <strong>Ruled (a) on 17 September: disclose it.</strong> <code>range.closedByOverrun</code> gets wired
-      to every surface that states a coverage figure, which is what <code>lib/dietTrial.ts:2223</code> has
-      claimed since B-422. Option (d), &ldquo;do nothing&rdquo;, was drawn so that it would be ruled rather
-      than defaulted into, and it was rejected. This is <strong>PR 1b</strong>, and it is the first thing the
-      track ships, ahead of the door &mdash; it repairs something live today rather than gating something
-      new.
+      <strong>What PR 1b does not ship: the owner&rsquo;s card sentence.</strong> The <em>freeze</em> reaches
+      the trial card (its facts come through the same module), so the flip is gone there too &mdash; the body
+      no longer goes from <em>&ldquo;Culprit isn&rsquo;t saying how many matched&rdquo;</em> to
+      <em>&ldquo;all 32 matched&rdquo;</em> on a tap. What the card still lacks is its own overrun sentence,
+      the one that explains <em>&ldquo;56 of 56 days&rdquo;</em> sitting under <em>&ldquo;Day 84&rdquo;</em>.
+      That is <b>B-592</b>, filed since B-422 and deliberately unwritten: the card in
+      <code>nyx-diet-trial-mockups.html</code> is design-locked, and this repo does not invent strings for it
+      outside a mock round. Jordan&rsquo;s constraint governs when it is drawn &mdash; the owner who has
+      drifted past the target is close to quitting, so the line reads as a prompt to close the trial, never
+      as a scold about the days they did not log.
     </div>
   </section>
 
