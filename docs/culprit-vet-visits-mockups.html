@@ -308,13 +308,56 @@
   .mini { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 4px; padding: 2px 5px; background: var(--a-subtle); color: var(--a-text2); }
   .mini.med { background: var(--a-med-light); color: var(--a-med); }
   .mini.diet { background: var(--a-accent-light); color: var(--a-accent-ink); }
+  /* ── round 4 additions ─────────────────────────────────────────── */
+  .q .tk { width: 18px; height: 18px; border-radius: 999px; border: 1.5px solid var(--a-border-strong); flex: none; margin-top: 1px; }
+  .q .tk.on { background: var(--a-accent); border-color: var(--a-accent); position: relative; }
+  .q .tk.on::after { content: ""; position: absolute; left: 5.5px; top: 2px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .q .t .ans { display: block; margin-top: 5px; font-size: 12px; color: var(--a-text2); background: var(--a-subtle); border-radius: 8px; padding: 6px 8px; line-height: 1.4; }
+  .q .t .ans.ph { color: var(--a-text-dis); }
+  .q.opt { outline: 1.5px dashed var(--a-border-strong); outline-offset: -5px; border-radius: 10px; }
+  .q.raised .t { color: var(--a-text2); }
+  .q.raised .t small { color: var(--a-text-dis); }
+  .plan .sug { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+  .plan .chip.on.vet { border-color: var(--a-med); background: var(--a-med-light); color: var(--a-med); }
+  .plan .t .why { display: block; font-size: 11px; color: var(--a-text2); margin-top: 5px; line-height: 1.4; }
+  .plan.opt { outline: 1.5px dashed var(--a-border-strong); outline-offset: -5px; border-radius: 10px; }
+  .plan .settled { font-size: 11px; color: var(--a-text2); flex: none; padding-top: 6px; font-weight: 600; }
+  .confirm { position: absolute; inset: 0; background: var(--a-scrim); display: flex; align-items: center; justify-content: center; padding: 22px; z-index: 3; }
+  .confirm .box { background: var(--a-surface); border-radius: 16px; padding: 16px; width: 100%; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+  .confirm .h { font-size: 15px; font-weight: 600; letter-spacing: -.15px; }
+  .confirm .p { font-size: 12px; color: var(--a-text2); margin-top: 6px; line-height: 1.45; }
+  .confirm .acts { display: flex; gap: 8px; margin-top: 12px; }
+  .confirm .acts div { flex: 1; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid var(--a-border-strong); }
+  .confirm .acts .danger { background: var(--a-symptom-light); color: var(--a-symptom-ink); border-color: transparent; }
+  .phase { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: var(--a-subtle); color: var(--a-text3); border: 1px solid var(--a-border); }
+  .seg.on { background: var(--a-accent-light); color: var(--a-accent-ink); border-color: var(--a-accent-soft); }
+  .fork { border: 1.5px dashed var(--amber); border-radius: 22px; padding: 18px 16px 12px; background: color-mix(in srgb, var(--amber-tint) 30%, transparent); }
+  .fork-h { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); text-align: center; margin-bottom: 14px; }
+  .rail-2.fork-rail { margin-top: 0; }
+  .note.teal b::before { content: "Record · "; color: var(--accent); font-weight: 700; }
+  .ledger-who.rec { color: var(--rose); }
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">Culprit · design review · CUL-878 Vet visits · round 3 — one proposal</p>
+  <p class="eyebrow">Culprit · design review · CUL-878 Vet visits · round 4 — the PM's reactions, and Nyx's own visit</p>
   <h1 class="title serif">The vet visit — before, during, after</h1>
+  <p class="lede"><b>Round 4 (2026-09-17)</b> draws the recommendations from the synthetic review the way the PM asked to see them — as frames, not sentences — with the four reactions applied, and it reads one real record for the first time: <b>Nyx's Sep 16 visit at Completely Cat Clinic</b>, the first appointment the companion carried end to end. Every round-3 frame still stands; where a round-4 frame redraws one, the caption says so. The states question (reaction 1) is a genuine fork, so it is drawn as <b>two options side by side, neither tagged current</b>. Section G is new; round 3's own note follows.</p>
   <p class="lede"><b>Round 3 (CUL-952)</b> is additive: it draws the one screen the lifecycle was missing — <b>changing or removing a booked appointment</b> — and the second answer the <i>Waiting on you</i> row was asking for and not offering. Nothing from round 2 is retired; every frame below still stands. Round 2's own note follows.</p>
   <p class="lede">Round 2 applies the PM's reactions to round 1 and the nine isolated persona interviews as <b>one proposal</b>. The retired direction (A3, the Ask-only door) has left the page — git keeps round 1 at <b>4f4e6f1</b>. Every frame below is tagged: <b>current</b> is the proposal; a dashed box is an <b>option drawn for a later decision</b>, not the proposal. Real content throughout: Nyx, the PM's own cat, with a GI history, a hydrolyzed trial, a PRN antiemetic and an appointment on Tuesday.</p>
+
+  <div class="ledger">
+    <div class="ledger-h">Round 4 · the PM's reactions to the review, and what Nyx's record said — what moved on the page</div>
+    <div class="ledger-row"><span class="ledger-who">PM · 1</span><div><b>"Should we have a 'get ready' OR 'how did it go?' state? … should this just be a vet appt and we not have the complexity of the states?"</b> A fork, not a reaction to a frame, so it is drawn rather than argued: <b>G1</b> is one appointment page that fills in over time and changes only its primary; <b>G1b</b> keeps the built screens and fixes their doors (the review's REC 1). What the record adds: the PM's own visit went through five screens, and two of the vet's instructions still never reached the record — an argument that the door between screens, not the count of them, is the cost. <span class="moved">Neither option is tagged current. The decision brief is at the foot of §G.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · 2</span><div><b>"Decision 2 — I'd need to see a mockup."</b> <span class="moved">G2 and G4: the questions with their ticks and a note each, in the room and on the visit afterwards, using Nyx's two real questions and the answers the PM typed into the notes.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · 3</span><div><b>"Repeat info and a waste of space… it should really just be one row… 'worth raising', checkable, or at least we can add notes to it like a question."</b> Ruled in shape. Worth raising and the owner's questions become <b>one list, "To raise"</b>: every row tickable, every row annotatable, the intake decline said once from the fresher source. The spine does not move — a record row is still quoted, never re-derived; safety rows still sit above the cap — what changes is that a record row is now a thing the owner can tick and answer, exactly like a question. <span class="moved">G2 draws the list in the room; G4 keeps the ticks and notes on the visit.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · 7</span><div><b>"Love the 'weighed at the clinic' option. I added that in notes."</b> The record agrees twice: <i>8.22 lbs</i> is the first line of the visit's notes (22:03), and a separate weight event was logged at 22:51 — the same number, typed again forty-eight minutes later. <span class="moved">G3 draws the row on <i>How did it go?</i>; G4 shows it on the visit.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>The plan never landed.</b> The notes say <i>"Treat left ear. Motozol. Once a day."</i> and <i>"Steroid for coughing… Pred… 10d full strength"</i>; the medications table gained no row. The only Motozol on record is the July course, completed Aug 9. <span class="moved">G3's <i>Started something new?</i> offers the past course back ("Motozol again?") — confirmation over entry — and G4 shows the plan written on the visit with a door to add to it afterwards (REC 4). This is the PM's item 6 with the evidence attached.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>The trial's window did not move.</b> <i>"Min 8 week. Recommending 12… stay on diet trial for 4 more weeks."</i> The trial's target is still 56 days (Jul 26 → Sep 20). The write path for a vet-directed window change shipped this morning (<code>changeTrialWindow</code>, CUL-1039; migration 068's <code>target_duration_vet_directed</code>). <span class="moved">G3's trial row gains <i>Extended</i>, which calls it with the visit as its provenance.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>The reason for the visit lived in free text.</b> Sep 13: three events with notes — <i>"Tipping ear down"</i>, <i>"Shaking her head- ear is bothering her"</i>, <i>"Scratched ear"</i> — logged as <code>other</code> and <code>itch</code>. Worth raising had no row for any of it (there is no ear lane), and the first question the PM typed was about ears. <span class="moved">G2 carries one dashed option row, <i>from your notes</i>: the owner's own recent event notes, quoted verbatim, tappable to the event. Deterministic; an option, not the proposal.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>Two instructions have no home at all.</b> <i>"Outcome to look for: a reduction in coughing or sneezing… if after the 10d full-strength pred she's still coughing, call"</i> is a watch-and-a-deadline, not a medication — drawn as a dashed option row in G3 because it needs a scheduled notification (the consented-schedule carve-out). <i>"Start monthly with the cleaning. Every 4 weeks."</i> cannot be expressed by the medication model (<code>doses_per_day</code>, where NULL means as-needed and nothing is coarser than daily). <span class="moved">Named here, not drawn.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>What worked.</b> Two questions typed ahead and both ticked in the room (4:42 and 4:54 pm); one photo of the paperwork, filed under Nyx and linked to the visit; the notes edited on the visit 38 minutes after saving. The appointment had no time and no reason, and neither mattered. <span class="moved">Nothing to move; recorded so the frames above are read against a real visit, not a fixture.</span></div></div>
+  </div>
 
   <div class="ledger">
     <div class="ledger-h">Round 3 · CUL-952 — what was found, and what moved on the page</div>
@@ -515,7 +558,7 @@
             <div class="barhint">Saved as you type · finish the visit when you're out</div>
           </div>
         </div></div>
-        <div class="opt-cap"><span class="k">C1 · Notes + the checklist <span class="tag cur">current</span></span><p>Get ready stays the day's primary door; "At the vet" lives inside it, so the tap on the leash lands on the numbers, not an empty box. One plain-text field, saved as it is typed, never lost to a phone call. The photo goes to Vet Files under the visit's pet with the visit linked and no document type asked; it shows on the visit (D3) afterwards. No toolbar, no mic in v1.</p></div>
+        <div class="opt-cap"><span class="k">C1 · Notes + the checklist <span class="tag cur">current</span></span><p>Get ready stays the day's primary door; "At the vet" lives inside it, so the tap on the leash lands on the numbers, not an empty box. One plain-text field, saved as it is typed, never lost to a phone call. The photo goes to Vet Files under the visit's pet with the visit linked and no document type asked; it shows on the visit (D3) afterwards. No toolbar, no mic in v1. <b>Round 4:</b> G2 redraws this screen with the PM's reaction 3 applied (one list, ticks, a note per row); this frame stays current until that ruling.</p></div>
       </div>
 
       <div class="opt">
@@ -583,7 +626,7 @@
           </div>
           <div class="btn-stack"><div class="btn primary">Save Nyx's visit</div><div class="barhint">Anything left open stays on the visit — finish it later</div></div>
         </div></div>
-        <div class="opt-cap"><span class="k">D1 · The after-visit capture <span class="tag cur">current</span></span><p>Prefilled from the appointment; saving with nothing typed is allowed, and an open row is never a blocker — <i>Later</i> is the row's resting state. The existing course and the running trial render as confirmations; <i>Changed</i> edits the course rather than minting a second Cerenia that would split the dose count; <i>Stopped</i> and <i>Ended</i> are the owner actions the H1 register requires. <i>Add</i> opens the real medication setup (the label photo works there tomorrow, from the visit). This screen replaces <code>app/vet-visit.tsx</code>.</p></div>
+        <div class="opt-cap"><span class="k">D1 · The after-visit capture <span class="tag cur">current</span></span><p>Prefilled from the appointment; saving with nothing typed is allowed, and an open row is never a blocker — <i>Later</i> is the row's resting state. The existing course and the running trial render as confirmations; <i>Changed</i> edits the course rather than minting a second Cerenia that would split the dose count; <i>Stopped</i> and <i>Ended</i> are the owner actions the H1 register requires. <i>Add</i> opens the real medication setup (the label photo works there tomorrow, from the visit). This screen replaces <code>app/vet-visit.tsx</code>. <b>Round 4:</b> G3 redraws the plan rows from Nyx's real visit — <i>Extended</i> on the trial, the past course offered back, the clinic weight, a confirm on <i>Stopped</i>.</p></div>
       </div>
 
       <div class="opt">
@@ -618,7 +661,7 @@
           <div class="rowcard"><div class="row"><span class="v">Discharge sheet — Sep 16<small>Photo · added at the visit</small></span><span class="chev">›</span></div></div>
           <div class="barhint" style="margin-top:auto">Asked: 3 of 4 questions</div>
         </div></div>
-        <div class="opt-cap"><span class="k">D3 · A visit, afterwards <span class="tag cur">current</span></span><p>The record of one visit: the notes, the plan as live links whose numbers come from the linked records, the paperwork from Vet Files, the questions asked. ⋯ holds Edit and Delete; Delete confirms that the report window moves back and that the linked course and trial survive.</p></div>
+        <div class="opt-cap"><span class="k">D3 · A visit, afterwards <span class="tag cur">current</span></span><p>The record of one visit: the notes, the plan as live links whose numbers come from the linked records, the paperwork from Vet Files, the questions asked. ⋯ holds Edit and Delete; Delete confirms that the report window moves back and that the linked course and trial survive. <b>Round 4:</b> G4 redraws this frame with the plan persisted on the visit and a door to add to it afterwards; the build today renders only first-linked courses and a count of the questions.</p></div>
       </div>
     </div>
   </section>
@@ -725,6 +768,175 @@
     </div>
   </section>
 
+  <!-- ═══════════════ G · ROUND 4 ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">G · Round 4 — the review's recommendations, drawn against Nyx's own visit</p>
+    <h2 class="serif">One appointment, or the screens with their doors fixed? Drawn, so the PM can rule.</h2>
+    <p class="sec-lede">Every frame below is Nyx's Sep 16 visit as the record holds it: Completely Cat Clinic, Dr Miller, "Potential ear infection", the two questions the PM typed, the notes as written, the plan the vet gave that the app never received. Reaction 1 is the fork in the dashed box. Everything after it is drawn once, on the screens as built, because it lands the same way in either option.</p>
+
+    <div class="fork">
+      <div class="fork-h">Reaction 1 · a fork — two options, drawn for the decision · neither is the current proposal</div>
+      <div class="rail rail-2 fork-rail">
+        <div class="opt">
+          <div class="phone"><div class="ph-screen">
+            <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+            <div><div class="ph-eyebrow">Tue, Sep 16 · today</div><div class="ph-pagetitle">Nyx's vet visit</div><div class="ph-sub">Completely Cat Clinic</div></div>
+            <div class="phase"><span class="seg">Booked Sep 12</span><span class="seg on">In the room</span><span class="seg">Saved</span></div>
+            <div class="sec-label">To raise</div>
+            <div class="rowcard">
+              <div class="q raised"><span class="tk on"></span><span class="t">When she's had ear infections in the past — which ear?<small>added ahead of the visit</small><span class="ans">Both ears last time. This one is the left only.</span></span></div>
+              <div class="q"><span class="tk"></span><span class="t">Coming up on 8 weeks of the trial — worth continuing?<small>added ahead of the visit</small><span class="ans ph">Jot the answer</span></span></div>
+              <div class="q"><span class="tk"></span><span class="t">Day 53 of 56 on Royal Canin Selected Protein.<small>from the trial</small></span></div>
+              <div class="q add"><span class="n">+</span><span class="t">Add</span></div>
+            </div>
+            <div class="sec-label">Notes</div>
+            <div class="field tall" style="min-height:0"><div class="val" style="min-height:40px">8.22 lbs — Dr Miller wasn't very concerned about this loss. No fever…</div></div>
+            <div class="sec-label">The plan · after the room</div>
+            <div class="rowcard"><div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>day 53 of 56 · what did the vet say?</span></span><span class="go">Later</span></div></div>
+            <div class="btn-stack"><div class="btn ghost">Photograph the paperwork</div><div class="barhint">One page from booking to the record · the primary changes with the day, the screen never does</div></div>
+          </div></div>
+          <div class="opt-cap"><span class="k">G1 · One appointment, no states <span class="tag open">option</span></span><p>The PM's reaction taken literally: the appointment is one page that exists from booking and fills in over time. Before the day its primary is <i>Send the vet report</i>; in the room it is the notes and the ticks; after, <i>Save Nyx's visit</i> and the plan rows open. Every door in the app — the Pet-tab card, the list, Home's strip — lands here, so the door problem disappears by construction. <b>Cost:</b> a consolidation of four screens into one long one, and a long screen in an exam room with a cat on the lap; the rules (one primary, Home writes nothing new, the report is the vet's artifact) are unchanged.</p></div>
+        </div>
+
+        <div class="opt">
+          <div class="phone"><div class="ph-screen">
+            <div class="ph-nav"><span class="ph-back">‹ Pets</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+            <div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div><div class="pet-sub">Cat · 8.22 lb</div></div></div>
+            <div class="card">
+              <div class="card-head"><h4>Vet visits</h4><span class="card-count">1 visit</span></div>
+              <div class="appt" style="box-shadow:none;border-radius:12px;padding:10px 11px;margin-top:10px;background:var(--a-subtle)">
+                <div class="date"><b>16</b><span>Sep</span></div>
+                <div class="main"><div class="t">Today</div><div class="s">Completely Cat Clinic</div></div>
+              </div>
+              <div class="doors" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px"><span class="door">Get ready</span><span class="door ghost">Take notes</span><span class="door ghost">How did it go?</span></div>
+              <div class="cardbtn ghost">Open visits</div>
+            </div>
+            <div class="sec-label" style="margin-top:6px">Home · the same day, after the hour</div>
+            <div class="appt">
+              <div class="date"><b>16</b><span>Sep</span></div>
+              <div class="main"><div class="t">Today · Completely Cat Clinic</div><div class="s">the visit's day</div><div class="doors"><span class="door">How did it go?</span><span class="door ghost">Take notes</span></div></div>
+            </div>
+            <div class="sec-label" style="margin-top:6px">Home · the day after, no visit logged</div>
+            <div class="appt">
+              <div class="date"><b>16</b><span>Sep</span></div>
+              <div class="main"><div class="t">Did Tuesday's visit happen?</div><div class="doors"><span class="door">Yes — how did it go?</span><span class="door ghost">It moved</span><span class="door ghost">It didn't</span></div></div>
+            </div>
+          </div></div>
+          <div class="opt-cap"><span class="k">G1b · The screens as built, with every door present <span class="tag open">option</span></span><p>The review's REC 1: keep Get ready, Notes, <i>How did it go?</i> and the visit as separate screens, and make every door exist whenever its job does — <i>Get ready</i> on the Pet-tab card and the list from the day of booking, <i>+ Add</i> on the Notes screen, and a Home strip whose face follows the clock: after the appointment hour the primary is <i>How did it go?</i> (both doors when no time was given), and the day-after ask gains <i>It moved</i>. <b>Cost:</b> doors and strings, no schema; the screens the PM has already used stay as they are. <b>What it does not fix</b> on its own: the plan rows still live on one screen for one sitting — that is G3/G4's job in either option.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rail rail-3" style="margin-top:36px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title"></span><span class="ph-x" style="color:var(--a-accent-ink);font-weight:600;font-size:12.5px;width:auto;white-space:nowrap">How did it go?</span></div>
+          <div><div class="ph-pagetitle" style="font-size:20px">Notes for Nyx's visit</div><div class="ph-sub">Today · Completely Cat Clinic</div></div>
+          <div class="sec-label">To raise</div>
+          <div class="rowcard">
+            <div class="q raised"><span class="tk on"></span><span class="t">Coming up on 8 weeks of the trial — is it worth continuing?<small>added ahead of the visit</small><span class="ans">Min 8 weeks, recommending 12. Stay on it 4 more weeks; then reintroduce one protein at a time.</span></span></div>
+            <div class="q raised"><span class="tk on"></span><span class="t">When she's had ear infections in the past — which ear?<small>added ahead of the visit</small><span class="ans">Both ears last time. This one is left only. Cleaned it; Motozol once a day.</span></span></div>
+            <div class="q"><span class="tk"></span><span class="t">Day 53 of 56 on Royal Canin Selected Protein.<small>from the trial</small><span class="ans ph">Jot the answer</span></span></div>
+            <div class="q"><span class="tk"></span><span class="t">Coughing — 1 logged this week.<small>from the record</small></span></div>
+            <div class="q opt"><span class="tk"></span><span class="t">"Tipping ear down" · "Shaking her head" · "Scratched ear"<small>from your notes · Sep 13 · option</small></span></div>
+            <div class="q add"><span class="n">+</span><span class="t">Add</span></div>
+          </div>
+          <div class="sec-label">Notes</div>
+          <div class="field tall" style="min-height:0"><div class="val" style="min-height:44px">8.22 lbs — Dr Miller wasn't very concerned about this loss. No fever. Lungs sound good…</div><div class="barhint" style="text-align:left;margin-top:6px">Saved as you type · kept with this visit</div></div>
+          <div class="btn-stack"><div class="btn ghost">Photograph the paperwork <span style="font-weight:400;color:var(--a-text3)">· 1 in Vet Files</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G2 · One list, "To raise" — tick it, jot the answer <span class="tag cur">current · replaces C1 on ruling</span></span><p>Reactions 2 and 3 together. The record's rows and the owner's are one numbered list; every row has a tick and a place for the answer, so question and answer sit together and survive onto the visit. The record's rows are still quoted, never re-derived, still capped at four with safety above the cap — and the intake decline, when both the record and the Signal carry it, is <b>one</b> row from the fresher source. The dashed row is the option from the ledger: the owner's own event notes since booking, quoted. The header's right action is the finish door, named for what it opens.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title">How did it go?</span><span class="ph-spacer"></span></div>
+          <div class="field-row">
+            <div class="field"><div class="lab">When</div><div class="val">Tue, Sep 16</div></div>
+            <div class="field"><div class="lab">Where</div><div class="val">Completely Cat · Dr Miller</div></div>
+          </div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>day 53 of 56</span><span class="chips"><span class="chip">Keep</span><span class="chip on vet">Extended</span><span class="chip">Ended</span><span class="chip">Switched</span></span><span class="why">To 12 weeks · ends Oct 18 · the vet's call</span></span></div>
+            <div class="plan"><span class="ico med">+</span><span class="t"><b>Started something new?</b><span>a course the record does not hold</span><span class="sug"><span class="chip">Motozol again? · Jul 16 – Aug 9</span><span class="chip">Add another</span></span></span></div>
+            <div class="plan"><span class="ico med">⚖</span><span class="t"><b>Weighed at the clinic?</b><span>writes an ordinary weight check, dated today</span></span><span class="go">8.22 lb</span></div>
+            <div class="plan opt"><span class="ico next">◷</span><span class="t"><b>Something to watch for?</b><span>option · "less coughing by Sep 26" · one reminder, then it leaves</span></span><span class="go">Set</span></div>
+            <div class="plan"><span class="ico next">→</span><span class="t"><b>Next visit</b><span>none needed, the vet said</span></span><span class="go">Set a date</span></div>
+            <div class="plan"><span class="ico doc">▤</span><span class="t"><b>Paperwork</b><span>1 photo · add a photo or a PDF</span></span><span class="go">Add</span></div>
+          </div>
+          <div class="btn-stack"><div class="btn primary">Save Nyx's visit</div><div class="barhint">Anything left open stays on the visit — add to it later</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G3 · The plan rows, from a real visit <span class="tag cur">current · redraws D1</span></span><p>What Dr Miller actually said, as rows. <i>Extended</i> is the verb the trial row lacked — it calls the window-change write that shipped this morning, with the visit as its provenance and "the vet's call" recorded. <i>Started something new?</i> offers the July Motozol course back before it offers a blank form (Principle 2). <i>Weighed at the clinic?</i> is the row the PM loved, and the record wanted. <i>Something to watch for?</i> is dashed: it is a scheduled reminder, so it waits on the notification foundation's consent posture. The Paperwork row takes a PDF, which is the seam the repeat visitor named. "Add to it later" is now a promise the visit keeps (G4).</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Visits</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+          <div><div class="ph-eyebrow">Tuesday, Sep 16</div><div class="ph-pagetitle" style="font-size:20px">Potential ear infection</div><div class="ph-sub">Completely Cat Clinic · Dr Miller</div></div>
+          <div class="sec-label">The plan · as recorded at this visit</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>extended to 12 weeks · ends Oct 18</span></span><span class="settled">Extended</span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>left ear · once a day · started here</span></span><span class="settled">Started</span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Pred</b><span>10 days full strength · started here</span></span><span class="settled">Started</span></div>
+            <div class="plan"><span class="ico med">⚖</span><span class="t"><b>8.22 lb</b><span>weighed at the clinic</span></span><span class="settled">Logged</span></div>
+            <div class="plan"><span class="ico med">+</span><span class="t"><b>Add to this visit</b><span>a course, a weight, a document, the next visit</span></span><span class="go">Add</span></div>
+          </div>
+          <div class="sec-label">Raised · 2 of 3</div>
+          <div class="rowcard">
+            <div class="q raised"><span class="tk on"></span><span class="t">Worth continuing the trial?<span class="ans">Min 8 weeks, recommending 12. Stay on it 4 more weeks.</span></span></div>
+            <div class="q raised"><span class="tk on"></span><span class="t">Which ear, before?<span class="ans">Both last time; left only now.</span></span></div>
+          </div>
+          <div class="sec-label">What the vet said</div>
+          <div class="field" style="border:0;padding:0;background:transparent"><div class="val" style="font-weight:400;font-size:12.5px">8.22 lbs — Dr Miller wasn't very concerned about this loss. No fever. Lungs sound good. Change of season might impact the sneeze and cough…</div></div>
+          <div class="sec-label">Paperwork · in Vet Files</div>
+          <div class="rowcard"><div class="row"><span class="v">Photo — Sep 16<small>added at the visit</small></span><span class="chev">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G4 · The visit, afterwards — the plan written on it <span class="tag cur">current · redraws D3</span></span><p>REC 4. Every verdict is a fact the visit produced and is written on it — extended, started, logged — so the visit as later read says what was said, not only which course first got a link. <i>Add to this visit</i> is the door the PM went looking for the next day and did not find: the plan rows reopen from here, for the medication that was forgotten in the car park or the PDF that arrives that evening. The questions keep their ticks and their answers. Cost: schema (a per-visit verdict row, own PR) plus this screen.</p></div>
+      </div>
+    </div>
+
+    <div class="rail rail-2" style="margin-top:36px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title">How did it go?</span><span class="ph-spacer"></span></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>left ear · once a day · since Sep 16</span><span class="chips"><span class="chip">Keep</span><span class="chip">Changed</span><span class="chip on" style="border-color:var(--a-symptom-ink);color:var(--a-symptom-ink);background:var(--a-symptom-light)">Stopped</span></span></span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Pred</b><span>10 days full strength · since Sep 16</span><span class="chips"><span class="chip">Keep</span><span class="chip">Changed</span><span class="chip">Stopped</span></span></span></div>
+          </div>
+          <div class="confirm"><div class="box"><div class="h">Stop Motozol?</div><div class="p">The course ends today. Its logged doses stay on the timeline and in vet reports.</div><div class="acts"><div>Keep it</div><div class="danger">Stop it</div></div></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G5 · One safety net on <i>Stopped</i> <span class="tag cur">current</span></span><p>REC 5, drawn at Nyx's next visit. The destructive chip confirms, naming the course and the date; <i>Keep</i> stays one tap. After the confirm the row settles to <i>Motozol · stopped today</i> instead of vanishing, and the record writes <code>stopped</code>, not <code>completed</code>. The same shape on the trial's <i>Ended</i>.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="saved-wrap">
+            <div class="saved-check"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7B6C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+            <div class="saved-h">Saved to Nyx's visits</div>
+            <div class="saved-p">From tomorrow, Nyx's vet report starts from this visit. One you build today still covers up to yesterday.</div>
+            <div class="rowcard" style="width:100%;text-align:left">
+              <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>extended to 12 weeks · ends Oct 18</span></span><span class="done">Extended</span></div>
+              <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>left ear · once a day</span></span><span class="done">Started</span></div>
+              <div class="plan"><span class="ico med">⚖</span><span class="t"><b>8.22 lb</b><span>weighed at the clinic</span></span><span class="done">Logged</span></div>
+            </div>
+            <div class="saved-offline">On this phone now — backs up when you're online</div>
+            <div class="btn-stack" style="width:100%"><div class="btn ghost">Done</div></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G6 · The saved moment, with the plan it wrote <span class="tag cur">current · redraws D2</span></span><p>Unchanged in shape; it now lists the three things the record gained rather than a link. The trial line names the new end date so the owner can check it against what the vet said before they drive.</p></div>
+      </div>
+    </div>
+
+    <div class="note-grid">
+      <div class="note amber"><b>Decision · reaction 1 — one appointment, or the screens with their doors fixed?</b> <i>Deciding:</i> whether the companion is one page that fills in over time (G1) or the built screens with every door present (G1b). <i>Options:</i> (a) G1 — the door problem disappears by construction; a consolidation of four screens, a long page in the exam room. (b) G1b — doors and strings, no screen is rebuilt; recommended by the team as the smaller step that can be walked on a device next week, with G1 kept as the shape to grow toward if the doors still feel disjointed after it. (c) As built. <i>Consequence:</i> (a) reopens §4.1 B–D as one spec section and the mock's C–D frames retire; (b) is REC 1 and ships in one PR; (c) leaves the PM's item 1 open.</div>
+      <div class="note amber"><b>Decision · REC 4 — a verdict written on the visit (R-D1).</b> <i>Deciding:</i> whether <i>Keep · Extended · Stopped · Started</i> are recorded per visit or remain a first-wins provenance link. <i>Options:</i> (a) a per-visit verdict row, no numbers on the visit — recommended; G4 is only possible under it. (b) link-only, as ruled. <i>Consequence:</i> (a) is the schema PR that makes "finish it later" true; (b) keeps the visit silent about every course it did not start.</div>
+      <div class="note amber"><b>Decision · REC 3 — which source owns the intake row.</b> <i>Deciding:</i> when the record and the Signal both carry the decline, which sentence the owner reads aloud. <i>Options:</i> (a) the record's count wins, the Signal's sentence beneath or dropped — recommended (the cache can be a day stale); (b) CUL-950's option (a) as written; (c) both, each dated. In every option the local read is un-gated from the trial, because today a cat with no trial has no offline intake row at all.</div>
+      <div class="note rose"><b>Not drawn · two phones on one login.</b> The household lens showed two phones can save two visits for one appointment and that whichever phone flushes last overwrites the other's notes. The first is a one-clause guard on the attend write (in REC 4); the second collides with the last-write-wins hard constraint and sits in the review's Conflicts for the PM.</div>
+      <div class="note rose"><b>Not drawn · Files and Visits as one card.</b> Reaction 2 asked for a mock before ruling on the questions; the card-count question (the review's REC 6) is the same kind of call and wants a Pet-tab frame of its own rather than a corner of this page. The seams it named — a PDF on the Paperwork row, <i>Add to this visit</i> — are in G3 and G4.</div>
+    </div>
+  </section>
+
   <!-- ═══════════════ F · OPEN + NOT DRAWN ═══════════════ -->
   <section>
     <p class="sec-eyebrow">F · Open decisions and what is deliberately not drawn</p>
@@ -739,5 +951,5 @@
     </div>
   </section>
 
-  <div class="foot"><b>Round 3 is additive over round 2</b> (which superseded round 1, git <b>4f4e6f1</b>; the retired direction A3 left the page then). Round 3 adds E4 and E5 for <b>CUL-952</b> and retires nothing. The spec that pairs with this page is <b>docs/nyx-vet-visits-requirements.md</b> (v1.0, build-ready; decision record in §0); the evidence is <b>docs/research/2026-09-vet-visit-companion-evidence.md</b>; the issue is <b>CUL-878</b>; the build track is the Linear project <b>Vet visits — the appointment companion</b>. Phone frames use the app's fixed tokens from <b>constants/theme.ts</b>; the page chrome is theme-aware.</div>
+  <div class="foot"><b>Round 4 is additive over round 3:</b> it adds §G (G1–G6) from the 2026-09-17 synthetic review and the PM's four reactions, redraws nothing in place, and retires nothing — the fork in G1/G1b is unruled, so the C–D frames stay current until it is. The review itself is published beside this page (<i>Vet Visits Beta Review</i>, round 1). <b>Round 3 is additive over round 2</b> (which superseded round 1, git <b>4f4e6f1</b>; the retired direction A3 left the page then). Round 3 adds E4 and E5 for <b>CUL-952</b> and retires nothing. The spec that pairs with this page is <b>docs/nyx-vet-visits-requirements.md</b> (v1.0, build-ready; decision record in §0); the evidence is <b>docs/research/2026-09-vet-visit-companion-evidence.md</b>; the issue is <b>CUL-878</b>; the build track is the Linear project <b>Vet visits — the appointment companion</b>. Phone frames use the app's fixed tokens from <b>constants/theme.ts</b>; the page chrome is theme-aware.</div>
 </div>
