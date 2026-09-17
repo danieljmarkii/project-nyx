@@ -4,7 +4,8 @@
 **Mode:** DISCOVERY · **Issue:** CUL-367 (B-510) · **Also reads on:** CUL-583 (item 9), CUL-156 (D5), P-1
 **Outcome:** `docs/diet-trial-duration-ratification-2026-09.md` — the one-pager Dr. Chen rules from.
 Nothing built; the constant was not moved. One overstatement in the record corrected, one Tier-2 edit
-proposed, one new option added to the decision.
+proposed, one new option added to the decision — **and the package failed its own adversarial pass on the
+first draft, with all ten findings applied before it went anywhere near a clinician.**
 
 ---
 
@@ -71,11 +72,61 @@ against the wrong question, and (d) should be rejected on cost if it is rejected
 The team does recommend an *order*: rule what the number means for gut (Q1/Q2) before choosing among the
 four, because each option is only coherent under a different answer.
 
+## The adversarial pass, which the package failed
+
+Run as an isolated `adversarial-reviewer` against the shipped tree, because the DoD's mandatory-review
+class is *anything clinically load-bearing* and a page that exists to produce a clinical ruling qualifies
+even though it changes no logic. **Verdict: FAIL, ten findings.** Every arithmetic cell held — all four
+ladders, all twelve lateness cells, the fractions, the six constants — and the claims about the *product*
+and the *evidence* did not. All ten are applied; §10 of the package records the pass rather than hiding it.
+
+**The worst one was mine, and it is the reason the pass was worth running.** §4 said *"an owner can now set
+any window on any day"* — the mitigation D5's ratification rests on. It is false today: `changeTrialWindow`
+(`lib/dietTrialSetup.ts:914`) has **zero UI call sites**, `TrialWindowSheet` exists only inside a guard's
+comment, and the extension track's **PR 3 — the door and the sheet — is unmerged** (0, 1, 2 and 4 landed;
+PR 4 shipped the report line about a moved window ahead of the door that moves it). I read the PR plan and
+the git log in the same session and did not connect them. So the `+14` ladder is still the only route a
+window can move, and §6(a)'s *"nothing to build"* was false with it — the extension spec's own D5 says (a)
+*"raises D1's priority"*. Ruling (a) on the page as written would have been ruling against a false premise
+about the product. Now §4.1.
+
+The other nine, in severity order: the headline said *"five times before"* where the fifth is **at** 84
+(four before, five total); §3's exposure count is a **punctual-owner** figure — `stateFor` fires `milestone`
+only at `overrunDays === 0` (`lib/dietTrialCard.ts:1169`), so one day of slippage collapses dog·gut's inline
+`This trial is done` from **5 to 1**, with the route surviving as a daily link on the overrun card — and §4
+carried the number without the qualifier; §7's cat·gut 42 justifies a **gastrointestinal** number with
+**dermatological** evidence (feline CAFR remission) plus a **canine** GI consensus, with no feline GI
+duration source anywhere; §2's table filed AAHA's skin 12-week under *continuation* when it is a slow-
+responder **assessment** window, manufacturing the very symmetry the finding depends on not existing;
+§3's *"rungs × lateness"* mechanism is falsified by its own 7-day row (predicts 105, executes 91 — the
+ladder terminates on crossing 84, so a bigger step removes a rung); §1's *"propagates rather than needing a
+sweep"* is **backwards** — `guards/trialWindow.test.ts:811` pins `toBe(64)` precisely to red the build,
+because `generate-report/trial.test.ts:4947` carries a hand-copied `64` the jest runtime cannot see; §8 led
+with the rare case (landing on 84 needs total lateness ≡ 0 mod 14 — 16 of 204,204 enumerated patterns);
+§6(d)'s cost was overstated by three already-shipped columns (`phase`, `transition_started_at`,
+`target_duration_days_initial`, all round-tripped by the mirror and never written); and
+`lib/dietTrialSetup.ts:87`'s ">90% at 5" disagrees with the brief's ">85% at 5".
+
+Two lessons worth carrying past this issue. **A review pass is owed by what a document will be used for,
+not by whether it contains code** — this one changed no logic and would have produced a wrong clinical
+ruling. And **the reviewer re-derived the same numbers I did and got the same answers; what it caught was
+everything I asserted about the product around them.** Executing the arithmetic felt like verification and
+was not: the arithmetic was never the risk.
+
 ## Persona positions
 
 - **Dr. Chen** — the subject, not a participant. The package is written to be read cold by him.
 - **Sr. Data Scientist** — owns the measurements and the §8 correction. The ratchet arithmetic is the
-  finding the first pass gestured at and mis-stated.
+  finding the first pass gestured at and mis-stated. Every cell survived the adversarial pass; none of the
+  prose around them did.
+- **`adversarial-reviewer`** — FAIL on the first draft, ten findings, all applied. Falsification attempts
+  it executed: all four ladders and all twelve lateness cells against the shipped functions ✓ HELD; the
+  card resolver driven across days 26–56 → the three-button milestone renders only at `overrunDays === 0`
+  ✗ BROKE §3's unqualified count; every caller of `changeTrialWindow` grepped → zero UI call sites ✗ BROKE
+  §4's mitigation; 204,204 lateness vectors enumerated → cat·gut hits 84 on 16 ✗ BROKE §8's emphasis;
+  §7 checked quote-by-quote → three primary citations verbatim ✓ HELD, cat·gut's support wrong-organ
+  ✗ BROKE; the cost claim measured by mutating the constants in an isolated copy and running all 8,489
+  tests → 2–3 failing assertions, no schema, no migration ✓ HELD, propagation claim ✗ BROKE.
 - **Sr. Product Designer** — flagged that the milestone's *construction* is not at fault and must not be
   collateral: no completion vocabulary, `Keep going` first and filled, the sticky card. Jordan's review is
   on record that the pre-filled named default is what stops her tapping `done`, so any option removing it
@@ -90,6 +141,13 @@ button, and it is the subject rather than a conflict.
 
 - **The Tier-2 edit is proposed, not made.** `nyx-trial-extension-requirements.md` §9's adversarial DoD
   line should gain the day-53 condition on its cat·gi bullet. Left for PM approval per the doc protocol.
+  Note the same spec **already states it correctly at §5.5**, condition and all — it is §9 alone that drops
+  it, and §9 is the line CUL-367's comment was carried from.
+- **Two live defects found in passing, neither filed as its own issue** because both are one-line fixes
+  inside surfaces this ruling will touch anyway: `lib/dietTrialSetup.ts:87`'s ">90% at 5" (the brief says
+  ">85%"), and the `>=`-vs-`===` gap between `nyx-diet-trial-requirements.md` §4.3's "never expires and
+  re-surfaces" and `stateFor`'s exact-day `milestone`. Both are recorded in the package (§8, §3.1) so the
+  ruling session picks them up. If the PM would rather they were tracked, they are cheap to file.
 - **P-1's provisional markers stay up** — `nyx-diet-trial-requirements.md` §0.4 and the
   `DURATION_DEFAULT_DAYS` header comment both still say *pending Dr. Chen*, correctly, until the sitting.
 - **Nothing about CUL-267** (`TRIAL_OVERRUN_GRACE_DAYS = 56`) — a separate agenda item on the same sitting,

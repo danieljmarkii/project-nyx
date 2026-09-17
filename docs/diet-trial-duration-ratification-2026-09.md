@@ -10,7 +10,10 @@ is a clinical value and nobody on the team is a clinician. This page is everythi
 in one sitting, without reading the specs behind it.
 
 **Every number below was measured by driving the shipped functions** (`lib/dietTrialCompletion.ts`,
-`lib/dietTrialSetup.ts`), not read off the spec. Where the existing record overstates the finding, §8 says so.
+`lib/dietTrialSetup.ts`, `lib/dietTrialCard.ts`), not read off the spec. **This page failed its own
+adversarial pass once** — ten findings, of which the worst was a false claim about the product that would
+have changed what a ruling *means* (§10). What survived that pass is marked; what it corrected is in §8
+and §10.
 
 ---
 
@@ -18,17 +21,26 @@ in one sitting, without reading the specs behind it.
 
 | | dog | cat | source in tree |
 |---|---|---|---|
-| **skin** — starting window | 56 d | 56 d | `dietTrialSetup.ts:98` |
-| **gut (`gi`)** — starting window | **28 d** | **42 d** | `dietTrialSetup.ts:98` |
+| **skin** — starting window | 56 d | 56 d | `dietTrialSetup.ts:99` |
+| **gut (`gi`)** — starting window | **28 d** | **42 d** | `dietTrialSetup.ts:99–100` |
 | **`other`** — starting window | 56 d | 56 d | falls back to skin |
-| **`Keep going` adds — skin / `other`** | +28 d | +28 d | `dietTrialCompletion.ts:extensionDays` |
-| **`Keep going` adds — gut** | **+14 d** | **+14 d** | `dietTrialCompletion.ts:extensionDays` |
+| **`Keep going` adds — skin / `other`** | +28 d | +28 d | `dietTrialCompletion.ts:90` |
+| **`Keep going` adds — gut** | **+14 d** | **+14 d** | `dietTrialCompletion.ts:90` |
 
-**Cost of a change: four lines and their tests.** A lookup constant and one function — no schema, no
-migration, no backfill. The guards written for the extension track already read `extensionDays()`
-dynamically (`guards/trialWindow.test.ts:514, 653`), so a ruling propagates rather than needing a sweep.
-This is deliberately the cheapest clinical decision on the board to reverse; it has been expensive only
-because nobody could rule it.
+**Cost of a change: three lines and a handful of assertions.** A lookup constant and one function — no
+schema, no migration, no backfill. **Measured, not asserted:** in an isolated copy of the repo, mutating
+`extensionDays('gi')` 14 → 28 fails **3 assertions in 3 files** out of 8,489 tests; setting both gut cells
+to 84 fails **2 assertions in 1 file**. Nothing else in the app moves.
+
+**One caveat on propagation, because the first draft of this page had it backwards.** A ruling does **not**
+silently propagate: `guards/trialWindow.test.ts:811` pins `expect(GATE_TARGET_AFTER).toBe(64)` precisely so
+that a change **reds the build**, because `supabase/functions/generate-report/trial.test.ts:4947` carries a
+hand-copied `64` in the Deno runtime that jest cannot see. That is good engineering, and it means a ruling
+needs a deliberate **two-runtime sweep** (the jest guard plus the `Edge Functions (deno test)` job) rather
+than none. It does not change the size of the change.
+
+**What a ruling does *not* reach.** There is no backfill and no re-derivation path, so a new default
+applies to **trials started after it ships**. Every pet currently on a diet trial keeps the window it has.
 
 ---
 
@@ -38,19 +50,24 @@ The app stores **one** number per trial, `target_duration_days`. The protocol it
 
 | | what it answers | skin | gut |
 |---|---|---|---|
-| **Assessment point** | *Is the diet working?* | 8 wk → >90% diagnostic sensitivity | ≥2 wk exclusive; response typically 10–14 d |
-| **Continuation length** | *When may the diet change?* | 12 wk for the subset unresolved at 8 | **≥12 wk before transitioning away** |
+| **Assessment point** | *Is the diet working?* | 8 wk → >90% diagnostic sensitivity; **12 wk for the slow-responder subset** | ≥2 wk exclusive; response typically 10–14 d |
+| **Continuation length** | *When may the diet change?* | *not separately specified — the diagnostic endpoint is the decision point* | **≥12 wk before transitioning away** |
 
-For **skin** the two nearly collapse: 56 d is both the diagnostic endpoint and the decision point, so one
-number models it honestly and `+28` carries the unresolved subset from 8 wk to 12 wk in one tap. That is
-why the skin numbers hold up.
+*(AAHA's 12 weeks for skin is a longer **assessment** window for slow responders, not a continuation
+requirement. It sits in the first row deliberately — an earlier draft of this page put it in the second,
+which manufactured a skin/gut symmetry that the finding in §4 depends on **not** existing.)*
+
+For **skin** the two collapse: 56 d is both the diagnostic endpoint and the decision point, so one number
+models it honestly, and `+28` carries the unresolved subset from 8 wk to 12 wk in one tap. That is why the
+skin numbers hold up.
 
 For **gut** they are 28 d and 84 d — a 3× gap. The shipped number sits on the **assessment** point, and the
 screen attached to it offers **`This trial is done`**. So at day 28 the app asks a continuation question at
 an assessment moment.
 
 **This is visible in the product's own copy, in one screenshot.** The note and the button beneath it are
-generated by two different functions from the same indication:
+generated by two different functions from the same indication (verified verbatim against `milestoneNote`
+and `trialDecisionChoices`):
 
 > **Day 28 of 28 — the window you set is done.**
 > Your vet decides when the diet changes. *For gut problems, diets are often continued for around three
@@ -61,66 +78,101 @@ The note names three months. The button under it offers two weeks. Both are spec
 (`nyx-diet-trial-requirements.md` §4.3). The research brief reached this in July and it was never carried
 into the constant: *"28 d is a fine assessment point and a wrong trial length. G3's real question is not
 'is 28 the right number' but 'what does the number mean'"*
-(`docs/research/2026-07-diet-trial-competitive-landscape.md` §4.1).
+(`docs/research/2026-07-diet-trial-competitive-landscape.md` §4.1). **No predicate anywhere in the tree
+derives a continuation length** — grepped; the only occurrences are that copy sentence and comments.
 
 ---
 
 ## 3. What the app does today — measured
 
 `Keep going` writes `max(current target, today) + extension`. So a trial walks up a ladder of windows, and
-`This trial is done` is presented at the top of every rung.
+the stop route is offered again at the top of every rung.
 
-**Owner taps on the milestone day, every time (the best case):**
+**Owner taps on the milestone day, every time:**
 
-| trial | ladder of windows | `This trial is done` shown | lands on 84 d |
+| trial | ladder of windows | `This trial is done` — before 84 d / in total | lands on 84 d |
 |---|---|---|---|
-| **dog · gut** | 28 → 42 → 56 → 70 → **84** | **5×** | yes |
-| **cat · gut** | 42 → 56 → 70 → **84** | **4×** | yes |
-| dog · skin | 56 → **84** | 2× | yes |
-| cat · skin | 56 → **84** | 2× | yes |
+| **dog · gut** | 28 → 42 → 56 → 70 → **84** | **4× before** · 5 in total | yes |
+| **cat · gut** | 42 → 56 → 70 → **84** | **3× before** · 4 in total | yes |
+| dog · skin | 56 → **84** | 1× before · 2 in total | yes |
+| cat · skin | 56 → **84** | 1× before · 2 in total | yes |
 
 **The first milestone, as a fraction of the 12-week continuation the same screen names:** dog·gut **33%**,
 cat·gut **50%**, skin **67%** — and skin's 56 d is 100% of its *own* diagnostic endpoint, so for skin the
 first stop button lands exactly where a decision is genuinely due.
 
-**Taps are rarely on the day, and lateness compounds.** Because each tap extends from *today* when today is
-past the target, a late tap is carried forward permanently — the overshoot is roughly *(number of rungs) ×
-(average lateness)*, and gut has three to four rungs where skin has one:
+### 3.1 The count above is the on-time case, and the qualifier is load-bearing
 
-| owner is late by | dog · gut lands at | cat · gut lands at | dog · skin lands at |
+The three-button row renders **only on the exact day** the target is reached — `stateFor` returns
+`milestone` at `overrunDays === 0` and falls to `overrun` above it (`lib/dietTrialCard.ts:1169–1170`).
+Driven through the real card resolver, **one day of slippage takes dog·gut's inline `This trial is done`
+from five to one.** What replaces it is not silence: the overrun card carries a single link,
+*Tell Culprit what's next*, which opens the same three-way decision sheet including `This trial is done` —
+**every day, indefinitely**. So the honest statement is two-sided:
+
+- **Inline, as a button:** 5 (dog·gut, on time) → **1** on any slippage.
+- **As a reachable route:** offered on *every* day past each target, unbounded. Far more than five.
+
+And one case removes it entirely: on a pet with a live intake-decline or trial-refusal flag those cards
+outrank the milestone (`:1162`, `:1168`), so the stop route degrades to the same quiet link. **The five
+inline exposures assume a clinically quiet record and a punctual owner.**
+
+*(Noted for the record, not for this ruling: `nyx-diet-trial-requirements.md` §4.3 specifies the milestone
+at `dayCounter >= targetDays`, "never expires and re-surfaces until acted on". The shipped `stateFor` uses
+`===`. The stickiness is delivered by the overrun card's link, not by the milestone.)*
+
+### 3.2 Lateness, and what it does to the ladder
+
+Because each tap extends from *today* when today is past the target, a late tap is carried forward
+permanently. The ladder stops at the first window **at or past 84**, so a larger lateness can remove a rung
+— which is why the 7-day row is not monotone and must be read with that rule in hand:
+
+| owner is late by, each rung | dog · gut lands at | cat · gut lands at | dog · skin lands at |
 |---|---|---|---|
-| 0 d | 84 | 84 | 84 |
-| 1 d | 88 | 87 | 85 |
-| 3 d | **96** | 93 | 87 |
-| 7 d | 91 | 84 | 91 |
+| 0 d | 84 (4 rungs) | 84 (3) | 84 (1) |
+| 1 d | 88 (4) | 87 (3) | 85 (1) |
+| 3 d | **96** (4) | 93 (3) | 87 (1) |
+| 7 d | 91 (3) | 84 (3) | 91 (1) |
 
 A gut owner who is three days late each time spends **twelve extra days** on a restrictive diet relative to
-the instruction; a skin owner spends three. Neither is dangerous. It is listed because it is the honest
-version of a claim the record currently overstates (§8), and because it shows the ladder is anchored to the
-owner's tap days rather than to any clinical grid.
+the instruction; a skin owner spends three. Neither is dangerous. The point is only that the ladder is
+anchored to the owner's tap days rather than to any clinical grid, and gut has three to four chances to
+drift where skin has one. **Do not read a general "overshoot = rungs × lateness" rule off this table — the
+7-day row falsifies it** (it predicts 105 for dog·gut; the executed answer is 91).
 
 ---
 
 ## 4. The finding, stated fairly
 
 1. **The indication with the live clinical harm gets the most invitations to stop.** ACVIM 2026 names
-   ≥12 weeks of continuation for canine chronic inflammatory enteropathy. A dog·gut owner is shown
-   `This trial is done` five times before reaching it. A skin owner is shown it twice — and for skin the
-   first of those two lands on a real diagnostic endpoint.
+   ≥12 weeks of continuation for canine chronic inflammatory enteropathy. A punctual dog·gut owner is shown
+   `This trial is done` **four times before** reaching it, and a fifth time **at** it. A skin owner is shown
+   it once before and once at — and for skin the first of those lands on a real diagnostic endpoint.
+   *(Read with §3.1: those are inline-button counts for a punctual owner with a quiet record.)*
 2. **It also gets the smaller one-tap extension** (+14 vs +28), so each invitation buys less distance.
 3. **The app's own note contradicts its own button** on the gut milestone, as quoted in §2.
 
 **What is *not* claimed.** The milestone is already built to resist a premature stop and that work should
 not be undone: no completion vocabulary anywhere on the screen, `Keep going` first in reading order and
-drawn as the filled button, the decision handed to the vet in the sentence under the headline, and the
-milestone is sticky rather than a push. The finding is about the *numbers*, not the screen. Jordan's review
-is on record that the named-default one-tap (`Keep going — 4 more weeks`, already filled in) is the thing
-that stops her tapping `done` at day 56, so any option that removes the named default is worse than today.
+drawn as the filled button, the decision handed to the vet in the sentence under the headline. The finding
+is about the *numbers*, not the screen. Jordan's review is on record that the named-default one-tap
+(`Keep going — 4 more weeks`, already filled in) is the thing that stops her tapping `done` at day 56, so
+any option that removes the named default is worse than today.
 
-**What has changed since the filing (2026-07-26).** An owner can now set any window on any day: CUL-156's
-mid-trial *Change the window* sheet was specified and ruled on 2026-09-17 and is mid-build (PRs 0, 1, 2, 4
-merged). That is why D5 ratified `+14` **for v1** — the ladder stopped being the only route to twelve
-weeks. It is an argument about urgency, not about the numbers, and it does not touch anything in §3.
+### 4.1 The escape hatch does not exist yet — and this is what ruling (a) turns on
+
+D5 ratified `+14` **for v1** on 2026-09-17, on the reasoning that CUL-156's mid-trial *Change the window*
+sheet lets an owner set any window on any day, so the ladder is no longer the only route to twelve weeks.
+
+**That sheet is specified and ruled, but not shipped.** Verified in the tree: `changeTrialWindow` exists
+(`lib/dietTrialSetup.ts:914`) and has **zero UI call sites**; `TrialWindowSheet` does not exist outside a
+guard's comment; and the extension track's **PR 3 — the door and the sheet — is unmerged** (PRs 0, 1, 2 and
+4 have landed; PR 4, the vet report saying the window moved, shipped ahead of the door that would move it).
+
+**So today the `+14` ladder is still the only way a trial's window can move.** An owner told "84 days" who
+is ever late by a non-multiple of 14 cannot record 84 at all. The mitigation that justified deferring this
+ruling is real and is coming — but it is not in an owner's hands on the day this is being ruled, and a
+ruling of (a) should be made knowing that.
 
 ---
 
@@ -132,7 +184,7 @@ Ruling-ready. Each is a number or a yes.
 |---|---|---|
 | **Q1** | For a **gut** trial, at what day should the app first ask the owner to decide whether to stop? Dog, and cat. | dog 28 · cat 42 |
 | **Q2** | What total should **one tap** of `Keep going` reach on a gut trial — a fixed increment, or the clinically named total? | +14 d |
-| **Q3** | Is **cat·gut = 42 d** right, or should the two species be equal? *(42 is the one number with no direct source: it was raised from the dog's 28 on the ~50%-remission-at-4-weeks figure.)* | 42 d |
+| **Q3** | Is **cat·gut = 42 d** right, or should the two species be equal? **See §7 — this cell has no feline GI source.** | 42 d |
 | **Q4** | Are **skin 56 d** and **+28 d** ratified as they stand? | 56 d, +28 d |
 | **Q5** | What should **`other`** (indication not skin or gut) take? Today it takes skin's numbers — the longer ones. | 56 d, +28 d |
 | **Q6** | Does the gut milestone's *note* ("around three months") stay as it is once Q1/Q2 are ruled? | as quoted in §2 |
@@ -145,25 +197,29 @@ The first three are the options carried, verbatim and unchanged, since the first
 is attached to any of them: they are clinical values and the team has declined to invent one since
 2026-07-26.** Consequences are the team's and are stated.
 
-- **(a) Ratify as-is.** +14 stays; the mid-trial sheet carries any non-preset length.
-  *Consequence:* nothing to build. §4's finding stands permanently, and the mid-trial sheet becomes the only
-  one-action route to a vet's number — which makes that sheet's discoverability a clinical matter rather
-  than a copy matter. This is the **current v1 position** (D5, 2026-09-17), taken explicitly as a deferral.
+- **(a) Ratify as-is.** +14 stays; the mid-trial sheet carries any non-preset length **once PR 3 ships**.
+  *Consequence:* no constant changes — but this is **not** "nothing to build". Per the extension spec's own
+  D5, (a) *"leans the whole GI path on D1's sheet, which raises D1's priority"*, and per §4.1 that sheet is
+  currently unbuilt, so (a) makes **PR 3 the clinical dependency** rather than a convenience. §4's finding
+  then stands permanently, and the sheet's discoverability becomes a clinical matter rather than a copy one.
+  This is the **current v1 position**, taken explicitly as a deferral.
 - **(b) The gut preset reaches the clinically named total** — one tap moves a below-84 window to 84,
   mirroring what +28 already does for skin's 8 wk → 12 wk.
-  *Consequence:* one constant becomes one small function; the gut ladder collapses from five exposures to
-  two. `Keep going` stops being a fixed phrase ("2 more weeks" → "to twelve weeks"), which is a copy change
-  the voice pass must re-read.
-- **(c) Raise gut to +28 flat.** *Consequence:* one constant. dog·gut goes 28 → 56 → 84 (three exposures),
-  cat·gut 42 → 70 → 98 — which **overshoots** 84 rather than landing on it.
-- **(d) Split the two clinical jobs** — *new this session, and larger than the other three.* The stored
-  window stays the **assessment** point; a separate indication-derived **continuation** length governs when
-  a stop may be offered at all, so the day-28 card asks *how is it going* and `This trial is done` first
-  appears at the continuation length.
-  *Consequence:* this is not PR 5. It is a new card state, new copy, and a re-opening of §4.4 (which the
-  extension spec deliberately left alone). It is listed because §2 says the one-slot model is what produces
-  the contradiction, and ruling (a)–(c) without seeing (d) would rule a number against the wrong question.
-  It should be rejected on cost if it is rejected — not by omission.
+  *Consequence:* one constant becomes one small function; the gut ladder collapses to a single pre-84
+  exposure. `Keep going` stops being a fixed phrase ("2 more weeks" → "to twelve weeks"), which is a copy
+  change the voice pass must re-read, and the two-runtime sweep in §1 applies.
+- **(c) Raise gut to +28 flat.** *Consequence:* one constant. dog·gut goes 28 → 56 → 84 (two exposures
+  before 84), cat·gut 42 → 70 → 98 — which **overshoots** 84 rather than landing on it.
+- **(d) Split the two clinical jobs** — *added this session.* The stored window stays the **assessment**
+  point; a separate indication-derived **continuation** length governs when a stop may be offered at all,
+  so the day-28 card asks *how is it going* and `This trial is done` first appears at the continuation
+  length.
+  *Consequence:* this is not PR 5 — it is a new card state, new copy, and a re-opening of §4.4 (which the
+  extension spec deliberately left alone). **Its schema cost, however, is lower than an earlier draft of
+  this page implied:** `phase` and `transition_started_at` already ship (migration `040:110,115`, added as
+  "the other half of every clinical protocol"), as does `target_duration_days_initial` (`068:193`) — all
+  three round-tripped by the mirror and sync and **never written**. It should be rejected on its UI cost if
+  it is rejected, not on a migration it does not need.
 
 **The team does have a recommendation about the *order*, which is a product call rather than a clinical
 one: rule Q1/Q2 (what the number means for gut) before choosing between (a)–(d).** Each of the four is only
@@ -174,30 +230,39 @@ easy to pick once that is settled.
 
 ## 7. Evidence behind each cell
 
-Cite these directly; they are the primary sources, not a secondary summary.
+Cite these directly; they are the primary sources, not a secondary summary. Each was checked
+quote-for-quote and URL-for-URL against `docs/research/2026-07-diet-trial-competitive-landscape.md` §4.1.
 
 - **skin 56 d — Olivry, Mueller & Prélaud**, critically appraised topic, 209 dogs + 40 cats: a minimum of 5
   weeks (dogs) / 6 weeks (cats) diagnoses ≥80%; *"increasing the duration of the restrictive diet to 8 weeks
   will increase the sensitivity of diagnosis to more than 90% of cases in both species."*
   <https://pmc.ncbi.nlm.nih.gov/articles/PMC4551374/>
 - **skin, the 12-week tail — AAHA 2023:** 4–12 weeks, >90% of food-allergic dogs at 8 weeks, *"a small
-  subset… may require 12 weeks."* This is what `+28` from 56 is carrying.
+  subset… may require 12 weeks."* This is what `+28` from 56 is carrying. (An **assessment** window for
+  slow responders — see §2's note.)
 - **gut 28 d and the ≥12 weeks — ACVIM 2026 consensus, canine chronic inflammatory enteropathy:** complete
   dietary trials entail exclusive feeding *"for at least 2 weeks,"* responses *"typically seen within 10–14
   days,"* the diet continued *"for at least 12 weeks before attempting to transition away,"* PLE dogs
   long-term. <https://academic.oup.com/jvim/article/40/1/aalaf017/8429723>
-- **cat·gut 42 d — the one number with no direct source.** Raised from the dog's 28 on the cumulative
-  remission gap: cats ~50% at 4 weeks and ~80% at 6, against dogs >85% at 5; AAHA puts 90% of food-allergic
-  cats resolving by 8 weeks vs 50% at 4. Note the feline base is **40 cats across 3 studies** against 209
-  dogs across 5. **Q3 is the question this weakness sits under.**
+- **cat·gut 42 d — the weakest cell on the page, and weaker than "no direct source" suggests.** It was
+  raised from the dog's 28 on a remission gap that is **dermatological**: cats ~50% cumulative remission at
+  4 weeks and ~80% at 6, against dogs >85% at 5; AAHA puts 90% of **food-allergic** cats resolving by 8
+  weeks vs 50% at 4. Those are CAFR figures. The number being set is a **gastrointestinal** trial length,
+  and the only GI consensus cited anywhere in this package (ACVIM 2026) is explicitly **canine**. So
+  cat·gut 42 rests on *feline dermatology plus canine gastroenterology*, and **no feline GI duration source
+  appears anywhere in this package or the brief behind it.** By the same token the 84-day yardstick applied
+  to the cat·gut rows in §3 is the canine CIE number; there is no feline 84 on record here either. Note
+  also the feline evidence base is **40 cats across 3 studies** against 209 dogs across 5. **Q3 is the
+  question this sits under, and it should be ruled knowing the gap is one of organ system, not just of
+  strength.**
 - **Why a too-long default was chosen wherever the evidence ran out** (`other`, unknown species): a too-long
   window costs the owner weeks of a restrictive diet and is editable; a too-short one produces a milestone
   that reads as permission to stop. The asymmetry is deliberate and is the same argument this package is
   asking to be applied to the gut cells.
 - **Research debt that touches this decision** (`…competitive-landscape.md` §9): the feline *"two different
   diets"* recommendation and the food-aversion → hepatic-lipidosis chain came solely from a bot-walled
-  source and are flagged *route to Dr. Chen as a clinical ruling, not as evidence*. Nothing in §7 above
-  depends on them, but if the sitting has time they are adjacent.
+  source and are flagged *"route to Dr. Chen as a clinical ruling, not as evidence"*. Nothing above depends
+  on them, but if the sitting has time they are adjacent.
 
 ---
 
@@ -206,18 +271,26 @@ Cite these directly; they are the primary sources, not a secondary summary.
 Stated because a ratification package that carries an overstated number is worse than none.
 
 - **"On the shipped cat·gi default of 42 days the ladder is 42 → 67 → 81 → 95 and 84 is never reachable"**
-  (CUL-367 comment, 2026-09-17) is **conditional, not general**. That ladder is what happens when the
-  *first* tap is delayed to day 53 — the specific live trial the extension spec was written against. Tapped
-  on the milestone day, cat·gut is 42 → 56 → 70 → **84**, and 84 is reached (§3). The adversarial-review
-  line it came from is sound in its own framing (*"the cat·gi default 42 against a vet's 84-day
-  directive"*, i.e. a directive arriving mid-overrun); the Linear comment dropped the condition.
-- **The honest generalisation is stronger, and is in §3:** the ladder is anchored to the owner's tap days,
-  so no window is guaranteed reachable on any indication — and gut has three to four chances to drift where
-  skin has one.
+  (CUL-367 comment, 2026-09-17) is **missing its condition**. That ladder is what happens when the *first*
+  tap is delayed to **day 53** — the specific live trial the extension spec was written against, and the
+  unique producing value (day 50 gives 92, day 55 gives 97). Tapped on the milestone day, cat·gut is
+  42 → 56 → 70 → **84**.
+- **But landing on 84 is the coincidence, not the rule, so the original claim is closer to true than the
+  correction first suggested.** Enumerating every lateness pattern of up to four rungs from 42 (204,204
+  cases), exactly **16 land on 84** — those where total lateness is a multiple of 14. And with PR 3 unbuilt
+  (§4.1) there is no other door, so an owner told 84 who is ever late by a non-multiple of 14 genuinely
+  cannot record it. The honest summary: **no window is guaranteed reachable on any indication; gut has
+  three to four chances to drift where skin has one; and today there is no way around the ladder.**
+- **The extension spec already says this correctly in one place and not the other.**
+  `nyx-trial-extension-requirements.md` §5.5 carries the day-53 condition verbatim, including *"(the worked
+  trial escapes this only because its target was set to 56 by hand.)"* — it is §9's adversarial DoD line
+  that drops it, and that is the line CUL-367's comment was carried from. Adding the condition to §9 is a
+  **Tier-2 edit, proposed not made**.
 - **Nothing in the tree hard-codes the overstated claim.** The guards compute from `extensionDays()`, so no
-  test needs changing. The overstatement lives in one Linear comment and one DoD line in
-  `nyx-trial-extension-requirements.md` §9; correcting that spec line is a Tier-2 edit and is **proposed,
-  not made** — see the session record.
+  test encodes 67 / 81 / 95.
+- **One live inconsistency, unrelated to any ruling:** `lib/dietTrialSetup.ts:87` says dogs reach ">90% at
+  5 [weeks]" where the research brief and §7 both say ">85% at 5". Three artifacts, two numbers; worth a
+  one-word fix whichever way Q3 goes.
 
 ---
 
@@ -227,6 +300,31 @@ Stated because a ratification package that carries an overstated number is worse
   changed."* Either outcome meets it. The provisional marker comes off P-1 in
   `nyx-diet-trial-requirements.md` §0.4 and off the duration table's header comment.
 - **The extension track's PR 5** (`nyx-trial-extension-requirements.md` §7) — deferred, not cancelled, and
-  unblocked by this ruling and nothing else. If the ruling is (a), PR 5 is closed rather than built.
+  unblocked by this ruling and nothing else. If the ruling is (a), PR 5 is closed rather than built, and
+  **PR 3 becomes the clinical dependency** (§4.1, §6a).
 - **CUL-583's agenda item 9** clears. The nine other items on that sitting have no package like this one;
   the shape here is reusable if the PM wants them prepared the same way.
+
+---
+
+## 10. This page's own adversarial pass
+
+Run before the package was put in front of a clinician, in an isolated context, against the shipped tree.
+**Verdict: FAIL on the first draft**, ten findings, all ten applied above. Recorded here because a
+ratification package that hides its own review is asking to be trusted rather than checked.
+
+**What it broke.** The mitigation in §4.1 was stated as shipped when PR 3 is unmerged and
+`changeTrialWindow` has no UI caller — the worst of the ten, because it changes what ruling (a) *means*.
+§4's headline said "five times before" where the fifth is *at* 84. §3's exposure count was a punctual-owner
+figure carried into §4 without its qualifier, hiding a 5→1 collapse on one day of slippage. §7's cat·gut
+cell justified a GI number with dermatological evidence. §2's table filed AAHA's skin 12-week under
+*continuation*, contradicting its own prose. §3's "rungs × lateness" mechanism was falsified by its own
+7-day row. §1's "propagates rather than needing a sweep" was backwards. §8 led with the rare case. §6(d)'s
+cost was overstated by three already-shipped columns. Plus the `>90%`/`>85%` disagreement.
+
+**What held, and is therefore safe to rule from.** Every one of the six shipped numbers; all four ladders;
+the 33/50/67% fractions; all twelve cells of the lateness table; the `max(target, today) + extension`
+simplification; §2's screenshot verbatim; §2's core claim that no continuation predicate exists anywhere in
+the tree; three of §7's four primary citations quote-for-quote and URL-for-URL; §8's day-53 derivation as
+unique; and the cost claim — measured at 2–3 failing assertions across 8,489 tests under two different
+plausible rulings, with no schema and no migration.
