@@ -2358,7 +2358,33 @@ function headline(snap: ReportSnapshot): string {
   if (q.question === 'diet_trial_working' && snap.diet.trial) {
     const t = snap.diet.trial
     const food = t.foodLabel ? h(t.foodLabel) : 'a diet trial'
-    const vet = t.vetName ? `, directed by ${h(t.vetName)}` : ''
+    // ── A NAMED VET AND THE WINDOW MARKER NEVER SHARE THIS SENTENCE ─────────────
+    //
+    // `vet-report-cold-read`, 2026-09-17, focused re-read, verdict NOT SAFE — and it
+    // made the binding itself: *"'(window extended)' is an agentless passive. The
+    // sentence offers exactly one agent, names him, and places him four words before
+    // the revision flag. An agentless passive that close to the only named agent
+    // inherits that agent. I did not have to infer anything; I had nothing else to
+    // attach it to."*
+    //
+    // Strict grammar says the participle post-modifies "a diet trial" and the
+    // parenthetical is a separate annotation on the day count. That parse is defensible
+    // and it is not the one a reader makes at speed — and at speed is this line's whole
+    // design brief.
+    //
+    // THE DIRECTION OF THE ERROR IS WHAT MAKES IT UNSHIPPABLE. With the box TICKED the
+    // block corrects it downstream ("Owner reports the change was directed by a vet" —
+    // unnamed, owner-sourced). With the box UNTICKED there is no such sentence, so the
+    // binding stands over a record holding NO attestation for the change at all: *"the
+    // less the record knows, the less the page hedges"*, which is absence rendered as a
+    // positive.
+    //
+    // So the name yields, not the marker. It is not lost — the trial block restates it
+    // as "Trial directed by <name>", scoped to what it attributes, on the same page. And
+    // the suppression is conditional: on the overwhelming majority of reports, where no
+    // window ever moved, this line is byte-identical to what it has always rendered.
+    const vet =
+      t.vetName && !snap.trial?.windowChange ? `, directed by ${h(t.vetName)}` : ''
     // "Day 46 of 56" asserts a trial that is RUNNING. When the record shows an off-trial
     // protein in the trial food or continuously available in a bowl, that assertion is
     // the wrong frame for everything below it — and a cold read proved the cost: scanning
@@ -2429,6 +2455,32 @@ function headline(snap: ReportSnapshot): string {
     // report window while the trial block's figures are over the overlap, and those two
     // spans are not always equal; a single number here would have to be one or the
     // other and would be read as both.
+    // ── THE TARGET IS NOT NECESSARILY THE PLAN, AND THIS IS WHERE THAT BITES ────
+    //
+    // `vet-report-cold-read`, 2026-09-17, a BLOCKING finding on the artifact: *"a target
+    // minted on the generation date, presented as the plan, with no marker anywhere above
+    // the fold"*. The trial block carries the full sentence — from what, when, and how far
+    // past the original window the trial has run — but it sits below the weight block and
+    // the at-a-glance strip, and this line is what a 60-second scan reads first. A vet
+    // reading "day 50 of 64" unqualified schedules a recheck against a plan that did not
+    // exist yesterday.
+    //
+    // FOUR WORDS, AND THE DETAIL STAYS IN THE BLOCK. The marker's job is only to stop the
+    // number reading as the original design; the moment it tried to carry the from-value
+    // or the date it would be competing with `breachBit` below, which is the most
+    // actionable sentence on the page.
+    //
+    // ⚠️ HEADLINE ONLY, DELIBERATELY. The "Trial diet" row at the foot of page 1 repeats
+    // "day 50 of 64" and is NOT marked, because it sits BELOW the block: by the time a
+    // reader reaches it the full clause is behind them. The rule is mark the number where
+    // the reader meets it BEFORE the explanation, never after — a third mention of one
+    // fact in one band is the defect this report has paid for elsewhere.
+    //
+    // The verb follows the arithmetic, same as the block's (`extended` / `shortened` /
+    // `changed`), so a shortened window is never announced as an extension here either.
+    const windowMovedBit = tb?.windowChange
+      ? ` (window ${h(tb.windowChange.direction)})`
+      : ''
     const outsideHere = tb ? tb.trialDaysOutsideRange.before + tb.trialDaysOutsideRange.after : 0
     const windowBit =
       outsideHere > 0 && tb
@@ -2437,7 +2489,7 @@ function headline(snap: ReportSnapshot): string {
           )} of the trial&rsquo;s ${num(tb.trialDaysElapsed)} days fall outside it</b>, so the count above is over that window, not over the trial.`
         : ''
     return `
-  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${breachBit}</div>`
+  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}${windowMovedBit}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${breachBit}</div>`
   }
   const hasChronic = snap.safetyFlags.some((f) => f.kind === 'chronicity')
   const chronicBit = hasChronic ? ' Ongoing pattern — see the safety flags above.' : ''
@@ -3416,8 +3468,28 @@ function trialWindowChangeLine(
   // sentence either way: the record says a vet was involved, never which one. Per C-28
   // the rewrite re-entered the voice pass — "Owner reports" still leads, because that
   // hedge is the whole point of the sentence (§5.1 #3).
+  //
+  // ⚠️ AND THE INDEFINITE ARTICLE ALONE WAS NOT ENOUGH, which a second cold read measured
+  // rather than predicted (2026-09-17, attribution-focused, verdict NOT SAFE at ~80%
+  // confidence). "a vet" had exactly ONE available antecedent on the page, twenty words
+  // later, and both clauses used the same verb: *"an indefinite noun phrase with one
+  // available antecedent in the same paragraph is not ambiguous to a reader — it's an
+  // anaphor"*, and the indefinite-then-named order is the exact sequence that closes one.
+  //
+  // So the sentence now severs the referent instead of merely declining to name it, and
+  // drops the shared verb. Two mechanisms, two repairs: `asked for` kills the lexical
+  // echo with `Trial directed by <name>`, and `Culprit cannot say which` says outright
+  // that the record cannot resolve it — which is what an indefinite article was being
+  // asked to imply and could not.
+  //
+  // WHAT THIS DOES NOT FIX, stated because the reviewer measured it too: with the box
+  // UNTICKED there is no sentence here at all, and silence next to a named vet is read as
+  // concurrence (~55–60%), invisibly, because a cold reader cannot see a sentence that is
+  // absent. Rendering that absence positively is a deviation from §5.1's design lock —
+  // "the clause is simply absent" — so it is a PM decision, open on CUL-1041, not a call
+  // this file may make on its own.
   const attribution = wc.vetDirected
-    ? ' Owner reports the change was directed by a vet.'
+    ? ' Owner reports a vet asked for the change; Culprit cannot say which.'
     : ''
   return `${fact}${attribution}`
 }

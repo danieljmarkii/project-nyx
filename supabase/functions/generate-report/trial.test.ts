@@ -4651,7 +4651,7 @@ Deno.test('CUL-1041 §5.1 — the spec’s worked case: extended from 56 on day 
   // THE TWO-SIDED RULE. With the box unchecked there is no attribution sentence at
   // all — not a sentence saying the owner acted alone, and not a hedge about not
   // knowing. Silence is the whole of it.
-  assert.ok(!/directed by a vet/.test(page), 'no attribution clause')
+  assert.ok(!/asked for the change/.test(page), 'no attribution clause')
   assert.ok(!/own initiative|on their own|owner decided/i.test(page), 'and no inverse claim either')
 })
 
@@ -4663,7 +4663,7 @@ Deno.test('CUL-1041 §5.1 / D4a — the checked box adds "owner reports", and no
     targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
     targetDurationVetDirected: true,
   })
-  assert.match(page, /Owner reports the change was directed by a vet\./)
+  assert.match(page, /Owner reports a vet asked for the change; Culprit cannot say which\./)
   // The app cannot verify a vet instruction and must never assert one. The hedge is
   // not decoration: without it the sentence is a clinical claim about a third party.
   assert.ok(
@@ -4774,7 +4774,7 @@ Deno.test('CUL-1041 — an unattributed window move cannot borrow the trial\u201
     'no unscoped attribution is left in a paragraph holding an unattributed change',
   )
   // And the change itself still carries no attribution of any kind, in either direction.
-  assert.ok(!/directed by a vet/.test(page))
+  assert.ok(!/asked for the change/.test(page))
 })
 
 Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a named clinician', () => {
@@ -4792,7 +4792,7 @@ Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a n
     targetDurationVetDirected: true,
     vetName: 'Dr. Sarah Kim',
   })
-  assert.match(page, /Owner reports the change was directed by a vet\./)
+  assert.match(page, /Owner reports a vet asked for the change; Culprit cannot say which\./)
   assert.ok(!/the vet\u2019s direction/.test(page), 'no definite article to bind')
   // Both facts stay on the page; what is gone is the false link between them.
   assert.match(page, /Trial directed by Dr\. Sarah Kim\./)
@@ -4808,7 +4808,7 @@ Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a n
     targetDurationVetDirected: true,
     vetName: null,
   })
-  assert.match(unnamed, /Owner reports the change was directed by a vet\./)
+  assert.match(unnamed, /Owner reports a vet asked for the change; Culprit cannot say which\./)
   assert.ok(!/Trial directed by/.test(unnamed), 'and no trial attribution is invented')
 })
 
@@ -5019,3 +5019,125 @@ expectedFailure(
     }
   },
 )
+
+Deno.test('CUL-1041 — the page-1 headline marks a target that is not the original plan', () => {
+  // `vet-report-cold-read` returned NOT READY on this: the headline is what a 60-second
+  // scan reads first, the trial block sits below the weight and at-a-glance blocks, and
+  // "day 50 of 64" unqualified reads as the plan. PM ruled (a) — a short marker here,
+  // the detail staying in the block.
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+  })
+  // The marker rides the headline's own day phrase, ABOVE the block.
+  assert.match(page, /as a diet trial — day 50 of 64 \(window extended\)\. Primary sign logged/)
+  // And the block still carries the whole sentence; the marker replaces nothing.
+  assert.match(page, /Window extended from 28 days; last moved [A-Z][a-z]+ \d+ \(day 40\)\./)
+
+  // HEADLINE ONLY. The "Trial diet" row at the foot of page 1 repeats the day phrase and
+  // is deliberately unmarked, because it sits BELOW the block — by the time a reader is
+  // there, the full clause is behind them. Mark the number where the reader meets it
+  // before the explanation, never after.
+  assert.equal(page.match(/\(window extended\)/g)?.length, 1, 'exactly one marker on the page')
+})
+
+Deno.test('CUL-1041 — an unmoved window adds no headline marker at all', () => {
+  const page = windowPage({ dayOfTrial: 50, targetDurationDays: 64 })
+  assert.match(page, /as a diet trial — day 50 of 64\. Primary sign logged/)
+  assert.ok(!/\(window /.test(page), 'no marker, and no empty parenthetical')
+})
+
+Deno.test('CUL-1041 — the headline marker takes the arithmetic\u2019s verb, not the feature\u2019s name', () => {
+  // A shortened window announced as an extension on the most-scanned line of the page
+  // would be §5.2's laundering with a louder voice.
+  const page = windowPage({
+    dayOfTrial: 30,
+    targetDurationDays: 28,
+    targetDurationDaysInitial: 56,
+    movedOnDayOfTrial: 28,
+    status: 'completed',
+    stoppedReason: 'completed',
+  })
+  assert.match(page, /\(window shortened\)/)
+  assert.ok(!/\(window extended\)/.test(page))
+})
+
+Deno.test('CUL-1041 — a named vet and the window marker never share the headline sentence', () => {
+  // `vet-report-cold-read` (focused re-read, 2026-09-17) MADE this binding rather than
+  // predicting it: "(window extended)" is an agentless passive, and with a named vet four
+  // words earlier in the same sentence it inherits him. The reviewer would have left the
+  // consult believing a named colleague set the current endpoint.
+  const moved = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    vetName: 'Dr. A. Chen',
+  })
+  const headline = moved.slice(moved.indexOf('Tracking'), moved.indexOf('Primary sign logged'))
+  assert.match(headline, /day 50 of 64 \(window extended\)/, 'the marker survives')
+  assert.ok(!/Dr\. A\. Chen/.test(headline), 'and the name is not in the sentence with it')
+
+  // The name is not LOST — the block restates it, scoped to what it attributes.
+  assert.match(moved, /Trial directed by Dr\. A\. Chen\./)
+})
+
+Deno.test('CUL-1041 — an unmoved window keeps the headline exactly as it always rendered', () => {
+  // The suppression is conditional, and this is the case that must not move: no window
+  // has ever moved on the overwhelming majority of reports, and this line is theirs.
+  const still = windowPage({ dayOfTrial: 50, targetDurationDays: 64, vetName: 'Dr. A. Chen' })
+  assert.match(still, /Tracking .* as a diet trial, directed by Dr\. A\. Chen — day 50 of 64\./)
+  assert.ok(!/\(window /.test(still))
+})
+
+Deno.test('CUL-1041 — the UNATTESTED extension is the dangerous one, and carries no name anywhere near it', () => {
+  // The cold read's sharpest point: with the box unticked there is no corrective
+  // sentence downstream, so a name left in the headline stands uncorrected over a record
+  // that holds no attestation for the change at all — "the less the record knows, the
+  // less the page hedges". Absence rendered as a positive.
+  const unattested = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    targetDurationVetDirected: false,
+    vetName: 'Dr. A. Chen',
+  })
+  const headline = unattested.slice(
+    unattested.indexOf('Tracking'),
+    unattested.indexOf('Primary sign logged'),
+  )
+  assert.ok(!/Dr\. A\. Chen/.test(headline))
+  // And still no attribution of any kind on the change itself, in either direction.
+  assert.ok(!/asked for the change/.test(unattested))
+  assert.ok(!/on their own|owner decided/i.test(unattested))
+})
+
+Deno.test('CUL-1041 — the attested clause severs the referent and drops the shared verb', () => {
+  // A second cold read MEASURED the binding the indefinite article was supposed to stop:
+  // "a vet" had exactly one antecedent on the page, twenty words later, and both clauses
+  // said *directed*. An indefinite noun phrase with one available antecedent in the same
+  // paragraph is an anaphor, not an ambiguity — and indefinite-then-named is the order
+  // that closes one. ~80% confidence the reader binds.
+  const page = windowPage({
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    movedOnDayOfTrial: 50,
+    targetDurationVetDirected: true,
+    vetName: 'Dr. Sarah Kim',
+  })
+  const row = page.slice(page.indexOf('Elimination diet trial'), page.indexOf('Record'))
+
+  // 1. The record's inability to resolve it is STATED, not implied by an article.
+  assert.match(row, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+
+  // 2. The lexical echo is gone: `directed` appears once in the row, on the TRIAL.
+  assert.equal(row.match(/directed/g)?.length, 1, 'one "directed" in the row, and it is the trial\u2019s')
+  assert.match(row, /Trial directed by Dr\. Sarah Kim\./)
+
+  // 3. And the change is still never asserted as that clinician\u2019s.
+  assert.ok(!/Dr\. Sarah Kim (asked|directed|extended)/.test(row))
+})
