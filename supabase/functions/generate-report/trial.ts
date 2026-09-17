@@ -379,6 +379,10 @@ export interface TrialBlock {
    * question is `target_duration_set_at`, which nothing writes yet (PR 2).
    */
   coverageClosedByOverrun: boolean
+  /** CUL-1038 R2 — the same record over the window CURRENTLY IN FORCE. Equal to
+   *  `coverage` on every un-extended trial; where they differ, the difference is
+   *  the span the printed ratio excludes and how much of it is logged. */
+  gateCoverage: { daysLogged: number; daysElapsed: number } | null
   /**
    * B-600 — ELAPSED TRIAL DAYS THIS REPORT'S SCOPE LEAVES OUT, either side.
    *
@@ -1112,7 +1116,13 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     evidenceStartDate: dayKeyFromIndex(evidence.startDayIndex),
     evidenceEndDate: dayKeyFromIndex(evidence.endDayIndex),
     rangeClipped: facts.range.clipped,
-    coverageClosedByOverrun: facts.range.closedByOverrun,
+    // R2 — the RENDER CONDITION, not the trial-state fact. `closedByOverrun` is
+    // true even where the clip did nothing, which made the first cut of the
+    // report's disclosure false on a scope opening after the window closed.
+    coverageClosedByOverrun: facts.range.coverageClippedAtWindowEnd,
+    gateCoverage: facts.gateCoverage
+      ? { daysLogged: facts.gateCoverage.daysLogged, daysElapsed: facts.gateCoverage.daysElapsed }
+      : null,
     untrackedDaysBeforeFirstLog: facts.untrackedDaysBeforeFirstLog,
     trialDaysOutsideRange: facts.trialDaysOutsideRange,
     trialDaysElapsed: facts.trialDaysElapsed,

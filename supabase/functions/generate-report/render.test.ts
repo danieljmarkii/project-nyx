@@ -107,6 +107,10 @@ export function trialBlockFixture(
     // there is no second window to distinguish and no disclosure to render. A
     // fixture exercising the overrun disclosure overrides it.
     coverageClosedByOverrun: false,
+    // CUL-1038 R2 — null is the ordinary fixture (no trial facts synthesised
+    // here). A fixture exercising the excluded-span sentence sets it to a reading
+    // WIDER than `coverage`, which is the only shape that produces one.
+    gateCoverage: null,
     untrackedDaysBeforeFirstLog: 0,
     // The default is the UNTRUNCATED trial — range and trial coincide, which is
     // every first report and every client surface. A fixture exercising B-600

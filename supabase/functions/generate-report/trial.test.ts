@@ -4695,10 +4695,30 @@ Deno.test('§5.4 report path — the overrun disclosure SURVIVES the tap (D7c ha
   // The coverage disclosure now carries it on BOTH sides — this is the C-38 debt
   // `lib/dietTrial.ts`'s tail clip has owed since B-422, and the reason the
   // freeze is legible rather than merely correct.
+  //
+  // ⚠ THE COPY CHANGED WITH R2. It read "This trial has run past the window it
+  // was designed against", which asserted an overrun the day line denies on an
+  // extended trial ("day 50 of 64") — the sentence that would reconcile them
+  // names a window MOVE, and that needs `target_duration_set_at` (PR 4). It now
+  // describes the MEASURE, which is what the reader needs to read the ratio, and
+  // carries the excluded span as a NUMBER (C-3).
   for (const page of [before, after]) {
-    assert.match(page, /This trial has run past the window it was designed against/)
-    assert.match(page, /coverage is measured over that window/)
+    assert.match(page, /Coverage above is measured over the trial’s original window\./)
   }
+
+  // ── AND THE EXCLUDED SPAN, ONLY WHERE THERE IS ONE (C-3) ───────────────────
+  //
+  // Before the tap the designed window IS the window in force, so there is no
+  // span to state and the page says one thing. After it the two diverge, and the
+  // page states the difference as a NUMBER rather than gesturing at it — which is
+  // what the first cut lost when it replaced a quantified denominator (`32 of 50`)
+  // with an unquantified clause. This asymmetry is the `gateCoverage` contract
+  // rendered: one fact on the ordinary record, two only where the record holds
+  // two.
+  assert.ok(!/The trial has run \d+ days in all/.test(before))
+  assert.match(after, /The trial has run 50 days in all/)
+  assert.match(after, /the 22 since that window closed are not in the ratio above/)
+  assert.match(after, /the record holds a meal on 22 of them/)
 
   // It never claims the WINDOW MOVED — that is `target_duration_set_at`, which
   // nothing writes yet, and §5.1's sentence is PR 4's.
@@ -4764,14 +4784,14 @@ Deno.test('§5.4 report path — the scan-grid tile carries the same disclosure 
   // could lose its gate, change its wording, or vanish, and nothing would notice.
   // (Gap named by `code-reviewer` on this PR.)
   const overrun = gatePage(28)
-  assert.match(overrun, /over the trial’s designed window — it has run past it/)
+  assert.match(overrun, /over the trial’s original window, not the days since/)
 
   // THE GATE, proven by its OFF state over a record that differs in one way only:
   // read on the last day of the prescribed window, so nothing has overrun. Without
   // this half the assertion above passes over an unconditional string.
   const inWindow = gatePage(28, { now: '2026-06-28T18:00:00Z' })
-  assert.ok(!/it has run past it/.test(inWindow))
-  assert.ok(!/This trial has run past the window it was designed against/.test(inWindow))
+  assert.ok(!/not the days since/.test(inWindow))
+  assert.ok(!/Coverage above is measured over the trial’s original window/.test(inWindow))
   // …and it really is the same page, still printing a coverage tile to hang the
   // note on — otherwise the absence proves nothing (C-41).
   assert.match(inWindow, /record coverage — not intake, not a clean-elimination count/)

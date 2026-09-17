@@ -2652,10 +2652,29 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // the window MOVED: that is `target_duration_set_at`, which nothing writes
     // yet, and §5.1's "extended from 56 days on 19 Sep" is PR 4's.
     if (t.coverageClosedByOverrun) {
+      // THE EXCLUDED SPAN, AS A NUMBER (C-3). The first cut of this sentence
+      // replaced a quantified fact — the ratio itself used to carry the silent
+      // days in its denominator — with an unquantified clause. `gateCoverage`
+      // reads the same record over the window in force, so the difference IS the
+      // span, and how much of it holds a meal is the number that decides whether
+      // the reader should care.
+      const gate = t.gateCoverage
+      const extraDays = gate ? gate.daysElapsed - t.coverage.daysElapsed : 0
+      const extraLogged = gate ? gate.daysLogged - t.coverage.daysLogged : 0
+      const since =
+        extraDays > 0
+          ? ` The trial has run ${num(gate!.daysElapsed)} days in all; the ${num(extraDays)} since ` +
+            `that window closed ${extraDays === 1 ? 'is' : 'are'} not in the ratio above, and the ` +
+            `record holds a meal on <b>${num(extraLogged)}</b> of them.`
+          : ''
       recordBits.push(
-        `<b>This trial has run past the window it was designed against</b> &mdash; coverage is ` +
-          `measured over that window, so the days since are not in the ratio above. Feedings ` +
-          `logged in them are still counted in the exposures below.`,
+        // NOT "has run past the window it was designed against" — that asserted an
+        // overrun the day counter denies on an extended trial ("day 50 of 64"),
+        // and the sentence that would reconcile them names a window MOVE, which
+        // needs `target_duration_set_at` and is PR 4's. This says what is true of
+        // the MEASURE instead, which is what the reader needs to read the ratio.
+        `<b>Coverage above is measured over the trial&rsquo;s original window.</b>${since} ` +
+          `Feedings logged after it are still counted in the exposures below.`,
       )
     }
   }
@@ -4576,7 +4595,7 @@ function trialTiles(snap: ReportSnapshot): string[] {
     // fold has the full form): what it adds is that this denominator is the
     // DESIGNED window, which the day counter beside it may already exceed.
     const overrunNote = snap.trial.coverageClosedByOverrun
-      ? `<br/>over the trial&rsquo;s designed window &mdash; it has run past it`
+      ? `<br/>over the trial&rsquo;s original window, not the days since`
       : ''
     tiles.push(
       tile(

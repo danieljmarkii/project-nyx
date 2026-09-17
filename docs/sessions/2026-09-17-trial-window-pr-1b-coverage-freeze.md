@@ -1,4 +1,4 @@
-# Trial window PR 1b — the coverage denominator is frozen, and the overrun is disclosed
+# Trial window PR 1b — the ratio is frozen, the verdict is the harsher of two readings
 
 **Date:** 2026-09-17
 
@@ -31,12 +31,17 @@ be on an elimination diet — so the worst instance lands on the wedge's own own
 
 ## What shipped
 
-**The freeze.** A new predicate, `trialCoverageWindowEndDayIndex` (`lib/dietTrial.ts`),
-reads `target_duration_days_initial` (migration 068, backfilled for every live row) and
-falls back to the live target only where nothing recorded the designed window. The tail
-clip takes it for **both** `endDayIndex` and `overrunUnended` — bounding one and leaving
-the other on the live target releases the clip entirely on an extended trial, which is
-the defect wearing a different shape.
+**The freeze — the printed RATIO.** A new predicate,
+`trialCoverageWindowEndDayIndex` (`lib/dietTrial.ts`), reads
+`target_duration_days_initial` (migration 068, backfilled for every live row) and falls
+back to the live target only where nothing recorded the designed window. The tail clip
+takes it for **both** `endDayIndex` and `overrunUnended` — bounding one and leaving the
+other on the live target releases the clip entirely on an extended trial, which is the
+defect wearing a different shape.
+
+**The split — the VERDICT.** `interpretability` is the **less reassuring** of that
+reading and a second one taken over the window currently in force
+(`leastReassuring` / `gateCoverage`). This is not how the PR started; see item 10.
 
 **The disclosure.** `range.closedByOverrun` now reaches production for the first time
 since B-422: the report's coverage sentence, its scan-grid tile, and
@@ -170,6 +175,56 @@ The generalisation, which is not specific to this column: **a local mirror's NUL
 device has not learned it", and a full-row upsert has no way to say "leave this alone".**
 Any column where those two facts meet is a clobber waiting for a tap.
 
+**10. The freeze alone was not the repair, and its own adversarial pass is what showed
+it.** The mandatory pass returned **FAIL** with five executed counterexamples. The
+blocker: pinning the denominator at the designed window *excludes* un-logged days that lie
+**inside the window currently in force**, and on a trial designed at 28 days, extended to
+84, logged on every one of days 1–28 and then silent, read on day 60, the rendered report
+went from *"28 of 60 … does not support interpreting this trial either way — the gaps are
+larger than the record"* to *"28 of 28 … supports interpreting it"* plus the all-matched
+claim. B-422's justification is "a vet who prescribed eight weeks should not read a
+denominator of twelve"; there the prescription in force **was** twelve weeks and the vet
+read a denominator of four.
+
+**The mis-cut in one line:** D7(c) split BELIEF from CLAIMS along `target_duration_days`,
+but this denominator has **three** owner-movable inputs — the target, `ended_at`, and (via
+the freeze) which of two targets is authoritative. Pinning one redistributed the movement
+onto the other two. Tapping *Complete* became a claim-moving control where pre-change it
+moved nothing.
+
+**PM ruled (a): the ratio and the verdict are two questions.** The printed ratio stays over
+the designed window (unmovable); the verdict takes the harsher of the two readings; the
+excluded span is stated as a number. Three more defects fell out of the same pass and were
+repaired with it: the disclosure printed *"the days since are not in the ratio above"* over
+a ratio composed **entirely** of days since, on a since-visit scope opening after the
+window closed — no extension required, and the standard second-report shape; its copy
+asserted an overrun the day counter denies on an extended trial; and
+`interpretabilityStatement` called the designed window *"prescribed"* while the longer one
+is prescribed on the same page.
+
+**Why precedence is the mechanism and not a third window.** Extending flatters the LIVE
+window on a well-logged tail and flatters the DESIGNED window on a silent one. Picking
+either window can only ever fix one direction. Taking the less reassuring verdict fixes
+both, and it is the rule this repo already has — C-4's precedence, and §5.2's *a floor may
+only ever move toward disclosing more*.
+
+**11. The residual, and why it cannot be closed.** §5.4's *withdrawing* direction still
+moves: a trial logged on every prescribed day then silent, extended, goes
+`supports` → `does_not_support` on the tap. Closing it requires freezing the gate, which is
+exactly what re-opens the reassuring direction — **the two records are structurally
+identical and demand opposite things.** Executed on both code versions, so the direction is
+not a guess: pre-change moved it here too, which is what PR 0's marker was documenting.
+The disclosing direction is the side §5.2 and `clinical-guardrails` say to leave open, so
+the marker is back to an `expectedFailure` and **TE-6's direction is a new open question**
+for the PM. The generalisation: **when two requirements are the same record pointing
+opposite ways, "fix both" is not available and the safety asymmetry is what picks.**
+
+**12. A fix's own first cut needs the same suspicion as the thing it fixes.** The R2 gate
+used `max(scopedStart, liveTargetEnd)` and collapsed to a one-day window on a scope opening
+after the live window closed — dropping a `supports` to `not_yet`. Safe direction, still
+wrong, and the designed clip three lines above already carried the exact guard it needed.
+Caught by re-running the same executed cases against the fix rather than by reading it.
+
 ## Proven by mutation, not by reading (C-18)
 
 | Mutation | Result |
@@ -179,6 +234,9 @@ Any column where those two facts meet is a clobber waiting for a tap.
 | `initial ?? current` without the `> 0` guard (NULL/0 read as a number) | **exactly 1 red** — G5's own test, the one written for it |
 | `dietTrialRowToRemote` forwards the column (what a PR 2 session reading only the registry would do) | **3 red**, including the named prohibition test |
 | The scan-grid tile's overrun note rendered ungated | **1 red** — the tile test's off-state half |
+| **R2:** `leastReassuring` returns the MORE reassuring of the two | **10 red** |
+| **R2:** the gate reads the designed end instead of the live one | **5 red** |
+| **R2:** the gate drops its `liveTargetEnd >= scopedStart` guard | **1 red** — the scope case, the one written for it |
 
 ## Reviews
 

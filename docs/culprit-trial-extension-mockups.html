@@ -3,7 +3,7 @@
 <style>
   /* ============================================================
      Diet trial extension — mock ROUND 2 (low-fi).
-     Build contract: docs/nyx-trial-extension-requirements.md v2.2.
+     Build contract: docs/nyx-trial-extension-requirements.md v2.4.
      ALL SEVEN RULED 2026-09-17 (D1/D2/D4/D6/D7 first pass,
      D3/D5 second). D5 ratifies today's constant, so CUL-367's
      alternative stays drawn — deferred to Dr. Chen, not retired.
@@ -233,7 +233,7 @@
       September,</strong> so this round is one proposal with the retired options removed. The one frame still
       boxed is §7's, and it is boxed because D5 <em>deferred</em> it to Dr. Chen rather than rejecting it.
       <strong>D7 was then re-ruled the same day, (a) &rarr; (c)</strong>, and §8 now shows what shipped.
-      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v2.2.
+      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v2.4.
     </p>
   </header>
 
@@ -251,7 +251,7 @@
         <tr><td>D1</td><td><em>&ldquo;let&rsquo;s go w the total duration approach&rdquo;</em></td><td><b>(a)</b> totals</td><td>§3 keeps one frame. The delta sheet left the page.</td></tr>
         <tr><td>D2</td><td rowspan="2"><em>&ldquo;I like the idea of adding that the trial was extended&rdquo;</em></td><td><b>(a)</b> three columns on <code>diet_trials</code></td><td>§5&rsquo;s proposal specimens are now the proposal, not an option. <b>Read as (a), not (b)&rsquo;s full history</b> &mdash; flagged on CUL-156, and cheap to change until PR 1.</td></tr>
         <tr><td>D4</td><td><b>(a)</b> ask, unchecked by default</td><td>§5&rsquo;s third specimen is current. The box stays optional, and its absence stays silence.</td></tr>
-        <tr><td>D7</td><td><em>&ldquo;we&rsquo;ll go w your recommendation&rdquo;</em>, then re-ruled same day</td><td><b>(a)</b> disclose it &rarr; <b>RE-RULED (c)</b> freeze <em>and</em> disclose</td><td>§8 is rewritten. PR 0 executed (a)&rsquo;s premises and falsified two of them &mdash; a render cannot move the gates it was ruled to repair &mdash; so PR 1b became a mechanism change. <b>§8 now shows what shipped</b>, not a decision.</td></tr>
+        <tr><td>D7</td><td><em>&ldquo;we&rsquo;ll go w your recommendation&rdquo;</em>, then re-ruled twice the same day</td><td><b>(a)</b> disclose &rarr; <b>(c)</b> freeze <em>and</em> disclose &rarr; <b>(c) as SPLIT</b>: the ratio is frozen, the verdict is the harsher of two readings</td><td>§8 rewritten twice. PR 0 falsified (a)&rsquo;s premises &mdash; a render cannot move the gates it was ruled to repair. Then 1b&rsquo;s own adversarial pass falsified the plain freeze: pinning the denominator opened the mirror defect. <b>§8 shows what shipped</b>, both halves.</td></tr>
         <tr><td>D3</td><td rowspan="2"><em>&ldquo;I&rsquo;ll defer to the recommendation from the product team for the rest&rdquo;</em></td><td><b>(a)</b> forward-only in v1</td><td>§6 stands as the reason. The sheet offers no total at or below the current window, so the laundering path is closed by construction rather than by a render rule.</td></tr>
         <tr><td>D5</td><td><b>(a)</b> ratify <code>+14</code> as-is</td><td>§7&rsquo;s option stays drawn and is relabelled <b>deferred</b>: CUL-367&rsquo;s finding stands, PR 5 is deferred rather than cancelled, and Dr. Chen still owns the numbers. <b>The first pass could not be ruled</b> &mdash; that brief carried no recommendation, deliberately. D1&rsquo;s ruling is what made one available.</td></tr>
       </tbody>
@@ -705,21 +705,69 @@
       </div>
 
       <div class="specimen">
-        <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 1 &mdash; the denominator is the window the trial was <em>designed</em> against</p>
+        <p class="s-k"><span class="tag never">and the freeze alone was not the repair</span></p>
+        <p class="report-line" style="margin-bottom:10px">
+          <span class="bad">28 of 60 days &mdash; does not support interpreting this trial either way.</span>
+        </p>
+        <p class="report-line">
+          &darr;&nbsp; <span class="bad">28 of 28 days &mdash; supports interpreting it. All matched the
+          trial diet or a permitted food.</span>
+        </p>
+        <p class="s-note">
+          <strong>1b&rsquo;s own adversarial pass returned FAIL.</strong> A trial designed at 28 days,
+          extended to 84, logged on every one of days 1&ndash;28 and then silent, read on day 60: pinning
+          the denominator at the designed window <em>excluded</em> 32 un-logged days that sit
+          <strong>inside the window currently in force</strong>, and granted a clean claim the old code
+          withheld. B-422&rsquo;s justification is &ldquo;a vet who prescribed eight weeks should not read
+          a denominator of twelve&rdquo; &mdash; here the prescription in force <em>was</em> twelve weeks
+          and the vet read a denominator of four.
+          <br><br>
+          The mis-cut: D7(c) split belief from claims along one input, and this denominator has
+          <strong>three</strong> owner-movable ones &mdash; the target, the end date, and which of two
+          targets is authoritative. Pinning one moved the movement elsewhere; tapping <em>Complete</em>
+          became a claim-moving control. <strong>PM ruled (a): the ratio and the verdict are two
+          questions.</strong>
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 1 &mdash; the RATIO is the window the trial was <em>designed</em> against</p>
         <p class="report-line" style="margin-bottom:10px">
           Meals logged on <b>0 of 9 days</b> (Jun 20 &ndash; Jun 28, 2026).
           &nbsp;&rarr;&nbsp; Meals logged on <b>0 of 9 days</b> (Jun 20 &ndash; Jun 28, 2026).
         </p>
         <p class="s-note">
           The clip bounds on <code>target_duration_days_initial</code> (migration 068) instead of the
-          mutable <code>target_duration_days</code>, so no owner action moves a claim about the record
-          (TE-6). It closes the <strong>head-clip route</strong> for free: with the window pinned there is
-          no logged day inside it for the head clip to follow, so the ceiling case &mdash;
-          <code>0 of 28</code> becoming <code>22 of 22, supports</code> &mdash; cannot be reached either.
+          mutable <code>target_duration_days</code>, so no owner action moves the printed number. It also
+          closes the tail-clip&rsquo;s <strong>head-clip route</strong>: with the window pinned there is no
+          logged day inside it for the head clip to follow.
           <br><br>
           <strong>What still moves, and should:</strong> the day line reads <em>day 50 of 64</em>. An
           extension moves <em>belief</em> &mdash; how long this trial is running &mdash; and that is what the
-          tap is for. What it may not move is what the record is said to <em>show</em>.
+          tap is for.
+        </p>
+      </div>
+
+      <div class="specimen">
+        <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 1b &mdash; the VERDICT is the harsher of two readings</p>
+        <p class="report-line">
+          Meals logged on <b>28 of 28 days</b> (Jun 1 &ndash; Jun 28, 2026).
+          <span class="moved">Coverage above is measured over the trial&rsquo;s original window.</span>
+          The trial has run 60 days in all; the 32 since that window closed are not in the ratio above,
+          and the record holds a meal on <b>0</b> of them.
+        </p>
+        <p class="s-note">
+          <code>interpretability</code> &mdash; and through it <code>belowCoverageFloor</code> and the
+          all-matched claim &mdash; is the <strong>less reassuring</strong> of the printed reading and one
+          taken over the window currently in force. Neither window gets to be the generous one, and that is
+          the whole mechanism: extending flatters the <em>live</em> window on a well-logged tail and
+          flatters the <em>designed</em> window on a silent one, so picking either can only ever fix one
+          direction. The harsher verdict fixes both. It is C-4&rsquo;s precedence rule and &sect;5.2&rsquo;s
+          <em>a floor may only ever move toward disclosing more</em>.
+          <br><br>
+          <strong>And the excluded span is a number</strong>, not a gesture (C-3). The first cut replaced a
+          quantified denominator with a clause; how many days the ratio leaves out, and how many hold a
+          meal, is what decides whether the reader should care.
         </p>
       </div>
 
@@ -727,9 +775,8 @@
         <p class="s-k"><span class="tag now">shipped</span> &nbsp; half 2 &mdash; the disclosure the clip has cited since B-422</p>
         <p class="report-line">
           Meals logged on <b>10 of 28 days</b> (Jun 1 &ndash; Jun 28, 2026).
-          <span class="moved">This trial has run past the window it was designed against</span> &mdash;
-          coverage is measured over that window, so the days since are not in the ratio above. Feedings
-          logged in them are still counted in the exposures below.
+          <span class="moved">Coverage above is measured over the trial&rsquo;s original window.</span>
+          Feedings logged after it are still counted in the exposures below.
         </p>
         <p class="s-note">
           Written in the register of the precedent one block away in the same document &mdash;
