@@ -15,6 +15,7 @@
 
 import { strict as assert } from 'node:assert'
 import { renderReport, SHIPPED_STYLE } from './render.ts'
+import { expectedFailure } from './expectedFailure.testutil.ts'
 import { LANE_SYMPTOM_TYPES } from '../generate-signal/detection.ts'
 import { REPORT_SYMPTOM_TYPES } from './report.ts'
 import type {
@@ -4240,45 +4241,9 @@ Deno.test('B-532 — "completed" never claims a full course over a short one', (
 // render learns to say what the window used to be (§5.1) — which is what a
 // re-opening spec has to build before the control.
 
-/**
- * `test.failing` for the Deno runner, which has none.
- *
- * The body states the REQUIREMENT; this wrapper records that the requirement does
- * not hold today. The test PASSES while the requirement is violated and FAILS the
- * moment it starts holding — so a repair cannot land without promoting the marker,
- * and a repair that does not actually repair cannot land quietly either.
- *
- * `{ ignore: true }` would be `skip`, which CUL-1036 forbids for exactly this
- * reason: a skipped test asserts nothing in either direction.
- *
- * TWO THINGS KEEP IT FROM BEING GREEN OVER NOTHING. Only an `AssertionError`
- * counts — a fixture break, a typo or a `renderReport` crash re-throws as a real
- * failure rather than being absorbed as "the requirement still fails". And the
- * green tests beside each call pin the fixture independently, so a fixture that
- * stops producing the shape reds THERE instead of silently satisfying this.
- */
-function expectedFailure(name: string, fn: () => void): void {
-  Deno.test(name, () => {
-    let thrown: unknown
-    let threw = false
-    try {
-      fn()
-    } catch (e) {
-      threw = true
-      thrown = e
-    }
-    if (!threw) {
-      throw new Error(
-        `EXPECTED FAILURE NOW PASSES: ${name}\n\n` +
-          'The behaviour this documented has changed. That is the signal, not a bug: ' +
-          'promote this to a plain Deno.test, delete the expectedFailure wrapper, and ' +
-          'record the repair on the issue named in the block comment above it.',
-      )
-    }
-    // A non-assertion throw is a broken fixture, not a documented hazard.
-    if (!(thrown instanceof assert.AssertionError)) throw thrown
-  })
-}
+// The wrapper lives in `./expectedFailure.testutil.ts` — `trial.test.ts` needs it too
+// for §5.4's report path, and a helper copied into each file is how a subtle bug
+// propagates (`guards/blankComments.ts`'s own argument).
 
 /** The worked case: a 56-day trial the owner shortened to 28 on day 28 and then
  *  marked complete. What the row HOLDS after that move is a 28-day window reached

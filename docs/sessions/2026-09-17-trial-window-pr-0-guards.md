@@ -160,12 +160,56 @@ Six closed in `222b371`:
    one block earlier, written by the guard itself. Half (c) now pins the two facts
    that do hold the door shut: exactly one `setCompletionEntry('decision')` call site,
    and the header verb still `Replace`. Three mutations red it.
-6. **Scope and blast radius.** The fixture drives the client path under a heading
-   about what the vet reads; the report path passes a scope and reads differently.
-   Corrected — and the four surfaces the tap moves that this file does not pin (the
-   card's own disclosing sentence, `interpretabilityStatement`, `coveredDayIndices`,
-   and `pet.dietTrialActive` muting report detectors ⑧/⑨/⑩) are now stated rather
-   than omitted.
+6. **Scope and blast radius.** The fixture drove the client path under a heading
+   about what the vet reads. **Fixed properly at the PM's direction rather than
+   annotated** — see below. The four surfaces the tap moves that this PR still does
+   not pin (the card's own disclosing sentence, `interpretabilityStatement`,
+   `coveredDayIndices`, and `pet.dietTrialActive` muting report detectors ⑧/⑨/⑩)
+   are stated rather than omitted.
+
+## The report path, executed — and §5.6's transcription debt paid
+
+The PM asked for the report-path fixture before merge rather than as PR 4's problem.
+`supabase/functions/generate-report/trial.test.ts` now drives the whole path — raw
+events → `assembleReport` → `renderReport` → the text a clinician reads — twice, with
+`targetDurationDays` as the only difference between the runs.
+
+This closes what §5.6 itself recorded as owed: *"no live Deno render — two report
+strings were TRANSCRIBED, not executed."* Executed, they are directionally right and
+numerically wrong, and **the real numbers are worse**, because the scope a diet-trial
+owner actually gets is rung 1, *since the most recent vet visit* — the shortest window
+on the page:
+
+| scope | before the tap | after one tap |
+|---|---|---|
+| default | Meals logged on **10 of 28** days | **32 of 50** days |
+| since the visit (rung 1) | Meals logged on **0 of 9** days | **22 of 31** days |
+
+A literal **zero** becomes *"all 22 matched the trial diet or a permitted food."* And
+the owner most likely to hit it is the one this product is for: sent home from a vet
+visit on an elimination diet, which is precisely the record rung 1 scopes to.
+
+**The tap also deletes the page's own disclosure.** The day line goes from *"day 50 —
+22 days past the 28-day window"* to *"day 50 of 64"*. The one sentence telling the
+clinician this trial had outrun the window it was designed against is what the tap
+removes — the same shape the owner's card shows, on the document that matters more.
+§5.4's *"nothing says the window moved"* understates it: the thing that did say so is
+the casualty.
+
+Four tests: the two scopes, the deleted disclosure, and a fourth expected failure
+stating TE-6 at the report layer **over both scopes** — a repair that holds on the
+full window and not on the since-visit one has not held where the wedge's own owner
+reads it. Proven both ways: converted to a plain `Deno.test` it fails on its own
+assertion; a frozen denominator reds all three companions and fires the marker's
+promote-this message.
+
+The Deno wrapper moved to `expectedFailure.testutil.ts` so the two suites share one
+copy rather than drifting — `blankComments.ts`'s own argument for existing. The
+`.testutil.ts` extension keeps it out of CI's `find … -name '*.test.ts'` (a file
+matching that glob with no `Deno.test` in it would be a suite asserting nothing) and
+out of the deploy ledger's fingerprint, which walks `index.ts`'s transitive relative
+imports. Both confirmed rather than assumed: 29 suites still discovered, ledger guard
+green.
 
 ## The seventh finding is a PM decision, and it is the serious one
 
@@ -212,7 +256,7 @@ rather than spent unasked.
 - `npm test -- --ci` — 8446 passed / 389 suites
 - `TZ=Pacific/Chatham npm test -- --ci` — 8446 passed; the new guard also green under
   `Pacific/Kiritimati` and `Pacific/Honolulu`
-- `deno test` over all 29 suites — 1795 passed
+- `deno test` over all 29 suites — 1799 passed
 
 ## Next
 
