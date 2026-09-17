@@ -152,3 +152,19 @@ button, and it is the subject rather than a conflict.
   `DURATION_DEFAULT_DAYS` header comment both still say *pending Dr. Chen*, correctly, until the sitting.
 - **Nothing about CUL-267** (`TRIAL_OVERRUN_GRACE_DAYS = 56`) — a separate agenda item on the same sitting,
   deliberately untouched here.
+
+## One thing found by accident, filed as CUL-1053
+
+`CLAUDE.md` § Git Workflow says, as a **measured** rule, that *"the ATTACHMENT is what closes an issue — a
+mention on its own does nothing"*, citing four issues named in a PR body on 2026-09-05 that the integration
+*"never linked at all"*. **That no longer holds.** This PR carried a bare `CUL-367` on a
+`claude/<slug>` branch that does not reference the issue, and within two minutes the integration had created
+an attachment; deleting it, the next push created another; it also overwrote a deliberate `Todo` status
+write twice.
+
+Under the same rule an attachment is *"a commitment that merging this PR finishes that issue"* — so today
+**any** PR naming an issue closes it on merge, which is exactly wrong for the DISCOVERY mode this session
+ran in. Merging #872 as-is would mark a clinical ratification done that Dr. Chen has not made. CUL-660 was
+closed this way on 2026-09-05 with an open decision brief and nothing built; that was read as a one-off and
+is the general case. Filed to the workflow-audit project rather than folded in — the convention and the
+`CLAUDE.md` rule both need a decision, and neither is this issue's.
