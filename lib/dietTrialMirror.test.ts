@@ -710,7 +710,12 @@ describe('row → Supabase upsert mappers', () => {
 // server forever — and a column absent from the INSERT is dropped on arrival.
 // `lib/sqlShape.test.ts` proves the INSERT's four lists COUNT OUT the same; it has
 // nothing to say about a column missing from all four at once, which is exactly the
-// drift shape migration 068 shipped with.
+// drift shape migration 068 shipped with. MEASURED, not assumed: with
+// `target_duration_set_at` removed from the column list, the placeholders, the
+// param array AND the conflict clause, sqlShape is 168/168 GREEN and the two tests
+// below are RED. (Remove it from only three of the four and sqlShape catches it —
+// so the mutation that proves this guard has to be the CONSISTENT one, which was
+// not the first mutation tried here.)
 //
 // The expected set is DERIVED from the executed DDL (C-38), so a future column is
 // enrolled by existing, not by being remembered here.

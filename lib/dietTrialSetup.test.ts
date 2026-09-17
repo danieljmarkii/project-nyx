@@ -64,12 +64,14 @@ jest.mock('./dailyRecapOffer', () => ({
 import {
   addTrialFood, buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
-  extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro,
+  extendTrial, changeTrialWindow, TrialWindowRefused, getActiveTrialForPet,
+  permittedRoleForFood, secondTrialIntro,
   setTrialTargetProtein, startDietTrial,
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
   type StartTrialInput,
 } from './dietTrialSetup';
 import { VetVisitLinkRefused } from './vetVisitLink';
+import { nextTargetDays } from './dietTrialCompletion';
 import { useSyncStore } from '../store/syncStore';
 import { toLocalDayKey } from './utils';
 
@@ -413,36 +415,232 @@ describe('endActiveTrial', () => {
   });
 });
 
-describe('extendTrial — `Keep going`', () => {
-  it('writes the new target and re-arms the push', async () => {
-    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
-    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
-    expect(sql).toContain('target_duration_days = ?');
-    expect(params[0]).toBe(84);
-    expect(sql).toContain('synced = 0');
-    expect(sql).toContain('sync_error = NULL');
+// ── CUL-1039 — the mid-trial window change, and the clamp both doors share ────
+//
+// A local day key N days back, so `dayCounter` is N + 1 (day 1 is the start day).
+// ANCHORED TO `Date.now()`, never to a literal date: the floor these tests probe is
+// judged against a real-clock day counter, and a fixture pinned to an absolute date
+// fails on a calendar boundary rather than on a change (C-29).
+const dayKeyDaysAgo = (n: number): string =>
+  toLocalDayKey(new Date(Date.now() - n * 24 * 60 * 60 * 1000));
+
+/** A running trial the write path can read: day `dayCounter` of `target`. */
+function trialRow(overrides: Partial<{
+  started_at: string; target_duration_days: number; status: string; ended_at: string | null;
+}> = {}) {
+  return {
+    started_at: dayKeyDaysAgo(52), // day 53
+    target_duration_days: 56,
+    status: 'active',
+    ended_at: null,
+    ...overrides,
+  };
+}
+
+describe('changeTrialWindow — the mid-trial write path (CUL-1039)', () => {
+  const NOW = new Date('2026-09-19T10:00:00.000Z');
+
+  beforeEach(() => {
+    mockGetFirstAsync.mockResolvedValue(trialRow());
   });
 
-  it('extends the SAME row — never a second trial', async () => {
-    // One continuous window. A second row would split one clinical episode into
-    // two, neither of which is the span the vet asked about, and §7 would render
-    // the back half of an 84-day elimination as a 28-day trial.
-    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
+  it('writes the total, the stamp, the vet flag and the ORIGINAL, and re-arms the push', async () => {
+    await changeTrialWindow({
+      trialId: 't-1', targetDurationDays: 84, vetDirected: true, now: NOW,
+    });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('target_duration_days = ?');
+    expect(sql).toContain('target_duration_set_at = ?');
+    expect(sql).toContain('target_duration_vet_directed = ?');
+    // COALESCE, not a bare assignment: migration 068's backfill cannot reach a
+    // trial created after the apply, so `initial` may be NULL on a first change and
+    // must capture the OLD target — and on a SECOND change must not move.
+    expect(sql).toContain(
+      'target_duration_days_initial = COALESCE(target_duration_days_initial, target_duration_days)',
+    );
+    expect(params).toEqual([84, NOW.toISOString(), 1, NOW.toISOString(), 't-1']);
+    expect(sql).toContain('synced = 0');
+    expect(sql).toContain('sync_attempts = 0');
+    expect(sql).toContain('sync_error = NULL');
+    // C-23: markSynced matches on `updated_at`, so a re-queueing write that left it
+    // still would strand an owner edit made inside the network gap at synced = 1.
+    expect(sql).toContain('updated_at = ?');
+    expect(mockSyncTrials).toHaveBeenCalled();
+  });
+
+  it('changes the SAME row — never a second trial (TE-1)', async () => {
+    await changeTrialWindow({ trialId: 't-1', targetDurationDays: 84 });
     const [sql] = mockRunAsync.mock.calls[0] as [string];
     expect(sql).toContain('UPDATE diet_trials');
     expect(sql.toUpperCase()).not.toContain('INSERT');
     expect(sql).toContain('WHERE id = ?');
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
   });
 
-  it('never touches status, started_at or the allowed set', async () => {
-    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
+  it('never touches status, started_at, ended_at or the allowed set', async () => {
+    await changeTrialWindow({ trialId: 't-1', targetDurationDays: 84 });
     const [sql] = mockRunAsync.mock.calls[0] as [string];
     expect(sql).not.toContain('status =');
     expect(sql).not.toContain('started_at =');
     expect(sql).not.toContain('ended_at =');
+    expect(mockSyncTrialFoods).not.toHaveBeenCalled();
   });
 
-  it('refuses a nonsense target rather than writing it', async () => {
+  it('coerces the vet flag to 1 / 0 / NULL, and silence is NOT false', async () => {
+    // Three states on the way down, because §5.1 needs NULL and false to mean the
+    // same thing DOWNSTREAM without the write path inventing either. `toBeNull`
+    // rather than a falsy check — that is the whole distinction.
+    for (const [given, stored] of [[true, 1], [false, 0]] as const) {
+      mockRunAsync.mockClear();
+      await changeTrialWindow({ trialId: 't-1', targetDurationDays: 84, vetDirected: given });
+      expect((mockRunAsync.mock.calls[0] as [string, unknown[]])[1][2]).toBe(stored);
+    }
+    mockRunAsync.mockClear();
+    await changeTrialWindow({ trialId: 't-1', targetDurationDays: 84 });
+    expect((mockRunAsync.mock.calls[0] as [string, unknown[]])[1][2]).toBeNull();
+  });
+
+  it('re-stamps the vet flag on every change, so a stale `true` cannot outlive it', async () => {
+    // The three columns describe the LAST move, the scope `set_at` has. Leaving a
+    // previous `true` behind an untagged change would have the report attribute to
+    // a vet a window the vet never named — the one assertion §5.1 forbids outright.
+    await changeTrialWindow({ trialId: 't-1', targetDurationDays: 84, vetDirected: null });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('target_duration_vet_directed = ?');
+    expect(params[2]).toBeNull();
+  });
+
+  describe('forward-only (TE-3 / D3a), refused in the predicate', () => {
+    const refusal = async (target: number, row = trialRow()): Promise<TrialWindowRefused> => {
+      mockGetFirstAsync.mockResolvedValue(row);
+      try {
+        await changeTrialWindow({ trialId: 't-1', targetDurationDays: target });
+      } catch (e) {
+        return e as TrialWindowRefused;
+      }
+      throw new Error(`changeTrialWindow accepted ${target} — it must not`);
+    };
+
+    it('refuses a SHORTER window — §5.2 is closed by construction, not by a render rule', async () => {
+      // The executed case: 56 → 28 on day 28, then "This trial is done", and
+      // render.ts:3948 prints "Ran its course — the full window was completed" over
+      // a trial abandoned at four weeks.
+      const e = await refusal(28, trialRow({ started_at: dayKeyDaysAgo(27) }));
+      expect(e).toBeInstanceOf(TrialWindowRefused);
+      expect(e.reason).toBe('not_forward');
+      expect(mockRunAsync).not.toHaveBeenCalled();
+    });
+
+    it('refuses the NO-OP re-save, which would otherwise stamp a move that never happened', async () => {
+      // `target_duration_set_at IS NOT NULL` is the predicate every reader switches
+      // on, so a stamp with no change is a false clinical claim, not a spare write.
+      const e = await refusal(56);
+      expect(e.reason).toBe('not_forward');
+      expect(mockRunAsync).not.toHaveBeenCalled();
+    });
+
+    it('in overrun the DAY counter is the binding half, above the target', async () => {
+      // Day 61 of 56. 58 clears the target floor and is still backwards from where
+      // the owner actually is — `nextTargetDays`' own criterion, enforced here.
+      const overrun = trialRow({ started_at: dayKeyDaysAgo(60) });
+      const e = await refusal(58, overrun);
+      expect(e.reason).toBe('not_forward');
+      expect(e.floorDays).toBe(61);
+      expect(e.dayCounter).toBe(61);
+      expect(e.currentTargetDays).toBe(56);
+
+      mockRunAsync.mockClear();
+      mockGetFirstAsync.mockResolvedValue(overrun);
+      await changeTrialWindow({ trialId: 't-1', targetDurationDays: 62 });
+      expect(mockRunAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('hands the caller structured fields to render from, never a message to display', async () => {
+      // `guards/ownerFacingCopy.test.ts` forbids a display sink reading a string off
+      // an error, so the sheet phrases "Nyx is already on day 53" from these.
+      const e = await refusal(50);
+      expect(e.dayCounter).toBe(53);
+      expect(e.currentTargetDays).toBe(56);
+      expect(e.floorDays).toBe(56);
+      expect(e.requestedDays).toBe(50);
+    });
+
+    it('refuses a trial it cannot find, and one that has ended', async () => {
+      mockGetFirstAsync.mockResolvedValue(null);
+      await expect(changeTrialWindow({ trialId: 'gone', targetDurationDays: 84 }))
+        .rejects.toMatchObject({ reason: 'not_found' });
+
+      const ended = await refusal(84, trialRow({ status: 'completed', ended_at: dayKeyDaysAgo(1) }));
+      expect(ended.reason).toBe('not_running');
+      expect(mockRunAsync).not.toHaveBeenCalled();
+    });
+
+    it('refuses NaN rather than writing it', async () => {
+      const e = await refusal(Number.NaN);
+      expect(e.reason).toBe('not_forward');
+      expect(mockRunAsync).not.toHaveBeenCalled();
+    });
+  });
+
+  it('throws when the by-id UPDATE matches nothing, rather than resolving silently', async () => {
+    // C-39: a local UPDATE … WHERE id = ? that matches nothing resolves
+    // { changes: 0 } and says nothing. The SELECT above makes it near-impossible,
+    // which is exactly why it is worth asserting rather than assuming.
+    mockRunAsync.mockResolvedValueOnce({ changes: 0, lastInsertRowId: 0 });
+    await expect(changeTrialWindow({ trialId: 't-1', targetDurationDays: 84 }))
+      .rejects.toMatchObject({ reason: 'not_found' });
+  });
+
+  it('bumps the hydration tick so the Home strip re-reads, not just the writer (B-534)', async () => {
+    const before = useSyncStore.getState().hydrationTick;
+    await changeTrialWindow({ trialId: 't-1', targetDurationDays: 84 });
+    expect(useSyncStore.getState().hydrationTick).toBe(before + 1);
+  });
+});
+
+describe('extendTrial delegates to changeTrialWindow — one clamp, two doors (CUL-1039)', () => {
+  beforeEach(() => {
+    mockGetFirstAsync.mockResolvedValue(trialRow());
+  });
+
+  it('records provenance on the MILESTONE path too, with the vet flag silent', async () => {
+    // §5.1's own worked sentence — "extended from 56 days on 19 Sep (day 56)" —
+    // describes the milestone tap, and TE-4 is unconditional. A milestone extension
+    // that recorded nothing would leave the only door that exists today writing the
+    // byte-identical row TE-4 exists to stop. The flag is null BY CONSTRUCTION: the
+    // milestone is a named default with no box to check, and silence is the honest
+    // record of that.
+    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('target_duration_set_at = ?');
+    expect(sql).toContain(
+      'target_duration_days_initial = COALESCE(target_duration_days_initial, target_duration_days)',
+    );
+    expect(params[0]).toBe(84);
+    expect(params[2]).toBeNull();
+  });
+
+  it('inherits the forward-only refusal, which nextTargetDays can never trip', async () => {
+    // THE CLAIM BEHIND THE DELEGATION, swept rather than argued. §5.6 already swept
+    // "strictly above the current DAY"; the half this PR adds is "strictly above the
+    // current TARGET", and both must hold or the milestone would start refusing its
+    // own arithmetic. Driven through the real function — a test that re-derived the
+    // rule would be a tautology with fixtures (C-34).
+    const offenders: string[] = [];
+    for (const currentTargetDays of [1, 14, 28, 42, 56, 84, 365]) {
+      for (const dayCounter of [1, 13, 27, 55, 56, 57, 140, 400]) {
+        for (const extraDays of [14, 28]) {
+          const next = nextTargetDays({ currentTargetDays, dayCounter, extraDays });
+          if (next <= Math.max(currentTargetDays, dayCounter)) {
+            offenders.push(`${currentTargetDays}/${dayCounter}/+${extraDays} → ${next}`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('still refuses a nonsense target rather than writing it', async () => {
     for (const bad of [0, -5, Number.NaN]) {
       await expect(extendTrial({ trialId: 't-1', targetDurationDays: bad })).rejects.toThrow();
     }
@@ -564,9 +762,26 @@ describe('every trial write bumps the hydration tick (B-534)', () => {
   });
 
   it('extendTrial notifies', async () => {
+    // Since CUL-1039 it reads the row before it writes, so the row has to exist —
+    // the refusal below is the SAME suite's other half and needs no row at all.
+    mockGetFirstAsync.mockResolvedValue(trialRow());
     const before = tick();
     await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
     expect(tick()).toBe(before + 1);
+  });
+
+  it('changeTrialWindow notifies', async () => {
+    mockGetFirstAsync.mockResolvedValue(trialRow());
+    const before = tick();
+    await changeTrialWindow({ trialId: 't-1', targetDurationDays: 84, vetDirected: true });
+    expect(tick()).toBe(before + 1);
+  });
+
+  it('a refused window change does NOT notify — nothing changed', async () => {
+    mockGetFirstAsync.mockResolvedValue(trialRow());
+    const before = tick();
+    await expect(changeTrialWindow({ trialId: 't-1', targetDurationDays: 56 })).rejects.toThrow();
+    expect(tick()).toBe(before);
   });
 
   it('a refused extension does NOT notify — nothing changed', async () => {
