@@ -3485,12 +3485,37 @@ function trialWindowChangeLine(
   // WHAT THIS DOES NOT FIX, stated because the reviewer measured it too: with the box
   // UNTICKED there is no sentence here at all, and silence next to a named vet is read as
   // concurrence (~55–60%), invisibly, because a cold reader cannot see a sentence that is
-  // absent. Rendering that absence positively is a deviation from §5.1's design lock —
-  // "the clause is simply absent" — so it is a PM decision, open on CUL-1041, not a call
-  // this file may make on its own.
+  // absent. THE ABSENCE IS NOW STATED — PM ruled brief C (a), 2026-09-17, a deliberate
+  // deviation from §5.1's "the clause is simply absent".
+  //
+  // Two independent cold reads measured the same thing on the unattested page: *"silence
+  // inherits the nearest named agent. A cold reader cannot see that a sentence present on
+  // another patient's report is missing from this one"* — ~55–60% confidence the reader
+  // still credits the named vet. The class the second one named is the decisive part:
+  // **absence of an attribution disclaimer was being rendered as attribution**, which is
+  // the two-sided rule's own hazard inverted, landing hardest on the record that deserves
+  // the most scepticism, because the weaker record got the less hedged page.
+  //
+  // IT DOES NOT BREAK THE RULE §5.1 EXISTS TO ENFORCE. That rule forbids rendering the
+  // absence as *"the owner did this on their own"* — a claim about the owner. This is a
+  // claim about the RECORD, and it attributes the change to nobody at all, which is why
+  // §8.8 ("with the box unchecked, no clause attributes the change to anyone") still
+  // holds with it on the page.
+  //
+  // The two arms are deliberately parallel — same subject, differing only in what is
+  // unknown — so a clinician reading two reports sees one sentence shape, not a presence
+  // and an absence they would have to notice the difference between.
+  //
+  // It fires whenever the window moved without attestation, NOT only when a vet is named.
+  // Conditioning it on `vetName` would make a sentence about the change appear and vanish
+  // on a field that is not about the change, and the reviewer's finding did not need a
+  // name to land: *"nothing on either page tells me trial length is an owner-editable
+  // field, and a vet's default prior is that changes to a vet-directed plan are
+  // vet-directed."* The report's own house pattern for this is Appendix D's unlogged
+  // medication — say what the record cannot say, rather than leaving the gap to be read.
   const attribution = wc.vetDirected
     ? ' Owner reports a vet asked for the change; Culprit cannot say which.'
-    : ''
+    : ' Culprit cannot say who asked for the change.'
   return `${fact}${attribution}`
 }
 

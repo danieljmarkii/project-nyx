@@ -4651,7 +4651,8 @@ Deno.test('CUL-1041 §5.1 — the spec’s worked case: extended from 56 on day 
   // THE TWO-SIDED RULE. With the box unchecked there is no attribution sentence at
   // all — not a sentence saying the owner acted alone, and not a hedge about not
   // knowing. Silence is the whole of it.
-  assert.ok(!/asked for the change/.test(page), 'no attribution clause')
+  assert.match(page, /Culprit cannot say who asked for the change\./)
+  assert.ok(!/a vet asked for the change/.test(page), 'and no vet is credited')
   assert.ok(!/own initiative|on their own|owner decided/i.test(page), 'and no inverse claim either')
 })
 
@@ -4774,7 +4775,8 @@ Deno.test('CUL-1041 — an unattributed window move cannot borrow the trial\u201
     'no unscoped attribution is left in a paragraph holding an unattributed change',
   )
   // And the change itself still carries no attribution of any kind, in either direction.
-  assert.ok(!/asked for the change/.test(page))
+  assert.match(page, /Culprit cannot say who asked for the change\./)
+  assert.ok(!/a vet asked for the change/.test(page))
 })
 
 Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a named clinician', () => {
@@ -5111,7 +5113,8 @@ Deno.test('CUL-1041 — the UNATTESTED extension is the dangerous one, and carri
   )
   assert.ok(!/Dr\. A\. Chen/.test(headline))
   // And still no attribution of any kind on the change itself, in either direction.
-  assert.ok(!/asked for the change/.test(unattested))
+  assert.match(unattested, /Culprit cannot say who asked for the change\./)
+  assert.ok(!/a vet asked for the change/.test(unattested))
   assert.ok(!/on their own|owner decided/i.test(unattested))
 })
 
@@ -5140,4 +5143,68 @@ Deno.test('CUL-1041 — the attested clause severs the referent and drops the sh
 
   // 3. And the change is still never asserted as that clinician\u2019s.
   assert.ok(!/Dr\. Sarah Kim (asked|directed|extended)/.test(row))
+})
+
+Deno.test('CUL-1041 brief C — the unattested change says the record cannot say, and blames nobody', () => {
+  // PM ruled (a), 2026-09-17, a deliberate deviation from §5.1's "the clause is simply
+  // absent". Two independent cold reads measured the same thing: silence next to a named
+  // vet is read as concurrence (~55–60%), INVISIBLY, because a cold reader cannot see a
+  // sentence that is missing. Absence of a disclaimer was being rendered as attribution.
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    targetDurationVetDirected: false,
+    vetName: 'Dr. Sarah Kim',
+  })
+  assert.match(page, /Culprit cannot say who asked for the change\./)
+
+  // §8.8 STILL HOLDS, and this is the whole reason the sentence is allowed: it attributes
+  // the change to NOBODY. Not to a vet, and — the rule §5.1 actually exists to enforce —
+  // not to the owner either.
+  assert.ok(!/a vet asked for the change/.test(page), 'no vet is credited')
+  assert.ok(!/on their own|owner decided|the owner extended/i.test(page), 'and no owner is blamed')
+  assert.ok(!/Dr\. Sarah Kim (asked|extended|changed)/.test(page))
+
+  // The named vet is still on the page, still scoped to the trial — what changed is that
+  // the reader can no longer reach him from the window change through a gap.
+  assert.match(page, /Trial directed by Dr\. Sarah Kim\./)
+})
+
+Deno.test('CUL-1041 brief C — the two arms are one sentence shape, differing only in what is unknown', () => {
+  // A clinician reading two reports should meet the same construction on both, not a
+  // presence on one and an absence on the other that they would have to notice.
+  const shared = {
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    vetName: 'Dr. Sarah Kim',
+  }
+  const attested = windowPage({ ...shared, targetDurationVetDirected: true })
+  const not = windowPage({ ...shared, targetDurationVetDirected: false })
+  assert.match(attested, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.match(not, /Culprit cannot say who asked for the change\./)
+  // Same subject on both arms.
+  for (const p of [attested, not]) assert.match(p, /Culprit cannot say/)
+})
+
+Deno.test('CUL-1041 brief C — it fires on the window move, not on whether a vet is named', () => {
+  // Conditioning it on `vetName` would make a sentence ABOUT THE CHANGE appear and vanish
+  // on a field that is not about the change. The reviewer's finding did not need a name:
+  // "a vet's default prior is that changes to a vet-directed plan are vet-directed".
+  const noVet = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    vetName: null,
+  })
+  assert.match(noVet, /Culprit cannot say who asked for the change\./)
+
+  // And a window that never moved says nothing about attribution at all — there is no
+  // change to be unable to attribute.
+  const unmoved = windowPage({ dayOfTrial: 50, targetDurationDays: 64, vetName: 'Dr. Sarah Kim' })
+  assert.ok(!/Culprit cannot say/.test(unmoved))
 })
