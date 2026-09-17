@@ -327,6 +327,15 @@ now says it does not. Two generalisations:
 
 ## What this owes and leaves
 
+**Merged `main` a second time at the wrap** — #874 landed while this was closing out.
+Zero file overlap, zero conflicts, and the two sessions' records sat side by side as
+separate files. That is `docs/sessions/`' non-collision design doing exactly the job it
+was created for, on the day it was most likely to be tested: two sessions, same track,
+same evening, both writing a record. Verified on the merged tree rather than assumed —
+#874 ships a new guard (`guards/dietTrialRatchet.test.ts`), and a new guard from `main`
+can red against an untouched file, which is precisely what PR 4's provenance registry did
+to this branch earlier the same session.
+
 **CUL-1051 (PR 1c) — LANDED, same evening.** A sibling session shipped migration 069's
 ratchet trigger and applied it to production (#874, still draft). `target_duration_days_initial`
 is now immutable once non-NULL, so the push path PR 2 shipped can no longer erase the column
