@@ -191,3 +191,51 @@ The reviewer also left three things it could not settle from the repo, carried
 into the PR's apply checklist: the live policy/grant state (`pg_policy` +
 `pg_attribute.attacl` queries to run before apply), the header's row-count claim
 (re-run at apply), and `get_advisors` after.
+
+## Applied — 2026-09-17, PM-approved
+
+Migration `068` is live on `aigchluqluzuhtbfllgh` as
+`diet_trials_window_provenance`, applied via the Supabase MCP with the full
+annotated file stored (the 066/067 convention — prior records store the whole
+file, not the bare statements).
+
+**Pre-apply gates, all four green.** The first one confirmed the red-team's
+replay against production rather than trusting it: `diet_trials` carries exactly
+one policy, `diet_trials_owner`, `polcmd = '*'` (FOR ALL), `polwithcheck IS
+NULL` — so the `USING` expression is reused as the `WITH CHECK`, which is the
+load-bearing behaviour 067 depends on — and that expression names only `pet_id`.
+Column-level ACLs: 0. The three columns: absent. Rows: 3, zero NULL targets.
+
+One thing worth recording about the gate query itself: the first attempt used
+`with_check`, which is the `pg_policies` *view*'s column name. The `pg_policy`
+*catalog* calls it `polwithcheck`, and the query errored rather than silently
+returning something wrong. Worth knowing for the next pre-apply.
+
+**Post-apply, every pre-flight expectation held:** 3 new columns present; 3 rows;
+`target_duration_days_initial IS NULL` → 0; rows where initial `IS DISTINCT
+FROM` target → 0 (the backfill is exact, not approximate); rows wrongly carrying
+`set_at` or `vet_directed` → 0; policies still 1; column ACLs still 0; CHECK
+constraints still 0. All three columns nullable with no default, typed
+`integer` / `timestamp with time zone` / `boolean`. All three `COMMENT ON
+COLUMN` landed with the `''` escaping intact.
+
+**The disclosed side effect was verified, not just claimed.** The header says the
+backfill bumps `updated_at` on every row via `trg_diet_trials_updated_at`.
+Measured after apply: 3 of 3 bumped to apply time, 0 still at `created_at`. The
+disclosure was accurate.
+
+A consequence of that, worth stating because the header cites the measurement:
+the pre-apply finding that 2 of 3 rows had never been edited **can no longer be
+re-derived from the live database** — the backfill moved every row's
+`updated_at`. The evidence survives only here and in the migration header, which
+is where it was written down before the apply. That is the reason to measure
+before, not after.
+
+**`get_advisors` — nothing new.** Security returns two WARNs, both pre-existing
+and both structurally impossible for a column add to have caused: a
+`SECURITY DEFINER` `record_ai_usage` RPC callable by `authenticated`, and the
+Auth leaked-password-protection setting. Performance returns the same shapes
+`diet_trials` already had — an unindexed `food_item_id` FK (from 001), the
+`auth_rls_initplan` re-evaluation that 27 tables share (from 001), and an unused
+`idx_diet_trials_vet_visit` (from 066). This migration added no index and no
+policy, and no finding names a new column.
