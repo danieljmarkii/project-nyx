@@ -55,7 +55,7 @@ import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
-import { extendTrial } from '../../lib/dietTrialSetup';
+import { extendTrial, TrialWindowRefused } from '../../lib/dietTrialSetup';
 import { getDietTrialProgress } from '../../lib/analytics';
 import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
@@ -448,11 +448,24 @@ export default function ProfileScreen() {
       });
       reloadTrial();
     } catch (e) {
-      console.error('[DietTrial] extend failed:', e);
-      Alert.alert(
-        'That didn’t save',
-        'The trial is still running on its current window. Have another go in a moment.',
-      );
+      // A FORWARD-ONLY REFUSAL HERE IS NOT AN ERROR (CUL-1039). Since the write
+      // path became one clamp, a stale tap — the row already carries a window at or
+      // beyond what this tap would set, because another device extended it or this
+      // one re-read late — lands as `not_forward`. `nextTargetDays` always returns
+      // above the current day, so that refusal can only mean the stored window is
+      // ALREADY at least what the owner just asked for: their intent is satisfied,
+      // and the only thing wrong is what this card is showing. So re-read and let
+      // it say so. "That didn't save" over a window that is already longer is a
+      // false alarm, and "have another go" would be advice to repeat a no-op.
+      if (e instanceof TrialWindowRefused && e.reason === 'not_forward') {
+        reloadTrial();
+      } else {
+        console.error('[DietTrial] extend failed:', e);
+        Alert.alert(
+          'That didn’t save',
+          'The trial is still running on its current window. Have another go in a moment.',
+        );
+      }
     } finally {
       setExtendingTrial(false);
     }
