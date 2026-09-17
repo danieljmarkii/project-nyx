@@ -6,8 +6,9 @@ CUL-1038, shipped via #TBD. The second behaviour change of the diet-trial window
 track (CUL-156) and the first repair on it: everything before this pinned or
 recorded the defect, and this closes it.
 
-Spec: `docs/nyx-trial-extension-requirements.md` v2.3 §5.4 (the ⚠ REPAIRED block),
-TE-6, §6 D7(c). Mock: `docs/culprit-trial-extension-mockups.html` §8, republished.
+Spec: `docs/nyx-trial-extension-requirements.md` **v2.5** §5.4 (both ⚠ blocks),
+**TE-6 (amended — the rule is directional)**, §6 D7(c). Mock:
+`docs/culprit-trial-extension-mockups.html` §8, republished.
 
 ## What was wrong
 
@@ -215,9 +216,13 @@ exactly what re-opens the reassuring direction — **the two records are structu
 identical and demand opposite things.** Executed on both code versions, so the direction is
 not a guess: pre-change moved it here too, which is what PR 0's marker was documenting.
 The disclosing direction is the side §5.2 and `clinical-guardrails` say to leave open, so
-the marker is back to an `expectedFailure` and **TE-6's direction is a new open question**
-for the PM. The generalisation: **when two requirements are the same record pointing
-opposite ways, "fix both" is not available and the safety asymmetry is what picks.**
+the marker is back to an `expectedFailure` — and **the PM ruled TE-6 DIRECTIONAL the same
+day**: an owner action may move a claim toward more disclosure, never toward less. That
+makes the marker's expected-failure state permanent rather than pending; it records a cost
+that was priced and accepted, and the spec's TE-6 now says so. The generalisation:
+**when two requirements are the same record pointing opposite ways, "fix both" is not
+available and the safety asymmetry is what picks** — and a rule stated without a direction
+should be read as a rule whose direction nobody had needed yet.
 
 **12. A fix's own first cut needs the same suspicion as the thing it fixes.** The R2 gate
 used `max(scopedStart, liveTargetEnd)` and collapsed to a one-day window on a scope opening

@@ -3,7 +3,7 @@
 <style>
   /* ============================================================
      Diet trial extension — mock ROUND 2 (low-fi).
-     Build contract: docs/nyx-trial-extension-requirements.md v2.4.
+     Build contract: docs/nyx-trial-extension-requirements.md v2.5.
      ALL SEVEN RULED 2026-09-17 (D1/D2/D4/D6/D7 first pass,
      D3/D5 second). D5 ratifies today's constant, so CUL-367's
      alternative stays drawn — deferred to Dr. Chen, not retired.
@@ -233,7 +233,7 @@
       September,</strong> so this round is one proposal with the retired options removed. The one frame still
       boxed is §7's, and it is boxed because D5 <em>deferred</em> it to Dr. Chen rather than rejecting it.
       <strong>D7 was then re-ruled the same day, (a) &rarr; (c)</strong>, and §8 now shows what shipped.
-      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v2.4.
+      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v2.5.
     </p>
   </header>
 
@@ -819,6 +819,20 @@
       Until it lands the freeze covers every trial that existed when 068 applied, and a trial started from
       now on falls back to today&rsquo;s behaviour &mdash; reachable only after it overruns its own window
       and is then extended.
+    </div>
+
+    <div class="callout">
+      <strong>One residual, priced and accepted: TE-6 is DIRECTIONAL.</strong> The <em>withdrawing</em>
+      direction still moves &mdash; a trial logged on every prescribed day then silent, extended, goes
+      <em>supports</em> &rarr; <em>does not support</em> on the tap. It cannot be closed alongside the
+      reassuring one: that record and the mirror above are <strong>structurally identical</strong> and
+      demand opposite things of the gate, so closing either opens the other. Executed on both code
+      versions, so it is a property of the problem, not of a fix &mdash; the code before this PR moved it
+      too. <strong>Ruled 17 September: an owner action may move a claim toward MORE disclosure, never
+      toward less</strong>, which is the rule &sect;5.2 already states for the exposure floor and
+      <code>clinical-guardrails</code> for every claim gate. A claim withdrawn costs the owner; a claim
+      granted over a month of silence costs the patient. The residual is an executable expected failure
+      rather than a note.
     </div>
 
     <div class="callout warn">

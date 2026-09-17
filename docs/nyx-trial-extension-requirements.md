@@ -1,6 +1,6 @@
 # Diet-trial extension — changing a running trial's window
 
-**Version:** 2.4 (BUILD-READY — every decision ruled; PR 1b SHIPPED, re-cut twice) | Last Updated: 2026-09-17
+**Version:** 2.5 (BUILD-READY — every decision ruled, TE-6 included; PR 1b SHIPPED) | Last Updated: 2026-09-17
 **Changed at 2.4 (2026-09-17, after 1b's mandatory adversarial pass returned FAIL — CUL-1038):**
 **D7(c) is RE-CUT: the RATIO and the VERDICT are two questions.** A plain freeze closed §5.4's
 reassuring direction and opened its mirror — pinning the denominator at the designed window EXCLUDED
@@ -8,8 +8,10 @@ un-logged days inside the window currently in force and manufactured a clean rea
 does_not_support` → `28 of 28 supports`, executed on the rendered page). **PM ruled (a):** the printed
 ratio stays over the designed window and no owner action moves it; `interpretability` is the **less
 reassuring** of that reading and one taken over the window in force. Neither window gets to be the
-generous one, which is what closes both directions at once. §5.4 gains a second ⚠ block; a residual is
-recorded and **TE-6's DIRECTION is now an open question** (see §5.4).
+generous one, which is what closes both directions at once. §5.4 gains a second ⚠ block, and **TE-6 is
+amended: the rule is DIRECTIONAL** (PM, same day) — an owner action may move a claim toward more
+disclosure, never toward less. The undirected form is unachievable, and that is a property of the problem,
+proven on both code versions.
 
 **Changed at 2.3 (2026-09-17, after PR 1b shipped — CUL-1038):** **D7(c) is BUILT, reads-only**, and the
 plan gains **PR 1c (CUL-1051)** — a ratchet migration that blocks PR 2. The coverage
@@ -127,7 +129,26 @@ resolve it — but it may never raise "should this trial be longer?" on its own.
 judgment; the product's job is to *record* the vet's, not to issue one. The mid-trial control is therefore
 a **door the owner opens**, never a prompt, a badge, or a nudge (Principles 3 and 4).
 
-**TE-6 · An extension may not move a claim about the record that the record did not change.** This is a
+**TE-6 · An extension may not move a claim about the record TOWARD REASSURANCE when the record did not
+change.** ⚠ **The direction was RULED 2026-09-17 (PM), after 1b's adversarial pass proved the undirected
+form unachievable.** Draft 1 stated the rule without a direction. That cannot be built: a record with a
+perfect designed window followed by silence, then extended, and the mirror the pass found are
+*structurally identical* and demand opposite things of the gate — freeze it and the reassuring direction
+re-opens, follow the live window and the withdrawing one does. Executed on both code versions, so this is
+a property of the problem rather than of a fix.
+
+So the rule takes the direction the rest of this repo already uses: **an owner action may move a claim
+toward MORE disclosure, never toward less.** §5.2 states it for the exposure floor (*a floor may only ever
+move toward disclosing more*), `clinical-guardrails` states it for every claim gate, and C-4 names
+precedence as the only honest resolution when two counts over one population disagree. A claim withdrawn
+costs the owner; a claim granted over a month of silence costs the patient.
+
+**What that buys, mechanically (D7c as split, §5.4):** the RATIO a surface prints is measured over the
+designed window and moves in neither direction; the VERDICT is the less reassuring of that reading and one
+over the window in force. The residual — the withdrawing direction still moves — is recorded as an
+executable expected failure in `guards/trialWindow.test.ts`, not hidden.
+
+The rest of this rule is unchanged, and is still a
 **requirement on the build, not a description of today** — stated as an assertion in draft 1 and falsified
 by the adversarial pass the same session. On an **un-ended trial past its target**, the B-422 coverage tail
 clip bounds the coverage denominator at the *current* target (`lib/dietTrial.ts:2201-2206`), so one
@@ -418,13 +439,14 @@ on trial day 50:
 > extended trial; and `interpretabilityStatement` says **original**, not *prescribed*, because on an
 > extended trial the prescribed window is the longer one printed on the same page.
 >
-> **⚠ ONE RESIDUAL, AND IT IS A NEW OPEN QUESTION — does TE-6 have a direction?** §5.4's *withdrawing*
-> direction still moves: a trial logged on every prescribed day then silent, extended, goes
-> `supports` → `does_not_support` on the tap. It cannot be closed alongside the reassuring one — that
-> record and the mirror above are structurally identical and demand opposite things of the gate, so closing
-> either opens the other (executed both ways; pre-change code moved it here too). The disclosing direction
-> is the side §5.2 and `clinical-guardrails` say to leave open. TE-6 as written has **no** direction;
-> whether it should is a PM decision on CUL-1038, and the marker is back to an expected failure until then.
+> **⚠ ONE RESIDUAL, RULED 2026-09-17 — TE-6 IS DIRECTIONAL (PM).** §5.4's *withdrawing* direction still
+> moves: a trial logged on every prescribed day then silent, extended, goes `supports` →
+> `does_not_support` on the tap. It cannot be closed alongside the reassuring one — that record and the
+> mirror above are structurally identical and demand opposite things of the gate, so closing either opens
+> the other (executed both ways; pre-change code moved it here too). **The PM ruled the rule directional:
+> an owner action may move a claim toward MORE disclosure, never toward less** — see TE-6, which now
+> carries it. The marker stays an expected failure recording the residual, and that is its permanent
+> state rather than a waiting one.
 
 What the vet report prints across that tap:
 

@@ -1114,17 +1114,19 @@ describe('§5.4 — the same tap, the other direction: a clean claim withdrawn (
   // Pre-change ALSO withdrew the claim here — this marker was documenting that.
   // R2 repairs the ratio and reproduces the verdict movement.
   //
-  // WHY THIS IS THE SIDE TO LEAVE OPEN, pending the PM ruling on TE-6's
-  // direction: this move is toward MORE disclosure (a clean claim withdrawn),
-  // the mirror's is toward LESS (a clean claim granted over 32 silent days).
-  // §5.2 rules that a floor may only ever move toward disclosing more, and
-  // `clinical-guardrails` rules the same asymmetry for every claim gate. Closing
-  // the reassuring direction and leaving the disclosing one open is the only
-  // ordering those two rules permit.
+  // ⚠ RULED 2026-09-17 (PM): TE-6 IS DIRECTIONAL, so this marker's PERMANENT
+  // state is an expected failure rather than a waiting one. An owner action may
+  // move a claim toward MORE disclosure, never toward less. This move is toward
+  // more (a clean claim withdrawn); the mirror's is toward less (a clean claim
+  // granted over 32 silent days). §5.2 already rules that a floor may only ever
+  // move toward disclosing more and `clinical-guardrails` rules the same
+  // asymmetry for every claim gate, so the ruling names an existing rule rather
+  // than minting one. Spec v2.5 TE-6 carries it.
   //
-  // TE-6 as written has no direction. Whether it should is now a PM decision, on
-  // CUL-1038 — if it is ruled undirected, this goes back to a plain `it` and the
-  // mirror is accepted instead, knowingly.
+  // DO NOT PROMOTE THIS. Unlike every other marker in this file, it is not
+  // waiting on a repair — it records a cost that was priced and accepted. Making
+  // it pass means freezing the gate, which re-opens the reassuring direction: the
+  // two records are structurally identical and there is no third option.
   expectedFailure(
     'TE-6 — the rule has no direction: this move is forbidden too [CUL-1038]',
     () => {
