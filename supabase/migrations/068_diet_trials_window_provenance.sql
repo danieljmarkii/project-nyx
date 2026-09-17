@@ -112,20 +112,51 @@
 -- reachable only through the same pet-ownership check that already gates
 -- target_duration_days. No new reader, grant, view, function, index or surface;
 -- no service-role path; rides the existing ON DELETE CASCADE from pets, so
--- account deletion and export need no change. The values are a day count, a
--- timestamp, and one owner-checked boolean — no health-photo or free-text note
--- class of data, and nothing here is reachable from the unauthenticated share
--- path (unshipped).
+-- account deletion needs no change (delete-account is auth.admin.deleteUser plus
+-- the FK cascade, with no table loop and no column enumeration, so it is
+-- structurally column-agnostic). Export needs no change because there is no
+-- export path in the tree at all — that claim is VACUOUS, not verified, and
+-- B-041 must enumerate these three when it ships.
+--
+-- SENSITIVITY IS A QUESTION ABOUT MEANING, NOT TYPE. It would be easy to write
+-- "a day count, a timestamp and a boolean — no photo, no free text" and stop.
+-- This repo has already rejected that test: ACTIVE_DIET_TRIAL_QUERY excludes
+-- `indication` from the widget's App Group snapshot on a MEANING basis (it names
+-- the clinical suspicion), not because of its type. By that test these columns
+-- are not inert — their whole purpose, stated at the top of this file, is to let
+-- a reader infer *the signs had not resolved at eight weeks*, which is a clinical
+-- inference about a specific animal. Nothing today can reach them (every server
+-- and client reader uses an explicit column list, including the widget snapshot
+-- and the `ask` LLM boundary), so there is no live exposure. But PR 2 and PR 4
+-- owe the snapshot/share call on what these columns MEAN, and must not settle it
+-- by pointing at INTEGER and BOOLEAN.
+--
+-- And the share path: nothing here is reachable from the unauthenticated share
+-- link, which is unshipped (vet_reports_public_share was dropped in 026). Do not
+-- carry that sentence forward — PR 4 renders these columns INTO the report the
+-- share token would unlock, so it stops being true by design, not by accident.
 --
 -- ------------------------------------------------------------
 -- Migration Safety Pre-flight
 -- ------------------------------------------------------------
 --   Destructive y/n:  n. Purely additive — three nullable columns with no
 --                     default, no CHECK. Drops, renames or alters no existing
---                     column, constraint, index, policy or row. An ADD COLUMN of
---                     a nullable column with no default is O(1) in PG 11+ (no
---                     table rewrite). The backfill is an UPDATE of a
---                     just-created, all-NULL column — it can overwrite nothing.
+--                     column, constraint, index or policy. An ADD COLUMN of a
+--                     nullable column with no default is O(1) in PG 11+ (no table
+--                     rewrite). The backfill is an UPDATE of a just-created,
+--                     all-NULL column — it can overwrite nothing.
+--
+--                     ONE SIDE EFFECT, DISCLOSED: the backfill is an UPDATE, so
+--                     trg_diet_trials_updated_at (001_schema.sql:281) fires and
+--                     every diet_trials row's `updated_at` moves to apply time.
+--                     Measured on a replay: both seeded rows bumped. That column
+--                     is the LWW sync basis, so every device re-pulls these rows
+--                     (3 of them) on its next hydrate. Benign — hydrateDietTrials
+--                     writes under `WHERE diet_trials.synced = 1` (lib/sync.ts),
+--                     so it cannot clobber an unpushed local edit — but this
+--                     repo treats an updated_at bump as load-bearing propagation
+--                     elsewhere, so it is stated here rather than left for
+--                     whoever debugs the next watermark question.
 --   Affected tables:  public.diet_trials. Verified this session, not copied
 --                     forward (the issue's pre-flight said 1 row as of
 --                     2026-09-16; it is 3):

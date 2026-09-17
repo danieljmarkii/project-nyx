@@ -128,3 +128,66 @@ that a PM approval, so it is held despite the standing convention that backend
 deploys run from the session. On approval: Supabase MCP `apply_migration`
 (project `aigchluqluzuhtbfllgh`), then `get_advisors` for security and
 performance.
+
+## The `rls-privacy-reviewer` pass — PASS, with four things it caught
+
+Mandatory per the issue, and the reviewer did the thing that makes it worth
+running: it built a PG16 cluster, replayed the real schema (001's `diet_trials`
++ policy, 040/053/066's adds, 067's `SECURITY DEFINER` trigger, Supabase's
+bootstrap grants), seeded two tenants, applied 068 verbatim from the repo file,
+and attacked it — rather than reasoning about the header's claim.
+
+**Held, each against an executed attack:** user-B JWT selecting *only the three
+new columns* from pet-A's trial by known id → 0 rows (`diet_trials_owner` is
+row-scoped and genuinely column-agnostic); `anon` → 0 rows; cross-tenant
+`INSERT` / `UPDATE` / re-parent → `42501` on the USING-reuse `WITH CHECK` that
+067 verified and 068 does not split; zero column-level ACLs, no view, no RPC,
+and every server + client reader on an explicit column list — including the
+`ask` LLM boundary and the widget's App Group snapshot; PR 2's exact write shape
+against a row already violating 066's link invariant → `UPDATE 1`, no `RAISE`,
+so no C-31 message leak (067's narrowed `IS DISTINCT FROM` guard short-circuits
+— it notes 068 would have *bricked* the rows had it landed between 066 and 067);
+the backfill cannot cross a tenant (per-row self-copy, no join) and cannot
+overwrite (re-run over a stamped value → `UPDATE 0`); deleting the `auth.users`
+row cascaded all three columns away, and both deletion halves are structurally
+column-agnostic.
+
+**Four advisories, all fixed on this branch.** Three were corrections to claims
+I had written:
+
+1. **The backfill bumps `updated_at` on every row, and the pre-flight said it
+   altered none.** `trg_diet_trials_updated_at` (001:281) fires on the backfill
+   `UPDATE` — verified in the repo, not taken on trust. `updated_at` is the LWW
+   sync basis, so every device re-pulls the 3 rows on next hydrate. Benign,
+   because `hydrateDietTrials` writes under `WHERE diet_trials.synced = 1` and
+   cannot clobber an unpushed edit — but this repo treats an `updated_at` bump
+   as load-bearing propagation elsewhere, so it is now disclosed in the
+   pre-flight rather than left for whoever debugs the next watermark question.
+2. **The mapper's completeness guard was blind to exactly the drift this PR
+   creates, and fired against its fix.** `dietTrialRowToRemote`'s comment claims
+   the key-set test asserts it forwards every server column; that test was a
+   **hardcoded literal**. Proven by mutation: green with 068's columns absent
+   from the mapper, red when PR 2 adds them. A guard that is green on the drift
+   and red on the repair is worse than none. Rewritten to derive the expected
+   set from the DDL the repo actually executes (C-38), with a
+   `PENDING_MAPPER_COLUMNS` registry naming CUL-1039 and **the empty set as the
+   assertion** (C-32) — so a half-fix, a stale registry entry, and the original
+   B-057 drift all red, while the complete PR 2 repair is green. All four states
+   were run.
+3. **Sensitivity was justified by data TYPE.** The header said "a day count, a
+   timestamp and a boolean — no photo, no free text", which is 053's phrasing
+   and the wrong test: this repo already rejected type when
+   `ACTIVE_DIET_TRIAL_QUERY` excluded `indication` from the widget snapshot on a
+   *meaning* basis. These columns' meaning is *the signs had not resolved at
+   eight weeks* — a clinical inference. Rewritten, with the snapshot/share call
+   handed explicitly to PR 2 and PR 4. The share-path sentence is also now
+   marked do-not-carry-forward: it is true today and false by design at PR 4,
+   which renders these columns into the report the token would unlock.
+4. **"Export needs no change" was vacuous.** There is no export path in the tree
+   at all (verified: zero hits). Now stated as vacuous rather than verified,
+   with B-041 named as owing the enumeration.
+
+The reviewer also left three things it could not settle from the repo, carried
+into the PR's apply checklist: the live policy/grant state (`pg_policy` +
+`pg_attribute.attacl` queries to run before apply), the header's row-count claim
+(re-run at apply), and `get_advisors` after.

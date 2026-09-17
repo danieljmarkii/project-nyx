@@ -49,6 +49,11 @@ function freshDb() {
   return db;
 }
 
+/** The columns a table actually has, read back from a built database. */
+function columnsOf(db: { prepare: (sql: string) => { all: () => unknown[] } }, table = 'diet_trials'): string[] {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+}
+
 function insertTrial(db: ReturnType<typeof freshDb>, overrides: Record<string, string> = {}) {
   const v = {
     id: 'trial-1',
@@ -461,12 +466,6 @@ describe('COLUMN_UPGRADES — the ALTER path an already-installed device takes (
     return stripped.join('\n');
   }
 
-  function columnsOf(db: { prepare: (sql: string) => { all: () => unknown[] } }): string[] {
-    return (db.prepare(`PRAGMA table_info(diet_trials)`).all() as { name: string }[]).map(
-      (c) => c.name,
-    );
-  }
-
   it('adds all three window-provenance columns to a pre-068 diet_trials', async () => {
     const db = new DatabaseSync(':memory:');
     db.exec(pre068Ddl());
@@ -548,18 +547,59 @@ describe('row → Supabase upsert mappers', () => {
     created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
   };
 
+  // Columns that exist LOCALLY and deliberately never travel. Not drift — the
+  // mapper's own contract is to drop them (B-398's quarantine pair plus `synced`).
+  const LOCAL_ONLY_COLUMNS = ['synced', 'sync_attempts', 'sync_error'] as const;
+
+  // Server columns that exist but which the mapper does NOT yet forward, each
+  // with the issue that lands it. THE EMPTY SET IS THE ASSERTION (C-32): adding a
+  // column to the mapper without emptying this registry reds the test below, and
+  // so does leaving a registered column unforwarded — the two halves cannot drift
+  // apart. Keep this at zero entries; an entry is a dated exception, not a
+  // parking space.
+  const PENDING_MAPPER_COLUMNS: Readonly<Record<string, string>> = {
+    // CUL-1037 (migration 068) declared these; CUL-1039 / trial-window PR 2 owns
+    // the hydrate select, the push mapper and the INTEGER↔BOOLEAN coercion.
+    target_duration_days_initial: 'CUL-1039',
+    target_duration_set_at: 'CUL-1039',
+    target_duration_vet_directed: 'CUL-1039',
+  };
+
   it('forwards every diet_trials server column (the B-057 drift guard)', () => {
     // Completeness, asserted on the KEY SET: a column silently dropped here
     // desyncs forever and nothing else in the stack would notice.
-    expect(Object.keys(dietTrialRowToRemote(trial)).sort()).toEqual(
-      [
-        'completed_at', 'created_at', 'ended_at', 'food_item_id', 'food_label', 'id',
-        'indication', 'notes', 'outcome', 'outcome_notes', 'pet_id', 'phase',
-        'started_at', 'status', 'stopped_reason', 'target_duration_days',
-        'target_protein', 'target_protein_set_at', 'vet_visit_id',
-        'transition_started_at', 'updated_at', 'vet_name',
-      ].sort(),
-    );
+    //
+    // The expected set is DERIVED from the DDL this repo actually executes, not
+    // from a list re-typed beside it (C-38: derive the expected set from the
+    // repository, never from the constant under test). The hardcoded literal this
+    // replaced could not see the one thing it exists to catch — proven by
+    // mutation: with migration 068's three columns in the DDL and absent from the
+    // mapper, it was GREEN, and adding them, the correct fix, turned it RED. A
+    // guard that is green on the drift and red on the repair is worse than none.
+    const db = freshDb();
+    const serverColumns = columnsOf(db)
+      .filter((c) => !(LOCAL_ONLY_COLUMNS as readonly string[]).includes(c))
+      .filter((c) => !(c in PENDING_MAPPER_COLUMNS));
+    db.close();
+
+    // Non-vacuity floor: a derivation that yielded nothing would pass over an
+    // empty mapper.
+    expect(serverColumns.length).toBeGreaterThan(15);
+    expect(Object.keys(dietTrialRowToRemote(trial)).sort()).toEqual(serverColumns.sort());
+  });
+
+  it('has no unforwarded server column beyond the registered pending set', () => {
+    // The other direction, and the reason PENDING_MAPPER_COLUMNS cannot rot: a
+    // registered column that the mapper HAS now is a stale entry, and an
+    // unregistered column it lacks is drift. Either reds here.
+    const db = freshDb();
+    const local = columnsOf(db);
+    db.close();
+    const forwarded = new Set(Object.keys(dietTrialRowToRemote(trial)));
+    const unforwarded = local
+      .filter((c) => !(LOCAL_ONLY_COLUMNS as readonly string[]).includes(c))
+      .filter((c) => !forwarded.has(c));
+    expect(unforwarded.sort()).toEqual(Object.keys(PENDING_MAPPER_COLUMNS).sort());
   });
 
   it('forwards the visit link as-is, and it moves NO other value (CUL-899)', () => {
