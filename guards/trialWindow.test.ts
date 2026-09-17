@@ -90,6 +90,7 @@ import {
   planTrialCard,
   resolveTrialCard,
   trialManageLabel,
+  trialManageTarget,
   type TrialCardActionId,
   type TrialCardInput,
   type TrialCardState,
@@ -214,6 +215,33 @@ function expectedFailure(name: string, fn: () => void): void {
 // C-38 cheque this guard was citing one block earlier. Half (c) below closes it by
 // pinning the two facts that actually hold the door shut, so the door's PR reds
 // them and has to come here to say so.
+//
+// ── ⚠️ THE DOOR LANDED. CUL-1040, 2026-09-17 — WHAT MOVED AND WHAT DID NOT ─────
+//
+// It worked: half (c)'s verb assertion went red and this is the file that had to
+// say so. What it says is that **G1's headline claim is still true**, and that the
+// truth of it is now worth more than it was.
+//
+// HALVES (a) AND (b) ARE UNCHANGED AND STAY GREEN, verbatim. `trial_extend` is the
+// MILESTONE's write — a DELTA, through `nextTargetDays`, which §5.5 records as
+// carrying an unbounded divergence the report reads as a prescription (a 56-day
+// trial tapped on day 140 writes 168). CUL-1040 added a door to a different write:
+// `changeTrialWindow`, denominated in TOTALS, which sidesteps that divergence
+// because a total is what the owner said. So the rule these halves pin — the delta
+// path does not become mid-trial reachable — is not a relic of the missing door. It
+// is the reason the door was built the other way, and it is now load-bearing rather
+// than incidental.
+//
+// HALF (c) SPLITS IN TWO, and only one of them moved:
+//   • the decision sheet still has exactly ONE caller. The new door does not route
+//     to `trial_extend`, to `setCompletionEntry('decision')`, or to
+//     `TrialCompletionSheet` at all — asserted below, and that assertion is what
+//     keeps the headline honest now that a mid-trial door exists;
+//   • the header verb is `Manage`, not `Replace` (D6a), and the destination is
+//     pinned beside it. A verb without its destination is how CUL-156 happened in
+//     the first place — a header that promised an edit it could not perform — so
+//     this half now asserts the BICONDITIONAL between `trialManageLabel` and
+//     `trialManageTarget` rather than either one alone.
 
 /** The two states the resolver CANNOT return mid-trial, with the reason. These are
  *  not skips — each is asserted structurally in `G1 — half (a)` below. */
@@ -447,17 +475,67 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
     expect(sheet).not.toMatch(/overrunDays/);
   });
 
-  it('half (c) — the header verb is still Replace on every running state', () => {
-    // D6a makes the header the mid-trial door ("Manage") in PR 3. Until then it
-    // says `Replace`, which is honest about current capability and is the thing
-    // §3 of the spec calls the failure this track replaces. This reds on the day
-    // the door lands, which is exactly when someone should be reading this file.
+  it('half (c) — the header verb is Manage on every running state, and opens the door', () => {
+    // D6a, CUL-1040. It said `Replace` until the door existed, which was honest
+    // about current capability and is the thing §3 calls the failure this track
+    // replaces. `Manage` is honest about BOTH acts now that both exist, and is
+    // deliberately neither of their verbs — a header naming one would promise the
+    // other.
+    //
+    // THE VERB AND THE DESTINATION ARE ASSERTED TOGETHER. A host that read the
+    // destination off the verb's string would be one relabel away from routing a
+    // running trial into the start form, which is CUL-156 with the arrow reversed.
     for (const [state, entry] of Object.entries(MID_TRIAL_BY_STATE)) {
       if ('unreachableMidTrial' in entry) continue;
       if (state === 'no_trial' || state === 'completed' || state === 'abandoned') continue;
       const model = resolveTrialCard(entry);
-      expect(trialManageLabel(model)).toBe('Replace');
+      expect(trialManageLabel(model)).toBe('Manage');
+      expect(trialManageTarget(model)).toBe('window_door');
     }
+  });
+
+  it('half (c) — label and target agree in BOTH directions, over every state', () => {
+    // The biconditional, and it is the half a one-sided assertion would miss:
+    // suppression is keyed on the body's actual actions (the two `abandoned`
+    // branches that ship `actions: []` are why), so a target that suppressed on
+    // `state` instead would strand a card with a verb and nowhere to go, or a
+    // destination with no control to reach it.
+    let sawBoth = { suppressed: false, shown: false };
+    for (const entry of Object.values(MID_TRIAL_BY_STATE)) {
+      if ('unreachableMidTrial' in entry) continue;
+      const model = resolveTrialCard(entry);
+      const label = trialManageLabel(model);
+      const target = trialManageTarget(model);
+      expect(label === null).toBe(target === null);
+      if (label === null) sawBoth.suppressed = true;
+      else sawBoth.shown = true;
+      // …and where both are present they describe the same act.
+      if (label !== null) {
+        expect(target).toBe(label === '+ Start' ? 'start_trial' : 'window_door');
+      }
+    }
+    // NON-VACUITY: a biconditional over a set that is all one side proves nothing
+    // (C-36). Both arms must be exercised by the walk.
+    expect(sawBoth).toEqual({ suppressed: true, shown: true });
+  });
+
+  it('half (c) — the new door does NOT reach the delta write, which is what keeps G1 true', () => {
+    // The headline claim, re-earned now that a mid-trial door exists. The window
+    // sheet reaches `changeTrialWindow` (a TOTAL) and nothing else: not
+    // `trial_extend`, not `setCompletionEntry`, not the completion sheet. If a
+    // later PR points it at the milestone's delta, §5.5's divergence arrives
+    // mid-trial and this reds.
+    const sheet = blankComments(
+      fs.readFileSync(
+        path.join(REPO_ROOT, 'components/profile/TrialWindowSheet.tsx'),
+        'utf8',
+      ),
+    );
+    expect(sheet).not.toMatch(/trial_extend|setCompletionEntry|nextTargetDays|extendTrial/);
+    // Non-vacuity: the file really is the sheet, and really does carry the totals
+    // write's own vocabulary — otherwise the four absences above are absences in a
+    // file that was never about this.
+    expect(sheet).toMatch(/targetDurationDays/);
   });
 });
 

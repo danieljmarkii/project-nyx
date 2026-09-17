@@ -102,6 +102,7 @@ import { proteinTrialLabel } from './trialProteinPicker';
 import { localDayIndexOf, MONTHS } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS, type TrialResponseCounts } from './trialResponseCounts';
+import { windowMovedTodayLine } from './trialWindowSheet';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -126,6 +127,17 @@ export interface TrialCardTrial {
   targetDurationDays: number;
   /** `diet_trials.food_label`, else the joined food's "Brand Product". */
   foodLabel?: string | null;
+  /**
+   * `diet_trials.target_duration_set_at` — migration 068, written by
+   * `changeTrialWindow` on EVERY window change (CUL-1037/CUL-1039).
+   *
+   * The resolver reads it for one thing only: §4.3's line, for the rest of the
+   * local day the window moved. Null means the window has never moved, which is
+   * not the same fact as "never moved through the sheet" — the milestone's one-tap
+   * delegates to the same write path and stamps it too (CUL-1039's handoff, point
+   * 3). The predicate is only ever *did this window move*.
+   */
+  targetDurationSetAt?: string | null;
   /** The stored `stopped_reason`. PR 3's `endActiveTrial` writes a closed set of
    *  TOKENS (`vet_advised` / `refused` / `other` / `completed`), documented in
    *  `lib/dietTrialSetup.ts` as load-bearing — so this resolver maps the tokens
@@ -1198,16 +1210,50 @@ function degenerateStateFor(trial: TrialCardTrial | null): TrialCardState {
  * §1097), so suppressing on `state` alone would strand those cards with zero
  * controls. (Regression: caught by `code-reviewer`, 2026-08-06.)
  *
- * When it IS shown, the verb says what `onManage` opens: on a RUNNING trial the
- * ordered end-and-replace sheet ("Replace" — never "Change", which read as an EDIT
- * and routed an active trial, and on `day_one` the card's ONLY control, straight to
- * its own destruction); on a terminal/degenerate card the start form ("+ Start").
+ * When it IS shown, the verb says what `onManage` opens: on a RUNNING trial a
+ * two-row door ("Manage" — D6a, CUL-1040); on a terminal/degenerate card the start
+ * form ("+ Start").
+ *
+ * WHY THE VERB MOVED, AND WHY IT IS NOT "CHANGE" (CUL-156). It said `Replace`
+ * because that is what it did: the only mid-trial control ENDED the trial and
+ * started a new one. `Change` was tried first and was worse — it read as an EDIT
+ * and routed an active trial, on `day_one` the card's ONLY control, straight to its
+ * own destruction. The relabel fixed the lie and left the missing capability.
+ *
+ * `Manage` is honest about BOTH acts now that both exist, and it is deliberately
+ * neither of their verbs: *Change the window* keeps one continuous episode and is
+ * reversible; *Replace the trial* ends it and is not. A header that named either
+ * one would be promising the other. The destructive act keeps exactly the tap count
+ * it had, and the safe one is no cheaper (§4.1, mock §2).
  */
 export function trialManageLabel(
   model: Pick<TrialCardModel, 'state' | 'actions'>,
 ): string | null {
   if (model.actions.some((a) => a.id === 'start_trial')) return null;
   return trialManageVerb(model.state);
+}
+
+/**
+ * WHERE the header affordance goes — the destination half of `trialManageLabel`.
+ *
+ * TWO FUNCTIONS, ONE FACT, AND THEY CANNOT DRIFT. The verb and the destination are
+ * both derived from `state` through the same exhaustive switch shape, and the
+ * suppression is the SAME expression in both (the body's actual actions, never
+ * `state` — see `trialManageLabel`'s own note on the two `abandoned` branches that
+ * ship `actions: []`). `dietTrialCard.test.ts` asserts the biconditional: a null
+ * label iff a null target, over every state. A host that read the destination off
+ * the verb's STRING would be one relabel away from routing a running trial into the
+ * start form, which is the CUL-156 failure with the arrow reversed.
+ *
+ *   `window_door` — the running trial's two acts (CUL-1040 §4.1, D6a).
+ *   `start_trial` — a terminal or degenerate card, where there is no window to
+ *                   change and the verb is `+ Start`.
+ */
+export function trialManageTarget(
+  model: Pick<TrialCardModel, 'state' | 'actions'>,
+): 'window_door' | 'start_trial' | null {
+  if (model.actions.some((a) => a.id === 'start_trial')) return null;
+  return trialManageVerb(model.state) === '+ Start' ? 'start_trial' : 'window_door';
 }
 
 function trialManageVerb(state: TrialCardState): string {
@@ -1225,7 +1271,7 @@ function trialManageVerb(state: TrialCardState): string {
     case 'intake_decline':
     case 'free_fed':
     case 'trial_refusal':
-      return 'Replace';
+      return 'Manage';
     default: {
       // Exhaustive: a new TrialCardState fails to compile here rather than
       // silently inheriting "Replace".
@@ -1281,7 +1327,47 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   if (state === 'completed') return completedCard(input, ctx, register);
   if (state === 'abandoned') return abandonedCard(input, ctx, register);
 
-  return activeCard(input, ctx, state, register);
+  return withWindowMovedLine(activeCard(input, ctx, state, register), input, ctx);
+}
+
+/**
+ * §4.3 — one `forward` line, for the rest of the local day the window moved.
+ *
+ * APPLIED AT THE ONE CALL SITE RATHER THAN IN EACH BRANCH, because §4.3's own
+ * words are that "the state machine is untouched: the card is in whatever state
+ * §4.2 of the trial spec says it is in, with one extra `forward` line". Four of
+ * the running branches build `lines` from a literal and four from `recordRegion`,
+ * so a per-branch push would be eight edits and a ninth state shipping without it.
+ *
+ * WHAT IT MUST NOT BECOME (TE-7, and the mock draws the rejected version
+ * explicitly): no cheer, no `!`, no countdown, no coverage restated beside it. The
+ * bar retreating from 95% to 63% is the truth of a longer window and is not
+ * dressed as a setback. The copy itself is in `lib/trialWindowSheet.ts`.
+ *
+ * LAST, after the record region and its caveats, which is where the mock draws it
+ * — the window is a fact about the trial, not a qualifier on the record above it.
+ */
+function withWindowMovedLine(
+  model: TrialCardModel,
+  input: TrialCardInput,
+  ctx: TrialContext,
+): TrialCardModel {
+  const text = windowMovedTodayLine({
+    targetDurationSetAt: input.trial?.targetDurationSetAt ?? null,
+    currentTargetDays: ctx.trial.targetDurationDays,
+    startDayKey: startDayKeyOf(ctx.trial.startedAt),
+    nowMs: input.nowMs,
+  });
+  if (!text) return model;
+  return { ...model, lines: [...model.lines, { role: 'forward', text }] };
+}
+
+/** `started_at` is a DATE column but arrives as an ISO instant from some readers,
+ *  and the end-date math takes a day key. Slicing the first ten characters is the
+ *  same normalisation `lib/dietTrialFacts.startKeyOf` does; an unparseable value
+ *  falls through to a null end date rather than a guessed one. */
+function startDayKeyOf(startedAt: string): string {
+  return startedAt.slice(0, 10);
 }
 
 // ── Compose: the register's body, then the disclosures the table allows ──────

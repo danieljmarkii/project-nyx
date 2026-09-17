@@ -50,12 +50,15 @@ import { DietTrialCard } from '../../components/profile/DietTrialCard';
 import {
   TrialCompletionSheet, type TrialCompletionEntry,
 } from '../../components/profile/TrialCompletionSheet';
+import { TrialManageSheet } from '../../components/profile/TrialManageSheet';
+import { TrialWindowSheet } from '../../components/profile/TrialWindowSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
-import { resolveTrialCard } from '../../lib/dietTrialCard';
+import { resolveTrialCard, trialManageTarget } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
-import { extendTrial, TrialWindowRefused } from '../../lib/dietTrialSetup';
+import { changeTrialWindow, extendTrial, TrialWindowRefused } from '../../lib/dietTrialSetup';
+import { windowRefusedLine } from '../../lib/trialWindowSheet';
 import { getDietTrialProgress } from '../../lib/analytics';
 import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
@@ -479,6 +482,76 @@ export default function ProfileScreen() {
       setExtendingTrial(false);
     }
   }, [trialInput, reloadTrial, extendingTrial]);
+
+  // ── CUL-1040 — the header's door and the window sheet behind it (§4.1/§4.2) ──
+  //
+  // TWO SHEETS, NOT ONE, because §4.1's two acts must never be confused: *Change
+  // the window* keeps one continuous episode and is reversible; *Replace the trial*
+  // ends it and is not. The door names both and opens neither by default.
+  const [manageVisible, setManageVisible] = useState(false);
+  const [windowVisible, setWindowVisible] = useState(false);
+  const [savingWindow, setSavingWindow] = useState(false);
+  const [windowError, setWindowError] = useState<string | null>(null);
+
+  /**
+   * The §4.2 write. One total, one optional vet statement, no confirm (the sheet's
+   * own Save is the confirmation and the act is fully reversible — CUL-645).
+   *
+   * THE REFUSAL IS PHRASED HERE FROM STRUCTURED FIELDS, NEVER FROM `e.message`.
+   * `guards/ownerFacingCopy.test.ts` fails the build on a display sink reading a
+   * string off an error, and `TrialWindowRefused` carries `reason` /
+   * `requestedDays` / `floorDays` / `currentTargetDays` / `dayCounter` precisely so
+   * this can say something true (CUL-1039's handoff, point 2).
+   *
+   * It is reachable even though the sheet gates against the same floor, and the
+   * gap is the point: the sheet gates against the HYDRATED card and the predicate
+   * against the ROW. A card a sync behind, or a trial ended on another device, is
+   * exactly the case where the owner deserves the reason rather than a silent
+   * nothing — so every arm re-reads the trial and says what is true of it.
+   */
+  const handleChangeWindow = useCallback(
+    async (input: { targetDurationDays: number; vetDirected: boolean }) => {
+      const trial = trialInput?.trial;
+      if (!trial?.id || savingWindow) return;
+      setSavingWindow(true);
+      setWindowError(null);
+      try {
+        await changeTrialWindow({
+          trialId: trial.id,
+          targetDurationDays: input.targetDurationDays,
+          // false is recorded as false, never folded into null: the column keeps
+          // three states and 0 vs NULL are indistinguishable DOWNSTREAM, which is
+          // not the same as being interchangeable here.
+          vetDirected: input.vetDirected,
+        });
+        setWindowVisible(false);
+        reloadTrial();
+      } catch (e) {
+        reloadTrial();
+        if (e instanceof TrialWindowRefused) {
+          setWindowError(
+            windowRefusedLine({
+              reason: e.reason,
+              requestedDays: e.requestedDays,
+              currentTargetDays: e.currentTargetDays,
+              dayCounter: e.dayCounter,
+              // The RECORD's pet would be the rule (C-9), and here they are the
+              // same row: this sheet only ever opens over `trialInput`, which is
+              // read for the active pet. A blank name falls back to second person
+              // inside the phrasing, never to "the pet".
+              petName: activePet?.name ?? '',
+            }),
+          );
+        } else {
+          console.error('[DietTrial] change window failed:', e);
+          setWindowError('That didn’t save. The trial is still on its current window.');
+        }
+      } finally {
+        setSavingWindow(false);
+      }
+    },
+    [trialInput, reloadTrial, savingWindow, activePet?.name],
+  );
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -1137,6 +1210,20 @@ export default function ProfileScreen() {
       )?.dayCounter ?? 1
     : 1;
 
+  /** CUL-1040 — the window sheet's trial. Denominated the way the sheet is: a start
+   *  DAY KEY (the end-date math takes one) and the day counter, not the raw row. It
+   *  is null on anything but a running trial, so the sheet cannot open over a window
+   *  that is a finished fact. */
+  const windowSheetTrial =
+    trialInput?.trial?.id && trialInput.trial.status === 'active'
+      ? {
+          id: trialInput.trial.id,
+          startDayKey: trialInput.trial.startedAt.slice(0, 10),
+          currentTargetDays: trialInput.trial.targetDurationDays,
+          dayCounter: sheetDayCounter,
+        }
+      : null;
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView
@@ -1536,13 +1623,18 @@ export default function ProfileScreen() {
               // is most valuable in exactly the weeks between the trial ending
               // and the recheck it was run for.
               open_report: () => router.push('/report'),
-              // B-533 / R1 — the refusal state's way out. Same sheet the header's
-              // "Change" opens (one active trial per pet is a DB constraint, so
-              // this lands on the ordered "end the running one first" flow, never
-              // a second concurrent trial). It is a card ACTION rather than only
-              // the header link because on the one state whose message is "this
-              // diet may need to change", the way out cannot be chrome.
-              trial_manage: () => setStartTrialVisible(true),
+              // B-533 / R1 — the refusal state's way out. Same door the header's
+              // "Manage" opens. It is a card ACTION rather than only the header
+              // link because on the one state whose message is "this diet may need
+              // to change", the way out cannot be chrome.
+              //
+              // CUL-1040 RE-POINTED THIS, AND IT IS WHAT MAKES ITS LABEL TRUE. The
+              // action reads "Change or end the trial" and, until the door existed,
+              // could only END one — it landed straight on the start form, which
+              // (one active trial per pet being a DB constraint) is the ordered
+              // end-the-running-one-first flow. Now it opens both acts, which is
+              // the label it has carried since B-533.
+              trial_manage: () => setManageVisible(true),
               // B-616 PR 2 (§2.2). Present only on a hydrated set — see the hook
               // read above; `undefined` here means the card draws no link.
               ...(trialAllowedSet.status === 'ready'
@@ -1562,7 +1654,15 @@ export default function ProfileScreen() {
               // could have known.
               view_exposures: () => router.push('/trial-exposures'),
             }}
-            onManage={() => setStartTrialVisible(true)}
+            // D6a — `Manage` on a running trial opens the two-row door; on a
+            // terminal/degenerate card the verb is `+ Start` and the door would have
+            // nothing to change, so it goes straight to the start form.
+            // `trialManageLabel` decides the VERB from the body's actions; this
+            // decides the DESTINATION from the same fact the verb is derived from.
+            onManage={() => {
+              if (trialManageTarget(trialCard) === 'start_trial') setStartTrialVisible(true);
+              else setManageVisible(true);
+            }}
           />
         )}
 
@@ -1756,6 +1856,32 @@ export default function ProfileScreen() {
         onClose={() => setCompletionEntry(null)}
         onExtend={handleExtendTrial}
         onChanged={reloadTrial}
+      />
+
+      {/* CUL-1040 §4.1 — the door. Two rows, and the file's whole job is that they
+          are never confused. */}
+      <TrialManageSheet
+        visible={manageVisible}
+        petName={activePet.name}
+        onClose={() => setManageVisible(false)}
+        onChangeWindow={() => { setWindowError(null); setWindowVisible(true); }}
+        // The EXISTING flow, with its existing confirm. One active trial per pet is
+        // a DB constraint, so the start form is the ordered end-the-running-one-first
+        // sheet — which is what "Replace the trial" has always meant.
+        onReplaceTrial={() => setStartTrialVisible(true)}
+      />
+
+      {/* CUL-1040 §4.2 — *Change the window*. `windowSheetTrial` is null on a
+          terminal card, and the sheet renders nothing then rather than offering a
+          window change on a trial that has ended. */}
+      <TrialWindowSheet
+        visible={windowVisible}
+        trial={windowSheetTrial}
+        petName={activePet.name}
+        busy={savingWindow}
+        writeError={windowError}
+        onClose={() => { setWindowVisible(false); setWindowError(null); }}
+        onSave={handleChangeWindow}
       />
     </SafeAreaView>
   );

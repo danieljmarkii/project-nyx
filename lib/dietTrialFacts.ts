@@ -96,6 +96,10 @@ interface TrialRow {
   /** B-704 — the owner-stated trial protein (canonical key or null). Resolved
    *  stored-first through `trialTargetProtein` into the card/strip identity. */
   target_protein: string | null;
+  /** Migration 068 — stamped by `changeTrialWindow` on every window change. Read
+   *  for §4.3's one line, for the rest of the local day the window moved
+   *  (CUL-1040). Null on every trial whose window has never moved. */
+  target_duration_set_at: string | null;
 }
 
 /** The card's read, against the LOCAL mirror B-417 PR 2 shipped (#453).
@@ -150,6 +154,7 @@ interface TrialRow {
 export const TRIAL_FOR_CARD_SQL = `
   SELECT t.id, t.started_at, t.target_duration_days, t.status,
          t.ended_at, t.stopped_reason, t.outcome, t.indication, t.target_protein,
+         t.target_duration_set_at,
          COALESCE(
            NULLIF(TRIM(COALESCE(f.brand, '') || ' ' || COALESCE(f.product_name, '')), ''),
            t.food_label
@@ -256,6 +261,7 @@ export async function loadTrialPredicateFacts(
     endedAt: row.ended_at,
     targetDurationDays: row.target_duration_days,
     foodLabel: row.food_label,
+    targetDurationSetAt: row.target_duration_set_at,
     stoppedReason: row.stopped_reason,
     outcome: (row.outcome as TrialCardTrial['outcome']) ?? null,
     // Narrowed from the local TEXT column against the ENUM migration 040 defines.

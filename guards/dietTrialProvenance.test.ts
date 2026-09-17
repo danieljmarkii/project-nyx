@@ -103,6 +103,12 @@ const ALLOWED: Record<string, string> = {
     'hydrateDietTrials, which pulls the three columns down and mirrors them locally so an owner sees her own window change after a round trip. An explicit column list, never a select(*).',
   'scripts/render-trial-report-sample.deno.ts':
     'A fixture generator for the vet-report-cold-read gate. Pure — no network, no Supabase, synthetic pets only; it renders the artifact the review reads.',
+  'lib/dietTrialFacts.ts':
+    'THE CLIENT READ (CUL-1040, PR 3). Adds set_at ALONE to TRIAL_FOR_CARD_SQL — never initial, never vet_directed, which the card has no use for — and maps it onto TrialCardTrial for the one line §4.3 owes. Its own loader is also the widget\u2019s entry point; see the containment test below, which is what this entry rests on.',
+  'lib/dietTrialCard.ts':
+    'The pure resolver, which reads set_at for ONE purpose: withWindowMovedLine appends a `forward` line for the rest of the local day the window moved. It renders the CURRENT end date, which windowLineFor already puts on the same card — not the original window, not the delta, not the attribution — so the line discloses no inference the columns are protected for.',
+  'lib/trialWindowSheet.ts':
+    'Builds that line (windowMovedTodayLine) and nothing else from these columns. Takes the value as a parameter rather than reading a row, so it has no path to one; it lives beside the sheet\u2019s own rules because the copy is the sheet\u2019s copy.',
 };
 
 /** Every non-test source in the tree, derived from the REPOSITORY rather than from a list
@@ -157,6 +163,58 @@ describe('CUL-1041 — the window-provenance columns are the vet report’s, and
       expect(PROVENANCE.some((c) => code(rel).includes(c))).toBe(true);
       expect(why.length).toBeGreaterThan(40);
     }
+  });
+
+  it('the client read does NOT carry them across the App Group boundary (CUL-1040)', () => {
+    // THE CLAIM THE THREE CLIENT ENTRIES REST ON, as a test rather than a sentence —
+    // which is this file's own subject (C-38).
+    //
+    // `lib/dietTrialFacts.ts` maps set_at inside `loadTrialPredicateFacts`, and that
+    // function is ALSO `lib/widgetSnapshot.ts`'s entry point (`:543`) — the card's own
+    // `loadDietTrialFacts` delegates to it (`:431`), so there is one mapping, not two.
+    // What keeps the value off the widget is that the publisher takes only the COVERAGE
+    // NUMBERS out of the result and discards `predicate.trial` wholesale. That is
+    // containment by the consumer's discipline, so it is pinned here: the publisher may
+    // read `predicate.facts.*` and nothing else.
+    //
+    // The widget's own trial row comes from `ACTIVE_DIET_TRIAL_QUERY`, asserted separately
+    // below, and this is the second of the two doors.
+    const pub = code('lib/widgetSnapshot.ts');
+    const reads = [...pub.matchAll(/predicate\??\.([A-Za-z_]+)/g)].map((m) => m[1]);
+    // Non-vacuity first: if the publisher stopped naming `predicate` at all, an empty
+    // set would satisfy every assertion below for free (C-36).
+    expect(reads.length).toBeGreaterThan(0);
+    expect(new Set(reads)).toEqual(new Set(['facts']));
+
+    // And the widget's own query still spells its columns without these three — re-verified
+    // here rather than inherited from the PR 2 pass that last checked it.
+    const widgetQuery = code('lib/dietTrialMirror.ts');
+    const m = /ACTIVE_DIET_TRIAL_QUERY\s*=\s*`([^`]*)`/.exec(widgetQuery);
+    expect(m).not.toBeNull();
+    for (const col of PROVENANCE) {
+      expect((m as RegExpExecArray)[1]).not.toContain(col);
+    }
+  });
+
+  it('the rendered line reaches exactly ONE surface — the Pet-tab card (CUL-1040)', () => {
+    // `withWindowMovedLine` appends to the SHARED `TrialCardModel.lines`, and a line
+    // appended to a shared model travels wherever the model travels. Six modules import
+    // `lib/dietTrialCard.ts`; only the card component reads `.lines`, and the rest take
+    // named helpers or types. If a second reader appears — `lib/daySummary.ts` is the one
+    // that would matter, because the notification spec's D3 forbids a body that asserts
+    // record contents — this reds and that reader has to say what it does about the line.
+    const readers = sources().filter((rel) => {
+      const src = code(rel);
+      if (!/from\s+['"][^'"]*dietTrialCard['"]/.test(src)) return false;
+      return /\.lines\b/.test(src);
+    });
+    expect(readers).toEqual(['components/profile/DietTrialCard.tsx']);
+    // Non-vacuity: the importer set is real and larger than the reader set, so the
+    // filter above is discriminating rather than matching nothing.
+    const importers = sources().filter((rel) =>
+      /from\s+['"][^'"]*dietTrialCard['"]/.test(code(rel)),
+    );
+    expect(importers.length).toBeGreaterThan(readers.length);
   });
 
   it('no REMOTE diet_trials read sweeps them up with select(*)', () => {
