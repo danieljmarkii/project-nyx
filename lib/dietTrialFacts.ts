@@ -74,6 +74,7 @@ import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './tri
 import { trialTargetProtein } from './trialProtein';
 import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
+import { trialStartDayKey } from './trialWindowDates';
 
 export interface DietTrialFactsPet {
   id: string;
@@ -100,6 +101,10 @@ interface TrialRow {
   /** B-704 — the owner-stated trial protein (canonical key or null). Resolved
    *  stored-first through `trialTargetProtein` into the card/strip identity. */
   target_protein: string | null;
+  /** Migration 068 — stamped by `changeTrialWindow` on every window change. Read
+   *  for §4.3's one line, for the rest of the local day the window moved
+   *  (CUL-1040). Null on every trial whose window has never moved. */
+  target_duration_set_at: string | null;
 }
 
 /** The card's read, against the LOCAL mirror B-417 PR 2 shipped (#453).
@@ -155,6 +160,7 @@ export const TRIAL_FOR_CARD_SQL = `
   SELECT t.id, t.started_at, t.target_duration_days,
          t.target_duration_days_initial, t.status,
          t.ended_at, t.stopped_reason, t.outcome, t.indication, t.target_protein,
+         t.target_duration_set_at,
          COALESCE(
            NULLIF(TRIM(COALESCE(f.brand, '') || ' ' || COALESCE(f.product_name, '')), ''),
            t.food_label
@@ -261,6 +267,7 @@ export async function loadTrialPredicateFacts(
     endedAt: row.ended_at,
     targetDurationDays: row.target_duration_days,
     foodLabel: row.food_label,
+    targetDurationSetAt: row.target_duration_set_at,
     stoppedReason: row.stopped_reason,
     outcome: (row.outcome as TrialCardTrial['outcome']) ?? null,
     // Narrowed from the local TEXT column against the ENUM migration 040 defines.
@@ -610,12 +617,11 @@ function shiftDayKey(dayKey: string, deltaDays: number): string {
 
 
 /** The trial's own local day key, whether the column arrived as a DATE or an ISO
- *  instant (the local mirror stores TEXT and both shapes exist in the wild). */
-function startKeyOf(startedAt: string): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(startedAt)
-    ? startedAt
-    : toLocalDayKey(new Date(startedAt));
-}
+ *  instant (the local mirror stores TEXT and both shapes exist in the wild).
+ *
+ *  DELEGATES since CUL-1040: the card and the window sheet need the same branch, and
+ *  a second inline copy is how one of them came to slice the string instead. */
+const startKeyOf = trialStartDayKey;
 
 /**
  * The lower bound every windowed read below uses.

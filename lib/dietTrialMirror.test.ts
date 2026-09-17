@@ -29,6 +29,8 @@ import {
   type LocalDietTrialFood,
 } from './dietTrialMirror';
 import { COLUMN_UPGRADES, applyColumnUpgrades } from './localSchema';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 // node:sqlite is Node ≥ 22 core; require() keeps it off the babel/jest-expo path
 // (same loader trick as lib/medications.test.ts).
@@ -531,17 +533,17 @@ describe('COLUMN_UPGRADES — the ALTER path an already-installed device takes (
 describe('row → Supabase upsert mappers', () => {
   const trial: LocalDietTrial = {
     id: 't1', pet_id: 'p1', food_item_id: 'f1', started_at: '2026-07-01',
-    target_duration_days: 56,
-    // CUL-1038 — the DESIGNED window, forwarded as of PR 1b. Deliberately NOT
-    // equal to `target_duration_days` here: an extended trial is the only shape
-    // where the two differ, and a fixture that sets them equal cannot tell a
-    // mapper forwarding the right column from one forwarding the wrong one.
-    target_duration_days_initial: 42,
-    status: 'active', completed_at: null,
+    target_duration_days: 56, status: 'active', completed_at: null,
     vet_name: 'Dr Chen', notes: null, food_label: 'RC HP', indication: 'skin',
     phase: 'elimination', outcome: null, outcome_notes: null, stopped_reason: null,
     ended_at: null, transition_started_at: '2026-06-24',
     target_protein: 'duck', target_protein_set_at: '2026-07-01T00:00:00.000Z',
+    // CUL-1039 (migration 068) — the steady state of a trial whose window has
+    // never moved. NULL across all three, and `days_initial` NULL specifically
+    // means NOT RECORDED (068's backfill cannot reach a trial created after the
+    // apply), never a number.
+    target_duration_days_initial: null, target_duration_set_at: null,
+    target_duration_vet_directed: null,
     vet_visit_id: null, // CUL-899 — no writer until VV-3, so null is the steady state
     created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
   };
@@ -563,27 +565,10 @@ describe('row → Supabase upsert mappers', () => {
   // so does leaving a registered column unforwarded — the two halves cannot drift
   // apart. Keep this at zero entries; an entry is a dated exception, not a
   // parking space.
-  const PENDING_MAPPER_COLUMNS: Readonly<Record<string, string>> = {
-    // CUL-1037 (migration 068) declared three, and all three are still
-    // unforwarded — but for two different reasons, which is why the entries name
-    // two different issues.
-    //
-    // `target_duration_days_initial` is the one CUL-1038 (PR 1b) HYDRATES and
-    // READS. It is deliberately not pushed: the code review on that PR traced a
-    // full clobber — an upgrading device holds NULL here until a hydrate fills
-    // it, `pushRows` is a real full-row upsert, and `syncNow` is push-before-pull,
-    // so a `Keep going` tap before that row's first hydrate would erase 068's
-    // backfill and silently return the vet report to the pre-repair arithmetic
-    // for exactly the trials the freeze protects. Closing it needs a server-side
-    // ratchet (a `BEFORE UPDATE` refusing NULL over a value), which is a
-    // migration and therefore its own PR: **CUL-1051**, which BLOCKS PR 2.
-    // See `dietTrialRowToRemote`'s own note for the full trace.
-    target_duration_days_initial: 'CUL-1051',
-    // The other two are CUL-1039 / PR 2's, with the write path that first gives
-    // them a value and the INTEGER↔BOOLEAN coercion.
-    target_duration_set_at: 'CUL-1039',
-    target_duration_vet_directed: 'CUL-1039',
-  };
+  // Emptied by CUL-1039, in the same change that added the three columns to the
+  // mapper — the two halves cannot be separated without reddening this file, which
+  // is the registry's whole purpose and was proved by mutation on #866.
+  const PENDING_MAPPER_COLUMNS: Readonly<Record<string, string>> = {};
 
   it('forwards every diet_trials server column (the B-057 drift guard)', () => {
     // Completeness, asserted on the KEY SET: a column silently dropped here
@@ -622,34 +607,6 @@ describe('row → Supabase upsert mappers', () => {
     expect(unforwarded.sort()).toEqual(Object.keys(PENDING_MAPPER_COLUMNS).sort());
   });
 
-  it('NEVER pushes target_duration_days_initial — the freeze depends on not writing it (CUL-1038)', () => {
-    // A PROHIBITION, not a to-do, and it is tested separately because the registry
-    // above cannot tell the two apart. `PENDING_MAPPER_COLUMNS` means "a column the
-    // mapper does not forward YET" for the other two entries; for this one it means
-    // "a column the mapper must not forward until CUL-1051's ratchet exists". A PR 2
-    // session reading only the registry would forward it, which is the bug.
-    //
-    // WHY. `pushRows` is a real full-row upsert and PostgREST sets every column
-    // PRESENT in the payload from `excluded`, so a forwarded value from a device that
-    // has not hydrated this row yet OVERWRITES migration 068's backfill — and
-    // `syncNow` is push-before-pull, with `extendTrial` firing its own immediate push.
-    // The result is the coverage freeze silently reverting to the pre-repair
-    // arithmetic for precisely the trials it protects.
-    //
-    // Asserted on the KEY'S ABSENCE, not on a null value: `upsert` treats a present
-    // null as an instruction to write null, so `{ target_duration_days_initial: null }`
-    // is the clobber rather than the fix. And asserted over BOTH a populated and an
-    // empty local value, because the rule is "never pushed" — a mapper that forwarded
-    // it only when non-null would still push a stale 64 over a correct 28.
-    for (const initial of [42, null]) {
-      const payload = dietTrialRowToRemote({ ...trial, target_duration_days_initial: initial });
-      expect('target_duration_days_initial' in payload).toBe(false);
-    }
-    // Non-vacuity: the local row really does carry the column, so the absence above
-    // is the mapper's decision and not a fixture that never had it.
-    expect(trial.target_duration_days_initial).not.toBeUndefined();
-  });
-
   it('forwards the visit link as-is, and it moves NO other value (CUL-899)', () => {
     // The link is PROVENANCE — where the trial came from — and CUL-746/TG-5 make
     // that a rule with teeth: it must never become a source of numbers. So this
@@ -660,6 +617,46 @@ describe('row → Supabase upsert mappers', () => {
     const linked = dietTrialRowToRemote({ ...trial, vet_visit_id: 'visit-9' });
     expect(linked.vet_visit_id).toBe('visit-9');
     expect({ ...linked, vet_visit_id: null }).toEqual(dietTrialRowToRemote(trial));
+  });
+
+  it('coerces the vet-directed flag INTEGER → BOOLEAN, and never invents a false (CUL-1039)', () => {
+    // SQLite has no boolean type, so the mirror stores 1/0/NULL against a server
+    // BOOLEAN. The mapping is one to one in BOTH directions, and the third state is
+    // the point: §5.1's two-sided rule makes NULL and false indistinguishable
+    // DOWNSTREAM — both are silence — but a mapper that normalised NULL to false on
+    // the wire would be answering, in the record, a question the owner was never
+    // asked. Asserted with `toBeNull` / `toBe(false)` rather than a truthiness
+    // check, which cannot tell them apart.
+    expect(dietTrialRowToRemote({ ...trial, target_duration_vet_directed: 1 })
+      .target_duration_vet_directed).toBe(true);
+    expect(dietTrialRowToRemote({ ...trial, target_duration_vet_directed: 0 })
+      .target_duration_vet_directed).toBe(false);
+    expect(dietTrialRowToRemote({ ...trial, target_duration_vet_directed: null })
+      .target_duration_vet_directed).toBeNull();
+  });
+
+  it('forwards the window provenance as-is, and it moves NO other value (CUL-1039)', () => {
+    // The same two-sided shape as the visit link above, for the same reason: these
+    // three columns exist to let the report say the window MOVED, and a mapper that
+    // also nudged `target_duration_days` or `started_at` would be moving the
+    // numbers the disclosure is about.
+    const moved = dietTrialRowToRemote({
+      ...trial,
+      target_duration_days: 84,
+      target_duration_days_initial: 56,
+      target_duration_set_at: '2026-09-19T10:00:00.000Z',
+      target_duration_vet_directed: 1,
+    });
+    expect(moved.target_duration_days_initial).toBe(56);
+    expect(moved.target_duration_set_at).toBe('2026-09-19T10:00:00.000Z');
+    expect(moved.target_duration_days).toBe(84);
+    expect({
+      ...moved,
+      target_duration_days: 56,
+      target_duration_days_initial: null,
+      target_duration_set_at: null,
+      target_duration_vet_directed: null,
+    }).toEqual(dietTrialRowToRemote(trial));
   });
 
   it('never forwards the local-only synced / sync_error columns', () => {
@@ -702,6 +699,106 @@ describe('row → Supabase upsert mappers', () => {
 
   it('preserves an open-ended membership as null rather than defaulting it', () => {
     expect(dietTrialFoodRowToRemote(food).allowed_until).toBeNull();
+  });
+});
+
+// ── The PULL side's column lists, derived from the same DDL (CUL-1039) ───────
+//
+// WHY THIS EXISTS. `dietTrialRowToRemote` has a completeness guard; `hydrateDietTrials`
+// did not, and its two column lists are hand-written strings. A column absent from
+// the SELECT never comes down — no error, no log, the value simply stays on the
+// server forever — and a column absent from the INSERT is dropped on arrival.
+// `lib/sqlShape.test.ts` proves the INSERT's four lists COUNT OUT the same; it has
+// nothing to say about a column missing from all four at once, which is exactly the
+// drift shape migration 068 shipped with. MEASURED, not assumed: with
+// `target_duration_set_at` removed from the column list, the placeholders, the
+// param array AND the conflict clause, sqlShape is 168/168 GREEN and the two tests
+// below are RED. (Remove it from only three of the four and sqlShape catches it —
+// so the mutation that proves this guard has to be the CONSISTENT one, which was
+// not the first mutation tried here.)
+//
+// The expected set is DERIVED from the executed DDL (C-38), so a future column is
+// enrolled by existing, not by being remembered here.
+//
+// STATED BLIND SPOTS, because an undocumented one reads as coverage: this checks
+// PRESENCE, not order, not the placeholder count (sqlShape's job), not that the
+// param in that position is the right one, and not the two tables the same function
+// does not touch. It is scoped to `diet_trials` deliberately — the other hydrators
+// have the same hole and closing them is not this PR's (they are named in the
+// session record).
+describe('hydrateDietTrials column lists cover the local DDL (CUL-1039)', () => {
+  const hydrateSource = (): string => {
+    const src = readFileSync(join(__dirname, 'sync.ts'), 'utf8');
+    const start = src.indexOf('async function hydrateDietTrials(');
+    const end = src.indexOf('async function hydrateDietTrialFoods(', start);
+    // Non-vacuity: a rename upstream must fail here rather than silently hand the
+    // assertions an empty string, which every `toContain` below would pass over.
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return src.slice(start, end);
+  };
+
+  /** The server columns, from the DDL this repo actually executes. */
+  const serverColumns = (): string[] => {
+    const db = freshDb();
+    const cols = columnsOf(db).filter(
+      (c) => !['synced', 'sync_attempts', 'sync_error'].includes(c),
+    );
+    db.close();
+    expect(cols.length).toBeGreaterThan(15); // the same floor the push guard uses
+    return cols;
+  };
+
+  /** `indexOf` from a known-earlier anchor, refusing -1. The first draft of these
+   *  tests searched the whole function body for `WHERE diet_trials.synced = 1` and
+   *  found it in the function's own LEADING COMMENT, 2,000 characters before the
+   *  statement — which inverted a slice into an empty string and reported every
+   *  column missing. A marker that also appears in prose is not an anchor. */
+  const at = (body: string, needle: string, from = 0): number => {
+    const i = body.indexOf(needle, from);
+    expect(i).toBeGreaterThan(-1);
+    return i;
+  };
+
+  it('pulls every server column down (the SELECT list)', () => {
+    const body = hydrateSource();
+    const after = at(body, "'diet_trials',");
+    const selectList = body.slice(after + "'diet_trials',".length, at(body, 'floor ?', after));
+    const selected = (selectList.match(/'([^']*)'/g) ?? [])
+      .map((q) => q.slice(1, -1))
+      .join('')
+      .split(',')
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+    expect(selected.length).toBeGreaterThan(15);
+    expect(serverColumns().filter((c) => !selected.includes(c))).toEqual([]);
+  });
+
+  it('writes every server column locally (the INSERT list)', () => {
+    const body = hydrateSource();
+    const insert = body.slice(at(body, 'INSERT INTO diet_trials'));
+    const written = insert
+      .slice(at(insert, '(') + 1, at(insert, ')'))
+      .split(',')
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+    expect(written.length).toBeGreaterThan(15);
+    expect(serverColumns().filter((c) => !written.includes(c))).toEqual([]);
+  });
+
+  it('refreshes every server column on the conflict branch, except the immutable ones', () => {
+    // A column in the INSERT but absent from ON CONFLICT DO UPDATE lands on the
+    // first pull and then never changes again — a window that moved on another
+    // device would arrive once and go stale, which is the same silence as not
+    // pulling it. `id` is the conflict key and `created_at` is write-once by
+    // definition; both are named rather than derived, because they are decisions.
+    const body = hydrateSource();
+    const conflictAt = at(body, 'ON CONFLICT(id) DO UPDATE SET');
+    const clause = body.slice(conflictAt, at(body, 'WHERE diet_trials.synced = 1', conflictAt));
+    expect(clause.length).toBeGreaterThan(200);
+    const refreshed = serverColumns().filter((c) => !['id', 'created_at'].includes(c));
+    expect(refreshed.length).toBeGreaterThan(15);
+    expect(refreshed.filter((c) => !clause.includes(`${c}=excluded.${c}`))).toEqual([]);
   });
 });
 

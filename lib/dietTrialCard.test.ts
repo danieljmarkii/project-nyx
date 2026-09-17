@@ -22,6 +22,7 @@ jest.mock('./feedingArrangements', () => ({
 import {
   resolveTrialCard,
   trialManageLabel,
+  trialManageTarget,
   resolveTrialStrip,
   trialResponseStandingLine,
   planTrialCard,
@@ -470,16 +471,30 @@ describe('trialManageLabel — the header affordance, honest per state', () => {
     expect(trialManageLabel({ state: 'completed', actions: [] })).toBe('+ Start');
   });
 
-  // "Replace", never "Change": on a running trial the header opens end-and-replace,
-  // and "Change" read as an edit — routing an active (day-1: the ONLY) card to its
-  // own destruction.
-  it('says "Replace" on every running state', () => {
+  // "Manage" since CUL-1040 (D6a) — and deliberately neither act's own verb. It
+  // said "Replace" while that was all it could do, and "Change" before that, which
+  // read as an EDIT and routed an active (day-1: the ONLY) card to its own
+  // destruction. Now that both acts exist, a header naming one would promise the
+  // other, so it names the door.
+  it('says "Manage" on every running state, and points at the door', () => {
     for (const s of [
       'day_one', 'clean', 'exposures', 'below_floor', 'milestone',
       'overrun', 'intake_decline', 'free_fed', 'trial_refusal',
     ] as const) {
-      expect(trialManageLabel({ state: s, actions: [link] })).toBe('Replace');
+      expect(trialManageLabel({ state: s, actions: [link] })).toBe('Manage');
+      expect(trialManageTarget({ state: s, actions: [link] })).toBe('window_door');
     }
+  });
+
+  // The destination half, on the two arms where it is NOT the door. A terminal card
+  // has no window to change, so `+ Start` goes to the start form — and suppression
+  // is keyed on the actions in both functions, which is what stops an `abandoned`
+  // card with `actions: []` being stranded (the regression below).
+  it('points a terminal card at the start form, and suppresses in lockstep', () => {
+    expect(trialManageTarget({ state: 'completed', actions: [] })).toBe('start_trial');
+    expect(trialManageTarget({ state: 'abandoned', actions: [] })).toBe('start_trial');
+    expect(trialManageTarget({ state: 'no_trial', actions: [start] })).toBeNull();
+    expect(trialManageTarget({ state: 'abandoned', actions: [start] })).toBeNull();
   });
 
   // REGRESSION (`code-reviewer`, 2026-08-06): suppression is keyed on the ACTIONS,

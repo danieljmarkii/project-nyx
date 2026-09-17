@@ -312,15 +312,14 @@ Deno.test('mapMedicationItemRows: renames catalog columns, preserving nulls', ()
 Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () => {
   const rows = mapDietTrialRows([{
     id: 't1', food_item_id: 'f1', started_at: '2026-05-01', target_duration_days: 56,
-    // CUL-1038 — the DESIGNED window, DIFFERENT from the live target on purpose:
-    // an extended trial is the only shape where the two diverge, and a fixture
-    // that sets them equal cannot tell a mapper reading the right column from one
-    // reading the wrong one.
-    target_duration_days_initial: 42,
     status: 'active', completed_at: null, ended_at: null, indication: 'skin',
     outcome: null, outcome_notes: null, stopped_reason: null, food_label: 'Royal Canin Hydrolyzed',
     vet_name: 'Dr Chen',
     target_protein: 'duck', target_protein_set_at: '2026-05-03T10:00:00Z',
+    // CUL-1041 migration 068 — a window that MOVED, so the mapper is asserted rather
+    // than merely satisfied.
+    target_duration_days_initial: 28, target_duration_set_at: '2026-06-25T14:00:00Z',
+    target_duration_vet_directed: true,
     food_items: { food_type: 'meal', format: 'kibble', primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'Royal Canin', product_name: 'Hydrolyzed' },
     diet_trial_foods: [{
       food_item_id: 'f1', food_label: 'Royal Canin Hydrolyzed', role: 'primary_diet',
@@ -333,6 +332,10 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
   assert.equal(rows[0].indication, 'skin')
   // B-455's reader half: `ended_at` reaches the pure layer at all.
   assert.equal(rows[0].endedAt, null)
+  // CUL-1041 — all three window-provenance columns reach the pure layer.
+  assert.equal(rows[0].targetDurationDaysInitial, 28)
+  assert.equal(rows[0].targetDurationSetAt, '2026-06-25T14:00:00Z')
+  assert.equal(rows[0].targetDurationVetDirected, true)
   // The allowed set (§3.2) — rung 1 has nothing to permit against without it.
   assert.equal(rows[0].allowedFoods?.length, 1)
   assert.equal(rows[0].allowedFoods?.[0].role, 'primary_diet')
@@ -343,7 +346,10 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
   assert.equal(rows[0].targetProteinSetAt, '2026-05-03T10:00:00Z')
   // CUL-1038 — the DESIGNED window, and asserted against the LIVE one so a mapper
   // reading `target_duration_days` twice cannot pass.
-  assert.equal(rows[0].targetDurationDaysInitial, 42)
+  // CUL-1038 — the DESIGNED window, asserted against the LIVE one so a mapper
+  // reading `target_duration_days` twice cannot pass. The fixture's 28-vs-56 is
+  // PR 4's (CUL-1041) and already divergent, so this needs no separate row.
+  assert.equal(rows[0].targetDurationDaysInitial, 28)
   assert.equal(rows[0].targetDurationDays, 56)
 })
 
@@ -354,13 +360,13 @@ Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label
   // trial losing its identity on the vet report at the same moment.
   const rows = mapDietTrialRows([{
     id: 't2', food_item_id: null, started_at: '2026-05-01', target_duration_days: 28,
-    // The un-stamped row — a trial created after 068 and before the create-stamp.
-    // NULL means "not recorded", never a number.
-    target_duration_days_initial: null,
     status: 'abandoned', completed_at: null, ended_at: '2026-05-19', indication: 'gi',
     outcome: null, outcome_notes: null, stopped_reason: 'refused',
     food_label: 'Purina HA', vet_name: null,
     target_protein: null, target_protein_set_at: null,
+    // CUL-1041 — the ordinary row: the window has never moved.
+    target_duration_days_initial: 28, target_duration_set_at: null,
+    target_duration_vet_directed: null,
     food_items: null, diet_trial_foods: null,
   }])
   assert.equal(rows[0].endedAt, '2026-05-19')
@@ -371,6 +377,11 @@ Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label
   // B-704 — a trial with no stored protein maps null (derivation still runs downstream).
   assert.equal(rows[0].targetProtein, null)
   assert.equal(rows[0].targetProteinSetAt, null)
+  // CUL-1041 — a backfilled row whose window has never moved. `initial` alone is NOT
+  // the "did it move?" predicate: it is populated here and the answer is still no.
+  assert.equal(rows[0].targetDurationDaysInitial, 28)
+  assert.equal(rows[0].targetDurationSetAt, null)
+  assert.equal(rows[0].targetDurationVetDirected, null)
 })
 
 Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared carried', () => {

@@ -526,23 +526,6 @@ export interface ReportDietTrialInput extends ReportFoodProteinInput {
   foodItemId: string | null
   startedAt: string // DATE
   targetDurationDays: number
-  /**
-   * `diet_trials.target_duration_days_initial` (migration 068, CUL-1037) — the
-   * window the trial was DESIGNED against, which `targetDurationDays` stops being
-   * the moment an owner extends.
-   *
-   * ONE READER: the coverage denominator's freeze (CUL-1038 / D7c, spec §5.4).
-   * The day line, the overrun phrase, the stop-reason line and the trial anchor
-   * all read `targetDurationDays` and must keep reading it — they describe the
-   * window in force today, and an extension is supposed to move them. It is the
-   * claims ABOUT THE RECORD that may not move (TE-6).
-   *
-   * Absent/null is "not recorded", never a number; it falls back to
-   * `targetDurationDays`, which is the pre-repair behaviour preserved exactly.
-   * Never compare the two to infer that the window moved — that predicate is
-   * `target_duration_set_at`, which nothing writes until PR 2.
-   */
-  targetDurationDaysInitial?: number | null
   status: string // 'active'|'completed'|'abandoned'
   completedAt: string | null
   /**
@@ -568,6 +551,26 @@ export interface ReportDietTrialInput extends ReportFoodProteinInput {
    *  disclosure ("protein confirmed day N" when it falls after day 1, §7.4); it never
    *  versions the value (TP-3: one value, whole-trial, disclosed not versioned). */
   targetProteinSetAt?: string | null
+  /**
+   * CUL-1041 / migration 068 — §5.1's WINDOW PROVENANCE, three fields read as one.
+   *
+   * `targetDurationSetAt` is THE predicate: "did this window move?" is
+   * `targetDurationSetAt != null`, never a comparison of `targetDurationDaysInitial`
+   * against `targetDurationDays` (two equal numbers are also what a corrected typo
+   * looks like, and a trial created between 068 and the PR 2 write path lands with a
+   * NULL initial and a real move). On null, the other two are not read at all.
+   *
+   * `targetDurationDaysInitial` is the window the trial was DESIGNED against — the
+   * value immediately before the first RECORDED change. NULL means "not recorded" and
+   * is never rendered as a number.
+   *
+   * `targetDurationVetDirected` is TRUE only when the owner checked the box. NULL and
+   * FALSE are indistinguishable downstream and both mean SILENCE — an unchecked box is
+   * never rendered as "the owner did this on their own" (§5.1's two-sided rule).
+   */
+  targetDurationDaysInitial?: number | null
+  targetDurationSetAt?: string | null
+  targetDurationVetDirected?: boolean | null
   /** What the trial is FOR (migration 040). Renders verbatim to a clinician and
    *  decides whether an antibiotic course is worth naming (§7). */
   indication?: 'skin' | 'gi' | 'other' | null

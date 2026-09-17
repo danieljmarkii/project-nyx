@@ -346,9 +346,6 @@ interface DietTrialRow {
   food_item_id: string | null
   started_at: string
   target_duration_days: number
-  /** migration 068 (CUL-1037) — the window the trial was DESIGNED against; the
-   *  coverage freeze's only input (CUL-1038). NULL = not recorded. */
-  target_duration_days_initial: number | null
   status: string
   completed_at: string | null
   // B-455: `ended_at` is written on BOTH completed and abandoned (§3.1) and was
@@ -365,6 +362,12 @@ interface DietTrialRow {
   /** B-704 migration 053 — the owner's stored trial protein + when it was set. */
   target_protein: string | null
   target_protein_set_at: string | null
+  /** CUL-1037 migration 068 — the window this trial was DESIGNED against, when the
+   *  window last moved, and whether the owner said a vet directed it. All three are
+   *  nullable and are read only through `target_duration_set_at` (§5.1). */
+  target_duration_days_initial: number | null
+  target_duration_set_at: string | null
+  target_duration_vet_directed: boolean | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
   diet_trial_foods: DietTrialFoodRow[] | null
 }
@@ -931,10 +934,6 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
       foodItemId: r.food_item_id ?? null,
       startedAt: r.started_at,
       targetDurationDays: r.target_duration_days,
-      // migration 068 / CUL-1038 — the DESIGNED window, the coverage freeze's only
-      // input. NULL on a trial nothing has stamped; the module treats that as
-      // "not recorded" and falls back to the live target.
-      targetDurationDaysInitial: r.target_duration_days_initial ?? null,
       status: r.status,
       completedAt: r.completed_at ?? null,
       // B-455. `completed_at` alone is null on an ABANDONED trial, which the
@@ -955,6 +954,12 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
       // `trialTargetProtein`; null derives, exactly as today. Never permits (TG-1).
       targetProtein: r.target_protein ?? null,
       targetProteinSetAt: r.target_protein_set_at ?? null,
+      // CUL-1041 (migration 068) — §5.1's window provenance. `?? null` on all three,
+      // because PostgREST omits a column it cannot read and `undefined` would then
+      // reach a reader that switches on `!= null`.
+      targetDurationDaysInitial: r.target_duration_days_initial ?? null,
+      targetDurationSetAt: r.target_duration_set_at ?? null,
+      targetDurationVetDirected: r.target_duration_vet_directed ?? null,
       ...mapFoodProteins(fi),
       allowedFoods: (r.diet_trial_foods ?? []).map((f) => {
         const ffi = first(f.food_items)
@@ -1235,31 +1240,30 @@ export async function generateReportForPet(
         .eq('pet_id', petId).is('deleted_at', null)
         .order('visited_at', { ascending: false }).order('id', { ascending: false })
         .range(from, to)),
-    // `target_duration_days_initial` (migration 068, CUL-1037) is selected below.
-    // CUL-1038 freezes the coverage denominator on it, so one extension tap cannot
-    // move `belowCoverageFloor` / `mayStateRecordClean` / `interpretability` over a
-    // record that did not change (TE-6, §5.4). Selecting it is inert until this
-    // function is redeployed; that redeploy is the standing ledger item, never a new
-    // one. The other two provenance columns (set_at, vet_directed) are PR 4's, with
-    // §5.1's window-change sentence.
-    //
-    // The rationale sits HERE rather than inside the chain because
-    // `guards/reportPullPagination.test.ts` reads 2,000 characters from `.from(` and
-    // a comment inside the select pushed `count: 'exact'` out of that window — the
-    // guard went red on a pull that pages perfectly well. Its bound is deliberate
-    // (C-4: a fixed window that reaches into the next query is not a slice of the
-    // object under test), so the comment moved rather than the bound.
+    // A NOTE FOR WHOEVER ADDS THE NEXT COMMENT TO THIS CHAIN, not about the columns
+    // (the select says what they are): `guards/reportPullPagination.test.ts` reads
+    // 2,000 characters from `.from(` and a rationale written INSIDE the select pushed
+    // `count: 'exact'` out of that window — the guard went red on a pull that pages
+    // perfectly well (measured, CUL-1038). Its bound is deliberate (C-4: a fixed
+    // window that reaches into the next query is not a slice of the object under
+    // test), so prose about this pull belongs here, above the call, and never in the
+    // chain. `target_duration_days_initial` is the coverage freeze's input (CUL-1038);
+    // its two siblings are the window-change sentence's (CUL-1041).
     fetchAll<DietTrialRow>('diet_trials', (r) => r.id, (from, to) =>
       supabase
       .from('diet_trials')
       .select(
         'id, food_item_id, started_at, target_duration_days, status, completed_at, ended_at, ' +
           'indication, outcome, outcome_notes, stopped_reason, food_label, vet_name, ' +
-          'target_duration_days_initial, ' + // CUL-1038 — see above
           // B-704 migration 053 — the owner's stored trial protein feeds the report's
           // stored-first naming (§7.4). Selecting it is inert until `generate-report` is
           // redeployed; that redeploy rides the standing B-494 gate, never on its own.
           'target_protein, target_protein_set_at, ' +
+          // CUL-1041 migration 068 — the window's provenance (§5.1). `set_at` is THE
+          // predicate for "did this window move?"; `initial` is never compared against
+          // the current target to decide that, and NULL means "not recorded" rather
+          // than a number. Selecting these is inert until `generate-report` redeploys.
+          'target_duration_days_initial, target_duration_set_at, target_duration_vet_directed, ' +
           `food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name), ` +
           // The allowed set (§3.2) — rung 1 of §5.3, and the only reason the report
           // can tell a vet-permitted treat from a contaminant. Soft-deleted rows are

@@ -104,23 +104,11 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     -- anything building from the DDL constants, the upgrade reaches an already
     -- installed device (the 048 / 053 / 066 precedent).
     --
-    -- ⚠ AMENDED BY CUL-1038 (PR 1b). This said "nothing reads or writes these
-    -- three yet: the hydrate select, the push mapper and the write path are PR
-    -- 2's". One of the three now moves, and it moves in ONE DIRECTION ONLY:
-    --
-    --   • target_duration_days_initial is HYDRATED as of PR 1b, and READ by the
-    --     coverage freeze (trialCoverageWindowEndDayIndex, spec §6 D7c). It is
-    --     NOT pushed and NOT stamped on the device — see the long note on
-    --     dietTrialRowToRemote for the clobber that forbids it. The server value
-    --     is authoritative; this mirror holds a copy it may not write back.
-    --   • set_at and vet_directed are still PR 2's, untouched — they record that
-    --     the window MOVED, which is a write path, and the paired-null contract
-    --     is enforced there.
-    --
-    -- All three were declared by PR 1 so PR 2's local UPDATE cannot throw "no
-    -- such column" on an upgrading device; that is still why the other two sit
-    -- here unread, and it is what PR 2 needs in place before it can write any of
-    -- them (behind CUL-1051's ratchet).
+    -- WIRED END TO END BY CUL-1039 (PR 2): changeTrialWindow writes all three,
+    -- dietTrialRowToRemote pushes them (coercing vet_directed INTEGER -> BOOLEAN)
+    -- and hydrateDietTrials pulls them back (BOOLEAN -> INTEGER). Both are explicit
+    -- column lists, so both are asserted in the test file against the set DERIVED
+    -- from this DDL, never against a list re-typed beside it.
     target_duration_days_initial INTEGER,
     target_duration_set_at       TEXT,
     target_duration_vet_directed INTEGER,
@@ -258,15 +246,6 @@ export interface LocalDietTrial {
   food_item_id: string | null;
   started_at: string;
   target_duration_days: number;
-  // migration 068 (CUL-1037) — the window the trial was DESIGNED against.
-  //
-  // READ-ONLY ON THE DEVICE, and that is a safety property rather than a
-  // convenience (CUL-1038's code review). It is HYDRATED from the server, where
-  // 068's backfill filled it, and read by the coverage freeze
-  // (`trialCoverageWindowEndDayIndex`). It is deliberately NOT in
-  // `dietTrialRowToRemote` — see the note there. NULL means "this device has not
-  // learned it yet", never a number.
-  target_duration_days_initial: number | null;
   status: string;
   completed_at: string | null;
   vet_name: string | null;
@@ -282,6 +261,14 @@ export interface LocalDietTrial {
   // migration 053 (B-704) — the owner-stated trial protein + its provenance stamp.
   target_protein: string | null;
   target_protein_set_at: string | null;
+  // migration 068 (CUL-1037) — WINDOW PROVENANCE, written by `changeTrialWindow`
+  // (CUL-1039). `vet_directed` is INTEGER here and BOOLEAN on the server, which is
+  // the one coercion this mapper has ever needed; `days_initial` is NULL for a
+  // trial created between 068's apply and the write path shipping, and NULL means
+  // NOT RECORDED, never a number.
+  target_duration_days_initial: number | null;
+  target_duration_set_at: string | null;
+  target_duration_vet_directed: number | null;
   // CUL-899 VV-1 (migration 066) — PROVENANCE: the visit this trial came from.
   // Never a source of numbers: `started_at`, the coverage denominators and the
   // adherence counts stay the trial's own (CUL-746: one population, one owner;
@@ -338,60 +325,32 @@ export interface RemoteDietTrialUpsert {
   // path (PR 3), never here.
   target_protein: string | null;
   target_protein_set_at: string | null;
+  // migration 068 (CUL-1039). `set_at` forwarded AS-IS (an ISO/UTC string on the
+  // wire, like every other stamp here); `vet_directed` is coerced INTEGER →
+  // BOOLEAN because SQLite has no boolean type and the server column is one. The
+  // write contract — set_at stamped on every change, days_initial captured once —
+  // is enforced at the write path (`changeTrialWindow`), never here.
+  target_duration_days_initial: number | null;
+  target_duration_set_at: string | null;
+  target_duration_vet_directed: boolean | null;
   vet_visit_id: string | null; // CUL-899 VV-1 — provenance only (migration 066)
   created_at: string;
   updated_at: string;
 }
 
-// Trial → upsert payload. No booleans to coerce; the guard this mapper encodes is
-// COMPLETENESS — it forwards every server column and drops the local-only
-// `synced` / `sync_error`, so no column silently desyncs (the B-057
-// placeholder/param-drift class, asserted by the key-set test).
+// Trial → upsert payload. The guard this mapper encodes is COMPLETENESS — it
+// forwards every server column and drops the local-only `synced` / `sync_error`,
+// so no column silently desyncs (the B-057 placeholder/param-drift class, asserted
+// by the key-set test, which derives its expected set from the executed DDL).
 //
-// ── THE ONE SERVER COLUMN THIS MAPPER DELIBERATELY DOES NOT FORWARD ─────────
-//
-// `target_duration_days_initial` (migration 068) is hydrated DOWN and never
-// pushed UP, and the completeness rule above is suspended for it on purpose.
-// Removing it from this payload is what stops CUL-1038's coverage freeze from
-// un-freezing the trials it was written to protect.
-//
-// THE CLOBBER, traced end to end (found by `code-reviewer` on CUL-1038, before
-// the freeze shipped):
-//
-//   1. `COLUMN_UPGRADES` adds this column to an already-installed device as a
-//      bare `ALTER TABLE ADD COLUMN` with nothing backfilled locally — correct,
-//      because a local guess would be the app writing down a value the owner
-//      never stated. So on an upgrading phone every pre-existing trial holds
-//      NULL here until a hydrate fills it.
-//   2. `pushRows` does a real full-row `upsert(..., { onConflict: 'id' })`, and
-//      PostgREST sets every column PRESENT in the payload from `excluded`. A
-//      forwarded NULL therefore OVERWRITES the server's value.
-//   3. `syncNow` is push-before-pull (FR-2), and `extendTrial` /
-//      `endActiveTrial` / `setTrialTargetProtein` each fire their own immediate
-//      `syncPendingDietTrials()` with no hydrate in front of them. The extension
-//      tap is one tap with no confirm and no network gate.
-//
-// So an owner who updates the app and taps `Keep going` on a pre-existing
-// overrun trial before that row has been freshly hydrated would push NULL,
-// permanently erase 068's backfill, and silently return their vet report to the
-// pre-repair, TE-6-violating arithmetic — for exactly the population the freeze
-// exists to protect. Nothing repairs it afterwards: there is no trigger and no
-// re-derivation.
-//
-// WHY NOT A CLIENT-SIDE STAMP INSTEAD. Every "fill it in locally" variant writes
-// a plausible wrong number rather than an honest NULL. `COALESCE(initial,
-// target_duration_days)` on an already-extended trial records the EXTENDED
-// window as the designed one — and on a device whose local target is already 64
-// while the server correctly holds 28, it would push 64 and un-freeze the trial
-// just as thoroughly, only less visibly.
-//
-// WHAT CLOSES IT PROPERLY, and where it lives: a `BEFORE UPDATE` ratchet on
-// `diet_trials` refusing a NULL over a non-NULL, so no client — old, new,
-// hydrated or not — can regress the column. That is a migration, migrations get
-// their own PR (CLAUDE.md § Git Workflow), and it is CUL-1051, which BLOCKS the
-// PR 2 write path. Until it lands, the server value is authoritative and the
-// device cannot touch it. `PENDING_MAPPER_COLUMNS` in this module's test file
-// holds the registry entry and names that issue.
+// ONE COERCION, ADDED BY CUL-1039 (migration 068): `target_duration_vet_directed`
+// is INTEGER locally and BOOLEAN on the server. `1 → true`, `0 → false`, `NULL →
+// null`, and NULL is NOT normalised to false in either direction. That is not
+// pedantry about types: §5.1's two-sided rule makes NULL and false
+// indistinguishable DOWNSTREAM — both are silence, and neither may render as "the
+// owner did this on their own" — but a mapper that invented a `false` where the
+// column holds NULL would be manufacturing an answer to a question the owner was
+// never asked, and the column is not where that call gets made.
 export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert {
   return {
     id: row.id,
@@ -413,6 +372,10 @@ export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert
     transition_started_at: row.transition_started_at,
     target_protein: row.target_protein,
     target_protein_set_at: row.target_protein_set_at,
+    target_duration_days_initial: row.target_duration_days_initial,
+    target_duration_set_at: row.target_duration_set_at,
+    target_duration_vet_directed:
+      row.target_duration_vet_directed == null ? null : row.target_duration_vet_directed === 1,
     vet_visit_id: row.vet_visit_id, // CUL-899 — forwarded as-is; NULL until VV-3 sets it
     created_at: row.created_at,
     updated_at: row.updated_at,
