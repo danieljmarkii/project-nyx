@@ -4208,6 +4208,157 @@ Deno.test('B-532 — "completed" never claims a full course over a short one', (
   assert.ok(!/short of the/.test(full))
 })
 
+// ════════════════════════════════════════════════════════════════════════════════
+// §5.2 — the laundering path a BACKWARD window move opens (CUL-1036, PR 0)
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// docs/nyx-trial-extension-requirements.md §5.2, §5.1, D3 · track home CUL-156.
+//
+// B-532 (directly above) fixed the half of this sentence that the report can see:
+// a trial that stopped SHORT of its stored window no longer claims a full course.
+// What it cannot see is the window MOVING. `target_duration_days` is overwritten in
+// place, so a trial shortened to fit what actually happened is byte-identical, on
+// this page and everywhere else, to one that was always that length (TE-4) — and
+// `short` computes to 0, and the emphasised sentence says the course was completed.
+//
+// AN EIGHT-WEEK ELIMINATION TRIAL ABANDONED AT FOUR WEEKS IS RENDERED TO THE
+// CLINICIAN AS ONE THAT RAN ITS COURSE, and nothing on the document contradicts it.
+// On skin, 56 days IS the >90% band; on GI, ACVIM says continue ≥12 weeks. This is
+// the sentence a 60-second scan takes.
+//
+// ── WHY THIS IS A TEST AND NOT A FIX ────────────────────────────────────────────
+// D3a (ruled 2026-09-17) makes the window FORWARD-ONLY, so the app ships no control
+// that can reach this state: `nextTargetDays`' clamp cannot write a target at or
+// below the current day, and shortening routes to `Replace the trial`, which ends
+// the trial honestly and records a `stopped_reason`. The defect is therefore held
+// UN-SHIPPABLE rather than repaired, and this test is the trip-wire on that
+// decision — a future spec that re-opens backward movement owes §5.2 a render rule
+// FIRST, not a UI control, and it will find out here rather than on a vet's desk.
+//
+// So unlike an ordinary expected failure, this one is not waiting on an issue. It is
+// waiting on a decision that currently says "never". It goes green only when the
+// render learns to say what the window used to be (§5.1) — which is what a
+// re-opening spec has to build before the control.
+
+/**
+ * `test.failing` for the Deno runner, which has none.
+ *
+ * The body states the REQUIREMENT; this wrapper records that the requirement does
+ * not hold today. The test PASSES while the requirement is violated and FAILS the
+ * moment it starts holding — so a repair cannot land without promoting the marker,
+ * and a repair that does not actually repair cannot land quietly either.
+ *
+ * `{ ignore: true }` would be `skip`, which CUL-1036 forbids for exactly this
+ * reason: a skipped test asserts nothing in either direction.
+ *
+ * TWO THINGS KEEP IT FROM BEING GREEN OVER NOTHING. Only an `AssertionError`
+ * counts — a fixture break, a typo or a `renderReport` crash re-throws as a real
+ * failure rather than being absorbed as "the requirement still fails". And the
+ * green tests beside each call pin the fixture independently, so a fixture that
+ * stops producing the shape reds THERE instead of silently satisfying this.
+ */
+function expectedFailure(name: string, fn: () => void): void {
+  Deno.test(name, () => {
+    let thrown: unknown
+    let threw = false
+    try {
+      fn()
+    } catch (e) {
+      threw = true
+      thrown = e
+    }
+    if (!threw) {
+      throw new Error(
+        `EXPECTED FAILURE NOW PASSES: ${name}\n\n` +
+          'The behaviour this documented has changed. That is the signal, not a bug: ' +
+          'promote this to a plain Deno.test, delete the expectedFailure wrapper, and ' +
+          'record the repair on the issue named in the block comment above it.',
+      )
+    }
+    // A non-assertion throw is a broken fixture, not a documented hazard.
+    if (!(thrown instanceof assert.AssertionError)) throw thrown
+  })
+}
+
+/** The worked case: a 56-day trial the owner shortened to 28 on day 28 and then
+ *  marked complete. What the row HOLDS after that move is a 28-day window reached
+ *  on day 28 — there is no column anywhere that remembers the 56. */
+function shortenedToFit() {
+  return base({
+    clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+    trial: trialBlockFixture({
+      status: 'completed',
+      endedAt: '2026-06-04',
+      stoppedReason: 'completed',
+      dayCounter: 28,
+      // ⚠️ THE MOVED VALUE. The trial was prescribed for 56 days. This is the only
+      // thing the shortening changed, and it is the whole defect.
+      targetDurationDays: 28,
+    }),
+  })
+}
+
+/** The control: the same trial, same day, with the record telling the truth about
+ *  the window it was designed against. */
+function windowUnmoved() {
+  return base({
+    clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'itch' },
+    trial: trialBlockFixture({
+      status: 'completed',
+      endedAt: '2026-06-04',
+      stoppedReason: 'completed',
+      dayCounter: 28,
+      targetDurationDays: 56,
+    }),
+  })
+}
+
+Deno.test('§5.2 — the page CAN name a short trial, when the record still holds the window', () => {
+  // The non-vacuity floor for the expected failure below. Without it, "the sentence
+  // is wrong" would be indistinguishable from "the fixture never reached the
+  // sentence" — and B-532's repair is what this proves is present and working.
+  const honest = plain(renderReport(windowUnmoved()))
+  assert.match(honest, /Marked complete at day 28 — 28 days short of the 56-day window\./)
+  assert.ok(!/Ran its course/.test(honest), 'and it makes no full-course claim')
+})
+
+Deno.test('§5.2 — a window shortened to fit renders as a completed course (the defect)', () => {
+  // EXECUTED, not transcribed. This is what the clinician reads today over a trial
+  // abandoned at half its prescribed length.
+  const laundered = plain(renderReport(shortenedToFit()))
+  assert.match(laundered, /Ran its course — the full window was completed\./)
+  assert.ok(!/short of the/.test(laundered), 'nothing on the page contradicts it')
+  // And the original window is nowhere on the document — the finding TE-4 says the
+  // record owes is not withheld, it is DELETED.
+  assert.ok(!/56-day window/.test(laundered))
+  assert.ok(!/\b56 days\b/.test(laundered))
+})
+
+expectedFailure(
+  '§5.2 — a shortened window may never render as a completed course [D3 / CUL-156]',
+  () => {
+    const laundered = plain(renderReport(shortenedToFit()))
+    // The requirement, in the two forms a repair could take: refuse the claim, or
+    // name the window the trial was designed against (§5.1). Either satisfies this.
+    //
+    // The second clause is anchored to WINDOW VOCABULARY, not to the bare number.
+    // A loose `/56/` was the first draft and it reported the requirement already
+    // satisfied — "56" occurs on its own all over a rendered report (a count, a
+    // percentage, a date). A guard whose second disjunct is always true is a guard
+    // that only ever tests the first one.
+    const namesTheOriginalWindow =
+      /\b56[\s-]day window\b/.test(laundered) ||
+      /\bfrom 56 days\b/.test(laundered) ||
+      /\bwindow (?:was |is )?(?:extended|shortened|changed) from 56\b/.test(laundered)
+    assert.ok(
+      !/Ran its course — the full window was completed\./.test(laundered) ||
+        namesTheOriginalWindow,
+      'a trial shortened to fit what happened must not be rendered as one that ran ' +
+        'its course, and the report owes the window it was designed against (§5.1)',
+    )
+  },
+)
+
 Deno.test('B-532 — Appendix E states EVERY intake rating, never the mode alone', () => {
   // The canonical artifact: 38 feedings of a prescribed diet, 34 refused and 4 partly
   // eaten. The mode column printed the single word "Refused" and the four meals that
