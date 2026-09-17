@@ -46,7 +46,7 @@ deno test --lock=deno.lock --cached-only --allow-read=supabase/functions supabas
 
 That is the whole of it, and it means **every future session can run the 1803-test Edge Function
 suite and render a real vet report locally** instead of reasoning about what `render.ts` would
-print. Filed as CUL-1043 to get it into `docs/edge-deploy-runbook.md`, which is Tier 2 and not
+print. Filed as **CUL-1049** to get it into `docs/edge-deploy-runbook.md`, which is Tier 2 and not
 this session's to edit.
 
 ## The four calls where the design-locked sentence was wrong
@@ -202,8 +202,11 @@ property — the move on the last day — and every mutation was evaluated insid
   If `changeTrialWindow` writes `target_duration_vet_directed` only when checked, a
   vet-directed day-28 move silently attributes an owner-initiated day-70 move to a vet.
   A write-contract requirement for CUL-1039; unexecutable until PR 2 ships.
-- **Two T&S findings, filed rather than folded in:** the shared report PDF survives sign-out
-  and account deletion, and the unshipped share link has no audience arm for this clause.
+- **Filed out rather than folded in:** CUL-1045 (Urgent — the shared report PDF survives
+  sign-out *and* account deletion, named after the pet; the B-478 VF-6 defect repeated one
+  module over), CUL-1046 (the unshipped share link has no audience arm for this clause),
+  CUL-1047 + CUL-1048 (the cold read's findings on the *pre-existing* report), CUL-1049
+  (the deno note above). The PR-2 write contract went to CUL-1039 as a comment.
 - **Merge collision:** PR 0 (#867) also edits `render.test.ts` and `trial.test.ts`. All
   additions here are tail-appended to minimise it.
 
