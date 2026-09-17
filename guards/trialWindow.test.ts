@@ -14,14 +14,44 @@
 //   • THREE GREEN GUARDS (G1–G3) — true today and required to STAY true until the
 //     mid-trial door ships. Each is proven by mutation, not by reading (C-18); the
 //     mutation that reds each one is named in its own block.
-//   • TWO EXPECTED FAILURES — hazards the record now carries as executable tests.
-//     They are `test.failing`, never `skip`: the body states the REQUIREMENT, jest
-//     records that it does not hold today, and the suite goes RED the moment the
-//     behaviour is repaired — which is the whole point. A repair that does not
-//     actually repair cannot land quietly, and neither can one that lands without
-//     promoting the marker. (§5.2's other half is a Deno test and lives in
-//     `supabase/functions/generate-report/render.test.ts`, beside the B-532 block
-//     it extends — that render is server-side and jest does not run it.)
+//   • EXPECTED FAILURES — hazards the record now carries as executable tests. Each
+//     body states the REQUIREMENT; `expectedFailure` records that it does not hold
+//     today and turns the suite RED the moment it starts holding. Never `skip`,
+//     which asserts nothing in either direction. (§5.2's half is a Deno test and
+//     lives in `supabase/functions/generate-report/render.test.ts`, beside the
+//     B-532 block it extends — that render is server-side and jest does not run it.)
+//
+// ── WHY `expectedFailure` AND NOT jest's OWN `test.failing` ─────────────────────
+// `test.failing` passes on ANY throw. Measured: a `TypeError`, a `ReferenceError`
+// and a bare thrown string all satisfy it. So a fixture that breaks in a way that
+// happens to throw reads as "the hazard is still there" — the marker cannot tell a
+// live hazard from a dead fixture, which is the one thing it exists to tell. The
+// Deno half of this PR already filters on the assertion class because its own
+// docstring calls that load-bearing; presenting the two harnesses as equivalent
+// while one of them lacked the filter was the asymmetry. Now they match.
+//
+// ── WHAT THIS FILE DOES NOT PIN, STATED SO THE GAP IS NOT READ AS COVERAGE ──────
+// The §5.4 markers below assert over `computeTrialFacts`. The same tap was executed
+// against four more surfaces and moves all of them; none is pinned here, because
+// each needs its own harness and PR 0's remit is the model:
+//
+//   • THE OWNER'S TRIAL CARD. State `overrun` → `clean`; the body goes from "32
+//     feedings in total. Culprit isn't saying how many matched the trial diet on
+//     this record." to "…all 32 matched the trial diet or a permitted food."; the
+//     day line from "Day 50 — 22 days past the window you set" to "Day 50 of 64".
+//     Note what that is: the tap DELETES the only sentence on the card that
+//     disclosed anything was unusual. §5.4's "nothing says the window moved", made
+//     worse — the one thing that did say so is what the tap removes.
+//   • `interpretabilityStatement`, which renders verbatim on the vet report.
+//   • `coveredDayIndices` (10 → 32), which paints the widget's trial-day strip.
+//   • `pet.dietTrialActive` on the report's detection input, verified flipping
+//     FALSE → TRUE across a tap on an aged trial (target 28 → 166 on day 152) via
+//     `trialLastDayNum`. `report.ts`'s own comment: that "fully mutes detectors
+//     ⑧/⑨/⑩ and promotes correlation to band 1". §5.5 names it in prose.
+//
+// They belong with PR 1b's repair, where there is something to assert them against.
+// Listed rather than omitted because an undocumented blind spot reads as coverage
+// (C-38) — and because the card's deleted sentence is arguably the worst of the set.
 //
 // ── FIXTURE DISCIPLINE (C-35) ───────────────────────────────────────────────────
 // Every fixture here is one the real caller could hand over. The adversarial pass
@@ -39,6 +69,10 @@ jest.mock('../lib/feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn().mockResolvedValue([]),
 }));
 
+import * as fs from 'fs';
+import * as path from 'path';
+
+import { blankComments } from './blankComments';
 import { getDietTrialProgress } from '../lib/analytics';
 import {
   COVERAGE_FLOOR,
@@ -55,6 +89,7 @@ import {
 import {
   planTrialCard,
   resolveTrialCard,
+  trialManageLabel,
   type TrialCardActionId,
   type TrialCardInput,
   type TrialCardState,
@@ -73,6 +108,9 @@ function localNoon(y: number, m: number, d: number): number {
 
 const MS_PER_DAY = 86_400_000;
 
+/** `guards/` sits one level under the repo root. */
+const REPO_ROOT = path.resolve(__dirname, '..');
+
 /** Local noon on trial day N, counting from a start date, day 1 inclusive.
  *  Built by adding whole days to a local-noon instant — noon is 12h clear of both
  *  boundaries, so this survives a DST shift in either direction. */
@@ -82,6 +120,47 @@ function trialDay(start: readonly [number, number, number], n: number): number {
 
 function isoAt(ms: number): string {
   return new Date(ms).toISOString();
+}
+
+/**
+ * The jest half of the expected-failure harness, matching the Deno wrapper in
+ * `supabase/functions/generate-report/render.test.ts`.
+ *
+ * The body states the REQUIREMENT. This passes while the requirement is violated
+ * and FAILS the moment it holds, so a repair cannot land without promoting the
+ * marker and a repair that does not actually repair cannot land quietly either.
+ *
+ * Only a jest MATCHER failure counts as "still violated". Anything else — a
+ * `TypeError` from a fixture that stopped building, a `ReferenceError`, a bare
+ * thrown string — is re-thrown as a real failure. `test.failing` absorbs all three
+ * (measured), which would let a dead fixture read as a live hazard.
+ *
+ * `err.name` is useless here: jest's assertion errors report `name: 'Error'`.
+ * `matcherResult` is the property jest attaches to them and is the discriminator.
+ */
+function expectedFailure(name: string, fn: () => void): void {
+  it(`EXPECTED FAILURE · ${name}`, () => {
+    let thrown: unknown;
+    let threw = false;
+    try {
+      fn();
+    } catch (e) {
+      threw = true;
+      thrown = e;
+    }
+    if (!threw) {
+      throw new Error(
+        `EXPECTED FAILURE NOW PASSES: ${name}\n\n` +
+          'The behaviour this documented has changed. That is the signal, not a bug: ' +
+          'promote this to a plain `it`, drop the expectedFailure wrapper, and record ' +
+          'the repair on the issue named in the block comment above it.',
+      );
+    }
+    const isMatcherFailure =
+      typeof thrown === 'object' && thrown !== null && 'matcherResult' in thrown;
+    // A non-matcher throw is a broken fixture, not a documented hazard.
+    if (!isMatcherFailure) throw thrown;
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -114,6 +193,27 @@ function isoAt(ms: number): string {
 // `stateFor` reaches only at `overrunDays > 0` — the same bound by a different
 // mechanism. The distinction matters for what a mutation proves: half (a) is what
 // covers :1789, so a guard that only asserted half (b) would leave it unguarded.
+//
+// ⚠️ AND WHAT THE MODEL ALONE CANNOT SEE — the third half, added after the
+// adversarial pass showed the first two do not add up to the rule. Halves (a) and
+// (b) walk `resolveTrialCard(...).actions`, and the card's action list is not the
+// only way to the extension:
+//
+//   • `TrialCompletionSheet` (`components/profile/TrialCompletionSheet.tsx:246`)
+//     fires `onExtend()` with NO window gate of its own, whenever it is on its
+//     `decision` step. The only thing keeping that unreachable mid-trial is that
+//     `setCompletionEntry('decision')` has exactly ONE caller — the card's own
+//     `milestone` action.
+//   • The header affordance is not on `TrialCardModel` at all. It is
+//     `trialManageLabel(model)` → `trialManageVerb(state)`, and D6a makes THAT the
+//     mid-trial door in PR 3.
+//
+// So as first written this file claimed "the door's PR will have to come through
+// this file to change it" and could not cash it: PR 3 could ship header `Manage` →
+// `TrialWindowSheet` → the write without one assertion here going red. That is the
+// C-38 cheque this guard was citing one block earlier. Half (c) below closes it by
+// pinning the two facts that actually hold the door shut, so the door's PR reds
+// them and has to come here to say so.
 
 /** The two states the resolver CANNOT return mid-trial, with the reason. These are
  *  not skips — each is asserted structurally in `G1 — half (a)` below. */
@@ -311,6 +411,53 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
       nowMs: trialDay(MID_TRIAL_START, MID_TRIAL_TARGET),
     }).actions.map((a) => a.id);
     expect(atWindow).toContain('milestone');
+  });
+
+  // ── Half (c): the two facts outside the model that hold the door shut ────────
+  //
+  // Both are source scans, because both are about WIRING rather than about a
+  // returned value — and the wiring is what PR 3 changes. Comments are blanked in
+  // one left-to-right pass (C-18) so a mention inside a comment cannot pass for a
+  // call site, and so the reported counts describe code.
+  it('half (c) — the decision sheet is reachable from exactly ONE place', () => {
+    // C-32's `firstCallerLands` shape. `TrialCompletionSheet:246` routes `extend`
+    // straight to `onExtend()` with no window check of its own, so the entry point
+    // IS the gate. A second caller — a mid-trial door being the obvious one — reds
+    // this and has to come here and say what it did about the window.
+    const src = blankComments(
+      fs.readFileSync(path.join(REPO_ROOT, 'app/(tabs)/profile.tsx'), 'utf8'),
+    );
+    const callSites = [...src.matchAll(/setCompletionEntry\(\s*['"]decision['"]\s*\)/g)];
+    expect(callSites).toHaveLength(1);
+    // …and it is the card's `milestone` action, not something else that grew into
+    // the same call. Asserted on the line, because "there is one caller" is only
+    // reassuring if it is the caller this rule is about.
+    const line = src.slice(0, callSites[0].index).split('\n').length;
+    expect(src.split('\n')[line - 1]).toMatch(/milestone:/);
+
+    // The ungated branch this is standing in for. If the sheet ever grows its own
+    // window gate, this reds — which is a good outcome and means half (c) can relax.
+    const sheet = blankComments(
+      fs.readFileSync(
+        path.join(REPO_ROOT, 'components/profile/TrialCompletionSheet.tsx'),
+        'utf8',
+      ),
+    );
+    expect(sheet).toMatch(/if \(c\.id === 'extend'\) \{ onExtend\(\); return; \}/);
+    expect(sheet).not.toMatch(/overrunDays/);
+  });
+
+  it('half (c) — the header verb is still Replace on every running state', () => {
+    // D6a makes the header the mid-trial door ("Manage") in PR 3. Until then it
+    // says `Replace`, which is honest about current capability and is the thing
+    // §3 of the spec calls the failure this track replaces. This reds on the day
+    // the door lands, which is exactly when someone should be reading this file.
+    for (const [state, entry] of Object.entries(MID_TRIAL_BY_STATE)) {
+      if ('unreachableMidTrial' in entry) continue;
+      if (state === 'no_trial' || state === 'completed' || state === 'abandoned') continue;
+      const model = resolveTrialCard(entry);
+      expect(trialManageLabel(model)).toBe('Replace');
+    }
   });
 });
 
@@ -599,8 +746,8 @@ describe('G3 — a target move cannot change the off-diet exposure counts (§5.3
 // EXPECTED FAILURE 1 — §5.4: one tap moves a reassurance gate on the vet report
 // ════════════════════════════════════════════════════════════════════════════════
 //
-// CUL-1038 (PR 1b) is what turns this green. Do not delete it, do not skip it, and
-// do not "fix" it by weakening the requirement — the requirement is TE-6:
+// Do not delete it, do not skip it, and do not "fix" it by weakening the
+// requirement — the requirement is TE-6:
 //
 //   > An extension may not move a claim about the record that the record did not
 //   > change.
@@ -608,15 +755,41 @@ describe('G3 — a target move cannot change the off-diet exposure counts (§5.3
 // WHAT HAPPENS TODAY. The B-422 tail clip applies only while the trial is un-ended
 // and past its target. Extending pushes the target end past the evidence, the clip
 // stops applying, and the coverage denominator jumps from the prescribed window to
-// the full elapsed range — carrying `belowCoverageFloor` and `mayStateRecordClean`
-// with it, retroactively, over days already reported, on zero new evidence.
+// the full elapsed range — carrying `belowCoverageFloor`, `mayStateRecordClean` AND
+// `interpretability` with it, retroactively, over days already reported, on zero new
+// evidence.
 //
-// WHAT THE VET READS ACROSS THAT TAP:
+// WHAT THE OWNER'S CARD READS ACROSS THAT TAP (this fixture drives the CLIENT path;
+// see the scope note below):
 //   before → "The record is too sparse to read that as a clean elimination"
 //   after  → "32 feedings — all 32 matched the trial diet or a permitted food."
 //
-// It runs both ways: on a trial logged daily to day 28 then silent to day 90, one
-// tap WITHDRAWS a clean claim. The direction is not the defect; the movement is.
+// ⚠️ THREE CORRECTIONS TO THE SPEC'S OWN ACCOUNT, EXECUTED 2026-09-17 (CUL-1036's
+// adversarial pass). Recorded here rather than left to be rediscovered, because D7
+// was ruled on two of them:
+//
+//  1. THE TAP IS INERT AT THE MILESTONE. At `overrunDays === 0`, `overrunUnended`
+//     is `evidenceEnd > targetEnd`, which is FALSE — no clip is applying, so moving
+//     the target changes nothing. Executed: day 28 of 28 → 42 leaves coverage at
+//     10/28 and both gates where they were. D7's justification — "this is already
+//     reachable today AT THE MILESTONE" — is false in its specifics. The hazard is
+//     **overrun-only**.
+//  2. A MID-WINDOW EXTENSION IS ALSO INERT. Day 20 of 56 → 84: coverage 6/20 both
+//     reads, nothing moves. So the mid-trial door this track exists to build cannot
+//     trigger §5.4 on a mid-window trial, and D7's "not created by this feature,
+//     only MULTIPLIED by it" survives only for the door offered on an overrun trial.
+//  3. IT IS NOT ONE TAP OF `Keep going`. On an overrun trial the card's only action
+//     is `{ id: 'milestone', label: 'Tell Culprit what's next' }` — a link whose
+//     label says nothing about a window — and `Keep going — 2 more weeks` lives
+//     inside the sheet it opens. Two taps, behind a label that does not name what
+//     is about to move. Where the tap is one tap it is inert; where it moves the
+//     gate it is two.
+//
+// ⚠️ AND THE SCOPE THIS FIXTURE DRIVES. It passes no `scopeStart` / `scopeEnd`, so
+// it is the CLIENT read. `generate-report/trial.ts` always passes both, and under a
+// since-visit scope opening at day 20 the same record reads 0 of 9 → 22 of 31 —
+// different numbers, in the same direction. §5.6 already records "no live Deno
+// render" as owed; this is that debt one level earlier, and PR 4 is where it lands.
 
 describe('§5.4 — the coverage gate an owner can move with one tap (CUL-1038)', () => {
   // The §5.4 record: 10 of days 1–28 logged, then every day to day 50. No off-diet
@@ -678,17 +851,34 @@ describe('§5.4 — the coverage gate an owner can move with one tap (CUL-1038)'
 
   // ── The requirement (TE-6) ──────────────────────────────────────────────────
   //
-  // `test.failing` and not `skip`: jest records this as an expected failure today
-  // and turns the suite RED the moment it starts passing. That is deliberate. When
-  // CUL-1038 lands, this test going red is the signal to promote it to a plain
-  // `it` — and a repair that does not actually repair leaves it exactly as it is,
-  // which is what stops the fix shipping quietly.
-  test.failing(
-    'EXPECTED FAILURE · TE-6 — a target move may not flip belowCoverageFloor or ' +
-      'mayStateRecordClean [CUL-1038]',
+  // ⚠️ READ THIS BEFORE ASSUMING CUL-1038 TURNS IT GREEN. It does not, as D7 was
+  // ruled. D7(a) is a DISCLOSURE — "wire `range.closedByOverrun` to the surfaces
+  // that state a coverage figure … this is a render, not a mechanism". But
+  // `belowCoverageFloor` is `interpretability === 'does_not_support'` and
+  // `mayStateRecordClean` reads `facts.interpretability`, both computed in
+  // `lib/dietTrial.ts`, and NEITHER reads `closedByOverrun`. So PR 1b as specced
+  // leaves every assertion in this file exactly where it is — this marker included
+  // — with the hazard fully intact and now merely described beside the number.
+  //
+  // Only D7(b) (freeze the denominator at the original target) or (c) (both) moves
+  // it. The PM ruled (a). That conflict is surfaced on CUL-1036 / CUL-1038 as a
+  // decision brief and is NOT resolved here: PR 0's job is to state the requirement
+  // accurately, and TE-6 is stated without qualification in the spec's own spine.
+  //
+  // The practical consequence for whoever lands PR 1b: this test staying green is
+  // NOT evidence the repair worked. It going RED is.
+  expectedFailure(
+    'TE-6 — a target move may not move belowCoverageFloor, mayStateRecordClean or ' +
+      'interpretability [CUL-1038]',
     () => {
       expect(after.belowCoverageFloor).toBe(before.belowCoverageFloor);
       expect(mayStateRecordClean(after)).toBe(mayStateRecordClean(before));
+      // `interpretability` is NOT a third way of saying the same thing. At 18 of 28
+      // logged it moves `partially_supports` → `supports` while BOTH booleans hold
+      // — and it renders verbatim on the vet report as `interpretabilityStatement`
+      // (`render.ts:3026`). A requirement stated over the booleans alone can be
+      // satisfied by a repair that still violates TE-6.
+      expect(after.interpretability).toBe(before.interpretability);
     },
   );
 });
@@ -770,12 +960,108 @@ describe('§5.4 — the same tap, the other direction: a clean claim withdrawn (
     expect(mayStateRecordClean(after)).toBe(false);
   });
 
-  test.failing(
-    'EXPECTED FAILURE · TE-6 — the rule has no direction: this move is forbidden too ' +
-      '[CUL-1038]',
+  expectedFailure(
+    'TE-6 — the rule has no direction: this move is forbidden too [CUL-1038]',
     () => {
       expect(after.belowCoverageFloor).toBe(before.belowCoverageFloor);
       expect(mayStateRecordClean(after)).toBe(mayStateRecordClean(before));
+      // `interpretability` is NOT a third way of saying the same thing. At 18 of 28
+      // logged it moves `partially_supports` → `supports` while BOTH booleans hold
+      // — and it renders verbatim on the vet report as `interpretabilityStatement`
+      // (`render.ts:3026`). A requirement stated over the booleans alone can be
+      // satisfied by a repair that still violates TE-6.
+      expect(after.interpretability).toBe(before.interpretability);
+    },
+  );
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// EXPECTED FAILURE 3 — §5.4's REAL ceiling: the head clip carries it to `supports`
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// The two cases above stop two rungs short of the worst instance, and recording a
+// hazard at less than its ceiling is the under-statement this PR exists to prevent.
+//
+// EXECUTED. An owner who logs nothing during the prescribed window and then every
+// day past it. Before the tap: 0 of 28, `does_not_support`, the record correctly
+// unreadable. After ONE tap:
+//
+//     22 of 22 · fraction 1.0 · `supports` · mayStateRecordClean TRUE
+//
+// A perfect coverage ratio, the strongest interpretability verdict the module can
+// return, and the affirmative claim unlocked — over a trial whose entire prescribed
+// window has no meal logged in it at all.
+//
+// HOW IT GETS THERE, and why this one is worse than a denominator moving. The head
+// clip resolves INSIDE the coverage window: `startDayIndex` is the first logged day
+// when the range opens at the trial's start. While the tail clip holds the window at
+// day 28 the head cannot move (no log is inside it). Extending removes the tail
+// clip, the first logged day becomes day 29, and the head clip follows it — so the
+// window becomes [29, 50], which is 22 days with 22 of them logged.
+//
+// `untrackedDaysBeforeFirstLog` goes 0 → 28 in the same move. The app now asserts
+// that the first 28 days of the trial PRE-DATE ANY LOGGING. They do not. They are
+// ordinary un-logged trial days, and the distinction is the whole reason that field
+// exists: days the owner could not have logged are not a gap in their record, and
+// days they simply did not log are.
+//
+// That is the head clip's own documented forbidden direction, re-entered through the
+// target. `lib/dietTrial.ts` on the head clip: it "moves the denominator toward the
+// record looking complete … the one direction it must never move on a claim it
+// cannot support." Nothing in that module is wrong; the target is reaching a clip
+// that was reasoned about on the assumption the target does not move.
+//
+// CUL-1038's scope is the tail clip. This case says the repair has to hold the head
+// one too, or the same tap reaches a strictly better-looking number by a second
+// route. Recorded here so PR 1b cannot close the first without seeing the second.
+
+describe('§5.4 — the ceiling: nothing logged in the window, everything after it', () => {
+  const LOGGED_AFTER = daysRange(GATE_TARGET + 1, GATE_TODAY);
+  const FEEDINGS = LOGGED_AFTER.map(onDiet);
+
+  const before = factsAtTarget(GATE_TARGET, FEEDINGS);
+  const after = factsAtTarget(GATE_TARGET_AFTER, FEEDINGS);
+
+  it('the record is identical across the tap, and empty inside the prescribed window', () => {
+    expect(FEEDINGS).toHaveLength(GATE_TODAY - GATE_TARGET);
+    expect(before.coverage).toEqual({ daysLogged: 0, daysElapsed: GATE_TARGET, fraction: 0 });
+    expect(before.exposures.totalFeedings).toBe(after.exposures.totalFeedings);
+    expect(before.range?.closedByOverrun).toBe(true);
+    expect(after.range?.closedByOverrun).toBe(false);
+  });
+
+  it('one tap takes an empty window to a PERFECT ratio and the strongest verdict', () => {
+    expect(after.coverage).toEqual({
+      daysLogged: LOGGED_AFTER.length,
+      daysElapsed: LOGGED_AFTER.length,
+      fraction: 1,
+    });
+    expect((after.coverage as { fraction: number }).fraction).toBeGreaterThanOrEqual(
+      COVERAGE_SUPPORTS,
+    );
+    expect(before.interpretability).toBe('does_not_support');
+    expect(after.interpretability).toBe('supports');
+    expect(before.belowCoverageFloor).toBe(true);
+    expect(after.belowCoverageFloor).toBe(false);
+    expect(mayStateRecordClean(before)).toBe(false);
+    expect(mayStateRecordClean(after)).toBe(true);
+  });
+
+  it('and the app starts asserting the first 28 days pre-date any logging', () => {
+    expect(before.untrackedDaysBeforeFirstLog).toBe(0);
+    expect(after.untrackedDaysBeforeFirstLog).toBe(GATE_TARGET);
+  });
+
+  expectedFailure(
+    'TE-6 — the head clip may not follow the target either [CUL-1038]',
+    () => {
+      expect(after.belowCoverageFloor).toBe(before.belowCoverageFloor);
+      expect(mayStateRecordClean(after)).toBe(mayStateRecordClean(before));
+      expect(after.interpretability).toBe(before.interpretability);
+      // The second route, stated separately because a repair could close the tail
+      // clip and leave this one open — which would still hand the report a
+      // fabricated 28-day "before any logging" span.
+      expect(after.untrackedDaysBeforeFirstLog).toBe(before.untrackedDaysBeforeFirstLog);
     },
   );
 });
