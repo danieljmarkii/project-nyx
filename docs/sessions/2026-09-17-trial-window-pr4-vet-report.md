@@ -1,6 +1,6 @@
 # Trial window PR 4 — the vet report says the window moved, and when
 
-**Date:** 2026-09-17 · **Issue:** CUL-1041 · **Shipped via #869** (draft)
+**Date:** 2026-09-17 · **Issue:** CUL-1041 · **Shipped via #869**
 
 PR 4 of the diet-trial window track (CUL-156, `docs/nyx-trial-extension-requirements.md` §7).
 Migration 068 (CUL-1037, #866) recorded that a trial's window moved; this renders it.
