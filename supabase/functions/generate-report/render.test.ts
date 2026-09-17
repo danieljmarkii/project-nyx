@@ -7350,19 +7350,27 @@ function windowSnap(
   return snap
 }
 
-Deno.test('CUL-1041 — the clause sits directly under the day phrase it qualifies', () => {
+Deno.test('CUL-1041 — the window change is its OWN row, and it comes after the trial\u2019s own', () => {
+  // The fourth cold read's finding, and the first structural one: three rounds of copy
+  // repair fought a LAYOUT problem. `identity.join(' ')` put the change and
+  // `Trial directed by <name>` in one unbroken paragraph nine words apart, disclaimer
+  // first, so the name arrived last and back-filled the slot the disclaimer opened.
   const page = plain(renderReport(windowSnap({
     targetDurationDays: 84,
     targetDurationDaysInitial: 56,
     targetDurationSetAt: onTrialDay(26),
   })))
-  // Not on the headline — that line carries the truncated-scope and protein-breach
-  // escalations, and the breach is the most actionable sentence on the page.
   const dayPhrase = page.indexOf('day 45 of 84')
-  const clause = page.indexOf('Window extended from 56 days')
   const started = page.indexOf('Started May 8')
+  const clause = page.indexOf('Window extended from 56 days')
+
+  // It still follows the number it qualifies \u2014 but now as a labelled row of its own,
+  // AFTER the identity row has finished, so the record's limit is the reader's last
+  // state on attribution rather than the vet's name.
   assert.ok(dayPhrase >= 0 && clause > dayPhrase, 'the clause follows the number it qualifies')
-  assert.ok(started > clause, 'and precedes the rest of the identity row')
+  assert.ok(started > 0 && clause > started, 'the identity row completes first')
+  assert.match(page, /Window change/, 'and the change carries its own label')
+
   // Day 26 of a 45-day span: a real position, and the trial has not passed its 56-day
   // original window, so no overrun sentence.
   assert.match(page, /Window extended from 56 days; last moved Jun 2 \(day 26\)\./)

@@ -5208,3 +5208,29 @@ Deno.test('CUL-1041 brief C — it fires on the window move, not on whether a ve
   const unmoved = windowPage({ dayOfTrial: 50, targetDurationDays: 64, vetName: 'Dr. Sarah Kim' })
   assert.ok(!/Culprit cannot say/.test(unmoved))
 })
+
+Deno.test('CUL-1041 — the change and the trial’s named vet are never in one row', () => {
+  // The four mechanisms the fourth cold read named are all properties of ONE JOINED
+  // PARAGRAPH, not of any sentence in it. This pins the two that a future edit could
+  // silently undo by moving the clause back: same-row adjacency, and order.
+  const page = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    movedOnDayOfTrial: 40,
+    targetDurationVetDirected: true,
+    vetName: 'Dr. Sarah Kim',
+  })
+  const trialRow = page.slice(page.indexOf('Elimination diet trial'), page.indexOf('Window change'))
+  // 1. The vet's name is in the TRIAL row, and the change is not.
+  assert.match(trialRow, /Trial directed by Dr\. Sarah Kim\./)
+  assert.ok(!/Window extended from/.test(trialRow), 'the change has left the identity row')
+  assert.ok(!/asked for the change/.test(trialRow), 'and so has its attribution')
+
+  // 2. ORDER: the name comes first, the record's limit last — so the disclaimer is the
+  //    reader's final state on attribution rather than the thing the name back-fills.
+  assert.ok(
+    page.indexOf('Trial directed by Dr. Sarah Kim') < page.indexOf('Culprit cannot say'),
+    'the record’s limit is read after the name, not before it',
+  )
+})

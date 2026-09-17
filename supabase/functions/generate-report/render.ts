@@ -2589,7 +2589,6 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // escalations already, for a truncated scope and for a protein breach in the diet,
   // and the breach is the most actionable sentence on the page; a third dilutes them.
   const windowMoveLine = trialWindowChangeLine(t, identityDay)
-  if (windowMoveLine) identity.push(windowMoveLine)
   // The food labels + provenance sub-line, only when the lead named the protein instead
   // of the labels (else the labels already lead and this would repeat them). The labels
   // ALWAYS ride this line so they never vanish; the provenance word rides it only when
@@ -2617,6 +2616,39 @@ function dietTrialSection(snap: ReportSnapshot): string {
   if (t.vetName) identity.push(`Trial directed by ${h(t.vetName)}.`)
   if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason, t))}</b>`)
   rows.push(kv('Trial', identity.join(' ')))
+  // ── ITS OWN ROW, AND AFTER THE NAME — THE FOURTH COLD READ'S FINDING ────────
+  //
+  // Three rounds of copy repair fought this as a wording problem and it was a LAYOUT
+  // one. The reviewer, given the repaired page, still attributed the extension to the
+  // named vet at ~75–80% and diagnosed why: *"It separates them in the data and merges
+  // them on the page. This is a render defect, not a data defect."* Four mechanisms, all
+  // of them properties of one joined paragraph rather than of any sentence in it:
+  //
+  //   1. ONE PARAGRAPH. `identity.join(' ')` put the change and `Trial directed by <name>`
+  //      in a single unbroken prose run inside one `kv` cell, nine words apart.
+  //   2. THE CLASS HAS ONE MEMBER. "a vet" narrows the requester to a class of which
+  //      exactly one instance is named on the whole page.
+  //   3. ORDER. The disclaimer came BEFORE the name, so the name arrived last and
+  //      back-filled the slot the disclaimer had opened.
+  //   4. WEIGHT. A bolded claim, then an unbolded refusal, then a proper noun.
+  //
+  // Its own labelled row answers 1, 3 and 4 at once, and it is a far smaller change than
+  // it looks: the row EXISTS ONLY WHEN A WINDOW HAS MOVED, so every report that has never
+  // had one renders byte-identically to before this feature. Splitting the whole Trial
+  // row into labelled rows — which is what the reviewer proposes in general — is
+  // report-wide and remains out of scope; this splits out only what this PR added.
+  //
+  // IT SITS AFTER THE TRIAL ROW, not before, which is the point of it. The reviewer:
+  // *"Reverse them and the disclaimer is at least the reader's final state."* The vet's
+  // name is now the Trial row's last word and the record's own limit is the next thing
+  // read, instead of the other way round.
+  //
+  // AND IT UN-CAMOUFLAGES THE ONE HEDGE THAT CHANGES BEHAVIOUR. The same read found the
+  // block is ~40% epistemics, so a reader pattern-matches sentences opening with
+  // "Culprit" as boilerplate by the fourth one — *"over-hedging is the delivery mechanism
+  // for the attribution failure, not a separate complaint about it."* Under its own label
+  // this sentence is no longer the fifth of its kind in a run.
+  if (windowMoveLine) rows.push(kv('Window change', windowMoveLine))
 
   // B-704 §6 — the target-vs-label tension does NOT render a second disclosure line here.
   // It leads the SAFETY BAND above (a `protein_mismatch` flag), because a disclosure line
