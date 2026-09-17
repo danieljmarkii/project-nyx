@@ -2,7 +2,8 @@
 
 **Date:** 2026-09-17
 **Mode:** BUILD · **Issue:** CUL-1051 (trial-window PR 1c) · **Also touched:** CUL-1038, CUL-1040 (surfaced), CUL-367 (first half of the session)
-**Outcome:** migration 069 built, applied to production, then **re-applied after `rls-privacy-reviewer` returned FAIL on a claim in its own header**. Draft PR #874. Four issues filed: CUL-1057, CUL-1058, CUL-1059, plus a finding commented onto CUL-1038.
+**Outcome:** shipped via #874 — migration 069 built, applied to production, then **re-applied after `rls-privacy-reviewer` returned FAIL on a claim in its own header**. Four issues filed: CUL-1057, CUL-1058, CUL-1059, plus a finding commented onto CUL-1038.
+**`STATUS.md`: untouched, deliberately.** No track started or ended, no standing hold changed, the build phase is unmoved and no pointer went stale. The trial-window track has no row there to update — that absence is CUL-1043's subject, not this session's.
 
 ---
 
