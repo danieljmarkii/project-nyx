@@ -234,8 +234,42 @@ false). Decision brief posted on **CUL-1038**, which is raised to Urgent and
 freeze's prerequisite column is already PR 1's job under D2a, and (c) is the only
 option under which PR 0's markers can ever go green.
 
-Not resolved here. PR 0's job is to state the requirement accurately, and TE-6 is
+Not resolved by me. PR 0's job is to state the requirement accurately, and TE-6 is
 stated without qualification in the spec's own spine.
+
+## …and the PM re-ruled it the same session: D7(c)
+
+**Ruled 2026-09-17: (c) freeze AND disclose.** Verified before recording it — simulating
+the freeze fires all four §5.4 markers (jest and Deno), and leaves §5.2's alone, which
+is correct: D3a holds that one un-shippable and it stays the trip-wire on that decision
+rather than a repair signal.
+
+What the ruling moved, applied this session:
+
+- **Spec v2.2.** §6 D7 carries a `RE-RULED` stamp with both falsified premises named and
+  the original (a) ruling kept verbatim under a strikethrough — a ruled brief keeps its
+  options, and a superseded ruling is part of the record rather than an embarrassment to
+  tidy away. §5.4's table gains the ⚠ correction (the old figures were the client read).
+  §5.6's "no live Deno render" line is struck as paid. §7's table now shows PR 1b gated
+  on **D7c · PR 1 (hard)**.
+- **PR 1 → PR 1b is now a hard dependency**, not a parallel track. Set in Linear, and
+  flagged on CUL-1037 so whoever is building the migration knows its column stopped
+  being a provenance nicety and became the input to a shipped clinical gate.
+- **CUL-1038 re-titled and re-scoped** — "freeze the coverage denominator, and disclose
+  the window move (D7c)" — off `Waiting on PM`, still Urgent.
+- **The guards' comments corrected.** This is the part worth noting: for about six hours
+  `guards/trialWindow.test.ts` told the next session that green was *not* evidence the
+  repair worked. Under (c) that is false again, so the comment now says the marker means
+  what it says — red is the repair signal. A guard that lies about its own semantics is
+  worse than no guard, and the window in which this one did is itself a small argument
+  for keeping the ruling and the test in the same PR.
+
+**One thing (c) buys that neither (a) nor (b) alone was scoped for.** The freeze closes
+the head-clip ceiling as a structural side effect: with the window pinned at the original
+target, the head clip has no logged day inside it to follow, so `0 of 28` stays `0 of 28`.
+That route was outside CUL-1038's stated scope and would have stayed open *and*
+undisclosed under (a) — a disclosure about the tail clip says nothing about the head one.
+Verified by executing the freeze against the ceiling marker, not inferred.
 
 ## What did not need doing
 

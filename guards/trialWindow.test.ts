@@ -851,22 +851,27 @@ describe('§5.4 — the coverage gate an owner can move with one tap (CUL-1038)'
 
   // ── The requirement (TE-6) ──────────────────────────────────────────────────
   //
-  // ⚠️ READ THIS BEFORE ASSUMING CUL-1038 TURNS IT GREEN. It does not, as D7 was
-  // ruled. D7(a) is a DISCLOSURE — "wire `range.closedByOverrun` to the surfaces
-  // that state a coverage figure … this is a render, not a mechanism". But
-  // `belowCoverageFloor` is `interpretability === 'does_not_support'` and
-  // `mayStateRecordClean` reads `facts.interpretability`, both computed in
-  // `lib/dietTrial.ts`, and NEITHER reads `closedByOverrun`. So PR 1b as specced
-  // leaves every assertion in this file exactly where it is — this marker included
-  // — with the hazard fully intact and now merely described beside the number.
+  // CUL-1038 (PR 1b) is what turns this green — under D7(c), and only under (c).
   //
-  // Only D7(b) (freeze the denominator at the original target) or (c) (both) moves
-  // it. The PM ruled (a). That conflict is surfaced on CUL-1036 / CUL-1038 as a
-  // decision brief and is NOT resolved here: PR 0's job is to state the requirement
-  // accurately, and TE-6 is stated without qualification in the spec's own spine.
+  // ⚠️ THE HISTORY MATTERS, because this comment said the opposite for six hours and
+  // the reason is the whole point of PR 0. D7 was first ruled **(a) disclose it**,
+  // described as "a render, not a mechanism". But `belowCoverageFloor` is
+  // `interpretability === 'does_not_support'` and `mayStateRecordClean` reads
+  // `facts.interpretability`, both computed in `lib/dietTrial.ts`, and NEITHER reads
+  // `closedByOverrun`. A render cannot move them. Executed both ways against the
+  // shipped module: a frozen denominator fires every marker in this file; (a)'s
+  // render-only change fires none. PR 1b as first specced would have landed with the
+  // suite green and the hazard fully intact.
   //
-  // The practical consequence for whoever lands PR 1b: this test staying green is
-  // NOT evidence the repair worked. It going RED is.
+  // **The PM re-ruled to D7(c) — freeze AND disclose — on 2026-09-17** (spec v2.2).
+  // So the marker means what it says again: when PR 1b lands, this going RED is the
+  // repair signal, and the next session promotes it to a plain `it`.
+  //
+  // WHAT (c) ACTUALLY CHANGES, for whoever builds it: the coverage denominator is
+  // pinned at `target_duration_days_initial` (D2a's column, added by PR 1 — which is
+  // therefore a HARD prerequisite, not a parallel track), and the window move is
+  // disclosed beside the figure. The freeze is what moves these assertions; the
+  // disclosure pays off the C-38 debt at `lib/dietTrial.ts:2223` and does not.
   expectedFailure(
     'TE-6 — a target move may not move belowCoverageFloor, mayStateRecordClean or ' +
       'interpretability [CUL-1038]',
@@ -1011,9 +1016,16 @@ describe('§5.4 — the same tap, the other direction: a clean claim withdrawn (
 // cannot support." Nothing in that module is wrong; the target is reaching a clip
 // that was reasoned about on the assumption the target does not move.
 //
-// CUL-1038's scope is the tail clip. This case says the repair has to hold the head
-// one too, or the same tap reaches a strictly better-looking number by a second
-// route. Recorded here so PR 1b cannot close the first without seeing the second.
+// CUL-1038's scope was the tail clip alone, which is why this case was recorded
+// separately: the repair has to hold the head clip too, or the same tap reaches a
+// strictly better-looking number by a second route.
+//
+// ⚠️ D7(c) CLOSES IT, AND THAT IS STRUCTURAL RATHER THAN LUCKY. With the denominator
+// pinned at the ORIGINAL target the coverage window never leaves [day 1, day 28], so
+// the head clip has no logged day inside it to follow and 0 of 28 stays 0 of 28.
+// Verified by executing the freeze against this marker. Under D7(a) — the first
+// ruling, superseded — this route would have stayed open AND undisclosed, since a
+// disclosure about the tail clip says nothing about the head one.
 
 describe('§5.4 — the ceiling: nothing logged in the window, everything after it', () => {
   const LOGGED_AFTER = daysRange(GATE_TARGET + 1, GATE_TODAY);

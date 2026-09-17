@@ -4526,7 +4526,9 @@ Deno.test('trialAllowedListMissing: no trial block → false', () => {
 // ════════════════════════════════════════════════════════════════════════════════
 //
 // CUL-1036 (trial window PR 0) · `docs/nyx-trial-extension-requirements.md` §5.4,
-// TE-6, §5.6 · the repair is CUL-1038 (PR 1b), whose scope is an open PM question.
+// TE-6, §5.6 · the repair is CUL-1038 (PR 1b), ruled D7(c) — freeze the denominator
+// at `target_duration_days_initial` AND disclose the window move. When it lands, the
+// expected failure at the foot of this block goes RED; that is the repair signal.
 //
 // ── WHY THIS BLOCK EXISTS SEPARATELY FROM `guards/trialWindow.test.ts` ──────────
 // That guard drives `computeTrialFacts` with no scope — the CLIENT read. The report
