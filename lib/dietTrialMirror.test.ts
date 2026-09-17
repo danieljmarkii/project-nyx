@@ -564,13 +564,23 @@ describe('row → Supabase upsert mappers', () => {
   // apart. Keep this at zero entries; an entry is a dated exception, not a
   // parking space.
   const PENDING_MAPPER_COLUMNS: Readonly<Record<string, string>> = {
-    // CUL-1037 (migration 068) declared three. `target_duration_days_initial`
-    // LEFT this registry with CUL-1038 (PR 1b), which forwards it — the coverage
-    // freeze reads it, so a column the push never sends would be a freeze that
-    // repairs the report and not the device that wrote the row.
+    // CUL-1037 (migration 068) declared three, and all three are still
+    // unforwarded — but for two different reasons, which is why the entries name
+    // two different issues.
     //
-    // The remaining two are CUL-1039 / trial-window PR 2's, with the write path
-    // that first gives them a value and the INTEGER↔BOOLEAN coercion.
+    // `target_duration_days_initial` is the one CUL-1038 (PR 1b) HYDRATES and
+    // READS. It is deliberately not pushed: the code review on that PR traced a
+    // full clobber — an upgrading device holds NULL here until a hydrate fills
+    // it, `pushRows` is a real full-row upsert, and `syncNow` is push-before-pull,
+    // so a `Keep going` tap before that row's first hydrate would erase 068's
+    // backfill and silently return the vet report to the pre-repair arithmetic
+    // for exactly the trials the freeze protects. Closing it needs a server-side
+    // ratchet (a `BEFORE UPDATE` refusing NULL over a value), which is a
+    // migration and therefore its own PR: **CUL-1051**, which BLOCKS PR 2.
+    // See `dietTrialRowToRemote`'s own note for the full trace.
+    target_duration_days_initial: 'CUL-1051',
+    // The other two are CUL-1039 / PR 2's, with the write path that first gives
+    // them a value and the INTEGER↔BOOLEAN coercion.
     target_duration_set_at: 'CUL-1039',
     target_duration_vet_directed: 'CUL-1039',
   };
@@ -610,6 +620,34 @@ describe('row → Supabase upsert mappers', () => {
       .filter((c) => !(LOCAL_ONLY_COLUMNS as readonly string[]).includes(c))
       .filter((c) => !forwarded.has(c));
     expect(unforwarded.sort()).toEqual(Object.keys(PENDING_MAPPER_COLUMNS).sort());
+  });
+
+  it('NEVER pushes target_duration_days_initial — the freeze depends on not writing it (CUL-1038)', () => {
+    // A PROHIBITION, not a to-do, and it is tested separately because the registry
+    // above cannot tell the two apart. `PENDING_MAPPER_COLUMNS` means "a column the
+    // mapper does not forward YET" for the other two entries; for this one it means
+    // "a column the mapper must not forward until CUL-1051's ratchet exists". A PR 2
+    // session reading only the registry would forward it, which is the bug.
+    //
+    // WHY. `pushRows` is a real full-row upsert and PostgREST sets every column
+    // PRESENT in the payload from `excluded`, so a forwarded value from a device that
+    // has not hydrated this row yet OVERWRITES migration 068's backfill — and
+    // `syncNow` is push-before-pull, with `extendTrial` firing its own immediate push.
+    // The result is the coverage freeze silently reverting to the pre-repair
+    // arithmetic for precisely the trials it protects.
+    //
+    // Asserted on the KEY'S ABSENCE, not on a null value: `upsert` treats a present
+    // null as an instruction to write null, so `{ target_duration_days_initial: null }`
+    // is the clobber rather than the fix. And asserted over BOTH a populated and an
+    // empty local value, because the rule is "never pushed" — a mapper that forwarded
+    // it only when non-null would still push a stale 64 over a correct 28.
+    for (const initial of [42, null]) {
+      const payload = dietTrialRowToRemote({ ...trial, target_duration_days_initial: initial });
+      expect('target_duration_days_initial' in payload).toBe(false);
+    }
+    // Non-vacuity: the local row really does carry the column, so the absence above
+    // is the mapper's decision and not a fixture that never had it.
+    expect(trial.target_duration_days_initial).not.toBeUndefined();
   });
 
   it('forwards the visit link as-is, and it moves NO other value (CUL-899)', () => {

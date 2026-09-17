@@ -4750,3 +4750,25 @@ Deno.test('§5.4 report path — TE-6: one tap may not move what the vet report 
     assert.equal(claim(after), claim(before))
   }
 })
+
+
+Deno.test('§5.4 report path — the scan-grid tile carries the same disclosure as the sentence', () => {
+  // THE TWO SURFACES MUST NOT DISAGREE ABOUT ONE NUMBER — the tile is the
+  // scan-grid twin of the coverage sentence, and `render.ts`'s own comment says
+  // so. The sentence is covered by the tests above; without this the tile's note
+  // could lose its gate, change its wording, or vanish, and nothing would notice.
+  // (Gap named by `code-reviewer` on this PR.)
+  const overrun = gatePage(28)
+  assert.match(overrun, /over the trial’s designed window — it has run past it/)
+
+  // THE GATE, proven by its OFF state over a record that differs in one way only:
+  // read on the last day of the prescribed window, so nothing has overrun. Without
+  // this half the assertion above passes over an unconditional string.
+  const inWindow = gatePage(28, { now: '2026-06-28T18:00:00Z' })
+  assert.ok(!/it has run past it/.test(inWindow))
+  assert.ok(!/This trial has run past the window it was designed against/.test(inWindow))
+  // …and it really is the same page, still printing a coverage tile to hang the
+  // note on — otherwise the absence proves nothing (C-41).
+  assert.match(inWindow, /record coverage — not intake, not a clean-elimination count/)
+  assert.match(overrun, /record coverage — not intake, not a clean-elimination count/)
+})

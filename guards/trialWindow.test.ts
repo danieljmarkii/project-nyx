@@ -969,7 +969,9 @@ describe('§5.4 — the coverage gate an owner can move with one tap (CUL-1038)'
   // pinned at `target_duration_days_initial` (D2a's column, added by PR 1 — which is
   // therefore a HARD prerequisite, not a parallel track), and the window move is
   // disclosed beside the figure. The freeze is what moves these assertions; the
-  // disclosure pays off the C-38 debt at `lib/dietTrial.ts:2223` and does not.
+  // disclosure pays off the C-38 debt on `TrialRange.closedByOverrun` and does
+  // not. (Named by SYMBOL, not by line: this cited `lib/dietTrial.ts:2223` and had
+  // already drifted onto a blank line by the time PR 1b read it.)
   // ── PROMOTED BY CUL-1038 (PR 1b) ────────────────────────────────────────────
   //
   // PR 0 shipped this wrapped in `expectedFailure`: it passed while TE-6 was

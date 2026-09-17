@@ -1,7 +1,8 @@
 # Diet-trial extension — changing a running trial's window
 
 **Version:** 2.3 (BUILD-READY — every decision ruled; PR 1b SHIPPED) | Last Updated: 2026-09-17
-**Changed at 2.3 (2026-09-17, after PR 1b shipped — CUL-1038):** **D7(c) is BUILT.** The coverage
+**Changed at 2.3 (2026-09-17, after PR 1b shipped — CUL-1038):** **D7(c) is BUILT, reads-only**, and the
+plan gains **PR 1c (CUL-1051)** — a ratchet migration that blocks PR 2. The coverage
 denominator is frozen at `target_duration_days_initial` and the overrun is disclosed on the vet report;
 PR 0's four §5.4 markers are promoted to plain tests. §5.4 gains a ⚠ **REPAIRED** block; §7's PR table
 marks 1b shipped. Three things the build settled that the spec did not say: the freeze is scoped to a NEW
@@ -338,10 +339,20 @@ on trial day 50:
 >    and must. D7(c) splits BELIEF (is this trial running — an extension is *supposed* to move it, and
 >    detector suppression reads it) from CLAIMS ABOUT THE RECORD (TE-6 — no owner action may move them).
 >    Freezing both would have withdrawn belief from the trial the owner just extended.
-> 2. **`startDietTrial` must STAMP the column at creation.** 068's backfill covers every row that existed
->    when it applied and nothing after: a `DEFAULT` cannot reference a sibling column, so without the stamp
->    the freeze would cover no trial started from that day on. The stamp, the push mapper and the hydrate
->    select are therefore PR 1b's; `set_at` / `vet_directed` and the window-MOVE write path remain PR 2's.
+> 2. **The device HYDRATES the column and may not WRITE it — and that is the shape the code review forced,
+>    not the shape 1b started in.** 068's backfill covers every row that existed when it applied and nothing
+>    after, so the first cut of 1b stamped the column at creation and forwarded it on the push. The
+>    `code-reviewer` pass traced a full clobber through that: `COLUMN_UPGRADES` adds the column to an
+>    installed device with nothing backfilled locally, `pushRows` is a real full-row upsert that sets every
+>    column present in the payload, and `syncNow` is push-before-pull with `extendTrial` firing its own
+>    immediate push — so a `Keep going` tap before that row's first hydrate would erase the backfill
+>    permanently and silently return the report to the pre-repair arithmetic, for exactly the trials the
+>    freeze protects. No client-side stamp fixes it: every variant writes a plausible wrong number
+>    (`COALESCE(initial, current)` on an already-extended trial records the EXTENDED window as the designed
+>    one) instead of an honest NULL. **1b is therefore reads-only** — hydrate select, report pull, freeze,
+>    disclosure — and the ratchet migration that makes writing safe is **CUL-1051 (PR 1c), which now blocks
+>    PR 2.** The prohibition is pinned by a mutation-proven test on `dietTrialRowToRemote`, because
+>    `PENDING_MAPPER_COLUMNS` alone reads as "not yet" rather than "not until".
 > 3. **The residual is a row with no recorded designed window**, which keeps the pre-repair arithmetic
 >    exactly. There is no safe constant to substitute — the clipped window is the reassuring read on a record
 >    that went silent and the unclipped one is the reassuring read on a record that started late, so a
@@ -620,14 +631,17 @@ sequencing constraint rather than a gate. PR 5 is the one exception: deferred by
 |---|---|---|
 | **0** | `guards/` + tests pinning today's behaviour: no mid-trial route to `trial_extend` in any state; the `nextTargetDays` clamp; §5.2's shortening render and §5.4's gate flip each as a **failing** test that documents the hazard | — |
 | **1** | Migration: D2's three columns, additive + nullable + backfill `target_duration_days_initial = target_duration_days` for the 1 live row. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer`. **PR 1b now depends on this** (D7c), so it is no longer parallel to 1b | ✅ D2a, D4a |
-| **1b** | ✅ **SHIPPED 2026-09-17 (CUL-1038).** §5.4's repair — D7(c): the coverage denominator is frozen at `target_duration_days_initial` via a new `trialCoverageWindowEndDayIndex`, and the overrun is disclosed on the report's coverage sentence, its scan tile and `interpretabilityStatement`. All four §5.4 markers promoted; §5.2's still red by D3a. **Owes a `generate-report` redeploy** — the ledger carries it. | ✅ D7c · PR 1 |
+| **1b** | ✅ **SHIPPED 2026-09-17 (CUL-1038).** §5.4's repair — D7(c): the coverage denominator is frozen at `target_duration_days_initial` via a new `trialCoverageWindowEndDayIndex`, and the overrun is disclosed on the report's coverage sentence, its scan tile and `interpretabilityStatement`. All four §5.4 markers promoted; §5.2's still red by D3a. **READS-ONLY** — the device hydrates the column and never writes it (§5.4's ⚠ REPAIRED item 2). **Owes a `generate-report` redeploy** — the ledger carries it. | ✅ D7c · PR 1 |
+| **1c** | **NEW, and it blocks PR 2.** Migration: a `BEFORE UPDATE` ratchet on `diet_trials` so no client can move `target_duration_days_initial` from a value back to NULL. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer`. Unblocks the push mapper, the create-stamp and PR 2's write path. **CUL-1051** | — |
 | **2** | The predicate + write path: `changeTrialWindow` beside `extendTrial` (one arithmetic home — `nextTargetDays` is not forked), the paired-null provenance contract, the local mirror, **the concurrent-extension LWW case (§5.6)**, and the forward-only refusal | ✅ D2a, D3a |
 | **3** | The door + the sheet: `Manage`, `TrialWindowSheet`, the `trial_refusal` re-point, `ChipGroup` of **totals** (none at or below the current day), the end-date line, the vet-directed box, §4.3's forward line | ✅ D1a, D3a, D4a, D6a |
 | **4** | The vet report: §5.1's sentence, the attribution clause, **a `deno test` over `render.test.ts` with a mutated `targetDurationDays` (§5.6's untested half)**, `generate-report` redeploy (**note the standing deploy discipline — the function is at v15 and the ledger is `pending`**) | ✅ D2a, D4a · PR 1 |
 | **5** | D5's constant — **deferred, not cancelled.** Owned by CUL-367, unblocked by Dr. Chen's ratification, never by this spec | CUL-367 (Dr. Chen) |
 
-**PRs 0 through 4 are unblocked; PR 0 has shipped (#867). PR 5 is deferred to CUL-367.** The one ordering
-change since v2.1: **PR 1 → PR 1b is now a hard dependency**, not a convenience (D7c).
+**PRs 0, 1 and 1b have shipped. PR 1c (CUL-1051) is new and blocks PR 2. PR 5 is deferred to CUL-367.**
+Two ordering changes since v2.1: **PR 1 → PR 1b is a hard dependency**, not a convenience (D7c); and
+**PR 1c now sits between 1b and 2**, because 1b could only be made safe by declining to write the column
+and the write path cannot land until the database refuses to lose it.
 
 **Adversarial review is mandatory on PRs 1b, 2 and 4** — the write moves a denominator the vet report
 renders, which is the clinically load-bearing class, and §5.4 is what happens when that is assumed rather

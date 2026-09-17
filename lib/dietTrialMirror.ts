@@ -104,22 +104,23 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     -- anything building from the DDL constants, the upgrade reaches an already
     -- installed device (the 048 / 053 / 066 precedent).
     --
-    -- ⚠ CORRECTED BY CUL-1038 (PR 1b). This said "nothing reads or writes these
+    -- ⚠ AMENDED BY CUL-1038 (PR 1b). This said "nothing reads or writes these
     -- three yet: the hydrate select, the push mapper and the write path are PR
-    -- 2's". The split is finer than that, and the line is where it matters:
+    -- 2's". One of the three now moves, and it moves in ONE DIRECTION ONLY:
     --
-    --   • target_duration_days_initial is LIVE as of PR 1b. It is hydrated, it
-    --     rides the push mapper, startDietTrial() stamps it at creation, and
-    --     trialCoverageWindowEndDayIndex() freezes the coverage denominator on
-    --     it (spec §6 D7c). 1b owns making the column TRUE and READ, because a
-    --     freeze reading a column nothing populates repairs nothing.
+    --   • target_duration_days_initial is HYDRATED as of PR 1b, and READ by the
+    --     coverage freeze (trialCoverageWindowEndDayIndex, spec §6 D7c). It is
+    --     NOT pushed and NOT stamped on the device — see the long note on
+    --     dietTrialRowToRemote for the clobber that forbids it. The server value
+    --     is authoritative; this mirror holds a copy it may not write back.
     --   • set_at and vet_directed are still PR 2's, untouched — they record that
     --     the window MOVED, which is a write path, and the paired-null contract
     --     is enforced there.
     --
     -- All three were declared by PR 1 so PR 2's local UPDATE cannot throw "no
     -- such column" on an upgrading device; that is still why the other two sit
-    -- here unread.
+    -- here unread, and it is what PR 2 needs in place before it can write any of
+    -- them (behind CUL-1051's ratchet).
     target_duration_days_initial INTEGER,
     target_duration_set_at       TEXT,
     target_duration_vet_directed INTEGER,
@@ -258,10 +259,13 @@ export interface LocalDietTrial {
   started_at: string;
   target_duration_days: number;
   // migration 068 (CUL-1037) — the window the trial was DESIGNED against.
-  // CUL-1038 reads it (the coverage freeze) and `startDietTrial` stamps it; the
-  // other two provenance columns stay unmapped until PR 2's write path, because
-  // nothing writes or reads them yet and a mapper that forwards a column nobody
-  // fills is a completeness claim with no content.
+  //
+  // READ-ONLY ON THE DEVICE, and that is a safety property rather than a
+  // convenience (CUL-1038's code review). It is HYDRATED from the server, where
+  // 068's backfill filled it, and read by the coverage freeze
+  // (`trialCoverageWindowEndDayIndex`). It is deliberately NOT in
+  // `dietTrialRowToRemote` — see the note there. NULL means "this device has not
+  // learned it yet", never a number.
   target_duration_days_initial: number | null;
   status: string;
   completed_at: string | null;
@@ -317,7 +321,6 @@ export interface RemoteDietTrialUpsert {
   food_item_id: string | null;
   started_at: string;
   target_duration_days: number;
-  target_duration_days_initial: number | null; // migration 068 (CUL-1038)
   status: string;
   completed_at: string | null;
   vet_name: string | null;
@@ -344,6 +347,51 @@ export interface RemoteDietTrialUpsert {
 // COMPLETENESS — it forwards every server column and drops the local-only
 // `synced` / `sync_error`, so no column silently desyncs (the B-057
 // placeholder/param-drift class, asserted by the key-set test).
+//
+// ── THE ONE SERVER COLUMN THIS MAPPER DELIBERATELY DOES NOT FORWARD ─────────
+//
+// `target_duration_days_initial` (migration 068) is hydrated DOWN and never
+// pushed UP, and the completeness rule above is suspended for it on purpose.
+// Removing it from this payload is what stops CUL-1038's coverage freeze from
+// un-freezing the trials it was written to protect.
+//
+// THE CLOBBER, traced end to end (found by `code-reviewer` on CUL-1038, before
+// the freeze shipped):
+//
+//   1. `COLUMN_UPGRADES` adds this column to an already-installed device as a
+//      bare `ALTER TABLE ADD COLUMN` with nothing backfilled locally — correct,
+//      because a local guess would be the app writing down a value the owner
+//      never stated. So on an upgrading phone every pre-existing trial holds
+//      NULL here until a hydrate fills it.
+//   2. `pushRows` does a real full-row `upsert(..., { onConflict: 'id' })`, and
+//      PostgREST sets every column PRESENT in the payload from `excluded`. A
+//      forwarded NULL therefore OVERWRITES the server's value.
+//   3. `syncNow` is push-before-pull (FR-2), and `extendTrial` /
+//      `endActiveTrial` / `setTrialTargetProtein` each fire their own immediate
+//      `syncPendingDietTrials()` with no hydrate in front of them. The extension
+//      tap is one tap with no confirm and no network gate.
+//
+// So an owner who updates the app and taps `Keep going` on a pre-existing
+// overrun trial before that row has been freshly hydrated would push NULL,
+// permanently erase 068's backfill, and silently return their vet report to the
+// pre-repair, TE-6-violating arithmetic — for exactly the population the freeze
+// exists to protect. Nothing repairs it afterwards: there is no trigger and no
+// re-derivation.
+//
+// WHY NOT A CLIENT-SIDE STAMP INSTEAD. Every "fill it in locally" variant writes
+// a plausible wrong number rather than an honest NULL. `COALESCE(initial,
+// target_duration_days)` on an already-extended trial records the EXTENDED
+// window as the designed one — and on a device whose local target is already 64
+// while the server correctly holds 28, it would push 64 and un-freeze the trial
+// just as thoroughly, only less visibly.
+//
+// WHAT CLOSES IT PROPERLY, and where it lives: a `BEFORE UPDATE` ratchet on
+// `diet_trials` refusing a NULL over a non-NULL, so no client — old, new,
+// hydrated or not — can regress the column. That is a migration, migrations get
+// their own PR (CLAUDE.md § Git Workflow), and it is CUL-1051, which BLOCKS the
+// PR 2 write path. Until it lands, the server value is authoritative and the
+// device cannot touch it. `PENDING_MAPPER_COLUMNS` in this module's test file
+// holds the registry entry and names that issue.
 export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert {
   return {
     id: row.id,
@@ -351,7 +399,6 @@ export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert
     food_item_id: row.food_item_id,
     started_at: row.started_at,
     target_duration_days: row.target_duration_days,
-    target_duration_days_initial: row.target_duration_days_initial,
     status: row.status,
     completed_at: row.completed_at,
     vet_name: row.vet_name,

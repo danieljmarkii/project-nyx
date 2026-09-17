@@ -1334,8 +1334,17 @@ export interface TrialRange {
    * justification at the tail-clip comment cited the disclosure as the reason the
    * clip was safe. C-38's *"a comment writing a cheque the code does not cash"*,
    * sitting inside the clip whose whole argument was the disclosure. CUL-1038
-   * (PR 1b) cashes it: the vet report's coverage sentence, its scan-grid tile and
-   * `interpretabilityStatement` all read this, and so does the trial card.
+   * (PR 1b) cashes it on the REPORT: the coverage sentence, the scan-grid tile and
+   * `interpretabilityStatement` all read this.
+   *
+   * THE OWNER'S CARD STILL DOES NOT, and that is a scope line rather than an
+   * oversight — so it is stated here instead of being left for the next reader to
+   * discover the same way. The card gets the FREEZE (its facts come through
+   * `computeTrialFacts` too, so the gate can no longer flip under it); what it
+   * lacks is the SENTENCE explaining "56 of 56 days" under "Day 84". That copy is
+   * B-592, filed since B-422 and deliberately unwritten: the card in
+   * `docs/nyx-diet-trial-mockups.html` is design-locked and this repo does not
+   * invent strings for it outside a mock round.
    *
    * WHAT IT MEANS AND WHAT IT DOES NOT. True says *this trial has run past the
    * window it was designed against, so the figure beside me is measured over that

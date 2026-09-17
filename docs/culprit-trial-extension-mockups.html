@@ -760,6 +760,20 @@
       </div>
     </div>
 
+    <div class="callout">
+      <strong>What PR 1b does not write: the column itself.</strong> The freeze READS
+      <code>target_duration_days_initial</code> and the device never writes it back, because the code
+      review traced a clobber: an upgrading phone holds NULL in that column until a hydrate fills it, the
+      push is a full-row upsert, and the sync pushes before it pulls &mdash; so a <em>Keep going</em> tap
+      before that row&rsquo;s first hydrate would have erased the backfill and silently returned the report
+      to the arithmetic above, for exactly the trials the freeze protects. No client-side stamp fixes it;
+      every variant writes a plausible wrong number instead of an honest blank. The database has to refuse
+      the write, which is a migration and therefore its own PR: <strong>1c</strong>, which now blocks PR 2.
+      Until it lands the freeze covers every trial that existed when 068 applied, and a trial started from
+      now on falls back to today&rsquo;s behaviour &mdash; reachable only after it overruns its own window
+      and is then extended.
+    </div>
+
     <div class="callout warn">
       <strong>What PR 1b does not ship: the owner&rsquo;s card sentence.</strong> The <em>freeze</em> reaches
       the trial card (its facts come through the same module), so the flip is gone there too &mdash; the body

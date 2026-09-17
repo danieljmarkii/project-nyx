@@ -44,10 +44,9 @@ since B-422: the report's coverage sentence, its scan-grid tile, and
 register of the precedent one block away in the same document — *"The allowed list
 changed after the trial started"* (`render.ts:2721`).
 
-**The column, made true and read.** `startDietTrial` stamps
-`target_duration_days_initial` at creation; `dietTrialRowToRemote` forwards it;
-`hydrateDietTrials` pulls it; `lib/dietTrialFacts.ts` and `generate-report`'s pull +
-mapper carry it to the two `computeTrialFacts` callers.
+**The column, made READ.** `hydrateDietTrials` pulls it; `lib/dietTrialFacts.ts` and
+`generate-report`'s pull + mapper carry it to the two `computeTrialFacts` callers. The
+device **never writes it** — see item 8 below, which is why.
 
 **The markers.** PR 0's four §5.4 expected failures are promoted to plain tests with
 their assertion bodies byte-identical. Two new blocks: **G4** pins the downstream
@@ -71,11 +70,11 @@ rather than unfixed.
 
 **2. A column the backfill filled is not a column the freeze can use.** 068's backfill
 covers every row that existed when it applied and nothing after, because a `DEFAULT`
-cannot reference a sibling column. Without a create-stamp the freeze would have covered
-every existing trial and no trial started from that day on — a repair whose coverage
-shrinks over time. So the stamp, the push mapper and the hydrate select came into 1b;
-`set_at` / `vet_directed` and the window-MOVE write path stay PR 2's. The line is: **1b
-owns making the column TRUE and READ, PR 2 owns recording that the window moved.**
+cannot reference a sibling column. Without a create-stamp the freeze covers every
+existing trial and no trial started from that day on — a repair whose coverage shrinks
+over time. So the first cut of 1b stamped the column at creation and forwarded it on the
+push. **That turned out to be the one unsafe thing in the PR; see item 8.** What shipped
+is reads-only, and the create-stamp moved to PR 1c's train.
 
 **3. The fixtures had to move toward production before the markers could fire (C-35).**
 All four of PR 0's markers built a trial with no `targetDurationDaysInitial` — the
@@ -115,7 +114,16 @@ deliberately unwritten because the card in `nyx-diet-trial-mockups.html` is desi
 and this repo does not invent strings for it outside a mock round. Not a gap this PR left
 open; a gap it narrowed from a safety defect to copy.
 
-**7. A comment inside a query chain can red a guard that has nothing to do with it.**
+**7. The C-38 cheque I wrote myself, three hours after paying off someone else's.** The
+new docstring on `TrialRange.closedByOverrun` said the report's three surfaces "all read
+this, and so does the trial card". The card does not — it gets the freeze, not the
+disclosure, because B-592 owns that copy and the card is design-locked. Caught by
+`code-reviewer`. The lesson is not "check your comments": it is that a comment listing
+consumers is a *claim about the import graph*, and the moment I wrote a true list of
+three I extended it to four from memory. A list of consumers either comes from a grep or
+comes with the scope line that explains the omission.
+
+**8. A comment inside a query chain can red a guard that has nothing to do with it.**
 `guards/reportPullPagination.test.ts` (C-42) reads 2,000 characters from `.from(` and
 `blankComments` preserves line length, so a nine-line rationale inside the `.select()`
 pushed `count: 'exact'` out of the window and the guard reported a pull that pages
@@ -124,6 +132,44 @@ the next query is not a slice of the object under test), so **the comment moved,
 bound** — and the reason it moved is written where the next person will put a comment
 there.
 
+**9. The freeze's own prerequisite could have erased the freeze.** `code-reviewer`
+traced this end to end on the first cut, and it is the finding that re-cut the PR:
+
+1. `COLUMN_UPGRADES` adds `target_duration_days_initial` to an already-installed device
+   as a bare `ALTER TABLE ADD COLUMN` with **nothing backfilled locally** — correct, since
+   a local guess would be the app writing down a value the owner never stated. So every
+   pre-existing trial on an upgrading phone holds NULL until a hydrate fills it.
+2. `pushRows` is a real full-row `upsert(..., { onConflict: 'id' })`, and PostgREST sets
+   every column **present in the payload** from `excluded`. A forwarded NULL overwrites.
+3. `syncNow` is **push-before-pull** (FR-2), and `extendTrial` / `endActiveTrial` /
+   `setTrialTargetProtein` each fire their own immediate `syncPendingDietTrials()` with no
+   hydrate in front of them. The extension tap is one tap, no confirm, no network gate.
+
+So an owner who updated the app and tapped `Keep going` on a pre-existing overrun trial
+before that row's first hydrate would have erased 068's backfill permanently — no trigger,
+no re-derivation — and silently returned their vet report to the pre-repair arithmetic,
+**for exactly the population the freeze was written to protect.** A repair that undoes
+itself on contact with its own target user.
+
+And no client-side stamp fixes it. Every variant writes a plausible wrong number instead
+of an honest NULL: `COALESCE(initial, current)` on an already-extended trial records the
+**extended** window as the designed one, and on a device whose local target is already 64
+while the server correctly holds 28 it pushes 64 and un-freezes the trial just as
+thoroughly, only less visibly. Omitting the key per row means a bulk payload with mixed
+key sets, which PostgREST rejects.
+
+**So the rule this produced:** a column whose value only the server can know is
+**hydrated, never pushed**, until the database itself refuses to lose it. PM ruled
+reads-only; the ratchet is **CUL-1051 (PR 1c)** and it now blocks PR 2. The prohibition
+is pinned by a mutation-proven test on `dietTrialRowToRemote` rather than by the
+`PENDING_MAPPER_COLUMNS` registry alone — the registry means "not forwarded *yet*" for
+its other two entries, and a PR 2 session reading only that would forward this one, which
+is the bug.
+
+The generalisation, which is not specific to this column: **a local mirror's NULL is "this
+device has not learned it", and a full-row upsert has no way to say "leave this alone".**
+Any column where those two facts meet is a clobber waiting for a tap.
+
 ## Proven by mutation, not by reading (C-18)
 
 | Mutation | Result |
@@ -131,12 +177,21 @@ there.
 | `trialCoverageWindowEndDayIndex` reads `targetDurationDays` (the pre-repair function) | **17 red**, including all four TE-6 markers and both G4 pins. G5 correctly stays green — its fixture has no `initial`, so the mutation is a no-op there. |
 | Freeze `endDayIndex` but leave `overrunUnended` on the live target (the half-repair the code comment warns against) | **17 red** |
 | `initial ?? current` without the `> 0` guard (NULL/0 read as a number) | **exactly 1 red** — G5's own test, the one written for it |
+| `dietTrialRowToRemote` forwards the column (what a PR 2 session reading only the registry would do) | **3 red**, including the named prohibition test |
+| The scan-grid tile's overrun note rendered ungated | **1 red** — the tile test's off-state half |
 
-## Adversarial review
+## Reviews
 
-`adversarial-reviewer` (mandatory — a coverage denominator the vet report renders) and
-`code-reviewer` both ran against the committed diff. See the PR body and the CUL-1038
-outcome comment for the counterexamples tried and what held.
+**`code-reviewer` returned FIX-BEFORE-MERGE** on the push-mapper clobber above, plus two
+cleanups now closed (the untested scan tile, and the stale `lib/dietTrial.ts:2223`
+citation — named by symbol now, since it had already drifted onto a blank line). It also
+verified, rather than assumed, the placeholder/param counts on all three touched SQL
+statements, the `COLUMN_UPGRADES` coverage, the byte-identity of the three promoted
+assertion bodies, and the HTML-escaping of both new render strings.
+
+**`adversarial-reviewer`** (mandatory — a coverage denominator the vet report renders):
+see the PR body and the CUL-1038 outcome comment for the counterexamples tried and what
+held.
 
 ## Tests
 
@@ -147,7 +202,16 @@ outcome comment for the counterexamples tried and what held.
 - The report path is executed end to end (raw events → `assembleReport` →
   `renderReport`), on the default and since-visit scopes, both sides of the tap.
 
-## What this owes
+## What this owes and leaves
+
+**CUL-1051 (PR 1c)** — the ratchet migration, which now blocks PR 2. Until it lands the
+server value is authoritative and the device cannot touch it, which is safe but means the
+freeze covers only the trials 068 backfilled: a trial created from now on carries a NULL
+designed window and keeps G5's documented fallback. It can only reach the hazard after it
+overruns its own window *and* is extended, so the exposure is bounded by a window length
+rather than being immediate.
+
+
 
 **A `generate-report` redeploy.** The function is at v15 and the ledger entry was already
 `pending`; CUL-1038 joins that pending set and is the reason it is now worth deploying
