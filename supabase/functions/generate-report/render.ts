@@ -2523,6 +2523,21 @@ function dietTrialSection(snap: ReportSnapshot): string {
         )}.`
       : `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays, identityDay === fmtDayYear)}.`,
   ]
+  // ── §5.1 — THE WINDOW MOVED, AND WHEN (CUL-1041) ───────────────────────────
+  //
+  // It sits HERE, directly under the day phrase, because the sentence above it is the
+  // one it qualifies: "day 60 of 84" is byte-identical on a trial designed for twelve
+  // weeks and on an eight-week trial extended at day 56, and *that the signs had not
+  // resolved at eight weeks* is the finding the extension is evidence of (TE-4). The
+  // placement follows this block's own precedent — `allowedSetChangedAfterStart` says
+  // "the allowed list changed after the trial started" on the row holding the list,
+  // not on the headline.
+  //
+  // It is NOT on the page-1 headline. That line carries two conditional bold
+  // escalations already, for a truncated scope and for a protein breach in the diet,
+  // and the breach is the most actionable sentence on the page; a third dilutes them.
+  const windowMoveLine = trialWindowChangeLine(t, identityDay)
+  if (windowMoveLine) identity.push(windowMoveLine)
   // The food labels + provenance sub-line, only when the lead named the protein instead
   // of the labels (else the labels already lead and this would repeat them). The labels
   // ALWAYS ride this line so they never vanish; the provenance word rides it only when
@@ -3282,6 +3297,90 @@ function articleFor(n: number): string {
   // so a `startsWith` test rendered "an 112-day window", and 112 is one tap away (84 +
   // §4.3's "Keep going — 4 more weeks"). Any number spoken starting with "eight" does.
   return String(n)[0] === '8' || n === 11 || n === 18 ? 'an' : 'a'
+}
+
+/**
+ * §5.1 — the window moved, and when. Empty string when it never did (CUL-1041).
+ *
+ * WHY THE SENTENCE SAYS "LAST MOVED" AND NOT "ON". Migration 068 stores the FIRST
+ * window (`target_duration_days_initial`) and the LAST change (`target_duration_set_at`),
+ * and on a trial extended twice those describe different events. D2(a) accepted losing
+ * the middle steps; it did not license asserting they never happened, and a 28 → 56 → 84
+ * trial rendered as "extended from 28 days on 19 Sep" claims a jump this record cannot
+ * support. Multi-move is not the edge case either: D5's own finding is that a GI owner
+ * meets `This trial is done` five times before twelve weeks, so the ladder produces
+ * exactly this shape. "Last moved" is true of one move and of five, and costs one word.
+ *
+ * WHY THE VERB FOLLOWS THE ARITHMETIC. `shortened` is reachable — TE-3 makes the
+ * mid-trial sheet forward-only, but the shipped milestone path and every pre-068 row
+ * predate that rule — and it is the direction §5.2 is about: a 56-day trial shortened
+ * to 28 and marked complete prints "Ran its course — the full window was completed."
+ * Calling a shortening "extended" would hide precisely the move that laundering needs
+ * hidden. `changed` is the honest word when the prior window was never recorded.
+ *
+ * WHY THE OVERRUN CLAUSE EXISTS. `daysPastTarget` is computed against the CURRENT
+ * target, so one tap turns "day 50 — 22 days past the 28-day window" into "day 50 of
+ * 64" — deleting the report's only staleness disclosure in the same breath that
+ * changes the stated window length. Executed by PR 0 (CUL-1036) against the real
+ * report, both scopes. §5.1's clause makes that derivable; this clause restores it as
+ * a STATED fact, at the moment it would otherwise be lost. Distinct from D7(c)'s
+ * freeze, which governs the coverage denominator and `belowCoverageFloor`, not this
+ * line.
+ *
+ * AND THE ATTRIBUTION IS A SEPARATE, UNBOLDED SENTENCE. "Owner reports" is the whole
+ * point of it (§5.1 #3): the app cannot verify a vet instruction and must never assert
+ * one. It is not a finding, so it does not take the finding's weight. When the box is
+ * unchecked there is no sentence at all — an unchecked box is SILENCE, never "the
+ * owner did this on their own" (the two-sided rule, the same one that makes a mark's
+ * absence not a verdict on off-diet foods). NULL and FALSE are indistinguishable here
+ * by construction: `windowChange.vetDirected` is `=== true` and nothing else.
+ */
+function trialWindowChangeLine(
+  t: NonNullable<ReportSnapshot['trial']>,
+  identityDay: (dayKey: string | null) => string,
+): string {
+  const wc = t.windowChange
+  if (!wc) return ''
+
+  const verb = wc.direction === 'changed' ? 'changed' : wc.direction
+  // THE FROM-NUMBER IS BOUND TO THE DIRECTION, NOT TO ITS OWN NON-NULLNESS. When the
+  // prior window EQUALS the current one the direction is `changed`, and "changed from
+  // 56 days" then asserts a move away from 56 on a trial whose window is 56 — the
+  // round-trip case (56 → 84 → 56, where the write path's COALESCE keeps the FIRST
+  // window and the current one has come back to it). Two changes happened and neither
+  // is a net move, so the sentence says the window changed and when, and names no
+  // number it would have to be wrong about.
+  const fromBit =
+    wc.fromDays !== null && wc.direction !== 'changed' ? ` from ${num(wc.fromDays)} days` : ''
+
+  // The "when", assembled from whatever the record actually holds. A date that does
+  // not parse is a corruption rather than a state any write path produces, but the
+  // clause is still rendered without it: hiding the move is the defect this sentence
+  // exists to close, and a floor may only ever move toward disclosing more.
+  const whenBit =
+    wc.movedOnDate !== null && wc.movedOnDay !== null
+      ? `${h(identityDay(wc.movedOnDate))} (day ${num(wc.movedOnDay)})`
+      : wc.movedOnDate !== null
+        ? h(identityDay(wc.movedOnDate))
+        : wc.movedOnDay !== null
+          ? `on trial day ${num(wc.movedOnDay)}`
+          : 'on a date the record does not hold'
+
+  const overrunBit =
+    wc.daysPastPriorWindowAtMove !== null
+      ? ` &mdash; ${num(wc.daysPastPriorWindowAtMove)} day${
+          wc.daysPastPriorWindowAtMove === 1 ? '' : 's'
+        } past that window`
+      : ''
+
+  // Bolded like `stoppedReasonLine` two entries down this same array, and for the same
+  // reason: it is a clinical fact about the trial's shape that a 60-second scan must
+  // not step over. The attribution that follows is deliberately not bold.
+  const fact = `<b>Window ${verb}${fromBit}; last moved ${whenBit}${overrunBit}.</b>`
+  const attribution = wc.vetDirected
+    ? ' Owner reports the change was at the vet&rsquo;s direction.'
+    : ''
+  return `${fact}${attribution}`
 }
 
 function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number, withYear = false): string {

@@ -15,6 +15,9 @@
 
 import { strict as assert } from 'node:assert'
 import { renderReport, SHIPPED_STYLE } from './render.ts'
+// CUL-1041 — the window-move fixtures below are built by the PRODUCTION derivation,
+// so this file cannot drift from `trial.ts` without going red.
+import { deriveWindowChange } from './trial.ts'
 import { LANE_SYMPTOM_TYPES } from '../generate-signal/detection.ts'
 import { REPORT_SYMPTOM_TYPES } from './report.ts'
 import type {
@@ -152,6 +155,12 @@ export function trialBlockFixture(
     // report cannot produce.
     elapsedStartDayIndex: over.elapsedStartDayIndex ?? elapsedStart,
     elapsedEndDayIndex: over.elapsedEndDayIndex ?? elapsedStart + Math.max(0, elapsed - 1),
+    // CUL-1041 — the default is a window that NEVER MOVED, so every pre-existing
+    // assertion in this file keeps describing the report it described before. It is
+    // taken after the spread for the same reason the two elapsed indices are: `over`
+    // carries `windowChange?: TrialWindowChange | null`, and an explicit `null` in an
+    // override must survive rather than be re-defaulted by a `??` on the left.
+    windowChange: over.windowChange ?? null,
   }
 }
 
@@ -7166,4 +7175,112 @@ Deno.test('CUL-981 — a black read is a colour, never the blood caveat’s own 
   assert.equal(t.split('coffee-ground').length - 1, 1, 'the term appears once, in the blood caveat')
   assert.ok(/digested \(coffee-ground\) blood photographs poorly/.test(t), 'and that once is the caveat')
   assert.ok(/Not seen/.test(t), 'which still refuses to clear')
+})
+
+// ── CUL-1041 §5.1 — the window-move clause, branch by branch ─────────────────
+//
+// The end-to-end guard lives in `trial.test.ts`, where a real `targetDurationDays`
+// mutation drives `assembleReport` → `renderReport`. These cover what an end-to-end
+// fixture cannot reach without writing a corrupt row: the degenerate shapes of the
+// three columns, and where on the page the sentence lands.
+//
+// THE FIXTURE IS BUILT BY THE PRODUCTION DERIVATION, never by hand. A hand-written
+// `windowChange` would let this file and `trial.ts` drift apart silently, and the
+// assertion would then be about a shape production never produces (C-35) — which is
+// exactly how the transcribed-not-executed pass that preceded this feature went
+// wrong in the first place.
+
+function windowSnap(
+  wcOver: {
+    targetDurationDays: number
+    targetDurationDaysInitial?: number | null
+    targetDurationSetAt?: string | null
+    targetDurationVetDirected?: boolean | null
+  },
+  startDayIndex = Math.round(Date.parse('2026-05-08T00:00:00Z') / 86_400_000),
+): ReportSnapshot {
+  const snap = base()
+  const wc = deriveWindowChange(
+    {
+      targetDurationDays: wcOver.targetDurationDays,
+      targetDurationDaysInitial: wcOver.targetDurationDaysInitial ?? null,
+      targetDurationSetAt: wcOver.targetDurationSetAt ?? null,
+      targetDurationVetDirected: wcOver.targetDurationVetDirected ?? null,
+    },
+    startDayIndex,
+    'America/New_York',
+  )
+  snap.trial = trialBlockFixture({
+    targetDurationDays: wcOver.targetDurationDays,
+    windowChange: wc,
+  })
+  return snap
+}
+
+Deno.test('CUL-1041 — the clause sits directly under the day phrase it qualifies', () => {
+  const page = plain(renderReport(windowSnap({
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: '2026-07-02T11:00:00Z',
+  })))
+  // Not on the headline — that line carries the truncated-scope and protein-breach
+  // escalations, and the breach is the most actionable sentence on the page.
+  const dayPhrase = page.indexOf('day 45 of 84')
+  const clause = page.indexOf('Window extended from 56 days')
+  const started = page.indexOf('Started May 8')
+  assert.ok(dayPhrase >= 0 && clause > dayPhrase, 'the clause follows the number it qualifies')
+  assert.ok(started > clause, 'and precedes the rest of the identity row')
+})
+
+Deno.test('CUL-1041 — a stamp that predates the trial names the date and NO trial day', () => {
+  // `trialDayCounter` floors at 1, so taking it unconditionally would print "day 1"
+  // for a move made before the trial began — a confident wrong number where the
+  // honest output is silence about that half.
+  const page = plain(renderReport(windowSnap({
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: '2026-05-01T11:00:00Z', // a week before started_at
+  })))
+  assert.match(page, /Window extended from 56 days; last moved May 1\./)
+  assert.ok(!/\(day 1\)/.test(page), 'never floors a pre-trial stamp to day 1')
+  // And with no trial day there is no overrun claim either — the arithmetic that
+  // would produce it has no second operand.
+  assert.ok(!/past that window/.test(page))
+})
+
+Deno.test('CUL-1041 — an unparseable stamp still discloses the move', () => {
+  // A corruption, not a state any write path produces. The clause degrades rather
+  // than disappearing: hiding the move is the defect the sentence exists to close,
+  // and a floor may only ever move toward disclosing more.
+  const page = plain(renderReport(windowSnap({
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: 'not-a-timestamp',
+  })))
+  assert.match(page, /Window extended from 56 days; last moved on a date the record does not hold\./)
+})
+
+Deno.test('CUL-1041 — a non-positive prior window is "not recorded", never a number', () => {
+  // `target_duration_days_initial` is nullable with no CHECK and is backfilled from a
+  // sibling column, so the render must not be the first thing that assumes its range.
+  for (const bad of [0, -14]) {
+    const page = plain(renderReport(windowSnap({
+      targetDurationDays: 84,
+      targetDurationDaysInitial: bad,
+      targetDurationSetAt: '2026-07-02T11:00:00Z',
+    })))
+    assert.match(page, /Window changed; last moved Jul 2 \(day 56\)\./, `initial=${bad}`)
+    assert.ok(!/from 0 days|from -14 days/.test(page), `initial=${bad} is not printed`)
+  }
+})
+
+Deno.test('CUL-1041 — no provenance means no sentence, and the page is otherwise identical', () => {
+  // The absence-equivalence shape (C-36): a trial whose window never moved must render
+  // byte-for-byte what it rendered before this feature existed. `windowChange: null` is
+  // the only state every pre-068 row and every unextended trial can be in.
+  const withNull = renderReport(windowSnap({ targetDurationDays: 84 }))
+  const snapNoField = base()
+  snapNoField.trial = trialBlockFixture({ targetDurationDays: 84 })
+  assert.equal(withNull, renderReport(snapNoField))
+  assert.ok(!/Window (extended|shortened|changed)/.test(plain(withNull)))
 })

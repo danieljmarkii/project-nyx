@@ -4519,3 +4519,199 @@ Deno.test('trialAllowedListMissing: an active-status trial past its overrun grac
 Deno.test('trialAllowedListMissing: no trial block → false', () => {
   assert.equal(trialAllowedListMissing(null, R16_NOW_MS, 'UTC'), false)
 })
+
+// ── CUL-1041 §5.1 — THE WINDOW MOVED, AND WHEN ───────────────────────────────
+//
+// THE GUARD THAT SHOULD HAVE EXISTED BEFORE ANY OF THIS. The adversarial pass that
+// produced the trial-extension spec could not run a live render — `trialDayPhrase`
+// and `stoppedReasonLine` were TRANSCRIBED from `render.ts`, not executed — so every
+// claim this feature was designed against was a claim about source a human had read.
+// These drive raw events → `assembleReport` → `renderReport` across a MUTATED
+// `targetDurationDays`, which is the only way the deletion below is observable: the
+// two renders differ by one integer on one input row, and the page changes in three
+// places.
+//
+// The numbers are the spec's own worked cases, not invented ones:
+//   · §5.4  — a 28-day window, day 50, extended to 64. What the tap deletes.
+//   · §5.1  — a 56-day window extended to 84 on day 56. What the report owes.
+
+const W_TZ = 'America/New_York'
+
+/** A trial started `elapsed - 1` days before NOW, fed its own diet every day.
+ *
+ *  Anchored on NOW rather than on a literal start date so the day counter is a
+ *  RESULT of the fixture rather than a constant restated beside it — a fixture that
+ *  hardcodes both drifts silently the moment the report's day math changes (C-29's
+ *  time-axis half, and C-35: build the shape the caller could actually hand over). */
+function windowTrialInput(o: {
+  dayOfTrial: number
+  targetDurationDays: number
+  targetDurationDaysInitial?: number | null
+  targetDurationSetAt?: string | null
+  targetDurationVetDirected?: boolean | null
+}): ReportInput {
+  const todayKey = NOW.slice(0, 10)
+  const startedAt = dayKeyPlus(todayKey, -(o.dayOfTrial - 1))
+  return baseInput({
+    events: days(startedAt, todayKey).map((d) =>
+      meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+    ),
+    dietTrials: [
+      {
+        id: 'trial-w',
+        foodItemId: 'f-hp',
+        startedAt,
+        targetDurationDays: o.targetDurationDays,
+        status: 'active',
+        completedAt: null,
+        endedAt: null,
+        indication: 'skin',
+        vetName: null,
+        foodLabel: 'Royal Canin Hydrolyzed HP',
+        primaryProtein: 'soy',
+        proteins: ['soy'],
+        allowedFoods: [{ ...TRIAL_FOOD, allowedFrom: startedAt }],
+        targetDurationDaysInitial: o.targetDurationDaysInitial ?? null,
+        targetDurationSetAt: o.targetDurationSetAt ?? null,
+        targetDurationVetDirected: o.targetDurationVetDirected ?? null,
+      },
+    ],
+  })
+}
+
+const windowPage = (o: Parameters<typeof windowTrialInput>[0]): string =>
+  plain(renderReport(assembleReport(windowTrialInput(o))))
+
+Deno.test('CUL-1041 §5.4 — the mutated target deletes the overrun line, and the clause puts it back', () => {
+  // The trial as designed: 28 days, and it is day 50. The report says so.
+  const before = windowPage({ dayOfTrial: 50, targetDurationDays: 28 })
+  assert.match(before, /day 50 — 22 days past the 28-day window/)
+  assert.ok(!/Window (extended|shortened|changed)/.test(before), 'nothing moved, so nothing is claimed')
+
+  // One extension tap, and ONE integer on ONE row changes: 28 → 64.
+  const after = windowPage({
+    dayOfTrial: 50,
+    targetDurationDays: 64,
+    targetDurationDaysInitial: 28,
+    // 07:00 local on the report's own last day — day 50, and before `now`.
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+
+  // The three places the page moves. First: the position stops disclosing the overrun,
+  // which is the deletion §5.4 executed and this PR is answering.
+  assert.match(after, /day 50 of 64/)
+  assert.ok(
+    !/22 days past the 28-day window/.test(after),
+    'the position is now inside the window — the OLD sentence is legitimately gone',
+  )
+
+  // Second and third: the original window and the day it moved, and the overrun
+  // RESTATED rather than left to be derived from two numbers a page apart.
+  assert.match(after, /Window extended from 28 days; last moved Jul 2 \(day 50\) — 22 days past that window\./)
+
+  // The regression this test exists for, stated as the property rather than the string:
+  // whatever else the tap changes, the report may not stop saying the trial outran the
+  // window it was designed against.
+  assert.ok(/22 days past/.test(before) && /22 days past/.test(after), 'the disclosure survives the tap')
+})
+
+Deno.test('CUL-1041 §5.1 — the spec’s worked case: extended from 56 on day 56, box unchecked', () => {
+  const page = windowPage({
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+  assert.match(page, /day 56 of 84/)
+  assert.match(page, /Window extended from 56 days; last moved Jul 2 \(day 56\)\./)
+  // A move ON the last day of the old window is not an overrun. The clause stops.
+  assert.ok(!/past that window/.test(page), 'day 56 of a 56-day window is not past it')
+  // THE TWO-SIDED RULE. With the box unchecked there is no attribution sentence at
+  // all — not a sentence saying the owner acted alone, and not a hedge about not
+  // knowing. Silence is the whole of it.
+  assert.ok(!/vet’s direction/.test(page), 'no attribution clause')
+  assert.ok(!/own initiative|on their own|owner decided/i.test(page), 'and no inverse claim either')
+})
+
+Deno.test('CUL-1041 §5.1 / D4a — the checked box adds "owner reports", and nothing stronger', () => {
+  const page = windowPage({
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+    targetDurationVetDirected: true,
+  })
+  assert.match(page, /Owner reports the change was at the vet’s direction\./)
+  // The app cannot verify a vet instruction and must never assert one. The hedge is
+  // not decoration: without it the sentence is a clinical claim about a third party.
+  assert.ok(
+    !/The vet (directed|extended|asked)/.test(page),
+    'the report never asserts the vet did anything',
+  )
+})
+
+Deno.test('CUL-1041 — FALSE reads exactly like NULL (the two-sided rule, both spellings)', () => {
+  const shared = {
+    dayOfTrial: 56,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  }
+  const asNull = windowPage({ ...shared, targetDurationVetDirected: null })
+  const asFalse = windowPage({ ...shared, targetDurationVetDirected: false })
+  assert.equal(asFalse, asNull, 'an unchecked box and an unanswered one are one state')
+})
+
+Deno.test('CUL-1041 — the predicate is set_at, never initial-vs-current', () => {
+  // The backfilled row every live trial now carries: `initial` is populated and equal
+  // to the current target, and the window has never moved. Comparing the two would be
+  // the obvious predicate and would be right here by accident; it is wrong in the two
+  // cases below, which is why migration 068's COMMENT names `set_at` as the one.
+  const backfilled = windowPage({ dayOfTrial: 20, targetDurationDays: 56, targetDurationDaysInitial: 56 })
+  assert.ok(!/Window (extended|shortened|changed)/.test(backfilled), 'a populated initial is not a move')
+
+  // A move recorded with no prior window — the row a trial created between 068 and
+  // the PR 2 write path produces. Initial-vs-current cannot see this at all.
+  const noPrior = windowPage({
+    dayOfTrial: 20,
+    targetDurationDays: 56,
+    targetDurationDaysInitial: null,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+  assert.match(noPrior, /Window changed; last moved Jul 2 \(day 20\)\./)
+  assert.ok(!/from null|from 0 days|from  days/.test(noPrior), 'an unrecorded window is never a number')
+
+  // THE ARM THAT MAKES `set_at` LOAD-BEARING RATHER THAN A CONVENIENCE, and the one a
+  // mutation pass found missing here: a window moved and then moved BACK. 56 → 84 → 56
+  // leaves `initial` at 56 (the write path COALESCEs, so it keeps the FIRST window) and
+  // `target_duration_days` back at 56, with `set_at` stamped twice. Initial-vs-current
+  // reads that as "never moved" and the page goes silent about two changes — §5.2's
+  // laundering, one remove further out. Swapping the predicate for the obvious
+  // comparison left every other test in this file green; this is the one that reds.
+  const movedBack = windowPage({
+    dayOfTrial: 20,
+    targetDurationDays: 56,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+  assert.match(movedBack, /Window changed; last moved Jul 2 \(day 20\)\./)
+  // And it is not called an extension: the record cannot say which way it went when
+  // the first window and the current one are the same number.
+  assert.ok(!/Window (extended|shortened)/.test(movedBack))
+})
+
+Deno.test('CUL-1041 §5.2 — a SHORTENED window says shortened, on the page that could launder it', () => {
+  // §5.2 executed: a trial shortened to fit the day it stopped renders "Ran its course
+  // — the full window was completed." TE-3 closes the mid-trial door on this, but the
+  // shipped milestone path and every pre-068 row predate that rule, so the RENDER must
+  // still be able to say which direction the window moved. Calling this "extended"
+  // would hide precisely the move the laundering needs hidden.
+  const page = windowPage({
+    dayOfTrial: 30,
+    targetDurationDays: 28,
+    targetDurationDaysInitial: 56,
+    targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
+  })
+  assert.match(page, /Window shortened from 56 days; last moved Jul 2 \(day 30\)/)
+  assert.ok(!/Window extended/.test(page))
+})
