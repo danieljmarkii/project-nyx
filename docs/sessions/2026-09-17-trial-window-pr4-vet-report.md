@@ -186,6 +186,55 @@ passed against these tests. A mutation pass proves a test discriminates; it cann
 the fixture describes a shape production makes. The fixtures all shared one accidental
 property — the move on the last day — and every mutation was evaluated inside it.
 
+## The rulings, and the three review rounds the second one triggered
+
+The PM ruled both briefs (a). **A** needed no code — the overrun sentence was already
+anchored on *now*. **B** put a marker on the page-1 headline: `day 50 of 64 (window
+extended)`. Headline only; the "Trial diet" row at the foot of page 1 repeats the day
+phrase and stays unmarked, because it sits *below* the block. **Mark the number where the
+reader meets it before the explanation, never after.**
+
+Then the marker's own cold read found two defects the marker had created, and a third
+round found that the fix for the first had only moved it. Worth recording as a sequence,
+because the sequence is the lesson.
+
+**Round 2 — the agentless passive.** `(window extended)` names no agent, and the
+headline's `, directed by Dr. A. Chen` sat four words earlier in the same sentence. The
+reviewer did not predict the binding; it made it:
+
+> *"The sentence offers exactly one agent, names him, and places him four words before the
+> revision flag. An agentless passive that close to the only named agent inherits that
+> agent. I did not have to infer anything; I had nothing else to attach it to."*
+
+The direction of the error is what made it unshippable. Box ticked → the block corrects it
+downstream. Box unticked → there is no such sentence, so the binding stands over a record
+holding *no attestation at all*: **the less the record knows, the less the page hedged.**
+Repair: the name yields, not the marker. The headline drops the vet phrase when, and only
+when, a window has moved; the block still carries it, scoped.
+
+**Round 3 — the indefinite article was not enough.** With the headline's name gone, a
+fresh reader bound *inside the trial row*: "a vet" had exactly one antecedent on the page,
+twenty words later, and both clauses used the verb *directed*.
+
+> *"An indefinite noun phrase with one available antecedent in the same paragraph is not
+> ambiguous to a reader — it's an anaphor."*
+
+~80% confidence. Two mechanisms, two repairs: `asked for` kills the lexical echo, and
+`Culprit cannot say which` states the record's inability outright instead of asking an
+article to imply it.
+
+**Stopped there.** Three rounds, each moving the defect rather than closing it, is itself
+the finding — and the reviewer says so: *"the layout is the attribution defect, not just
+its container."* The Trial row is ~55 words of unstructured prose carrying ten classes of
+fact, and two proper-noun/role tokens in one skimmed paragraph will fuse. Splitting it into
+labelled rows is report-wide and out of scope.
+
+What is left open is **brief C**, on the issue: with the box unticked there is no clause at
+all, and silence next to a named vet reads as concurrence (~55–60%), *invisibly* — a cold
+reader cannot see a sentence that is absent. Both cold reads independently recommend
+rendering that absence positively. §5.1 says the clause is "simply absent", so it is a
+spec deviation and the PM's call, not this session's.
+
 ## Raised, not resolved here
 
 - **`extendTrial` stamps no provenance.** The shipped milestone path (`lib/dietTrialSetup.ts`)
