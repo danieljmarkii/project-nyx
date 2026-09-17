@@ -90,6 +90,27 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     -- normal LWW column update and is resolved stored-first via trialTargetProtein().
     target_protein        TEXT,
     target_protein_set_at TEXT,
+    -- migration 068 (CUL-1037) — WINDOW PROVENANCE: the record of a window that
+    -- MOVED. target_duration_days is overwritten in place, so without these an
+    -- 8-week trial extended on day 56 is byte-identical to a 12-week trial
+    -- started on day 1 (spec §5.1 / TE-4). set_at is THE PREDICATE — "did this
+    -- window move?" is set_at IS NOT NULL, never initial <> target_duration_days
+    -- — and it is NULL until the window first moves, which is also when the
+    -- other two are read at all. vet_directed is INTEGER because SQLite has no
+    -- BOOLEAN: 1 = the owner checked the box, and NULL and 0 are
+    -- INDISTINGUISHABLE downstream, both meaning silence (§5.1's two-sided rule
+    -- — an unchecked box is never rendered as "the owner did this on their own").
+    -- Declared here AND in COLUMN_UPGRADES — this reaches a fresh install and
+    -- anything building from the DDL constants, the upgrade reaches an already
+    -- installed device (the 048 / 053 / 066 precedent).
+    --
+    -- DECLARED, NOT YET SYNCED. Nothing reads or writes these three yet: the
+    -- hydrate select, the push mapper and the write path are PR 2's (spec §7).
+    -- They are here now so PR 2's local UPDATE cannot throw "no such column" on
+    -- an upgrading device.
+    target_duration_days_initial INTEGER,
+    target_duration_set_at       TEXT,
+    target_duration_vet_directed INTEGER,
     -- CUL-899 VV-1 / migration 066 — PROVENANCE: the visit this trial came from.
     -- Never a source of numbers: started_at, the coverage denominators and the
     -- adherence counts stay the trial's own (CUL-746; TG-5). Declared here AND in

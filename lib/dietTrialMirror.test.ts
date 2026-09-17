@@ -28,6 +28,7 @@ import {
   type LocalDietTrial,
   type LocalDietTrialFood,
 } from './dietTrialMirror';
+import { COLUMN_UPGRADES, applyColumnUpgrades } from './localSchema';
 
 // node:sqlite is Node ≥ 22 core; require() keeps it off the babel/jest-expo path
 // (same loader trick as lib/medications.test.ts).
@@ -46,6 +47,11 @@ function freshDb() {
   );`);
   db.exec(DIET_TRIAL_SCHEMA_SQL);
   return db;
+}
+
+/** The columns a table actually has, read back from a built database. */
+function columnsOf(db: { prepare: (sql: string) => { all: () => unknown[] } }, table = 'diet_trials'): string[] {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 }
 
 function insertTrial(db: ReturnType<typeof freshDb>, overrides: Record<string, string> = {}) {
@@ -116,6 +122,43 @@ describe('DIET_TRIAL_SCHEMA_SQL — production local DDL', () => {
     t = db.prepare('SELECT * FROM diet_trials WHERE id = ?').get('trial-1') as Row;
     expect(t.target_protein).toBe('duck');
     expect(t.target_protein_set_at).toBe('2026-07-03T09:00:00.000Z');
+    db.close();
+  });
+
+  it('carries the CUL-1037 window-provenance columns, defaulting NULL for a trial that never moved', () => {
+    // migration 068: three nullable columns the vet report reads to say a window
+    // MOVED. A column missing from the local DDL reads back undefined on device
+    // and silently blanks the report's window history — the same failure mode the
+    // 040 and 053 tests guard. insertTrial sets none of them, and NULL is the
+    // honest value: this trial's window has never moved.
+    const db = freshDb();
+    insertTrial(db);
+    let t = db.prepare('SELECT * FROM diet_trials WHERE id = ?').get('trial-1') as Row;
+    expect(t.target_duration_days_initial).toBeNull();
+    expect(t.target_duration_set_at).toBeNull();
+    expect(t.target_duration_vet_directed).toBeNull();
+
+    // A moved window round-trips: the designed length, the ISO/UTC stamp (TEXT
+    // locally so it compares on one clock), and the owner's box as SQLite's 1 —
+    // there is no BOOLEAN affinity here, which is why the column is INTEGER.
+    db.exec(`UPDATE diet_trials SET
+      target_duration_days_initial = 56,
+      target_duration_set_at = '2026-09-19T14:00:00.000Z',
+      target_duration_vet_directed = 1
+      WHERE id = 'trial-1'`);
+    t = db.prepare('SELECT * FROM diet_trials WHERE id = ?').get('trial-1') as Row;
+    expect(t.target_duration_days_initial).toBe(56);
+    expect(t.target_duration_set_at).toBe('2026-09-19T14:00:00.000Z');
+    expect(t.target_duration_vet_directed).toBe(1);
+
+    // The two-sided rule's storage half (spec §5.1): an UNCHECKED box is storable
+    // as either NULL or 0 and the mirror keeps them apart as values while the
+    // render treats both as silence. Asserted here so a future reader cannot
+    // conclude from the column alone that 0 means "the owner did this on their
+    // own" — the DDL permits both spellings precisely because neither is a claim.
+    db.exec(`UPDATE diet_trials SET target_duration_vet_directed = 0 WHERE id = 'trial-1'`);
+    t = db.prepare('SELECT * FROM diet_trials WHERE id = ?').get('trial-1') as Row;
+    expect(t.target_duration_vet_directed).toBe(0);
     db.close();
   });
 
@@ -398,6 +441,93 @@ describe('ACTIVE_DIET_TRIAL_QUERY', () => {
   });
 });
 
+describe('COLUMN_UPGRADES — the ALTER path an already-installed device takes (CUL-1037)', () => {
+  // DIET_TRIAL_SCHEMA_SQL reaches a FRESH install. It cannot reach the PM's
+  // phone: `diet_trials` predates migration 068, so CREATE TABLE IF NOT EXISTS is
+  // a no-op there and only COLUMN_UPGRADES can add the columns. That asymmetry is
+  // the bug class this whole list exists for — it works on the simulator and is
+  // missing on the device — so the upgrade is driven here against a table built
+  // the way a pre-068 build actually left it, not asserted by re-reading the
+  // constant.
+  const WINDOW_COLUMNS = [
+    'target_duration_days_initial',
+    'target_duration_set_at',
+    'target_duration_vet_directed',
+  ] as const;
+
+  /** The diet_trials DDL exactly as the build before 068 shipped it. */
+  function pre068Ddl(): string {
+    const stripped = DIET_TRIAL_SCHEMA_SQL.split('\n').filter(
+      (line) => !/^\s*target_duration_(days_initial|set_at|vet_directed)\s+\w+,\s*$/.test(line),
+    );
+    // Non-vacuity floor: if the strip matched nothing, every assertion below is
+    // green over a table that already has the columns and measures nothing.
+    expect(DIET_TRIAL_SCHEMA_SQL.split('\n').length - stripped.length).toBe(WINDOW_COLUMNS.length);
+    return stripped.join('\n');
+  }
+
+  it('adds all three window-provenance columns to a pre-068 diet_trials', async () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(pre068Ddl());
+
+    // The other half of the floor: the fixture must genuinely lack them, or the
+    // upgrade is being credited with work the DDL already did. Asserted PER
+    // COLUMN — expect.not.arrayContaining over the whole set only fails when
+    // every member is present, so it would pass over a fixture that kept two of
+    // the three.
+    for (const c of WINDOW_COLUMNS) expect(columnsOf(db)).not.toContain(c);
+
+    await applyColumnUpgrades(
+      async (sql) => db.exec(sql),
+      COLUMN_UPGRADES.filter((u) => u.table === 'diet_trials'),
+    );
+    expect(columnsOf(db)).toEqual(expect.arrayContaining([...WINDOW_COLUMNS]));
+    db.close();
+  });
+
+  it("unblocks the PR 2 write that would otherwise throw 'no such column' on device", async () => {
+    // The mutation proof, run both ways in one test: the exact UPDATE shape the
+    // window-change write path will issue fails against a pre-068 table and
+    // succeeds after the upgrade. Deleting the three COLUMN_UPGRADES entries reds
+    // this; deleting them and the DDL lines together still reds it.
+    const write = `UPDATE diet_trials SET
+      target_duration_days_initial = 56,
+      target_duration_set_at = '2026-09-19T14:00:00.000Z',
+      target_duration_vet_directed = 1
+      WHERE id = 'trial-1'`;
+
+    const db = new DatabaseSync(':memory:');
+    db.exec(pre068Ddl());
+    db.exec(`INSERT INTO diet_trials (id, pet_id, started_at, target_duration_days, status)
+             VALUES ('trial-1', 'pet-1', '2026-07-26', 56, 'active')`);
+    expect(() => db.exec(write)).toThrow(/no such column/i);
+
+    await applyColumnUpgrades(
+      async (sql) => db.exec(sql),
+      COLUMN_UPGRADES.filter((u) => u.table === 'diet_trials'),
+    );
+    expect(() => db.exec(write)).not.toThrow();
+    const t = db.prepare('SELECT * FROM diet_trials WHERE id = ?').get('trial-1') as Row;
+    expect(t.target_duration_days_initial).toBe(56);
+    expect(t.target_duration_vet_directed).toBe(1);
+    db.close();
+  });
+
+  it('is idempotent — a second launch re-runs every add and swallows the duplicate', async () => {
+    // applyColumnUpgrades catches per column, so the second launch of an upgraded
+    // app must be a silent no-op rather than a startup failure. Driven against the
+    // FRESH DDL, where every add is already a duplicate on the first pass.
+    const db = new DatabaseSync(':memory:');
+    db.exec(DIET_TRIAL_SCHEMA_SQL);
+    const before = columnsOf(db);
+    const upgrades = COLUMN_UPGRADES.filter((u) => u.table === 'diet_trials');
+    await expect(applyColumnUpgrades(async (sql) => db.exec(sql), upgrades)).resolves.toBeUndefined();
+    await expect(applyColumnUpgrades(async (sql) => db.exec(sql), upgrades)).resolves.toBeUndefined();
+    expect(columnsOf(db)).toEqual(before);
+    db.close();
+  });
+});
+
 describe('row → Supabase upsert mappers', () => {
   const trial: LocalDietTrial = {
     id: 't1', pet_id: 'p1', food_item_id: 'f1', started_at: '2026-07-01',
@@ -417,18 +547,59 @@ describe('row → Supabase upsert mappers', () => {
     created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
   };
 
+  // Columns that exist LOCALLY and deliberately never travel. Not drift — the
+  // mapper's own contract is to drop them (B-398's quarantine pair plus `synced`).
+  const LOCAL_ONLY_COLUMNS = ['synced', 'sync_attempts', 'sync_error'] as const;
+
+  // Server columns that exist but which the mapper does NOT yet forward, each
+  // with the issue that lands it. THE EMPTY SET IS THE ASSERTION (C-32): adding a
+  // column to the mapper without emptying this registry reds the test below, and
+  // so does leaving a registered column unforwarded — the two halves cannot drift
+  // apart. Keep this at zero entries; an entry is a dated exception, not a
+  // parking space.
+  const PENDING_MAPPER_COLUMNS: Readonly<Record<string, string>> = {
+    // CUL-1037 (migration 068) declared these; CUL-1039 / trial-window PR 2 owns
+    // the hydrate select, the push mapper and the INTEGER↔BOOLEAN coercion.
+    target_duration_days_initial: 'CUL-1039',
+    target_duration_set_at: 'CUL-1039',
+    target_duration_vet_directed: 'CUL-1039',
+  };
+
   it('forwards every diet_trials server column (the B-057 drift guard)', () => {
     // Completeness, asserted on the KEY SET: a column silently dropped here
     // desyncs forever and nothing else in the stack would notice.
-    expect(Object.keys(dietTrialRowToRemote(trial)).sort()).toEqual(
-      [
-        'completed_at', 'created_at', 'ended_at', 'food_item_id', 'food_label', 'id',
-        'indication', 'notes', 'outcome', 'outcome_notes', 'pet_id', 'phase',
-        'started_at', 'status', 'stopped_reason', 'target_duration_days',
-        'target_protein', 'target_protein_set_at', 'vet_visit_id',
-        'transition_started_at', 'updated_at', 'vet_name',
-      ].sort(),
-    );
+    //
+    // The expected set is DERIVED from the DDL this repo actually executes, not
+    // from a list re-typed beside it (C-38: derive the expected set from the
+    // repository, never from the constant under test). The hardcoded literal this
+    // replaced could not see the one thing it exists to catch — proven by
+    // mutation: with migration 068's three columns in the DDL and absent from the
+    // mapper, it was GREEN, and adding them, the correct fix, turned it RED. A
+    // guard that is green on the drift and red on the repair is worse than none.
+    const db = freshDb();
+    const serverColumns = columnsOf(db)
+      .filter((c) => !(LOCAL_ONLY_COLUMNS as readonly string[]).includes(c))
+      .filter((c) => !(c in PENDING_MAPPER_COLUMNS));
+    db.close();
+
+    // Non-vacuity floor: a derivation that yielded nothing would pass over an
+    // empty mapper.
+    expect(serverColumns.length).toBeGreaterThan(15);
+    expect(Object.keys(dietTrialRowToRemote(trial)).sort()).toEqual(serverColumns.sort());
+  });
+
+  it('has no unforwarded server column beyond the registered pending set', () => {
+    // The other direction, and the reason PENDING_MAPPER_COLUMNS cannot rot: a
+    // registered column that the mapper HAS now is a stale entry, and an
+    // unregistered column it lacks is drift. Either reds here.
+    const db = freshDb();
+    const local = columnsOf(db);
+    db.close();
+    const forwarded = new Set(Object.keys(dietTrialRowToRemote(trial)));
+    const unforwarded = local
+      .filter((c) => !(LOCAL_ONLY_COLUMNS as readonly string[]).includes(c))
+      .filter((c) => !forwarded.has(c));
+    expect(unforwarded.sort()).toEqual(Object.keys(PENDING_MAPPER_COLUMNS).sort());
   });
 
   it('forwards the visit link as-is, and it moves NO other value (CUL-899)', () => {
