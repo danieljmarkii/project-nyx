@@ -76,15 +76,37 @@ const PROVENANCE = [
   'targetDurationDaysInitial',
   'targetDurationSetAt',
   'targetDurationVetDirected',
+  // THE SEVENTH SPELLING, and the one the first six missed (CUL-1040, found by the
+  // `rls-privacy-reviewer`). `changeTrialWindow`'s own parameter is `vetDirected`
+  // (`lib/dietTrialSetup.ts:909`), so every caller that MINTS the attribution spells it
+  // this way and none of them spell `targetDurationVetDirected`. Measured: PR 3's sheet
+  // and its host both carried the claim about a third party — the most sensitive of the
+  // three by this file's own header — with zero detector hits, and a `vetDirected`
+  // handler planted in `lib/daySummary.ts` passed all six tests.
+  //
+  // It is the SHORT spelling because it is the one at the boundary. A column's
+  // qualified name survives as far as the row mapper; past that, every module that
+  // decides something with the value uses the field name, and this file is about
+  // modules that decide.
+  'vetDirected',
 ];
 
 /**
  * THE REGISTRY IS AN EXEMPTION, AND EACH ENTRY IS EARNED (C-32).
  *
- * Note what is NOT here and could easily have been: `generate-report/render.ts` names all
- * three columns — in prose, explaining why the sentence reads as it does. Comments are
- * blanked before the scan, so it never becomes an entry, and the registry keeps meaning
- * "modules that handle these values" rather than "files that mention them".
+ * ⚠️ THE NOTE THAT STOOD HERE WAS FALSE, and it is worth keeping the correction beside it
+ * rather than quietly deleting it, because of WHICH claim it got wrong. It said
+ * `generate-report/render.ts` "names all three columns — in prose … so it never becomes an
+ * entry". `render.ts` reads the value IN CODE — `const attribution = wc.vetDirected`
+ * (`:3567`) — and that read is the single decision in this whole feature about whether the
+ * report prints a claim about a third party. The file the registry singled out as a
+ * mere mention was the most consequential reader in the set, and it escaped only because
+ * the detector was blind to the spelling it uses. It is an entry now.
+ *
+ * The rule the note was reaching for still holds and is worth stating properly: comments
+ * are blanked before the scan, so the registry means "modules that HANDLE these values",
+ * never "files that mention them". What went wrong was the classification of one file, not
+ * the rule.
  */
 const ALLOWED: Record<string, string> = {
   'supabase/functions/generate-report/index.ts':
@@ -103,6 +125,20 @@ const ALLOWED: Record<string, string> = {
     'hydrateDietTrials, which pulls the three columns down and mirrors them locally so an owner sees her own window change after a round trip. An explicit column list, never a select(*).',
   'scripts/render-trial-report-sample.deno.ts':
     'A fixture generator for the vet-report-cold-read gate. Pure — no network, no Supabase, synthetic pets only; it renders the artifact the review reads.',
+  'supabase/functions/generate-report/render.ts':
+    'THE ATTRIBUTION DECISION. `const attribution = wc.vetDirected` (:3567) is the one place in the tree that decides whether the document prints a claim about a third party, and :3430 states the === true contract it rests on. Registered after the preamble\u2019s note misfiled it as a prose mention; it is the most consequential reader here, not the least.',
+  'lib/dietTrialFacts.ts':
+    'THE CLIENT READ (CUL-1040, PR 3). Adds set_at ALONE to TRIAL_FOR_CARD_SQL — never initial, never vet_directed, which the card has no use for — and maps it onto TrialCardTrial for the one line §4.3 owes. Contained by the three CLOSED widget interfaces plus this file\u2019s base scan, NOT by the publisher\u2019s discipline (the corrected argument); the cost of the placement is that DaySummaryPetInput.trial can hold the field, which the projection test below pins.',
+  'lib/dietTrialCard.ts':
+    'The pure resolver, which reads set_at for ONE purpose: withWindowMovedLine appends a `forward` line for the rest of the local day the window moved. It renders the CURRENT end date, which windowLineFor already shows on every branch the line can fire on — not the original window, not the delta, not the attribution. It DOES disclose one bit: that the window moved today. That is the protected inference in its weakest form (same-day, the owner\u2019s own action, her own device, a one-day TTL) and the entry concedes it rather than claiming zero.',
+  'lib/trialWindowSheet.ts':
+    'Builds that line (windowMovedTodayLine) and nothing else from these columns. Takes the value as a parameter rather than reading a row, so it has no path to one; it lives beside the sheet\u2019s own rules because the copy is the sheet\u2019s copy.',
+  'components/profile/TrialWindowPanel.tsx':
+    'WHERE THE ATTRIBUTION IS MINTED (CUL-1040 §4.2, D4a). The vet switch is the origin of target_duration_vet_directed: unchecked by default, never required, and reset by the panel UNMOUNTING between steps, so a stale true cannot attribute to a vet a window the vet never named. It holds the boolean and hands it to the host; it reads no row and renders no attribution back.',
+  'components/profile/TrialManageSheet.tsx':
+    'The one Modal (C-14), which passes the panel\u2019s onSave straight through to the host and never inspects its payload. Registered because it names the field in that signature, not because it decides anything with it \u2014 and a registry entry describes what the file HANDLES, so a pass-through says so plainly.',
+  'app/(tabs)/profile.tsx':
+    'The host that carries the minted boolean to the one write path (handleChangeWindow \u2192 changeTrialWindow), passing false as false rather than folding it into null — the column keeps three states. It renders the value nowhere; the only thing it renders from these columns is the refusal sentence, phrased from structured fields.',
 };
 
 /** Every non-test source in the tree, derived from the REPOSITORY rather than from a list
@@ -159,12 +195,87 @@ describe('CUL-1041 — the window-provenance columns are the vet report’s, and
     }
   });
 
+  it('the client read does NOT carry them across the App Group boundary (CUL-1040)', () => {
+    // THE CLAIM THE THREE CLIENT ENTRIES REST ON, as a test rather than a sentence —
+    // which is this file's own subject (C-38).
+    //
+    // `lib/dietTrialFacts.ts` maps set_at inside `loadTrialPredicateFacts`, and that
+    // function is ALSO `lib/widgetSnapshot.ts`'s entry point (`:543`) — the card's own
+    // `loadDietTrialFacts` delegates to it (`:431`), so there is one mapping, not two.
+    // What keeps the value off the widget is that the publisher takes only the COVERAGE
+    // NUMBERS out of the result and discards `predicate.trial` wholesale. That is
+    // containment by the consumer's discipline, so it is pinned here: the publisher may
+    // read `predicate.facts.*` and nothing else.
+    //
+    // The widget's own trial row comes from `ACTIVE_DIET_TRIAL_QUERY`, asserted separately
+    // below, and this is the second of the two doors.
+    const pub = code('lib/widgetSnapshot.ts');
+    const reads = [...pub.matchAll(/predicate\??\.([A-Za-z_]+)/g)].map((m) => m[1]);
+    // Non-vacuity first: if the publisher stopped naming `predicate` at all, an empty
+    // set would satisfy every assertion below for free (C-36).
+    expect(reads.length).toBeGreaterThan(0);
+    expect(new Set(reads)).toEqual(new Set(['facts']));
+
+    // And the widget's own query still spells its columns without these three — re-verified
+    // here rather than inherited from the PR 2 pass that last checked it.
+    const widgetQuery = code('lib/dietTrialMirror.ts');
+    const m = /ACTIVE_DIET_TRIAL_QUERY\s*=\s*`([^`]*)`/.exec(widgetQuery);
+    expect(m).not.toBeNull();
+    for (const col of PROVENANCE) {
+      expect((m as RegExpExecArray)[1]).not.toContain(col);
+    }
+  });
+
+  it('exactly ONE importer of the card model NAMES its lines — the Pet-tab card (CUL-1040)', () => {
+    // `withWindowMovedLine` appends to the SHARED `TrialCardModel.lines`, and a line
+    // appended to a shared model travels wherever the model travels. Six modules import
+    // `lib/dietTrialCard.ts`; only the card component reads the lines, and the rest take
+    // named helpers or types. If a second reader appears — `lib/daySummary.ts` is the one
+    // that would matter, because the notification spec's D3 forbids a body that asserts
+    // record contents — this reds and that reader has to say what it does about the line.
+    //
+    // ⚠️ THE NAME IS DELIBERATELY NARROWER THAN THE ONE THIS TEST SHIPPED WITH. It said
+    // "the rendered line reaches exactly ONE surface", which it does not prove: it proves
+    // that one importer NAMES the lines. A module that serialises the whole model —
+    // `JSON.stringify(trialCard)` — ships the line without ever naming it, and no such
+    // sink exists in the tree today (checked: the only boundary-crossing stringifies are
+    // the widget's closed-type snapshot, the widget capture POST's own record type, the
+    // notification title+body, and the vet-visit questions), which makes this a
+    // FUTURE-leak gap rather than a shipped one. Stated because an undocumented blind
+    // spot reads as coverage (C-38), which is this file's own subject.
+    //
+    // MATCHES DESTRUCTURING AS WELL AS THE DOT. The first cut was `/\.lines\b/` alone, and
+    // `const { lines } = m` walked straight past it — a byte-equivalent leak, in the very
+    // file this comment names, measured green.
+    const READS_LINES = /\.lines\b|\{[^}]*\blines\b[^}]*\}\s*=/;
+    const importsCard = (src: string): boolean => /from\s+['"][^'"]*dietTrialCard['"]/.test(src);
+    const readers = sources().filter((rel) => {
+      const src = code(rel);
+      return importsCard(src) && READS_LINES.test(src);
+    });
+    expect(readers).toEqual(['components/profile/DietTrialCard.tsx']);
+    // Non-vacuity: the importer set is real and larger than the reader set, so the
+    // filter above is discriminating rather than matching nothing.
+    const importers = sources().filter((rel) => importsCard(code(rel)));
+    expect(importers.length).toBeGreaterThan(readers.length);
+  });
+
   it('no REMOTE diet_trials read sweeps them up with select(*)', () => {
     // The other direction, and the one the migration's own claim rested on: a projection
     // that does not spell its columns does not have to name these to receive them. Keyed
     // on the supabase-js chain, so the LOCAL `SELECT * FROM diet_trials WHERE synced = 0`
-    // in the mirror's push path is out of scope by shape rather than by exemption — it
-    // reads a SQLite table whose provenance columns are never hydrated.
+    // in the mirror's push path is out of scope BY SHAPE — this detector is about remote
+    // reads, and that statement is a local one.
+    //
+    // ⚠️ THE REASON THAT STOOD HERE WAS FALSE, and falsified by this file's own header
+    // thirty lines up. It said the local `SELECT *` was safe because it "reads a SQLite
+    // table whose provenance columns are never hydrated" — true when PR 4 wrote it, and
+    // untrue since PR 2: `lib/sync.ts`'s hydrate pulls all three down by an explicit
+    // column list, so that statement DOES sweep them up now. The behaviour is intended
+    // and registered (`lib/dietTrialMirror.ts`'s push mapper is what carries an owner's
+    // window change up to the server); it was only the stated justification that went
+    // stale. Kept beside the correction rather than replaced, because a guard whose
+    // subject is exactly this class of claim is the last place to quietly fix one.
     const offenders: string[] = [];
     for (const rel of sources()) {
       const src = code(rel);

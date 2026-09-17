@@ -84,6 +84,12 @@ function freshDb() {
       status TEXT NOT NULL, ended_at TEXT, completed_at TEXT,
       stopped_reason TEXT, outcome TEXT, indication TEXT, food_label TEXT,
       target_protein TEXT, target_protein_set_at TEXT,
+      -- migration 068 (CUL-1037). TRIAL_FOR_CARD_SQL really does select this since
+      -- CUL-1040 -- it is what the card's window-moved line keys on -- so the
+      -- fixture carries it or the real SQL cannot run against a real engine. The
+      -- sibling two columns stay OUT: the card reads neither, and a fixture wider
+      -- than the query is a shape production's readers never produce (C-35).
+      target_duration_set_at TEXT,
       synced INTEGER NOT NULL DEFAULT 0
     );
   `);
