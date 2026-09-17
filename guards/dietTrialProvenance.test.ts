@@ -21,12 +21,23 @@
 // purpose is disclosing this class of fact to this reader, and `indication` renders on
 // that same page. The line is **for the report, and for nothing else.**
 //
-// THE EMPTY SET IS THE ASSERTION (C-32). `ALLOWED` is an EXEMPTION, and every entry is
-// earned with a written reason. The registry holds no consumer outside
-// `generate-report`, and that zero is the rule — the first module that adds one reds this
-// file and has to argue for it, rather than walking a treatment-failure inference into
-// the App Group, the `ask` LLM boundary or an export with nothing going red. Listing a
-// file here to record that somebody thought about it is what this shape exists to stop.
+// THE EMPTY SET OUTSIDE THE REGISTRY IS THE ASSERTION (C-32). `ALLOWED` is an EXEMPTION,
+// and every entry is earned with a written reason. A module that is not in it and names
+// these columns reds this file and has to argue for itself, rather than walking a
+// treatment-failure inference into the App Group, the `ask` LLM boundary or an export with
+// nothing going red. Listing a file here to record that somebody thought about it is what
+// this shape exists to stop.
+//
+// IT HAS ALREADY FIRED ONCE, WHICH IS WHY THIS PARAGRAPH IS WORDED AS IT IS. Written for
+// PR 4, the registry named `generate-report` and nothing else, and the header said so —
+// "the registry holds no consumer outside `generate-report`, and that zero is the rule".
+// PR 2 (CUL-1039) then merged the write path and this file went red on
+// `lib/dietTrialSetup.ts` and `lib/sync.ts`. Both are legitimate and both were verified
+// before being admitted (the writer assigns `vet_directed` unconditionally from its own
+// call's checkbox; the hydrate uses an explicit column list) — but the sentence about a
+// permanent zero was a claim the code stopped cashing the moment the second handler
+// landed, inside a guard whose whole subject is that class of claim. The rule was never
+// "only the report"; it is "these modules, each for a stated reason, and no others".
 //
 // WHAT IT DOES NOT CLAIM, stated rather than implied, because an undocumented blind spot
 // reads as coverage (C-38):
@@ -36,15 +47,19 @@
 //     variable renamed on the way. Review's job, not a scan's.
 //   · It says nothing about the RENDERED artifact's afterlife. `shareReportPdf` writes
 //     the whole report to a file, and where that file lands is `lib/pdf.ts`'s business
-//     and CUL-1044's — "report-only" is a claim about the surface, not the residue.
+//     and CUL-1045's — "report-only" is a claim about the surface, not the residue.
 //   · It does not gate the report's own AUDIENCE. `ReportAudience` discriminates exactly
 //     one thing today (look notes), and the window clause has no audience arm, so a
 //     share link would disclose it. That is a live PM decision on the unshipped PR 6
-//     (CUL-1045), not something a scan can settle.
-//   · The local SQLite mirror legitimately DECLARES these columns (`lib/localSchema.ts`,
-//     `lib/dietTrialMirror.ts`) while `hydrateDietTrials` never fetches them, so they sit
-//     NULL on every device. This guard pins the declaration sites; the *absence* of a
-//     hydrate is pinned by the remote-projection half below.
+//     (CUL-1046), not something a scan can settle.
+//   · The columns REACH THE DEVICE as of PR 2 (CUL-1039), and that is a change from what
+//     the CUL-1041 access-control pass recorded — it observed that `hydrateDietTrials` did
+//     not select them, so they sat NULL on every device. `lib/sync.ts` now pulls them, by
+//     an explicit column list, so an owner sees her own window change after a round trip.
+//     What that costs is covered elsewhere, and is stated here rather than assumed: the
+//     widget's App Group snapshot (`ACTIVE_DIET_TRIAL_QUERY`) still excludes all three —
+//     re-verified when PR 2 merged, not inherited — and `diet_trials` is already in
+//     `LOCAL_WIPE_TABLES`, so a sign-out takes them with the rest of the row.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -79,9 +94,13 @@ const ALLOWED: Record<string, string> = {
   'supabase/functions/generate-report/trial.ts':
     'The derivation. deriveWindowChange resolves the three columns into one TrialWindowChange, because placing the move on a trial day needs ctx.startDayIndex and the report’s zone.',
   'lib/localSchema.ts':
-    'DECLARES the local mirror columns (migration 068’s "also owed"). No reader and no writer: hydrateDietTrials does not fetch them, so they stay NULL on device.',
+    'DECLARES the local mirror columns (migration 068’s "also owed"), so the PR 2 write path has somewhere to write. Declaration only — no read, no write.',
   'lib/dietTrialMirror.ts':
-    'The local CREATE TABLE beside localSchema’s migration rows, same reason. Its dietTrialRowToRemote push mapper deliberately OMITS all three, so a device cannot clobber the server’s provenance back to NULL.',
+    'The local CREATE TABLE beside localSchema’s migration rows, same reason, plus the push mapper that carries an owner’s window change up to the server.',
+  'lib/dietTrialSetup.ts':
+    'THE WRITER (CUL-1039, PR 2). changeTrialWindow stamps COALESCE(initial, target_duration_days) so the FIRST window survives every later move, writes set_at on every change because it is the predicate, and assigns vet_directed unconditionally from THAT call’s own checkbox — never leaving a prior true in place for a later owner-initiated move.',
+  'lib/sync.ts':
+    'hydrateDietTrials, which pulls the three columns down and mirrors them locally so an owner sees her own window change after a round trip. An explicit column list, never a select(*).',
   'scripts/render-trial-report-sample.deno.ts':
     'A fixture generator for the vet-report-cold-read gate. Pure — no network, no Supabase, synthetic pets only; it renders the artifact the review reads.',
 };
