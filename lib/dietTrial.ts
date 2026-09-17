@@ -2469,7 +2469,22 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // 50: `22 of 22`, fraction 1.0, `supports`, `mayStateRecordClean` TRUE, with
   // `untrackedDaysBeforeFirstLog` at 28, so the report asserts the first 28 days
   // pre-date any logging. Identical with the column absent, so it is not this
-  // PR's regression — it is every trial in its first half, and it is unfiled.
+  // PR's regression — it is every trial in its first half.
+  //
+  // IT IS FILED, a day before this PR, by the v15 cold read: CUL-1020 (the
+  // affirmative verdict) and CUL-1021 (the page-1 tile's ratio), the second
+  // carrying an open PM call on which denominator is right. Re-executed here on
+  // the merged tree against CUL-1020's own record — 56-day trial read on day 39,
+  // days 1-16 never logged, never extended — and it reproduces that issue's
+  // quoted string verbatim: `23 of 23`, `supports`, `mayStateRecordClean` TRUE.
+  //
+  // AND THE PRECEDENCE SPLIT CANNOT REACH IT, by construction rather than by
+  // omission. `coverageOverWindow` applies this head allowance to BOTH readings,
+  // so `gateCoverage` is also `23 of 23` and `leastReassuring` is handed two
+  // equal inputs. That is S3 working as ruled — CUL-1020 says as much itself —
+  // which is why the head needs its own answer and not a wider gate. On that
+  // record `coverageClippedAtWindowEnd` is FALSE, so PR 1b's disclosure never
+  // renders there either: the two defects are disjoint, tail and head.
   const headCandidates = rangeOpensAtTrialStart ? loggedDays.filter((d) => d <= endDayIndex) : [];
   const startDayIndex = headCandidates.length > 0 ? Math.min(...headCandidates) : scopedStart;
   const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
