@@ -287,7 +287,16 @@ export function windowRefusalLine(input: RefusalInput): string | null {
   if (requested <= day) {
     return `${name} is already on day ${day}.`;
   }
-  if (requested <= target) {
+  // EQUALITY IS NOT SHORTNESS. A typed total equal to the current window used to
+  // fall into the arm below and read "That is shorter than the 56-day window you
+  // set" over a 56 — false, and the one arm an owner reaches by typing exactly what
+  // the trial already has. `saveStateFor` catches equality before it ever calls this,
+  // so the Save path was right and only the FIELD was wrong; the two now agree
+  // because they say the same sentence.
+  if (requested === target) {
+    return 'That is the window you have now.';
+  }
+  if (requested < target) {
     return `That is shorter than the ${target}-day window you set. To end this trial and start a new one, use Replace the trial.`;
   }
   return null;
@@ -352,15 +361,57 @@ export function windowRefusedLine(input: {
   }
 }
 
+/**
+ * Is this typed total SETTLED, or is the owner still mid-number?
+ *
+ * WHY THIS EXISTS. `windowRefusalLine` is correct about any total handed to it, and
+ * the sheet recomputed it on every keystroke — so every valid answer was accused on
+ * the way in. Typing `84` reddened the field at `8` with *"Nyx is already on day
+ * 53."*; typing `112` did it at `1` and again at `11`. `TextField` renders that in
+ * the destructive colour AND calls `announceForAccessibility` on each change on iOS,
+ * so a VoiceOver owner is told twice that her cat is already past the number she is
+ * halfway through typing. An owner carrying a vet instruction, corrected mid-digit,
+ * is the opposite of the register the sheet's own intro just set (found by
+ * `pm-feature-review` as Sam).
+ *
+ * THE TEST IS WHETHER ANOTHER DIGIT COULD STILL RESCUE IT. A value that can grow and
+ * stay inside the ceiling is a PREFIX, not an answer: `8` can still become `84`, so
+ * it is withheld. A value that cannot grow without breaching the ceiling is as
+ * complete as it will get, so a refusal then is about the number she meant: `40` is
+ * settled (`400 > 365`) and really is behind day 53, and `840` is settled and over
+ * the ceiling.
+ *
+ * It bounds only the REFUSAL's timing, never what may be saved — `saveStateFor` is
+ * unchanged and still refuses an unsettled prefix, so nothing invalid can be
+ * submitted while its reason is being withheld. Silence here means "not yet", never
+ * "fine".
+ */
+export function windowEntryIsSettled(typed: number): boolean {
+  if (!Number.isFinite(typed) || typed < 1) return false;
+  return Math.floor(typed) * 10 > WINDOW_MAX_DAYS;
+}
+
 // ── `Save` (§4.2) ────────────────────────────────────────────────────────────
 
 /**
  * Whether `Save` can fire, and — when it cannot — the reason, stated.
  *
- * `disabled` IS THE RIGHT CLAIM HERE AND THE REASON IS ALWAYS RENDERED (C-7). A
- * control that exists and is unavailable is exactly what this is, on every arm:
- * the owner has a `Save` in front of them and it is waiting on something. So the
- * reason is never a dimmed button on its own — the caller draws `reason` beside it.
+ * `disabled` IS THE RIGHT CLAIM HERE (C-7): a control that exists and is unavailable
+ * is exactly what this is on every arm — the owner has a `Save` in front of them and
+ * it is waiting on something.
+ *
+ * ⚠️ AND THE REASON IS RENDERED ON EVERY ARM BUT ONE. An earlier wording of this
+ * paragraph claimed "always", which the no-selection arm below has never satisfied —
+ * a cheque the code does not cash, in the docstring of the function that decides it
+ * (`pm-feature-review`). The exception is deliberate and it is the sheet's FIRST
+ * FRAME: nothing is selected yet, and the instruction is already on screen as the
+ * `SectionLabel` directly above the chips ("How long is this trial now?"). Adding a
+ * second sentence saying to pick one would be the app narrating its own form. What
+ * C-7 forbids is a dimmed control whose unavailability is UNEXPLAINED; "you have not
+ * answered the question above yet" is explained by the question above it.
+ *
+ * Every other arm — the current window, a backward total, an over-ceiling total —
+ * returns a sentence, and the caller draws it beside the button.
  *
  * The no-change arm is the one worth naming: picking the current window is a
  * legitimate answer ("leave it alone"), and answering it with a stated line beats

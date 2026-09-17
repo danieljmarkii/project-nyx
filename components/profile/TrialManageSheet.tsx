@@ -28,7 +28,11 @@ import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
   visible: boolean;
-  /** The RECORD's pet, for the sheet's subtitle. Never `activePet` (C-9). */
+  /** The pet whose trial this is, for the subtitle. The host passes `activePet.name`,
+   *  and that is correct here rather than a C-9 violation: this door only opens from
+   *  the active pet's own card, so there is no route by which it could render another
+   *  pet's record. (An earlier wording claimed the opposite — see the same note on
+   *  `TrialWindowSheet`.) */
   petName: string;
   onClose: () => void;
   /** → the §4.2 sheet. */

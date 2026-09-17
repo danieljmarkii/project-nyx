@@ -21,6 +21,8 @@ import {
   windowRefusalLine,
   saveStateFor,
   windowMovedTodayLine,
+  windowEntryIsSettled,
+  windowRefusedLine,
 } from './trialWindowSheet';
 
 /** 'YYYY-MM-DD' for a local date `daysAgo` before today — the shape every trial's
@@ -252,6 +254,20 @@ describe('windowRefusalLine — the two sentences, from structured fields (§4.2
     expect(line).not.toContain('day 53');
   });
 
+  it('names EQUALITY as equality, never as shortness', () => {
+    // The field path calls this directly, so a typed 56 against a 56-day window used
+    // to read "That is shorter than the 56-day window you set".
+    expect(windowRefusalLine({ ...base, requestedDays: 56 })).toBe('That is the window you have now.');
+    // …and it agrees with what Save says about the same total, which is the reason
+    // the bug mattered: two surfaces, one record, one answer.
+    expect(windowRefusalLine({ ...base, requestedDays: 56 }))
+      .toBe(saveStateFor({ ...base, selectedDays: 56 }).reason);
+  });
+
+  it('still says SHORTER for a total genuinely below the window', () => {
+    expect(windowRefusalLine({ ...base, requestedDays: 55 })).toMatch(/^That is shorter than the 56-day window/);
+  });
+
   it('the two sentences are genuinely different strings', () => {
     expect(windowRefusalLine({ ...base, requestedDays: 40 }))
       .not.toBe(windowRefusalLine({ ...base, requestedDays: 55 }));
@@ -304,6 +320,56 @@ describe('windowRefusalLine — the two sentences, from structured fields (§4.2
   });
 });
 
+describe('windowEntryIsSettled — the refusal waits for a whole number (pm-review)', () => {
+  it('withholds every PREFIX of a valid total', () => {
+    // The measured defect: typing 84 reddened the field at `8`, and 112 at `1` and
+    // `11`, each announced on iOS. Every digit on the way to a real answer.
+    for (const prefix of [8, 1, 11, 4, 5, 7, 16]) {
+      expect(windowEntryIsSettled(prefix)).toBe(false);
+    }
+  });
+
+  it('settles a total that another digit could not rescue', () => {
+    // 40 × 10 = 400 > 365, so 40 is as complete as it will get — and it really is
+    // behind day 53, so the refusal is about the number she meant.
+    expect(windowEntryIsSettled(40)).toBe(true);
+    expect(windowEntryIsSettled(50)).toBe(true);
+    expect(windowEntryIsSettled(84)).toBe(true);
+    expect(windowEntryIsSettled(840)).toBe(true);
+  });
+
+  it('is false for an empty or absurd entry, so neither reds the field mid-type', () => {
+    for (const v of [0, -1, Number.NaN]) expect(windowEntryIsSettled(v)).toBe(false);
+  });
+
+  it('a LADDER total can still be a prefix, and that is correct', () => {
+    // 28 × 10 = 280, which is inside the ceiling, so `28` really could be on its way
+    // to `280`. Written first as "every ladder total is settled" and the suite said
+    // otherwise — the premise was wrong, not the predicate.
+    expect(windowEntryIsSettled(28)).toBe(false);
+    expect(windowEntryIsSettled(42)).toBe(true);
+  });
+
+  it('…and withholding it costs no reason, because Save still carries one', () => {
+    // THE INVARIANT THE LADDER TEST WAS REACHING FOR. The gate may delay a sentence
+    // on the FIELD; it may never leave an un-saveable total with no sentence
+    // anywhere. Swept over every total the free field can hold up to the ceiling.
+    for (let d = 1; d <= WINDOW_MAX_DAYS + 1; d++) {
+      const save = saveStateFor({ selectedDays: d, currentTargetDays: 56, dayCounter: 53, petName: 'Nyx' });
+      if (!save.canSave) expect(save.reason).not.toBeNull();
+    }
+  });
+
+  it('does NOT relax what may be SAVED — silence is "not yet", never "fine"', () => {
+    // The half that keeps the gate honest. `8` is withheld from the field AND
+    // refused by Save, so nothing invalid can be submitted while its reason is
+    // being held back.
+    expect(windowEntryIsSettled(8)).toBe(false);
+    expect(saveStateFor({ selectedDays: 8, currentTargetDays: 56, dayCounter: 53, petName: 'Nyx' }).canSave)
+      .toBe(false);
+  });
+});
+
 describe('saveStateFor — the confirm-free Save and its stated reasons (§4.2)', () => {
   const base = { currentTargetDays: 56, dayCounter: 53, petName: 'Nyx' };
 
@@ -337,6 +403,40 @@ describe('saveStateFor — the confirm-free Save and its stated reasons (§4.2)'
     expect(saveStateFor({ ...base, selectedDays: 40 }).reason).toBe(
       windowRefusalLine({ ...base, requestedDays: 40 }),
     );
+  });
+});
+
+describe('windowRefusedLine — a write the PREDICATE refused (CUL-1039 handoff)', () => {
+  const base = { requestedDays: 84, currentTargetDays: 56, dayCounter: 53, petName: 'Nyx' };
+
+  it('re-uses the live sentences on not_forward, so the wording is the field’s wording', () => {
+    expect(windowRefusedLine({ ...base, reason: 'not_forward', requestedDays: 40 }))
+      .toBe(windowRefusalLine({ ...base, requestedDays: 40 }));
+  });
+
+  it('says the trial ended on not_running, which is a different fact from a bad number', () => {
+    expect(windowRefusedLine({ ...base, reason: 'not_running' }))
+      .toBe('Nyx’s trial has ended, so its window cannot change.');
+  });
+
+  it('every arm returns a sentence, and none of them is an error message', () => {
+    for (const reason of ['not_found', 'not_running', 'not_forward', 'out_of_range'] as const) {
+      const line = windowRefusedLine({ ...base, reason });
+      expect(line.length).toBeGreaterThan(10);
+      expect(line).not.toContain('!');
+      // Never the diagnostic `TrialWindowRefused` builds for `message`.
+      expect(line).not.toMatch(/changeTrialWindow|refused \(|floor \d|undefined/);
+    }
+  });
+
+  it('falls back rather than reporting success when not_forward arrives with no fields', () => {
+    // `windowRefusalLine` returns null when the total WAS forward of what it was
+    // handed, which only happens when the fields are absent. Returning null here
+    // would render nothing over a write that did not happen.
+    const line = windowRefusedLine({
+      reason: 'not_forward', requestedDays: 84, currentTargetDays: null, dayCounter: null, petName: 'Nyx',
+    });
+    expect(line).toBe('Nyx’s trial has a different window now. Have a look and try again.');
   });
 });
 

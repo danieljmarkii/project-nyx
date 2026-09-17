@@ -44,6 +44,7 @@ function setup(overrides: Partial<Parameters<typeof TrialWindowSheet>[0]> = {}) 
     trial: WORKED,
     petName: 'Nyx',
     onClose: jest.fn(),
+    onSelectionChanged: jest.fn(),
     onSave: jest.fn(),
     ...overrides,
   };
@@ -143,6 +144,23 @@ describe('Save carries a TOTAL and the vet statement (§4.2, D4a)', () => {
     fireEvent.press(t.getByText('12 weeks'));
     fireEvent.press(t.getByTestId('trial-window-save'));
     expect(t.props.onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('the vet LABEL is inside the target, not an inert word beside a toggle', () => {
+    // A bare `View` left only the switch tappable, where the Manage door's own rows
+    // wrap both their lines. The row is the control: one announcement, one target.
+    const t = setup();
+    const row = t.getByTestId('trial-window-vet-row');
+    expect(row.props.accessibilityRole).toBe('switch');
+    expect(row.props.accessibilityState).toEqual({ checked: false, disabled: false });
+    fireEvent.press(row);
+    expect(t.getByTestId('trial-window-vet').props.value).toBe(true);
+  });
+
+  it('the vet row is inert while a write is in flight', () => {
+    const t = setup({ busy: true });
+    fireEvent.press(t.getByTestId('trial-window-vet-row'));
+    expect(t.getByTestId('trial-window-vet').props.value).toBe(false);
   });
 
   it('carries the vet statement through when it IS checked', () => {
@@ -247,6 +265,28 @@ describe('the free-entry escape hatch (§4.2, CUL-1039’s handoff)', () => {
     expect(t.queryByTestId('trial-window-summary')).toBeNull();
   });
 
+  it('does NOT accuse her on the way to a valid total (pm-review)', () => {
+    // THE MEASURED DEFECT: `customError` recomputed per keystroke, so typing 84 red
+    // the field at `8` with "Nyx is already on day 53." — and `TextField` announces
+    // its error on iOS, so VoiceOver said it too. Every digit of a correct answer.
+    const t = openCustom();
+    const field = t.getByTestId('trial-window-custom');
+    for (const typed of ['8', '84', '1', '11', '112']) {
+      fireEvent.changeText(field, typed);
+      expect(t.queryByTestId('trial-window-custom-error')).toBeNull();
+    }
+  });
+
+  it('…and a prefix still cannot be SAVED — the silence is "not yet", never "fine"', () => {
+    const t = openCustom();
+    fireEvent.changeText(t.getByTestId('trial-window-custom'), '8');
+    expect(t.getByTestId('trial-window-save').props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(t.getByTestId('trial-window-save'));
+    expect(t.props.onSave).not.toHaveBeenCalled();
+    // The reason is under the BUTTON even while the field holds none.
+    expect(t.queryByTestId('trial-window-reason')).not.toBeNull();
+  });
+
   it('refuses a backward total with the reason, never a silent correction', () => {
     const t = openCustom();
     fireEvent.changeText(t.getByTestId('trial-window-custom'), '40');
@@ -274,7 +314,13 @@ describe('the states the module reports and the sheet must draw', () => {
     const t = setup({
       trial: { ...WORKED, currentTargetDays: 112, dayCounter: 200, startDayKey: localDayKeyAgo(199) },
     });
+    // NAMES THE CHIP, not "below": the day field only mounts once `Something else`
+    // is tapped, so the owner most likely to meet this state was pointed at a field
+    // that was not there.
     expect(t.getByTestId('trial-window-exhausted')).toBeTruthy();
+    expect(t.getByText(/Tap Something\s+else to enter the new length\./)).toBeTruthy();
+    expect(t.queryByText(/below/)).toBeNull();
+    expect(t.queryByTestId('trial-window-custom')).toBeNull();
     expect(t.queryByText('16 weeks')).toBeNull();
     expect(t.getByText('16 weeks · now')).toBeTruthy();
   });
@@ -290,6 +336,22 @@ describe('the states the module reports and the sheet must draw', () => {
     expect(t.getByTestId('trial-window-reason').props.children).toBe(
       'Nyx’s trial has ended, so its window cannot change.',
     );
+  });
+
+  it('a NEW SELECTION reports the last write’s refusal stale (pm-review)', () => {
+    // `writeError` wins the `??`, so a refusal left standing after the owner picks a
+    // different total is both false and SUPPRESSES the live reason for the new one.
+    const t = setup({ writeError: 'Nyx’s trial has ended, so its window cannot change.' });
+    expect(t.getByTestId('trial-window-reason')).toBeTruthy();
+    fireEvent.press(t.getByText('12 weeks'));
+    expect(t.props.onSelectionChanged).toHaveBeenCalled();
+  });
+
+  it('…and typing a correction reports the same staleness', () => {
+    const t = setup({ writeError: 'Nyx’s trial has ended, so its window cannot change.' });
+    fireEvent.press(t.getByText('Something else'));
+    fireEvent.changeText(t.getByTestId('trial-window-custom'), '84');
+    expect(t.props.onSelectionChanged).toHaveBeenCalled();
   });
 
   it('a write error outranks the local reason — it is the newer fact', () => {

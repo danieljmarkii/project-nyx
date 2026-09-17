@@ -56,6 +56,7 @@ import { ThemedText } from '../ui/ThemedText';
 import {
   ladderIsExhausted,
   saveStateFor,
+  windowEntryIsSettled,
   windowOptionFor,
   windowOptionsFor,
   windowRefusalLine,
@@ -79,7 +80,19 @@ export interface TrialWindowSheetTrial {
 interface Props {
   visible: boolean;
   trial: TrialWindowSheetTrial | null;
-  /** The RECORD's pet. Never `activePet` (C-9) — it is named in the refusals. */
+  /**
+    * The pet whose trial this is — named in the refusals, so a wrong one accuses the
+    * wrong animal.
+    *
+    * ⚠️ AN EARLIER WORDING SAID "never `activePet` (C-9)" AND THE CALL SITE PASSES
+    * `activePet.name`. Both are fine and the docstring was the wrong half: this sheet
+    * only ever opens over `trialInput`, which is read FOR the active pet, so the
+    * record's pet and the active pet are the same row by construction. C-9's rule
+    * binds a surface that can render a record belonging to some OTHER pet, and there
+    * is no such route here. A prop doc that asserts a discipline its only call site
+    * does not keep is worse than no doc: the next reader either "fixes" the call site
+    * or stops trusting the comment (`pm-feature-review`).
+    */
   petName: string;
   busy?: boolean;
   /** A write that was refused, phrased by the host from `TrialWindowRefused`'s
@@ -87,12 +100,24 @@ interface Props {
    *  (`guards/ownerFacingCopy.test.ts`). Null clears it. */
   writeError?: string | null;
   onClose: () => void;
+  /**
+   * The owner picked a different total, so anything said about the LAST one is
+   * stale. The host clears `writeError` on this.
+   *
+   * It is a callback rather than the sheet clearing its own copy because
+   * `writeError` describes a SUBMITTED total and the host is what submitted it. And
+   * it is load-bearing rather than tidy: `writeError` wins the `??` below, so a
+   * refusal left standing after a new selection is both false AND suppresses the live
+   * reason for the total now chosen.
+   */
+  onSelectionChanged?: () => void;
   /** The new TOTAL, plus the owner's optional statement about their vet. */
   onSave: (input: { targetDurationDays: number; vetDirected: boolean }) => void;
 }
 
 export function TrialWindowSheet({
-  visible, trial, petName, busy = false, writeError = null, onClose, onSave,
+  visible, trial, petName, busy = false, writeError = null,
+  onClose, onSelectionChanged, onSave,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [choice, setChoice] = useState<string | null>(null);
@@ -165,8 +190,14 @@ export function TrialWindowSheet({
   // The typed total's refusal goes on the FIELD, where the mistake was made; the
   // chip-set refusals (which today can only be the current window) go under the
   // chips. Same phrasing either way — one module owns both.
+  //
+  // WITHHELD WHILE THE NUMBER IS STILL A PREFIX (`windowEntryIsSettled`). Recomputing
+  // on every keystroke accused every valid total on the way in — `84` reddened at
+  // `8`, and iOS announced it — so the refusal waits until another digit could not
+  // rescue the value. `saveStateFor` is NOT relaxed by this, so an unsettled prefix
+  // still cannot be saved: the silence is "not yet", never "fine".
   const customError =
-    choice === CUSTOM && customParsed !== null && trial
+    choice === CUSTOM && customParsed !== null && trial && windowEntryIsSettled(customParsed)
       ? windowRefusalLine({
           requestedDays: customParsed,
           currentTargetDays: trial.currentTargetDays,
@@ -223,7 +254,11 @@ export function TrialWindowSheet({
             <ChipGroup
               options={chips}
               value={choice}
-              onChange={setChoice}
+              // A NEW SELECTION CLEARS THE LAST WRITE'S REFUSAL. `writeError` wins the
+              // `??` below, so a refusal left standing after the owner picks a
+              // different total is both false and SUPPRESSES the live reason for the
+              // new one. The stale error describes a total she is no longer choosing.
+              onChange={(next) => { onSelectionChanged?.(); setChoice(next); }}
               // A closed single-select over a required field: one total is always
               // the answer, so a second tap must not clear back to nothing.
               allowDeselect={false}
@@ -237,8 +272,11 @@ export function TrialWindowSheet({
                 and no visible way forward (Principle 5). */}
             {ladderIsExhausted(options) && (
               <ThemedText testID="trial-window-exhausted" style={styles.hint}>
-                This trial has run past every length Culprit offers. Enter the new
-                length in days below.
+                {/* NAMES THE CHIP, not "below" — the day field only mounts once
+                    `Something else` is tapped, so the owner most likely to meet this
+                    state was told to type a number below, with nothing below. */}
+                This trial has run past every length Culprit offers. Tap Something
+                else to enter the new length.
               </ThemedText>
             )}
 
@@ -249,7 +287,10 @@ export function TrialWindowSheet({
                   value={customDays}
                   // Digits only, so the field can never hold a value the refusal
                   // has to explain twice.
-                  onChangeText={(t) => setCustomDays(t.replace(/[^0-9]/g, ''))}
+                  onChangeText={(t) => {
+                    onSelectionChanged?.();
+                    setCustomDays(t.replace(/[^0-9]/g, ''));
+                  }}
                   placeholder={String(trial.currentTargetDays)}
                   keyboardType="number-pad"
                   accessibilityLabel="The trial's whole length in days"
@@ -281,18 +322,37 @@ export function TrialWindowSheet({
                 instruction and must never assert one. Unchecked is SILENCE, and
                 silence is never rendered as "the owner did this on their own"
                 (§5.1's two-sided rule). */}
-            <View style={styles.vetRow}>
+            {/* THE LABEL IS PART OF THE TARGET. A bare `View` here left only the
+                toggle tappable, where the Manage door's own rows correctly wrap both
+                their lines in one responder — and a 15pt label beside a switch is the
+                half an owner actually aims at. `accessible` joins the two into one
+                announcement rather than a label and an orphaned control (C-6). */}
+            <Pressable
+              testID="trial-window-vet-row"
+              style={styles.vetRow}
+              accessible
+              accessibilityRole="switch"
+              accessibilityState={{ checked: vetDirected, disabled: busy }}
+              accessibilityLabel="My vet asked for this"
+              onPress={() => { if (!busy) setVetDirected((v) => !v); }}
+            >
               <ThemedText style={styles.vetLabel}>My vet asked for this</ThemedText>
               <Switch
                 testID="trial-window-vet"
                 value={vetDirected}
                 onValueChange={setVetDirected}
                 disabled={busy}
+                // No `accessibilityElementsHidden` here: `accessible` on the row above
+                // already collapses its descendants into ONE element on iOS, which is
+                // the same mechanism the Manage door's rows use (C-6). Hiding the
+                // control outright would be a second, stronger claim — and it removes
+                // the toggle from the queryable tree, so the row's own behaviour would
+                // become unassertable (C-39's shape: a harness narrower than the API
+                // hides what it cannot reach).
                 trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
                 ios_backgroundColor={theme.colorBorderStrong}
-                accessibilityLabel="My vet asked for this"
               />
-            </View>
+            </Pressable>
 
             {/* `disabled` asserts the control exists and is unavailable, so the
                 reason is ALWAYS rendered beside it (C-7) — never a dimmed button on

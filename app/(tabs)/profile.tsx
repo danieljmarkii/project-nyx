@@ -1881,6 +1881,9 @@ export default function ProfileScreen() {
         busy={savingWindow}
         writeError={windowError}
         onClose={() => { setWindowVisible(false); setWindowError(null); }}
+        // A new total makes the last refusal stale, and a stale refusal outranks the
+        // live reason on the sheet — so the host clears what the host set.
+        onSelectionChanged={() => setWindowError(null)}
         onSave={handleChangeWindow}
       />
     </SafeAreaView>

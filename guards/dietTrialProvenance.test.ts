@@ -76,15 +76,37 @@ const PROVENANCE = [
   'targetDurationDaysInitial',
   'targetDurationSetAt',
   'targetDurationVetDirected',
+  // THE SEVENTH SPELLING, and the one the first six missed (CUL-1040, found by the
+  // `rls-privacy-reviewer`). `changeTrialWindow`'s own parameter is `vetDirected`
+  // (`lib/dietTrialSetup.ts:909`), so every caller that MINTS the attribution spells it
+  // this way and none of them spell `targetDurationVetDirected`. Measured: PR 3's sheet
+  // and its host both carried the claim about a third party — the most sensitive of the
+  // three by this file's own header — with zero detector hits, and a `vetDirected`
+  // handler planted in `lib/daySummary.ts` passed all six tests.
+  //
+  // It is the SHORT spelling because it is the one at the boundary. A column's
+  // qualified name survives as far as the row mapper; past that, every module that
+  // decides something with the value uses the field name, and this file is about
+  // modules that decide.
+  'vetDirected',
 ];
 
 /**
  * THE REGISTRY IS AN EXEMPTION, AND EACH ENTRY IS EARNED (C-32).
  *
- * Note what is NOT here and could easily have been: `generate-report/render.ts` names all
- * three columns — in prose, explaining why the sentence reads as it does. Comments are
- * blanked before the scan, so it never becomes an entry, and the registry keeps meaning
- * "modules that handle these values" rather than "files that mention them".
+ * ⚠️ THE NOTE THAT STOOD HERE WAS FALSE, and it is worth keeping the correction beside it
+ * rather than quietly deleting it, because of WHICH claim it got wrong. It said
+ * `generate-report/render.ts` "names all three columns — in prose … so it never becomes an
+ * entry". `render.ts` reads the value IN CODE — `const attribution = wc.vetDirected`
+ * (`:3567`) — and that read is the single decision in this whole feature about whether the
+ * report prints a claim about a third party. The file the registry singled out as a
+ * mere mention was the most consequential reader in the set, and it escaped only because
+ * the detector was blind to the spelling it uses. It is an entry now.
+ *
+ * The rule the note was reaching for still holds and is worth stating properly: comments
+ * are blanked before the scan, so the registry means "modules that HANDLE these values",
+ * never "files that mention them". What went wrong was the classification of one file, not
+ * the rule.
  */
 const ALLOWED: Record<string, string> = {
   'supabase/functions/generate-report/index.ts':
@@ -103,12 +125,18 @@ const ALLOWED: Record<string, string> = {
     'hydrateDietTrials, which pulls the three columns down and mirrors them locally so an owner sees her own window change after a round trip. An explicit column list, never a select(*).',
   'scripts/render-trial-report-sample.deno.ts':
     'A fixture generator for the vet-report-cold-read gate. Pure — no network, no Supabase, synthetic pets only; it renders the artifact the review reads.',
+  'supabase/functions/generate-report/render.ts':
+    'THE ATTRIBUTION DECISION. `const attribution = wc.vetDirected` (:3567) is the one place in the tree that decides whether the document prints a claim about a third party, and :3430 states the === true contract it rests on. Registered after the preamble\u2019s note misfiled it as a prose mention; it is the most consequential reader here, not the least.',
   'lib/dietTrialFacts.ts':
-    'THE CLIENT READ (CUL-1040, PR 3). Adds set_at ALONE to TRIAL_FOR_CARD_SQL — never initial, never vet_directed, which the card has no use for — and maps it onto TrialCardTrial for the one line §4.3 owes. Its own loader is also the widget\u2019s entry point; see the containment test below, which is what this entry rests on.',
+    'THE CLIENT READ (CUL-1040, PR 3). Adds set_at ALONE to TRIAL_FOR_CARD_SQL — never initial, never vet_directed, which the card has no use for — and maps it onto TrialCardTrial for the one line §4.3 owes. Contained by the three CLOSED widget interfaces plus this file\u2019s base scan, NOT by the publisher\u2019s discipline (the corrected argument); the cost of the placement is that DaySummaryPetInput.trial can hold the field, which the projection test below pins.',
   'lib/dietTrialCard.ts':
-    'The pure resolver, which reads set_at for ONE purpose: withWindowMovedLine appends a `forward` line for the rest of the local day the window moved. It renders the CURRENT end date, which windowLineFor already puts on the same card — not the original window, not the delta, not the attribution — so the line discloses no inference the columns are protected for.',
+    'The pure resolver, which reads set_at for ONE purpose: withWindowMovedLine appends a `forward` line for the rest of the local day the window moved. It renders the CURRENT end date, which windowLineFor already shows on every branch the line can fire on — not the original window, not the delta, not the attribution. It DOES disclose one bit: that the window moved today. That is the protected inference in its weakest form (same-day, the owner\u2019s own action, her own device, a one-day TTL) and the entry concedes it rather than claiming zero.',
   'lib/trialWindowSheet.ts':
     'Builds that line (windowMovedTodayLine) and nothing else from these columns. Takes the value as a parameter rather than reading a row, so it has no path to one; it lives beside the sheet\u2019s own rules because the copy is the sheet\u2019s copy.',
+  'components/profile/TrialWindowSheet.tsx':
+    'WHERE THE ATTRIBUTION IS MINTED (CUL-1040 §4.2, D4a). The vet switch is the origin of target_duration_vet_directed: unchecked by default, never required, and reset on every open so a stale true cannot attribute to a vet a window the vet never named. It holds the boolean and hands it to the host; it reads no row and renders no attribution back.',
+  'app/(tabs)/profile.tsx':
+    'The host that carries the minted boolean to the one write path (handleChangeWindow \u2192 changeTrialWindow), passing false as false rather than folding it into null — the column keeps three states. It renders the value nowhere; the only thing it renders from these columns is the refusal sentence, phrased from structured fields.',
 };
 
 /** Every non-test source in the tree, derived from the REPOSITORY rather than from a list
