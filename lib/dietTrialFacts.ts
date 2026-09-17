@@ -74,6 +74,7 @@ import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './tri
 import { trialTargetProtein } from './trialProtein';
 import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
+import { trialStartDayKey } from './trialWindowDates';
 
 export interface DietTrialFactsPet {
   id: string;
@@ -606,12 +607,11 @@ function shiftDayKey(dayKey: string, deltaDays: number): string {
 
 
 /** The trial's own local day key, whether the column arrived as a DATE or an ISO
- *  instant (the local mirror stores TEXT and both shapes exist in the wild). */
-function startKeyOf(startedAt: string): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(startedAt)
-    ? startedAt
-    : toLocalDayKey(new Date(startedAt));
-}
+ *  instant (the local mirror stores TEXT and both shapes exist in the wild).
+ *
+ *  DELEGATES since CUL-1040: the card and the window sheet need the same branch, and
+ *  a second inline copy is how one of them came to slice the string instead. */
+const startKeyOf = trialStartDayKey;
 
 /**
  * The lower bound every windowed read below uses.

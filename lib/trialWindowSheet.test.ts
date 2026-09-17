@@ -24,6 +24,8 @@ import {
   windowEntryIsSettled,
   windowRefusedLine,
 } from './trialWindowSheet';
+import { trialStartDayKey } from './trialWindowDates';
+import { localDayIndexOf } from './utils';
 
 /** 'YYYY-MM-DD' for a local date `daysAgo` before today — the shape every trial's
  *  `started_at` has, on the owner's own clock. */
@@ -154,6 +156,40 @@ describe('windowOptionsFor — the chips (§4.2, D3a)', () => {
 
   it('is NOT exhausted on the worked case', () => {
     expect(ladderIsExhausted(windowOptionsFor(WORKED))).toBe(false);
+  });
+});
+
+describe('trialStartDayKey — the branch a slice got wrong (code-review)', () => {
+  it('passes a DATE-shaped key through untouched', () => {
+    expect(trialStartDayKey('2026-07-26')).toBe('2026-07-26');
+  });
+
+  it('resolves an ISO INSTANT to the LOCAL day, which a slice does not', () => {
+    // The defect: `startedAt.slice(0, 10)` yields the UTC day. Built from local
+    // components at 23:00 so the instant's UTC date is the NEXT day west of
+    // Greenwich — then asserted against the local day, whichever zone CI runs in.
+    const n = new Date();
+    const lateLocal = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 23, 0, 0, 0);
+    const iso = lateLocal.toISOString();
+    const p = (x: number) => String(x).padStart(2, '0');
+    const expected =
+      `${lateLocal.getFullYear()}-${p(lateLocal.getMonth() + 1)}-${p(lateLocal.getDate())}`;
+    expect(trialStartDayKey(iso)).toBe(expected);
+    // Non-vacuous only where the two spellings actually differ — true in every zone
+    // behind UTC, and stated rather than assumed so the assertion below is honest.
+    if (iso.slice(0, 10) !== expected) {
+      expect(trialStartDayKey(iso)).not.toBe(iso.slice(0, 10));
+    }
+  });
+
+  it('agrees with the card’s own day math on both shapes', () => {
+    // The card's persistent `Ends <date>` line goes through `localDayIndexOf`; this
+    // is what stopped one card printing two end dates for one window.
+    const n = new Date();
+    const lateLocal = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 23, 0, 0, 0);
+    for (const shape of ['2026-07-26', lateLocal.toISOString()]) {
+      expect(localDayIndexOf(trialStartDayKey(shape))).toBe(localDayIndexOf(shape));
+    }
   });
 });
 

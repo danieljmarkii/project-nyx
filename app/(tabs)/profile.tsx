@@ -51,7 +51,6 @@ import {
   TrialCompletionSheet, type TrialCompletionEntry,
 } from '../../components/profile/TrialCompletionSheet';
 import { TrialManageSheet } from '../../components/profile/TrialManageSheet';
-import { TrialWindowSheet } from '../../components/profile/TrialWindowSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
@@ -59,6 +58,7 @@ import { resolveTrialCard, trialManageTarget } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
 import { changeTrialWindow, extendTrial, TrialWindowRefused } from '../../lib/dietTrialSetup';
 import { windowRefusedLine } from '../../lib/trialWindowSheet';
+import { trialStartDayKey } from '../../lib/trialWindowDates';
 import { getDietTrialProgress } from '../../lib/analytics';
 import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
@@ -489,9 +489,23 @@ export default function ProfileScreen() {
   // the window* keeps one continuous episode and is reversible; *Replace the trial*
   // ends it and is not. The door names both and opens neither by default.
   const [manageVisible, setManageVisible] = useState(false);
-  const [windowVisible, setWindowVisible] = useState(false);
   const [savingWindow, setSavingWindow] = useState(false);
   const [windowError, setWindowError] = useState<string | null>(null);
+  /**
+   * `Replace the trial` chosen, waiting for the door's Modal to finish dismissing.
+   *
+   * A REF, NEVER STATE (C-22). It is a one-shot request consumed by a side effect,
+   * and held in state an already-scheduled passive effect re-enters with the
+   * pre-clear closure and fires twice — here, two presentations of the start form.
+   * Cleared BEFORE the side effect, for the same reason.
+   *
+   * It exists because `StartTrialModal` is the one hand-off that still crosses a
+   * Modal boundary: it is reached independently from a terminal card's header and
+   * keeps a half-filled form alive across dismissals (`resumeTrialModalOnFocus`), so
+   * folding it into the door is a wider change than this PR should make. Sequencing
+   * it costs one ref.
+   */
+  const pendingAfterManage = useRef<'replace_trial' | null>(null);
 
   /**
    * The §4.2 write. One total, one optional vet statement, no confirm (the sheet's
@@ -524,7 +538,7 @@ export default function ProfileScreen() {
           // not the same as being interchangeable here.
           vetDirected: input.vetDirected,
         });
-        setWindowVisible(false);
+        setManageVisible(false);
         reloadTrial();
       } catch (e) {
         reloadTrial();
@@ -1218,7 +1232,10 @@ export default function ProfileScreen() {
     trialInput?.trial?.id && trialInput.trial.status === 'active'
       ? {
           id: trialInput.trial.id,
-          startDayKey: trialInput.trial.startedAt.slice(0, 10),
+          // `trialStartDayKey`, never a slice: on an ISO-instant `started_at` the
+          // slice yields the UTC day and every chip's end date would sit a day off
+          // the card's own (CUL-1040).
+          startDayKey: trialStartDayKey(trialInput.trial.startedAt),
           currentTargetDays: trialInput.trial.targetDurationDays,
           dayCounter: sheetDayCounter,
         }
@@ -1858,29 +1875,27 @@ export default function ProfileScreen() {
         onChanged={reloadTrial}
       />
 
-      {/* CUL-1040 §4.1 — the door. Two rows, and the file's whole job is that they
-          are never confused. */}
+      {/* CUL-1040 §4.1/§4.2 — ONE Modal, two steps: the door's two rows, and
+          *Change the window* behind the first of them. `windowSheetTrial` is null on
+          a terminal card, which disables that row rather than opening a window
+          change over a trial that has ended. */}
       <TrialManageSheet
         visible={manageVisible}
-        petName={activePet.name}
-        onClose={() => setManageVisible(false)}
-        onChangeWindow={() => { setWindowError(null); setWindowVisible(true); }}
-        // The EXISTING flow, with its existing confirm. One active trial per pet is
-        // a DB constraint, so the start form is the ordered end-the-running-one-first
-        // sheet — which is what "Replace the trial" has always meant.
-        onReplaceTrial={() => setStartTrialVisible(true)}
-      />
-
-      {/* CUL-1040 §4.2 — *Change the window*. `windowSheetTrial` is null on a
-          terminal card, and the sheet renders nothing then rather than offering a
-          window change on a trial that has ended. */}
-      <TrialWindowSheet
-        visible={windowVisible}
         trial={windowSheetTrial}
         petName={activePet.name}
         busy={savingWindow}
         writeError={windowError}
-        onClose={() => { setWindowVisible(false); setWindowError(null); }}
+        onClose={() => { setManageVisible(false); setWindowError(null); }}
+        // The EXISTING flow, with its existing confirm. One active trial per pet is
+        // a DB constraint, so the start form is the ordered end-the-running-one-first
+        // sheet — which is what "Replace the trial" has always meant. It is ARMED
+        // here and presented on `onDismissed`, never in the row's own commit (C-14).
+        onReplaceTrial={() => { pendingAfterManage.current = 'replace_trial'; }}
+        onDismissed={() => {
+          const pending = pendingAfterManage.current;
+          pendingAfterManage.current = null;
+          if (pending === 'replace_trial') setStartTrialVisible(true);
+        }}
         // A new total makes the last refusal stale, and a stale refusal outranks the
         // live reason on the sheet — so the host clears what the host set.
         onSelectionChanged={() => setWindowError(null)}

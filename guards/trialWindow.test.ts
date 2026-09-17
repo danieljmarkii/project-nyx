@@ -527,7 +527,9 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
     // mid-trial and this reds.
     const sheet = blankComments(
       fs.readFileSync(
-        path.join(REPO_ROOT, 'components/profile/TrialWindowSheet.tsx'),
+        // The §4.2 form. It became a PANEL inside the door's one Modal (C-14,
+        // CUL-1040) — the file moved, the rule did not.
+        path.join(REPO_ROOT, 'components/profile/TrialWindowPanel.tsx'),
         'utf8',
       ),
     );

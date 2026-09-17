@@ -103,6 +103,7 @@ import { localDayIndexOf, MONTHS } from './utils';
 import type { TrialIndication } from './dietTrialSetup';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS, type TrialResponseCounts } from './trialResponseCounts';
 import { windowMovedTodayLine } from './trialWindowSheet';
+import { trialStartDayKey } from './trialWindowDates';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -1355,20 +1356,18 @@ function withWindowMovedLine(
   const text = windowMovedTodayLine({
     targetDurationSetAt: input.trial?.targetDurationSetAt ?? null,
     currentTargetDays: ctx.trial.targetDurationDays,
-    startDayKey: startDayKeyOf(ctx.trial.startedAt),
+    startDayKey: trialStartDayKey(ctx.trial.startedAt),
     nowMs: input.nowMs,
   });
   if (!text) return model;
   return { ...model, lines: [...model.lines, { role: 'forward', text }] };
 }
 
-/** `started_at` is a DATE column but arrives as an ISO instant from some readers,
- *  and the end-date math takes a day key. Slicing the first ten characters is the
- *  same normalisation `lib/dietTrialFacts.startKeyOf` does; an unparseable value
- *  falls through to a null end date rather than a guessed one. */
-function startDayKeyOf(startedAt: string): string {
-  return startedAt.slice(0, 10);
-}
+// `started_at` is a DATE column but arrives as an ISO instant from some readers, and
+// the end-date math takes a day key. `trialStartDayKey` owns the branch; this file
+// used to slice the first ten characters under a comment claiming that was the same
+// normalisation, which it was not — see that function's own note for the off-by-one
+// it produced ON THIS CARD (CUL-1040).
 
 // ── Compose: the register's body, then the disclosures the table allows ──────
 

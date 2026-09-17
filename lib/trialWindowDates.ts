@@ -19,6 +19,29 @@
 
 import { toLocalDayKey, dayKeyToLocalDate } from './utils';
 
+/**
+ * A trial's own local day key, whether `started_at` arrived as a DATE or an ISO
+ * instant — the local mirror stores TEXT and both shapes exist in the wild.
+ *
+ * LIFTED HERE BECAUSE A NAIVE SLICE IS OFF BY A DAY, AND ON THE SAME CARD (CUL-1040,
+ * found by `code-reviewer`). `startDayKeyOf` in `lib/dietTrialCard.ts` did
+ * `startedAt.slice(0, 10)` under a comment claiming it mirrored
+ * `dietTrialFacts.startKeyOf`, which it did not: that one BRANCHES. On an ISO instant
+ * the slice yields the UTC day, while `localDayIndexOf` — which the card's own
+ * persistent `Ends <date>` line goes through — yields the LOCAL one. For
+ * `2026-09-18T03:00:00.000Z` read at UTC-4 those are 18 Sep and 17 Sep, so one card
+ * printed two different end dates for one window, on the sentence §4.2 calls the
+ * thing the owner plans around.
+ *
+ * `lib/dietTrialFacts.ts`'s `startKeyOf` now delegates here, so there is ONE branch
+ * rather than the three a second inline copy would have made.
+ */
+export function trialStartDayKey(startedAt: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(startedAt)
+    ? startedAt
+    : toLocalDayKey(new Date(startedAt));
+}
+
 /** The window's LAST day, inclusive: start + target − 1. An off-by-one here is an
  *  off-by-one on the milestone that decides whether an owner stops a diet. */
 export function trialEndDayKey(startDayKey: string, targetDays: number): string | null {

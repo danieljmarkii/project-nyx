@@ -1,4 +1,9 @@
-// `TrialWindowSheet` — CUL-1040 (spec §4.2, D1a/D3a/D4a).
+// `TrialWindowPanel` — CUL-1040 (spec §4.2, D1a/D3a/D4a).
+//
+// RENDERED DIRECTLY, with no Modal around it, because the panel has no presentation
+// of its own — `TrialManageSheet` is the one Modal and swaps this in as a step
+// (C-14). The wrapper's own suite owns the door, the step transition and the
+// exactly-one-Modal assertion.
 //
 // ── WHAT THIS FILE IS FOR, AND WHAT IT IS NOT ─────────────────────────────────
 //
@@ -14,13 +19,8 @@
 // The fixtures are anchored to `Date.now()` — every question under them is a
 // local-day question and CI runs at UTC+14 / +12:45 / −10 (C-29).
 
-// No provider in a unit render; the sheet reads the bottom inset for its padding.
-jest.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
-}));
-
 import { render, fireEvent, within } from '@testing-library/react-native';
-import { TrialWindowSheet } from './TrialWindowSheet';
+import { TrialWindowPanel } from './TrialWindowPanel';
 
 /** 'YYYY-MM-DD' for a local date `daysAgo` before today. */
 function localDayKeyAgo(daysAgo: number): string {
@@ -38,9 +38,8 @@ const WORKED = {
   dayCounter: 53,
 };
 
-function setup(overrides: Partial<Parameters<typeof TrialWindowSheet>[0]> = {}) {
+function setup(overrides: Partial<Parameters<typeof TrialWindowPanel>[0]> = {}) {
   const props = {
-    visible: true,
     trial: WORKED,
     petName: 'Nyx',
     onClose: jest.fn(),
@@ -48,7 +47,7 @@ function setup(overrides: Partial<Parameters<typeof TrialWindowSheet>[0]> = {}) 
     onSave: jest.fn(),
     ...overrides,
   };
-  return { ...render(<TrialWindowSheet {...props} />), props };
+  return { ...render(<TrialWindowPanel {...props} />), props };
 }
 
 describe('the sheet draws what the module decided (§4.2, mock §3)', () => {
@@ -117,6 +116,8 @@ describe('the sheet draws what the module decided (§4.2, mock §3)', () => {
     const flat = require('react-native').StyleSheet.flatten(group.props.style);
     expect(flat.flexWrap).toBe('wrap');
     expect(t.UNSAFE_queryAllByProps({ horizontal: true })).toHaveLength(0);
+    // …and the panel presents nothing of its own (C-14) — the wrapper is the Modal.
+    expect(t.UNSAFE_queryAllByType(require('react-native').Modal)).toHaveLength(0);
   });
 });
 
@@ -171,18 +172,21 @@ describe('Save carries a TOTAL and the vet statement (§4.2, D4a)', () => {
     expect(t.props.onSave).toHaveBeenCalledWith({ targetDurationDays: 84, vetDirected: true });
   });
 
-  it('every open starts clean — a re-open never carries the last vet statement', () => {
+  it('a fresh mount starts clean — the panel never carries a last vet statement', () => {
     // A stale `true` behind an untagged change would have the report attribute to a
     // vet a window the vet never named — the one assertion §5.1 forbids outright.
-    const t = setup({ visible: false });
-    t.rerender(
-      <TrialWindowSheet {...t.props} visible />,
-    );
-    fireEvent(t.getByTestId('trial-window-vet'), 'valueChange', true);
-    t.rerender(<TrialWindowSheet {...t.props} visible={false} />);
-    t.rerender(<TrialWindowSheet {...t.props} visible />);
-    expect(t.getByTestId('trial-window-vet').props.value).toBe(false);
-    expect(t.queryByTestId('trial-window-summary')).toBeNull();
+    //
+    // The panel resets by UNMOUNTING (the wrapper drops it when the step leaves
+    // `window`), so the assertion is about a fresh mount rather than a `visible`
+    // flag. That the wrapper really does unmount it is asserted in its own suite.
+    const first = setup();
+    fireEvent(first.getByTestId('trial-window-vet'), 'valueChange', true);
+    fireEvent.press(first.getByText('12 weeks'));
+    first.unmount();
+
+    const second = setup();
+    expect(second.getByTestId('trial-window-vet').props.value).toBe(false);
+    expect(second.queryByTestId('trial-window-summary')).toBeNull();
   });
 
   it('there is no confirm between Save and the write (§4.2)', () => {
@@ -299,6 +303,34 @@ describe('the free-entry escape hatch (§4.2, CUL-1039’s handoff)', () => {
     expect(t.props.onSave).not.toHaveBeenCalled();
   });
 
+  it('the FIELD and SAVE never disagree about one number (code-review)', () => {
+    // THE MEASURED DEFECT. `customError` called the phrasing function directly and so
+    // bypassed `saveStateFor`'s equality check, and the two orders diverge in overrun:
+    // at target 56 on day 61, a typed `56` read "Nyx is already on day 61." on the
+    // field while the text beside Save read "That is the window you have now." One
+    // number, one sheet, two framings — and `56` is the value the owner's own marked
+    // chip shows, so it is the likeliest thing to type.
+    const t = setup({ trial: { ...WORKED, currentTargetDays: 56, dayCounter: 61 } });
+    fireEvent.press(t.getByText('Something else'));
+    fireEvent.changeText(t.getByTestId('trial-window-custom'), '56');
+    const field = t.getByTestId('trial-window-custom-error').props.children;
+    const beside = t.getByTestId('trial-window-reason').props.children;
+    expect(field).toBe(beside);
+    expect(field).toBe('That is the window you have now.');
+  });
+
+  it('…and they still agree on a genuinely backward total in overrun', () => {
+    // Non-vacuity for the test above: a DIFFERENT input must still produce the day
+    // sentence, or "the two agree" could be satisfied by one arm answering everything.
+    const t = setup({ trial: { ...WORKED, currentTargetDays: 56, dayCounter: 61 } });
+    fireEvent.press(t.getByText('Something else'));
+    fireEvent.changeText(t.getByTestId('trial-window-custom'), '40');
+    expect(t.getByTestId('trial-window-custom-error').props.children).toBe(
+      'Nyx is already on day 61.',
+    );
+    expect(t.getByTestId('trial-window-reason').props.children).toBe('Nyx is already on day 61.');
+  });
+
   it('accepts a legitimate off-ladder total', () => {
     const t = openCustom();
     fireEvent.changeText(t.getByTestId('trial-window-custom'), '91');
@@ -370,6 +402,8 @@ describe('the states the module reports and the sheet must draw', () => {
   });
 
   it('renders nothing at all without a running trial', () => {
+    // Belt-and-braces: the wrapper disables the row that would open this step when
+    // there is no running trial, so the panel should never be mounted without one.
     const t = setup({ trial: null });
     expect(t.toJSON()).toBeNull();
   });
