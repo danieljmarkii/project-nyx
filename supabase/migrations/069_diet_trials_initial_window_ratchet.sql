@@ -63,20 +63,66 @@
 -- oracle of CUL-867/C-31, because it raises nothing and reads no other row.
 -- `search_path` is pinned anyway: it costs nothing and keeps the family uniform.
 --
--- WHAT ELSE CAN MOVE (C-38's question, asked rather than assumed). Nothing else
--- reaches the designed window: `target_duration_days` is independent of it,
--- `started_at` moves the day counter and not this column, a DELETE removes the
--- trial outright rather than falsifying it, and a BEFORE trigger binds the
--- service role where a policy would not. The one residual is stated below.
+-- WHAT ELSE CAN MOVE (C-38's question) — AND THE ANSWER IS NOT "NOTHING".
+-- An earlier draft of this header said a DELETE "removes the trial outright
+-- rather than falsifying it". That is FALSE, and `rls-privacy-reviewer` broke it:
+--
+--   DELETE FROM diet_trials WHERE id = X;  -- then re-INSERT the SAME id
+--   INSERT INTO diet_trials (id, …, target_duration_days_initial) VALUES (X, …, 84);
+--
+-- takes the designed window from 28 to 84. EXECUTED against production inside a
+-- rolled-back transaction, on a throwaway row: 28 -> 84, RLS-legal, no error.
+-- This trigger is a per-row-VERSION guard, not a per-ID guard — a BEFORE INSERT
+-- trigger cannot know the id was previously used — so the `COMMENT` below says
+-- "immutable for the life of the row" and not "immutable", because the row's life
+-- is exactly what a DELETE ends. Writing the stronger claim here while shipping
+-- the weaker code is the cheque-the-code-does-not-cash failure 045 and 066 both
+-- recorded, and this header cited C-38 while committing it.
+--
+-- BOUNDED, because the bound is what decides whether it ships: it is
+-- owner-against-their-own-record, NOT cross-tenant (every cross-account attack
+-- held — the only branch that reads OLD is unreachable for another tenant, since
+-- RLS filters the row before the executor reaches the trigger). No shipped code
+-- path DELETEs a `diet_trials` row — every touch in `lib/`, `store/`, `app/`,
+-- `supabase/functions/` and `scripts/` is a SELECT — so it takes two hand-crafted
+-- PostgREST calls with the owner's own session, and it costs the attacker the
+-- allowed set (`diet_trial_foods … ON DELETE CASCADE`, 040:157). Closing it for
+-- real needs a tombstone or a DELETE revoke, which is a separate decision with
+-- its own blast radius: CUL-1058.
+--
+-- What genuinely cannot move it: `target_duration_days` is independent of it,
+-- `started_at` moves the day counter and not this column, and a BEFORE trigger
+-- binds the service role where a policy would not.
 --
 -- KNOWN LIMIT, stated because an undocumented blind spot reads as coverage.
--- The ratchet makes a WRONG value permanent too. 068's own header records that
--- its backfill "does not recover history that predates the column": a trial
--- already extended through the milestone path before 068 applied carries its
--- EXTENDED window as `initial`. Freezing that is not a new defect — the value was
--- already unrecoverable — but after this migration the only correction is a
--- service-role UPDATE with the trigger dropped, which the rollback below covers.
--- MEASURED this session: zero such rows exist (see Affected rows).
+-- The ratchet makes a WRONG value permanent too, and this is NOT confined to
+-- legacy rows — an earlier draft of this header said it was, and that was
+-- understated. Two live shapes, both measured:
+--
+--   (a) The INSERT branch TRUSTS a client-supplied `initial`. Executed against
+--       production (rolled back): a row sent with target 21 and initial 7 keeps
+--       7, frozen for the row's life. `COALESCE` is what makes that possible and
+--       it is deliberate — PR 2's write path and any future `startDietTrial`
+--       stamp correctly and must not be second-guessed — but the cost is that a
+--       plausible wrong POSITIVE survives. `deriveWindowChange` rejects <= 0, so
+--       the harmless shapes are filtered and this one is not.
+--   (b) 068's own header records that its backfill "does not recover history that
+--       predates the column": a trial extended through the milestone path before
+--       068 applied carries its EXTENDED window as `initial`. Freezing that is not
+--       a new defect — the value was already unrecoverable.
+--
+-- Branch 3 below is the one that can AFFIRMATIVELY MANUFACTURE a wrong value: on
+-- a row with `initial` NULL and a target already extended, the first write of any
+-- kind stamps the extended window, and branch 2 then freezes it. The report then
+-- renders `direction = 'changed'` rather than "extended from N days" and
+-- `daysPastOriginalWindowNow` goes NULL — the page's only staleness disclosure
+-- (generate-report/trial.ts:469-475). Its whole defence is that `initial_null` is
+-- zero, which is measured below and RE-CONFIRMED after apply. The branch is
+-- self-closing: post-069 every INSERT stamps non-NULL, so no new row can enter
+-- that state.
+--
+-- In every case the only correction is a service-role UPDATE with the trigger
+-- dropped, which the rollback below covers.
 --
 -- ============================================================
 -- MIGRATION SAFETY PRE-FLIGHT
@@ -139,6 +185,22 @@ BEGIN
     -- payload holds, NULL or a number. Not `IS DISTINCT FROM` + RAISE, because
     -- this corrects rather than refuses (see the header), and an assignment that
     -- writes back the identical value on the ordinary no-change path is free.
+    --
+    -- OBSERVABILITY, and why it is a LOG rather than nothing. Because this
+    -- assignment is unconditional and this trigger fires first, every later
+    -- trigger sees NEW = OLD on this column, so a correction is invisible to any
+    -- audit trigger or future guard — a buggy client build erasing the designed
+    -- window on every sync would surface NOWHERE. `rls-privacy-reviewer` named
+    -- that, and it is separable from the decision not to quarantine: a LOG does
+    -- not abort, never reaches the client, and is C-31-clean because it names
+    -- only NEW.id and the caller's OWN payload value, never anything read from
+    -- another row. Guarded by IS DISTINCT FROM so the ordinary no-change path
+    -- (PostgREST re-sends the column unchanged on a conflict) logs nothing.
+    IF NEW.target_duration_days_initial IS DISTINCT FROM OLD.target_duration_days_initial THEN
+      RAISE LOG 'diet_trials %: refused a change to target_duration_days_initial (payload %); the designed window is immutable for the life of the row (CUL-1051)',
+        NEW.id, NEW.target_duration_days_initial;
+    END IF;
+
     NEW.target_duration_days_initial := OLD.target_duration_days_initial;
     RETURN NEW;
   END IF;
@@ -167,4 +229,4 @@ CREATE TRIGGER trg_diet_trials_initial_ratchet
   FOR EACH ROW EXECUTE FUNCTION enforce_diet_trial_initial_window_ratchet();
 
 COMMENT ON FUNCTION public.enforce_diet_trial_initial_window_ratchet() IS
-  'CUL-1051 (trial-window PR 1c): makes diet_trials.target_duration_days_initial a ratchet. On INSERT it stamps COALESCE(initial, target_duration_days) — at creation the target IS the designed window. On UPDATE, a non-NULL initial is IMMUTABLE: the server keeps its own value and discards the payload''s, because the client can erase it (COLUMN_UPGRADES adds the column locally with no backfill, dietTrialRowToRemote forwards it, pushRows is a full-row upsert, and sync is push-before-pull) or overwrite it with its own already-extended target. CUL-1038''s coverage freeze prints the vet report''s denominator over this column, so an erased value silently restores the TE-6-violating arithmetic. Corrects silently rather than RAISEing: the caller is a stale sync payload, not an owner, and a refusal would be a terminal 23514 that quarantines the whole trial (C-38 — writable-but-corrected is repairable, bricked is not). INVOKER because it reads nothing (067''s asymmetry). It does NOT recover a wrong pre-068 value: freezing one is a known limit, stated in 069''s header, and zero such rows existed at apply.';
+  'CUL-1051 (trial-window PR 1c): makes diet_trials.target_duration_days_initial a ratchet. On INSERT it stamps COALESCE(initial, target_duration_days) — at creation the target IS the designed window. On UPDATE, a non-NULL initial is IMMUTABLE FOR THE LIFE OF THE ROW: the server keeps its own value and discards the payload''s, because the client can erase it (COLUMN_UPGRADES adds the column locally with no backfill, dietTrialRowToRemote forwards it, pushRows is a full-row upsert, and sync is push-before-pull) or overwrite it with its own already-extended target. CUL-1038''s coverage freeze prints the vet report''s denominator over this column, so an erased value silently restores the TE-6-violating arithmetic. Corrects silently rather than RAISEing: the caller is a stale sync payload, not an owner, and a refusal would be a terminal 23514 that quarantines the whole trial (C-38 — writable-but-corrected is repairable, bricked is not). INVOKER because it reads nothing (067''s asymmetry). TWO LIMITS, both measured and stated in 069''s header rather than left implicit: a DELETE followed by a re-INSERT of the same id DOES move the value (this is a per-row-version guard, not a per-id one — owner-only, unreachable from shipped code, CUL-1058), and the INSERT branch trusts a client-supplied initial, so a plausible wrong positive is frozen for the row''s life. A refused change is RAISE LOG''d because the unconditional assign would otherwise make the attempt invisible to every later trigger.';
