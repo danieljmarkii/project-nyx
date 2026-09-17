@@ -104,6 +104,12 @@ export interface TrialSource {
   outcome?: 'improved' | 'no_change' | 'worse' | 'unsure' | null
   outcomeNotes?: string | null
   stoppedReason?: string | null
+  /** CUL-1041 / migration 068 — §5.1's window provenance, read as ONE fact through
+   *  `deriveWindowChange`. Optional because a display-only fixture may omit them and
+   *  because PostgREST omits a column it cannot read; absent is "never moved". */
+  targetDurationDaysInitial?: number | null
+  targetDurationSetAt?: string | null
+  targetDurationVetDirected?: boolean | null
   allowedFoods?: TrialFoodSource[]
 }
 
@@ -308,6 +314,177 @@ export interface TrialExposure {
    */
 }
 
+/**
+ * CUL-1041 §5.1 — THE WINDOW MOVED, AND WHEN. Null when it never did.
+ *
+ * `target_duration_days` is overwritten in place, so an 8-week trial extended on day
+ * 56 is byte-identical, everywhere, to a 12-week trial started on day 1 (TE-4) — and
+ * *that the signs had not resolved at eight weeks* is the finding the extension is
+ * evidence of. These are the fields that let the report say so.
+ *
+ * DERIVED HERE, NOT IN THE RENDERER, because placing the move on a trial day needs
+ * `ctx.startDayIndex` and the report's timezone, neither of which `render.ts` can
+ * see. A consumer re-deriving a bound at a layer that cannot see the clip is the seam
+ * mistake rounds 2/3/4 of the trial block each paid for once.
+ */
+export interface TrialWindowChange {
+  /**
+   * `target_duration_days_initial` — the window the trial was DESIGNED against.
+   *
+   * NULL means NOT RECORDED and is never rendered as a number: a trial created between
+   * migration 068 and the PR 2 write path lands here, and so does any row written by a
+   * path that stamped `set_at` without it. The clause degrades to naming the date.
+   */
+  fromDays: number | null
+  /**
+   * `target_duration_set_at` as a local day key. Null only when the stored value does
+   * not parse — a corruption, not a state any write path produces. The clause is still
+   * rendered without it, because hiding the move is the defect this whole object
+   * exists to close, and a floor may only ever move toward disclosing more.
+   */
+  movedOnDate: string | null
+  /**
+   * The TRIAL DAY the move landed on — the clinical signal, per §5.1: a window
+   * extended at day 56 says the signs had not resolved at eight weeks.
+   *
+   * Null when the stamp predates `started_at`. `trialDayCounter` floors at 1, so
+   * taking it unconditionally would print "day 1" for a move that happened before the
+   * trial began — a confident wrong number in place of an honest silence.
+   */
+  movedOnDay: number | null
+  /**
+   * How far past the ORIGINAL window the trial has run, as of now. Null when it has
+   * not, or when the original window was never recorded.
+   *
+   * This is the sentence the extension deletes: `daysPastTarget` is computed against
+   * the CURRENT target, so one tap turns *"day 50 — 22 days past the 28-day window"*
+   * into *"day 50 of 64"*, removing the report's only staleness disclosure in the same
+   * breath that changes the stated window length.
+   *
+   * ⚠️ IT IS ANCHORED ON NOW, NOT ON THE MOVE, AND THE DIFFERENCE IS THE WHOLE POINT
+   * (`adversarial-reviewer`, 2026-09-17, executed). The first cut computed
+   * `movedOnDay - fromDays` — how far past the prior window the trial already was WHEN
+   * it moved — which welds the FIRST window to the LAST change, the exact weld the verb
+   * beside it was reworded to avoid. Run against the spec's own D5 ladder: a cat·gi
+   * trial on the 42-day default whose owner meets `This trial is done` at days 42, 56
+   * and 70 and taps `Keep going` each time. `stateFor` returns `milestone` only at
+   * `overrunDays === 0`, so **every tap is exactly on time and the trial is never past
+   * its window** — and the report printed *"Window extended from 42 days; last moved
+   * Jun 27 (day 70) — 28 days past that window."* An adherence accusation §6.9 forbids
+   * even when the arithmetic is right, over a history that did not happen. The same
+   * three column values are also produced by one 42→84 move after a real 28-day
+   * overrun, and D2(a) chose three columns over a history table, so **the record cannot
+   * tell those apart and must not assert either.**
+   *
+   * `trialDaysElapsed - fromDays` asserts only what the record holds: the trial's own
+   * length against the window it was designed for. True under one move and under five,
+   * and a statement about the TRIAL rather than about when the owner acted.
+   */
+  daysPastOriginalWindowNow: number | null
+  /**
+   * `target_duration_vet_directed === true`, and ONLY that.
+   *
+   * NULL and FALSE are deliberately indistinguishable and both mean SILENCE. An
+   * unchecked box is never rendered as "the owner did this on their own" — the
+   * two-sided rule the trial spec already applies to off-diet marking, where a mark's
+   * absence is never a verdict. TRUE means the OWNER checked a box, never that a vet
+   * was consulted, which the app cannot verify and must never assert.
+   */
+  vetDirected: boolean
+  /**
+   * The verb, which FOLLOWS THE ARITHMETIC rather than the feature's name.
+   *
+   * `shortened` is reachable — TE-3 makes the mid-trial sheet forward-only, but the
+   * shipped milestone path and any pre-068 row are not bound by it — and it is the
+   * direction §5.2 is about: a 56-day trial shortened to 28 and marked complete prints
+   * *"Ran its course — the full window was completed."* Naming a shortening
+   * "extended" would hide exactly the move that laundering needs hidden. `changed` is
+   * the honest word when `fromDays` is null or equal to the current target.
+   */
+  direction: 'extended' | 'shortened' | 'changed'
+}
+
+/**
+ * §5.1's window provenance, resolved from the three columns migration 068 added.
+ *
+ * THE PREDICATE IS `targetDurationSetAt != null`, never `initial !== current` — stated
+ * in the column's own COMMENT and true for two independent reasons: two equal numbers
+ * are also what a corrected typo looks like, and a trial created between 068 and the
+ * PR 2 write path can move its window with a NULL initial. On null, the other two
+ * columns are not read at all.
+ */
+export function deriveWindowChange(
+  trial: Pick<
+    TrialSource,
+    | 'targetDurationDays'
+    | 'targetDurationDaysInitial'
+    | 'targetDurationSetAt'
+    | 'targetDurationVetDirected'
+  >,
+  startDayIndex: number,
+  /** The trial's OWN elapsed length (`trialDaysElapsed`) — the span a trial day may
+   *  name. Bounded at `min(today, its end)`, so it also bounds a future-dated stamp:
+   *  `extendTrial` writes `new Date().toISOString()` from the DEVICE clock. */
+  trialDaysElapsed: number,
+  timeZone: string | null,
+): TrialWindowChange | null {
+  const setAt = trial.targetDurationSetAt
+  if (!setAt) return null
+
+  const movedIdx = dayIndexOfValue(setAt, timeZone)
+  const fromDaysRaw = trial.targetDurationDaysInitial
+  // A non-positive initial is not a window, so it is "not recorded" rather than a
+  // number to print. `target_duration_days` is INTEGER NOT NULL and the app writes
+  // positives, but this column is nullable with no CHECK and is backfilled from a
+  // sibling, so the render must not be the first thing that assumes its range.
+  //
+  // ⚠️ TRUNCATE FIRST, THEN RANGE-CHECK. The first cut checked `> 0` on the raw value
+  // and truncated after, so `0.5` passed the guard and printed *"extended from 0
+  // days"* — the one output the guard's own comment says it exists to prevent
+  // (`adversarial-reviewer`, 2026-09-17). A guard that runs on a different value than
+  // the one it admits is not checking the value it admits.
+  const fromDaysWhole =
+    typeof fromDaysRaw === 'number' && Number.isFinite(fromDaysRaw) ? Math.trunc(fromDaysRaw) : null
+  const fromDays = fromDaysWhole !== null && fromDaysWhole > 0 ? fromDaysWhole : null
+
+  // ── THE TRIAL DAY IS BOUNDED AT BOTH ENDS, AND ONLY ONE END WAS GUARDED ──────
+  //
+  // `trialDayCounter` floors at 1, so an early stamp printed "day 1" for a move made
+  // before the trial began — guarded from the first cut, with a comment saying why.
+  // The upper end had neither (`adversarial-reviewer`, 2026-09-17, executed): a stamp
+  // past the trial's own span produced "day 390" on a trial whose counter is 56, "day
+  // 50" on a completed trial that has thirty, and — on a device whose clock runs fast
+  // — a move "last moved" a week in the future. C-37's tell, exactly: if you reach
+  // outside the window, check you reach for the accusing number too.
+  //
+  // `trialDaysElapsed` is the trial's own span, so a move outside it has no trial day
+  // to name. The date survives; the day does not, on the same reasoning as the lower
+  // bound — correct-but-partial beats confidently wrong.
+  const elapsedEndDayIndex = startDayIndex + Math.max(0, trialDaysElapsed - 1)
+  const movedOnDay =
+    movedIdx !== null && movedIdx >= startDayIndex && movedIdx <= elapsedEndDayIndex
+      ? trialDayCounter(startDayIndex, movedIdx)
+      : null
+
+  const current = trial.targetDurationDays
+  const direction: TrialWindowChange['direction'] =
+    fromDays === null || fromDays === current
+      ? 'changed'
+      : fromDays < current
+        ? 'extended'
+        : 'shortened'
+
+  return {
+    fromDays,
+    movedOnDate: movedIdx !== null ? dayKeyFromIndex(movedIdx) : null,
+    movedOnDay,
+    daysPastOriginalWindowNow:
+      fromDays !== null && trialDaysElapsed > fromDays ? trialDaysElapsed - fromDays : null,
+    vetDirected: trial.targetDurationVetDirected === true,
+    direction,
+  }
+}
+
 export interface TrialBlock {
   id: string
   status: 'active' | 'completed' | 'abandoned'
@@ -315,6 +492,10 @@ export interface TrialBlock {
   /** `ended_at` (B-455) — present on BOTH completed and abandoned trials. */
   endedAt: string | null
   targetDurationDays: number
+  /** CUL-1041 §5.1 — the provenance of the number above, or null when the window has
+   *  never moved. `targetDurationDays` alone cannot tell a 12-week trial from an
+   *  8-week one that was extended (TE-4); this is what can. */
+  windowChange: TrialWindowChange | null
   vetName: string | null
   indication: 'skin' | 'gi' | 'other' | null
   species: TrialSpecies
@@ -1068,6 +1249,15 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     startedAt: trial.startedAt,
     endedAt,
     targetDurationDays: trial.targetDurationDays,
+    // CUL-1041 §5.1. Taken HERE because `ctx.startDayIndex` and the report's zone are
+    // both in hand — `render.ts` has neither, and a trial day derived without the
+    // start index is a guess.
+    windowChange: deriveWindowChange(
+      trial,
+      ctx.startDayIndex,
+      facts.trialDaysElapsed,
+      timeZone,
+    ),
     vetName: trial.vetName,
     indication: trial.indication ?? null,
     species,

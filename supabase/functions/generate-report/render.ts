@@ -2358,7 +2358,33 @@ function headline(snap: ReportSnapshot): string {
   if (q.question === 'diet_trial_working' && snap.diet.trial) {
     const t = snap.diet.trial
     const food = t.foodLabel ? h(t.foodLabel) : 'a diet trial'
-    const vet = t.vetName ? `, directed by ${h(t.vetName)}` : ''
+    // ── A NAMED VET AND THE WINDOW MARKER NEVER SHARE THIS SENTENCE ─────────────
+    //
+    // `vet-report-cold-read`, 2026-09-17, focused re-read, verdict NOT SAFE — and it
+    // made the binding itself: *"'(window extended)' is an agentless passive. The
+    // sentence offers exactly one agent, names him, and places him four words before
+    // the revision flag. An agentless passive that close to the only named agent
+    // inherits that agent. I did not have to infer anything; I had nothing else to
+    // attach it to."*
+    //
+    // Strict grammar says the participle post-modifies "a diet trial" and the
+    // parenthetical is a separate annotation on the day count. That parse is defensible
+    // and it is not the one a reader makes at speed — and at speed is this line's whole
+    // design brief.
+    //
+    // THE DIRECTION OF THE ERROR IS WHAT MAKES IT UNSHIPPABLE. With the box TICKED the
+    // block corrects it downstream ("Owner reports the change was directed by a vet" —
+    // unnamed, owner-sourced). With the box UNTICKED there is no such sentence, so the
+    // binding stands over a record holding NO attestation for the change at all: *"the
+    // less the record knows, the less the page hedges"*, which is absence rendered as a
+    // positive.
+    //
+    // So the name yields, not the marker. It is not lost — the trial block restates it
+    // as "Trial directed by <name>", scoped to what it attributes, on the same page. And
+    // the suppression is conditional: on the overwhelming majority of reports, where no
+    // window ever moved, this line is byte-identical to what it has always rendered.
+    const vet =
+      t.vetName && !snap.trial?.windowChange ? `, directed by ${h(t.vetName)}` : ''
     // "Day 46 of 56" asserts a trial that is RUNNING. When the record shows an off-trial
     // protein in the trial food or continuously available in a bowl, that assertion is
     // the wrong frame for everything below it — and a cold read proved the cost: scanning
@@ -2429,6 +2455,32 @@ function headline(snap: ReportSnapshot): string {
     // report window while the trial block's figures are over the overlap, and those two
     // spans are not always equal; a single number here would have to be one or the
     // other and would be read as both.
+    // ── THE TARGET IS NOT NECESSARILY THE PLAN, AND THIS IS WHERE THAT BITES ────
+    //
+    // `vet-report-cold-read`, 2026-09-17, a BLOCKING finding on the artifact: *"a target
+    // minted on the generation date, presented as the plan, with no marker anywhere above
+    // the fold"*. The trial block carries the full sentence — from what, when, and how far
+    // past the original window the trial has run — but it sits below the weight block and
+    // the at-a-glance strip, and this line is what a 60-second scan reads first. A vet
+    // reading "day 50 of 64" unqualified schedules a recheck against a plan that did not
+    // exist yesterday.
+    //
+    // FOUR WORDS, AND THE DETAIL STAYS IN THE BLOCK. The marker's job is only to stop the
+    // number reading as the original design; the moment it tried to carry the from-value
+    // or the date it would be competing with `breachBit` below, which is the most
+    // actionable sentence on the page.
+    //
+    // ⚠️ HEADLINE ONLY, DELIBERATELY. The "Trial diet" row at the foot of page 1 repeats
+    // "day 50 of 64" and is NOT marked, because it sits BELOW the block: by the time a
+    // reader reaches it the full clause is behind them. The rule is mark the number where
+    // the reader meets it BEFORE the explanation, never after — a third mention of one
+    // fact in one band is the defect this report has paid for elsewhere.
+    //
+    // The verb follows the arithmetic, same as the block's (`extended` / `shortened` /
+    // `changed`), so a shortened window is never announced as an extension here either.
+    const windowMovedBit = tb?.windowChange
+      ? ` (window ${h(tb.windowChange.direction)})`
+      : ''
     const outsideHere = tb ? tb.trialDaysOutsideRange.before + tb.trialDaysOutsideRange.after : 0
     const windowBit =
       outsideHere > 0 && tb
@@ -2437,7 +2489,7 @@ function headline(snap: ReportSnapshot): string {
           )} of the trial&rsquo;s ${num(tb.trialDaysElapsed)} days fall outside it</b>, so the count above is over that window, not over the trial.`
         : ''
     return `
-  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${breachBit}</div>`
+  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}${windowMovedBit}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${breachBit}</div>`
   }
   const hasChronic = snap.safetyFlags.some((f) => f.kind === 'chronicity')
   const chronicBit = hasChronic ? ' Ongoing pattern — see the safety flags above.' : ''
@@ -2523,6 +2575,20 @@ function dietTrialSection(snap: ReportSnapshot): string {
         )}.`
       : `${labels} &middot; ${trialDayPhrase(t, t.targetDurationDays, identityDay === fmtDayYear)}.`,
   ]
+  // ── §5.1 — THE WINDOW MOVED, AND WHEN (CUL-1041) ───────────────────────────
+  //
+  // It sits HERE, directly under the day phrase, because the sentence above it is the
+  // one it qualifies: "day 60 of 84" is byte-identical on a trial designed for twelve
+  // weeks and on an eight-week trial extended at day 56, and *that the signs had not
+  // resolved at eight weeks* is the finding the extension is evidence of (TE-4). The
+  // placement follows this block's own precedent — `allowedSetChangedAfterStart` says
+  // "the allowed list changed after the trial started" on the row holding the list,
+  // not on the headline.
+  //
+  // It is NOT on the page-1 headline. That line carries two conditional bold
+  // escalations already, for a truncated scope and for a protein breach in the diet,
+  // and the breach is the most actionable sentence on the page; a third dilutes them.
+  const windowMoveLine = trialWindowChangeLine(t, identityDay)
   // The food labels + provenance sub-line, only when the lead named the protein instead
   // of the labels (else the labels already lead and this would repeat them). The labels
   // ALWAYS ride this line so they never vanish; the provenance word rides it only when
@@ -2537,9 +2603,52 @@ function dietTrialSection(snap: ReportSnapshot): string {
         }.`,
   )
   if (t.indication) identity.push(`Indication: ${h(indicationLabel(t.indication))}.`)
-  if (t.vetName) identity.push(`Directed by ${h(t.vetName)}.`)
+  // "TRIAL directed by", because an unscoped attribution is BORROWED by the sentence
+  // beside it (CUL-1041, `vet-report-cold-read` 2026-09-17, verdict NOT READY on the
+  // extended-late artifact). This row now carries two attributable acts — starting the
+  // trial and moving its window — and a bare "Directed by Dr. A. Chen" names neither,
+  // so on a window that moved with NO recorded attribution the reader reaches for the
+  // only name in the paragraph: *"A vet concludes they authorised a 22-day-retroactive
+  // re-dating of a lapsed trial that they may never have seen. I would be signing off
+  // on my own supposed decision."* The two-sided rule (§5.1) makes the absence of an
+  // attribution silence; it cannot also make it immune to a neighbour. One word scopes
+  // the sentence to what it actually attributes.
+  if (t.vetName) identity.push(`Trial directed by ${h(t.vetName)}.`)
   if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason, t))}</b>`)
   rows.push(kv('Trial', identity.join(' ')))
+  // ── ITS OWN ROW, AND AFTER THE NAME — THE FOURTH COLD READ'S FINDING ────────
+  //
+  // Three rounds of copy repair fought this as a wording problem and it was a LAYOUT
+  // one. The reviewer, given the repaired page, still attributed the extension to the
+  // named vet at ~75–80% and diagnosed why: *"It separates them in the data and merges
+  // them on the page. This is a render defect, not a data defect."* Four mechanisms, all
+  // of them properties of one joined paragraph rather than of any sentence in it:
+  //
+  //   1. ONE PARAGRAPH. `identity.join(' ')` put the change and `Trial directed by <name>`
+  //      in a single unbroken prose run inside one `kv` cell, nine words apart.
+  //   2. THE CLASS HAS ONE MEMBER. "a vet" narrows the requester to a class of which
+  //      exactly one instance is named on the whole page.
+  //   3. ORDER. The disclaimer came BEFORE the name, so the name arrived last and
+  //      back-filled the slot the disclaimer had opened.
+  //   4. WEIGHT. A bolded claim, then an unbolded refusal, then a proper noun.
+  //
+  // Its own labelled row answers 1, 3 and 4 at once, and it is a far smaller change than
+  // it looks: the row EXISTS ONLY WHEN A WINDOW HAS MOVED, so every report that has never
+  // had one renders byte-identically to before this feature. Splitting the whole Trial
+  // row into labelled rows — which is what the reviewer proposes in general — is
+  // report-wide and remains out of scope; this splits out only what this PR added.
+  //
+  // IT SITS AFTER THE TRIAL ROW, not before, which is the point of it. The reviewer:
+  // *"Reverse them and the disclaimer is at least the reader's final state."* The vet's
+  // name is now the Trial row's last word and the record's own limit is the next thing
+  // read, instead of the other way round.
+  //
+  // AND IT UN-CAMOUFLAGES THE ONE HEDGE THAT CHANGES BEHAVIOUR. The same read found the
+  // block is ~40% epistemics, so a reader pattern-matches sentences opening with
+  // "Culprit" as boilerplate by the fourth one — *"over-hedging is the delivery mechanism
+  // for the attribution failure, not a separate complaint about it."* Under its own label
+  // this sentence is no longer the fifth of its kind in a run.
+  if (windowMoveLine) rows.push(kv('Window change', windowMoveLine))
 
   // B-704 §6 — the target-vs-label tension does NOT render a second disclosure line here.
   // It leads the SAFETY BAND above (a `protein_mismatch` flag), because a disclosure line
@@ -3282,6 +3391,183 @@ function articleFor(n: number): string {
   // so a `startsWith` test rendered "an 112-day window", and 112 is one tap away (84 +
   // §4.3's "Keep going — 4 more weeks"). Any number spoken starting with "eight" does.
   return String(n)[0] === '8' || n === 11 || n === 18 ? 'an' : 'a'
+}
+
+/**
+ * §5.1 — the window moved, and when. Empty string when it never did (CUL-1041).
+ *
+ * WHY THE SENTENCE SAYS "LAST MOVED" AND NOT "ON". Migration 068 stores the FIRST
+ * window (`target_duration_days_initial`) and the LAST change (`target_duration_set_at`),
+ * and on a trial extended twice those describe different events. D2(a) accepted losing
+ * the middle steps; it did not license asserting they never happened, and a 28 → 56 → 84
+ * trial rendered as "extended from 28 days on 19 Sep" claims a jump this record cannot
+ * support. Multi-move is not the edge case either: D5's own finding is that a GI owner
+ * meets `This trial is done` five times before twelve weeks, so the ladder produces
+ * exactly this shape. "Last moved" is true of one move and of five, and costs one word.
+ *
+ * WHY THE VERB FOLLOWS THE ARITHMETIC. `shortened` is reachable — TE-3 makes the
+ * mid-trial sheet forward-only, but the shipped milestone path and every pre-068 row
+ * predate that rule — and it is the direction §5.2 is about: a 56-day trial shortened
+ * to 28 and marked complete prints "Ran its course — the full window was completed."
+ * Calling a shortening "extended" would hide precisely the move that laundering needs
+ * hidden. `changed` is the honest word when the prior window was never recorded.
+ *
+ * WHY THE OVERRUN CLAUSE EXISTS. `daysPastTarget` is computed against the CURRENT
+ * target, so one tap turns "day 50 — 22 days past the 28-day window" into "day 50 of
+ * 64" — deleting the report's only staleness disclosure in the same breath that
+ * changes the stated window length. Executed by PR 0 (CUL-1036) against the real
+ * report, both scopes. §5.1's clause makes that derivable; this clause restores it as
+ * a STATED fact, at the moment it would otherwise be lost. Distinct from D7(c)'s
+ * freeze, which governs the coverage denominator and `belowCoverageFloor`, not this
+ * line.
+ *
+ * AND THE ATTRIBUTION IS A SEPARATE, UNBOLDED SENTENCE. "Owner reports" is the whole
+ * point of it (§5.1 #3): the app cannot verify a vet instruction and must never assert
+ * one. It is not a finding, so it does not take the finding's weight. When the box is
+ * unchecked there is no sentence at all — an unchecked box is SILENCE, never "the
+ * owner did this on their own" (the two-sided rule, the same one that makes a mark's
+ * absence not a verdict on off-diet foods). NULL and FALSE are indistinguishable here
+ * by construction: `windowChange.vetDirected` is `=== true` and nothing else.
+ */
+function trialWindowChangeLine(
+  t: NonNullable<ReportSnapshot['trial']>,
+  identityDay: (dayKey: string | null) => string,
+): string {
+  const wc = t.windowChange
+  if (!wc) return ''
+
+  const verb = wc.direction === 'changed' ? 'changed' : wc.direction
+  // THE FROM-NUMBER IS BOUND TO THE DIRECTION, NOT TO ITS OWN NON-NULLNESS. When the
+  // prior window EQUALS the current one the direction is `changed`, and "changed from
+  // 56 days" then asserts a move away from 56 on a trial whose window is 56 — the
+  // round-trip case (56 → 84 → 56, where the write path's COALESCE keeps the FIRST
+  // window and the current one has come back to it). Two changes happened and neither
+  // is a net move, so the sentence says the window changed and when, and names no
+  // number it would have to be wrong about.
+  const fromBit =
+    wc.fromDays !== null && wc.direction !== 'changed' ? ` from ${num(wc.fromDays)} days` : ''
+
+  // The "when", assembled from whatever the record actually holds. A date that does
+  // not parse is a corruption rather than a state any write path produces, but the
+  // clause is still rendered without it: hiding the move is the defect this sentence
+  // exists to close, and a floor may only ever move toward disclosing more.
+  const whenBit =
+    wc.movedOnDate !== null && wc.movedOnDay !== null
+      ? `${h(identityDay(wc.movedOnDate))} (day ${num(wc.movedOnDay)})`
+      : wc.movedOnDate !== null
+        ? h(identityDay(wc.movedOnDate))
+        : wc.movedOnDay !== null
+          ? `on trial day ${num(wc.movedOnDay)}`
+          : 'on a date the record does not hold'
+
+  // ── THE OVERRUN, AND THE ONE PLACE IT IS NOT ALREADY ON THE PAGE ────────────
+  //
+  // A SEPARATE SENTENCE anchored on the trial, not a trailing clause anchored on the
+  // move: `trial.ts` re-based the number after the adversarial pass showed the
+  // move-anchored one accuses an owner of a delay the record cannot evidence.
+  //
+  // AND IT FIRES ONLY INTO THE HOLE THE EXTENSION MAKES. When the trial is past its
+  // CURRENT target the day phrase above already says so — "day 70 — 30 days past the
+  // 40-day window" — and adding a second, larger overrun against the original window
+  // put two "past the window" counts in adjacent sentences, where the nearest
+  // antecedent for a pronoun was the wrong one of the two. The extension's whole effect
+  // is to move the trial back INSIDE its window and take that sentence away; this
+  // replaces it exactly there, and stays silent where nothing was taken.
+  const dayPhraseAlreadyDiscloses = t.trialDaysElapsed > t.targetDurationDays
+  const overrunBit =
+    wc.daysPastOriginalWindowNow !== null && !dayPhraseAlreadyDiscloses
+      ? ` The trial has run ${num(wc.daysPastOriginalWindowNow)} day${
+          wc.daysPastOriginalWindowNow === 1 ? '' : 's'
+        } past that original window.`
+      : ''
+
+  // Bolded like `stoppedReasonLine` two entries down this same array, and for the same
+  // reason: it is a clinical fact about the trial's shape that a 60-second scan must
+  // not step over. The attribution that follows is deliberately not bold.
+  const fact = `<b>Window ${verb}${fromBit}; last moved ${whenBit}.${overrunBit}</b>`
+  // "A VET", NOT "THE VET" (rls-privacy-reviewer, CUL-1041, 2026-09-17). The definite
+  // article has exactly one available referent on this page — `Trial directed by
+  // <name>`, four sentences down — and the record cannot support that bind:
+  // `diet_trials.vet_name` is WHOLE-TRIAL while `target_duration_vet_directed` is
+  // PER-CHANGE, and 068 deliberately declined a richer provenance vocabulary. So a
+  // window moved at an ER visit, by a specialist, or by a second practice printed as
+  // though the named clinician directed it — an unverifiable instruction attributed to
+  // an identifiable, non-consenting person who does not use this app and has no way to
+  // correct the record. The mirror case is the same bug inverted: vet_directed TRUE
+  // with vet_name NULL said "the vet's" about a clinician the record never names.
+  //
+  // The indefinite article breaks the bind at zero schema cost, and is the more honest
+  // sentence either way: the record says a vet was involved, never which one. Per C-28
+  // the rewrite re-entered the voice pass — "Owner reports" still leads, because that
+  // hedge is the whole point of the sentence (§5.1 #3).
+  //
+  // ⚠️ AND THE INDEFINITE ARTICLE ALONE WAS NOT ENOUGH, which a second cold read measured
+  // rather than predicted (2026-09-17, attribution-focused, verdict NOT SAFE at ~80%
+  // confidence). "a vet" had exactly ONE available antecedent on the page, twenty words
+  // later, and both clauses used the same verb: *"an indefinite noun phrase with one
+  // available antecedent in the same paragraph is not ambiguous to a reader — it's an
+  // anaphor"*, and the indefinite-then-named order is the exact sequence that closes one.
+  //
+  // So the sentence now severs the referent instead of merely declining to name it, and
+  // drops the shared verb. Two mechanisms, two repairs: `asked for` kills the lexical
+  // echo with `Trial directed by <name>`, and `Culprit cannot say which` says outright
+  // that the record cannot resolve it — which is what an indefinite article was being
+  // asked to imply and could not.
+  //
+  // WHAT THIS DOES NOT FIX, stated because the reviewer measured it too: with the box
+  // UNTICKED there is no sentence here at all, and silence next to a named vet is read as
+  // concurrence (~55–60%), invisibly, because a cold reader cannot see a sentence that is
+  // absent. THE ABSENCE IS NOW STATED — PM ruled brief C (a), 2026-09-17, a deliberate
+  // deviation from §5.1's "the clause is simply absent".
+  //
+  // Two independent cold reads measured the same thing on the unattested page: *"silence
+  // inherits the nearest named agent. A cold reader cannot see that a sentence present on
+  // another patient's report is missing from this one"* — ~55–60% confidence the reader
+  // still credits the named vet. The class the second one named is the decisive part:
+  // **absence of an attribution disclaimer was being rendered as attribution**, which is
+  // the two-sided rule's own hazard inverted, landing hardest on the record that deserves
+  // the most scepticism, because the weaker record got the less hedged page.
+  //
+  // IT DOES NOT BREAK THE RULE §5.1 EXISTS TO ENFORCE. That rule forbids rendering the
+  // absence as *"the owner did this on their own"* — a claim about the owner. This is a
+  // claim about the RECORD, and it attributes the change to nobody at all, which is why
+  // §8.8 ("with the box unchecked, no clause attributes the change to anyone") still
+  // holds with it on the page.
+  //
+  // The two arms are deliberately parallel — same subject, differing only in what is
+  // unknown — so a clinician reading two reports sees one sentence shape, not a presence
+  // and an absence they would have to notice the difference between.
+  //
+  // It fires whenever the window moved without attestation, NOT only when a vet is named.
+  // Conditioning it on `vetName` would make a sentence about the change appear and vanish
+  // on a field that is not about the change, and the reviewer's finding did not need a
+  // name to land: *"nothing on either page tells me trial length is an owner-editable
+  // field, and a vet's default prior is that changes to a vet-directed plan are
+  // vet-directed."* The report's own house pattern for this is Appendix D's unlogged
+  // medication — say what the record cannot say, rather than leaving the gap to be read.
+  //
+  // ⚠️ AND IT NAMES THE CAPABILITY, WHICH IS WHAT MAKES IT INFORMATIVE (fifth cold read,
+  // 2026-09-17). The first cut said only "Culprit cannot say who asked for the change",
+  // and a reader could not tell that apart from three different situations: the app has
+  // no field for it, it has one and it was blank, or it has one and the value is
+  // unattributable. Only the last two say anything about THIS trial. The reviewer:
+  // *"neither page ever says that an owner can move the window in the app. Without that
+  // one fact, 'cannot say who' is indistinguishable from 'we forgot to write it down',
+  // and I will read it as the latter every time."*
+  //
+  // So the sentence now supplies the fact the reader cannot: an owner CAN move it. That
+  // is true today through the shipped milestone one-tap, not only through the mid-trial
+  // door. Without it the clause was boilerplate about the app; with it the clause is
+  // information about this animal's plan.
+  //
+  // The two arms keep ONE SHAPE — <fact>; Culprit cannot say <what is unknown> — because a
+  // clinician reading two reports should meet the same construction and see only the
+  // unknown differ. A test pins that, and it caught the first cut of this very change
+  // breaking it.
+  const attribution = wc.vetDirected
+    ? ' Owner reports a vet asked for the change; Culprit cannot say which.'
+    : ' A trial\u2019s window can be changed by its owner; Culprit cannot say who asked for this one.'
+  return `${fact}${attribution}`
 }
 
 function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number, withYear = false): string {

@@ -551,6 +551,26 @@ export interface ReportDietTrialInput extends ReportFoodProteinInput {
    *  disclosure ("protein confirmed day N" when it falls after day 1, §7.4); it never
    *  versions the value (TP-3: one value, whole-trial, disclosed not versioned). */
   targetProteinSetAt?: string | null
+  /**
+   * CUL-1041 / migration 068 — §5.1's WINDOW PROVENANCE, three fields read as one.
+   *
+   * `targetDurationSetAt` is THE predicate: "did this window move?" is
+   * `targetDurationSetAt != null`, never a comparison of `targetDurationDaysInitial`
+   * against `targetDurationDays` (two equal numbers are also what a corrected typo
+   * looks like, and a trial created between 068 and the PR 2 write path lands with a
+   * NULL initial and a real move). On null, the other two are not read at all.
+   *
+   * `targetDurationDaysInitial` is the window the trial was DESIGNED against — the
+   * value immediately before the first RECORDED change. NULL means "not recorded" and
+   * is never rendered as a number.
+   *
+   * `targetDurationVetDirected` is TRUE only when the owner checked the box. NULL and
+   * FALSE are indistinguishable downstream and both mean SILENCE — an unchecked box is
+   * never rendered as "the owner did this on their own" (§5.1's two-sided rule).
+   */
+  targetDurationDaysInitial?: number | null
+  targetDurationSetAt?: string | null
+  targetDurationVetDirected?: boolean | null
   /** What the trial is FOR (migration 040). Renders verbatim to a clinician and
    *  decides whether an antibiotic course is worth naming (§7). */
   indication?: 'skin' | 'gi' | 'other' | null

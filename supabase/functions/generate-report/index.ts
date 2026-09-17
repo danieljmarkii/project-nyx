@@ -362,6 +362,12 @@ interface DietTrialRow {
   /** B-704 migration 053 — the owner's stored trial protein + when it was set. */
   target_protein: string | null
   target_protein_set_at: string | null
+  /** CUL-1037 migration 068 — the window this trial was DESIGNED against, when the
+   *  window last moved, and whether the owner said a vet directed it. All three are
+   *  nullable and are read only through `target_duration_set_at` (§5.1). */
+  target_duration_days_initial: number | null
+  target_duration_set_at: string | null
+  target_duration_vet_directed: boolean | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
   diet_trial_foods: DietTrialFoodRow[] | null
 }
@@ -948,6 +954,12 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
       // `trialTargetProtein`; null derives, exactly as today. Never permits (TG-1).
       targetProtein: r.target_protein ?? null,
       targetProteinSetAt: r.target_protein_set_at ?? null,
+      // CUL-1041 (migration 068) — §5.1's window provenance. `?? null` on all three,
+      // because PostgREST omits a column it cannot read and `undefined` would then
+      // reach a reader that switches on `!= null`.
+      targetDurationDaysInitial: r.target_duration_days_initial ?? null,
+      targetDurationSetAt: r.target_duration_set_at ?? null,
+      targetDurationVetDirected: r.target_duration_vet_directed ?? null,
       ...mapFoodProteins(fi),
       allowedFoods: (r.diet_trial_foods ?? []).map((f) => {
         const ffi = first(f.food_items)
@@ -1238,6 +1250,11 @@ export async function generateReportForPet(
           // stored-first naming (§7.4). Selecting it is inert until `generate-report` is
           // redeployed; that redeploy rides the standing B-494 gate, never on its own.
           'target_protein, target_protein_set_at, ' +
+          // CUL-1041 migration 068 — the window's provenance (§5.1). `set_at` is THE
+          // predicate for "did this window move?"; `initial` is never compared against
+          // the current target to decide that, and NULL means "not recorded" rather
+          // than a number. Selecting these is inert until `generate-report` redeploys.
+          'target_duration_days_initial, target_duration_set_at, target_duration_vet_directed, ' +
           `food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name), ` +
           // The allowed set (§3.2) — rung 1 of §5.3, and the only reason the report
           // can tell a vet-permitted treat from a contaminant. Soft-deleted rows are
