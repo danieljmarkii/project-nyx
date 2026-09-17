@@ -3,17 +3,19 @@
 <style>
   /* ============================================================
      Diet trial extension — mock ROUND 2 (low-fi).
-     Build contract: docs/nyx-trial-extension-requirements.md v2.0.
-     D1/D2/D4/D6/D7 RULED 2026-09-17. D3 and D5 outstanding.
+     Build contract: docs/nyx-trial-extension-requirements.md v2.1.
+     ALL SEVEN RULED 2026-09-17 (D1/D2/D4/D6/D7 first pass,
+     D3/D5 second). D5 ratifies today's constant, so CUL-367's
+     alternative stays drawn — deferred to Dr. Chen, not retired.
 
      Page convention (PM directive 2026-09-09): ONE proposal, and a
      reaction round is not a second side-by-side. The options the
      rulings retired have LEFT this page — git keeps them, at the
      round-1 commits on branch claude/diet-trial-extension-3ad803
      (D1's delta sheet, D6's card-body and inside-Replace doors).
-     What remains: the proposal, the two alternatives that are still
-     live decisions in labelled OPTION boxes, and the frames drawn to
-     be rejected. §0 maps each reaction to what moved.
+     What remains: the proposal, ONE labelled OPTION box (§7's, which
+     D5 deferred to CUL-367 rather than rejecting), and the frames
+     drawn to be rejected. §0 maps each reaction to what moved.
 
      Document chrome matches the house mock system (protein /
      med-strip / food-library rounds). DEVICE FRAMES stay light in
@@ -215,15 +217,15 @@
       <span>Culprit · Diet trial</span>
       <span>Mock round 2</span>
       <span>2026-09-17</span>
-      <span class="draft">5 ruled &middot; 2 outstanding</span>
+      <span class="draft">all 7 ruled</span>
     </p>
     <h1>Changing a running trial&rsquo;s window</h1>
     <p class="standfirst">
       A vet directs twelve weeks on day 53 of a 56-day elimination trial and the app has nowhere to put that
-      instruction. <strong>Round 1 put seven calls side by side; five came back ruled on 17 September,</strong>
-      so this round is one proposal with the retired options removed. <strong>Two are still open:</strong>
-      D3 (§6) and D5 (§7), each boxed beside the frame it competes with. Build contract:
-      <code>docs/nyx-trial-extension-requirements.md</code> v2.0.
+      instruction. <strong>Round 1 put seven calls side by side; all seven came back ruled on 17
+      September,</strong> so this round is one proposal with the retired options removed. The one frame still
+      boxed is §7's, and it is boxed because D5 <em>deferred</em> it to Dr. Chen rather than rejecting it.
+      Build contract: <code>docs/nyx-trial-extension-requirements.md</code> v2.1.
     </p>
   </header>
 
@@ -242,8 +244,8 @@
         <tr><td>D2</td><td rowspan="2"><em>&ldquo;I like the idea of adding that the trial was extended&rdquo;</em></td><td><b>(a)</b> three columns on <code>diet_trials</code></td><td>§5&rsquo;s proposal specimens are now the proposal, not an option. <b>Read as (a), not (b)&rsquo;s full history</b> &mdash; flagged on CUL-156, and cheap to change until PR 1.</td></tr>
         <tr><td>D4</td><td><b>(a)</b> ask, unchecked by default</td><td>§5&rsquo;s third specimen is current. The box stays optional, and its absence stays silence.</td></tr>
         <tr><td>D7</td><td><em>&ldquo;we&rsquo;ll go w your recommendation&rdquo;</em></td><td><b>(a)</b> disclose it</td><td>§8 is no longer a decision. It becomes <b>PR 1b</b>, the first behaviour change of the track, because it repairs something live today.</td></tr>
-        <tr><td>D3</td><td>not addressed</td><td><span class="tag option">outstanding</span></td><td>§6 unchanged. Gates PRs 2&ndash;3 only; the recommendation stands at forward-only.</td></tr>
-        <tr><td>D5</td><td><em>&ldquo;I&rsquo;ll go w the recommendation&rdquo;</em></td><td><span class="tag option">outstanding</span></td><td><b>This brief carried none, deliberately</b> &mdash; the numbers are Dr. Chen&rsquo;s ratification. §7 keeps both frames and now states the recommendation D1&rsquo;s ruling made available.</td></tr>
+        <tr><td>D3</td><td rowspan="2"><em>&ldquo;I&rsquo;ll defer to the recommendation from the product team for the rest&rdquo;</em></td><td><b>(a)</b> forward-only in v1</td><td>§6 stands as the reason. The sheet offers no total at or below the current window, so the laundering path is closed by construction rather than by a render rule.</td></tr>
+        <tr><td>D5</td><td><b>(a)</b> ratify <code>+14</code> as-is</td><td>§7&rsquo;s option stays drawn and is relabelled <b>deferred</b>: CUL-367&rsquo;s finding stands, PR 5 is deferred rather than cancelled, and Dr. Chen still owns the numbers. <b>The first pass could not be ruled</b> &mdash; that brief carried no recommendation, deliberately. D1&rsquo;s ruling is what made one available.</td></tr>
       </tbody>
     </table>
     </div>
@@ -539,7 +541,7 @@
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">06</span><h2>D3 &mdash; why backward is a different act &middot; <em style="font-style:normal;color:var(--amber-ink)">outstanding</em></h2></div>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Why backward is a different act &mdash; D3 ruled forward-only</h2></div>
     <div class="col">
       <p>
         The report&rsquo;s completed-trial line is computed against the <strong>current</strong> window
@@ -559,16 +561,18 @@
     </div>
 
     <div class="callout">
-      <strong>Not an argument against ever shortening.</strong> An owner who typed 56 when the vet said 28
-      has a real correction to make &mdash; and an honest existing path for it (<em>Replace the trial</em>,
-      which records a <code>stopped_reason</code>). D3(a) keeps v1 forward-only and closes this with no new
-      render logic.
+      <strong>Ruled (a) on 17 September: forward-only in v1.</strong> This is not an argument against ever
+      shortening &mdash; an owner who typed 56 when the vet said 28 has a real correction to make, and an
+      honest existing path for it (<em>Replace the trial</em>, which records a <code>stopped_reason</code>).
+      It is an argument that shortening cannot ride the extension path while the completed-trial line is
+      computed against a mutable window. <strong>A future spec that re-opens this owes the render rule
+      first, not a UI control.</strong>
     </div>
   </section>
 
   <!-- ══════════════════════════════════════════════════════ -->
   <section>
-    <div class="sec-head"><span class="sec-num">07</span><h2>D5 &mdash; the GI preset &middot; <em style="font-style:normal;color:var(--amber-ink)">outstanding</em></h2></div>
+    <div class="sec-head"><span class="sec-num">07</span><h2>The GI preset &mdash; D5 ratified as-is, CUL-367 still open</h2></div>
     <div class="col">
       <p>
         CUL-367 has been waiting since 2026-07-26 for a case. Here it is: the worked trial is
@@ -619,15 +623,15 @@
           </div>
         </div>
         <figcaption>
-          <b>Option &mdash; the preset reaches the named total</b>
-          <em>Option, drawn for the decision, still live.</em> The button carries the window to the three
+          <b>Deferred to CUL-367 <span class="tag option">not built in v1</span></b>
+          <em>Drawn because it is deferred, not rejected.</em> The button would carry the window to the three
           months the note beside it already names, exactly as <code>+28</code> already carries
-          skin&rsquo;s 8wk&rarr;12wk. The numbers stay Dr. Chen&rsquo;s ratification, as they have been
-          since CUL-367 was filed &mdash; <strong>but D1&rsquo;s ruling changed what is at stake.</strong>
-          The totals sheet now reaches any window on any day, so the ladder is no longer the only path to
-          twelve weeks. That is enough to recommend <strong>ratifying +14 as-is for v1</strong> and leaving
-          CUL-367 open, rather than moving a clinical default without a vet. The five stop-button exposures
-          CUL-367 counts are real, unfixed by that, and deferred to the ratification.
+          skin&rsquo;s 8wk&rarr;12wk. <strong>D5 ratified today&rsquo;s <code>+14</code> for v1</strong>,
+          because D1&rsquo;s totals sheet now reaches any window on any day &mdash; the ladder is no longer
+          the only path to twelve weeks, which removes the urgency that would justify moving a clinical
+          default without a vet. <strong>CUL-367&rsquo;s finding stands and is not fixed by that:</strong> a
+          GI owner still meets <em>This trial is done</em> five times before twelve weeks where a skin owner
+          meets it twice. Dr. Chen owns the numbers; this frame is what they would be ratifying.
         </figcaption>
       </figure>
     </div>

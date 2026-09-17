@@ -1,13 +1,14 @@
 # Diet-trial extension — changing a running trial's window
 
-**Version:** 2.0 (BUILD-READY for PRs 0, 1, 1b and 4 — D3 and D5 outstanding) | Last Updated: 2026-09-17
+**Version:** 2.1 (BUILD-READY — every decision ruled) | Last Updated: 2026-09-17
+**Changed at 2.1 (2026-09-17, second pass):** **D3 and D5 ruled to the team's recommendations** — the
+window is forward-only in v1, and `extensionDays('gi') = 14` is ratified as-is with CUL-367 left open for
+Dr. Chen. **Every decision in §6 is now closed and the whole PR plan is unblocked.**
 **Changed at 2.0 (2026-09-17 PM reactions):** **D1, D2, D4, D6 and D7 are RULED** — each brief keeps its
 options verbatim and carries a ⚠ stamp. The sheet is denominated in totals (D1a); the record gains three
 columns on `diet_trials` (D2a) including the vet-directed boolean (D4a); the door is the header's `Manage`
 (D6a); and **D7(a) makes the coverage disclosure PR 1b, the track's first behaviour change**, because it
-repairs something live today. **D3 was not addressed** and gates PRs 2–3. **D5 could not be ruled as
-answered** — it deliberately carried no recommendation — and §6 now offers one that only D1's ruling made
-available.
+repairs something live today. D3 and D5 were carried to 2.1.
 **Changed at 1.1 (2026-09-16):** the `adversarial-reviewer` pass returned **FAIL** and falsified draft 1's TE-6.
 Coverage is *not* untouched by an extension (§5.4), so TE-6 is now a requirement rather than an assertion,
 §5.3 is narrowed to the exposure half that held, §5.4–§5.6 are new, and **D7 is new and is the most serious
@@ -83,10 +84,11 @@ trial, with its end date shown, and the app does the subtraction. The milestone'
 more weeks` one-tap is **unchanged** — there, the owner has not been handed a number and a named default is
 the correct affordance (§4.3, and Jordan's review of it). Two moments, two registers, one write.
 
-**TE-3 · The window may move forward freely. Moving it backward is a different act.** Extending is
-ordinary. Shortening can convert a trial that was stopped early into one that "ran its course" on the vet
-report — see §5.2, which is a laundering path, not a cosmetic issue. **D3 rules how shortening is handled;
-until it is ruled, the sheet offers extension only.**
+**TE-3 · The window moves forward only. (D3a, ruled 2026-09-17.)** Extending is ordinary. Shortening can
+convert a trial that was stopped early into one that "ran its course" on the vet report — see §5.2, which
+is a laundering path, not a cosmetic issue — so the sheet offers no total at or below the current window,
+and shortening routes to `Replace the trial`, which ends the trial honestly and records a `stopped_reason`.
+A future spec that re-opens this owes §5.2 a render rule first, not a UI control.
 
 **TE-4 · A window that moved is a clinical fact, and the record must keep it.** `target_duration_days` is
 overwritten in place, so today an 8-week trial extended on day 56 is byte-identical, everywhere, to a
@@ -393,10 +395,12 @@ mirror, its `LOCAL_WIPE_TABLES` entry and its sync pass. (c) is what ships today
 **Consequence:** (a) or (b) gate the report work; (c) closes §5.1 and leaves the vet report unable to
 distinguish a 12-week trial from an extended 8-week one, permanently.
 
-### D3 — May the window move backward at all? — **OUTSTANDING**
+### D3 — May the window move backward at all?
 
-> ⚠ **NOT RULED.** Not addressed in the 2026-09-17 reactions. It gates PR 2 and PR 3 (whether the sheet
-> offers totals below the current one), and nothing else. Recommendation stands at (a) forward-only.
+> ⚠ **RULED 2026-09-17 — (a) forward-only in v1.** PM deferred to the team's recommendation. The sheet
+> offers no total at or below the current window; shortening routes to `Replace the trial`, which already
+> ends the trial honestly and records a `stopped_reason`. §5.2's laundering path is closed by construction
+> rather than by a new render rule, and TE-3 stops being conditional.
 
 **Deciding:** whether *Change the window* offers totals below the current one.
 **Options:**
@@ -425,18 +429,22 @@ different clinical facts, and Dr. Chen reads the report to decide what to do nex
 a deliberate surface.
 **Consequence:** (a) adds one boolean to D2's column set and one clause to the report. (b) drops both.
 
-### D5 — The GI extension arithmetic (CUL-367, now observed) — **OUTSTANDING**
+### D5 — The GI extension arithmetic (CUL-367, now observed)
 
-> ⚠ **NOT RULEABLE AS ANSWERED.** PM: *"I'll go w the recommendation"* — but this brief deliberately
-> carries **none**, because the numbers are Dr. Chen's ratification and CUL-367 has said so since
-> 2026-07-26. Surfaced rather than resolved by guessing.
+> ⚠ **RULED 2026-09-17 — (a) ratify as-is for v1.** Ruled on the second pass, to the recommendation that
+> **only D1's ruling made available**: the totals sheet reaches any window on any day, so the GI ladder is
+> no longer the only path to twelve weeks, and that removes the urgency that would have justified moving a
+> clinically load-bearing default without a vet.
 >
-> **What changed since the brief was written:** D1's ruling gives every owner a way to reach any total on
-> any day, which is what the GI ladder could not do. That weakens the case for touching a clinically
-> load-bearing default without a vet, and it is now enough to offer a recommendation the brief could not:
-> **(a) ratify as-is for v1**, ship the sheet, and leave CUL-367 open for Dr. Chen. The five stop-button
-> exposures CUL-367 counts are a real finding and are not fixed by (a) — they are deferred to the
-> ratification, with the sheet as the escape hatch in the meantime.
+> **What this ruling does NOT do, stated plainly so it is not mistaken for a close:** CUL-367's finding
+> stands. A GI owner still meets `This trial is done` five times before twelve weeks where a skin owner
+> meets it twice, and the note beside the button still says "around three months" above a button offering
+> two weeks. **PR 5 is deferred, not cancelled**, and CUL-367 stays open for Dr. Chen's ratification with
+> the mid-trial sheet as the escape hatch in the meantime.
+>
+> The first pass could not be ruled: *"I'll go w the recommendation"* arrived against a brief that
+> deliberately carried **none**, and inventing one would have attributed a clinical call to the PM that
+> nobody made. The options below are the first pass's, verbatim.
 
 **Deciding:** whether `extensionDays('gi') = 14` survives, given that the worked case needs **two** taps
 **two weeks apart** — and two more exposures of `This trial is done` — to honour a single vet instruction.
@@ -496,22 +504,22 @@ that ruling, if it is the ruling, is made rather than defaulted into.
 
 ---
 
-## 7. PR plan — five rulings in; D3 gates PRs 2–3, D5 gates PR 5
+## 7. PR plan — every decision ruled; the whole plan is unblocked
 
-Five PRs, one per session, in this order. **Nothing here starts before the rulings**; PR 0 is the only one
-that is ruling-independent.
+Five PRs, one per session, in this order. **Every ruling is in as of 2026-09-17**, so the order below is a
+sequencing constraint rather than a gate. PR 5 is the one exception: deferred by D5, not cancelled.
 
 | PR | What | Gated on |
 |---|---|---|
 | **0** | `guards/` + tests pinning today's behaviour: no mid-trial route to `trial_extend` in any state; the `nextTargetDays` clamp; §5.2's shortening render and §5.4's gate flip each as a **failing** test that documents the hazard | — |
 | **1** | Migration: D2's three columns, additive + nullable + backfill `target_duration_days_initial = target_duration_days` for the 1 live row. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer` | ✅ D2a, D4a |
 | **1b** | **§5.4's repair** — D7(a)'s disclosure: wire `range.closedByOverrun` to every surface stating a coverage figure. Ahead of the door, because the door multiplies the defect, and it stands alone because it fixes a live one | ✅ D7a |
-| **2** | The predicate + write path: `changeTrialWindow` beside `extendTrial` (one arithmetic home — `nextTargetDays` is not forked), the paired-null provenance contract, the local mirror, **the concurrent-extension LWW case (§5.6)** | ✅ D2a · ⚠ **D3** |
-| **3** | The door + the sheet: `Manage`, `TrialWindowSheet`, the `trial_refusal` re-point, `ChipGroup` of **totals**, the end-date line, the vet-directed box, §4.3's forward line | ✅ D1a, D4a, D6a · ⚠ **D3** |
+| **2** | The predicate + write path: `changeTrialWindow` beside `extendTrial` (one arithmetic home — `nextTargetDays` is not forked), the paired-null provenance contract, the local mirror, **the concurrent-extension LWW case (§5.6)**, and the forward-only refusal | ✅ D2a, D3a |
+| **3** | The door + the sheet: `Manage`, `TrialWindowSheet`, the `trial_refusal` re-point, `ChipGroup` of **totals** (none at or below the current day), the end-date line, the vet-directed box, §4.3's forward line | ✅ D1a, D3a, D4a, D6a |
 | **4** | The vet report: §5.1's sentence, the attribution clause, **a `deno test` over `render.test.ts` with a mutated `targetDurationDays` (§5.6's untested half)**, `generate-report` redeploy (**note the standing deploy discipline — the function is at v15 and the ledger is `pending`**) | ✅ D2a, D4a · PR 1 |
-| **5** | D5's constant, if ratify-as-is is rejected | ⚠ **D5** (Dr. Chen) |
+| **5** | D5's constant — **deferred, not cancelled.** Owned by CUL-367, unblocked by Dr. Chen's ratification, never by this spec | CUL-367 (Dr. Chen) |
 
-**PRs 0, 1, 1b and 4 are unblocked today. PRs 2 and 3 wait on D3; PR 5 waits on D5.**
+**PRs 0 through 4 are unblocked. PR 5 is deferred to CUL-367.**
 
 **Adversarial review is mandatory on PRs 1b, 2 and 4** — the write moves a denominator the vet report
 renders, which is the clinically load-bearing class, and §5.4 is what happens when that is assumed rather

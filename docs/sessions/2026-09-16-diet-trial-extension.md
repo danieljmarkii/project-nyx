@@ -192,3 +192,52 @@ Re-read the still-open briefs after every ruling round rather than only the ones
 left the page — D1's delta sheet, D6's card-body and inside-Replace doors — with git named as their home;
 D3's and D5's alternatives stayed in labelled option boxes because they are still live; and §0 became a
 ledger mapping each reaction to what it ruled and what moved.
+
+---
+
+## Close-out, 2026-09-17 — every decision ruled, PR merged
+
+Same session, second resume. The PM deferred D3 and D5 to the team's recommendations:
+
+- **D3 (a) forward-only in v1.** The sheet offers no total at or below the current window; shortening
+  routes to `Replace the trial`, which already ends the trial honestly and records a `stopped_reason`.
+  §5.2's laundering path is closed **by construction** rather than by a new render rule, and TE-3 stops
+  being conditional.
+- **D5 (a) ratify `extensionDays('gi') = 14` as-is for v1.** Ruled to the recommendation that only D1's
+  ruling made available. **PR 5 is deferred, not cancelled** — CUL-367's finding stands (a GI owner still
+  meets `This trial is done` five times before twelve weeks where a skin owner meets it twice), Dr. Chen
+  still owns the numbers, and the mid-trial sheet is the escape hatch until they rule.
+
+Spec at **v2.1**, mock republished, all seven ⚠ stamps in place with each brief's options kept verbatim
+underneath. Merged via #865.
+
+### The shape of the whole thing, in one paragraph
+
+A question — *"check me, is there a way to extend a diet trial?"* — that turned out to have the answer
+*"yes, and you cannot reach it."* The capability had shipped in B-417 PR 6 and was gated behind
+`overrunDays >= 0` in every state, so the only mid-trial control an owner had was one that split their
+clinical episode in two. Specifying the missing door then surfaced a defect that had nothing to do with
+doors: one tap of the *existing* extension moves a coverage denominator and flips a reassurance gate on the
+vet report, with no new evidence and no disclosure anywhere. That defect now ships **first**, as PR 1b,
+ahead of the feature that prompted its discovery.
+
+### Three lessons, in descending order of how much they generalise
+
+1. **A definition is not a denominator.** TE-6 was written from §5.1's definitions, which say coverage is
+   days-over-days-elapsed. That is true, and it was irrelevant: a clip three hundred lines away in
+   `computeTrialFacts` had quietly made the target a bound on "days elapsed". Reading the definition of a
+   number tells you what it is *supposed* to be; only reading every bound on it tells you what moves it.
+2. **A ruling on one brief can change the answer to another, not just unblock it.** D5's brief carried no
+   recommendation on 09-16 because the ladder was the only path to twelve weeks and the numbers were a
+   vet's call. D1's ruling gave the ladder a competitor, and the recommendation became available with no
+   vet input at all. Re-read the still-open briefs after every ruling round, not only the ones answered.
+3. **An auto-attachment is a commitment nobody made.** The GitHub↔Linear integration attached #865 to
+   CUL-156 off the body mention, which per CUL-803 would have closed the issue on merge with two decisions
+   open and zero code written. **Any DISCOVERY PR that names its issue in the body gets this**, so the
+   attachment comes off when the PR is opened, not when someone notices the issue closed early.
+
+### What the next session picks up
+
+**PR 0 and PR 1b**, in that order — the guards pinning today's behaviour (including §5.4's gate flip as a
+*failing* test), then the disclosure that repairs it. Both are ruled, neither waits on anything, and PR 1b
+is the first behaviour change the track ships.
