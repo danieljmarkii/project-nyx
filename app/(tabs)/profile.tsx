@@ -55,7 +55,7 @@ import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { useWidgetSlotLabel } from '../../hooks/useWidgetSlotLabel';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
-import { extendTrial } from '../../lib/dietTrialSetup';
+import { extendTrial, TrialWindowRefused } from '../../lib/dietTrialSetup';
 import { getDietTrialProgress } from '../../lib/analytics';
 import { dayKeyToLocalDate, petPronouns, toLocalDayKey } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
@@ -448,11 +448,33 @@ export default function ProfileScreen() {
       });
       reloadTrial();
     } catch (e) {
-      console.error('[DietTrial] extend failed:', e);
-      Alert.alert(
-        'That didn’t save',
-        'The trial is still running on its current window. Have another go in a moment.',
-      );
+      // A REFUSAL IS NOT A FAILURE — IT MEANS THIS CARD IS STALE (CUL-1039).
+      //
+      // Since the write path became one clamp, this tap can be refused where it
+      // used to be a harmless no-op, and EVERY refusal arm says the same thing
+      // about the same fact: the row is not what the card was rendered from.
+      // `not_forward` — the stored window already meets or beats what this tap
+      // would set, so the owner's intent is already satisfied. `not_running` — the
+      // trial was ended, here or on another device. `not_found` — the row is gone.
+      // In all three the write correctly did nothing and the fix is the same: re-read,
+      // and let the card say what is true.
+      //
+      // So no alert on any of them. The existing copy is wrong twice over on the
+      // arms it used to reach: "The trial is still running on its current window"
+      // is FALSE when the refusal is `not_running`, and "have another go in a
+      // moment" is advice to repeat something that cannot succeed, on every arm.
+      // Re-routing without re-reading the copy is how a true string becomes a false
+      // one (C-28) — so the string keeps the one job it is still true for, a write
+      // that actually failed.
+      if (e instanceof TrialWindowRefused) {
+        reloadTrial();
+      } else {
+        console.error('[DietTrial] extend failed:', e);
+        Alert.alert(
+          'That didn’t save',
+          'The trial is still running on its current window. Have another go in a moment.',
+        );
+      }
     } finally {
       setExtendingTrial(false);
     }

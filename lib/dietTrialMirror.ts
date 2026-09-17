@@ -104,10 +104,11 @@ export const DIET_TRIAL_SCHEMA_SQL = `
     -- anything building from the DDL constants, the upgrade reaches an already
     -- installed device (the 048 / 053 / 066 precedent).
     --
-    -- DECLARED, NOT YET SYNCED. Nothing reads or writes these three yet: the
-    -- hydrate select, the push mapper and the write path are PR 2's (spec §7).
-    -- They are here now so PR 2's local UPDATE cannot throw "no such column" on
-    -- an upgrading device.
+    -- WIRED END TO END BY CUL-1039 (PR 2): changeTrialWindow writes all three,
+    -- dietTrialRowToRemote pushes them (coercing vet_directed INTEGER -> BOOLEAN)
+    -- and hydrateDietTrials pulls them back (BOOLEAN -> INTEGER). Both are explicit
+    -- column lists, so both are asserted in the test file against the set DERIVED
+    -- from this DDL, never against a list re-typed beside it.
     target_duration_days_initial INTEGER,
     target_duration_set_at       TEXT,
     target_duration_vet_directed INTEGER,
@@ -260,6 +261,14 @@ export interface LocalDietTrial {
   // migration 053 (B-704) — the owner-stated trial protein + its provenance stamp.
   target_protein: string | null;
   target_protein_set_at: string | null;
+  // migration 068 (CUL-1037) — WINDOW PROVENANCE, written by `changeTrialWindow`
+  // (CUL-1039). `vet_directed` is INTEGER here and BOOLEAN on the server, which is
+  // the one coercion this mapper has ever needed; `days_initial` is NULL for a
+  // trial created between 068's apply and the write path shipping, and NULL means
+  // NOT RECORDED, never a number.
+  target_duration_days_initial: number | null;
+  target_duration_set_at: string | null;
+  target_duration_vet_directed: number | null;
   // CUL-899 VV-1 (migration 066) — PROVENANCE: the visit this trial came from.
   // Never a source of numbers: `started_at`, the coverage denominators and the
   // adherence counts stay the trial's own (CUL-746: one population, one owner;
@@ -316,15 +325,32 @@ export interface RemoteDietTrialUpsert {
   // path (PR 3), never here.
   target_protein: string | null;
   target_protein_set_at: string | null;
+  // migration 068 (CUL-1039). `set_at` forwarded AS-IS (an ISO/UTC string on the
+  // wire, like every other stamp here); `vet_directed` is coerced INTEGER →
+  // BOOLEAN because SQLite has no boolean type and the server column is one. The
+  // write contract — set_at stamped on every change, days_initial captured once —
+  // is enforced at the write path (`changeTrialWindow`), never here.
+  target_duration_days_initial: number | null;
+  target_duration_set_at: string | null;
+  target_duration_vet_directed: boolean | null;
   vet_visit_id: string | null; // CUL-899 VV-1 — provenance only (migration 066)
   created_at: string;
   updated_at: string;
 }
 
-// Trial → upsert payload. No booleans to coerce; the guard this mapper encodes is
-// COMPLETENESS — it forwards every server column and drops the local-only
-// `synced` / `sync_error`, so no column silently desyncs (the B-057
-// placeholder/param-drift class, asserted by the key-set test).
+// Trial → upsert payload. The guard this mapper encodes is COMPLETENESS — it
+// forwards every server column and drops the local-only `synced` / `sync_error`,
+// so no column silently desyncs (the B-057 placeholder/param-drift class, asserted
+// by the key-set test, which derives its expected set from the executed DDL).
+//
+// ONE COERCION, ADDED BY CUL-1039 (migration 068): `target_duration_vet_directed`
+// is INTEGER locally and BOOLEAN on the server. `1 → true`, `0 → false`, `NULL →
+// null`, and NULL is NOT normalised to false in either direction. That is not
+// pedantry about types: §5.1's two-sided rule makes NULL and false
+// indistinguishable DOWNSTREAM — both are silence, and neither may render as "the
+// owner did this on their own" — but a mapper that invented a `false` where the
+// column holds NULL would be manufacturing an answer to a question the owner was
+// never asked, and the column is not where that call gets made.
 export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert {
   return {
     id: row.id,
@@ -346,6 +372,10 @@ export function dietTrialRowToRemote(row: LocalDietTrial): RemoteDietTrialUpsert
     transition_started_at: row.transition_started_at,
     target_protein: row.target_protein,
     target_protein_set_at: row.target_protein_set_at,
+    target_duration_days_initial: row.target_duration_days_initial,
+    target_duration_set_at: row.target_duration_set_at,
+    target_duration_vet_directed:
+      row.target_duration_vet_directed == null ? null : row.target_duration_vet_directed === 1,
     vet_visit_id: row.vet_visit_id, // CUL-899 — forwarded as-is; NULL until VV-3 sets it
     created_at: row.created_at,
     updated_at: row.updated_at,
