@@ -119,6 +119,8 @@ const ALLOWED: Record<string, string> = {
     'DECLARES the local mirror columns (migration 068’s "also owed"), so the PR 2 write path has somewhere to write. Declaration only — no read, no write.',
   'lib/dietTrialMirror.ts':
     'The local CREATE TABLE beside localSchema’s migration rows, same reason, plus the push mapper that carries an owner’s window change up to the server.',
+  'lib/dietTrial.ts':
+    'THE COVERAGE FREEZE (CUL-1038, PR 1b). Reads targetDurationDaysInitial for exactly ONE question — which window the printed coverage RATIO is measured over — through `trialCoverageWindowEndDayIndex`, so no owner action can move a claim about the record (TE-6, §5.4). It reads NEITHER of the other two: set_at is "did the window move", which this module never asks, and vet_directed is an attribution it must never see, because a claim about a third party has no business inside a denominator. The VERDICT deliberately does not read the column either — `leastReassuring` takes the harsher of the frozen reading and one over the live window, so freezing cannot become a way to exclude gaps. Nothing here renders; every string the owner or clinician sees is built a layer out.',
   'lib/dietTrialSetup.ts':
     'THE WRITER (CUL-1039, PR 2). changeTrialWindow stamps COALESCE(initial, target_duration_days) so the FIRST window survives every later move, writes set_at on every change because it is the predicate, and assigns vet_directed unconditionally from THAT call’s own checkbox — never leaving a prior true in place for a later owner-initiated move.',
   'lib/sync.ts':

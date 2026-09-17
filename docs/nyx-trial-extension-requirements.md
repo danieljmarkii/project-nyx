@@ -1,6 +1,27 @@
 # Diet-trial extension — changing a running trial's window
 
-**Version:** 2.2 (BUILD-READY — every decision ruled) | Last Updated: 2026-09-17
+**Version:** 2.5 (BUILD-READY — every decision ruled, TE-6 included; PR 1b SHIPPED) | Last Updated: 2026-09-17
+**Changed at 2.4 (2026-09-17, after 1b's mandatory adversarial pass returned FAIL — CUL-1038):**
+**D7(c) is RE-CUT: the RATIO and the VERDICT are two questions.** A plain freeze closed §5.4's
+reassuring direction and opened its mirror — pinning the denominator at the designed window EXCLUDED
+un-logged days inside the window currently in force and manufactured a clean read (`28 of 60
+does_not_support` → `28 of 28 supports`, executed on the rendered page). **PM ruled (a):** the printed
+ratio stays over the designed window and no owner action moves it; `interpretability` is the **less
+reassuring** of that reading and one taken over the window in force. Neither window gets to be the
+generous one, which is what closes both directions at once. §5.4 gains a second ⚠ block, and **TE-6 is
+amended: the rule is DIRECTIONAL** (PM, same day) — an owner action may move a claim toward more
+disclosure, never toward less. The undirected form is unachievable, and that is a property of the problem,
+proven on both code versions.
+
+**Changed at 2.3 (2026-09-17, after PR 1b shipped — CUL-1038):** **D7(c) is BUILT, reads-only**, and the
+plan gains **PR 1c (CUL-1051)** — a ratchet migration that blocks PR 2. The coverage
+denominator is frozen at `target_duration_days_initial` and the overrun is disclosed on the vet report;
+PR 0's four §5.4 markers are promoted to plain tests. §5.4 gains a ⚠ **REPAIRED** block; §7's PR table
+marks 1b shipped. Three things the build settled that the spec did not say: the freeze is scoped to a NEW
+predicate (`trialCoverageWindowEndDayIndex`) and `trialTargetEndDayIndex` deliberately keeps reading the
+live target, because D7(c) splits BELIEF from CLAIMS; `startDietTrial` must STAMP the column at creation
+or the freeze covers no trial started after 068; and the card's own overrun sentence stays B-592's, since
+the card is design-locked and the disclosure this PR shipped is the report's.
 **Changed at 2.2 (2026-09-17, after PR 0 shipped):** **D7 RE-RULED to (c) — freeze AND disclose.** PR 0
 (CUL-1036, #867) executed D7(a)'s premises and falsified two: (a) is a render and cannot move the gates it
 was ruled to repair, and the defect is neither reachable at the milestone nor mid-window — it is
@@ -108,7 +129,26 @@ resolve it — but it may never raise "should this trial be longer?" on its own.
 judgment; the product's job is to *record* the vet's, not to issue one. The mid-trial control is therefore
 a **door the owner opens**, never a prompt, a badge, or a nudge (Principles 3 and 4).
 
-**TE-6 · An extension may not move a claim about the record that the record did not change.** This is a
+**TE-6 · An extension may not move a claim about the record TOWARD REASSURANCE when the record did not
+change.** ⚠ **The direction was RULED 2026-09-17 (PM), after 1b's adversarial pass proved the undirected
+form unachievable.** Draft 1 stated the rule without a direction. That cannot be built: a record with a
+perfect designed window followed by silence, then extended, and the mirror the pass found are
+*structurally identical* and demand opposite things of the gate — freeze it and the reassuring direction
+re-opens, follow the live window and the withdrawing one does. Executed on both code versions, so this is
+a property of the problem rather than of a fix.
+
+So the rule takes the direction the rest of this repo already uses: **an owner action may move a claim
+toward MORE disclosure, never toward less.** §5.2 states it for the exposure floor (*a floor may only ever
+move toward disclosing more*), `clinical-guardrails` states it for every claim gate, and C-4 names
+precedence as the only honest resolution when two counts over one population disagree. A claim withdrawn
+costs the owner; a claim granted over a month of silence costs the patient.
+
+**What that buys, mechanically (D7c as split, §5.4):** the RATIO a surface prints is measured over the
+designed window and moves in neither direction; the VERDICT is the less reassuring of that reading and one
+over the window in force. The residual — the withdrawing direction still moves — is recorded as an
+executable expected failure in `guards/trialWindow.test.ts`, not hidden.
+
+The rest of this rule is unchanged, and is still a
 **requirement on the build, not a description of today** — stated as an assertion in draft 1 and falsified
 by the adversarial pass the same session. On an **un-ended trial past its target**, the B-422 coverage tail
 clip bounds the coverage denominator at the *current* target (`lib/dietTrial.ts:2201-2206`), so one
@@ -314,6 +354,99 @@ on trial day 50:
 > `untrackedDaysBeforeFirstLog` fabricated at 28 so the page asserts the first 28 days pre-date any
 > logging. They are ordinary un-logged trial days. That is the head clip's own documented forbidden
 > direction, re-entered through the target. D7(c)'s freeze closes it; D7(a) would not have.
+
+> **⚠ REPAIRED 2026-09-17 by PR 1b (CUL-1038), D7(c).** Everything above is the record of what the app
+> did; this is what it does now. The coverage clip bounds on a NEW predicate,
+> `trialCoverageWindowEndDayIndex`, which reads `target_duration_days_initial` (migration 068, backfilled
+> for every live row) and falls back to the live target only where nothing recorded the designed window.
+> Executed on the rendered page, both scopes: **default 10 of 28 → 10 of 28; since-visit 0 of 9 → 0 of 9**,
+> both still *"too sparse to read that as a clean elimination"*, across the same tap. The reversed direction
+> and the head-clip ceiling hold too, and the head clip closes *because* of the freeze rather than beside it.
+>
+> **Three things the build settled that this section did not say:**
+>
+> 1. **The freeze is scoped to a new predicate, not to `trialTargetEndDayIndex`.** That function, and
+>    `trialEffectiveEndDayIndex` / `isTrialRunning` through it, still read the live `target_duration_days`
+>    and must. D7(c) splits BELIEF (is this trial running — an extension is *supposed* to move it, and
+>    detector suppression reads it) from CLAIMS ABOUT THE RECORD (TE-6 — no owner action may move them).
+>    Freezing both would have withdrawn belief from the trial the owner just extended.
+> 2. **The device HYDRATES the column and may not WRITE it — and that is the shape the code review forced,
+>    not the shape 1b started in.** 068's backfill covers every row that existed when it applied and nothing
+>    after, so the first cut of 1b stamped the column at creation and forwarded it on the push. The
+>    `code-reviewer` pass traced a full clobber through that: `COLUMN_UPGRADES` adds the column to an
+>    installed device with nothing backfilled locally, `pushRows` is a real full-row upsert that sets every
+>    column present in the payload, and `syncNow` is push-before-pull with `extendTrial` firing its own
+>    immediate push — so a `Keep going` tap before that row's first hydrate would erase the backfill
+>    permanently and silently return the report to the pre-repair arithmetic, for exactly the trials the
+>    freeze protects. No client-side stamp fixes it: every variant writes a plausible wrong number
+>    (`COALESCE(initial, current)` on an already-extended trial records the EXTENDED window as the designed
+>    one) instead of an honest NULL. **1b is therefore reads-only** — hydrate select, report pull, freeze,
+>    disclosure — and the ratchet migration that makes writing safe is **CUL-1051 (PR 1c), which now blocks
+>    PR 2.** The prohibition is pinned by a mutation-proven test on `dietTrialRowToRemote`, because
+>    `PENDING_MAPPER_COLUMNS` alone reads as "not yet" rather than "not until".
+> 3. **The residual is a row with no recorded designed window**, which keeps the pre-repair arithmetic
+>    exactly. There is no safe constant to substitute — the clipped window is the reassuring read on a record
+>    that went silent and the unclipped one is the reassuring read on a record that started late, so a
+>    fail-safe cannot pick a side. Pinned as a test (`guards/trialWindow.test.ts` G5) rather than left
+>    implicit. **Its scope is NOT bounded by a create-stamp** — item 2's re-cut removed that, so
+>    every trial created until CUL-1051 + PR 2 land carries a NULL designed window, which is 100% of
+>    new trials rather than a legacy tail. And the reach is wider than first written: the condition is
+>    (the target moved) AND (the calendar is past the designed end), **in either order** — the day-28
+>    milestone tap reaches it 22 days later with no overrun ever having preceded it.
+>
+> **The disclosure half says what `closedByOverrun` knows and no more:** *"This trial has run past the window
+> it was designed against — coverage is measured over that window, so the days since are not in the ratio
+> above. Feedings logged in them are still counted in the exposures below."* It does **not** say the window
+> moved; that is `target_duration_set_at`, and §5.1's sentence is PR 4's. **The owner's card gets the freeze
+> but not a sentence** — B-592 owns that copy and the card is design-locked (see §5.4's card note below).
+
+> **⚠ RE-CUT 2026-09-17 by 1b's own adversarial pass — the freeze alone was not the repair.**
+> The block above is what the plain freeze did. The mandatory pass then executed the other direction and
+> returned **FAIL**: pinning the denominator at the designed window excludes un-logged days that lie
+> **inside the window currently in force**, and on a trial designed at 28 days, extended to 84, logged on
+> every one of days 1–28 and then silent, read on day 60, the rendered report went from
+> *"28 of 60 … does not support interpreting this trial either way — the gaps are larger than the record"*
+> to *"28 of 28 … supports interpreting it"* plus the all-matched claim. B-422's justification is *"a vet
+> who prescribed eight weeks should not read a denominator of twelve"*; there the prescription in force
+> **was** twelve weeks and the vet read a denominator of four.
+>
+> **The mis-cut, in one line:** D7(c) split BELIEF from CLAIMS along `target_duration_days`, but this
+> denominator has **three** owner-movable inputs — the target, `ended_at`, and (via the freeze) which of
+> two targets is authoritative. Pinning one redistributed the movement onto the other two.
+>
+> **PM ruling (a), 2026-09-17 — the RATIO and the VERDICT are two questions:**
+>
+> * **The ratio a surface prints** is measured over the window the trial was **designed** against. It is a
+>   statement about the record and no owner action moves it. This is the freeze, unchanged.
+> * **The verdict** (`interpretability` → `belowCoverageFloor` → `mayStateRecordClean`) is the **less
+>   reassuring** of that reading and a second one taken over the window **currently in force**, bounded by
+>   today (`leastReassuring`, `gateCoverage`). Un-logged days inside the live window are gaps, and gaps are
+>   what the floor exists to catch.
+> * **The excluded span is stated as a number** — how many elapsed days the ratio leaves out and how many
+>   of them hold a meal. The first cut had replaced a quantified denominator with an unquantified clause
+>   (C-3).
+>
+> Neither window may be the generous one, and that is the whole mechanism: extending flatters the LIVE
+> window on a well-logged tail and flatters the DESIGNED window on a silent one, so picking either window
+> can only ever fix one direction. Taking the harsher verdict fixes both. It is C-4's precedence rule and
+> §5.2's *a floor may only ever move toward disclosing more*.
+>
+> **Also repaired by the same pass, and each was its own defect:** the disclosure switches on a render
+> condition (`coverageClippedAtWindowEnd`) rather than the trial-state fact, because the first cut printed
+> *"the days since are not in the ratio above"* over a ratio composed **entirely** of days since on a
+> since-visit scope opening after the window closed — no extension required, and the standard second-report
+> shape; its copy now describes the MEASURE instead of asserting an overrun the day counter denies on an
+> extended trial; and `interpretabilityStatement` says **original**, not *prescribed*, because on an
+> extended trial the prescribed window is the longer one printed on the same page.
+>
+> **⚠ ONE RESIDUAL, RULED 2026-09-17 — TE-6 IS DIRECTIONAL (PM).** §5.4's *withdrawing* direction still
+> moves: a trial logged on every prescribed day then silent, extended, goes `supports` →
+> `does_not_support` on the tap. It cannot be closed alongside the reassuring one — that record and the
+> mirror above are structurally identical and demand opposite things of the gate, so closing either opens
+> the other (executed both ways; pre-change code moved it here too). **The PM ruled the rule directional:
+> an owner action may move a claim toward MORE disclosure, never toward less** — see TE-6, which now
+> carries it. The marker stays an expected failure recording the residual, and that is its permanent
+> state rather than a waiting one.
 
 What the vet report prints across that tap:
 
@@ -534,6 +667,10 @@ the dangerous one's flow.
 > `adversarial-reviewer` was already mandatory on 1b (§7) and is now mandatory for a second reason: this
 > changes a shipped clinical gate's arithmetic.
 >
+> **SHIPPED 2026-09-17 (CUL-1038).** See §5.4's ⚠ REPAIRED block for what the build settled beyond this
+> ruling — the belief/claim split that kept `trialTargetEndDayIndex` on the live target, the create-stamp
+> the freeze needed to cover any trial started after 068, and the residual it cannot cover.
+>
 > **The freeze closes the head-clip route as a side effect, and that is load-bearing rather than lucky.**
 > §5.4's ceiling (recorded in the ⚠ block there) runs through the HEAD clip following the target once the
 > tail clip releases; with the denominator pinned at the original target the head clip has no log inside
@@ -577,14 +714,17 @@ sequencing constraint rather than a gate. PR 5 is the one exception: deferred by
 |---|---|---|
 | **0** | `guards/` + tests pinning today's behaviour: no mid-trial route to `trial_extend` in any state; the `nextTargetDays` clamp; §5.2's shortening render and §5.4's gate flip each as a **failing** test that documents the hazard | — |
 | **1** | Migration: D2's three columns, additive + nullable + backfill `target_duration_days_initial = target_duration_days` for the 1 live row. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer`. **PR 1b now depends on this** (D7c), so it is no longer parallel to 1b | ✅ D2a, D4a |
-| **1b** | **§5.4's repair** — D7(c): **freeze** the coverage denominator at `target_duration_days_initial` AND disclose the window move (`range.closedByOverrun`). Ahead of the door because it fixes something live today. Turns PR 0's four §5.4 markers green; §5.2's stays red by D3a | ✅ D7c · **PR 1 (hard)** |
+| **1b** | ✅ **SHIPPED 2026-09-17 (CUL-1038), re-cut twice.** D7(c) as ruled (a): the printed RATIO is frozen at `target_duration_days_initial` (`trialCoverageWindowEndDayIndex`) and the VERDICT is the less reassuring of that and the window in force (`leastReassuring` / `gateCoverage`); the overrun is disclosed on the coverage sentence, the scan tile and `interpretabilityStatement`, with the excluded span as a number. §5.4's forward + ceiling markers promoted; **the reversed marker is back to an expected failure** (TE-6's direction is open). §5.2's still red by D3a. **READS-ONLY** — the device hydrates the column and never writes it. **Owes a `generate-report` redeploy.** | ✅ D7c · PR 1 |
+| **1c** | **NEW, and it blocks PR 2.** Migration: a `BEFORE UPDATE` ratchet on `diet_trials` so no client can move `target_duration_days_initial` from a value back to NULL. Own PR, Migration Safety Pre-flight, `rls-privacy-reviewer`. Unblocks the push mapper, the create-stamp and PR 2's write path. **CUL-1051** | — |
 | **2** | The predicate + write path: `changeTrialWindow` beside `extendTrial` (one arithmetic home — `nextTargetDays` is not forked), the paired-null provenance contract, the local mirror, **the concurrent-extension LWW case (§5.6)**, and the forward-only refusal | ✅ D2a, D3a |
 | **3** | The door + the sheet: `Manage`, `TrialWindowSheet`, the `trial_refusal` re-point, `ChipGroup` of **totals** (none at or below the current day), the end-date line, the vet-directed box, §4.3's forward line | ✅ D1a, D3a, D4a, D6a |
 | **4** | The vet report: §5.1's sentence, the attribution clause, **a `deno test` over `render.test.ts` with a mutated `targetDurationDays` (§5.6's untested half)**, `generate-report` redeploy (**note the standing deploy discipline — the function is at v15 and the ledger is `pending`**) | ✅ D2a, D4a · PR 1 |
 | **5** | D5's constant — **deferred, not cancelled.** Owned by CUL-367, unblocked by Dr. Chen's ratification, never by this spec | CUL-367 (Dr. Chen) |
 
-**PRs 0 through 4 are unblocked; PR 0 has shipped (#867). PR 5 is deferred to CUL-367.** The one ordering
-change since v2.1: **PR 1 → PR 1b is now a hard dependency**, not a convenience (D7c).
+**PRs 0, 1 and 1b have shipped. PR 1c (CUL-1051) is new and blocks PR 2. PR 5 is deferred to CUL-367.**
+Two ordering changes since v2.1: **PR 1 → PR 1b is a hard dependency**, not a convenience (D7c); and
+**PR 1c now sits between 1b and 2**, because 1b could only be made safe by declining to write the column
+and the write path cannot land until the database refuses to lose it.
 
 **Adversarial review is mandatory on PRs 1b, 2 and 4** — the write moves a denominator the vet report
 renders, which is the clinically load-bearing class, and §5.4 is what happens when that is assumed rather

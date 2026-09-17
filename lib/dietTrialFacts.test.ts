@@ -84,11 +84,13 @@ function freshDb() {
       status TEXT NOT NULL, ended_at TEXT, completed_at TEXT,
       stopped_reason TEXT, outcome TEXT, indication TEXT, food_label TEXT,
       target_protein TEXT, target_protein_set_at TEXT,
-      -- migration 068 (CUL-1037). TRIAL_FOR_CARD_SQL really does select this since
-      -- CUL-1040 -- it is what the card's window-moved line keys on -- so the
-      -- fixture carries it or the real SQL cannot run against a real engine. The
-      -- sibling two columns stay OUT: the card reads neither, and a fixture wider
-      -- than the query is a shape production's readers never produce (C-35).
+      -- migration 068 (CUL-1037). TRIAL_FOR_CARD_SQL selects BOTH of these and the
+      -- fixture carries both or the real SQL cannot run against a real engine:
+      -- set_at is what the card's window-moved line keys on (CUL-1040), and
+      -- days_initial is the coverage freeze's input (CUL-1038). vet_directed
+      -- stays OUT — the card reads it nowhere, and a fixture wider than the query
+      -- is a shape production's readers never produce (C-35).
+      target_duration_days_initial INTEGER,
       target_duration_set_at TEXT,
       synced INTEGER NOT NULL DEFAULT 0
     );

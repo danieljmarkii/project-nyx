@@ -1240,6 +1240,15 @@ export async function generateReportForPet(
         .eq('pet_id', petId).is('deleted_at', null)
         .order('visited_at', { ascending: false }).order('id', { ascending: false })
         .range(from, to)),
+    // A NOTE FOR WHOEVER ADDS THE NEXT COMMENT TO THIS CHAIN, not about the columns
+    // (the select says what they are): `guards/reportPullPagination.test.ts` reads
+    // 2,000 characters from `.from(` and a rationale written INSIDE the select pushed
+    // `count: 'exact'` out of that window — the guard went red on a pull that pages
+    // perfectly well (measured, CUL-1038). Its bound is deliberate (C-4: a fixed
+    // window that reaches into the next query is not a slice of the object under
+    // test), so prose about this pull belongs here, above the call, and never in the
+    // chain. `target_duration_days_initial` is the coverage freeze's input (CUL-1038);
+    // its two siblings are the window-change sentence's (CUL-1041).
     fetchAll<DietTrialRow>('diet_trials', (r) => r.id, (from, to) =>
       supabase
       .from('diet_trials')

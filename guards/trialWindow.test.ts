@@ -14,12 +14,22 @@
 //   • THREE GREEN GUARDS (G1–G3) — true today and required to STAY true until the
 //     mid-trial door ships. Each is proven by mutation, not by reading (C-18); the
 //     mutation that reds each one is named in its own block.
-//   • EXPECTED FAILURES — hazards the record now carries as executable tests. Each
-//     body states the REQUIREMENT; `expectedFailure` records that it does not hold
-//     today and turns the suite RED the moment it starts holding. Never `skip`,
-//     which asserts nothing in either direction. (§5.2's half is a Deno test and
-//     lives in `supabase/functions/generate-report/render.test.ts`, beside the
-//     B-532 block it extends — that render is server-side and jest does not run it.)
+//   • EXPECTED FAILURES — hazards the record carries as executable tests. Each body
+//     states the REQUIREMENT; `expectedFailure` records that it does not hold today
+//     and turns the suite RED the moment it starts holding. Never `skip`, which
+//     asserts nothing in either direction. (§5.2's half is a Deno test and lives in
+//     `supabase/functions/generate-report/render.test.ts`, beside the B-532 block it
+//     extends — that render is server-side and jest does not run it.)
+//
+//     ⚠ ALL THREE §5.4 MARKERS WERE PROMOTED BY CUL-1038 (PR 1b, D7c), which froze
+//     the coverage denominator at `target_duration_days_initial`. Their assertion
+//     bodies are byte-identical to PR 0's — only the wrapper is gone — and the
+//     pre-repair reads are kept verbatim in the comments beside the assertions that
+//     replaced them, because the executed record is what the marker was for. The
+//     §5.2 marker in the Deno file is NOT this PR's and stays red: D3a holds it
+//     un-shippable. `expectedFailure` therefore has no live caller in this file and
+//     is kept — the track has PRs 2, 3 and 4 still to come, and it is the harness
+//     they will reach for.
 //
 // ── WHY `expectedFailure` AND NOT jest's OWN `test.failing` ─────────────────────
 // `test.failing` passes on ANY throw. Measured: a `TypeError`, a `ReferenceError`
@@ -30,28 +40,32 @@
 // docstring calls that load-bearing; presenting the two harnesses as equivalent
 // while one of them lacked the filter was the asymmetry. Now they match.
 //
-// ── WHAT THIS FILE DOES NOT PIN, STATED SO THE GAP IS NOT READ AS COVERAGE ──────
-// The §5.4 markers below assert over `computeTrialFacts`. The same tap was executed
-// against four more surfaces and moves all of them; none is pinned here, because
-// each needs its own harness and PR 0's remit is the model:
+// ── THE FOUR DOWNSTREAM SURFACES PR 0 LISTED, RESOLVED BY CUL-1038 ──────────────
+// PR 0 named four surfaces the same tap moved and pinned none of them, because
+// there was nothing to assert them against yet. PR 1b is that something, so each is
+// answered here rather than left on a list:
 //
-//   • THE OWNER'S TRIAL CARD. State `overrun` → `clean`; the body goes from "32
-//     feedings in total. Culprit isn't saying how many matched the trial diet on
-//     this record." to "…all 32 matched the trial diet or a permitted food."; the
-//     day line from "Day 50 — 22 days past the window you set" to "Day 50 of 64".
-//     Note what that is: the tap DELETES the only sentence on the card that
-//     disclosed anything was unusual. §5.4's "nothing says the window moved", made
-//     worse — the one thing that did say so is what the tap removes.
-//   • `interpretabilityStatement`, which renders verbatim on the vet report.
-//   • `coveredDayIndices` (10 → 32), which paints the widget's trial-day strip.
-//   • `pet.dietTrialActive` on the report's detection input, verified flipping
-//     FALSE → TRUE across a tap on an aged trial (target 28 → 166 on day 152) via
-//     `trialLastDayNum`. `report.ts`'s own comment: that "fully mutes detectors
-//     ⑧/⑨/⑩ and promotes correlation to band 1". §5.5 names it in prose.
+//   • `interpretabilityStatement` and `coveredDayIndices` — PINNED, in the G4 block
+//     at the foot of this file. Both are computed inside `computeTrialFacts`, so
+//     the freeze reaches them; "reaches them" is a claim, so it is executed.
+//   • THE OWNER'S TRIAL CARD — the FREEZE reaches it (the card's facts come through
+//     `lib/dietTrialFacts.ts` → `computeTrialFacts`, pinned in G4), so the flip is
+//     gone: the body no longer goes from "Culprit isn't saying how many matched" to
+//     "all 32 matched" on a tap. What PR 1b does NOT add is the card's own overrun
+//     SENTENCE. That is B-592, filed since B-422, deliberately unwritten because
+//     `docs/nyx-diet-trial-mockups.html`'s card is design-locked and this repo does
+//     not invent strings for it outside a mock round. The report got its disclosure
+//     here; the card's rides B-592's queued round. Not a gap this PR left open —
+//     a gap this PR narrowed to copy.
+//   • `pet.dietTrialActive` — OUT OF SCOPE BY RULING, not unfixed. It flips across
+//     a tap via `trialLastDayNum` on the LIVE target, and that is correct: D7(c)
+//     splits BELIEF (is this trial running — an extension is supposed to move it)
+//     from CLAIMS ABOUT THE RECORD (TE-6 — no owner action may move them). Detector
+//     suppression is belief. §5.5's second finding — that the reach is unbounded and
+//     unlabelled — stands and is PR 2/3's.
 //
-// They belong with PR 1b's repair, where there is something to assert them against.
 // Listed rather than omitted because an undocumented blind spot reads as coverage
-// (C-38) — and because the card's deleted sentence is arguably the worst of the set.
+// (C-38).
 //
 // ── FIXTURE DISCIPLINE (C-35) ───────────────────────────────────────────────────
 // Every fixture here is one the real caller could hand over. The adversarial pass
@@ -79,6 +93,8 @@ import {
   COVERAGE_SUPPORTS,
   MIN_INTERPRETABLE_DAYS,
   computeTrialFacts,
+  interpretabilityOf,
+  interpretabilityStatement,
   mayClaimAllMatched,
   mayStateRecordClean,
   type AllowedFood,
@@ -737,11 +753,50 @@ const GATE_TARGET_AFTER = nextTargetDays({
   extraDays: extensionDays('gi'),
 });
 
-function factsAtTarget(targetDurationDays: number, feedings: readonly TrialFeeding[]): TrialFacts {
+/** The window the trial was DESIGNED against — the shipped GI default, and what
+ *  migration 068's backfill stamped into `target_duration_days_initial` on every
+ *  row live at apply time. It does not move when the owner extends. */
+const GATE_TARGET_DESIGNED = GATE_TARGET;
+
+/**
+ * ⚠ THE ROW SHAPE CHANGED WITH CUL-1038 (PR 1b), TOWARD PRODUCTION (C-35).
+ *
+ * PR 0 built these two reads with no `targetDurationDaysInitial` at all — the
+ * pre-068 row, and at the time the only row there was. Since migration 068
+ * applied, every live trial carries the backfilled column, and the shipped
+ * extension path (`extendTrial`, `lib/dietTrialSetup.ts:754`) writes ONLY
+ * `target_duration_days`. So the row a real tap produces is
+ * `{initial: 28, current: 64}` — which is what the two reads below now are, and
+ * a fixture shaped unlike production is green over a shape production never
+ * creates.
+ *
+ * WHAT DID NOT CHANGE IS THE REQUIREMENT. Every `expectedFailure` body in this
+ * file was promoted to a plain `it` with its assertions byte-identical. The
+ * oracle was never the row shape; it is that nothing an owner does may move a
+ * claim about the record. The un-stamped row — where the freeze has nothing to
+ * pin to and falls back to the live target — is driven separately at the foot of
+ * this file, so the residual is pinned rather than assumed.
+ */
+/** `TrialFacts.exposureRange` is null when the module cannot place the trial in
+ *  time. No fixture in this file is that trial, so a null here is a broken fixture
+ *  and is named as one rather than silenced with a `!` (C-36: a non-matcher throw
+ *  is a dead fixture reading as a live result). */
+function exposureRangeOf(facts: TrialFacts): { startDayIndex: number; endDayIndex: number } {
+  const r = facts.exposureRange;
+  if (r === null) throw new Error('fixture produced no exposureRange — the trial could not be placed');
+  return r;
+}
+
+function factsAtTarget(
+  targetDurationDays: number,
+  feedings: readonly TrialFeeding[],
+  designedWindow: number | null = GATE_TARGET_DESIGNED,
+): TrialFacts {
   const trial: TrialSpec = {
     id: 'trial-gate',
     startedAt: '2026-05-01',
     targetDurationDays,
+    targetDurationDaysInitial: designedWindow,
     species: 'dog',
   };
   return computeTrialFacts({
@@ -787,10 +842,20 @@ describe('G3 — a target move cannot change the off-diet exposure counts (§5.3
   // ── Non-vacuity floor, first ────────────────────────────────────────────────
   // "The counts match" is also what a fixture with no tail, no clip and no off-diet
   // feedings produces. These four assertions are what make the match mean something.
-  it('the fixture really is clipped before the move, and really is not after it', () => {
+  it('the fixture really is clipped, on BOTH sides of the move', () => {
+    // ⚠ REBASED BY CUL-1038, and the rebase is the point. PR 0 wrote this floor as
+    // "clipped before the move, NOT clipped after it" — it proved the fixture was
+    // live by pointing at the defect, so the repair that removed the defect also
+    // removed the proof. A non-vacuity floor keyed on the bug it sits next to
+    // expires with the bug.
+    //
+    // The floor is now the invariant instead: this trial has overrun its designed
+    // window on both reads, so the clip is doing work in both, and the tap really
+    // did move the live target past today.
     expect(before.range?.closedByOverrun).toBe(true);
-    expect(after.range?.closedByOverrun).toBe(false);
+    expect(after.range?.closedByOverrun).toBe(true);
     expect(GATE_TARGET_AFTER).toBeGreaterThan(GATE_TODAY);
+    expect(GATE_TARGET_AFTER).toBeGreaterThan(GATE_TARGET_DESIGNED);
   });
 
   it('the two off-diet feedings sit in the stretch the clip removes from coverage', () => {
@@ -798,9 +863,12 @@ describe('G3 — a target move cannot change the off-diet exposure counts (§5.3
       expect(day).toBeGreaterThan(GATE_TARGET);
       expect(day).toBeLessThanOrEqual(GATE_TODAY);
     }
-    // And the clip really did remove that stretch from the coverage window.
+    // And the clip really did remove that stretch from the coverage window — on
+    // both reads now, which is the freeze. The stretch it removes is precisely
+    // where the two off-diet feedings live, so "the counts survive" below is a
+    // claim about rows the coverage window cannot see.
     expect(before.coverage?.daysElapsed).toBe(GATE_TARGET);
-    expect(after.coverage?.daysElapsed).toBe(GATE_TODAY);
+    expect(after.coverage?.daysElapsed).toBe(GATE_TARGET);
   });
 
   // ── The rule ────────────────────────────────────────────────────────────────
@@ -813,12 +881,24 @@ describe('G3 — a target move cannot change the off-diet exposure counts (§5.3
     expect(before.exposures.totalFeedings).toBe(FEEDINGS.length);
   });
 
-  it('the exposure window itself does not move, and the coverage window does', () => {
+  it('the exposure window reaches past the coverage window, on both reads', () => {
     // The asymmetry §5.3 names, asserted rather than described. `exposureRange` is
     // what a consumer needing the rows reads; `range` is coverage's and only
     // coverage's.
+    //
+    // ⚠ REBASED BY CUL-1038 for the same reason as the floor above: the second
+    // assertion used to be "the coverage window DOES move", which was the defect
+    // used as a control. The asymmetry it was reaching for is better stated
+    // WITHIN a read — exposure runs to the evidence end, coverage stops at the
+    // designed window — and that is now true on both sides of the tap, which is
+    // the invariant §5.3 actually claims.
     expect(after.exposureRange).toEqual(before.exposureRange);
-    expect(after.range?.endDayIndex).toBeGreaterThan(before.range?.endDayIndex as number);
+    for (const read of [before, after]) {
+      expect(exposureRangeOf(read).endDayIndex).toBeGreaterThan(read.range?.endDayIndex as number);
+    }
+    // Neither window moved on the tap. The first line covers exposure; this covers
+    // coverage, so nothing in this file can now claim the tap moved a window.
+    expect(after.range?.endDayIndex).toBe(before.range?.endDayIndex);
   });
 });
 
@@ -895,38 +975,57 @@ describe('§5.4 — the coverage gate an owner can move with one tap (CUL-1038)'
     expect(after.exposures.offDiet).toBe(0);
   });
 
-  it('the coverage denominator jumps from the prescribed window to the elapsed range', () => {
-    // The spec's own table, as literals — this is the executed record and it should
-    // read the same in the test as it does in §5.4.
+  it('REPAIRED — the coverage denominator stays on the designed window', () => {
+    // ⚠ WHAT THIS READ BEFORE CUL-1038, kept verbatim because the executed record
+    // is the point of this block: `after.coverage` was
+    // `{daysLogged: 32, daysElapsed: 50, fraction: 32/50}` — the denominator
+    // jumping from the prescribed window to the full elapsed range on one tap.
     expect(before.coverage).toEqual({ daysLogged: 10, daysElapsed: 28, fraction: 10 / 28 });
-    expect(after.coverage).toEqual({ daysLogged: 32, daysElapsed: 50, fraction: 32 / 50 });
+    expect(after.coverage).toEqual({ daysLogged: 10, daysElapsed: 28, fraction: 10 / 28 });
     // …and the same numbers derived from the fixture's own constants, so an edit to
     // the fixture cannot leave the literals above quietly describing a different
     // record than the one that was read.
-    expect(before.coverage?.daysLogged).toBe(LOGGED_IN_WINDOW.length);
-    expect(before.coverage?.daysElapsed).toBe(GATE_TARGET);
-    expect(after.coverage?.daysLogged).toBe(FEEDINGS.length);
-    expect(after.coverage?.daysElapsed).toBe(GATE_TODAY);
-    // Both sides of the floor, derived from the shipped constants rather than from
-    // the percentages in the spec's table.
-    expect((before.coverage as { fraction: number }).fraction).toBeLessThan(COVERAGE_FLOOR);
-    expect((after.coverage as { fraction: number }).fraction).toBeGreaterThanOrEqual(COVERAGE_FLOOR);
-    expect((after.coverage as { fraction: number }).fraction).toBeLessThan(COVERAGE_SUPPORTS);
-    // And neither read is below the two-sided minimum, where the answer would be
-    // `not_yet` and no claim would be made in either direction.
-    expect(before.coverage?.daysElapsed).toBeGreaterThanOrEqual(MIN_INTERPRETABLE_DAYS);
+    for (const read of [before, after]) {
+      expect(read.coverage?.daysLogged).toBe(LOGGED_IN_WINDOW.length);
+      expect(read.coverage?.daysElapsed).toBe(GATE_TARGET_DESIGNED);
+      // Still below the floor on both reads, derived from the shipped constant
+      // rather than from the percentage in the spec's table.
+      expect((read.coverage as { fraction: number }).fraction).toBeLessThan(COVERAGE_FLOOR);
+      // And not below the two-sided minimum, where the answer would be `not_yet`
+      // and no claim would be made in either direction — which would make the
+      // requirement below hold for the wrong reason.
+      expect(read.coverage?.daysElapsed).toBeGreaterThanOrEqual(MIN_INTERPRETABLE_DAYS);
+    }
+    // NON-VACUITY: the tap really did move the live target, and the evidence really
+    // does run to day 50. Without these, a fixture that stopped extending at all
+    // would satisfy every assertion in this file.
+    expect(GATE_TARGET_AFTER).toBeGreaterThan(GATE_TARGET_DESIGNED);
+    expect(after.exposures.totalFeedings).toBe(FEEDINGS.length);
+    const exp = exposureRangeOf(after);
+    expect(exp.endDayIndex - exp.startDayIndex + 1).toBe(GATE_TODAY);
   });
 
-  it('and the two gates move with it, in the reassuring direction', () => {
-    expect(before.interpretability).toBe('does_not_support');
-    expect(after.interpretability).toBe('partially_supports');
-    expect(before.belowCoverageFloor).toBe(true);
-    expect(after.belowCoverageFloor).toBe(false);
-    expect(mayStateRecordClean(before)).toBe(false);
-    expect(mayStateRecordClean(after)).toBe(true);
-    // Not a second reason hiding the first: the claim gate itself never objected.
-    expect(mayClaimAllMatched(before)).toBe(true);
-    expect(mayClaimAllMatched(after)).toBe(true);
+  it('REPAIRED — and neither gate moves', () => {
+    // ⚠ BEFORE CUL-1038: `after` read `partially_supports`, `belowCoverageFloor`
+    // false and `mayStateRecordClean` TRUE — the report going from "too sparse to
+    // read that as a clean elimination" to "all 32 matched", on zero new evidence.
+    for (const read of [before, after]) {
+      expect(read.interpretability).toBe('does_not_support');
+      expect(read.belowCoverageFloor).toBe(true);
+      expect(mayStateRecordClean(read)).toBe(false);
+      // Not a second reason hiding the first: the claim gate itself never objected,
+      // so what withholds the affirmative is the coverage floor and only that.
+      expect(mayClaimAllMatched(read)).toBe(true);
+    }
+  });
+
+  it('REPAIRED — and the overrun disclosure survives the tap (D7c half 2)', () => {
+    // `closedByOverrun` is computed against the DESIGNED window too, so the fact
+    // the report renders beside the ratio is no longer deleted by the tap. Before
+    // the freeze this was `true` → `false`, and the page's own overrun sentence
+    // went with it.
+    expect(before.range?.closedByOverrun).toBe(true);
+    expect(after.range?.closedByOverrun).toBe(true);
   });
 
   // ── The requirement (TE-6) ──────────────────────────────────────────────────
@@ -951,8 +1050,17 @@ describe('§5.4 — the coverage gate an owner can move with one tap (CUL-1038)'
   // pinned at `target_duration_days_initial` (D2a's column, added by PR 1 — which is
   // therefore a HARD prerequisite, not a parallel track), and the window move is
   // disclosed beside the figure. The freeze is what moves these assertions; the
-  // disclosure pays off the C-38 debt at `lib/dietTrial.ts:2223` and does not.
-  expectedFailure(
+  // disclosure pays off the C-38 debt on `TrialRange.closedByOverrun` and does
+  // not. (Named by SYMBOL, not by line: this cited `lib/dietTrial.ts:2223` and had
+  // already drifted onto a blank line by the time PR 1b read it.)
+  // ── PROMOTED BY CUL-1038 (PR 1b) ────────────────────────────────────────────
+  //
+  // PR 0 shipped this wrapped in `expectedFailure`: it passed while TE-6 was
+  // violated and failed the moment the requirement held, so no repair could land
+  // without coming through this line, and no non-repair could land quietly. The
+  // assertion body is BYTE-IDENTICAL to the one PR 0 wrote — only the wrapper is
+  // gone. That is the whole value of a marker written before the fix.
+  it(
     'TE-6 — a target move may not move belowCoverageFloor, mayStateRecordClean or ' +
       'interpretability [CUL-1038]',
     () => {
@@ -1000,7 +1108,14 @@ describe('§5.4 — the same tap, the other direction: a clean claim withdrawn (
 
   function factsAt(targetDurationDays: number): TrialFacts {
     return computeTrialFacts({
-      trial: { id: 'trial-gate-rev', startedAt: '2026-05-01', targetDurationDays, species: 'dog' },
+      trial: {
+        id: 'trial-gate-rev',
+        startedAt: '2026-05-01',
+        targetDurationDays,
+        // The backfilled designed window — see `factsAtTarget`'s note.
+        targetDurationDaysInitial: GATE_TARGET_DESIGNED,
+        species: 'dog',
+      },
       allowedFoods: [GATE_DIET],
       feedings: FEEDINGS,
       nowMs: trialDay(GATE_START, SILENT_SINCE_TODAY),
@@ -1023,28 +1138,75 @@ describe('§5.4 — the same tap, the other direction: a clean claim withdrawn (
     expect(before.exposures.offDiet).toBe(0);
     // The clip is what is holding the window at the trial's own length.
     expect(before.range?.closedByOverrun).toBe(true);
-    expect(after.range?.closedByOverrun).toBe(false);
+    // ⚠ BEFORE CUL-1038 this read `false` — the tap released the clip and took the
+    // disclosure with it. The freeze computes it against the DESIGNED window, so
+    // the fact survives the tap in this direction too.
+    expect(after.range?.closedByOverrun).toBe(true);
   });
 
-  it('the denominator swells to the silence, and the claim is taken away', () => {
-    expect(after.coverage).toEqual({
-      daysLogged: 28,
-      daysElapsed: SILENT_SINCE_TODAY,
-      fraction: 28 / SILENT_SINCE_TODAY,
-    });
-    expect((before.coverage as { fraction: number }).fraction).toBeGreaterThanOrEqual(
-      COVERAGE_SUPPORTS,
-    );
-    expect((after.coverage as { fraction: number }).fraction).toBeLessThan(COVERAGE_FLOOR);
-    expect(before.interpretability).toBe('supports');
-    expect(after.interpretability).toBe('does_not_support');
-    // The mirror image of the first case, same mechanism, opposite sign.
-    expect(before.belowCoverageFloor).toBe(false);
-    expect(after.belowCoverageFloor).toBe(true);
-    expect(mayStateRecordClean(before)).toBe(true);
-    expect(mayStateRecordClean(after)).toBe(false);
+  it('REPAIRED — the printed denominator does not swell to the silence', () => {
+    // ⚠ BEFORE CUL-1038: `after.coverage` was
+    // `{daysLogged: 28, daysElapsed: 90, fraction: 28/90}` — below the floor,
+    // `does_not_support`, `mayStateRecordClean` FALSE. One tap WITHDREW a clean
+    // claim from a record logged on every single prescribed day.
+    const perfect = { daysLogged: GATE_TARGET, daysElapsed: GATE_TARGET, fraction: 1 };
+    expect(before.coverage).toEqual(perfect);
+    expect(after.coverage).toEqual(perfect);
+    for (const read of [before, after]) {
+      expect((read.coverage as { fraction: number }).fraction).toBeGreaterThanOrEqual(
+        COVERAGE_SUPPORTS,
+      );
+    }
+    // ⚠ THE VERDICT IS NOT ASSERTED HERE ANY MORE, and the expected failure below
+    // says why. The RATIO is repaired in this direction — it no longer swells to
+    // the silence — and that is what this `it` now pins.
+    // NON-VACUITY: the silence is real and the tap really moved the live target,
+    // so this is the hazard's own fixture and not a quiet one.
+    expect(SILENT_SINCE_TODAY).toBeGreaterThan(GATE_TARGET);
+    expect(after.trialDaysElapsed).toBe(SILENT_SINCE_TODAY);
   });
 
+  // ── ⚠ DEMOTED BACK TO AN EXPECTED FAILURE BY CUL-1038 R2 ────────────────────
+  //
+  // This was promoted when the plain freeze closed it. The mandatory adversarial
+  // pass then showed the freeze had opened its own mirror — pinning the
+  // denominator at the designed window EXCLUDED un-logged days that lie inside
+  // the window currently in force, and manufactured a clean read: a trial
+  // designed at 28 days, extended to 84, logged on every one of days 1–28 and
+  // then silent, read on day 60, went from "28 of 60 … does not support" to
+  // "28 of 28 … supports interpreting it". PM ruled (a): split the printed RATIO
+  // (over the designed window, unmovable) from the VERDICT (the less reassuring
+  // of that reading and one over the window in force).
+  //
+  // THE TWO REQUIREMENTS ARE MUTUALLY EXCLUSIVE, and that is the finding rather
+  // than an excuse. The record under this marker and the record under the mirror
+  // are structurally identical — a perfect designed window followed by silence,
+  // then extended — and they demand opposite things of the gate:
+  //
+  //   • close THIS one  → the gate must ignore the live window → the mirror opens
+  //   • close the mirror → the gate must follow the live window → this one opens
+  //
+  // Executed on both code versions, so the direction is not a guess:
+  //
+  //     PRE-CHANGE  before 28/28 supports  → after 28/90 does_not_support
+  //     R2          before 28/28 supports  → after 28/28 (ratio) … does_not_support
+  //
+  // Pre-change ALSO withdrew the claim here — this marker was documenting that.
+  // R2 repairs the ratio and reproduces the verdict movement.
+  //
+  // ⚠ RULED 2026-09-17 (PM): TE-6 IS DIRECTIONAL, so this marker's PERMANENT
+  // state is an expected failure rather than a waiting one. An owner action may
+  // move a claim toward MORE disclosure, never toward less. This move is toward
+  // more (a clean claim withdrawn); the mirror's is toward less (a clean claim
+  // granted over 32 silent days). §5.2 already rules that a floor may only ever
+  // move toward disclosing more and `clinical-guardrails` rules the same
+  // asymmetry for every claim gate, so the ruling names an existing rule rather
+  // than minting one. Spec v2.5 TE-6 carries it.
+  //
+  // DO NOT PROMOTE THIS. Unlike every other marker in this file, it is not
+  // waiting on a repair — it records a cost that was priced and accepted. Making
+  // it pass means freezing the gate, which re-opens the reassuring direction: the
+  // two records are structurally identical and there is no third option.
   expectedFailure(
     'TE-6 — the rule has no direction: this move is forbidden too [CUL-1038]',
     () => {
@@ -1119,32 +1281,44 @@ describe('§5.4 — the ceiling: nothing logged in the window, everything after 
     expect(before.coverage).toEqual({ daysLogged: 0, daysElapsed: GATE_TARGET, fraction: 0 });
     expect(before.exposures.totalFeedings).toBe(after.exposures.totalFeedings);
     expect(before.range?.closedByOverrun).toBe(true);
-    expect(after.range?.closedByOverrun).toBe(false);
+    // ⚠ BEFORE CUL-1038: `false`.
+    expect(after.range?.closedByOverrun).toBe(true);
   });
 
-  it('one tap takes an empty window to a PERFECT ratio and the strongest verdict', () => {
-    expect(after.coverage).toEqual({
-      daysLogged: LOGGED_AFTER.length,
-      daysElapsed: LOGGED_AFTER.length,
-      fraction: 1,
-    });
-    expect((after.coverage as { fraction: number }).fraction).toBeGreaterThanOrEqual(
-      COVERAGE_SUPPORTS,
-    );
-    expect(before.interpretability).toBe('does_not_support');
-    expect(after.interpretability).toBe('supports');
-    expect(before.belowCoverageFloor).toBe(true);
-    expect(after.belowCoverageFloor).toBe(false);
-    expect(mayStateRecordClean(before)).toBe(false);
-    expect(mayStateRecordClean(after)).toBe(true);
+  it('REPAIRED — an empty window stays empty, and stays unreadable', () => {
+    // ⚠ BEFORE CUL-1038, executed: `after.coverage` was
+    // `{daysLogged: 22, daysElapsed: 22, fraction: 1}` — a PERFECT ratio and
+    // `supports`, the strongest verdict the module returns, over a trial whose
+    // entire prescribed window has no meal logged in it at all.
+    const empty = { daysLogged: 0, daysElapsed: GATE_TARGET_DESIGNED, fraction: 0 };
+    expect(before.coverage).toEqual(empty);
+    expect(after.coverage).toEqual(empty);
+    for (const read of [before, after]) {
+      expect((read.coverage as { fraction: number }).fraction).toBeLessThan(COVERAGE_FLOOR);
+      expect(read.interpretability).toBe('does_not_support');
+      expect(read.belowCoverageFloor).toBe(true);
+      expect(mayStateRecordClean(read)).toBe(false);
+    }
+    // NON-VACUITY: the post-window logging that used to carry this to `supports`
+    // is still in the record and still counted as evidence — it is coverage it is
+    // not, which is exactly the B-422 split the freeze preserves.
+    expect(after.exposures.totalFeedings).toBe(LOGGED_AFTER.length);
+    expect(LOGGED_AFTER.length).toBeGreaterThan(0);
   });
 
-  it('and the app starts asserting the first 28 days pre-date any logging', () => {
+  it('REPAIRED — and the app never asserts the first 28 days pre-date any logging', () => {
+    // THE SECOND ROUTE, and it closes with the freeze rather than with a second
+    // guard: the head clip follows `endDayIndex`, so once the tail clip released
+    // it walked forward to the first log PAST the old window and fabricated a
+    // 28-day "before any logging" span out of 28 ordinary un-logged trial days.
+    // With the window pinned there is no log inside it for the head to follow.
+    // ⚠ BEFORE CUL-1038: `after.untrackedDaysBeforeFirstLog` was 28.
     expect(before.untrackedDaysBeforeFirstLog).toBe(0);
-    expect(after.untrackedDaysBeforeFirstLog).toBe(GATE_TARGET);
+    expect(after.untrackedDaysBeforeFirstLog).toBe(0);
   });
 
-  expectedFailure(
+  // PROMOTED BY CUL-1038 — body byte-identical to PR 0's.
+  it(
     'TE-6 — the head clip may not follow the target either [CUL-1038]',
     () => {
       expect(after.belowCoverageFloor).toBe(before.belowCoverageFloor);
@@ -1156,4 +1330,288 @@ describe('§5.4 — the ceiling: nothing logged in the window, everything after 
       expect(after.untrackedDaysBeforeFirstLog).toBe(before.untrackedDaysBeforeFirstLog);
     },
   );
+});
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// G4 — the freeze reaches every surface computed inside the module (CUL-1038)
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// PR 0's header named four downstream surfaces the tap moved and pinned none,
+// because there was nothing to assert them against. Two of them are computed
+// INSIDE `computeTrialFacts`, so "the freeze reaches them" follows from the
+// repair — and a claim that follows from a repair is still a claim, so it is
+// executed rather than reasoned about. The other two are answered in the header.
+//
+// MUTATION THAT REDS IT: in `trialCoverageWindowEndDayIndex`, drop the
+// `targetDurationDaysInitial` arm and read `targetDurationDays` — every assertion
+// in this block fails, because that is the pre-repair function.
+
+describe('G4 — the freeze reaches the module\'s own downstream surfaces (CUL-1038)', () => {
+  const FEEDINGS = [...daysRange(1, 10).map(onDiet), ...daysRange(29, GATE_TODAY).map(onDiet)];
+  const before = factsAtTarget(GATE_TARGET, FEEDINGS);
+  const after = factsAtTarget(GATE_TARGET_AFTER, FEEDINGS);
+
+  it('interpretabilityStatement is identical across the tap, and names WHICH window', () => {
+    // It renders VERBATIM on the vet report (`render.ts` §7.2) and is the line the
+    // file's own comment calls what a vet reads for the bottom line. Before the
+    // freeze it went from "covers 10 of 28 days … does not support interpreting
+    // this trial either way" to "covers 32 of 50 days — enough to read alongside
+    // the rest of the history".
+    const stmt = interpretabilityStatement(before);
+    expect(interpretabilityStatement(after)).toBe(stmt);
+    expect(stmt).toMatch(/covers 10 of 28 days/);
+    expect(stmt).toMatch(/does not support/);
+    // CUL-1038 also made it say WHICH window, because the day counter beside it on
+    // the page now legitimately reads past the denominator ("day 50 of 64").
+    expect(stmt).toMatch(/of the trial’s original window/);
+  });
+
+  it('a trial inside its window keeps the plain phrase — the word is earned, not default', () => {
+    // NON-VACUITY on the sentence above: a "prescribed" that rendered
+    // unconditionally would say nothing, and the assertion would pass over a
+    // constant. The SAME record read on the last day of its own window — nothing
+    // has overrun, so there is no second window to distinguish.
+    const inWindow = computeTrialFacts({
+      trial: {
+        id: 'trial-in-window',
+        startedAt: '2026-05-01',
+        targetDurationDays: GATE_TARGET,
+        targetDurationDaysInitial: GATE_TARGET,
+        species: 'dog',
+      },
+      allowedFoods: [GATE_DIET],
+      feedings: daysRange(1, 10).map(onDiet),
+      nowMs: trialDay(GATE_START, GATE_TARGET),
+    });
+    expect(inWindow.range?.closedByOverrun).toBe(false);
+    const stmt = interpretabilityStatement(inWindow)!;
+    expect(stmt).toMatch(/of the trial window/);
+    expect(stmt).not.toMatch(/original/);
+    // …and the overrun read of the same shape DOES carry it, so the two branches
+    // are exercised against each other rather than each against a literal.
+    expect(interpretabilityStatement(before)!).toMatch(/original/);
+  });
+
+  it('coveredDayIndices — the widget strip paints the same days across the tap', () => {
+    // `lib/widgetSnapshot.ts` reads this to paint the trial-day strip in the App
+    // Group projection, which persists on disk between sessions. Before the freeze
+    // it went from 10 painted days to 32.
+    expect(after.coveredDayIndices).toEqual(before.coveredDayIndices);
+    expect(before.coveredDayIndices).toHaveLength(10);
+  });
+
+  it('the exposure floor still reaches past the coverage window on both reads', () => {
+    // Restated here rather than assumed from G3: this block's fixture is the §5.4
+    // one (no off-diet feedings), and a freeze that quietly shortened the evidence
+    // window would satisfy every coverage assertion above while deleting rows.
+    for (const read of [before, after]) {
+      expect(read.exposures.totalFeedings).toBe(FEEDINGS.length);
+      expect(exposureRangeOf(read).endDayIndex).toBeGreaterThan(read.range?.endDayIndex as number);
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// G5 — THE RESIDUAL: an UNSTAMPED row keeps the pre-repair behaviour exactly
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// `target_duration_days_initial` is NULL on any trial this app creates: CUL-1038
+// ships READS-ONLY, so nothing on the device writes the column (see
+// `dietTrialRowToRemote`'s clobber note). The module treats NULL as "not recorded"
+// — never as a number — and falls back to the live target, which is the pre-repair
+// arithmetic preserved exactly.
+//
+// ⚠️ THE POPULATION IS EVERY NEW TRIAL, NOT A LEGACY TAIL. This block first said
+// "a trial created between migration 068 and the create-stamp CUL-1038 adds", which
+// described the PR's first cut; the create-stamp was removed when the code review
+// traced the clobber. Until CUL-1051's ratchet and PR 2's write path land, 068's
+// backfill covers the rows that existed when it applied and nothing after.
+//
+// THIS IS A TEST AND NOT A COMMENT because "the fallback is the old behaviour" is a
+// claim about executed code, and because this is the shape where the hazard
+// survives. Stating the blind spot is what stops it reading as coverage (C-38).
+//
+// THERE IS NO SAFE CONSTANT TO SUBSTITUTE, which is why the fallback is what it is:
+// the clipped window is the reassuring read on a record that went silent, and the
+// unclipped one is the reassuring read on a record that started late. A fail-safe
+// cannot pick a side, so the honest move is to change nothing and say so.
+
+describe('G5 — a row with no recorded designed window (CUL-1038 residual)', () => {
+  const FEEDINGS = [...daysRange(1, 10).map(onDiet), ...daysRange(29, GATE_TODAY).map(onDiet)];
+  const before = factsAtTarget(GATE_TARGET, FEEDINGS, null);
+  const after = factsAtTarget(GATE_TARGET_AFTER, FEEDINGS, null);
+
+  it('falls back to the live target — byte-identical to the pre-repair reads', () => {
+    expect(before.coverage).toEqual({ daysLogged: 10, daysElapsed: 28, fraction: 10 / 28 });
+    expect(after.coverage).toEqual({ daysLogged: 32, daysElapsed: 50, fraction: 32 / 50 });
+    expect(before.interpretability).toBe('does_not_support');
+    expect(after.interpretability).toBe('partially_supports');
+  });
+
+  it('a zero or negative stored window is "not recorded", never a number', () => {
+    // `target_duration_days` is INTEGER NOT NULL with no CHECK (migration 001) and
+    // 068 backfilled from it, so a 0 is reachable by sync. Zero is not a window.
+    for (const junk of [0, -7]) {
+      expect(factsAtTarget(GATE_TARGET, FEEDINGS, junk).coverage).toEqual(before.coverage);
+    }
+  });
+});
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// G6 — THE SPLIT: the ratio is the designed window, the verdict is the harsher of
+//      two readings (CUL-1038 R2, PM ruling (a))
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// The plain freeze closed §5.4's reassuring direction and opened its mirror. The
+// mandatory adversarial pass executed the mirror on the rendered report; this
+// block is that case and its siblings, pinned at the module.
+//
+// WHY THE RULE IS PRECEDENCE AND NOT A THIRD WINDOW (C-4). Two readings of one
+// population, and either can be the generous one depending on the record:
+//
+//   • extend an overrun trial with a well-logged tail → the LIVE window flatters
+//   • extend a trial with a silent tail              → the DESIGNED window flatters
+//
+// Picking one window can only ever fix one of those. Taking the less reassuring
+// verdict of both fixes both, and it is the same precedence rule §5.2 states for
+// the exposure floor: a claim gate may only ever move toward disclosing more.
+//
+// MUTATIONS THAT RED IT, each proven:
+//   • `leastReassuring` returns the MORE reassuring of the two → the mirror reds.
+//   • the gate reads the designed end instead of `liveTargetEnd` → the mirror reds.
+//   • the gate drops its `liveTargetEnd >= scopedStart` guard → the scope case reds.
+
+describe('G6 — the ratio and the verdict are two questions (CUL-1038 R2)', () => {
+  /** The mirror the adversarial pass found: a perfect designed window, then a long
+   *  silence, on a trial whose window has since been extended over that silence.
+   *  Every un-logged day here is INSIDE the window currently in force. */
+  const MIRROR = daysRange(1, GATE_TARGET).map(onDiet);
+  const mirror = (current: number) =>
+    computeTrialFacts({
+      trial: {
+        id: 'trial-mirror',
+        startedAt: '2026-05-01',
+        targetDurationDays: current,
+        targetDurationDaysInitial: GATE_TARGET_DESIGNED,
+        species: 'dog',
+      },
+      allowedFoods: [GATE_DIET],
+      feedings: MIRROR,
+      nowMs: trialDay(GATE_START, 60),
+    });
+
+  it('the RATIO is the designed window and does not move', () => {
+    const f = mirror(84);
+    expect(f.coverage).toEqual({ daysLogged: 28, daysElapsed: 28, fraction: 1 });
+    // …and that really is the freeze, not a coincidence of this record: with the
+    // designed window unrecorded the ratio swells to the elapsed range.
+    const unfrozen = computeTrialFacts({
+      trial: { id: 'm2', startedAt: '2026-05-01', targetDurationDays: 84, species: 'dog' },
+      allowedFoods: [GATE_DIET],
+      feedings: MIRROR,
+      nowMs: trialDay(GATE_START, 60),
+    });
+    expect(unfrozen.coverage?.daysElapsed).toBe(60);
+  });
+
+  it('the VERDICT reads the window in force, so the silence is not excluded', () => {
+    const f = mirror(84);
+    // 32 un-logged days inside the 84-day window currently prescribed.
+    expect(f.gateCoverage).toEqual({ daysLogged: 28, daysElapsed: 60, fraction: 28 / 60 });
+    expect(f.interpretability).toBe('does_not_support');
+    expect(f.belowCoverageFloor).toBe(true);
+    expect(mayStateRecordClean(f)).toBe(false);
+    // THE POINT: the ratio alone would have said `supports`. The split is what
+    // stops the printed number deciding the verdict.
+    expect(interpretabilityOf(f.coverage)).toBe('supports');
+  });
+
+  it('…and it is no more reassuring than the code that had no freeze at all', () => {
+    // The no-regression requirement the adversarial pass stated: the repair may
+    // not grant a claim the pre-change arithmetic withheld. `initial` absent IS
+    // the pre-change arithmetic (G5 pins that), so this compares the two directly.
+    const frozen = mirror(84);
+    const preChange = computeTrialFacts({
+      trial: { id: 'm3', startedAt: '2026-05-01', targetDurationDays: 84, species: 'dog' },
+      allowedFoods: [GATE_DIET],
+      feedings: MIRROR,
+      nowMs: trialDay(GATE_START, 60),
+    });
+    expect(preChange.interpretability).toBe('does_not_support');
+    expect(frozen.interpretability).toBe(preChange.interpretability);
+    expect(mayStateRecordClean(frozen)).toBe(mayStateRecordClean(preChange));
+  });
+
+  it('ending the trial does not move the verdict either', () => {
+    // The plain freeze had made `Complete` a claim-moving control — un-ended read
+    // `supports`, ended read `does_not_support` — where pre-change it moved
+    // nothing. `ended_at` is the second owner-movable input to this denominator.
+    const open = mirror(84);
+    const ended = computeTrialFacts({
+      trial: {
+        id: 'trial-mirror',
+        startedAt: '2026-05-01',
+        targetDurationDays: 84,
+        targetDurationDaysInitial: GATE_TARGET_DESIGNED,
+        endedAt: '2026-06-29',
+        species: 'dog',
+      },
+      allowedFoods: [GATE_DIET],
+      feedings: MIRROR,
+      nowMs: trialDay(GATE_START, 60),
+    });
+    expect(ended.interpretability).toBe(open.interpretability);
+    expect(mayStateRecordClean(ended)).toBe(mayStateRecordClean(open));
+  });
+
+  it('a window SHORTENED below the designed one cannot buy a claim either', () => {
+    // `initial > current` — no writer produces it today (TE-3 / D3a make the window
+    // forward-only), so this is latent. It is pinned because the freeze's
+    // correctness would otherwise depend on a write path that does not exist yet,
+    // and that coupling is invisible from the code.
+    const feedings = [...daysRange(1, 10).map(onDiet), ...daysRange(29, GATE_TODAY).map(onDiet)];
+    const shortened = factsAtTarget(GATE_TARGET, feedings, 56);
+    const honest = factsAtTarget(GATE_TARGET, feedings, GATE_TARGET_DESIGNED);
+    expect(shortened.interpretability).toBe(honest.interpretability);
+    expect(mayStateRecordClean(shortened)).toBe(mayStateRecordClean(honest));
+    // The ratio DOES differ — the designed window really is wider — and that is
+    // the honest half: what may not move is the claim.
+    expect(shortened.coverage?.daysElapsed).toBe(GATE_TODAY);
+    expect(honest.coverage?.daysElapsed).toBe(GATE_TARGET_DESIGNED);
+  });
+
+  it('a scope opening AFTER the live window binds on the scope, not on a 1-day gate', () => {
+    // The first cut of the gate used `max(scopedStart, liveTargetEnd)` and produced
+    // a one-day window here, dropping a `supports` to `not_yet` — the safe
+    // direction and still wrong. The designed clip carries the same guard for the
+    // same reason; this is that guard, on the second reading.
+    const f = computeTrialFacts({
+      trial: {
+        id: 'trial-scope',
+        startedAt: '2026-05-01',
+        targetDurationDays: GATE_TARGET,
+        targetDurationDaysInitial: GATE_TARGET_DESIGNED,
+        species: 'dog',
+      },
+      allowedFoods: [GATE_DIET],
+      feedings: [...daysRange(1, 10).map(onDiet), ...daysRange(35, GATE_TODAY).map(onDiet)],
+      nowMs: trialDay(GATE_START, GATE_TODAY),
+      scopeStart: '2026-06-04', // trial day 35 — past the designed end (day 28)
+    });
+    expect(f.coverage).toEqual(f.gateCoverage);
+    expect(f.coverage?.daysElapsed).toBe(16);
+    // And no disclosure, because the printed range does NOT stop at the window end.
+    expect(f.range?.coverageClippedAtWindowEnd).toBe(false);
+  });
+
+  it('B-422 still holds: a complete window followed by silence reads `supports`', () => {
+    // The harm the tail clip exists for, and the thing R2 must not undo. Nobody
+    // extended this trial, so both readings close at the same day.
+    const f = factsAtTarget(GATE_TARGET, daysRange(1, GATE_TARGET).map(onDiet), GATE_TARGET_DESIGNED);
+    expect(f.coverage).toEqual(f.gateCoverage);
+    expect(f.interpretability).toBe('supports');
+    expect(mayStateRecordClean(f)).toBe(true);
+  });
 });

@@ -2743,6 +2743,49 @@ function dietTrialSection(snap: ReportSnapshot): string {
         fmtRange(t.rangeStartDate, t.rangeEndDate),
       )}).`,
     )
+    // ── CUL-1038 / D7c — WHAT THAT DENOMINATOR IS, SAID OUT LOUD ─────────────
+    //
+    // The disclosure `lib/dietTrial.ts`'s tail clip has cited as its own
+    // justification since B-422 and that no surface rendered until now — C-38's
+    // "a comment writing a cheque the code does not cash", inside the clip whose
+    // whole argument was the disclosure. The freeze half of D7(c) stops an
+    // extension moving this figure; this half is why a clinician can see that it
+    // is pinned, and it is the sibling of the allowed-list sentence below
+    // ("The allowed list changed after the trial started"), which discloses the
+    // other mid-trial change to the comparator.
+    //
+    // IT DESCRIBES THE MEASURE, NOT THE PRINTED RANGE. `closedByOverrun` is true
+    // even where the clip itself did nothing — a since-visit scope that already
+    // ends before the target does — so a sentence claiming the dates above STOP
+    // at the window's end would be false on exactly that scope. And it never says
+    // the window MOVED: that is `target_duration_set_at`, which nothing writes
+    // yet, and §5.1's "extended from 56 days on 19 Sep" is PR 4's.
+    if (t.coverageClosedByOverrun) {
+      // THE EXCLUDED SPAN, AS A NUMBER (C-3). The first cut of this sentence
+      // replaced a quantified fact — the ratio itself used to carry the silent
+      // days in its denominator — with an unquantified clause. `gateCoverage`
+      // reads the same record over the window in force, so the difference IS the
+      // span, and how much of it holds a meal is the number that decides whether
+      // the reader should care.
+      const gate = t.gateCoverage
+      const extraDays = gate ? gate.daysElapsed - t.coverage.daysElapsed : 0
+      const extraLogged = gate ? gate.daysLogged - t.coverage.daysLogged : 0
+      const since =
+        extraDays > 0
+          ? ` The trial has run ${num(gate!.daysElapsed)} days in all; the ${num(extraDays)} since ` +
+            `that window closed ${extraDays === 1 ? 'is' : 'are'} not in the ratio above, and the ` +
+            `record holds a meal on <b>${num(extraLogged)}</b> of them.`
+          : ''
+      recordBits.push(
+        // NOT "has run past the window it was designed against" — that asserted an
+        // overrun the day counter denies on an extended trial ("day 50 of 64"),
+        // and the sentence that would reconcile them names a window MOVE, which
+        // needs `target_duration_set_at` and is PR 4's. This says what is true of
+        // the MEASURE instead, which is what the reader needs to read the ratio.
+        `<b>Coverage above is measured over the trial&rsquo;s original window.</b>${since} ` +
+          `Feedings logged after it are still counted in the exposures below.`,
+      )
+    }
   }
   if (t.untrackedDaysBeforeFirstLog > 0) {
     // §10 S3. The normal vet-directed setup, not an edge case: the owner is handed
@@ -4832,11 +4875,19 @@ function trialTiles(snap: ReportSnapshot): string[] {
     // so. And the denominator is the trial's LOGGED SPAN, not its target length, so the
     // range is named rather than left to collide with "of a 56-day window" elsewhere.
     const span = h(fmtRange(snap.trial.rangeStartDate, snap.trial.rangeEndDate))
+    // CUL-1038 — the tile is the scan-grid twin of the coverage sentence, so it
+    // carries the same disclosure or the two surfaces say different things about
+    // one number. Compressed to the caption's register (the sentence above the
+    // fold has the full form): what it adds is that this denominator is the
+    // DESIGNED window, which the day counter beside it may already exceed.
+    const overrunNote = snap.trial.coverageClosedByOverrun
+      ? `<br/>over the trial&rsquo;s original window, not the days since`
+      : ''
     tiles.push(
       tile(
         `${snap.trial.coverage.daysLogged}`,
         `<small>&nbsp;/&nbsp;${snap.trial.coverage.daysElapsed}</small>`,
-        `Days a meal was logged &middot; ${span}<br/>record coverage &mdash; not intake, not a clean-elimination count`,
+        `Days a meal was logged &middot; ${span}<br/>record coverage &mdash; not intake, not a clean-elimination count${overrunNote}`,
       ),
     )
   } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'consecutive_low') {

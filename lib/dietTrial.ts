@@ -145,6 +145,17 @@ export interface TrialSpec {
    *  is by definition the days before it. Carried so a surface can say so. */
   transitionStartedAt?: string | null;
   targetDurationDays?: number;
+  /** `diet_trials.target_duration_days_initial` (migration 068) — the window the
+   *  trial was DESIGNED against, which `target_duration_days` stops being the
+   *  moment an owner extends. It exists here for exactly one reader, the coverage
+   *  clip (`trialCoverageWindowEndDayIndex`); nothing else in this module may use
+   *  it, because every other question is about the window in force TODAY.
+   *
+   *  NULL / absent means "not recorded" and never a number (migration 068's own
+   *  column comment). Never compare it against `targetDurationDays` to ask
+   *  whether the window moved — two equal integers are also what a corrected typo
+   *  looks like, and `target_duration_set_at` is that predicate (PR 2). */
+  targetDurationDaysInitial?: number | null;
   species?: TrialSpecies;
 }
 
@@ -354,6 +365,76 @@ export function trialEffectiveEndDayIndex(
 ): number | null {
   const targetEnd = trialTargetEndDayIndex(trial, timeZone);
   return targetEnd === null ? null : targetEnd + TRIAL_OVERRUN_GRACE_DAYS;
+}
+
+/**
+ * The last local day the COVERAGE DENOMINATOR is measured over — the trial's
+ * window as it was DESIGNED, not as it stands today (CUL-1038, spec §6 D7c).
+ *
+ * ── WHY THIS IS NOT `trialTargetEndDayIndex` ────────────────────────────────
+ *
+ * They were the same function until an adversarial pass executed what an owner
+ * can do with them. The B-422 tail clip below bounds the coverage denominator at
+ * the target end, and `target_duration_days` is the exact integer the extension
+ * tap overwrites — so on an un-ended trial past its window, one extension moved
+ * `belowCoverageFloor`, `mayStateRecordClean` AND `interpretability` in the
+ * REASSURING direction, retroactively, over days already reported, on zero new
+ * evidence. Executed on the rendered report: *"Meals logged on 0 of 9 days"* +
+ * *"too sparse to read that as a clean elimination"* became **"all 22 matched the
+ * trial diet or a permitted food"**, on the since-visit scope a diet-trial owner
+ * actually gets. It runs the other way too, withdrawing a clean claim from a
+ * record that was logged every prescribed day.
+ *
+ * TE-6 is the rule that forbids it: **an extension may not move a claim about the
+ * record that the record did not change.** So the two ends split by the KIND of
+ * question they answer, and the split is the whole repair:
+ *
+ *   • `trialTargetEndDayIndex` / `trialEffectiveEndDayIndex` answer *is this
+ *     trial running today* — BELIEF, which an extension is SUPPOSED to move.
+ *     They keep reading `target_duration_days` and must keep reading it; the
+ *     extension tap's own docstring calls that "the sanctioned way to move the
+ *     window … for every reader at once", and that is still true of belief.
+ *   • this one answers *how much of the trial's window does the record cover* —
+ *     a CLAIM ABOUT THE RECORD, which no owner action may move.
+ *
+ * ── THE FALLBACK, AND WHY IT IS THE CURRENT TARGET ──────────────────────────
+ *
+ * `targetDurationDaysInitial` is NULL on a trial created between migration 068
+ * and the write path that stamps it. For those rows the designed window is not
+ * recorded, and there is no safe constant to substitute: the clipped window is
+ * the reassuring read on a record that went silent, and the unclipped one is the
+ * reassuring read on a record that started late, so a fail-safe cannot pick a
+ * side. Falling back to the current target is therefore the pre-repair behaviour
+ * preserved exactly — no new claim, no new hazard, and no pretence that the
+ * freeze covers a row it cannot.
+ *
+ * ⚠️ THE GAP IS NOT BOUNDED, AND THIS DOCSTRING CLAIMED IT WAS. It read
+ * "`startDietTrial` stamps the column on creation so the gap closes at its
+ * source" — true of the first cut of CUL-1038 and false at HEAD, because the
+ * create-stamp was removed when the code review traced a clobber through the
+ * push (see `dietTrialRowToRemote`). So every trial created until CUL-1051's
+ * ratchet and PR 2's write path land carries NULL here, which is 100% of new
+ * trials rather than a legacy tail. C-38, written into the very sentence that
+ * justifies the fallback — and caught by the adversarial pass, not by re-reading.
+ *
+ * The reach is also wider than the session record first claimed: the condition
+ * is (the target moved) AND (the calendar is past the designed end), IN EITHER
+ * ORDER. Executed — the day-28 milestone tap (`overrunDays === 0`, the shipped
+ * one-tap no-confirm control, inert at the moment of the tap) reaches it 22 days
+ * later with no overrun ever having preceded it.
+ */
+export function trialCoverageWindowEndDayIndex(
+  trial: {
+    startedAt: string;
+    targetDurationDays?: number | null;
+    targetDurationDaysInitial?: number | null;
+  },
+  timeZone?: string,
+): number | null {
+  const initial = Math.floor(Number(trial.targetDurationDaysInitial ?? 0));
+  const designed =
+    Number.isFinite(initial) && initial > 0 ? initial : trial.targetDurationDays;
+  return trialTargetEndDayIndex({ startedAt: trial.startedAt, targetDurationDays: designed }, timeZone);
 }
 
 /**
@@ -1260,11 +1341,49 @@ export interface TrialRange {
    * Exposed rather than kept private because §5.1's "render the range
    * explicitly" cuts both ways: a card reading "Meals logged on 56 of 56 days"
    * under "Day 84 of 56" owes the owner the sentence that says why the two
-   * denominators differ. No surface consumes this yet — the copy needs a mock
-   * round, and this PR deliberately ships the behaviour without inventing
-   * undrawn strings (B-592).
+   * denominators differ.
+   *
+   * ⚠️ THE ORIGINAL PARAGRAPH HERE READ "no surface consumes this yet — the copy
+   * needs a mock round", and it stayed true for four months while the clip's own
+   * justification at the tail-clip comment cited the disclosure as the reason the
+   * clip was safe. C-38's *"a comment writing a cheque the code does not cash"*,
+   * sitting inside the clip whose whole argument was the disclosure. CUL-1038
+   * (PR 1b) cashes it on the REPORT: the coverage sentence, the scan-grid tile and
+   * `interpretabilityStatement` all read this.
+   *
+   * THE OWNER'S CARD STILL DOES NOT, and that is a scope line rather than an
+   * oversight — so it is stated here instead of being left for the next reader to
+   * discover the same way. The card gets the FREEZE (its facts come through
+   * `computeTrialFacts` too, so the gate can no longer flip under it); what it
+   * lacks is the SENTENCE explaining "56 of 56 days" under "Day 84". That copy is
+   * B-592, filed since B-422 and deliberately unwritten: the card in
+   * `docs/nyx-diet-trial-mockups.html` is design-locked and this repo does not
+   * invent strings for it outside a mock round.
+   *
+   * WHAT IT MEANS AND WHAT IT DOES NOT. True says *this trial has run past the
+   * window it was designed against, so the figure beside me is measured over that
+   * window and not over the days elapsed.* It does NOT say the window was moved —
+   * that question is `target_duration_set_at IS NOT NULL` (migration 068), which
+   * nothing writes yet and which PR 4's §5.1 sentence renders. A surface that
+   * turns this field into "the window changed" is making a claim the record
+   * cannot support.
    */
   closedByOverrun: boolean;
+  /**
+   * CUL-1038 R2 — the coverage range's end IS the designed window's end, within
+   * THIS view. The condition a surface renders the overrun disclosure on.
+   *
+   * `closedByOverrun` above describes the TRIAL and is true even where the clip
+   * did nothing, which is what made the first cut of that disclosure false: on a
+   * since-visit scope OPENING AFTER the designed window closed, the page printed
+   * "the days since are not in the ratio above" over a ratio composed entirely of
+   * days since. The comment beside it had reasoned about the mirror case — a
+   * scope ENDING before the target — and guarded only that one.
+   *
+   * So the trial-state fact and the render condition are two fields. A sentence
+   * about where the printed range STOPS switches on this one.
+   */
+  coverageClippedAtWindowEnd: boolean;
 }
 
 export interface TrialCoverage {
@@ -1731,6 +1850,23 @@ export interface TrialFacts {
   untrackedDaysBeforeFirstLog: number;
   interpretability: Interpretability;
   /**
+   * CUL-1038 R2 — THE SAME RECORD, read over the window CURRENTLY IN FORCE.
+   *
+   * `coverage` is the RATIO a surface prints and is measured over the window the
+   * trial was DESIGNED against, so no owner action moves it (TE-6). This is the
+   * other question — how much of the trial as it NOW runs does the record cover —
+   * and `interpretability` is the less reassuring of the two verdicts, so neither
+   * window can be the generous one.
+   *
+   * Identical to `coverage` on every trial nobody has extended, which is the
+   * ordinary record: a surface printing both says one thing there, and two only
+   * where the record genuinely holds two facts. Where they differ,
+   * `daysElapsed - coverage.daysElapsed` is the span the printed ratio excludes
+   * and `daysLogged - coverage.daysLogged` is how much of it is logged — C-3 says
+   * a surface states that as a number rather than gesturing at it.
+   */
+  gateCoverage: TrialCoverage | null;
+  /**
    * B-600 — ELAPSED TRIAL DAYS THE RANGE DOES NOT LOOK AT, either side.
    *
    * Both zero whenever the range spans the whole elapsed trial, which is every
@@ -1887,6 +2023,81 @@ export const REFUSAL_WINDOW_DAYS = 14;
  *  overnight refusal. */
 export const REFUSAL_MIN_SPAN_MS = 12 * 60 * 60 * 1000;
 
+/**
+ * How REASSURING a verdict is, so two readings of one record can be compared
+ * (CUL-1038 R2). Higher = more reassuring. `not_yet` sits ABOVE
+ * `does_not_support` because it withholds the claim quietly while
+ * `does_not_support` actively says the record cannot be read — and
+ * `belowCoverageFloor` is `does_not_support`, so it is the one that renders a
+ * caveat. Most-disclosing is the floor.
+ */
+const REASSURANCE_RANK: Record<Interpretability, number> = {
+  supports: 3,
+  partially_supports: 2,
+  not_yet: 1,
+  does_not_support: 0,
+};
+
+/**
+ * THE GATE TAKES THE LESS REASSURING OF THE TWO READINGS (CUL-1038 R2, D7(c) as
+ * re-cut; C-4's precedence rule).
+ *
+ * The coverage denominator has more than one owner-movable input, and pinning
+ * one of them only moved the movement somewhere else. The first cut of this PR
+ * froze the denominator at the DESIGNED window, which closed §5.4 — an extension
+ * could no longer release the clip and inflate the ratio — and opened its mirror:
+ * a trial designed at 28 days, extended to 84, logged on every one of days 1–28
+ * and then silent, read on day 60, went from *"28 of 60 … does not support
+ * interpreting this trial either way"* to *"28 of 28 … supports interpreting
+ * it"*. The pin EXCLUDED 32 un-logged days that lie inside the window currently
+ * in force. B-422's justification is "a vet who prescribed eight weeks should not
+ * read a denominator of twelve"; there the prescription in force WAS twelve weeks
+ * and the vet read a denominator of four.
+ *
+ * So the two questions are separated, and neither reading is allowed to be the
+ * generous one:
+ *
+ *   • THE RATIO the report prints is measured over the DESIGNED window. It is a
+ *     statement about the record and no owner action may move it (TE-6).
+ *   • THE VERDICT is the less reassuring of that reading and a second one taken
+ *     over the window currently in force, bounded by today. Un-logged days inside
+ *     the live window are gaps, and gaps are what the floor exists to catch.
+ *
+ * Executed both ways: §5.4's extension no longer improves the verdict (the
+ * designed reading is the accusing one and wins), and the mirror no longer does
+ * either (the live reading is the accusing one and wins). Ending the trial stops
+ * moving it too — which it had started doing under the plain freeze.
+ */
+/**
+ * One coverage reading over an arbitrary window end, sharing the head clip.
+ *
+ * Both of `computeTrialFacts`' readings go through this, so the head allowance
+ * (§10 S3 — days before the owner's first log are named untracked, not counted as
+ * failure) applies to each on its own terms rather than one inheriting the
+ * other's start day. `loggedDays` is already filtered to non-treat feedings
+ * inside `[scopedStart, evidenceEnd]`, so this only ever narrows.
+ */
+export function coverageOverWindow(
+  endDay: number,
+  loggedDays: readonly number[],
+  scopedStart: number,
+  rangeOpensAtTrialStart: boolean,
+): TrialCoverage {
+  const head = rangeOpensAtTrialStart ? loggedDays.filter((d) => d <= endDay) : [];
+  const start = head.length > 0 ? Math.min(...head) : scopedStart;
+  const daysElapsed = endDay - start + 1;
+  const daysLogged = new Set(loggedDays.filter((d) => d >= start && d <= endDay)).size;
+  return {
+    daysLogged,
+    daysElapsed,
+    fraction: daysElapsed > 0 ? daysLogged / daysElapsed : 0,
+  };
+}
+
+export function leastReassuring(a: Interpretability, b: Interpretability): Interpretability {
+  return REASSURANCE_RANK[a] <= REASSURANCE_RANK[b] ? a : b;
+}
+
 export function interpretabilityOf(coverage: TrialCoverage | null): Interpretability {
   if (!coverage || coverage.daysElapsed < MIN_INTERPRETABLE_DAYS) return 'not_yet';
   if (coverage.fraction >= COVERAGE_SUPPORTS) return 'supports';
@@ -2041,6 +2252,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     antigenArmDark: false,
     untrackedDaysBeforeFirstLog: 0,
     interpretability: 'not_yet',
+    gateCoverage: null,
     // No range resolved, so nothing is "outside" one. These paths render no
     // interpretability statement at all (`not_yet`), so the zero is never read as
     // "the range covers the whole trial".
@@ -2165,7 +2377,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // line: it is `target_duration_days`, which §4.3's milestone lets an owner move
   // with one tap ("Keep going — 4 more weeks"). That is the sanctioned way to
   // extend the window, it moves it for every reader at once, and it cannot be
-  // triggered by a stray meal. An owner who genuinely runs long without tapping
+  // triggered by a stray meal.
+  //
+  // ⚠️ CORRECTED 2026-09-17 (CUL-1038 / D7c). "It moves it for every reader at
+  // once" was the defect, not the feature — the sentence is kept because the
+  // reasoning above it is still right about WHY a log line cannot be the
+  // authority, and wrong about this clip following the tap. A tap that moves
+  // BELIEF (is this trial still running) is sanctioned; a tap that moves a
+  // CLAIM ABOUT THE RECORD is TE-6's violation, and this denominator is the
+  // second kind. The authority for coverage is now the window the trial was
+  // DESIGNED against — `target_duration_days_initial`, read through
+  // `trialCoverageWindowEndDayIndex`. Everything below about the stray meal, the
+  // 28/84 mirror harm and the C5 disclosure is unchanged and is why the clip
+  // still exists.
+  //
+  // An owner who genuinely runs long without tapping
   // has their COVERAGE measured over the window their vet prescribed — which is
   // the number that motivated this clip in the first place, since a vet who
   // prescribed eight weeks should not read a denominator of twelve. Everything
@@ -2198,7 +2424,16 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // old trial) the scope is already the binding constraint, and clipping there
   // collapsed the range below its own start and returned NO TRIAL BLOCK AT ALL,
   // taking an in-scope off-diet exposure with it.
-  const targetEnd = trialTargetEndDayIndex(ctx.trial, input.timeZone);
+  // ── CUL-1038 / D7(c) — THE WINDOW IS THE DESIGNED ONE, NOT TODAY'S ────────
+  //
+  // `trialCoverageWindowEndDayIndex`, never `trialTargetEndDayIndex`. Its
+  // docstring carries the executed finding; the short version is that
+  // `target_duration_days` is what the extension tap overwrites, so a clip bound
+  // on it let one owner action move a claim about the record (TE-6). BOTH reads
+  // below take the frozen end — bounding `endDayIndex` while leaving
+  // `overrunUnended` on the live target would release the clip entirely on an
+  // extended trial, which is the defect wearing a different shape.
+  const targetEnd = trialCoverageWindowEndDayIndex(ctx.trial, input.timeZone);
   const overrunUnended = !ctx.trial.endedAt && targetEnd !== null && evidenceEnd > targetEnd;
   let endDayIndex = evidenceEnd;
   if (overrunUnended && targetEnd !== null && targetEnd >= scopedStart) {
@@ -2213,6 +2448,43 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // of -88 days". A range whose end precedes its start is not a degraded answer,
   // it is a nonsense one, so the clip only moves the head for a log that is
   // actually inside the window being described.
+  //
+  // CUL-1038: the head clip was the SECOND route to §5.4's flip, and the freeze
+  // above closes it rather than a second guard doing so. It follows
+  // `endDayIndex`, so once the tail clip released, the head clip walked forward
+  // to the first log PAST the old window — an owner who logged nothing in the
+  // prescribed 28 days and every day after went 0 of 28 `does_not_support` to 22
+  // of 22, fraction 1.0, `supports`, with `untrackedDaysBeforeFirstLog`
+  // fabricated at 28 so the page asserted the first 28 days pre-dated any
+  // logging. They were ordinary un-logged trial days. With the window pinned at
+  // the designed target there is no log inside it for the head to follow, so
+  // 0 of 28 stays 0 of 28. Stated here because it reads as incidental and is not.
+  //
+  // ⚠️ IT CLOSES ONE INSTANCE, NOT THE CLASS, and the first version of this
+  // comment (and §6 D7's "closes the head-clip route as a side effect") read as
+  // the latter. What the freeze closes is the route where the TAIL clip's release
+  // is what carried the head clip forward. The head clip is still free wherever
+  // the designed window extends past today — executed on the shipped dog·skin
+  // 56-day default, never extended, nothing logged days 1–28 then daily to day
+  // 50: `22 of 22`, fraction 1.0, `supports`, `mayStateRecordClean` TRUE, with
+  // `untrackedDaysBeforeFirstLog` at 28, so the report asserts the first 28 days
+  // pre-date any logging. Identical with the column absent, so it is not this
+  // PR's regression — it is every trial in its first half.
+  //
+  // IT IS FILED, a day before this PR, by the v15 cold read: CUL-1020 (the
+  // affirmative verdict) and CUL-1021 (the page-1 tile's ratio), the second
+  // carrying an open PM call on which denominator is right. Re-executed here on
+  // the merged tree against CUL-1020's own record — 56-day trial read on day 39,
+  // days 1-16 never logged, never extended — and it reproduces that issue's
+  // quoted string verbatim: `23 of 23`, `supports`, `mayStateRecordClean` TRUE.
+  //
+  // AND THE PRECEDENCE SPLIT CANNOT REACH IT, by construction rather than by
+  // omission. `coverageOverWindow` applies this head allowance to BOTH readings,
+  // so `gateCoverage` is also `23 of 23` and `leastReassuring` is handed two
+  // equal inputs. That is S3 working as ruled — CUL-1020 says as much itself —
+  // which is why the head needs its own answer and not a wider gate. On that
+  // record `coverageClippedAtWindowEnd` is FALSE, so PR 1b's disclosure never
+  // renders there either: the two defects are disjoint, tail and head.
   const headCandidates = rangeOpensAtTrialStart ? loggedDays.filter((d) => d <= endDayIndex) : [];
   const startDayIndex = headCandidates.length > 0 ? Math.min(...headCandidates) : scopedStart;
   const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
@@ -2270,6 +2542,11 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // even when the clip itself did nothing (a scope starting past the target),
     // because it describes the TRIAL's state, which is what a surface discloses.
     closedByOverrun: overrunUnended,
+    // The clip actually bit in this view: `overrunUnended` already carries
+    // "evidence past the designed end", so what this adds is that the clip was
+    // reachable from this scope (`targetEnd >= scopedStart`) and therefore that
+    // the end below really is the designed window's.
+    coverageClippedAtWindowEnd: overrunUnended && targetEnd !== null && endDayIndex === targetEnd,
   };
 
   const coveredDays = new Set<number>();
@@ -2419,7 +2696,45 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     daysElapsed: range.daysElapsed,
     fraction: range.daysElapsed > 0 ? coveredDays.size / range.daysElapsed : 0,
   };
-  const interpretability = interpretabilityOf(coverage);
+
+  // ── CUL-1038 R2 — THE SECOND READING, over the window CURRENTLY IN FORCE ────
+  //
+  // `coverage` above is the printed ratio and is measured over the DESIGNED
+  // window, so no owner action moves it. This one asks the other question — how
+  // much of the trial AS IT NOW RUNS does the record cover — and
+  // `leastReassuring` decides between them. Its docstring carries the executed
+  // case; the short version is that pinning the denominator excluded un-logged
+  // days that lie inside the live window and manufactured a clean read.
+  //
+  // DERIVED FROM `loggedDays`, NOT FROM A SECOND PASS OVER THE FEEDINGS. That
+  // array is already every non-treat logged day in `[scopedStart, evidenceEnd]`,
+  // which is a superset of both windows — so the two readings cannot disagree
+  // about what a logged day IS, only about which window they measure. A second
+  // loop could drift from the numerator the report prints; this cannot.
+  //
+  // AND ONLY WHEN THE LIVE WINDOW END IS INSIDE THIS SCOPE — the same guard the
+  // designed clip carries above, for the same reason its comment gives: where a
+  // report scope opens AFTER the window closed, the scope is already the binding
+  // constraint, and clipping there collapses the range below its own start. The
+  // first cut of this used `max(scopedStart, liveTargetEnd)` and produced exactly
+  // that: a since-visit scope on an overrun trial read a one-day gate window
+  // (`1 of 1`) and dropped a `supports` verdict to `not_yet`. The safe direction,
+  // and still wrong — the pre-change answer was the printed one, and where the
+  // scope binds there is no second window to be less reassuring about.
+  const liveTargetEnd = trialTargetEndDayIndex(ctx.trial, input.timeZone);
+  const gateEnd =
+    liveTargetEnd !== null && liveTargetEnd >= scopedStart
+      ? Math.min(evidenceEnd, liveTargetEnd)
+      : evidenceEnd;
+  const gateCoverage = coverageOverWindow(gateEnd, loggedDays, scopedStart, rangeOpensAtTrialStart);
+
+  // THE LESS REASSURING OF THE TWO. Not the lower fraction: `not_yet` is a
+  // non-claim rather than a low one, so comparing fractions across it would let a
+  // five-day designed window silently outrank a sixty-day live one.
+  const interpretability = leastReassuring(
+    interpretabilityOf(coverage),
+    interpretabilityOf(gateCoverage),
+  );
 
   const oralRoute: OralRouteExposure[] = [];
   for (const dose of input.doses ?? []) {
@@ -2592,6 +2907,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       : null,
     untrackedDaysBeforeFirstLog,
     interpretability,
+    gateCoverage,
     trialDaysOutsideRange,
     trialDaysElapsed,
     belowCoverageFloor: interpretability === 'does_not_support',
@@ -2858,11 +3174,46 @@ export function contaminationNote(
  */
 export function interpretabilityStatement(facts: TrialFacts): string | null {
   if (!facts.coverage || !facts.range) return null;
-  const { daysLogged, daysElapsed } = facts.coverage;
+  // CUL-1038 R2 — THE VERDICT'S OWN WINDOW, not always the printed ratio's.
+  //
+  // This renders verbatim on the vet report and the file's own comment calls it
+  // the one line a reader lifts for the bottom line, so it states the numbers the
+  // verdict was DECIDED over or it argues with itself. Both directions are real:
+  // on an extended trial with a silent stretch the printed ratio is `28 of 28`
+  // while the verdict is `does_not_support`; on §5.4's record the live-window read
+  // is `32 of 50` while the verdict comes from the designed `10 of 28`. Printing
+  // either one unconditionally pairs a reassuring numerator with an accusing
+  // verdict on one of the two.
+  //
+  // On a tie the PRINTED reading wins, so the sentence agrees with the coverage
+  // line above it wherever the two readings reach the same answer — which is
+  // every trial nobody has extended.
+  const printedVerdict = interpretabilityOf(facts.coverage);
+  const decidedOver =
+    facts.interpretability === printedVerdict ? facts.coverage : (facts.gateCoverage ?? facts.coverage);
+  const { daysLogged, daysElapsed } = decidedOver;
   const days = `${daysLogged} of ${daysElapsed} days`;
   const outside = facts.trialDaysOutsideRange.before + facts.trialDaysOutsideRange.after;
   const truncated = outside > 0;
-  const of = truncated ? 'of this report’s window' : 'of the trial window';
+  // CUL-1038 — WHICH WINDOW, on the one line a vet lifts for the bottom line.
+  // The denominator can be the window the trial was DESIGNED against while the
+  // day counter two inches away reads past it ("day 50 of 64"), so naming it
+  // removes the ambiguity where the reader meets it (C-37).
+  //
+  // ⚠ "PRESCRIBED" WAS THE WRONG WORD, and the adversarial pass caught it: on an
+  // extended trial the prescribed window is the LONGER one, printed on the same
+  // page, so this sentence was attaching the clinician's word to the number that
+  // is not it. "Original" is the true one.
+  //
+  // NOT pushed into the report's `caveats` array: every entry there suppresses
+  // the affirmative variant, and an overrun is not a reason the record cannot
+  // carry a result — B-422 exists precisely so a trial logged on all its
+  // prescribed days and then silent still reads `supports` over its own window.
+  const of = truncated
+    ? 'of this report’s window'
+    : facts.range.coverageClippedAtWindowEnd && decidedOver === facts.coverage
+      ? 'of the trial’s original window'
+      : 'of the trial window';
   switch (facts.interpretability) {
     case 'supports':
       return truncated

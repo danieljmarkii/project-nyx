@@ -344,6 +344,13 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
   // B-704 — the owner's stored trial protein + set-at reach the pure layer (§7.4).
   assert.equal(rows[0].targetProtein, 'duck')
   assert.equal(rows[0].targetProteinSetAt, '2026-05-03T10:00:00Z')
+  // CUL-1038 — the DESIGNED window, and asserted against the LIVE one so a mapper
+  // reading `target_duration_days` twice cannot pass.
+  // CUL-1038 — the DESIGNED window, asserted against the LIVE one so a mapper
+  // reading `target_duration_days` twice cannot pass. The fixture's 28-vs-56 is
+  // PR 4's (CUL-1041) and already divergent, so this needs no separate row.
+  assert.equal(rows[0].targetDurationDaysInitial, 28)
+  assert.equal(rows[0].targetDurationDays, 56)
 })
 
 Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label survives an archived food (B-455)', () => {

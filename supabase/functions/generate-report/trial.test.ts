@@ -4908,9 +4908,29 @@ Deno.test('CUL-1041 — the overrun is silent where the day phrase already discl
 // that matters more. §5.4's "nothing says the window moved" understates it: the
 // thing that did say so is the casualty.
 
+/** The window this trial was DESIGNED against — the shipped GI default, and the
+ *  value migration 068's backfill stamped into `target_duration_days_initial` for
+ *  every row live at apply time. It does NOT move when the owner extends. */
+const GATE_TARGET_DESIGNED = 28
+
 /** The §5.4 record as the report receives it: a GI trial on the shipped 28-day
  *  default, 10 of days 1–28 logged, then every day to day 50, read on day 50.
- *  Only `targetDurationDays` varies between the two runs. */
+ *  Only `targetDurationDays` varies between the two runs.
+ *
+ *  ⚠ THE ROW SHAPE CHANGED WITH CUL-1038 (PR 1b), and it changed TOWARD
+ *  production, not away from it (C-35: a fixture that cannot exist in production
+ *  is green over nothing). Round 1 of this fixture carried no
+ *  `targetDurationDaysInitial` at all, which was the pre-068 row. Since migration
+ *  068 applied, every live trial carries the backfilled column, and the shipped
+ *  extension path (`extendTrial`, lib/dietTrialSetup.ts) writes ONLY
+ *  `target_duration_days` — so the row a real tap produces is
+ *  `{initial: 28, current: 64}`, which is what the two runs below are.
+ *
+ *  What did NOT change is the requirement: the `expectedFailure` at the foot of
+ *  this block is byte-identical to the one PR 0 shipped. The oracle was never the
+ *  fixture's row shape; it is that nothing the owner does may move what the page
+ *  states. A separate test below drives the un-stamped row, so the fallback this
+ *  freeze keeps is pinned rather than assumed. */
 function gateInput(targetDurationDays: number, over: Partial<ReportInput> = {}): ReportInput {
   const events = [...days('2026-06-01', '2026-06-10'), ...days('2026-06-29', '2026-07-20')].map((d) =>
     meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
@@ -4924,6 +4944,7 @@ function gateInput(targetDurationDays: number, over: Partial<ReportInput> = {}):
         foodItemId: 'f-hp',
         startedAt: '2026-06-01',
         targetDurationDays,
+        targetDurationDaysInitial: GATE_TARGET_DESIGNED,
         status: 'active',
         completedAt: null,
         endedAt: null,
@@ -4957,70 +4978,215 @@ function gatePage(targetDurationDays: number, over: Partial<ReportInput> = {}): 
   return plain(renderReport(assembleReport(gateInput(targetDurationDays, over))))
 }
 
-Deno.test('§5.4 report path — the default scope: 10 of 28 becomes 32 of 50 on one tap', () => {
+Deno.test('§5.4 report path — REPAIRED: the default scope does not move on the tap', () => {
   const before = gatePage(28)
   const after = gatePage(GATE_TARGET_AFTER)
 
-  // The coverage sentence, as the vet reads it. Executed, not transcribed.
+  // ⚠ WHAT THIS TEST SAID BEFORE CUL-1038, kept because the executed record is
+  // the point of this block: `after` read "Meals logged on 32 of 50 days
+  // (Jun 1 – Jul 20, 2026)" and "all 32 matched the trial diet or a permitted
+  // food", where `before` read "10 of 28" and "too sparse to read that as a clean
+  // elimination". One tap, no new meal.
+  //
+  // The denominator is now frozen at the DESIGNED window, so both runs read the
+  // sentence the record earns.
   assert.match(before, /Meals logged on 10 of 28 days \(Jun 1 – Jun 28, 2026\)\./)
-  assert.match(after, /Meals logged on 32 of 50 days \(Jun 1 – Jul 20, 2026\)\./)
+  assert.match(after, /Meals logged on 10 of 28 days \(Jun 1 – Jun 28, 2026\)\./)
 
-  // And the verdict the page states over it, which is the thing that must not move.
-  assert.match(before, /too sparse to read that as a clean elimination/)
-  assert.ok(!/all \d+ matched the trial diet or a permitted food/.test(before))
+  for (const page of [before, after]) {
+    assert.match(page, /too sparse to read that as a clean elimination/)
+    assert.ok(!/all \d+ matched the trial diet or a permitted food/.test(page))
+  }
 
-  assert.ok(!/too sparse to read that as a clean elimination/.test(after))
-  assert.match(after, /all 32 matched the trial diet or a permitted food/)
+  // NON-VACUITY: the two pages must not be identical documents, or this is
+  // asserting that the tap did nothing at all rather than that it did not move
+  // the RECORD's claims. The day line legitimately follows the live window.
+  assert.notEqual(before, after)
 })
 
-Deno.test('§5.4 report path — since the vet visit, ZERO becomes an all-clean claim', () => {
-  // The scope a diet-trial owner actually gets (rung 1), and the worst instance on
-  // this page: the before state is not "sparse", it is a record with no meal logged
-  // in the window at all.
+Deno.test('§5.4 report path — REPAIRED: since the vet visit, ZERO stays ZERO', () => {
+  // The scope a diet-trial owner actually gets (rung 1), and the worst instance
+  // this page ever had: before the freeze, "Meals logged on 0 of 9 days" became
+  // "22 of 31" and "all 22 matched the trial diet or a permitted food" on one
+  // tap. A literal zero bought an affirmative all-clean claim.
   const before = gatePage(28, SINCE_VISIT)
   const after = gatePage(GATE_TARGET_AFTER, SINCE_VISIT)
 
   assert.match(before, /Meals logged on 0 of 9 days \(Jun 20 – Jun 28, 2026\)\./)
-  assert.match(after, /Meals logged on 22 of 31 days \(Jun 20 – Jul 20, 2026\)\./)
+  assert.match(after, /Meals logged on 0 of 9 days \(Jun 20 – Jun 28, 2026\)\./)
 
-  assert.match(before, /too sparse to read that as a clean elimination/)
-  assert.ok(!/all \d+ matched the trial diet or a permitted food/.test(before))
-  assert.match(after, /all 22 matched the trial diet or a permitted food/)
-
-  // Both runs really are the narrowed scope — otherwise this test would be the one
-  // above wearing a different name.
-  assert.ok(!/Jun 1 – /.test(before))
-  assert.ok(!/Jun 1 – /.test(after))
+  for (const page of [before, after]) {
+    assert.match(page, /too sparse to read that as a clean elimination/)
+    assert.ok(!/all \d+ matched the trial diet or a permitted food/.test(page))
+    // Both runs really are the narrowed scope — otherwise this test would be the
+    // one above wearing a different name.
+    assert.ok(!/Jun 1 – /.test(page))
+  }
 })
 
-Deno.test('§5.4 report path — the tap deletes the page’s own overrun disclosure', () => {
-  // The day line is the only place the document says this trial outran the window it
-  // was designed against. After the tap the page reads as an ordinary trial in
-  // progress, which is the §5.1 finding deleted rather than withheld (TE-4).
+Deno.test('§5.4 report path — the overrun disclosure SURVIVES the tap (D7c half 2)', () => {
+  // ⚠ THIS TEST INVERTED WITH CUL-1038. It used to assert the defect: the day
+  // line went from "day 50 — 22 days past the 28-day window" to "day 50 of 64",
+  // deleting the one sentence telling a clinician this trial had outrun the
+  // window it was designed against.
+  //
+  // Half of that is CORRECT and stays: the day line describes the window IN FORCE
+  // TODAY, and after a genuine extension that window really is 64 days. An
+  // extension is supposed to move belief. What was wrong is that nothing else on
+  // the page carried the overrun fact once the day line stopped.
   const before = gatePage(28)
   const after = gatePage(GATE_TARGET_AFTER)
 
   assert.match(before, /day 50 — 22 days past the 28-day window/)
   assert.match(after, /day 50 of 64/)
-  assert.ok(!/days past the/.test(after), 'nothing on the page still says it overran')
+
+  // The coverage disclosure now carries it on BOTH sides — this is the C-38 debt
+  // `lib/dietTrial.ts`'s tail clip has owed since B-422, and the reason the
+  // freeze is legible rather than merely correct.
+  //
+  // ⚠ THE COPY CHANGED WITH R2. It read "This trial has run past the window it
+  // was designed against", which asserted an overrun the day line denies on an
+  // extended trial ("day 50 of 64") — the sentence that would reconcile them
+  // names a window MOVE, and that needs `target_duration_set_at` (PR 4). It now
+  // describes the MEASURE, which is what the reader needs to read the ratio, and
+  // carries the excluded span as a NUMBER (C-3).
+  for (const page of [before, after]) {
+    assert.match(page, /Coverage above is measured over the trial’s original window\./)
+  }
+
+  // ── AND THE EXCLUDED SPAN, ONLY WHERE THERE IS ONE (C-3) ───────────────────
+  //
+  // Before the tap the designed window IS the window in force, so there is no
+  // span to state and the page says one thing. After it the two diverge, and the
+  // page states the difference as a NUMBER rather than gesturing at it — which is
+  // what the first cut lost when it replaced a quantified denominator (`32 of 50`)
+  // with an unquantified clause. This asymmetry is the `gateCoverage` contract
+  // rendered: one fact on the ordinary record, two only where the record holds
+  // two.
+  assert.ok(!/The trial has run \d+ days in all/.test(before))
+  assert.match(after, /The trial has run 50 days in all/)
+  assert.match(after, /the 22 since that window closed are not in the ratio above/)
+  assert.match(after, /the record holds a meal on 22 of them/)
+
+  // It never claims the WINDOW MOVED — that is `target_duration_set_at`, which
+  // nothing writes yet, and §5.1's sentence is PR 4's.
+  assert.ok(!/window (was )?(extended|changed|moved)/i.test(after))
 })
 
-expectedFailure(
-  '§5.4 report path — TE-6: one tap may not move what the vet report states [CUL-1038]',
-  () => {
-    // The requirement at the layer that matters, over BOTH scopes, because a repair
-    // that holds on the full window and not on the since-visit one has not held
-    // where the wedge's own owner reads it.
-    for (const over of [{}, SINCE_VISIT]) {
-      const before = gatePage(28, over)
-      const after = gatePage(GATE_TARGET_AFTER, over)
-      const sparse = (t: string) => /too sparse to read that as a clean elimination/.test(t)
-      const claim = (t: string) => /all \d+ matched the trial diet or a permitted food/.test(t)
-      assert.equal(sparse(after), sparse(before))
-      assert.equal(claim(after), claim(before))
-    }
-  },
-)
+Deno.test('§5.4 report path — an UNSTAMPED row keeps the pre-repair behaviour exactly', () => {
+  // THE RESIDUAL, PINNED RATHER THAN ASSUMED. `target_duration_days_initial` is
+  // NULL on a trial created between migration 068 and the stamp CUL-1038 adds to
+  // `startDietTrial` — and on any row a client wrote in that gap. The module
+  // treats NULL as "not recorded", never as a number, and falls back to the live
+  // target, which is the pre-repair arithmetic preserved exactly.
+  //
+  // It is a test rather than a comment because "the fallback is the old
+  // behaviour" is a claim about executed code, and because this is the shape
+  // where the hazard survives.
+  //
+  // ⚠ ITS SCOPE IS NOT BOUNDED. This said "bounded by the create-stamp"; that
+  // stamp was removed when the code review traced a clobber through the push, so
+  // CUL-1038 is reads-only and EVERY trial created until CUL-1051 + PR 2 land
+  // carries NULL here. 068's backfill covers the rows that existed when it
+  // applied and nothing after.
+  const unstamped = (targetDurationDays: number): string => {
+    const input = gateInput(targetDurationDays)
+    input.dietTrials[0].targetDurationDaysInitial = null
+    return plain(renderReport(assembleReport(input)))
+  }
+  const before = unstamped(28)
+  const after = unstamped(GATE_TARGET_AFTER)
+
+  assert.match(before, /Meals logged on 10 of 28 days/)
+  assert.match(after, /Meals logged on 32 of 50 days/)
+  assert.match(before, /too sparse to read that as a clean elimination/)
+  assert.match(after, /all 32 matched the trial diet or a permitted food/)
+})
+
+// ── THE REQUIREMENT, PROMOTED (CUL-1038) ────────────────────────────────────
+//
+// PR 0 shipped this as an `expectedFailure`: it passed while TE-6 was violated
+// and failed the moment the requirement held, so a repair could not land without
+// coming through this line. The assertion body below is BYTE-IDENTICAL to the one
+// PR 0 wrote — only the wrapper is gone. That is the whole value of the marker:
+// the oracle was fixed before the fix was, and it is the same oracle.
+Deno.test('§5.4 report path — TE-6: one tap may not move what the vet report states [CUL-1038]', () => {
+  // The requirement at the layer that matters, over BOTH scopes, because a repair
+  // that holds on the full window and not on the since-visit one has not held
+  // where the wedge's own owner reads it.
+  for (const over of [{}, SINCE_VISIT]) {
+    const before = gatePage(28, over)
+    const after = gatePage(GATE_TARGET_AFTER, over)
+    const sparse = (t: string) => /too sparse to read that as a clean elimination/.test(t)
+    const claim = (t: string) => /all \d+ matched the trial diet or a permitted food/.test(t)
+    assert.equal(sparse(after), sparse(before))
+    assert.equal(claim(after), claim(before))
+  }
+})
+
+
+Deno.test('PR 1b × PR 4 — both window sentences on ONE page, saying different things', () => {
+  // THE MERGE QUESTION, ASKED OF THE RENDERED PAGE. Until this branch merged main,
+  // the two features had never been rendered together: §5.4's fixture carried no
+  // provenance and CUL-1041's carried no silent tail. A real extended trial now has
+  // both, so the page can carry both sentences — and the risk is that they read as
+  // two answers to one question (the C-3 / one-record-two-answers class this repo
+  // treats as a defect).
+  //
+  // They are ADJACENT, not overlapping: CUL-1041 says the window MOVED and when;
+  // CUL-1038 says what the coverage ratio is MEASURED OVER. Asserted here rather
+  // than argued, because "they do not overlap" is a claim about rendered text.
+  const input = gateInput(GATE_TARGET_AFTER)
+  input.dietTrials[0].targetDurationSetAt = '2026-07-10T14:00:00Z'
+  const page = plain(renderReport(assembleReport(input)))
+
+  // PR 4's sentence: the window moved, and from what.
+  assert.match(page, /extended from 28 days/)
+  // PR 1b's: what the ratio is measured over, and what it leaves out.
+  assert.match(page, /Coverage above is measured over the trial’s original window\./)
+  assert.match(page, /are not in the ratio above/)
+
+  // NEITHER STATES THE OTHER'S FACT. PR 1b's sentence never says the window moved
+  // (it cannot know — it reads `initial`, not `set_at`), and PR 4's never claims
+  // anything about coverage.
+  assert.ok(!/Coverage above is measured[^.]*\b(extended|moved|changed)\b/.test(page))
+
+  // And the ratio really is the frozen one, on a page that also says it moved —
+  // which is the whole point of the two facts being separable.
+  assert.match(page, /Meals logged on 10 of 28 days/)
+})
+
+Deno.test('§5.4 report path — the scan-grid tile carries the same disclosure as the sentence', () => {
+  // THE TWO SURFACES MUST NOT DISAGREE ABOUT ONE NUMBER — the tile is the
+  // scan-grid twin of the coverage sentence, and `render.ts`'s own comment says
+  // so. The sentence is covered by the tests above; without this the tile's note
+  // could lose its gate, change its wording, or vanish, and nothing would notice.
+  // (Gap named by `code-reviewer` on this PR.)
+  const overrun = gatePage(28)
+  assert.match(overrun, /over the trial’s original window, not the days since/)
+
+  // THE GATE, proven by its OFF state over a record that differs in one way only:
+  // read on the last day of the prescribed window, so nothing has overrun. Without
+  // this half the assertion above passes over an unconditional string.
+  const inWindow = gatePage(28, { now: '2026-06-28T18:00:00Z' })
+  assert.ok(!/not the days since/.test(inWindow))
+  assert.ok(!/Coverage above is measured over the trial’s original window/.test(inWindow))
+  // …and it really is the same page, still printing a coverage tile to hang the
+  // note on — otherwise the absence proves nothing (C-41).
+  assert.match(inWindow, /record coverage — not intake, not a clean-elimination count/)
+  assert.match(overrun, /record coverage — not intake, not a clean-elimination count/)
+})
+
+// ── MERGE NOTE (PR 1b × PR 4) ───────────────────────────────────────────────
+//
+// PR 4 (CUL-1041) landed on main while this branch was open and re-stated the
+// §5.4 report-path marker as PR 0 left it — an `expectedFailure`. It is PROMOTED
+// here, with the body byte-identical, because this branch is the repair: the
+// freeze plus the ratio/verdict split is what makes it hold. PR 4's own tests
+// below are kept verbatim; the two features are adjacent on the page and do not
+// assert over each other — PR 4 says the window MOVED (and who asked), this says
+// what the coverage ratio is MEASURED OVER.
+
 
 Deno.test('CUL-1041 — the page-1 headline marks a target that is not the original plan', () => {
   // `vet-report-cold-read` returned NOT READY on this: the headline is what a 60-second
