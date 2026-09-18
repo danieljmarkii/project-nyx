@@ -272,10 +272,12 @@
     .tick { animation: none; opacity: 1; }
   }
   .foot { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
+  .snap, .snap * { transition: none !important; }
 </style>
 <div class="wrap">
 <header class="mast">
-  <p class="eyebrow"><span>Culprit · design system audit</span><span>CUL-1060 · discovery</span><span>2026-09-18</span><span class="roundtag">Round 2 · reimagined</span></p>
+  <div class="howto" style="margin:0 0 22px;border-left:3px solid var(--rose)"><b>This is the round 2 archive (2026-09-18).</b> The current proposal is round 3, <a href="https://claude.ai/artifact/Y8ZwK6Xox3GkgrvP91Zb8o"><b>The Signal Leads</b></a> (its own page and URL, <code>docs/culprit-design-v3-mockups.html</code>). Kept as the record of what you reacted to. The Arrive replay here did nothing after its first auto-play because the reset transitioned instead of snapping — fixed here too, so it does not mislead.</div>
+  <p class="eyebrow"><span>Culprit · design system audit</span><span>CUL-1060 · discovery</span><span>2026-09-18</span><span class="roundtag" style="color:var(--ink-2);background:var(--rule-soft)">Round 2 · archive</span></p>
   <h1>The record moves</h1>
   <p class="standfirst">Round 1 audited the app and drew seven directions. You ruled: the day as the mark and the area sparkline are right, the receipt is the right direction, the skeleton is a yes, and <strong>the chart drawing itself in is the level of delight you are after</strong>. Patterns and the Home trend were not enough, no Whorl was, and the one demo that mattered did not move. Round 2 keeps what you ruled, rebuilds the two you doubted from a different idea, replaces every wait, and <strong>every motion on this page runs in your browser</strong>.</p>
   <div class="howto"><b>How to read this page.</b> A fresh page, one proposal: round 1 (the audit, the retired directions) stays at its own URL as the archive and is not redrawn here; an alternative that is still a real decision sits in a dashed <em>option</em> box beside the frame it competes with; every current frame carries a <em>current</em> tag. §01 is the signature, the answer to "is it enough". §02 is the motion system, six working demos. §03 to §07 are the surfaces. §08 the principles, §09 the project and the new decisions, §10 the team. <strong>Press every Replay.</strong></div>
@@ -873,7 +875,11 @@
   /* ── arrive ───────────────────────────────────────────────────── */
   function playArrive(root) {
     var arr = root.querySelector('.arr') || root;
-    arr.classList.remove('in'); void arr.offsetWidth;
+    // Snap the reset: a replay after the auto-play must start from the still frame, not
+    // retarget a transition that is already at its end (the round 2 bug, fixed in round 3).
+    arr.classList.add('snap'); arr.classList.remove('in'); void arr.offsetWidth;
+    arr.querySelectorAll('*').forEach(function (n) { if (n.getBoundingClientRect) n.getBoundingClientRect(); });
+    arr.classList.remove('snap'); void arr.offsetWidth;
     requestAnimationFrame(function () { requestAnimationFrame(function () { arr.classList.add('in'); }); });
   }
 
