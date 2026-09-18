@@ -1,0 +1,988 @@
+<title>The Record Moves</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     The Record Moves — the design-system audit, ROUND 2 ("reimagined").
+     CUL-1060 (discovery). The CURRENT-PROPOSAL page, on its own artifact URL:
+     the PM asked for a fresh artifact after round 1, which is the split rule
+     (CLAUDE.md § Documentation Update Protocol, 2026-08-15) — round 1 stays at
+     docs/culprit-design-v2-brief.html as the deliberation archive with a banner
+     pointing here. One proposal: the retired directions are not redrawn, an
+     alternative still open sits in a labelled option box, every current frame
+     carries a "current" tag, and the ledger maps each reaction to what it ruled
+     and what moved. Frames render the app's REAL light tokens
+     (constants/theme.ts). Every demo on this page was driven in a headless
+     browser before publishing and shown to move.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+    --gold: #FBBF24; --gold-wash: #FDF6E3;
+    --night: #13112E; --night-2: #251F57;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+      --gold-wash: rgba(251,191,36,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+    --gold-wash: rgba(251,191,36,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  a { color: var(--teal-ink); }
+  .howto { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .howto b { color: var(--ink); }
+  .ledger { display: grid; gap: 8px; margin: 22px 0 8px; }
+  .ledger div { display: grid; grid-template-columns: 150px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger b { font-size: 13px; color: var(--ink); padding-top: 2px; }
+  .ledger q { font-style: italic; color: var(--ink-2); quotes: "“" "”"; }
+  .ledger a { color: inherit; text-decoration: none; }
+  .ledger a:hover { color: var(--teal-ink); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+  .pill.gold { color: #6B4A0E; background: var(--gold-wash); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  ul, ol { padding-left: 20px; margin: 0 0 16px; }
+  li { margin-bottom: 6px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+  .thesis { font-family: var(--serif); font-size: clamp(22px, 2.6vw, 30px); line-height: 1.3; color: var(--ink); margin: 26px 0; max-width: 28ch; text-wrap: balance; }
+  .brief { margin: 28px 0 8px; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .brief ol { margin: 4px 0 8px; font-size: 14.5px; color: var(--ink-2); }
+  .brief ol li { margin-bottom: 4px; }
+  .brief ol li strong { color: var(--ink); }
+  .optbox { border: 1px dashed var(--rule); border-radius: 3px; padding: 12px 14px; background: transparent; }
+  .optbox .otag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #6B4A0E; background: var(--gold-wash); border-radius: 999px; padding: 2px 8px; display: inline-block; margin-bottom: 8px; }
+  table.t { border-collapse: collapse; width: 100%; font-size: 14px; margin: 14px 0 18px; }
+  table.t th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+  table.t td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; color: var(--ink-2); }
+  table.t td:first-child { color: var(--ink); font-weight: 500; }
+  table.t td.num { font-variant-numeric: tabular-nums; }
+  .tscroll { overflow-x: auto; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 28px; margin-top: 18px; }
+  .voice { border-top: 1px solid var(--rule); padding-top: 12px; font-size: 14px; color: var(--ink-2); }
+  .voice b { color: var(--ink); display: block; margin-bottom: 4px; }
+  .voice q { font-style: italic; }
+  .princ { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 18px 22px; margin: 14px 0; }
+  .princ .pn { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .princ h4 { font-family: var(--serif); font-size: 21px; font-weight: 500; margin: 0 0 8px; letter-spacing: -0.005em; }
+  .princ p { font-size: 15px; color: var(--ink-2); margin: 0 0 8px; }
+  .princ .test { font-size: 14px; color: var(--ink); border-top: 1px solid var(--rule-soft); padding-top: 8px; margin-top: 10px; }
+  .princ .test b { color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-right: 8px; }
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; margin-bottom: 8px; }
+  .tag.built { color: var(--ink-2); background: var(--rule-soft); }
+  .tag.prop { color: var(--teal-ink); background: var(--teal-wash); }
+  .tag.opt { color: #6B4A0E; background: var(--gold-wash); }
+  .phone { width: 316px; max-width: 100%; background: #FAFAFA; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 12px 12px 14px; color: #0A0A0A; font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; }
+  .phone.night { background: #13112E; color: #ECEAF6; }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 8px; }
+  .phone.night .notch { background: #08071A; }
+  .stackhdr { display: flex; align-items: center; gap: 8px; padding: 4px 4px 10px; font-weight: 600; font-size: 16px; color: #0A0A0A; }
+  .stackhdr .back { color: #0B7B6C; font-weight: 500; font-size: 18px; line-height: 1; }
+  .stackhdr small { margin-left: auto; font-weight: 500; font-size: 11px; color: #737373; }
+  .hdr { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; }
+  .hdr .who { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .hdr .av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg,#C9C4E8,#8B87A8); }
+  .appbody { display: grid; gap: 10px; }
+  .acard { background: #FFFFFF; border-radius: 16px; padding: 12px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin-bottom: 6px; }
+  .seclabel.row { display: flex; justify-content: space-between; align-items: baseline; }
+  .seclabel .door { text-transform: none; letter-spacing: 0; font-weight: 500; color: #0B7B6C; font-size: 10.5px; }
+  .lead { font-family: var(--serif); font-size: 18px; line-height: 1.3; letter-spacing: -0.012em; color: #0A0A0A; margin: 0 0 6px; }
+  .lead.xl { font-size: 20px; }
+  .samp { font-size: 10.5px; color: #737373; margin-top: 5px; }
+  .muted { color: #737373; }
+  .irow { display: flex; gap: 9px; padding: 6px 0; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; align-self: stretch; background: #00C2A8; }
+  .rail.safety { background: #F43F5E; }
+  .rail.grey { background: #D4D4D4; }
+  .ibody { flex: 1; min-width: 0; }
+  .ctl { font-size: 11.5px; font-weight: 500; color: #0B7B6C; margin-top: 8px; display: flex; gap: 14px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 8px; }
+  .chip { font-size: 11px; font-weight: 500; border: 1px solid #D4D4D4; border-radius: 999px; padding: 3px 9px; color: #0A0A0A; background: #fff; font-family: inherit; cursor: pointer; }
+  .chip.on { background: #CDF5EC; border-color: #CDF5EC; color: #08685B; font-weight: 600; }
+  .chip:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 1px; }
+  .seg { display: inline-flex; background: #F0F0F0; border-radius: 8px; padding: 2px; gap: 2px; }
+  .seg button { font: inherit; font-size: 11px; font-weight: 600; border: 0; background: transparent; color: #525252; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
+  .seg button.on { background: #fff; color: #0A0A0A; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  .today { display: flex; gap: 6px; flex-wrap: wrap; }
+  .today span { font-size: 11px; border-radius: 999px; padding: 3px 9px; background: #F5F5F5; color: #525252; display: inline-flex; gap: 5px; align-items: center; }
+  .today span i { width: 7px; height: 7px; border-radius: 50%; background: #00C2A8; display: inline-block; }
+  .today span i.r { background: #F43F5E; }
+  /* calendar — the day is the mark (ruled) */
+  .cal2 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 8px; }
+  .cal2 .wd { text-align: center; font-size: 9.5px; color: #737373; font-weight: 600; padding-bottom: 2px; }
+  .dm { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; background: #F5F5F5; display: grid; place-items: center; font-size: 11px; color: #737373; cursor: pointer; border: 0; padding: 0; font-family: inherit; }
+  .dm:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 1px; }
+  .dm.logged { background: #FFFFFF; box-shadow: inset 0 0 0 1px #EAEAEA; color: #525252; }
+  .dm.logged::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 4px; height: 2px; border-radius: 1px; background: #86D9CC; }
+  .dm.sym { background: #F43F5E; color: #FFFFFF; font-weight: 600; box-shadow: none; }
+  .dm.sym::after { background: rgba(255,255,255,0.55); }
+  .dm.sym.two { background: #E11D48; }
+  .dm.today { box-shadow: inset 0 0 0 1.5px #0A0A0A; }
+  .dm.blank { background: transparent; cursor: default; }
+  .dm.future { background: transparent; box-shadow: inset 0 0 0 1px #EAEAEA; color: #C9C9C9; cursor: default; }
+  .dm.sel { box-shadow: inset 0 0 0 2px #0B7B6C; }
+  .day-detail { grid-column: 1 / -1; display: none; }
+  .day-detail.open { display: block; }
+  /* open in place — the fold's physics: rail leads, box follows, text lands */
+  .dd { display: flex; gap: 9px; padding: 6px 2px 4px; }
+  .dd .drail { width: 3px; border-radius: 2px; background: #F43F5E; flex-shrink: 0; height: 16px; transition: height 160ms ease-out; align-self: flex-start; }
+  .dd .dbox { flex: 1; min-width: 0; overflow: hidden; max-height: 0; transition: max-height 370ms cubic-bezier(.2,.8,.2,1.05); }
+  .dd .dtext { opacity: 0; transform: translateY(-8px); transition: opacity 300ms ease-out 40ms, transform 300ms ease-out 40ms; font-size: 12px; }
+  .dd.in .drail { height: 100%; align-self: stretch; }
+  .dd.in .dbox { max-height: 220px; }
+  .dd.in .dtext { opacity: 1; transform: none; }
+  .dd .dtext b { display: block; font-size: 12.5px; margin-bottom: 3px; }
+  .ev { display: flex; gap: 8px; align-items: center; padding: 3px 0; color: #525252; font-size: 12px; }
+  .ev i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .ev .ph { width: 30px; height: 30px; border-radius: 7px; background: linear-gradient(135deg,#B8B0C9,#7C7590); flex-shrink: 0; position: relative; }
+  .ev .ph::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #D4D4D4; border-radius: 2px 0 0 2px; }
+  .ev .ph.call::before { background: #F43F5E; }
+  /* arrive — the read lands on the tick that was already there */
+  .arr { position: relative; }
+  .arr .pend { display: flex; gap: 9px; align-items: center; font-size: 12px; color: #525252; transition: opacity 180ms ease-out, transform 180ms ease-out; position: absolute; left: 0; top: 0; right: 0; }
+  .arr.in .pend { opacity: 0; transform: translateY(-8px); }
+  .arr .dd { padding-top: 0; min-height: 22px; }
+  .arr .dd .drail { opacity: 0; transition: height 160ms ease-out 60ms, opacity 120ms ease-out 60ms; }
+  .arr.in .dd .drail { opacity: 1; }
+  .arr .dd .dbox { transition: max-height 370ms cubic-bezier(.2,.8,.2,1.05) 200ms; }
+  .arr .dd .dtext { transition: opacity 300ms ease-out 240ms, transform 300ms ease-out 240ms; }
+  .arr .dd .dtext { padding-top: 0; }
+  .arr.in .dd .drail { height: 100%; align-self: stretch; opacity: 1; }
+  .arr.in .dd .dbox { max-height: 260px; }
+  .arr.in .dd .dtext { opacity: 1; transform: none; }
+  .tick { width: 3px; height: 16px; border-radius: 2px; background: #D4D4D4; flex-shrink: 0; animation: breathe 1.4s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+  .verdict { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9F1239; background: #FFE4E6; border-radius: 999px; padding: 2px 8px; margin-bottom: 4px; }
+  /* charts */
+  .chart { width: 100%; height: auto; display: block; }
+  .legend { display: flex; gap: 12px; font-size: 10.5px; color: #737373; margin-top: 6px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .drawin path.b { transform-box: fill-box; transform-origin: 50% 100%; transform: scaleY(1); transition: none; }
+  .drawin.armed path.b { transform: scaleY(0.02); transition: none; }
+  .drawin.play path.b { transition: transform 420ms cubic-bezier(.2,.8,.2,1.02); transform: scaleY(1); }
+  .drawin .lab { opacity: 1; transition: none; }
+  .drawin.armed .lab { opacity: 0; transition: none; }
+  .drawin.play .lab { transition: opacity 300ms ease-out 480ms; opacity: 1; }
+  .drawin-x rect.bx { transform-box: fill-box; transform-origin: 0% 50%; transform: scaleX(1); transition: none; }
+  .drawin-x.armed rect.bx { transform: scaleX(0.01); transition: none; }
+  .drawin-x.play rect.bx { transition: transform 420ms cubic-bezier(.2,.8,.2,1.02); transform: scaleX(1); }
+  .drawin-x .lab { opacity: 1; transition: none; }
+  .drawin-x.armed .lab { opacity: 0; transition: none; }
+  .drawin-x.play .lab { transition: opacity 260ms ease-out 380ms; opacity: 1; }
+  /* the instrument */
+  .inst svg { touch-action: none; cursor: crosshair; user-select: none; }
+  .inst .layer { transition: opacity 260ms ease-out; }
+  .inst .layer.off { opacity: 0; pointer-events: none; }
+  .inst .layer path.b { transform-box: fill-box; transform-origin: 50% 100%; transition: transform 360ms cubic-bezier(.2,.8,.2,1.02); }
+  .inst .layer.off path.b { transform: scaleY(0.02); }
+  .inst .cursor rect { transition: x 120ms ease-out; }
+  .inst .cursor { opacity: 0; transition: opacity 160ms; }
+  .inst.live .cursor { opacity: 1; }
+  .daycard { margin-top: 6px; min-height: 92px; border-top: 1px solid #EAEAEA; padding-top: 8px; font-size: 12px; }
+  .daycard b { display: block; font-size: 12.5px; margin-bottom: 3px; }
+  /* the Home fortnight */
+  .fort { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; margin-top: 6px; }
+  .fq { font-size: 9.5px; border-radius: 6px; transition: opacity 260ms ease-out, transform 260ms cubic-bezier(.2,.8,.2,1.05); }
+  .fort.armed .fq { opacity: 0; transform: scale(0.6); transition: none; }
+  .fort.play .fq { opacity: 1; transform: none; }
+  .fort-line { display: flex; justify-content: space-between; font-size: 11px; color: #525252; margin-top: 8px; }
+  /* the wait */
+  .wait { position: relative; }
+  .wait .wait-skel { position: absolute; inset: 0; transition: opacity 320ms ease-out; }
+  .wait .wait-content { opacity: 0; transition: opacity 320ms ease-out; }
+  .wait.in .wait-skel { opacity: 0; pointer-events: none; }
+  .wait.in .wait-content { opacity: 1; }
+  .skel { display: grid; gap: 10px; }
+  .skel .k { height: 54px; border-radius: 14px; background: linear-gradient(90deg, #EFEFEF, #F7F7F7, #EFEFEF); }
+  .skel .k.tall { height: 96px; } .skel .k.short { height: 40px; } .skel .k.line { height: 14px; border-radius: 6px; width: 60%; }
+  .skel .k.tile { height: 44px; }
+  .skel .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .nm { position: relative; height: 360px; border-radius: 24px; overflow: hidden; background: #13112E; margin-top: 4px; }
+  .nm .copy { position: absolute; left: 22px; right: 22px; bottom: 30px; color: #F2EEE4; }
+  .nm .copy .t { font-family: var(--serif); font-size: 21px; line-height: 1.25; margin-bottom: 4px; }
+  .nm .copy .s { font-size: 12px; color: #A6A2CE; }
+  .moon { position: absolute; left: 50%; top: 38%; width: 120px; height: 120px; transform: translate(-50%, -50%); }
+  .demo { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 18px 20px; margin-top: 18px; }
+  .demo .dhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+  .demo .dhead b { font-size: 14px; }
+  .demo .dnote { font-size: 13.5px; color: var(--ink-2); margin: 10px 0 0; }
+  .demos { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; margin-top: 18px; }
+  .btn { font: inherit; font-size: 13px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border: 0; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  .btn:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; }
+  .motion-rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 24px; margin-top: 14px; font-size: 14px; color: var(--ink-2); }
+  .motion-rules div { border-top: 1px solid var(--rule); padding-top: 10px; }
+  .motion-rules b { color: var(--ink); display: block; margin-bottom: 4px; }
+  @media (prefers-reduced-motion: reduce) {
+    .drawin.armed path.b, .drawin.play path.b, .drawin-x.armed rect.bx, .drawin-x.play rect.bx { transition: none; transform: none; }
+    .drawin.armed .lab, .drawin.play .lab, .drawin-x.armed .lab, .drawin-x.play .lab { transition: none; opacity: 1; }
+    .dd .drail, .dd .dbox, .dd .dtext, .arr .pend, .inst .layer, .inst .layer path.b, .inst .cursor rect, .fq, .wait .wait-skel, .wait .wait-content { transition: none; }
+    .fort.armed .fq { opacity: 1; transform: none; }
+    .tick { animation: none; opacity: 1; }
+  }
+  .foot { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
+</style>
+<div class="wrap">
+<header class="mast">
+  <p class="eyebrow"><span>Culprit · design system audit</span><span>CUL-1060 · discovery</span><span>2026-09-18</span><span class="roundtag">Round 2 · reimagined</span></p>
+  <h1>The record moves</h1>
+  <p class="standfirst">Round 1 audited the app and drew seven directions. You ruled: the day as the mark and the area sparkline are right, the receipt is the right direction, the skeleton is a yes, and <strong>the chart drawing itself in is the level of delight you are after</strong>. Patterns and the Home trend were not enough, no Whorl was, and the one demo that mattered did not move. Round 2 keeps what you ruled, rebuilds the two you doubted from a different idea, replaces every wait, and <strong>every motion on this page runs in your browser</strong>.</p>
+  <div class="howto"><b>How to read this page.</b> A fresh page, one proposal: round 1 (the audit, the retired directions) stays at its own URL as the archive and is not redrawn here; an alternative that is still a real decision sits in a dashed <em>option</em> box beside the frame it competes with; every current frame carries a <em>current</em> tag. §01 is the signature, the answer to "is it enough". §02 is the motion system, six working demos. §03 to §07 are the surfaces. §08 the principles, §09 the project and the new decisions, §10 the team. <strong>Press every Replay.</strong></div>
+  <details style="margin-top:22px"><summary style="cursor:pointer;font-weight:600;font-size:14px;color:var(--ink)">The ledger — what each round 1 reaction ruled, and what moved (open if you want the trail)</summary>
+  <div class="ledger">
+    <div><b>Patterns (A)</b><span><q>doesn't seem like that might delight</q> → retired. <a href="#s03">§03 rebuilds Patterns from a different idea: one instrument you scrub, with layers, not a page of cards.</a></span></div>
+    <div><b>The calendar sheet (B)</b><span><q>a nice interaction, my bar is set low</q> → kept as current. <a href="#s07">§07: the open day now shows the photographed read.</a></span></div>
+    <div><b>The day is the mark (B)</b><span><q>LOVE the full fill over the dots</q> → <span class="pill">ruled</span> It becomes the vocabulary for the Home trend and the instrument's month view.</span></div>
+    <div><b>Area sparkline (C)</b><span><q>agreed, better</q> → <span class="pill">ruled</span> Weight and any continuous measure.</span></div>
+    <div><b>Home trend (C)</b><span><q>if this is our breakthrough, we have work to do</q> → retired. <a href="#s04">§04: the last two weeks as days you can read, drawing in, opening in place.</a></span></div>
+    <div><b>The receipt (D)</b><span><q>LOVE the direction; cluttered</q> → <span class="pill">ruled as direction</span> <a href="#s05">§05 declutters it and makes it draw in when the card unfolds.</a></span></div>
+    <div><b>Draw in (E)</b><span><q>this is what gets me stoked</q>; Replay did nothing → <span class="pill">the signature</span> The demo was broken: the CSS targeted <code>rect</code>, the bars are <code>path</code>. Fixed, and every demo here was driven in a headless browser and shown to move before publishing. <a href="#s02">§02.</a></span></div>
+    <div><b>The jank's source (E)</b><span><q>love that we identified the React Native source</q> → R-8 read as a yes pending the build; wave 2 as planned.</span></div>
+    <div><b>The Whorl (F)</b><span><q>all whorls need improved, none blowing my socks off</q> → retired. <a href="#s06">§06: two gestures replace it, the breathing tick and the moon.</a></span></div>
+    <div><b>The skeleton (F)</b><span><q>perfect, pull the trigger; the vet report too</q> → <span class="pill">ruled</span> <a href="#s06">§06 gives the cold start, the report and the event screen their own silhouettes.</a></span></div>
+    <div><b>"Is it enough?"</b><span><q>reimagine where we need to; don't rely on incremental</q> → the bar for this round. <a href="#s01">§01.</a></span></div>
+    <div><b>Still standing</b><span>R-1 the v2.0 principles · R-9 the dev client build and the on device gate · R-10 the first week · R-11 the process rule as written. Restated once in <a href="#s09">§09</a>, not re-argued.</span></div>
+  </div>
+  </details>
+</header>
+
+<!-- ───────────────────────── §01 THE SIGNATURE ───────────────────────── -->
+<section id="s01">
+  <div class="sec-head"><span class="sec-num">§01</span><h2>The signature — the answer to "is it enough"</h2></div>
+  <div class="col">
+    <p>Round 1 was honest and it was incremental: better charts in the same cards. What you reacted to was not a chart. It was a chart <em>arriving</em>. That is the signature, and it is worth stating as one sentence the whole app can be held to:</p>
+    <p class="thesis">The record moves. Every number draws itself the first time you see it, every day is a thing you can touch, and every wait is the shape of what is coming.</p>
+    <p>Three consequences, and they are what changed between the rounds. <strong>One:</strong> Patterns stops being a page of cards and becomes one instrument, a month you scrub with your thumb, with layers you switch on, and the photographed reads sitting on the timeline where they happened. <strong>Two:</strong> the Home trend stops being a bar chart and becomes the calendar's own mark, fourteen days you can read at a glance and open where they are. <strong>Three:</strong> the branded wait goes; every wait is the silhouette of the screen that is coming, and the two gestures that remain (a tick that breathes, a moon that phases) are the record's own rail and the brand's own crescent, nothing invented.</p>
+    <div class="callout"><strong>What did not change.</strong> The clinical spine: a shape never says more than its number, colour needs the established floor, coverage is drawn beside occurrence, safety cards stay plain, a symptom is acknowledged and never congratulated. Every demo below inherits it. The Home layout stays parked (CUL-810 / CUL-829); §04 changes one card's content, not Home's composition.</div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §02 THE MOTION SYSTEM ───────────────────────── -->
+<section id="s02">
+  <div class="sec-head"><span class="sec-num">§02</span><h2>The motion system, working</h2></div>
+  <div class="col">
+    <p>Six gestures. Four are the fold's physics applied to new things (the rail is the continuous thread; the line leads, the box follows with one settle, the words land a beat later). Two are waits. Everything else in the app is still, and chrome is always still. Each demo replays; with Reduce Motion on, each shows its designed still frame.</p>
+  </div>
+  <div class="demos">
+    <div class="demo">
+      <div class="dhead"><b>1 · Draw in</b><button class="btn" type="button" id="replay">Replay</button></div>
+      <svg class="chart drawin" id="drawin" data-bars="3,2,3,2,2,1,3,2" data-labels="Jul 27,,Aug 10,,Aug 24,,Sep 7," data-mark="4" data-marklabel="trial" viewBox="0 0 288 96" role="img" aria-label="Weekly vomiting counts for eight weeks, drawing in from the baseline"></svg>
+      <p class="dnote">Bars grow from the baseline, 420ms each with a 40ms stagger and one settle at the top; the label lands last. Once per screen open, never on a re-render. A safety chart draws in exactly the same way: plainness is what a card <em>says</em>.</p>
+    </div>
+    <div class="demo">
+      <div class="dhead"><b>2 · Arrive</b><button class="btn" type="button" id="arrive-replay">Replay</button></div>
+      <div class="phone" style="width:100%;border-radius:18px;padding:10px 12px" id="arrive">
+        <div class="acard arr">
+          <div class="seclabel">AI read</div>
+          <div class="pend"><span class="tick"></span><span>Reading the photo…</span></div>
+          <div class="dd"><div class="drail"></div><div class="dbox"><div class="dtext">
+            <span class="verdict">Worth a call</span>
+            <b>Streaks of red in this photo are worth a call to your vet today.</b>
+            <span class="muted">This is a quick read of a single moment, not a diagnosis.</span>
+          </div></div></div>
+        </div>
+      </div>
+      <p class="dnote">The pending tick breathes while the server reads. When the read lands, the pending line leaves first, the tick grows into the rail, the box opens around it, the sentence lands. Same physics on every verdict, no haptic, no flash. This is shipped on the event screen; here it is the whole app's arrival.</p>
+    </div>
+    <div class="demo">
+      <div class="dhead"><b>3 · The wait is the shape of what is coming</b><button class="btn" type="button" id="wait-replay">Replay</button></div>
+      <div class="phone wait" style="width:100%;border-radius:18px;padding:10px 12px" id="wait">
+        <div class="wait-skel"><div class="skel" style="padding:10px 12px"><div class="k line"></div><div class="k tall"></div><div class="k short"></div><div class="k"></div></div></div>
+        <div class="wait-content">
+          <div class="hdr"><div class="who"><span class="av"></span>Nyx</div><span class="muted" style="font-size:11px">Thu, Sep 17</span></div>
+          <div class="appbody">
+            <div class="acard"><div class="irow"><div class="rail"></div><div class="ibody"><p class="lead">Nyx has vomited six times in the trial's 21 days, against eight in the 21 before.</p></div></div></div>
+            <div class="acard"><div class="seclabel">Today</div><div class="today"><span><i></i>Breakfast · finished</span><span><i class="r"></i>Vomit · 8:02 AM</span></div></div>
+            <div class="acard"><div class="seclabel row"><span>Nyx's fortnight</span><span class="door">All patterns ›</span></div><div class="fort" id="wait-fort"></div><div class="fort-line"><span>Vomiting · 2 this week · 3 last week</span></div></div>
+          </div>
+        </div>
+      </div>
+      <p class="dnote">Home's own silhouette, then the record fills it and the fortnight draws in. No takeover, no dissolve over content, no brand screen. §06 gives the report and the event screen the same treatment.</p>
+    </div>
+    <div class="demo">
+      <div class="dhead"><b>4 · Open in place</b><span class="muted" style="font-size:12.5px">tap a day</span></div>
+      <div class="phone" style="width:100%;border-radius:18px;padding:10px 12px">
+        <div class="acard"><div class="seclabel row"><span>Nyx's fortnight</span><span class="door">All patterns ›</span></div><div class="fort" id="open-fort"></div><div class="fort-line"><span>Vomiting · 2 this week · 3 last week</span></div><div id="open-fort-detail"></div></div>
+      </div>
+      <p class="dnote">A day grows around its own content under its own position. The rail leads, the box follows, the events land. Tap again to close. The calendar in §07 and the instrument's month view in §03 use the same hook.</p>
+    </div>
+    <div class="demo">
+      <div class="dhead"><b>5 · The moon — the long wait</b><span class="muted" style="font-size:12.5px">runs on its own</span></div>
+      <div class="nm" style="height:200px;border-radius:14px">
+        <svg class="moon" id="moon" viewBox="0 0 100 100" role="img" aria-label="The Culprit crescent waxing to full and waning back while the app works">
+          <defs><mask id="moonmask"><rect width="100" height="100" fill="black"/><circle cx="45" cy="50" r="33" fill="white"/><circle cx="61" cy="43" r="29" fill="black"><animate attributeName="cx" values="61;150;61" keyTimes="0;0.5;1" dur="4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.25 1;0.45 0 0.25 1"/></circle></mask></defs>
+          <rect width="100" height="100" fill="#F2EEE4" mask="url(#moonmask)"/>
+          <circle cx="66" cy="53" r="9" fill="#00C2A8"/>
+        </svg>
+        <div class="copy" style="bottom:18px"><div class="t" style="font-size:17px">Writing Nyx's report…</div><div class="s">Six weeks, every episode, for your vet.</div></div>
+      </div>
+      <p class="dnote">The app icon's own crescent, phasing: the shadow slides off until the moon is full, then back. The Signal dot never moves. It is the one ambient loop the app keeps, for the one wait that is real work on the pet's behalf. The still frame is the icon.</p>
+    </div>
+    <div class="demo">
+      <div class="dhead"><b>6 · The breathing tick — the short wait</b><span class="muted" style="font-size:12.5px">runs on its own</span></div>
+      <div class="phone" style="width:100%;border-radius:18px;padding:10px 12px">
+        <div class="acard"><div class="seclabel">Foods</div><div class="pend" style="display:flex;gap:9px;align-items:center;font-size:12px;color:#525252"><span class="tick"></span><span>Reading the label…</span></div></div>
+        <div class="acard" style="margin-top:8px"><div class="seclabel">Report</div><div style="display:flex;gap:9px;align-items:center;font-size:12px;color:#525252"><span class="tick" style="background:#00C2A8"></span><span>Sending to Dr. Chen…</span></div></div>
+      </div>
+      <p class="dnote">Every inline wait is the rail's 16pt tick, breathing at 1.4s. It is the mark the arrival grows out of, so a wait and its answer are one object. Grey while nothing is known, teal for the app's own routine work. The Whorl retires everywhere.</p>
+    </div>
+  </div>
+  <div class="motion-rules">
+    <div><b>Draw in</b>A shape appears from its baseline the first time a screen shows it. Once per open.</div>
+    <div><b>Open in place</b>A row grows around its own content under its own position. The rail leads, the box follows, the text lands.</div>
+    <div><b>Arrive</b>A result the app produced lands on the mark that was already there.</div>
+    <div><b>Fold</b>A thing seen compresses to one line and comes back when the record changes (shipped).</div>
+    <div><b>Wait as the shape</b>Every wait is the silhouette of the screen that is coming; the tick breathes inline; the moon phases for the one long wait.</div>
+    <div><b>Still</b>Tab bar, headers, buttons, chips at rest, the FAB. Chrome never moves on its own. Touch is felt: routine commits succeed, symptom commits are acknowledged, safety is silent.</div>
+  </div>
+  <div class="col">
+    <h3>The engine, and why round 1's demo not moving is the same lesson</h3>
+    <p>The demo failed on a one-word selector. The app's motion has failed on the phone for a version of the same reason: a tool that cannot see the thing it is asked to move. React Native's <code>Animated</code> cannot drive an SVG path or a layout change on the UI thread, so the fold module carries a two-engine workaround, the daily look's ring is faked with a scale, and the pull-to-refresh sky dropped frames until it was cut. Reanimated is the tool built for exactly this (UI-thread layout transitions and shared-value SVG props, in the managed workflow); it rides the same dev-client rebuild the haptics have waited on since August. The Dir. of Engineering's two conditions stand: one engine (the three shipped motion modules migrate), and an on device pass on every motion PR, with what was felt written on the issue. That is R-8 and R-9, unchanged.</p>
+  </div>
+</section>
+
+<!-- ───────────────────────── §03 THE INSTRUMENT ───────────────────────── -->
+<section id="s03">
+  <div class="sec-head"><span class="sec-num">§03</span><h2>Patterns, reimagined — the instrument</h2></div>
+  <div class="col">
+    <p>Round 1 rearranged the dashboard. This is a different object. Patterns becomes <strong>one instrument</strong>: the month as a strip of days you scrub with your thumb, layers you switch on (vomiting, meals, medication, photos), and the photographed reads sitting on the timeline on the day they happened. The day under your thumb opens below, in place, with its events, its photo and its read. The Signal's sentence leads it; the standing panels (what she ate, the timing story, the trial so far, weight as an area) sit below it as they do today. The KPI column, the ribbon and the calendar card are gone; the month view <em>is</em> the calendar you ruled on. <strong>Drag across the chart. Switch the layers. Try Month.</strong></p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · the instrument</span>
+      <div class="phone inst" id="inst-root">
+        <div class="notch"></div>
+        <div class="stackhdr"><span class="back">‹</span>Patterns <small>September</small></div>
+        <div class="appbody">
+          <div class="acard">
+            <div class="irow" style="padding-top:2px"><div class="rail"></div><div class="ibody"><p class="lead">Six in the trial's 21 days, against eight in the 21 before.</p><div class="samp">Turkey trial · day 21 of 42 · logged on 19 of 21 days</div></div></div>
+          </div>
+          <div class="acard">
+            <div class="seclabel row"><span>Nyx's month</span><span class="seg" id="inst-seg"><button type="button" class="on" data-view="strip">Strip</button><button type="button" data-view="month">Month</button></span></div>
+            <div class="chips" id="inst-layers">
+              <button type="button" class="chip on" data-layer="vomit">Vomiting</button>
+              <button type="button" class="chip on" data-layer="meals">Meals</button>
+              <button type="button" class="chip on" data-layer="meds">Medication</button>
+              <button type="button" class="chip on" data-layer="photos">Photos</button>
+            </div>
+            <div id="inst-strip">
+              <svg class="chart" id="instrument" viewBox="0 0 288 152" role="img" aria-label="September as a strip of days: vomiting bars, meal coverage, a medication course from the 9th to the 12th, and four photographed reads; drag to read any day"></svg>
+              <div class="daycard" id="instrument-card"><b>Drag across the month</b><span class="muted">The day under your thumb opens here.</span></div>
+            </div>
+            <div id="inst-month" hidden>
+              <div class="cal2" id="inst-cal"></div>
+              <div class="legend"><span><i style="background:#F43F5E"></i>vomit day (count)</span><span><i style="background:#fff;box-shadow:inset 0 0 0 1px #EAEAEA"></i>logged</span><span><i style="background:#F5F5F5"></i>nothing logged</span></div>
+            </div>
+          </div>
+          <div class="acard">
+            <div class="seclabel row"><span>Weight · 6 readings</span><span class="door">All ›</span></div>
+            <svg class="chart" data-area="4.6,4.6,4.5,4.5,4.4,4.4" data-labels="Jul 3,,,,,Sep 12" viewBox="0 0 288 64" role="img" aria-label="Weight over six readings from July 3 to September 12: 4.6 kilograms falling to 4.4"></svg>
+          </div>
+          <div class="muted" style="text-align:center;font-size:10.5px;padding:2px 0">… What Nyx ate · Timing · The trial so far · What you noticed</div>
+        </div>
+      </div>
+      <p class="frame-cap"><b>One object, direct manipulation.</b> Rose bars are counts; the teal hairline beneath is coverage; the slate band is the medication course; the dots above are photographed reads, rose where the read was worth a call. The layers draw in as you switch them. Scrubbing snaps to a day and opens it below without leaving the month. Month is the same month as a grid, the mark you ruled on, opening the same way.</p>
+    </div>
+    <div class="frame-slot">
+      <div class="optbox"><span class="otag">option · drawn for the decision, not the proposal</span>
+        <p style="font-size:13.5px;color:var(--ink-2);margin:0 0 8px"><strong>Keep Patterns as cards, upgrade the charts.</strong> Round 1's page with the §02 shapes and the day-as-the-mark calendar. Cheaper by one session and it keeps the summary-led spec (§7) literally. It would still be a page you read rather than a thing you hold. Not drawn again here; round 1 has it.</p>
+      </div>
+      <div class="conflict" style="margin-top:22px">
+        <p><strong>Data Scientist:</strong> the instrument shows occurrence, never correlation, so it is safe by construction; the one rule is that a layer is a fact about a day (a bar is a count, a band is a course as logged, a dot is a photo that exists) and never a derived line between days. The medication band is what was logged, not adherence, so it carries no verdict colour.</p>
+        <p><strong>Dr. Chen:</strong> a med course drawn on the same strip as the vomiting is the first thing on Patterns I would actually use in the room. Keep the two on separate rows so nobody reads the band as a cause.</p>
+        <p><strong>Designer:</strong> this is the "instrument that expands" idea from the Home v2 rounds, landed on the surface it belongs to. It does not reopen the Home layout.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §04 THE HOME FORTNIGHT ───────────────────────── -->
+<section id="s04">
+  <div class="sec-head"><span class="sec-num">§04</span><h2>The Home trend, reimagined — Nyx's fortnight</h2></div>
+  <div class="col">
+    <p>The Trend zone stops being a bar chart. It becomes the calendar's own mark on Home: the last fourteen days as days you can read, today ringed, a vomit day filled rose with its count, a logged day white with its coverage hairline, an unlogged day grey. It draws in the first time Home opens (the wait in §02 ends on it), and a tap opens the day where it is, with the fold's physics. D8's verbiage stands unchanged beneath it: a count and last week's count, no arrow, no verdict. <strong>Press Replay, then tap a day.</strong></p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · the fortnight</span>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="appbody">
+          <div class="acard"><div class="seclabel">Today</div><div class="today"><span><i></i>Breakfast · finished</span><span><i class="r"></i>Vomit · 8:02 AM</span></div></div>
+          <div class="acard">
+            <div class="seclabel row"><span>Nyx's fortnight</span><span class="door">All patterns ›</span></div>
+            <div class="fort" id="fortnight"></div>
+            <div class="fort-line"><span>Vomiting · <b>2 this week</b> · 3 last week</span><span class="muted">Sep 4 – 17</span></div>
+            <div id="fortnight-detail"></div>
+            <div style="margin-top:8px"><button class="btn" type="button" id="fortnight-replay" style="font-size:11.5px;padding:4px 10px">Replay the draw in</button></div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-cap"><b>The record, at a glance, daily.</b> Fourteen marks the owner already knows how to read from the calendar. Coverage is in the mark itself, so a quiet week and an unlogged week never look alike. The card's line is D8's; the only new thing is that the days are real.</p>
+    </div>
+    <div class="frame-slot">
+      <div class="optbox"><span class="otag">option · drawn for the decision, not the proposal</span>
+        <p style="font-size:13.5px;color:var(--ink-2);margin:0 0 10px"><strong>The 17-day bar strip</strong> from round 1 (rounded bars from a baseline, today ringed, coverage beneath). Honest and quieter; the bar is a shape the Trend zone already has. You read it as "not our breakthrough".</p>
+        <svg class="chart" data-bars="0,1,0,0,0,0,0,2,0,0,0,0,1,0,1,1,0" data-meals="2,2,2,2,x,x,2,1,2,2,2,2,1,2,1,1,2" data-labels="Sep 1,,,,,,,,,,,,,,,,17" data-today="17" viewBox="0 0 288 72" aria-hidden="true"></svg>
+      </div>
+      <div class="brief" style="margin-top:22px"><p class="bid">R2-2 · The Home trend</p>
+        <p><strong>Deciding:</strong> what the Trend zone is.</p>
+        <ol>
+          <li><strong>The fortnight: fourteen day marks, drawing in, opening in place; D8's line beneath.</strong> <span class="rec">Recommended</span> — the mark you ruled on, on the surface seen daily, and the wait in §02 ends on it.</li>
+          <li>The round 1 bar strip.</li>
+          <li>Leave the Trend zone as built.</li>
+        </ol>
+        <p><strong>Consequence:</strong> (1) is one wave-1 issue in <code>components/home/TrendZone.tsx</code> plus the shared day-mark component it takes from the calendar; D8's verbiage rule is untouched, so this is not a better-than-the-rule case any more.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §05 THE RECEIPT ───────────────────────── -->
+<section id="s05">
+  <div class="sec-head"><span class="sec-num">§05</span><h2>The Signal card — the receipt, decluttered, drawing in</h2></div>
+  <div class="col">
+    <p>You ruled the direction and called it cluttered. The clutter was the coverage labels under the bars and the second caption. Now: the sentence, larger; two bars with one label each that carries both the numerator and the denominator; the coverage as a single line of words; the trial line as one quiet caption; the two controls. And because the card folds, it has a moment to arrive: when it unfolds, the sentence lands and the receipt draws in. Safety cards stay plain text and never take the receipt. <strong>Press Unfold.</strong></p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · the receipt</span>
+      <div class="phone" id="receipt">
+        <div class="notch"></div>
+        <div class="appbody">
+          <div class="acard">
+            <div class="seclabel row"><span>Signal</span><button class="btn" type="button" id="receipt-replay" style="font-size:11px;padding:3px 10px">Unfold</button></div>
+            <div class="arr" id="receipt-arr">
+              <div class="pend" style="color:#0A0A0A"><span class="tick" style="background:#00C2A8;animation:none;opacity:1"></span><span><b>Vomiting</b> · 6 in the trial's 21 days · 8 in the 21 before</span></div>
+              <div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext">
+                <p class="lead xl" style="margin-bottom:8px">Nyx has vomited six times in the trial's 21 days, against eight in the 21 before.</p>
+                <svg class="chart drawin-x" id="receipt-chart" data-compare="8,6" data-complabels="The 21 days before,The 21 trial days" viewBox="0 0 250 46" role="img" aria-label="Eight episodes in the 21 days before the trial; six in the 21 trial days"></svg>
+                <div class="samp" style="margin-top:6px">Logged on 19 of the 21 trial days and 17 of the 21 before, so the two spans compare fairly.</div>
+                <div class="samp">Turkey trial · day 21 of 42 · two windows compared, not a verdict</div>
+                <div class="ctl"><span>Why ›</span><span style="margin-left:auto">Keep it compact</span></div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-cap"><b>28 words on the face, the same facts.</b> The folded strip is the shipped one (rail tick, clause, count). On unfold the rail grows, the box opens, the sentence lands, and the two bars draw in from the left with their labels. S2 holds: both numerators and both denominators are on the drawing; the coverage that makes them comparable is one sentence, not four labels.</p>
+    </div>
+    <div class="frame-slot">
+      <div class="conflict" style="margin-top:0">
+        <p><strong>Data Scientist:</strong> the bars are comparable by height only because the windows are equal. When they are not (a trial younger than its baseline), the component draws rates with the denominators, or draws nothing. That rule lives in the component, not the copy; it is W1-5's first acceptance criterion.</p>
+        <p><strong>Designer:</strong> the fold control keeps its words. The unfold motion is the shipped fold's, run backwards, plus one new beat: the receipt draws in after the sentence. Nothing else on the card moves.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §06 THE WAIT ───────────────────────── -->
+<section id="s06">
+  <div class="sec-head"><span class="sec-num">§06</span><h2>Every wait, reimagined — the silhouette, the tick, the moon</h2></div>
+  <div class="col">
+    <p>You pulled the trigger on the skeleton and asked for it on the report too. This section takes that to its end: <strong>every wait is the silhouette of the screen that is coming</strong>, and the Whorl retires. Cold start is Home's silhouette (§02, demo 3). The report build is the report's own silhouette, with the moon phasing beside one line. The event screen's read is the breathing tick that becomes the rail. The night ground stays where it is brand, on Landing and onboarding, and leaves the working app.</p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · the report, writing</span>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="stackhdr"><span class="back">‹</span>Vet report</div>
+        <div class="acard" style="padding:10px 12px">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px"><svg viewBox="0 0 100 100" width="22" height="22" aria-hidden="true"><defs><mask id="moonmask2"><rect width="100" height="100" fill="black"/><circle cx="45" cy="50" r="33" fill="white"/><circle cx="61" cy="43" r="29" fill="black"><animate attributeName="cx" values="61;150;61" keyTimes="0;0.5;1" dur="4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.25 1;0.45 0 0.25 1"/></circle></mask></defs><rect width="100" height="100" fill="#211E4E" mask="url(#moonmask2)"/><circle cx="66" cy="53" r="9" fill="#00C2A8"/></svg><div><div style="font-size:12.5px;font-weight:600">Writing Nyx's report…</div><div class="muted" style="font-size:11px">Six weeks, every episode, for your vet.</div></div></div>
+          <div class="skel"><div class="k line" style="width:44%;height:10px"></div><div class="k line" style="width:70%;height:8px"></div><div class="row3"><div class="k tile"></div><div class="k tile"></div><div class="k tile"></div></div><div class="k" style="height:70px"></div><div class="k line" style="width:90%;height:8px"></div><div class="k line" style="width:84%;height:8px"></div><div class="k line" style="width:60%;height:8px"></div></div>
+        </div>
+      </div>
+      <p class="frame-cap"><b>The document's own shape.</b> Letterhead line, the three at-a-glance tiles, the chart block, the rows. The moon phases at 22pt beside the one line, in the crescent's light-ground ink. When the report lands, the blocks become the page. No night screen, no takeover.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag prop">Current · the event screen, reading</span>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="stackhdr"><span class="back">‹</span>Vomit <small>Tue, Sep 8 · 11:40 PM</small></div>
+        <div class="appbody">
+          <div style="height:150px;border-radius:14px;background:linear-gradient(135deg,#C4BBAF,#8E8478)"></div>
+          <div class="acard"><div class="seclabel">AI read</div><div class="pend" style="display:flex;gap:9px;align-items:center;font-size:12px;color:#525252"><span class="tick"></span><span>Reading the photo…</span></div></div>
+          <div class="acard" style="opacity:.6"><div class="skel"><div class="k line" style="width:40%;height:9px"></div><div class="k line" style="width:80%;height:8px"></div></div></div>
+        </div>
+      </div>
+      <p class="frame-cap"><b>The photo is the hero, the tick breathes.</b> Shipped already in its bones: the pending tick is the mark the arrival grows into. The Whorl beside it goes. Below, the observation grid's silhouette waits for the read.</p>
+    </div>
+    <div class="frame-slot">
+      <div class="optbox"><span class="otag">option · drawn for the decision, not the proposal</span>
+        <p style="font-size:13.5px;color:var(--ink-2);margin:0 0 8px"><strong>Keep the Whorl, improved.</strong> One arc instead of four, a still dot, on the flat night, only for the report build. Cheaper than the moon (it exists) and it keeps the loading mark the brand spec wrote. You said none of the whorls were it.</p>
+        <div class="nm" style="height:120px;border-radius:12px"><svg viewBox="0 0 100 100" style="position:absolute;left:50%;top:50%;width:56px;height:56px;transform:translate(-50%,-50%)" aria-hidden="true"><circle cx="50" cy="50" r="40" fill="none" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-dasharray="150 101" transform="rotate(20 50 50)"/><circle cx="50" cy="50" r="6" fill="#F2EEE4"/></svg></div>
+      </div>
+      <div class="brief" style="margin-top:22px"><p class="bid">R2-3 · The loading mark</p>
+        <p><strong>Deciding:</strong> what replaces the Whorl.</p>
+        <ol>
+          <li><strong>The Whorl retires. Inline waits are the breathing tick; the one long wait is the moon phasing beside its line.</strong> <span class="rec">Recommended</span> — both are marks the app already owns (the rail, the icon), so nothing new is invented and the wait and its answer are one object.</li>
+          <li>Keep the Whorl, simplified to one arc, for the report build only.</li>
+        </ol>
+        <p><strong>Consequence:</strong> (1) is one wave-2 issue and a Tier-2 edit to the brand spec §5 and §6 (the loading system and the night moment); the night ground stays on Landing and onboarding only.</p>
+      </div>
+      <div class="brief"><p class="bid">R2-4 · The night moment</p>
+        <p><strong>Deciding:</strong> whether any full-screen branded wait survives.</p>
+        <ol>
+          <li><strong>No. Every wait is its screen's silhouette; the report's carries the moon beside one line.</strong> <span class="rec">Recommended</span> — "the vet report too", taken to its end.</li>
+          <li>The report keeps a flat night screen with the moon; everything else goes to silhouettes.</li>
+        </ol>
+        <p><strong>Consequence:</strong> (1) retires <code>NightMoment</code> and <code>NightGround</code> from the working app (Landing keeps its own hero ground); (2) keeps one.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §07 THE CALENDAR ───────────────────────── -->
+<section id="s07">
+  <div class="sec-head"><span class="sec-num">§07</span><h2>The calendar — ruled, and one thing added</h2></div>
+  <div class="col">
+    <p>The day is the mark, ruled. The open in place, kept. One thing added since round 1: an open day shows its photographed read as a tile with the read's rail, so the magic is one tap from the month. This is also the instrument's month view (§03), the same component. <strong>Tap a day.</strong></p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · the day is the mark</span>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="stackhdr"><span class="back">‹</span>Patterns</div>
+        <div class="appbody"><div class="acard">
+          <div class="seclabel row"><span>September</span><span class="door">‹ Aug</span></div>
+          <div style="font-size:12px;margin:2px 0 0">Vomiting <b>6 times on 5 days</b> · 2 days unlogged</div>
+          <div class="cal2" id="cal-demo"></div>
+          <div class="legend"><span><i style="background:#F43F5E"></i>vomit day (count)</span><span><i style="background:#fff;box-shadow:inset 0 0 0 1px #EAEAEA"></i>logged</span><span><i style="background:#F5F5F5"></i>nothing logged</span></div>
+        </div></div>
+      </div>
+      <p class="frame-cap"><b>Sep 8 has the photo.</b> Tap it: the events, the meal she left, and the 11:40 PM photo with its rose rail. Tap a grey day: it says nothing was logged, never that nothing happened.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §08 PRINCIPLES ───────────────────────── -->
+<section id="s08">
+  <div class="sec-head"><span class="sec-num">§08</span><h2>Principles v2.0 — unchanged in shape, sharper in the vocabulary</h2></div>
+  <div class="col">
+    <p>R-1 still stands. The proposal is the same as round 1: the seven principles kept verbatim, two added, one process rule. What this round changes is Principle 9's vocabulary, which now names the six gestures of §02 rather than describing motion in general. The full text lands as the Tier-2 edit after your ruling.</p>
+  </div>
+  <div class="princ"><div class="pn"><span>Principle 8 · new</span><span class="pill">proposed</span></div><h4>The data is the delight.</h4><p>The app reads a label and a photo like magic; the display has to be as magical as the capture. Every number owns a shape, every shape reads in three seconds without a legend, and a shape draws itself the first time you see it. A shape never says more than its number.</p><div class="test"><b>The test</b>Would Jordan screenshot this and send it to their partner?</div></div>
+  <div class="princ"><div class="pn"><span>Principle 9 · new</span><span class="pill">proposed</span></div><h4>Motion is the record moving.</h4><p>Six gestures, one physics: draw in, open in place, arrive, fold, the wait as the shape of what is coming, and the moon for the one long wait. The rail is the continuous thread. Motion happens when the record changes state and nowhere else; chrome is still; a symptom is acknowledged, never congratulated; safety is silent. A motion or a haptic is verified on a phone, never in a test.</p><div class="test"><b>The test</b>Cover the words. Can you tell from the motion alone that something in the record changed?</div></div>
+  <div class="princ"><div class="pn"><span>Process rule</span><span class="pill">written · R-11</span></div><h4>A rule is a floor with a date on it.</h4><p>When a better design, plan, query or test violates a rule, the team surfaces a better-than-the-rule brief and the PM rules. Written into CLAUDE.md in round 1; confirm, amend or revert.</p></div>
+</section>
+
+<!-- ───────────────────────── §09 THE PROJECT + DECISIONS ───────────────────────── -->
+<section id="s09">
+  <div class="sec-head"><span class="sec-num">§09</span><h2>The project, re-cut — and the decisions this round asks</h2></div>
+  <div class="col">
+    <p>Same project, <em>Design v2 — the data and the delight</em>, re-cut around the signature. Wave 1 is the surfaces, on one chart and one day-mark component. Wave 2 is the engine and the waits. Wave 3 is what is felt. Issues are filed on your rulings; sizes are session counts.</p>
+  </div>
+  <div class="tscroll"><table class="t">
+    <tr><th>#</th><th>Candidate issue</th><th>Size</th><th>Touches</th><th>Gate</th></tr>
+    <tr><td>W1-0</td><td>The day-mark and chart family — the day mark (calendar, fortnight, month view), bars, area, compare; palette validated; labels Dr. Chen-read</td><td class="num">M</td><td><code>components/charts/</code> (new)</td><td>R2-1 · R2-2</td></tr>
+    <tr><td>W1-1</td><td>Patterns as the instrument — the strip, the layers, the scrub, the day card; month view = the calendar; the standing panels below</td><td class="num">L</td><td><code>app/insights/index.tsx</code>, <code>components/dashboard/*</code></td><td>R2-1 · W1-0</td></tr>
+    <tr><td>W1-2</td><td>The Home fortnight (the Trend zone's content); D8's line untouched</td><td class="num">S</td><td><code>components/home/TrendZone.tsx</code></td><td>R2-2 · W1-0</td></tr>
+    <tr><td>W1-3</td><td>The receipt drawn and decluttered; the unfold draws it in; Tier-2 edit to the Signal spec (shape B)</td><td class="num">M</td><td><code>InsightCard</code>, <code>SignalReceipts</code></td><td>R-6 ruled · W1-0</td></tr>
+    <tr><td>W2-1</td><td>Reanimated as the one engine; the three shipped motion modules migrated; the on device gate written into the DoD</td><td class="num">L</td><td><code>components/motion/*</code>, babel, the dev client</td><td>R-8 · R-9</td></tr>
+    <tr><td>W2-2</td><td>Draw in on the chart family, open in place on the day mark, the arrival generalised</td><td class="num">M</td><td><code>components/charts/</code>, <code>components/motion/</code></td><td>W2-1</td></tr>
+    <tr><td>W2-3</td><td>Every wait its silhouette: cold start, the report, the event screen; the breathing tick; the moon; the Whorl and the night moment retired from the working app; Tier-2 edits to the brand spec §5 §6</td><td class="num">M</td><td><code>ColdStartOverlay</code>, <code>NightMoment</code>, <code>WhorlSpinner</code>, <code>app/report.tsx</code></td><td>R2-3 · R2-4</td></tr>
+    <tr><td>W3-1</td><td>The haptics device pass — exists as CUL-616; the same dev client build as W2-1</td><td class="num">PM</td><td>the build</td><td>R-9</td></tr>
+    <tr><td>W3-2</td><td>The first week arc — a mock round, then its build issues</td><td class="num">L</td><td>Home, onboarding</td><td>R-10</td></tr>
+    <tr><td>W3-3</td><td>Design Principles v2.0 written (Tier 2); the better-than-the-rule shape in <code>personas.md</code>; CUL-635's two edits absorbed</td><td class="num">S</td><td><code>docs/</code></td><td>R-1 · R-11</td></tr>
+  </table></div>
+  <div class="col"><p style="font-size:14px;color:var(--ink-2)"><strong>Reconcile, don't duplicate:</strong> CUL-616 is W3-1; CUL-635 is absorbed by W3-3; CUL-766 / CUL-830 ride W2-1; CUL-383 stays closed as scoped; CUL-140's calendar half is superseded by W1-0; CUL-847 (the chart-led vet report) shares W1-0. Out of scope on purpose: CUL-322, CUL-493, CUL-447.</p></div>
+  <div class="brief"><p class="bid">R2-1 · Patterns</p>
+    <p><strong>Deciding:</strong> what Patterns is.</p>
+    <ol>
+      <li><strong>The instrument: one scrubbable month with layers, the photographed reads on the timeline, the day opening below; Month is the calendar; the standing panels stay beneath.</strong> <span class="rec">Recommended</span> — the one direction where the app's magic is something you hold, and it keeps the summary-led spine.</li>
+      <li>Cards with better charts (round 1). Cheaper; still a page you read.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) is W1-1 on W1-0 and a Tier-2 edit to the analytics spec §5 to §7 (the card taxonomy becomes layers); (2) closes this round's biggest swing.</p>
+  </div>
+  <div class="brief"><p class="bid">Standing from round 1 — restated, not re-argued</p>
+    <p><strong>R-1</strong> adopt the v2.0 shape (the seven kept, Principles 8 and 9, the process rule). <strong>R-9</strong> cut the dev client build and add the on device gate to the DoD. <strong>R-10</strong> file the first week arc as wave 3. <strong>R-11</strong> the process rule as written in CLAUDE.md: confirm, amend or revert. R-6 (the receipt) and R-7 (the skeleton) you ruled; R-8 (the engine) is read as a yes pending the build; R-2, R-3, R-4, R-5 are superseded by R2-1, R2-2 and the rulings above.</p>
+  </div>
+</section>
+
+<!-- ───────────────────────── §10 THE TEAM ───────────────────────── -->
+<section id="s10">
+  <div class="sec-head"><span class="sec-num">§10</span><h2>What the team said, round 2</h2></div>
+  <div class="grid2">
+    <div class="voice"><b>Sr. Product Designer</b><q>Round 1 asked "what should the cards look like". Round 2 asks "what does it feel like to hold the record". The instrument, the fortnight and the silhouettes are one answer to that question, and the moon is the only thing on the page I invented, and it is the icon.</q></div>
+    <div class="voice"><b>Sr. Data Scientist</b><q>Tried to break the instrument with a med course over a quiet week: it reads as a course over a quiet week, no verdict, because the layers are facts about days. Tried the unequal-window receipt: the rule is in the component. Tried a fortnight with no logs at all: fourteen grey squares, and the line says so.</q></div>
+    <div class="voice"><b>Dr. Chen</b><q>The medication band beside the vomiting is the thing I'd use. Keep them on separate rows, keep the band the colour of "logged", not "given as prescribed".</q></div>
+    <div class="voice"><b>Jordan</b><q>I would scrub that strip at the vet's counter. The fortnight on Home is the first Trend card I'd read without being told to.</q></div>
+    <div class="voice"><b>Sam</b><q>A left-some meal is a hollow hairline, not amber, everywhere it appears. She grazes. That is not a symptom until the detector says so.</q></div>
+    <div class="voice"><b>Dir. of Engineering</b><q>The demo bug is the argument for the gate: a motion you have not watched is a motion you have not built. One engine, one rebuild, a feel script on every motion PR, and the harness that drove this page becomes the PR's own check where it can.</q></div>
+    <div class="voice"><b>Sr. QA</b><q>Every demo here was sampled mid-transition and after it settled, by a script, before you saw it. That is the shape of the on device pass too: a step, a number, a number.</q></div>
+    <div class="voice"><b>Product Owner</b><q>Ten candidate issues, same four reconciled, same three out of scope. The archive page keeps round 1's audit so nobody re-derives it; this page carries only the proposal.</q></div>
+    <div class="voice"><b>Trust &amp; Safety</b><q>No new data path. The instrument's photo dots are photos the owner already reads on the event screen, through the same authenticated read.</q></div>
+  </div>
+</section>
+
+<p class="foot">The Record Moves · round 2 · 2026-09-18 · CUL-1060 · the committed source is <code>docs/culprit-design-v2-mockups.html</code> (the current-proposal page; round 1 is the archive at <code>docs/culprit-design-v2-brief.html</code>). Frames use Nyx's record with illustrative numbers. No app code changed this session.</p>
+</div>
+<script>
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var ROSE = '#F43F5E', ROSE_SOFT = '#F5C0CA', TEAL = '#00C2A8', TEAL_SOFT = '#86D9CC', TEAL_WASH = '#E0FBF7', MED = '#5B7A9E';
+  var INK = '#0A0A0A', INK2 = '#525252', INK3 = '#737373', RULE = '#EAEAEA', EMPTY = '#F0F0F0', IDLE = '#C9C9C9';
+  var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.__errors = []; window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });
+  function el(tag, attrs, parent) { var n = document.createElementNS(NS, tag); for (var k in attrs) if (Object.prototype.hasOwnProperty.call(attrs, k)) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; }
+  function text(parent, x, y, s, attrs) { var t = el('text', Object.assign({ x: x, y: y, 'font-family': 'Geist, -apple-system, sans-serif', 'font-size': 9, fill: INK3 }, attrs || {}), parent); t.textContent = s; return t; }
+  function topRounded(x, y, w, h, r) { r = Math.max(0, Math.min(r, w / 2, h)); var b = y + h; return 'M' + x + ',' + b + ' L' + x + ',' + (y + r) + ' Q' + x + ',' + y + ' ' + (x + r) + ',' + y + ' L' + (x + w - r) + ',' + y + ' Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + ' L' + (x + w) + ',' + b + ' Z'; }
+  function nums(s) { return s.split(',').map(function (v) { return v.trim(); }); }
+  function h(tag, cls, html) { var n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
+
+  /* ── the September record (illustrative) ─────────────────────── */
+  var TODAY = 17, DAYS = 30, LEAD = 2; // Sep 1 2026 is a Tuesday
+  var SYM = { 2: 1, 8: 2, 13: 1, 15: 1, 16: 1 };
+  var UNLOGGED = { 5: true, 6: true };
+  var MEALS = { 8: '1', 13: '1', 15: '1', 16: '1' }; // '1' = left some; default both finished
+  var PHOTOS = { 2: 'monitor', 8: 'call', 13: 'monitor', 16: 'monitor' };
+  var MEDS = { 9: true, 10: true, 11: true, 12: true };
+  var EVENTS = {
+    2: [['sym', 'Vomit · 6:52 AM · photo', 'monitor'], ['meal', 'Turkey pâté · finished · 7:30 AM'], ['meal', 'Turkey pâté · finished · 6:05 PM']],
+    8: [['sym', 'Vomit · 7:10 AM'], ['meal', 'Turkey pâté · left some · 7:40 AM'], ['meal', 'Turkey kibble · finished · 6:10 PM'], ['sym', 'Vomit · 11:40 PM · photo, read as worth a call', 'call']],
+    13: [['meal', 'Turkey pâté · finished · 7:35 AM'], ['sym', 'Vomit · 2:15 PM · photo', 'monitor'], ['meal', 'Turkey pâté · left some · 6:00 PM']],
+    15: [['meal', 'Turkey pâté · finished · 7:20 AM'], ['sym', 'Vomit · 9:48 PM'], ['meal', 'Turkey kibble · left some · 6:15 PM']],
+    16: [['meal', 'Turkey pâté · left some · 7:25 AM'], ['sym', 'Vomit · 8:02 AM · photo', 'monitor'], ['meal', 'Turkey pâté · finished · 6:00 PM']]
+  };
+  var WDN = ['Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon'];
+  function weekday(d) { return WDN[(d - 1) % 7]; }
+  function eventsOf(d) {
+    if (UNLOGGED[d]) return [];
+    var base = EVENTS[d] ? EVENTS[d].slice() : [['meal', 'Turkey pâté · finished · 7:30 AM'], ['meal', 'Turkey pâté · finished · 6:10 PM']];
+    if (MEDS[d]) base.splice(1, 0, ['med', 'Cerenia · given · 8:00 AM']);
+    return base;
+  }
+  function dotColor(kind) { return kind === 'sym' ? ROSE : (kind === 'med' ? MED : TEAL); }
+  function dayHeading(d) { var evs = eventsOf(d); if (d > TODAY) return weekday(d) + ', Sep ' + d + ' · ahead'; return weekday(d) + ', Sep ' + d + ' · ' + (evs.length ? evs.length + (evs.length === 1 ? ' event' : ' events') : 'nothing logged'); }
+  function eventsHtml(d) {
+    if (d > TODAY) return '<div class="ev"><span class="muted">Not yet.</span></div>';
+    var evs = eventsOf(d);
+    if (!evs.length) return '<div class="ev"><span class="muted">No entries this day — not the same as a quiet day.</span></div>';
+    return evs.map(function (e) {
+      var ph = e[2] ? '<span class="ph' + (e[2] === 'call' ? ' call' : '') + '"></span>' : '';
+      return '<div class="ev"><i style="background:' + dotColor(e[0]) + '"></i>' + ph + '<span>' + e[1] + '</span></div>';
+    }).join('');
+  }
+  function railFor(d) { return SYM[d] ? ROSE : (UNLOGGED[d] || d > TODAY ? IDLE : TEAL); }
+
+  /* ── the day mark (calendar, fortnight, month view) ───────────── */
+  function dayMark(d, small) {
+    var c = document.createElement('button'); c.type = 'button';
+    var cls = 'dm' + (small ? ' fq' : '');
+    var future = d > TODAY;
+    if (future) cls += ' future'; else if (!UNLOGGED[d]) cls += ' logged';
+    if (SYM[d]) cls += ' sym' + (SYM[d] >= 2 ? ' two' : '');
+    if (d === TODAY) cls += ' today';
+    c.className = cls;
+    c.textContent = SYM[d] ? String(SYM[d]) : String(d);
+    c.setAttribute('aria-label', weekday(d) + ' Sep ' + d + (future ? ', ahead' : (UNLOGGED[d] ? ', nothing logged' : (SYM[d] ? ', vomiting logged ' + SYM[d] + (SYM[d] === 1 ? ' time' : ' times') : ', logged, no vomiting'))));
+    c.disabled = future;
+    return c;
+  }
+
+  /* ── open in place: rail leads, box follows, text lands ─────────── */
+  function makeOpener(detailEl) {
+    var open = null;
+    return function toggle(cell, d) {
+      if (open && open.cell === cell) {
+        open.dd.classList.remove('in'); cell.classList.remove('sel'); open = null;
+        setTimeout(function () { if (!open) detailEl.classList.remove('open'); }, 400);
+        return;
+      }
+      if (open) { open.cell.classList.remove('sel'); }
+      detailEl.innerHTML = '';
+      var dd = h('div', 'dd'); var rail = h('div', 'drail'); rail.style.background = railFor(d);
+      var box = h('div', 'dbox'); var tx = h('div', 'dtext', '<b>' + dayHeading(d) + '</b>' + eventsHtml(d));
+      box.appendChild(tx); dd.appendChild(rail); dd.appendChild(box); detailEl.appendChild(dd);
+      detailEl.classList.add('open'); cell.classList.add('sel');
+      void dd.offsetWidth;
+      requestAnimationFrame(function () { dd.classList.add('in'); });
+      open = { cell: cell, dd: dd };
+    };
+  }
+
+  /* ── the calendar grid (the day is the mark) ──────────────────── */
+  function calendar(node) {
+    ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function (w) { node.appendChild(h('div', 'wd', w)); });
+    var weeks = [], week = []; for (var i = 0; i < LEAD; i++) week.push(null);
+    for (var d = 1; d <= DAYS; d++) { week.push(d); if (week.length === 7) { weeks.push(week); week = []; } }
+    if (week.length) { while (week.length < 7) week.push(null); weeks.push(week); }
+    var openers = [];
+    weeks.forEach(function (w) {
+      var detail = h('div', 'day-detail'); var toggle = makeOpener(detail); openers.push({ detail: detail, toggle: toggle });
+      w.forEach(function (d) {
+        if (!d) { node.appendChild(h('div', 'dm blank')); return; }
+        var c = dayMark(d, false);
+        c.addEventListener('click', function () {
+          openers.forEach(function (o) { if (o.detail !== detail && o.detail.classList.contains('open')) { var dd = o.detail.querySelector('.dd'); if (dd) dd.classList.remove('in'); var sel = node.querySelector('.dm.sel'); if (sel && sel !== c) sel.classList.remove('sel'); setTimeout(function () { o.detail.classList.remove('open'); }, 380); o.reset && o.reset(); } });
+          toggle(c, d);
+        });
+        node.appendChild(c);
+      });
+      node.appendChild(detail);
+    });
+  }
+
+  /* ── the fortnight (Sep 4 – 17) ───────────────────────────────── */
+  function fortnight(node, detailEl) {
+    var toggle = detailEl ? makeOpener(detailEl) : null;
+    for (var d = TODAY - 13; d <= TODAY; d++) (function (d) {
+      var c = dayMark(d, true);
+      if (toggle) c.addEventListener('click', function () { toggle(c, d); });
+      node.appendChild(c);
+    })(d);
+  }
+  function armFort(node, delayBase) {
+    if (REDUCED) return;
+    var items = node.querySelectorAll('.fq');
+    items.forEach(function (it, i) { it.style.transitionDelay = ((delayBase || 0) + i * 30) + 'ms'; });
+    node.classList.remove('play'); node.classList.add('armed');
+    void node.offsetWidth;
+    requestAnimationFrame(function () { requestAnimationFrame(function () { node.classList.remove('armed'); node.classList.add('play'); }); });
+  }
+
+  /* ── charts ───────────────────────────────────────────────────── */
+  function bars(svg) {
+    var vals = nums(svg.dataset.bars), labels = svg.dataset.labels ? nums(svg.dataset.labels) : [];
+    var meals = svg.dataset.meals ? nums(svg.dataset.meals) : null;
+    var today = svg.dataset.today ? Number(svg.dataset.today) : null;
+    var mark = svg.dataset.mark ? Number(svg.dataset.mark) : null;
+    var partialLast = !!svg.dataset.marklabel;
+    var vb = svg.viewBox.baseVal, W = vb.width, H = vb.height;
+    var hasLabels = labels.some(Boolean);
+    var padL = 6, padR = 6, padT = 14, padB = (hasLabels ? 14 : 6) + (meals ? 7 : 0);
+    var n = vals.length, slot = (W - padL - padR) / n, gap = 2, bw = Math.min(slot - gap, 22);
+    var max = Math.max.apply(null, vals.map(function (v) { return v === 'x' ? 0 : Number(v); }).concat([1]));
+    var base = H - padB, plotH = base - padT;
+    el('line', { x1: padL, x2: W - padR, y1: base + 0.5, y2: base + 0.5, stroke: RULE, 'stroke-width': 1 }, svg);
+    if (mark != null) { var mx = padL + mark * slot; el('line', { x1: mx, x2: mx, y1: padT - 6, y2: base, stroke: INK3, 'stroke-width': 1, 'stroke-dasharray': '2 3' }, svg); text(svg, mx + 3, padT - 1, svg.dataset.marklabel, { 'font-size': 8.5 }); }
+    var lastNonZero = -1;
+    vals.forEach(function (v, i) {
+      var x = padL + i * slot + (slot - bw) / 2;
+      if (v === 'x' || Number(v) === 0) { el('rect', { x: x, y: base - 2, width: bw, height: 2, rx: 1, fill: EMPTY }, svg); return; }
+      var num = Number(v); lastNonZero = i;
+      var hh = Math.max(4, num / max * plotH), y = base - hh;
+      el('path', { d: topRounded(x, y, bw, hh, 3), fill: (partialLast && i === n - 1) ? ROSE_SOFT : ROSE, 'class': 'b' }, svg);
+    });
+    if (lastNonZero >= 0) { var lx = padL + lastNonZero * slot + slot / 2; var lv = Number(vals[lastNonZero]); text(svg, lx, base - Math.max(4, lv / max * plotH) - 4, String(lv), { 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 600, fill: INK, 'class': 'lab' }); }
+    if (today != null) { var tx = padL + (today - 1) * slot; el('rect', { x: tx + 0.5, y: padT - 4, width: slot - 1, height: base - padT + 4 + (meals ? 7 : 0), rx: 3, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg); }
+    if (meals) meals.forEach(function (m, i) { if (m === 'x') return; var x = padL + i * slot + (slot - bw) / 2; el('rect', { x: x, y: base + 3, width: bw, height: 2, rx: 1, fill: m === '2' ? TEAL : TEAL_SOFT }, svg); });
+    labels.forEach(function (l, i) { if (!l) return; var anchor = i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle'); var x = i === 0 ? padL : (i === n - 1 ? W - padR : padL + i * slot + slot / 2); text(svg, x, H - 3, l, { 'text-anchor': anchor }); });
+  }
+  function area(svg) {
+    var vals = nums(svg.dataset.area).map(Number), labels = svg.dataset.labels ? nums(svg.dataset.labels) : [];
+    var vb = svg.viewBox.baseVal, W = vb.width, H = vb.height;
+    var padL = 8, padR = 34, padT = 10, padB = 14;
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), span = Math.max(hi - lo, 0.3); lo -= span * 0.35; hi += span * 0.2;
+    var n = vals.length, base = H - padB, plotH = base - padT;
+    function px(i) { return padL + i * (W - padL - padR) / (n - 1); } function py(v) { return base - (v - lo) / (hi - lo) * plotH; }
+    var pts = vals.map(function (v, i) { return px(i) + ',' + py(v); });
+    el('line', { x1: padL, x2: W - padR, y1: base + 0.5, y2: base + 0.5, stroke: RULE }, svg);
+    el('path', { d: 'M' + px(0) + ',' + base + ' L' + pts.join(' L') + ' L' + px(n - 1) + ',' + base + ' Z', fill: TEAL_WASH }, svg);
+    el('polyline', { points: pts.join(' '), fill: 'none', stroke: TEAL, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+    vals.forEach(function (v, i) { if (i !== n - 1) el('circle', { cx: px(i), cy: py(v), r: 2.2, fill: TEAL, stroke: '#fff', 'stroke-width': 1.5 }, svg); });
+    el('circle', { cx: px(n - 1), cy: py(vals[n - 1]), r: 3.6, fill: TEAL, stroke: '#fff', 'stroke-width': 2 }, svg);
+    text(svg, px(n - 1) + 7, py(vals[n - 1]) + 3.5, vals[n - 1].toFixed(1) + ' kg', { fill: INK, 'font-weight': 600, 'font-size': 10 });
+    text(svg, px(0) + 5, py(vals[0]) - 5, vals[0].toFixed(1), { 'font-size': 8.5 });
+    labels.forEach(function (l, i) { if (!l) return; text(svg, px(i), H - 3, l, { 'text-anchor': i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle') }); });
+  }
+  function compare(svg) {
+    var vals = nums(svg.dataset.compare).map(Number), labels = nums(svg.dataset.complabels);
+    var vb = svg.viewBox.baseVal, W = vb.width;
+    var labelW = 92, padR = 62, track = W - labelW - padR, max = Math.max.apply(null, vals);
+    vals.forEach(function (v, i) {
+      var y = 5 + i * 22, w = Math.max(6, v / max * track);
+      text(svg, 0, y + 9.5, labels[i], { fill: INK2, 'font-size': 9.5 });
+      el('rect', { x: labelW, y: y, width: track, height: 12, rx: 3, fill: EMPTY }, svg);
+      el('rect', { x: labelW, y: y, width: w, height: 12, rx: 3, fill: i === 1 ? ROSE : ROSE_SOFT, 'class': 'bx' }, svg);
+      text(svg, labelW + w + 6, y + 9.5, v + ' in 21 days', { fill: INK, 'font-weight': 600, 'font-size': 10, 'class': 'lab' });
+    });
+  }
+
+  /* ── draw in ──────────────────────────────────────────────────── */
+  function arm(svg, sel, stagger) {
+    if (REDUCED) return;
+    var marks = svg.querySelectorAll(sel);
+    marks.forEach(function (r, i) { r.style.transitionDelay = (i * stagger) + 'ms'; });
+    svg.classList.remove('play'); svg.classList.add('armed');
+    // The armed state carries `transition: none` in the stylesheet on purpose: the per-mark
+    // transition-delay set above is an inline style, and with a transition rule absent it
+    // would still create a zero-length DELAYED transition on the arm, which the play flip
+    // then retargets to nothing (measured in headless Chromium, round 2 — the round 1 bug's
+    // sibling). Reading the computed style here commits the armed value before the flip.
+    marks.forEach(function (r) { void getComputedStyle(r).transform; });
+    requestAnimationFrame(function () { requestAnimationFrame(function () { svg.classList.remove('armed'); svg.classList.add('play'); }); });
+  }
+  function armDrawin(svg) { arm(svg, 'path.b', 40); }
+  function armDrawinX(svg) { arm(svg, 'rect.bx', 120); }
+
+  /* ── arrive ───────────────────────────────────────────────────── */
+  function playArrive(root) {
+    var arr = root.querySelector('.arr') || root;
+    arr.classList.remove('in'); void arr.offsetWidth;
+    requestAnimationFrame(function () { requestAnimationFrame(function () { arr.classList.add('in'); }); });
+  }
+
+  /* ── the instrument ───────────────────────────────────────────── */
+  function instrument(svg, card, root) {
+    var vb = svg.viewBox.baseVal, W = vb.width, H = vb.height;
+    var padL = 6, padR = 6, slot = (W - padL - padR) / DAYS, bw = slot - 2;
+    var base = 118, plotT = 36, plotH = base - plotT, max = 2;
+    var gPhotos = el('g', { 'class': 'layer layer-photos' }, svg), gMeds = el('g', { 'class': 'layer layer-meds' }, svg), gVomit = el('g', { 'class': 'layer layer-vomit' }, svg), gMeals = el('g', { 'class': 'layer layer-meals' }, svg);
+    el('line', { x1: padL, x2: W - padR, y1: base + 0.5, y2: base + 0.5, stroke: RULE }, svg);
+    text(svg, padL + 2, 30, 'medication', { 'font-size': 7.5 }); text(svg, padL + 2, 10, 'photos', { 'font-size': 7.5 });
+    for (var d = 1; d <= DAYS; d++) {
+      var x = padL + (d - 1) * slot + 1, cx = padL + (d - 1) * slot + slot / 2;
+      if (d > TODAY) { el('rect', { x: x, y: base - 2, width: bw, height: 2, rx: 1, fill: '#F5F5F5' }, svg); continue; }
+      if (UNLOGGED[d]) { el('rect', { x: x, y: plotT, width: bw, height: base - plotT, rx: 2, fill: '#F5F5F5' }, svg); continue; }
+      if (SYM[d]) { var hh = SYM[d] / max * plotH; el('path', { d: topRounded(x, base - hh, bw, hh, 2.5), fill: ROSE, 'class': 'b' }, gVomit); } else el('rect', { x: x, y: base - 2, width: bw, height: 2, rx: 1, fill: EMPTY }, gVomit);
+      el('rect', { x: x, y: base + 4, width: bw, height: 2, rx: 1, fill: MEALS[d] === '1' ? TEAL_SOFT : TEAL }, gMeals);
+      if (PHOTOS[d]) el('circle', { cx: cx, cy: 16, r: 3.2, fill: PHOTOS[d] === 'call' ? ROSE : IDLE }, gPhotos);
+    }
+    el('rect', { x: padL + 8 * slot + 1, y: 22, width: 4 * slot - 2, height: 4, rx: 2, fill: MED, opacity: 0.9 }, gMeds);
+    [1, 8, 15, 22, 30].forEach(function (d) { text(svg, padL + (d - 1) * slot + slot / 2, H - 4, String(d), { 'text-anchor': 'middle', 'font-size': 8.5 }); });
+    el('rect', { x: padL + (TODAY - 1) * slot + 0.5, y: 8, width: slot - 1, height: base + 8 - 8 + 2, rx: 3, fill: 'none', stroke: INK, 'stroke-width': 1 }, svg);
+    var gCur = el('g', { 'class': 'cursor' }, svg);
+    var cur = el('rect', { x: padL + (TODAY - 1) * slot, y: 6, width: slot, height: base + 6, rx: 3, fill: 'rgba(10,10,10,0.07)', stroke: INK, 'stroke-width': 1 }, gCur);
+    var current = null;
+    function scrubTo(d) {
+      d = Math.max(1, Math.min(DAYS, d));
+      if (d === current) return; current = d;
+      cur.setAttribute('x', String(padL + (d - 1) * slot));
+      root.classList.add('live');
+      card.innerHTML = '<b>' + dayHeading(d) + '</b>' + eventsHtml(d);
+    }
+    function onPointer(e) { var r = svg.getBoundingClientRect(); var x = (e.clientX - r.left) / r.width * W; scrubTo(Math.floor((x - padL) / slot) + 1); }
+    svg.addEventListener('pointerdown', function (e) { svg.setPointerCapture && svg.setPointerCapture(e.pointerId); onPointer(e); });
+    svg.addEventListener('pointermove', function (e) { onPointer(e); });
+    svg.addEventListener('touchmove', function (e) { if (e.touches && e.touches[0]) { var t = e.touches[0]; onPointer({ clientX: t.clientX }); e.preventDefault(); } }, { passive: false });
+    svg.addEventListener('keydown', function (e) { if (e.key === 'ArrowRight') { scrubTo((current || TODAY) + 1); e.preventDefault(); } if (e.key === 'ArrowLeft') { scrubTo((current || TODAY) - 1); e.preventDefault(); } });
+    svg.setAttribute('tabindex', '0');
+    return { scrubTo: scrubTo };
+  }
+
+  /* ── wire everything ──────────────────────────────────────────── */
+  document.querySelectorAll('svg[data-bars]').forEach(bars);
+  document.querySelectorAll('svg[data-area]').forEach(area);
+  document.querySelectorAll('svg[data-compare]').forEach(compare);
+  var calDemo = document.getElementById('cal-demo'); if (calDemo) calendar(calDemo);
+  var instCal = document.getElementById('inst-cal'); if (instCal) calendar(instCal);
+  var fortMain = document.getElementById('fortnight'); if (fortMain) fortnight(fortMain, document.getElementById('fortnight-detail'));
+  var openFort = document.getElementById('open-fort'); if (openFort) fortnight(openFort, document.getElementById('open-fort-detail'));
+  var waitFort = document.getElementById('wait-fort'); if (waitFort) fortnight(waitFort, null);
+
+  var drawin = document.getElementById('drawin'), replay = document.getElementById('replay');
+  if (replay && drawin) replay.addEventListener('click', function () { armDrawin(drawin); });
+  var arrive = document.getElementById('arrive'), arriveBtn = document.getElementById('arrive-replay');
+  if (arriveBtn && arrive) arriveBtn.addEventListener('click', function () { playArrive(arrive); });
+  var wait = document.getElementById('wait'), waitBtn = document.getElementById('wait-replay');
+  function playWait() {
+    if (!wait) return;
+    wait.classList.remove('in'); if (waitFort) { waitFort.classList.remove('play'); waitFort.classList.add('armed'); }
+    setTimeout(function () { wait.classList.add('in'); if (waitFort) setTimeout(function () { armFort(waitFort, 0); }, 120); }, REDUCED ? 300 : 900);
+  }
+  if (waitBtn) waitBtn.addEventListener('click', playWait);
+  var fortBtn = document.getElementById('fortnight-replay');
+  if (fortBtn && fortMain) fortBtn.addEventListener('click', function () { armFort(fortMain, 0); });
+  var receiptBtn = document.getElementById('receipt-replay'), receiptArr = document.getElementById('receipt-arr'), receiptChart = document.getElementById('receipt-chart');
+  if (receiptBtn && receiptArr) receiptBtn.addEventListener('click', function () {
+    receiptArr.classList.remove('in'); if (receiptChart) { receiptChart.classList.remove('play'); receiptChart.classList.add('armed'); }
+    void receiptArr.offsetWidth;
+    requestAnimationFrame(function () { requestAnimationFrame(function () { receiptArr.classList.add('in'); if (receiptChart) setTimeout(function () { armDrawinX(receiptChart); }, 380); }); });
+  });
+  document.querySelectorAll('svg#moon, svg[aria-hidden] mask animate').forEach(function () {});
+  if (REDUCED) document.querySelectorAll('svg').forEach(function (s) { if (s.querySelector('animate') && s.pauseAnimations) s.pauseAnimations(); });
+
+  var instSvg = document.getElementById('instrument'), instCard = document.getElementById('instrument-card'), instRoot = document.getElementById('inst-root');
+  if (instSvg && instCard && instRoot) {
+    instrument(instSvg, instCard, instRoot);
+    var layers = document.getElementById('inst-layers');
+    if (layers) layers.querySelectorAll('.chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        var on = chip.classList.toggle('on'); chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+        var g = instSvg.querySelector('.layer-' + chip.dataset.layer); if (g) g.classList.toggle('off', !on);
+      });
+    });
+    var seg = document.getElementById('inst-seg'), strip = document.getElementById('inst-strip'), month = document.getElementById('inst-month');
+    if (seg) seg.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        seg.querySelectorAll('button').forEach(function (o) { o.classList.toggle('on', o === b); });
+        var m = b.dataset.view === 'month'; strip.hidden = m; month.hidden = !m;
+      });
+    });
+  }
+
+  // first-view plays: each once, when the demo scrolls into view
+  var once = {};
+  var plays = [
+    [drawin, function () { armDrawin(drawin); }],
+    [arrive, function () { playArrive(arrive); }],
+    [wait, playWait],
+    [fortMain, function () { armFort(fortMain, 0); }],
+    [openFort, function () { armFort(openFort, 0); }]
+  ];
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        plays.forEach(function (p) { if (p[0] === e.target && !once[p[0].id]) { once[p[0].id] = true; p[1](); io.unobserve(e.target); } });
+      });
+    }, { threshold: 0.5 });
+    plays.forEach(function (p) { if (p[0]) io.observe(p[0]); });
+  } else plays.forEach(function (p) { if (p[0]) p[1](); });
+})();
+</script>

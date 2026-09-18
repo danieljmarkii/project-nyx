@@ -231,14 +231,14 @@
   .demo .dhead b { font-size: 14px; }
   .btn { font: inherit; font-size: 13px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border: 0; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
   .btn:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; }
-  .drawin rect.b { transform-box: fill-box; transform-origin: 50% 100%; transform: scaleY(1); }
-  .drawin.armed rect.b { transform: scaleY(0.02); }
-  .drawin.play rect.b { transition: transform 420ms cubic-bezier(.2,.8,.2,1.02); transform: scaleY(1); }
+  .drawin path.b { transform-box: fill-box; transform-origin: 50% 100%; transform: scaleY(1); transition: none; }
+  .drawin.armed path.b { transform: scaleY(0.02); transition: none; }
+  .drawin.play path.b { transition: transform 420ms cubic-bezier(.2,.8,.2,1.02); transform: scaleY(1); }
   .drawin .lab { opacity: 1; }
   .drawin.armed .lab { opacity: 0; }
   .drawin.play .lab { transition: opacity 300ms ease-out 480ms; opacity: 1; }
   @media (prefers-reduced-motion: reduce) {
-    .drawin.armed rect.b, .drawin.play rect.b { transition: none; transform: scaleY(1); }
+    .drawin.armed path.b, .drawin.play path.b { transition: none; transform: scaleY(1); }
     .drawin.armed .lab, .drawin.play .lab { transition: none; opacity: 1; }
     .dd .drail, .dd .dbox, .dd .dtext { transition: none; }
   }
@@ -269,7 +269,8 @@
 </style>
 <div class="wrap">
 <header class="mast">
-  <p class="eyebrow"><span>Culprit · design system audit</span><span>CUL-1060 · discovery</span><span>2026-09-17</span><span class="roundtag">Round 1 · react</span></p>
+  <div class="howto" style="margin:0 0 22px;border-left:3px solid var(--rose)"><b>This is the round 1 archive (2026-09-17).</b> The current proposal is round 2, <a href="https://claude.ai/artifact/QZoaGcjkWZHbPm2pyewF51"><b>The Record Moves</b></a> (its own page and URL, <code>docs/culprit-design-v2-mockups.html</code>). This page keeps the audit and the retired directions so nobody re-derives them. The one demo on this page did not move when you first saw it (a CSS selector aimed at <code>rect</code>; the bars are <code>path</code>) — it is fixed here so it does not mislead, and round 2 verifies every demo in a browser before publishing.</div>
+  <p class="eyebrow"><span>Culprit · design system audit</span><span>CUL-1060 · discovery</span><span>2026-09-17</span><span class="roundtag" style="color:var(--ink-2);background:var(--rule-soft)">Round 1 · archive</span></p>
   <h1>The record, drawn well</h1>
   <p class="standfirst">The app captures a pet's health like magic and shows it like a records system. This brief audits where the design stands, proposes <strong>Design Principles v2.0</strong> — the aspirational half the seven restraint principles never had — and draws the directions as frames. <strong>Nothing here is built.</strong> React to the frames and rule on the R-briefs; the shovel-ready issues are filed from the rulings.</p>
   <div class="howto"><b>How to read this page.</b> §01 is the audit (what is true today, with the file that proves it). §02 is the principles proposal. §03–§09 are the directions, each with an <em>as built</em> frame drawn from the shipped code beside the <em>proposed</em> frame, and its R-brief. §10 is the project shape. §11 is what the team said. Frames use Nyx's record as the example, with illustrative numbers. Two demos are interactive: the bars in §07 and the calendar days in §04.</div>
@@ -1136,7 +1137,7 @@
     var rects = svg.querySelectorAll('path.b');
     rects.forEach(function (r, i) { r.style.transitionDelay = (i * 40) + 'ms'; });
     svg.classList.remove('play'); svg.classList.add('armed');
-    void svg.getBoundingClientRect();
+    rects.forEach(function (r) { void getComputedStyle(r).transform; });
     requestAnimationFrame(function () { requestAnimationFrame(function () { svg.classList.remove('armed'); svg.classList.add('play'); }); });
   }
 

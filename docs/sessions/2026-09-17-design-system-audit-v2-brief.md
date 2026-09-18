@@ -37,3 +37,13 @@
 ## PM actions (all on CUL-1060, `Waiting on PM`)
 
 React to the frames and rule R-1 … R-11. R-9's yes is also CUL-616's one step (the dev-client build).
+
+## Round 2 — "The Record Moves" (same session, 2026-09-18)
+
+**PM reactions to round 1 (transcribed on CUL-1060):** the day as the mark and the area sparkline ruled; the receipt ruled as direction, cluttered; the skeleton ruled ("pull the trigger; the vet report too"); the draw in named as the level of delight wanted; Patterns and the Home trend "not enough"; every Whorl "needs improved"; the one Replay did not move; "reimagine where we need to, don't rely on incremental"; and, mid-round, "I need a fresh artifact — this contains so much from previous builds".
+
+**What shipped:** a fresh current-proposal page, `docs/culprit-design-v2-mockups.html`, published at its own URL (https://claude.ai/artifact/QZoaGcjkWZHbPm2pyewF51); round 1 stays at `docs/culprit-design-v2-brief.html` as the archive with a banner pointing forward and its own Replay fixed. That is the split rule from 2026-08-15, applied at the PM's word. The page: the signature ("the record moves"), six working motion demos (draw in, arrive, the wait as the shape, open in place, the moon, the breathing tick), Patterns reimagined as one scrubbable, layered instrument (Month = the calendar), the Home trend as the fortnight of day marks, the receipt decluttered and drawing in on unfold, every wait as its screen's silhouette with the Whorl and the night moment retired from the working app, the calendar current, the principles compact, the project re-cut (W1-0 the day-mark and chart family first), and the new decisions R2-1 … R2-4 with the standing R-1, R-9, R-10, R-11.
+
+**The bug, and the lesson it carries into the build.** Round 1's Replay never moved: the CSS animated `rect.b`, the bars were `path` elements. Round 2's first harness run found a second, subtler version in its own draw-in: a per-mark `transition-delay` set inline before arming created a zero-length delayed transition in the armed state (which had no transition rule), and the play flip retargeted it to nothing. Both are the same class: a motion the author has not watched is a motion the author has not built. So round 2 drove every demo over the Chrome DevTools Protocol in headless Chromium and sampled a computed style mid-transition and after it settled (`scratchpad/verify-motion.js`): all seven probes moved before publishing, zero page errors. That harness is the shape of W2-1's on-device gate, and the reason the gate is a DoD line and not a habit.
+
+**PM question at the end, answered in the wrap:** "are we spending too much time perfecting this instead of in app" — yes as of this round's end; the page is done and the next session builds W1-0 and W2-1.
