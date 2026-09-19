@@ -293,8 +293,8 @@
   .node1 .pg { display: inline-block; width: 11px; height: 9px; border: 1.3px solid #737373; border-radius: 2px; vertical-align: -1px; margin: 0 1px; }
   .node1.nc { cursor: pointer; border-radius: 6px; }
   .node1.nc:focus-visible { outline: 2px solid #0B7B6C; }
-  .node1.nc .nt::after { content: "›"; color: #0B7B6C; margin-left: 5px; display: inline-block; transition: transform 200ms ease-out; }
-  .node1.nc[aria-expanded="true"] .nt::after { transform: rotate(90deg); }
+  .node1.nc .ntime::after { content: "›"; color: #0B7B6C; margin-left: 5px; display: inline-block; transition: transform 200ms ease-out; }
+  .node1.nc[aria-expanded="true"] .ntime::after { transform: rotate(90deg); }
   .ncdd { padding-left: 6px; }
   .ncdd .dd { padding: 0 2px 2px; }
   .ncdd .dd .dbox { max-height: 0; }
@@ -350,7 +350,7 @@
   @media (prefers-reduced-motion: reduce) {
     .drawin.armed path.b, .drawin.play path.b, .drawin-x.armed rect.bx, .drawin-x.play rect.bx, .drawin-dot.armed circle.dt, .drawin-dot.play circle.dt { transition: none; transform: none; opacity: 1; }
     .drawin.armed .lab, .drawin.play .lab, .drawin-x.armed .lab, .drawin-x.play .lab, .drawin-dot.armed .lab, .drawin-dot.play .lab { transition: none; opacity: 1; }
-    .dd .drail, .dd .dbox, .dd .dtext, .wait .wait-skel, .wait .wait-content, .screen.detail, .screen.detail .land, .arr2 .tick2, .arr2 .pend, .arr2 .dbox, .arr2 .dtext, .node1.nc .nt::after { transition: none; }
+    .dd .drail, .dd .dbox, .dd .dtext, .wait .wait-skel, .wait .wait-content, .screen.detail, .screen.detail .land, .arr2 .tick2, .arr2 .pend, .arr2 .dbox, .arr2 .dtext, .node1.nc .ntime::after { transition: none; }
     .tick, .tick2 { animation: none; opacity: 1; }
     .lookhead.answered .lans { animation: none; }
   }
@@ -363,7 +363,21 @@
   <h1>The whole day</h1>
   <p class="standfirst">Home, on Nyx's real Thursday: <strong>ten things logged, event for event from the record</strong>, seven of them meals, and it still reads in one glance. The Signal leads with a chart that now carries what the timing lane carries, every chart on the page meets that bar, the look question sits at the top of Today, no photo is on Home, the FAB is back, and the Signal's screen has the lane itself. <strong>Six stakeholders read round 3 cold before this was drawn; what each one moved is in §06.</strong> Scroll inside the phone. Tap the Signal. Tap a chip. Tap "2 meals". Press every Replay twice.</p>
   <div class="howto"><b>How to read this page.</b> A fresh page again; rounds 1–3 stay at their own URLs as archives. §01 is Home on the real day, one scrolling frame with the tab bar and the FAB, plus the quiet day. §02 is the one exception to "no photos on Home", drawn two ways side by side. §03 is the Signal's screen with the lane on it. §04 is the month, and the weight drawn two ways. §05 is the standard every chart here meets, as a table you can check. §06 is the six stakeholder reads and what each moved. §07 the principle edits, §08 the questions and the go/no-go, §09 the project as it would be filed on a go. Nothing is in Linear.</div>
-  <details style="margin-top:22px"><summary style="cursor:pointer;font-weight:600;font-size:14px;color:var(--ink)">The ledger — what each round 3 reaction ruled, and what moved</summary>
+  <div class="howto" style="margin-top:22px;border-left:3px solid var(--teal)"><b>Reacted 2026-09-19 — ruled go, and the project is filed.</b> What each reaction ruled and what moved on this page:</div>
+  <div class="ledger" id="ledger4">
+    <div><b>The FAB, teal</b><span><q>Bold! Let's do it.</q> → <span class="pill">ruled</span> Today's FAB is the dark neutral; it goes to the accent. Step 1, bundle A.</span></div>
+    <div><b>The chevron</b><span><q>can wrap to a new line and look pretty bad</q> → fixed: the chevron rides the time, which never wraps, so a long food name wraps under it and the arrow stays put.</span></div>
+    <div><b>Positives on the look</b><span><q>let's make sure we have some positive options showing too</q> → <span class="pill">ruled</span> <a href="#s01">Lively and Played on the compact row.</a> The daily-look spec fixes seven words per species; this is a Tier 2 edit to §4 (eight for cats; Dr. Chen signs the dog row's second positive) and rides step 2's Home issue.</span></div>
+    <div><b>Behind a beta toggle</b><span><q>ensure this redesign is behind a beta toggle too</q> → <span class="pill">ruled</span> <code>design_v2</code> on the Beta shelf, the same two gates as Noticed and Vet visits (eligible AND opted in); flag-off is byte-identical and a guard proves it; retired at GA. Drawn below.</span></div>
+    <div><b>Q1 · medication</b><span><q>we want to log it as needed but that's the FAB's job</q> → <span class="pill">ruled</span> Nothing about medication on Home beyond the dose as a fact once logged.</span></div>
+    <div><b>Q2 · the urgent photo</b><span><q>I'll defer to the team</q> → <span class="pill">ruled</span> <a href="#s02">Option A: the words on Home, the photo one tap in.</a></span></div>
+    <div><b>Q3 · the weight</b><span><q>defer to the designer; it needs to look good even with low numbers of weigh-ins</q> → <span class="pill">ruled</span> <a href="#s04">Dots by date on the fixed band; drawn at six, two and one readings.</a> The area is retired.</span></div>
+    <div><b>Q4 · the flight</b><span><q>go with the better design</q> → <span class="pill">ruled</span> The flight is the destination. The route ships first because the screen has to exist to land in; the flight is step 3's one issue, not a maybe.</span></div>
+    <div><b>Q5 · the clock</b><span><q>I'm in CST</q> → the day is redrawn in Central. Robust time-zone settings are their own later issue, <a href="https://linear.app/projectnyx/issue/CUL-1061">CUL-1061</a>.</span></div>
+    <div><b>Converging</b><span><q>let's get a project in Linear with step-by-step plans</q> → <a href="https://linear.app/projectnyx/project/design-v2-the-whole-day-35ed7930edbf"><b>Design v2 — the whole day</b></a>: four steps, the parallel lanes named, one bundle. <a href="#s09">§09.</a></span></div>
+  </div>
+  <div class="mini-card" style="margin-top:16px"><div class="seclabel">Beta features · the shelf row (Settings)</div><div style="display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-weight:600;font-size:13px">Design v2</div><div style="font-size:11.5px;color:#525252;line-height:1.4">The new Home, the Signal's own screen and the month on Patterns. Switch it off and the app is exactly as it was.</div></div><span role="switch" aria-checked="true" aria-label="Design v2, on" style="width:40px;height:24px;border-radius:12px;background:#00C2A8;position:relative;flex-shrink:0;display:block"><i style="position:absolute;right:2px;top:2px;width:20px;height:20px;border-radius:50%;background:#fff;display:block"></i></span></div></div>
+  <details style="margin-top:22px"><summary style="cursor:pointer;font-weight:600;font-size:14px;color:var(--ink)">The earlier ledger — what each round 3 reaction ruled, and what moved</summary>
   <div class="ledger">
     <div><b>Linear</b><span><q>remove it; we haven't converged</q> → <span class="pill">done</span> The project and the issue are cancelled; nothing is filed. <a href="#s08">§08 is the go/no-go.</a></span></div>
     <div><b>The Signal's screen</b><span><q>I like this a lot</q> → kept. <a href="#s03">§03 sharpens it with the six reads: per-episode verdicts, the lane, Cerenia named.</a></span></div>
@@ -387,11 +401,11 @@
 <section id="s01">
   <div class="sec-head"><span class="sec-num">§01</span><h2>Home on Nyx's Thursday — ten things logged, one glance</h2></div>
   <div class="col">
-    <p>This is <strong>September 17 from the record</strong>: seven meals of Selected Protein PR, a cough, two vomits three and four minutes after eating, both photographed. The frame is a 390×844 phone at scale, and it scrolls, so what you see first is what an owner sees first: the Signal with its chart, the look question, the day's count, the first nodes. <strong>Meals that run together compact to one line</strong> ("3 meals · 1:41 – 6:07 PM") and open in place; a vomit says how long after eating it was, whether it has a photo, and what the read said, as words, never a thumbnail. The read for the evening's photo arrives on the same tick that was waiting for it. The look is the header of Today: tap a chip and it becomes a fact with a time. The FAB and the tab bar are at the app's size and place. <strong>Replay the wait, then scroll, tap "2 meals", tap "Off", tap the Signal.</strong></p>
+    <p>This is <strong>September 17 from the record</strong>: seven meals of Selected Protein PR, a cough, two vomits three and four minutes after eating, both photographed. The frame is a 390×844 phone at scale, and it scrolls, so what you see first is what an owner sees first: the Signal with its chart, the look question, the day's count, the first nodes. <strong>Meals that run together compact to one line</strong> ("3 meals · 12:41 – 5:07 PM") and open in place; a vomit says how long after eating it was, whether it has a photo, and what the read said, as words, never a thumbnail. The read for the evening's photo arrives on the same tick that was waiting for it. The look is the header of Today: tap a chip and it becomes a fact with a time. The FAB and the tab bar are at the app's size and place. <strong>Replay the wait, then scroll, tap "2 meals", tap "Off", tap the Signal.</strong></p>
   </div>
   <div class="frames">
     <div class="frame-slot">
-      <span class="tag prop">Current · Home, Thu Sep 17 (Eastern)</span>
+      <span class="tag prop">Current · Home, Thu Sep 17 (Central)</span>
       <div class="phone vp wait" id="home">
         <div class="notch"></div>
         <div class="wait-skel" id="home-wait"><div class="skel" style="padding:52px 12px 12px"><div class="k line" style="width:38%;height:12px"></div><div class="k tall" style="height:176px"></div><div class="k short" style="height:30px"></div><div class="k" style="height:300px"></div><div class="k short" style="height:36px"></div></div></div>
@@ -419,19 +433,20 @@
                   <button type="button" class="chip" data-word="Lip-licking" data-gloss="swallowing a lot, nothing in her mouth">Lip-licking</button>
                   <button type="button" class="chip" data-word="Outside the box" data-gloss="pee or poo found outside the tray">Outside the box</button>
                   <button type="button" class="chip" data-word="Lively" data-gloss="playful">Lively</button>
+                  <button type="button" class="chip" data-word="Played" data-gloss="chased, pounced, batted a toy">Played</button>
                   <button type="button" class="chip more">More…</button>
                 </div>
-                <div class="lans" id="look-ans"><span class="lrail"></span><span><b id="look-word">Off</b> · <span id="look-gloss">flat, lying about</span> · 6:14 PM</span><button type="button" id="look-change">Change</button></div>
+                <div class="lans" id="look-ans"><span class="lrail"></span><span><b id="look-word">Off</b> · <span id="look-gloss">flat, lying about</span> · 5:14 PM</span><button type="button" id="look-change">Change</button></div>
               </div>
               <div class="countline"><b>10</b> logged · 7 meals · 2 vomits · 1 cough</div>
               <div class="spine" id="spine">
-                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">2 meals <small>· Selected Protein PR</small></div><div class="ntime">6:47 – 11:55 AM</div></div>
-                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 6:47 AM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 11:55 AM</span></div></div></div></div></div>
-                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 3 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">11:58 AM</div><div class="nv">Keep an eye out</div></div>
-                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">3 meals <small>· Selected Protein PR</small></div><div class="ntime">1:41 – 6:07 PM</div></div>
-                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 1:41 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 4:02 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 6:07 PM</span></div></div></div></div></div>
-                <div class="node1" style="--dot:#F43F5E"><div class="nt">Cough</div><div class="ntime">6:09 PM</div></div>
-                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 4 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">6:11 PM</div>
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">2 meals <small>· Selected Protein PR</small></div><div class="ntime">5:47 – 10:55 AM</div></div>
+                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 5:47 AM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 10:55 AM</span></div></div></div></div></div>
+                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 3 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">10:58 AM</div><div class="nv">Keep an eye out</div></div>
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">3 meals <small>· Selected Protein PR</small></div><div class="ntime">12:41 – 5:07 PM</div></div>
+                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 12:41 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 3:02 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 5:07 PM</span></div></div></div></div></div>
+                <div class="node1" style="--dot:#F43F5E"><div class="nt">Cough</div><div class="ntime">5:09 PM</div></div>
+                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 4 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">5:11 PM</div>
                   <div class="arr2" id="spine-read" style="flex-basis:100%" aria-live="polite">
                     <div class="arow"><span class="tick2"></span><div class="abody">
                       <div class="pend">Reading the photo…</div>
@@ -439,8 +454,8 @@
                     </div></div>
                   </div>
                 </div>
-                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">2 meals <small>· Selected Protein PR</small></div><div class="ntime">6:39 – 11:39 PM</div></div>
-                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 6:39 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 11:39 PM</span></div></div></div></div></div>
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">2 meals <small>· Selected Protein PR</small></div><div class="ntime">5:39 – 10:39 PM</div></div>
+                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 5:39 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 10:39 PM</span></div></div></div></div></div>
               </div>
             </div>
             <div class="acard door lft"><span>September · logged 15 of 17 days</span><span class="dr">Patterns ›</span></div>
@@ -465,7 +480,7 @@
               <div class="lanecap">The counts under each lane: under 30 min · 30 min to 6 h · over 6 h. <b>6 + 14 episodes couldn't be timed against a meal — they aren't on the lanes.</b></div>
             </div>
             <div class="acard"><div class="seclabel row"><span>The episodes · 21, nine photographed</span><span class="door">All ›</span></div>
-              <div class="gallery"><div class="g b" role="img" aria-label="September 17, 6:11 PM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g" role="img" aria-label="September 17, 11:58 AM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g c call" role="img" aria-label="September 8, 11:40 PM, photographed, read as worth a call"><small>Sep 8</small></div><div class="g" role="img" aria-label="September 2, 6:52 AM, photographed, read as keep an eye out"><small>Sep 2</small></div></div>
+              <div class="gallery"><div class="g b" role="img" aria-label="September 17, 5:11 PM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g" role="img" aria-label="September 17, 10:58 AM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g c call" role="img" aria-label="September 8, 11:40 PM, photographed, read as worth a call"><small>Sep 8</small></div><div class="g" role="img" aria-label="September 2, 6:52 AM, photographed, read as keep an eye out"><small>Sep 2</small></div></div>
               <div class="gcap"><span>Keep an eye out</span><span>Keep an eye out</span><span class="call">Worth a call</span><span>Keep an eye out</span></div>
             </div>
             <div class="acard"><div class="seclabel">Why this is a Signal</div><div style="font-size:12px;line-height:1.45;color:#525252">Two windows of equal length, compared as counts. Not a verdict on how Nyx is doing. Cerenia was given Sep 9–12, inside the trial window, and a diet change is one of several things that can move this. Day 55 of 56 on Royal Canin Selected Protein PR.</div></div>
@@ -496,7 +511,7 @@
               <div class="seclabel">Today</div>
               <div class="lookhead">
                 <p class="lq">How does Nyx seem today?</p>
-                <div class="lchips" role="group" aria-label="How does Nyx seem today"><button type="button" class="chip">Off</button><button type="button" class="chip">Sleeping more</button><button type="button" class="chip">Hiding</button><button type="button" class="chip">Not grooming</button><button type="button" class="chip">Lip-licking</button><button type="button" class="chip">Outside the box</button><button type="button" class="chip">Lively</button><button type="button" class="chip more">More…</button></div>
+                <div class="lchips" role="group" aria-label="How does Nyx seem today"><button type="button" class="chip">Off</button><button type="button" class="chip">Sleeping more</button><button type="button" class="chip">Hiding</button><button type="button" class="chip">Not grooming</button><button type="button" class="chip">Lip-licking</button><button type="button" class="chip">Outside the box</button><button type="button" class="chip">Lively</button><button type="button" class="chip">Played</button><button type="button" class="chip more">More…</button></div>
               </div>
               <div class="empty"><b>Nothing logged yet today.</b>Meals, symptoms and medication go in with the + button. The look above is enough to start.</div>
             </div>
@@ -511,7 +526,7 @@
   </div>
   <div class="col"><div class="conflict">
     <p><strong>Mobile IA:</strong> a real day is ~1.4 screens; the compaction rule and the look-as-header are what keep the question and the first symptom above the fold. The FAB's footprint is designed: the body scrolls with a 96pt inset so the door is never under it.</p>
-    <p><strong>Sam:</strong> "3 meals · 1:41 – 6:07 PM" is my cat's afternoon. I would not want three identical lines.</p>
+    <p><strong>Sam:</strong> "3 meals · 12:41 – 5:07 PM" is my cat's afternoon. I would not want three identical lines.</p>
     <p><strong>Dr. Chen:</strong> "3 min after eating" on the node is the lane's fact, at the moment it happened; that is the number I ask an owner for and they never have. And the read that arrived says what one photo can and cannot do.</p>
     <p><strong>Data Scientist:</strong> the count line is the day's, the door's number is coverage, the Signal's line is the week's. Three numbers, three named populations, nothing rhymes.</p>
   </div></div>
@@ -629,7 +644,7 @@
             <div class="lanecap">The counts under each lane: under 30 min · 30 min to 6 h · over 6 h. <b>6 + 14 episodes couldn't be timed against a meal — they aren't on the lanes.</b></div>
           </div>
           <div class="acard"><div class="seclabel row"><span>The episodes · 21, nine photographed</span><span class="door">All ›</span></div>
-            <div class="gallery"><div class="g b" role="img" aria-label="September 17, 6:11 PM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g" role="img" aria-label="September 17, 11:58 AM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g c call" role="img" aria-label="September 8, 11:40 PM, photographed, read as worth a call"><small>Sep 8</small></div><div class="g" role="img" aria-label="September 2, 6:52 AM, photographed, read as keep an eye out"><small>Sep 2</small></div></div>
+            <div class="gallery"><div class="g b" role="img" aria-label="September 17, 5:11 PM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g" role="img" aria-label="September 17, 10:58 AM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g c call" role="img" aria-label="September 8, 11:40 PM, photographed, read as worth a call"><small>Sep 8</small></div><div class="g" role="img" aria-label="September 2, 6:52 AM, photographed, read as keep an eye out"><small>Sep 2</small></div></div>
             <div class="gcap"><span>Keep an eye out</span><span>Keep an eye out</span><span class="call">Worth a call</span><span>Keep an eye out</span></div>
           </div>
           <div class="acard"><div class="seclabel">Why this is a Signal</div><div style="font-size:12px;line-height:1.45;color:#525252">Two windows of equal length, compared as counts. Not a verdict on how Nyx is doing. Cerenia was given Sep 9–12, inside the trial window, and a diet change is one of several things that can move this. Day 55 of 56 on Royal Canin Selected Protein PR.</div></div>
@@ -654,7 +669,7 @@
 <section id="s04">
   <div class="sec-head"><span class="sec-num">§04</span><h2>The month — the bars now sit over the rows</h2></div>
   <div class="col">
-    <p>The page you loved, with three corrections from the data read. <strong>The weekly bars start on Sunday, the same day the rows do</strong>, so each bar is a row you can point at; the count sits on every bar with the week's logged days beneath it. <strong>A vomit day keeps its date</strong>, with the count in its corner, so the days that matter are still days. The legend gained the paler hairline for a meal left unfinished. Arrows move through the months, the layers fade in and out on the grid, the day opens in place. Below it, the weight card drawn two ways: the specialist's, and the area you ruled in round 1. <strong>Press ‹ for August. Switch a layer. Tap a day.</strong></p>
+    <p>The page you loved, with three corrections from the data read. <strong>The weekly bars start on Sunday, the same day the rows do</strong>, so each bar is a row you can point at; the count sits on every bar with the week's logged days beneath it. <strong>A vomit day keeps its date</strong>, with the count in its corner, so the days that matter are still days. The legend gained the paler hairline for a meal left unfinished. Arrows move through the months, the layers fade in and out on the grid, the day opens in place. Below it, the weight card at six, two and one readings, dots by date on a fixed band. <strong>Press ‹ for August. Switch a layer. Tap a day.</strong></p>
   </div>
   <div class="frames">
     <div class="frame-slot">
@@ -682,19 +697,27 @@
       <p class="frame-cap"><b>Rows and bars agree.</b> Round 3's bars began on Monday over a grid whose rows began on Sunday, so no bar matched a row; now the ninth bar is the row with today in it. The Timing and Trial panels below the fold stay exactly as shipped: they are the bar this page was measured against.</p>
     </div>
     <div class="frame-slot">
-      <span class="tag prop">Option A · current · weight as dots by date, no fill, a fixed ±10% band</span>
+      <span class="tag prop">Current · weight as dots by date, no fill, a fixed ±10% band</span>
       <div class="mini-card">
         <div class="seclabel row"><span>Weight · 6 readings</span><span class="door">All ›</span></div>
         <svg class="chart drawin-dot" id="wt-dots" data-points="4.6,4.6,4.5,4.5,4.4,4.4" data-offsets="0,17,32,46,60,71" data-labels="Jul 3,,,,,Sep 12" viewBox="0 0 288 78" role="img" aria-label="Weight, six readings from July 3 to September 12, drawn by date on a band from 10 percent below to 10 percent above the first reading: 4.6 kilograms falling to 4.4"></svg>
         <div class="samp">Down <b style="color:#0A0A0A">0.2 kg (4%)</b> since Jul 3 · a home scale moves about that much on its own</div>
       </div>
-      <p class="frame-cap" style="margin-bottom:22px"><b>Recommended.</b> Readings sit where their dates are, not evenly spaced; the band is fixed at ±10% of the first reading so a 4% change looks like 4% and not like a cliff; there is no fill, because a fill says "quantity from zero" and this axis does not start at zero; the delta is spoken beside its caveat.</p>
-      <span class="tag opt">Option B · drawn for the decision · the area, as ruled in round 1</span>
-      <div class="mini-card">
-        <div class="seclabel row"><span>Weight · 6 readings</span><span class="door">All ›</span></div>
-        <svg class="chart" id="wt-area" data-area="4.6,4.6,4.5,4.5,4.4,4.4" data-labels="Jul 3,,,,,Sep 12" viewBox="0 0 288 64" role="img" aria-label="The same six readings as an area sparkline with the range clipped to the data"></svg>
+      <p class="frame-cap" style="margin-bottom:22px"><b>Ruled (you deferred to the designer).</b> Readings sit where their dates are, not evenly spaced; the band is fixed at ±10% of the first reading so a 4% change looks like 4% and not like a cliff; there is no fill, because a fill says "quantity from zero" and this axis does not start at zero; the delta is spoken beside its caveat.</p>
+      <span class="tag prop">Current · the same chart at one and two readings (ruled: it has to look good at low counts)</span>
+      <div style="display:grid;gap:12px">
+        <div class="mini-card">
+          <div class="seclabel row"><span>Weight · 1 reading</span><span class="door">Add ›</span></div>
+          <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px"><span style="font-family:var(--serif);font-size:30px;line-height:1;color:#0A0A0A">4.6 kg</span><span class="muted" style="font-size:11px">Sep 12</span></div>
+          <div class="samp">One reading is a number, not a line. The second one draws the band.</div>
+        </div>
+        <div class="mini-card">
+          <div class="seclabel row"><span>Weight · 2 readings</span><span class="door">All ›</span></div>
+          <svg class="chart drawin-dot" id="wt-two" data-points="4.6,4.5" data-offsets="0,17" data-labels="Aug 26,Sep 12" viewBox="0 0 288 78" role="img" aria-label="Weight, two readings: 4.6 kilograms on August 26 and 4.5 on September 12, on the same fixed band"></svg>
+          <div class="samp">Down <b style="color:#0A0A0A">0.1 kg (2%)</b> in 17 days · a home scale moves about that much on its own</div>
+        </div>
       </div>
-      <p class="frame-cap"><b>Why it is drawn again.</b> You ruled "area, agreed" in round 1; the data-vis read says the clipped range makes 0.2 kg fill the plot on a 4.6 kg cat, and the fill implies a quantity. That is a rule with a date on it crossed by a better thing, so it goes to you: R4-4 in §08.</p>
+      <p class="frame-cap"><b>Why the band is fixed.</b> With two readings a clipped range would make any change fill the plot; the ±10% band makes a 2% change look like 2% and leaves the chart the same shape it will have at six readings. At one reading the number is the chart. The area from round 1 is retired by your deferral to the designer.</p>
     </div>
   </div>
 </section>
@@ -703,7 +726,7 @@
 <section id="s05">
   <div class="sec-head"><span class="sec-num">§05</span><h2>Every chart brings the lane's information — the check</h2></div>
   <div class="col">
-    <p>The shipped "Vomiting, timed from meals" lane does five things at once, and you named it the bar. Here is every chart on this page against those five. <strong>Any cell that is not a yes is a defect</strong>, not a style choice, and this table is what W1-0's acceptance criteria become.</p>
+    <p>The shipped "Vomiting, timed from meals" lane does five things at once, and you named it the bar. Here is every chart on this page against those five. <strong>Any cell that is not a yes is a defect</strong>, not a style choice, and this table is D2-1's acceptance criteria (CUL-1064).</p>
   </div>
   <div class="tscroll"><table class="t">
     <tr><th>Chart</th><th>A mark per fact</th><th>A count on every mark</th><th>The denominator in view</th><th>The uncounted disclosed</th><th>The window named</th></tr>
@@ -712,8 +735,8 @@
     <tr><td>The compare (the Signal's screen)</td><td class="ok">one bar per window</td><td class="ok">19 · 21</td><td class="ok">the 55-day strip under each bar</td><td class="ok">"logged 44 of 55" · "51 of 55", hollow days on the strip</td><td class="ok">"the 55 days before" · "the trial's 55 days"</td></tr>
     <tr><td>The day marks (the month)</td><td class="ok">a day per square; the count in the corner</td><td class="ok">the count, on the days that have one</td><td class="ok">the coverage hairline; grey = nothing logged</td><td class="ok">the line: "2 days unlogged"</td><td class="ok">the month, with arrows</td></tr>
     <tr><td>The spine (Home)</td><td class="ok">a node per event; a compact node names its count</td><td class="ok">"3 meals", "3 min after eating"</td><td class="ok">the count line: 10 logged</td><td class="ok">the quiet day says "nothing logged yet"</td><td class="ok">today, dated in the header</td></tr>
-    <tr><td>Weight (option A)</td><td class="ok">a dot per reading, by date</td><td class="ok">the first and last values; the delta spoken</td><td class="ok">the fixed ±10% band</td><td class="ok">"a home scale moves about that much"</td><td class="ok">Jul 3 → Sep 12, 6 readings</td></tr>
-    <tr><td>Weight (option B, the area)</td><td class="ok">a point per reading, evenly spaced</td><td>the last value only</td><td>none: the range is the data's</td><td>none</td><td class="ok">dated</td></tr>
+    <tr><td>Weight (dots by date)</td><td class="ok">a dot per reading, by date</td><td class="ok">the first and last values; the delta spoken</td><td class="ok">the fixed ±10% band</td><td class="ok">"a home scale moves about that much"</td><td class="ok">Jul 3 → Sep 12, 6 readings</td></tr>
+    <tr><td>Weight, the retired area (for the record)</td><td class="ok">a point per reading, evenly spaced</td><td>the last value only</td><td>none: the range is the data's</td><td>none</td><td class="ok">dated</td></tr>
   </table></div>
   <div class="col"><p style="font-size:14px;color:var(--ink-2)"><strong>What the table is for.</strong> Round 3 failed three of these cells without anyone noticing until the data read: the card's bars carried occurrence only, the compare said "fairly", the month's bars were on the wrong weekday. A table you can check beats a principle you can admire.</p></div>
 </section>
@@ -776,24 +799,24 @@
   <div class="sec-head"><span class="sec-num">§08</span><h2>What I need from you — five questions, then the call</h2></div>
   <div class="col"><p>Each question carries the assumption I drew under, so a "yes" costs nothing and a "no" says what to redraw. Then the go/no-go you asked for.</p></div>
   <div class="qs">
-    <div class="q"><b>1 · The sentence that stopped.</b> "I don't want the 'log Zyrtec' on home. But I absolutely think that we should…" — should what? A dose as a fact on the spine once it is logged (drawn)? A reminder that a course is running, somewhere other than Home? Something in the FAB's menu?<span class="as">Drawn under: the dose appears on the spine as a fact when logged, like any other event; nothing else about medication is on Home.</span></div>
-    <div class="q"><b>2 · The urgent photo.</b> When a read is worth a call, does Home carry the words with the photo one tap away (option A), or the thumbnail on the node (option B)?<span class="as">Drawn under: A. R4-2 below.</span></div>
-    <div class="q"><b>3 · The weight.</b> Dots by date on a fixed band (option A) or the area you ruled in round 1 (option B)?<span class="as">Drawn under: A. R4-4 below.</span></div>
-    <div class="q"><b>4 · The Signal's opening.</b> A route that rises and draws in (drawn, ships on today's engines), or the chart's flight from the card, as a spike after wave 1?<span class="as">Drawn under: the route now, the flight as a spike. R4-3 below.</span></div>
-    <div class="q"><b>5 · The clock.</b> Sep 17 is drawn in Eastern time, from the record's timestamps. Is that what your phone shows for that day? If not, tell me the zone and nothing else changes.<span class="as">Drawn under: Eastern.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · the FAB's job</span><br><b>1 · The sentence that stopped.</b> "I don't want the 'log Zyrtec' on home. But I absolutely think that we should…" — should what? A dose as a fact on the spine once it is logged (drawn)? A reminder that a course is running, somewhere other than Home? Something in the FAB's menu?<span class="as">Drawn under: the dose appears on the spine as a fact when logged, like any other event; nothing else about medication is on Home.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · option A</span><br><b>2 · The urgent photo.</b> When a read is worth a call, does Home carry the words with the photo one tap away (option A), or the thumbnail on the node (option B)?<span class="as">Drawn under: A. R4-2 below.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · dots by date, drawn at low counts</span><br><b>3 · The weight.</b> Dots by date on a fixed band (option A) or the area you ruled in round 1 (option B)?<span class="as">Drawn under: A. R4-4 below.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · the flight is the destination, the route first</span><br><b>4 · The Signal's opening.</b> A route that rises and draws in (drawn, ships on today's engines), or the chart's flight from the card, as a spike after wave 1?<span class="as">Drawn under: the route now, the flight as a spike. R4-3 below.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · Central</span><br><b>5 · The clock.</b> Sep 17 was first drawn in Eastern from the record's UTC timestamps; you are in Central, so the day is redrawn an hour earlier. The events and their order are unchanged.<span class="as">Robust time-zone settings are a separate, later issue: CUL-1061.</span></div>
   </div>
-  <div class="brief"><p class="bid">R4-1 · Go / no-go</p>
+  <div class="brief"><p class="bid">R4-1 · Go / no-go — <span class="rec">ruled go, 2026-09-19</span></p>
     <p><strong>Deciding:</strong> whether this project has converged enough to file.</p>
     <ol>
-      <li><strong>Go.</strong> <span class="rec">Recommended</span> — §09 is filed in Linear as the project, with W1-0 (the chart family to the §05 standard) first and the fixtures named on W1-2. The four rule edits from round 3 and the three in §07 become Tier 2 edits on the specs they touch. <span class="rec">The next session builds W1-0.</span></li>
+      <li><strong>Go.</strong> <span class="rec">Recommended</span> — §09 is filed in Linear as the project, with the toggle and the chart family first (two sessions at once) and the fixtures named on Home's issue. The four rule edits from round 3 and the three in §07 become Tier 2 edits on the specs they touch. <span class="rec">The next two sessions run bundle A and lane B.</span></li>
       <li><strong>One more round.</strong> Say what is still not right and it is drawn fresh; nothing is filed.</li>
       <li><strong>Park.</strong> The four pages stay as the record; CUL-1060 stays cancelled.</li>
     </ol>
-    <p><strong>Consequence:</strong> (1) is nine issues and a project; (2) is another page; (3) is nothing.</p>
+    <p><strong>Consequence:</strong> (1) is ten issues and a project; (2) is another page; (3) is nothing.</p>
   </div>
   <div class="gogo">
-    <div><b>Go looks like</b>the §09 table as a Linear project (nine issues, three waves, the fixtures on W1-2, the §05 table as W1-0's acceptance criteria); the seven Tier 2 spec edits; the three specialist lenses graduating into the roster; round 4 becomes the design authority page and the archives stay.</div>
-    <div><b>No-go looks like</b>this page stays as the record with rounds 1–3; nothing in Linear; the specialist lenses retire with the project or wait for it; the three edits in §07 are not written; W1-0's chart family is not built ahead of a ruling.</div>
+    <div><b>Go looks like</b>the §09 table as a Linear project (ten issues, four steps, the fixtures on Home's issue, the §05 table as the chart family's acceptance criteria); the seven Tier 2 spec edits; the three specialist lenses graduating into the roster; round 4 becomes the design authority page and the archives stay.</div>
+    <div><b>No-go looks like</b>this page stays as the record with rounds 1–3; nothing in Linear; the specialist lenses retire with the project or wait for it; the three edits in §07 are not written; the chart family is not built ahead of a ruling.</div>
   </div>
   <div class="brief"><p class="bid">R4-2 · The urgent photo</p>
     <p><strong>Deciding:</strong> what "unless urgent" means on Home.</p>
@@ -808,9 +831,9 @@
     <ol>
       <li><strong>A route: the screen rises with the fold's physics, its charts draw in, three beats under 700ms, Back reverses (§03).</strong> <span class="rec">Recommended</span> — ships on the engines the app has; back-gesture, deep link and VoiceOver come free.</li>
       <li>The chart's flight from the card into the screen, built now as a measured FLIP over a native push — the Motion Designer's case; a week on device before the screen exists.</li>
-      <li>(1) now, and the flight as its own spike after wave 1, with a go/no-go on the recording.</li>
+      <li>(1) now, and the flight as its own issue after step 2, with a go/no-go on the recording.</li>
     </ol>
-    <p><strong>Consequence:</strong> (1) or (3) keeps W1-1 an L; (2) makes it an XL gated on a dev-client rebuild.</p>
+    <p><strong>Consequence:</strong> (1) or (3) keeps the Signal's issue an L; (2) makes it an XL gated on a dev-client rebuild.</p>
   </div>
   <div class="brief"><p class="bid">R4-4 · Weight — a better-than-the-rule brief</p>
     <p><strong>The rule:</strong> "area sparkline, agreed" (your round 1 ruling, 2026-09-17), protecting a continuous measure from being drawn as bars.</p>
@@ -819,29 +842,29 @@
       <li><strong>Dots by date, fixed band, no fill.</strong> <span class="rec">Recommended.</span></li>
       <li>The area as ruled.</li>
     </ol>
-    <p><strong>Consequence:</strong> one chart in W1-0 either way; (1) amends the round 1 ruling in the session record.</p>
+    <p><strong>Consequence:</strong> one chart in the chart family either way; (1) amends the round 1 ruling in the session record.</p>
   </div>
 </section>
 
 <!-- ───────────────────────── §09 THE PROJECT, ON A GO ───────────────────────── -->
 <section id="s09">
-  <div class="sec-head"><span class="sec-num">§09</span><h2>The project as it would be filed on a go — nothing is filed yet</h2></div>
+  <div class="sec-head"><span class="sec-num">§09</span><h2>The project, filed — <a href="https://linear.app/projectnyx/project/design-v2-the-whole-day-35ed7930edbf" style="text-decoration:none">Design v2 — the whole day</a></h2></div>
   <div class="tscroll"><table class="t">
-    <tr><th>#</th><th>Candidate issue</th><th>Size</th><th>Touches</th><th>Gate</th></tr>
-    <tr><td>W1-0</td><td>The chart family to the §05 standard: weekly bars with counts and logged-day ticks, the compare with its day strip, the lane as small multiples, the day mark with the count in its corner, weight by date; the draw in on each; palette validated; labels Dr. Chen-read</td><td class="num">M</td><td><code>components/charts/</code> (new); <code>lib/patternsTiming.ts</code> reused, never re-derived</td><td>R4-1 · R4-4</td></tr>
-    <tr><td>W1-1</td><td>The Signal card (title + chart + the week line) and the Signal's screen as a route with the fold's physics; the fold control moves to the screen; safety plain on Home; per-episode verdicts; "Why" names in-window medication</td><td class="num">L</td><td><code>InsightCard</code>, <code>SignalZone</code>, <code>app/signal/[id].tsx</code> (new)</td><td>R4-1 · R4-3 · W1-0</td></tr>
-    <tr><td>W1-2</td><td>Home on a real day: the look as Today's header with its answered state; the spine in daylight (DaySpine gains a ground prop) with the compaction rule and the read arriving on one node through an observe-only read; no photo on Home per R4-2; the med write, the trend card and the lane retired; the coverage door; the FAB inset. Fixtures: the ten-event day, the quiet day, the safety day, reduced motion, VoiceOver. Guards: the homeWrites allow-set, ALWAYS_SCANNED for the spine renderer and the gallery</td><td class="num">L</td><td><code>TodayZone</code>, <code>LookCard</code>, <code>MedStrip</code>, <code>TrendZone</code>, <code>DaySpine</code>, <code>app/(tabs)/index.tsx</code>, <code>guards/homeWrites.test.ts</code>, <code>guards/haptics.test.ts</code></td><td>R4-1 · R4-2</td></tr>
-    <tr><td>W1-3</td><td>Patterns: the month with Sunday-start bars over the rows, arrows, layers, the legend; the weight chart; the Timing and Trial panels untouched; the KPI column retired</td><td class="num">M</td><td><code>app/insights/index.tsx</code>, <code>components/dashboard/*</code></td><td>R4-1 · W1-0</td></tr>
-    <tr><td>W2-1</td><td>The flight — a spike, not a wave: a measured FLIP over a native push, recorded on device, go/no-go on the recording</td><td class="num">S</td><td><code>components/motion/</code>, the dev client</td><td>R4-3 (3)</td></tr>
-    <tr><td>W2-2</td><td>Draw in on every chart and open in place on the day mark, on the shipped two-engine split; the browser harness kept as the shape of the on-device gate, the recording as its evidence</td><td class="num">M</td><td><code>components/motion/</code></td><td>W1-0</td></tr>
-    <tr><td>W2-3</td><td>Every wait its silhouette (cold start, the report, the event screen); the tick the one spinner; the Whorl, the night moment and the night ground retired</td><td class="num">M</td><td><code>ColdStartOverlay</code>, <code>NightMoment</code>, <code>WhorlSpinner</code>, <code>app/report.tsx</code></td><td>its own project (PO)</td></tr>
-    <tr><td>W2-4</td><td>Reanimated as the one engine, the three motion modules migrated</td><td class="num">L</td><td><code>components/motion/*</code>, babel, the dev client</td><td>its own project (PO, Eng); gates nothing in W1</td></tr>
-    <tr><td>W3-1 · W3-2 · W3-3</td><td>The haptics device pass (CUL-616, the same build) · the first week arc · Principles v2.0 with the §07 edits and round 3's four rule edits</td><td class="num">PM · L · S</td><td>as before</td><td>R-9 · R-10 · R-1</td></tr>
+    <tr><th>Step</th><th>Lane</th><th>Issue</th><th>Size</th><th>Gate</th></tr>
+    <tr><td class="num">1</td><td><b>Bundle A</b> · one session, one PR</td><td><a href="https://linear.app/projectnyx/issue/CUL-1062">CUL-1062</a> <b>D2-0</b> the <code>design_v2</code> toggle and the flag-off guard · <a href="https://linear.app/projectnyx/issue/CUL-1063">CUL-1063</a> <b>D2-2</b> the FAB goes teal</td><td class="num">S + XS</td><td>none</td></tr>
+    <tr><td class="num">1</td><td><b>Lane B</b> · own session</td><td><a href="https://linear.app/projectnyx/issue/CUL-1064">CUL-1064</a> <b>D2-1</b> the chart family to the §05 standard, with the draw in</td><td class="num">M</td><td>none</td></tr>
+    <tr><td class="num">2</td><td>lane 1</td><td><a href="https://linear.app/projectnyx/issue/CUL-1065">CUL-1065</a> <b>D2-3</b> the Signal card and the Signal's own screen, as a route</td><td class="num">L</td><td>step 1 merged</td></tr>
+    <tr><td class="num">2</td><td>lane 2</td><td><a href="https://linear.app/projectnyx/issue/CUL-1066">CUL-1066</a> <b>D2-4</b> Home on a real day: the look as Today's header, the spine, no photo on Home, the med button gone</td><td class="num">L</td><td>step 1 merged</td></tr>
+    <tr><td class="num">2</td><td>lane 3</td><td><a href="https://linear.app/projectnyx/issue/CUL-1067">CUL-1067</a> <b>D2-5</b> Patterns: the month over the rows, layers, weight by date</td><td class="num">M</td><td>step 1 merged</td></tr>
+    <tr><td class="num">2</td><td>lane 4 · any time after step 1</td><td><a href="https://linear.app/projectnyx/issue/CUL-1068">CUL-1068</a> <b>D2-7</b> every wait its silhouette; the tick the one spinner</td><td class="num">M</td><td>D2-0 merged</td></tr>
+    <tr><td class="num">3</td><td>one session</td><td><a href="https://linear.app/projectnyx/issue/CUL-1069">CUL-1069</a> <b>D2-6</b> the flight, on device, recorded</td><td class="num">M</td><td>D2-3 merged · the dev client (CUL-616)</td></tr>
+    <tr><td class="num">3</td><td>PM</td><td><a href="https://linear.app/projectnyx/issue/CUL-1070">CUL-1070</a> <b>D2-9</b> the on-device pass: motion, haptics, Home on a real day</td><td class="num">PM</td><td>step 2 merged · the dev client</td></tr>
+    <tr><td class="num">4</td><td>one session</td><td><a href="https://linear.app/projectnyx/issue/CUL-1071">CUL-1071</a> <b>D2-8</b> GA: the toggle retired, the old surfaces deleted, Principles v2.0 and the seven spec edits</td><td class="num">M</td><td>steps 2–3 · D2-9's notes closed</td></tr>
   </table></div>
-  <div class="col"><p style="font-size:14px;color:var(--ink-2)"><strong>Reconcile, don't duplicate (on a go):</strong> CUL-616 is W3-1; CUL-635 rides W3-3; CUL-766 / CUL-830 ride W2-4; CUL-383 closes as superseded by W1-1; CUL-140's calendar half is superseded by W1-3; CUL-847 shares W1-0. <strong>Three overlaps the Product Owner named, to rule on W1-2's issue before it starts:</strong> the Noticed card's ruled slot (after MedStrip; here the look is Today's header, which is a Tier 2 edit to the daily-look spec §10); the intake-door ruling behind "Off her food" (the chip is not on the compact seven, so nothing changes until the door ships); DP-5's Trend verbiage (retired with the trend card). Out of scope on purpose: CUL-322, CUL-493, CUL-447.</p></div>
+  <div class="col"><p style="font-size:14px;color:var(--ink-2)"><strong>How to run it, as you asked.</strong> Every issue carries a paste-ready kickoff prompt; bundle A's covers both of its issues. Step 1 is two sessions at once; step 2 is up to four at once; each issue names the files it owns and the files it must not touch, so the parallel branches do not collide. Nothing is bundled that would make a session rush its second half. <strong>Reconciled:</strong> CUL-616 is D2-9's one step; CUL-635 rides D2-8; CUL-383 is superseded by D2-3; CUL-140's calendar half by D2-5; CUL-847 shares D2-1; CUL-766 / CUL-830 (the engine migration) stay out and gate nothing. Out of scope on purpose: CUL-322, CUL-493, CUL-447. The time-zone deferral is <a href="https://linear.app/projectnyx/issue/CUL-1061">CUL-1061</a>.</p></div>
 </section>
 
-<p class="foot">The Whole Day · round 4 · 2026-09-18 · CUL-1060 · the committed source is <code>docs/culprit-design-v4-mockups.html</code>; rounds 1–3 are archives at their own URLs. §01's Thursday is Nyx's September 17 from the record, event for event, in Eastern time; every other number on the page is illustrative and shaped like the record. No app code changed this session.</p>
+<p class="foot">The Whole Day · round 4 · 2026-09-18, reacted and ruled 2026-09-19 · CUL-1060 · the committed source is <code>docs/culprit-design-v4-mockups.html</code>; rounds 1–3 are archives at their own URLs. §01's Thursday is Nyx's September 17 from the record, event for event, in Central time; every other number on the page is illustrative and shaped like the record. No app code changed this session.</p>
 </div>
 <script>
 (function () {
@@ -876,7 +899,7 @@
   function isFuture(m, d) { return m.today != null && d > m.today; }
   function eventsOf(m, d) {
     if (m.unlogged[d]) return [];
-    var rows = [['meal', 'Selected Protein PR · 6:47 AM']];
+    var rows = [['meal', 'Selected Protein PR · 5:47 AM']];
     if (m.meds[d]) rows.push(['med', 'Cerenia · given · 8:00 AM']);
     for (var i = 0; i < (m.sym[d] || 0); i++) rows.push(['sym', 'Vomit · ' + VOMIT_TIMES[i] + (i === 0 && m.photos[d] ? ' · photo, ' + (m.photos[d] === 'call' ? 'worth a call' : 'keep an eye out') : ''), i === 0 ? m.photos[d] : null]);
     rows.push(['meal', (m.some[d] ? 'Selected Protein PR · left some' : 'Selected Protein PR') + ' · 6:10 PM']);
