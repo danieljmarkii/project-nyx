@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>The Whole Day</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     The Whole Day — the design-system audit, ROUND 4.
+     CUL-1060 (discovery). A fresh current-proposal page on its own artifact
+     URL; rounds 1–3 stay at their own URLs as archives with banners forward.
+     The PM's challenge for this round: "take an average day's worth of Nyx's
+     data and mock it up — make this look AMAZING with a lot of data", and
+     "ensure that all data vis brings this level of information" (the shipped
+     timing lane). Home here is Nyx's Thursday, Sep 17, event for event, from
+     the record. Six isolated stakeholder reads of round 3 fed this page (§06).
+     Frames render the app's REAL light tokens (constants/theme.ts). Every
+     demo was driven in a headless browser, pressed twice, before publishing.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+    --gold: #FBBF24; --gold-wash: #FDF6E3;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+      --gold-wash: rgba(251,191,36,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+    --gold-wash: rgba(251,191,36,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  a { color: var(--teal-ink); }
+  .howto { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .howto b { color: var(--ink); }
+  .ledger { display: grid; gap: 8px; margin: 22px 0 8px; }
+  .ledger div { display: grid; grid-template-columns: 170px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger b { font-size: 13px; color: var(--ink); padding-top: 2px; }
+  .ledger q { font-style: italic; color: var(--ink-2); quotes: "“" "”"; }
+  .ledger a { color: inherit; text-decoration: none; }
+  .ledger a:hover { color: var(--teal-ink); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+  .pill.gold { color: #6B4A0E; background: var(--gold-wash); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  ul, ol { padding-left: 20px; margin: 0 0 16px; }
+  li { margin-bottom: 6px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+  .thesis { font-family: var(--serif); font-size: clamp(22px, 2.6vw, 30px); line-height: 1.3; color: var(--ink); margin: 26px 0; max-width: 30ch; text-wrap: balance; }
+  .brief { margin: 28px 0 8px; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .brief ol { margin: 4px 0 8px; font-size: 14.5px; color: var(--ink-2); }
+  .brief ol li { margin-bottom: 4px; }
+  .brief ol li strong { color: var(--ink); }
+  table.t { border-collapse: collapse; width: 100%; font-size: 14px; margin: 14px 0 18px; }
+  table.t th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+  table.t td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; color: var(--ink-2); }
+  table.t td:first-child { color: var(--ink); font-weight: 500; }
+  table.t td.num { font-variant-numeric: tabular-nums; }
+  table.t td.ok { color: var(--teal-ink); font-weight: 600; }
+  .tscroll { overflow-x: auto; }
+  .voice { border-top: 1px solid var(--rule); padding-top: 12px; font-size: 14px; color: var(--ink-2); }
+  .voice b { color: var(--ink); display: block; margin-bottom: 4px; }
+  .voice q { font-style: italic; }
+  .princ { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 18px 22px; margin: 14px 0; }
+  .princ .pn { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .princ h4 { font-family: var(--serif); font-size: 21px; font-weight: 500; margin: 0 0 8px; letter-spacing: -0.005em; }
+  .princ p { font-size: 15px; color: var(--ink-2); margin: 0 0 8px; }
+  .princ .test { font-size: 14px; color: var(--ink); border-top: 1px solid var(--rule-soft); padding-top: 8px; margin-top: 10px; }
+  .princ .test b { color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-right: 8px; }
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-slot.wide { width: 100%; max-width: 660px; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; margin-bottom: 8px; }
+  .tag.built { color: var(--ink-2); background: var(--rule-soft); }
+  .tag.prop { color: var(--teal-ink); background: var(--teal-wash); }
+  .tag.opt { color: #6B4A0E; background: var(--gold-wash); }
+  .phone { width: 316px; max-width: 100%; background: #FAFAFA; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 12px 12px 14px; color: #0A0A0A; font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 8px; }
+  .stackhdr { display: flex; align-items: center; gap: 8px; padding: 4px 4px 10px; font-weight: 600; font-size: 16px; color: #0A0A0A; }
+  .stackhdr .back { color: #0B7B6C; font-weight: 500; font-size: 18px; line-height: 1; }
+  .hdr { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; }
+  .hdr .who { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .hdr .av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg,#C9C4E8,#8B87A8); }
+  .appbody { display: grid; gap: 10px; }
+  .acard { background: #FFFFFF; border-radius: 16px; padding: 12px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin-bottom: 6px; }
+  .seclabel.row { display: flex; justify-content: space-between; align-items: baseline; }
+  .seclabel .door { text-transform: none; letter-spacing: 0; font-weight: 500; color: #0B7B6C; font-size: 10.5px; }
+  .lead { font-family: var(--serif); font-size: 18px; line-height: 1.3; letter-spacing: -0.012em; color: #0A0A0A; margin: 0 0 6px; }
+  .samp { font-size: 10.5px; color: #737373; margin-top: 5px; }
+  .muted { color: #737373; }
+  .irow { display: flex; gap: 9px; padding: 6px 0; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; align-self: stretch; background: #00C2A8; }
+  .rail.safety { background: #F43F5E; }
+  .ibody { flex: 1; min-width: 0; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 8px; }
+  .chip { font-size: 11px; font-weight: 500; border: 1px solid #D4D4D4; border-radius: 999px; padding: 3px 9px; color: #0A0A0A; background: #fff; font-family: inherit; cursor: pointer; }
+  .chip.on { background: #CDF5EC; border-color: #CDF5EC; color: #08685B; font-weight: 600; }
+  .chip:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 1px; }
+  /* calendar — the day is the mark (ruled) */
+  .cal2 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 8px; }
+  .cal2 .wd { text-align: center; font-size: 9.5px; color: #737373; font-weight: 600; padding-bottom: 2px; }
+  .dm { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; background: #F5F5F5; display: grid; place-items: center; font-size: 11px; color: #737373; cursor: pointer; border: 0; padding: 0; font-family: inherit; }
+  .dm:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 1px; }
+  .dm.logged { background: #FFFFFF; box-shadow: inset 0 0 0 1px #EAEAEA; color: #525252; }
+  .dm.logged::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 4px; height: 2px; border-radius: 1px; background: #86D9CC; }
+  .dm.logged.some::after { background: #CFEFE8; }
+  .dm.sym { background: #F43F5E; color: #FFFFFF; font-weight: 600; box-shadow: none; }
+  .dm.sym::after { background: rgba(255,255,255,0.55); }
+  .dm.sym.two { background: #E11D48; }
+  .dm.today { box-shadow: inset 0 0 0 1.5px #0A0A0A; }
+  .dm.blank { background: transparent; cursor: default; }
+  .dm.future { background: transparent; box-shadow: inset 0 0 0 1px #EAEAEA; color: #C9C9C9; cursor: default; }
+  .dm.sel { box-shadow: inset 0 0 0 2px #0B7B6C; }
+  .dm .cnt { position: absolute; top: 2px; right: 4px; font-size: 8.5px; font-weight: 700; color: #FFFFFF; line-height: 1; }
+  .day-detail { grid-column: 1 / -1; display: none; }
+  .day-detail.open { display: block; }
+  /* open in place — the fold's physics: rail leads, box follows, text lands */
+  .dd { display: flex; gap: 9px; padding: 6px 2px 4px; }
+  .dd .drail { width: 3px; border-radius: 2px; background: #F43F5E; flex-shrink: 0; height: 16px; transition: height 160ms ease-out; align-self: flex-start; }
+  .dd .dbox { flex: 1; min-width: 0; overflow: hidden; max-height: 0; transition: max-height 370ms cubic-bezier(.2,.8,.2,1.05); }
+  .dd .dtext { opacity: 0; transform: translateY(-8px); transition: opacity 300ms ease-out 40ms, transform 300ms ease-out 40ms; font-size: 12px; }
+  .dd.in .drail { height: 100%; align-self: stretch; }
+  .dd.in .dbox { max-height: 220px; }
+  .dd.in .dtext { opacity: 1; transform: none; }
+  .dd .dtext b { display: block; font-size: 12.5px; margin-bottom: 3px; }
+  .ev { display: flex; gap: 8px; align-items: center; padding: 3px 0; color: #525252; font-size: 12px; }
+  .ev i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .tick { width: 3px; height: 16px; border-radius: 2px; background: #D4D4D4; flex-shrink: 0; animation: breathe 1.4s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+  .verdict { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9F1239; background: #FFE4E6; border-radius: 999px; padding: 2px 8px; margin-bottom: 4px; }
+  .verdict.mon { color: #525252; background: #F0F0F0; }
+  /* charts */
+  .chart { width: 100%; height: auto; display: block; }
+  .legend { display: flex; gap: 12px; font-size: 10.5px; color: #737373; margin-top: 6px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .drawin path.b { transform-box: fill-box; transform-origin: 50% 100%; transform: scaleY(1); transition: none; }
+  .drawin.armed path.b { transform: scaleY(0.02); transition: none; }
+  .drawin.play path.b { transition: transform 420ms cubic-bezier(.2,.8,.2,1.02); transform: scaleY(1); }
+  .drawin .lab { opacity: 1; transition: none; }
+  .drawin.armed .lab { opacity: 0; transition: none; }
+  .drawin.play .lab { transition: opacity 300ms ease-out 480ms; opacity: 1; }
+  .drawin-x rect.bx { transform-box: fill-box; transform-origin: 0% 50%; transform: scaleX(1); transition: none; }
+  .drawin-x.armed rect.bx { transform: scaleX(0.01); transition: none; }
+  .drawin-x.play rect.bx { transition: transform 420ms cubic-bezier(.2,.8,.2,1.02); transform: scaleX(1); }
+  .drawin-x .lab { opacity: 1; transition: none; }
+  .drawin-x.armed .lab { opacity: 0; transition: none; }
+  .drawin-x.play .lab { transition: opacity 260ms ease-out 380ms; opacity: 1; }
+  .drawin-dot circle.dt { transform-box: fill-box; transform-origin: 50% 50%; transform: scale(1); opacity: 1; transition: none; }
+  .drawin-dot.armed circle.dt { transform: scale(0.1); opacity: 0; transition: none; }
+  .drawin-dot.play circle.dt { transition: transform 300ms cubic-bezier(.2,.8,.2,1.05), opacity 200ms ease-out; transform: scale(1); opacity: 1; }
+  .drawin-dot .lab { opacity: 1; transition: none; }
+  .drawin-dot.armed .lab { opacity: 0; transition: none; }
+  .drawin-dot.play .lab { transition: opacity 260ms ease-out 420ms; opacity: 1; }
+  /* the wait */
+  .wait { position: relative; }
+  .wait .wait-skel { position: absolute; inset: 0; transition: opacity 320ms ease-out; z-index: 3; border-radius: 34px; }
+  .wait .wait-content { opacity: 0; transition: opacity 320ms ease-out; }
+  .wait.in .wait-skel { opacity: 0; pointer-events: none; }
+  .wait.in .wait-content { opacity: 1; }
+  .skel { display: grid; gap: 10px; }
+  .skel .k { height: 54px; border-radius: 14px; background: linear-gradient(90deg, #EFEFEF, #F7F7F7, #EFEFEF); }
+  .skel .k.tall { height: 96px; } .skel .k.short { height: 40px; } .skel .k.line { height: 14px; border-radius: 6px; width: 60%; }
+  .demo { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 18px 20px; margin-top: 18px; }
+  .btn { font: inherit; font-size: 13px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border: 0; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  .btn:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; }
+  .foot { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
+  .snap, .snap * { transition: none !important; animation-duration: 0s !important; }
+  .sigcard { cursor: pointer; }
+  .sigcard:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 2px; }
+  .sigtitle { font-family: var(--serif); font-size: 19px; line-height: 1.25; letter-spacing: -0.012em; color: #0A0A0A; margin: 0 0 8px; }
+  .sigtitle.xl { font-size: 24px; margin-bottom: 10px; }
+  .sigline { font-size: 12px; color: #525252; margin-top: 6px; display: flex; justify-content: space-between; align-items: baseline; }
+  .sigline b { color: #0A0A0A; }
+  .strip { display: flex; gap: 9px; align-items: center; padding: 8px 0 2px; font-size: 12px; color: #0A0A0A; }
+  .strip .stick { width: 3px; height: 16px; border-radius: 2px; background: #00C2A8; flex-shrink: 0; }
+  .strip .stick.safety { background: #F43F5E; }
+  .strip .cnt { margin-left: auto; color: #737373; font-size: 11px; }
+  .door { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: #0A0A0A; font-weight: 500; }
+  .door .dr { color: #0B7B6C; font-weight: 500; }
+  .door.lft { justify-content: flex-start; gap: 10px; }
+  .monthnav { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 0; }
+  .monthnav b { font-size: 13px; }
+  .monthnav button { font: inherit; font-size: 14px; border: 0; background: #F5F5F5; color: #0B7B6C; border-radius: 999px; width: 30px; height: 30px; cursor: pointer; }
+  .monthnav button:disabled { color: #C9C9C9; cursor: default; }
+  .monthnav button:focus-visible { outline: 2px solid #0B7B6C; }
+  .dm .lay { position: absolute; left: 3px; top: 3px; width: 5px; height: 5px; border-radius: 50%; }
+  .dm .lay.ph { background: #C9C9C9; left: 3px; top: auto; bottom: 3px; }
+  .dm .lay.ph.call { background: #F43F5E; }
+  .dm.sym .lay.ph { background: rgba(255,255,255,0.7); }
+  .dm.sym .lay.ph.call { background: #FFFFFF; }
+  .dm .lay.md { background: #5B7A9E; }
+  .dm .lay.ph, .dm .lay.md { display: none; }
+  .cal2.L-photos .dm .lay.ph { display: block; }
+  .cal2.L-meds .dm .lay.md { display: block; }
+  .cal2.L-noVomit .dm.sym { background: #FFFFFF; color: #525252; font-weight: 400; box-shadow: inset 0 0 0 1px #EAEAEA; }
+  .cal2.L-noVomit .dm.sym::after { background: #86D9CC; }
+  .cal2.L-noVomit .dm.sym .cnt { display: none; }
+  .cal2.L-noMeals .dm::after { display: none; }
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 18px; }
+  .rule { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 16px 18px; font-size: 14px; color: var(--ink-2); }
+  .rule b { color: var(--ink); display: block; margin-bottom: 6px; }
+  .rule .rid { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
+  .qs { counter-reset: q; display: grid; gap: 12px; margin-top: 14px; }
+  .q { border-left: 2px solid var(--gold); padding: 2px 0 2px 18px; font-size: 15px; color: var(--ink-2); }
+  .q b { color: var(--ink); }
+  .q .as { display: block; font-size: 13.5px; color: var(--ink-3); margin-top: 4px; }
+  .gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+  .gallery .g { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: linear-gradient(135deg,#B8B0C9,#7C7590); }
+  .gallery .g.b { background: linear-gradient(135deg,#C4BBAF,#8E8478); } .gallery .g.c { background: linear-gradient(135deg,#B9C3C9,#75838C); }
+  .gallery .g::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #D4D4D4; }
+  .gallery .g.call::before { background: #F43F5E; }
+  .gallery .g small { position: absolute; left: 6px; bottom: 4px; font-size: 9px; color: #FFFFFF; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+  .gcap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; font-size: 8.5px; color: #525252; margin-top: 3px; line-height: 1.25; }
+  .gcap span.call { color: #B4123B; font-weight: 600; }
+
+  /* ── round 4: the viewport frame, the tab bar, the FAB ─────────── */
+  .phone.vp { height: 684px; display: flex; flex-direction: column; padding-bottom: 0; position: relative; overflow: hidden; }
+  .phone.vp .vpbody { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: 96px; scrollbar-width: none; }
+  .phone.vp .vpbody::-webkit-scrollbar { display: none; }
+  .tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: 62px; background: rgba(250,250,250,0.97); border-top: 1px solid #EAEAEA; display: flex; justify-content: space-around; align-items: flex-start; padding: 8px 10px 0; border-radius: 0 0 34px 34px; font-size: 9.5px; color: #737373; z-index: 4; }
+  .tabbar span { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 56px; }
+  .tabbar span i { width: 18px; height: 18px; border-radius: 5px; background: #D4D4D4; display: block; }
+  .tabbar span.on { color: #0B7B6C; font-weight: 600; } .tabbar span.on i { background: #00C2A8; }
+  .fab { position: absolute; right: 14px; bottom: 74px; width: 46px; height: 46px; border-radius: 50%; background: #00C2A8; box-shadow: 0 6px 16px rgba(0,194,168,0.35); z-index: 5; }
+  .fab::before, .fab::after { content: ""; position: absolute; left: 50%; top: 50%; background: #FFFFFF; border-radius: 1px; transform: translate(-50%, -50%); }
+  .fab::before { width: 16px; height: 2px; } .fab::after { width: 2px; height: 16px; }
+  .screen.detail { position: absolute; left: 0; right: 0; top: 0; bottom: 0; background: #FAFAFA; border-radius: 34px; padding: 12px 12px 14px; opacity: 0; transform: translateY(18px); pointer-events: none; transition: opacity 240ms ease-out, transform 370ms cubic-bezier(.2,.8,.2,1.05); z-index: 6; overflow: auto; scrollbar-width: none; }
+  .screen.detail::-webkit-scrollbar { display: none; }
+  .screen.detail.on { opacity: 1; transform: none; pointer-events: auto; }
+  .screen.detail .land { opacity: 0; transform: translateY(-8px); transition: opacity 260ms ease-out 200ms, transform 260ms ease-out 200ms; }
+  .screen.detail.on .land { opacity: 1; transform: none; }
+  /* the day spine, in daylight — one line per node */
+  .spine { position: relative; padding-left: 18px; margin-top: 4px; }
+  .spine::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 2px; border-radius: 1px; background: #EAEAEA; }
+  .node1 { position: relative; padding: 5px 0 5px 6px; display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
+  .node1::before { content: ""; position: absolute; left: -18px; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: var(--dot, #00C2A8); box-shadow: 0 0 0 2px #FFFFFF; }
+  .node1 .nt { flex: 1; min-width: 0; color: #0A0A0A; font-weight: 500; }
+  .node1 .nt small { color: #525252; font-weight: 400; }
+  .node1 .nv { flex-basis: 100%; font-size: 11px; color: #525252; font-weight: 500; margin-top: -2px; }
+  .node1 .nv.call { color: #B4123B; font-weight: 600; }
+  .node1 .ntime { font-size: 10.5px; color: #737373; white-space: nowrap; }
+  .node1 .pg { display: inline-block; width: 11px; height: 9px; border: 1.3px solid #737373; border-radius: 2px; vertical-align: -1px; margin: 0 1px; }
+  .node1.nc { cursor: pointer; border-radius: 6px; }
+  .node1.nc:focus-visible { outline: 2px solid #0B7B6C; }
+  .node1.nc .ntime::after { content: "›"; color: #0B7B6C; margin-left: 5px; display: inline-block; transition: transform 200ms ease-out; }
+  .node1.nc[aria-expanded="true"] .ntime::after { transform: rotate(90deg); }
+  .ncdd { padding-left: 6px; }
+  .ncdd .dd { padding: 0 2px 2px; }
+  .ncdd .dd .dbox { max-height: 0; }
+  .ncdd .dd.in .dbox { max-height: 90px; }
+  .countline { font-size: 11px; color: #525252; margin: 8px 0 2px; }
+  .countline b { color: #0A0A0A; }
+  /* arrive — the tick IS the rail: one node, before, during and after */
+  .arr2 { margin-top: 3px; }
+  .arr2 .arow { display: flex; gap: 9px; align-items: flex-start; }
+  .arr2 .tick2 { width: 3px; height: 14px; border-radius: 2px; background: #D4D4D4; flex-shrink: 0; margin-top: 2px; animation: breathe 1.4s ease-in-out infinite; transition: height 160ms ease-out, background-color 160ms ease-out, margin 160ms ease-out; align-self: flex-start; }
+  .arr2.in .tick2 { animation: none; opacity: 1; background: #737373; height: 100%; align-self: stretch; margin-top: 0; }
+  .arr2.in.call .tick2 { background: #F43F5E; }
+  .arr2 .abody { flex: 1; min-width: 0; }
+  .arr2 .pend { font-size: 11.5px; color: #525252; max-height: 20px; overflow: hidden; transition: opacity 160ms ease-out, max-height 200ms ease-out; }
+  .arr2.in .pend { opacity: 0; max-height: 0; }
+  .arr2 .dbox { overflow: hidden; max-height: 0; transition: max-height 370ms cubic-bezier(.2,.8,.2,1.05) 100ms; }
+  .arr2.in .dbox { max-height: 120px; }
+  .arr2 .dtext { opacity: 0; transform: translateY(-8px); transition: opacity 300ms ease-out 180ms, transform 300ms ease-out 180ms; font-size: 11.5px; color: #525252; }
+  .arr2 .dtext b { color: #0A0A0A; display: block; font-size: 12px; margin-bottom: 2px; }
+  .arr2.in .dtext { opacity: 1; transform: none; }
+  /* the look, as the header of Today */
+  .lookhead { border-bottom: 1px solid #EAEAEA; padding-bottom: 8px; margin-bottom: 4px; }
+  .lookhead .lq { font-family: var(--serif); font-size: 16px; color: #0A0A0A; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .lookhead .lchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .lookhead .lchips .chip { font-size: 11px; padding: 4px 10px; }
+  .lookhead .lchips .chip.more { color: #0B7B6C; border-color: transparent; background: transparent; padding-left: 4px; }
+  .lookhead .lans { display: none; gap: 9px; align-items: center; margin-top: 6px; font-size: 12px; color: #525252; }
+  .lookhead .lans .lrail { width: 3px; height: 18px; border-radius: 2px; background: #00C2A8; }
+  .lookhead .lans b { color: #0A0A0A; }
+  .lookhead .lans button { margin-left: auto; font: inherit; font-size: 11px; font-weight: 500; color: #0B7B6C; background: none; border: 0; cursor: pointer; }
+  .lookhead.answered .lchips { display: none; }
+  .lookhead.answered .lans { display: flex; animation: landin 260ms ease-out; }
+  @keyframes landin { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .empty { font-size: 12px; color: #525252; padding: 10px 0 4px; }
+  .empty b { color: #0A0A0A; display: block; font-size: 12.5px; margin-bottom: 2px; }
+  /* stakeholders */
+  .stakes { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
+  .stake { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 16px 18px; font-size: 14px; color: var(--ink-2); }
+  .stake .who { font-weight: 600; color: var(--ink); font-size: 14.5px; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .stake .who .lean { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; color: var(--teal-ink); background: var(--teal-wash); }
+  .stake .who .lean.cond { color: #6B4A0E; background: var(--gold-wash); }
+  .stake .who .lean.no { color: var(--rose-ink); background: var(--rose-wash); }
+  .stake p { margin: 0 0 8px; }
+  .stake p b { color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-right: 6px; font-weight: 600; }
+  .stake a { color: var(--teal-ink); text-decoration: none; }
+  .optpair { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; margin-top: 18px; }
+  .optpair .frame-slot { width: 316px; }
+  .mini-card { background: #FFFFFF; border-radius: 16px; padding: 12px 14px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); width: 316px; max-width: 100%; color: #0A0A0A; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .lanecap { font-size: 10.5px; color: #525252; margin-top: 6px; line-height: 1.4; }
+  .gogo { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 16px; }
+  .gogo div { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .gogo div b { display: block; color: var(--ink); font-family: var(--serif); font-size: 20px; margin-bottom: 6px; }
+  @media (prefers-reduced-motion: reduce) {
+    .drawin.armed path.b, .drawin.play path.b, .drawin-x.armed rect.bx, .drawin-x.play rect.bx, .drawin-dot.armed circle.dt, .drawin-dot.play circle.dt { transition: none; transform: none; opacity: 1; }
+    .drawin.armed .lab, .drawin.play .lab, .drawin-x.armed .lab, .drawin-x.play .lab, .drawin-dot.armed .lab, .drawin-dot.play .lab { transition: none; opacity: 1; }
+    .dd .drail, .dd .dbox, .dd .dtext, .wait .wait-skel, .wait .wait-content, .screen.detail, .screen.detail .land, .arr2 .tick2, .arr2 .pend, .arr2 .dbox, .arr2 .dtext, .node1.nc .ntime::after { transition: none; }
+    .tick, .tick2 { animation: none; opacity: 1; }
+    .lookhead.answered .lans { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="mast">
+  <p class="eyebrow"><span>Culprit · design system audit</span><span>CUL-1060 · discovery</span><span>2026-09-18</span><span class="roundtag">Round 4 · the whole day</span></p>
+  <h1>The whole day</h1>
+  <p class="standfirst">Home, on Nyx's real Thursday: <strong>ten things logged, event for event from the record</strong>, seven of them meals, and it still reads in one glance. The Signal leads with a chart that now carries what the timing lane carries, every chart on the page meets that bar, the look question sits at the top of Today, no photo is on Home, the FAB is back, and the Signal's screen has the lane itself. <strong>Six stakeholders read round 3 cold before this was drawn; what each one moved is in §06.</strong> Scroll inside the phone. Tap the Signal. Tap a chip. Tap "2 meals". Press every Replay twice.</p>
+  <div class="howto"><b>How to read this page.</b> A fresh page again; rounds 1–3 stay at their own URLs as archives. §01 is Home on the real day, one scrolling frame with the tab bar and the FAB, plus the quiet day. §02 is the one exception to "no photos on Home", drawn two ways side by side. §03 is the Signal's screen with the lane on it. §04 is the month, and the weight drawn two ways. §05 is the standard every chart here meets, as a table you can check. §06 is the six stakeholder reads and what each moved. §07 the principle edits, §08 the questions and the go/no-go, §09 the project as it would be filed on a go. Nothing is in Linear.</div>
+  <div class="howto" style="margin-top:22px;border-left:3px solid var(--teal)"><b>Reacted 2026-09-19 — ruled go, and the project is filed.</b> What each reaction ruled and what moved on this page:</div>
+  <div class="ledger" id="ledger4">
+    <div><b>The FAB, teal</b><span><q>Bold! Let's do it.</q> → <span class="pill">ruled</span> Today's FAB is the dark neutral; it goes to the accent. Step 1, bundle A.</span></div>
+    <div><b>The chevron</b><span><q>can wrap to a new line and look pretty bad</q> → fixed: the chevron rides the time, which never wraps, so a long food name wraps under it and the arrow stays put.</span></div>
+    <div><b>Positives on the look</b><span><q>let's make sure we have some positive options showing too</q> → <span class="pill">ruled</span> <a href="#s01">Lively and Played on the compact row.</a> The daily-look spec fixes seven words per species; this is a Tier 2 edit to §4 (eight for cats; Dr. Chen signs the dog row's second positive) and rides step 2's Home issue.</span></div>
+    <div><b>Behind a beta toggle</b><span><q>ensure this redesign is behind a beta toggle too</q> → <span class="pill">ruled</span> <code>design_v2</code> on the Beta shelf, the same two gates as Noticed and Vet visits (eligible AND opted in); flag-off is byte-identical and a guard proves it; retired at GA. Drawn below.</span></div>
+    <div><b>Q1 · medication</b><span><q>we want to log it as needed but that's the FAB's job</q> → <span class="pill">ruled</span> Nothing about medication on Home beyond the dose as a fact once logged.</span></div>
+    <div><b>Q2 · the urgent photo</b><span><q>I'll defer to the team</q> → <span class="pill">ruled</span> <a href="#s02">Option A: the words on Home, the photo one tap in.</a></span></div>
+    <div><b>Q3 · the weight</b><span><q>defer to the designer; it needs to look good even with low numbers of weigh-ins</q> → <span class="pill">ruled</span> <a href="#s04">Dots by date on the fixed band; drawn at six, two and one readings.</a> The area is retired.</span></div>
+    <div><b>Q4 · the flight</b><span><q>go with the better design</q> → <span class="pill">ruled</span> The flight is the destination. The route ships first because the screen has to exist to land in; the flight is step 3's one issue, not a maybe.</span></div>
+    <div><b>Q5 · the clock</b><span><q>I'm in CST</q> → the day is redrawn in Central. Robust time-zone settings are their own later issue, <a href="https://linear.app/projectnyx/issue/CUL-1061">CUL-1061</a>.</span></div>
+    <div><b>Converging</b><span><q>let's get a project in Linear with step-by-step plans</q> → <a href="https://linear.app/projectnyx/project/design-v2-the-whole-day-35ed7930edbf"><b>Design v2 — the whole day</b></a>: four steps, the parallel lanes named, one bundle. <a href="#s09">§09.</a></span></div>
+  </div>
+  <div class="mini-card" style="margin-top:16px"><div class="seclabel">Beta features · the shelf row (Settings)</div><div style="display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-weight:600;font-size:13px">Design v2</div><div style="font-size:11.5px;color:#525252;line-height:1.4">The new Home, the Signal's own screen and the month on Patterns. Switch it off and the app is exactly as it was.</div></div><span role="switch" aria-checked="true" aria-label="Design v2, on" style="width:40px;height:24px;border-radius:12px;background:#00C2A8;position:relative;flex-shrink:0;display:block"><i style="position:absolute;right:2px;top:2px;width:20px;height:20px;border-radius:50%;background:#fff;display:block"></i></span></div></div>
+  <details style="margin-top:22px"><summary style="cursor:pointer;font-weight:600;font-size:14px;color:var(--ink)">The earlier ledger — what each round 3 reaction ruled, and what moved</summary>
+  <div class="ledger">
+    <div><b>Linear</b><span><q>remove it; we haven't converged</q> → <span class="pill">done</span> The project and the issue are cancelled; nothing is filed. <a href="#s08">§08 is the go/no-go.</a></span></div>
+    <div><b>The Signal's screen</b><span><q>I like this a lot</q> → kept. <a href="#s03">§03 sharpens it with the six reads: per-episode verdicts, the lane, Cerenia named.</a></span></div>
+    <div><b>The spine</b><span><q>nice; maybe no need for Full day</q> → <span class="pill">ruled</span> The door is gone. <a href="#s01">§01: the whole day is the spine, compacted where meals run together.</a></span></div>
+    <div><b>Photos on Home</b><span><q>not unless urgent (blood); they belong on the Signal screen as data points</q> → <span class="pill">ruled</span> No photo on Home; the episodes are the Signal screen's gallery. <a href="#s02">§02 draws the urgent case two ways.</a></span></div>
+    <div><b>"How does Nyx seem today"</b><span><q>love it; add it to the top of this section</q> → <span class="pill">ruled</span> <a href="#s01">The header of Today, with the answered state drawn.</a></span></div>
+    <div><b>"Why this is a Signal"</b><span><q>LOVE</q> → kept; it now names the medication inside the window.</span></div>
+    <div><b>The month</b><span><q>LOVE the weekly bars + calendar</q> → kept. <a href="#s04">§04: the bars now start on the same weekday as the rows, every bar has its count and its logged days.</a></span></div>
+    <div><b>Principles</b><span><q>don't dictate what MUST appear on Home; the med write leaves</q> → <a href="#s07">§07: Principle 3 becomes two jobs, not a list of zones.</a></span></div>
+    <div><b>The FAB</b><span><q>we certainly can't lose that</q> → <span class="pill">ruled</span> On every Home frame, with the tab bar, at the app's size and place.</span></div>
+    <div><b>Q1 the moon · Q3 the screen</b><span>tick only · one screen per finding → both drawn under.</span></div>
+    <div><b>Q2 medication</b><span><q>I absolutely think that we should</q> — the sentence stopped there. <a href="#s08">§08 question 1.</a></span></div>
+    <div><b>An average day</b><span><q>make this look AMAZING with a lot of data</q> → <a href="#s01">§01 is Sep 17, ten events, from the record.</a></span></div>
+    <div><b>The timing lane</b><span><q>let's not lose this; every data vis brings this level of information</q> → <a href="#s05">§05 is that standard, and every chart is checked against it.</a> The lane itself is on the Signal's screen.</span></div>
+    <div><b>Specialists · stakeholders</b><span>three lenses seated (<code>docs/personas.md</code>); six isolated reads → <a href="#s06">§06.</a></span></div>
+  </div>
+  </details>
+</header>
+
+<!-- ───────────────────────── §01 HOME, THE REAL DAY ───────────────────────── -->
+<section id="s01">
+  <div class="sec-head"><span class="sec-num">§01</span><h2>Home on Nyx's Thursday — ten things logged, one glance</h2></div>
+  <div class="col">
+    <p>This is <strong>September 17 from the record</strong>: seven meals of Selected Protein PR, a cough, two vomits three and four minutes after eating, both photographed. The frame is a 390×844 phone at scale, and it scrolls, so what you see first is what an owner sees first: the Signal with its chart, the look question, the day's count, the first nodes. <strong>Meals that run together compact to one line</strong> ("3 meals · 12:41 – 5:07 PM") and open in place; a vomit says how long after eating it was, whether it has a photo, and what the read said, as words, never a thumbnail. The read for the evening's photo arrives on the same tick that was waiting for it. The look is the header of Today: tap a chip and it becomes a fact with a time. The FAB and the tab bar are at the app's size and place. <strong>Replay the wait, then scroll, tap "2 meals", tap "Off", tap the Signal.</strong></p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · Home, Thu Sep 17 (Central)</span>
+      <div class="phone vp wait" id="home">
+        <div class="notch"></div>
+        <div class="wait-skel" id="home-wait"><div class="skel" style="padding:52px 12px 12px"><div class="k line" style="width:38%;height:12px"></div><div class="k tall" style="height:176px"></div><div class="k short" style="height:30px"></div><div class="k" style="height:300px"></div><div class="k short" style="height:36px"></div></div></div>
+        <div class="vpbody wait-content" id="home-content">
+          <div class="hdr"><div class="who"><span class="av"></span>Nyx</div><span class="muted" style="font-size:11px">Thu, Sep 17</span></div>
+          <div class="appbody">
+            <div class="acard sigcard" id="sig-card" role="button" tabindex="0" aria-label="Signal: vomiting, day 55 of the rabbit trial. Two this week so far, three last week. Opens the Signal.">
+              <div class="seclabel row"><span>Signal</span><span class="door">Open ›</span></div>
+              <div class="irow" style="padding:0 0 2px"><div class="rail"></div><div class="ibody">
+                <p class="sigtitle">Vomiting, day 55 of the rabbit trial</p>
+                <svg class="chart drawin" id="sig-chart" data-manual="1" data-bars="3,3,2,4,2,3,2,3,2" data-labels="Jul 19,,,,Aug 16,,,,Sep 13" data-mark="0.857" data-marklabel="trial · Jul 25" data-cover="1111111,1111111,1111111,1111111,0011111,1111111,1111110,0111111,11111--" data-partial="5 days so far" data-counts="all" viewBox="0 0 288 100" role="img" aria-label="Weekly vomiting for nine weeks from July 19, the trial starting July 25: 3, 3, 2, 4, 2, 3, 2, 3, and 2 so far this week. Under each week, its logged days: two unlogged in the week of August 16, one each in the weeks of August 30 and September 6."></svg>
+                <div class="sigline"><span><b>2</b> this week so far · <b>3</b> last week</span></div>
+              </div></div>
+            </div>
+            <div class="acard" style="padding:4px 14px 6px"><div class="strip"><span class="stick"></span><span>Coughing · <b>6</b> in 30 days</span><span class="cnt">folded</span></div></div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="lookhead" id="look">
+                <p class="lq">How does Nyx seem today?</p>
+                <div class="lchips" role="group" aria-label="How does Nyx seem today">
+                  <button type="button" class="chip" data-word="Off" data-gloss="flat, lying about">Off</button>
+                  <button type="button" class="chip" data-word="Sleeping more" data-gloss="asleep when she is usually up">Sleeping more</button>
+                  <button type="button" class="chip" data-word="Hiding" data-gloss="under the bed, out of the room">Hiding</button>
+                  <button type="button" class="chip" data-word="Not grooming" data-gloss="coat unattended, scruffy">Not grooming</button>
+                  <button type="button" class="chip" data-word="Lip-licking" data-gloss="swallowing a lot, nothing in her mouth">Lip-licking</button>
+                  <button type="button" class="chip" data-word="Outside the box" data-gloss="pee or poo found outside the tray">Outside the box</button>
+                  <button type="button" class="chip" data-word="Lively" data-gloss="playful">Lively</button>
+                  <button type="button" class="chip" data-word="Played" data-gloss="chased, pounced, batted a toy">Played</button>
+                  <button type="button" class="chip more">More…</button>
+                </div>
+                <div class="lans" id="look-ans"><span class="lrail"></span><span><b id="look-word">Off</b> · <span id="look-gloss">flat, lying about</span> · 5:14 PM</span><button type="button" id="look-change">Change</button></div>
+              </div>
+              <div class="countline"><b>10</b> logged · 7 meals · 2 vomits · 1 cough</div>
+              <div class="spine" id="spine">
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">2 meals <small>· Selected Protein PR</small></div><div class="ntime">5:47 – 10:55 AM</div></div>
+                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 5:47 AM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 10:55 AM</span></div></div></div></div></div>
+                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 3 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">10:58 AM</div><div class="nv">Keep an eye out</div></div>
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">3 meals <small>· Selected Protein PR</small></div><div class="ntime">12:41 – 5:07 PM</div></div>
+                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 12:41 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 3:02 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 5:07 PM</span></div></div></div></div></div>
+                <div class="node1" style="--dot:#F43F5E"><div class="nt">Cough</div><div class="ntime">5:09 PM</div></div>
+                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 4 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">5:11 PM</div>
+                  <div class="arr2" id="spine-read" style="flex-basis:100%" aria-live="polite">
+                    <div class="arow"><span class="tick2"></span><div class="abody">
+                      <div class="pend">Reading the photo…</div>
+                      <div class="dbox"><div class="dtext"><b>Keep an eye out</b>Second one today, minutes after eating both times. One photo can raise a flag; it can't clear one.</div></div>
+                    </div></div>
+                  </div>
+                </div>
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">2 meals <small>· Selected Protein PR</small></div><div class="ntime">5:39 – 10:39 PM</div></div>
+                <div class="ncdd"><div class="dd"><div class="drail" style="background:#00C2A8"></div><div class="dbox"><div class="dtext"><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 5:39 PM</span></div><div class="ev"><i style="background:#00C2A8"></i><span>Meal · Selected Protein PR · 10:39 PM</span></div></div></div></div></div>
+              </div>
+            </div>
+            <div class="acard door lft"><span>September · logged 15 of 17 days</span><span class="dr">Patterns ›</span></div>
+          </div>
+        </div>
+        <div class="tabbar" aria-hidden="true"><span class="on"><i></i>Home</span><span><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div>
+        <div class="fab" role="button" aria-label="Log event" tabindex="0"></div>
+        <div class="screen detail" id="detail" aria-hidden="true">
+          <div class="notch"></div>
+          <div class="stackhdr"><button class="back" id="det-back" type="button" style="border:0;background:none;padding:0 4px 0 0;font:inherit;color:#0B7B6C;font-size:18px;cursor:pointer" aria-label="Back to Home">‹</button>Signal</div>
+          <div class="appbody land">
+            <div class="acard">
+              <p class="sigtitle xl">Vomiting, day 55 of the rabbit trial</p>
+              <svg class="chart drawin" id="det-chart" data-manual="1" data-bars="3,3,2,4,2,3,2,3,2" data-labels="Jul 19,,,,Aug 16,,,,Sep 13" data-mark="0.857" data-marklabel="trial · Jul 25" data-cover="1111111,1111111,1111111,1111111,0011111,1111111,1111110,0111111,11111--" data-partial="5 days so far" data-counts="all" viewBox="0 0 288 120" role="img" aria-label="The same weekly chart, larger"></svg>
+              <p class="lead" style="margin-top:10px">Nyx has vomited 21 times in the trial's 55 days, against 19 in the 55 before.</p>
+              <svg class="chart drawin-x" id="det-compare" data-manual="1" data-compare="19,21" data-complabels="The 55 days before,The trial's 55 days" data-logged="44,51" data-days="55" viewBox="0 0 288 66" role="img" aria-label="Nineteen episodes in the 55 days before the trial, logged on 44 of those days; 21 in the trial's 55 days, logged on 51."></svg>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Timed from meals</div>
+              <svg class="chart drawin-dot" id="det-lane-a" data-manual="1" data-dots="8,14,19,22,26,29,45,70,95,130,180,240,420" data-lanelabel="Before the trial" data-timed="13 timed of 19" data-buckets="6,6,1" viewBox="0 0 288 54" role="img" aria-label="Before the trial: 13 timed of 19 episodes. Six under 30 minutes after eating, six between 30 minutes and 6 hours, one after 6 hours."></svg>
+              <svg class="chart drawin-dot" id="det-lane-b" data-manual="1" data-dots="3,5,9,12,16,21,24" data-lanelabel="In the trial" data-timed="7 timed of 21" data-buckets="7,0,0" data-axis="1" viewBox="0 0 288 68" role="img" aria-label="In the trial: 7 timed of 21 episodes, all seven under 30 minutes after eating."></svg>
+              <div class="lanecap">The counts under each lane: under 30 min · 30 min to 6 h · over 6 h. <b>6 + 14 episodes couldn't be timed against a meal — they aren't on the lanes.</b></div>
+            </div>
+            <div class="acard"><div class="seclabel row"><span>The episodes · 21, nine photographed</span><span class="door">All ›</span></div>
+              <div class="gallery"><div class="g b" role="img" aria-label="September 17, 5:11 PM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g" role="img" aria-label="September 17, 10:58 AM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g c call" role="img" aria-label="September 8, 11:40 PM, photographed, read as worth a call"><small>Sep 8</small></div><div class="g" role="img" aria-label="September 2, 6:52 AM, photographed, read as keep an eye out"><small>Sep 2</small></div></div>
+              <div class="gcap"><span>Keep an eye out</span><span>Keep an eye out</span><span class="call">Worth a call</span><span>Keep an eye out</span></div>
+            </div>
+            <div class="acard"><div class="seclabel">Why this is a Signal</div><div style="font-size:12px;line-height:1.45;color:#525252">Two windows of equal length, compared as counts. Not a verdict on how Nyx is doing. Cerenia was given Sep 9–12, inside the trial window, and a diet change is one of several things that can move this. Day 55 of 56 on Royal Canin Selected Protein PR.</div></div>
+            <div class="acard door"><span>Keep it compact on Home</span><span class="dr">Fold</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" type="button" id="wait-replay">Replay the wait</button><button class="btn" type="button" id="read-replay">Replay the read</button><button class="btn" type="button" id="sig-replay">Replay the chart</button></div>
+      <p class="frame-cap"><b>What is above the fold, and what the fold costs.</b> The Signal with its chart and its line, then the look question and its seven chips, the day's count, and the first two nodes. The rest of the day is one thumb-flick. Ten events became six nodes because consecutive meals with nothing between them share a line; the rule never compacts across a symptom, so the meal before each vomit is on its own. The door at the end speaks coverage, not a count, so it cannot rhyme with the Signal's numbers.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag prop">Current · the quiet day (Principle 5)</span>
+      <div class="phone vp" id="home-quiet">
+        <div class="notch"></div>
+        <div class="vpbody">
+          <div class="hdr"><div class="who"><span class="av"></span>Nyx</div><span class="muted" style="font-size:11px">Fri, Sep 18 · 7:10 AM</span></div>
+          <div class="appbody">
+            <div class="acard sigcard" role="button" tabindex="0">
+              <div class="seclabel row"><span>Signal</span><span class="door">Open ›</span></div>
+              <div class="irow" style="padding:0 0 2px"><div class="rail"></div><div class="ibody">
+                <p class="sigtitle">Vomiting, day 56 of the rabbit trial</p>
+                <svg class="chart drawin" data-bars="3,3,2,4,2,3,2,3,2" data-labels="Jul 19,,,,Aug 16,,,,Sep 13" data-mark="0.857" data-marklabel="trial · Jul 25" data-cover="1111111,1111111,1111111,1111111,0011111,1111111,1111110,0111111,111111-" data-partial="6 days so far" data-counts="all" viewBox="0 0 288 100" role="img" aria-label="The same weekly chart, one day later"></svg>
+                <div class="sigline"><span><b>2</b> this week so far · <b>3</b> last week</span></div>
+              </div></div>
+            </div>
+            <div class="acard" style="padding:4px 14px 6px"><div class="strip"><span class="stick"></span><span>Coughing · <b>6</b> in 30 days</span><span class="cnt">folded</span></div></div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="lookhead">
+                <p class="lq">How does Nyx seem today?</p>
+                <div class="lchips" role="group" aria-label="How does Nyx seem today"><button type="button" class="chip">Off</button><button type="button" class="chip">Sleeping more</button><button type="button" class="chip">Hiding</button><button type="button" class="chip">Not grooming</button><button type="button" class="chip">Lip-licking</button><button type="button" class="chip">Outside the box</button><button type="button" class="chip">Lively</button><button type="button" class="chip">Played</button><button type="button" class="chip more">More…</button></div>
+              </div>
+              <div class="empty"><b>Nothing logged yet today.</b>Meals, symptoms and medication go in with the + button. The look above is enough to start.</div>
+            </div>
+            <div class="acard door lft"><span>September · logged 16 of 18 days</span><span class="dr">Patterns ›</span></div>
+          </div>
+        </div>
+        <div class="tabbar" aria-hidden="true"><span class="on"><i></i>Home</span><span><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div>
+        <div class="fab" role="button" aria-label="Log event" tabindex="0"></div>
+      </div>
+      <p class="frame-cap"><b>The other fixture Engineering asked for.</b> Yesterday's chart, one bar taller by a day; the look question, which is the one thing Home asks; an empty state that says what to do without a nudge; the FAB where the day starts. The trial's last day says "56 of 56", never "done": reaching the target renders no completion language (the medication-duration rule D7, applied to the trial).</p>
+    </div>
+  </div>
+  <div class="col"><div class="conflict">
+    <p><strong>Mobile IA:</strong> a real day is ~1.4 screens; the compaction rule and the look-as-header are what keep the question and the first symptom above the fold. The FAB's footprint is designed: the body scrolls with a 96pt inset so the door is never under it.</p>
+    <p><strong>Sam:</strong> "3 meals · 12:41 – 5:07 PM" is my cat's afternoon. I would not want three identical lines.</p>
+    <p><strong>Dr. Chen:</strong> "3 min after eating" on the node is the lane's fact, at the moment it happened; that is the number I ask an owner for and they never have. And the read that arrived says what one photo can and cannot do.</p>
+    <p><strong>Data Scientist:</strong> the count line is the day's, the door's number is coverage, the Signal's line is the week's. Three numbers, three named populations, nothing rhymes.</p>
+  </div></div>
+</section>
+
+<!-- ───────────────────────── §02 THE URGENT DAY ───────────────────────── -->
+<section id="s02">
+  <div class="sec-head"><span class="sec-num">§02</span><h2>The one exception — a photo on Home only when the read was worth a call</h2></div>
+  <div class="col">
+    <p>Your rule: no incident photos on Home unless urgent. Drawn as a rule the code can hold: <strong>a photo never appears on Home unless its read was <em>worth a call</em></strong>. What "appears" means is the open question, so both readings are drawn side by side on the same evening. Either way the safety card leads Home as plain text (S1), the Signal folds to a strip beneath it, and the node on the spine says the verdict in words.</p>
+  </div>
+  <div class="optpair">
+    <div class="frame-slot">
+      <span class="tag prop">Option A · current · the words, and the photo one tap away</span>
+      <div class="phone vp">
+        <div class="notch"></div>
+        <div class="vpbody">
+          <div class="hdr"><div class="who"><span class="av"></span>Nyx</div><span class="muted" style="font-size:11px">Tue, Sep 8</span></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow" style="padding:0 0 2px"><div class="rail safety"></div><div class="ibody">
+                <p class="lead">Streaks of red in tonight's photo are worth a call to your vet today.</p>
+                <div class="samp" style="margin-top:2px">Read at 11:44 PM · a quick read of one moment, not a diagnosis</div>
+                <div class="sigline" style="margin-top:8px"><span style="color:#0B7B6C;font-weight:500">See the photo ›</span><span style="color:#0B7B6C;font-weight:500">Call the vet ›</span></div>
+              </div></div>
+            </div>
+            <div class="acard" style="padding:4px 14px 6px"><div class="strip"><span class="stick"></span><span>Vomiting, day 46 of the rabbit trial · <b>3</b> this week</span><span class="cnt">folded</span></div></div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="lookhead answered"><p class="lq">How does Nyx seem today?</p><div class="lans"><span class="lrail"></span><span><b>Hiding</b> · under the bed, out of the room · 9:02 PM</span><button type="button">Change</button></div></div>
+              <div class="countline"><b>8</b> logged · 6 meals · 2 vomits</div>
+              <div class="spine">
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">4 meals <small>· Selected Protein PR</small></div><div class="ntime">7:02 AM – 4:20 PM</div></div>
+                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 2 h after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">6:31 PM</div><div class="nv">Keep an eye out</div></div>
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">2 meals <small>· Selected Protein PR</small></div><div class="ntime">6:50 – 9:40 PM</div></div>
+                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 2 h after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">11:40 PM</div><div class="nv call">Worth a call</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tabbar" aria-hidden="true"><span class="on"><i></i>Home</span><span><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div>
+        <div class="fab" role="button" aria-label="Log event" tabindex="0"></div>
+      </div>
+      <p class="frame-cap"><b>Recommended.</b> Home is the surface a guest sees over your shoulder; the words carry the urgency and the photo is one tap in, on the record, where the vet will ask to see it. The rose rail is the only colour on the screen. Nothing here needs a haptic.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag opt">Option B · drawn for the decision · the thumbnail, for a worth-a-call only</span>
+      <div class="phone vp">
+        <div class="notch"></div>
+        <div class="vpbody">
+          <div class="hdr"><div class="who"><span class="av"></span>Nyx</div><span class="muted" style="font-size:11px">Tue, Sep 8</span></div>
+          <div class="appbody">
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow" style="padding:0 0 2px"><div class="rail safety"></div><div class="ibody">
+                <p class="lead">Streaks of red in tonight's photo are worth a call to your vet today.</p>
+                <div class="samp" style="margin-top:2px">Read at 11:44 PM · a quick read of one moment, not a diagnosis</div>
+                <div class="sigline" style="margin-top:8px"><span style="color:#0B7B6C;font-weight:500">Call the vet ›</span></div>
+              </div></div>
+            </div>
+            <div class="acard" style="padding:4px 14px 6px"><div class="strip"><span class="stick"></span><span>Vomiting, day 46 of the rabbit trial · <b>3</b> this week</span><span class="cnt">folded</span></div></div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="lookhead answered"><p class="lq">How does Nyx seem today?</p><div class="lans"><span class="lrail"></span><span><b>Hiding</b> · under the bed, out of the room · 9:02 PM</span><button type="button">Change</button></div></div>
+              <div class="countline"><b>8</b> logged · 6 meals · 2 vomits</div>
+              <div class="spine">
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">4 meals <small>· Selected Protein PR</small></div><div class="ntime">7:02 AM – 4:20 PM</div></div>
+                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 2 h after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">6:31 PM</div><div class="nv">Keep an eye out</div></div>
+                <div class="node1 nc" role="button" tabindex="0" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">2 meals <small>· Selected Protein PR</small></div><div class="ntime">6:50 – 9:40 PM</div></div>
+                <div class="node1" style="--dot:#F43F5E;flex-wrap:wrap"><div class="nt">Vomit <small>· 2 h after eating</small></div><div class="ntime">11:40 PM</div><div class="nv call">Worth a call</div>
+                  <div style="flex-basis:100%;display:flex;gap:9px;align-items:center;margin-top:4px"><span role="img" aria-label="the photo, read as worth a call" style="width:44px;height:44px;border-radius:9px;background:linear-gradient(135deg,#C4BBAF,#8E8478);border-left:3px solid #F43F5E;flex-shrink:0;display:block"></span><span style="font-size:11px;color:#525252">Streaks of red · <span style="color:#0B7B6C;font-weight:500">Open ›</span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tabbar" aria-hidden="true"><span class="on"><i></i>Home</span><span><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div>
+        <div class="fab" role="button" aria-label="Log event" tabindex="0"></div>
+      </div>
+      <p class="frame-cap"><b>The other reading of "unless urgent".</b> The 44pt thumbnail returns on the spine for this one verdict and never for a "keep an eye out". The vet's case for it: an owner on the phone with the clinic is looking at Home. The cost: the photo of blood is the first thing on the screen every time Home opens until the day ends.</p>
+    </div>
+  </div>
+  <div class="col"><div class="conflict">
+    <p><strong>Dr. Chen:</strong> a worth-a-call may carry its photo; the clinic will ask "what did it look like" and the owner should be able to hold the phone up. A "keep an eye out" never carries one.</p>
+    <p><strong>Trust &amp; Safety:</strong> Home is the shoulder-surf surface and the screenshot an owner sends a partner. The urgency is in the words; the photo belongs one tap in, on a screen that is unmistakably the record.</p>
+    <p><strong>Designer:</strong> either way S1 holds: the safety card is plain text and arrives with the same physics as a benign one, no haptic. The rule the code holds is the same in both; only the node's shape differs.</p>
+    <p><strong>PM decision needed:</strong> R4-2 in §08.</p>
+  </div></div>
+</section>
+
+<!-- ───────────────────────── §03 THE SIGNAL'S SCREEN ───────────────────────── -->
+<section id="s03">
+  <div class="sec-head"><span class="sec-num">§03</span><h2>The Signal's screen — the lane is on it now</h2></div>
+  <div class="col">
+    <p>The screen you liked, sharpened by the six reads. <strong>The chart carries a count on every week and the week's logged days under it</strong>, so adding the bars gives the sentence's number and a thin week is visibly thin. The compare shows how many of each window's days were logged and says nothing about fairness. <strong>The timing lane is here as two small multiples on one axis</strong>: before the trial and in it, each with its bucket counts, its "timed of" numerator, and the untimed episodes disclosed in one line, exactly as the shipped panel does it. The episodes are a gallery with each one's verdict in words under it, never a summary; "Why" names the medication inside the window. It opens from the card as a route: the screen rises with the fold's physics and its charts draw in, three beats, under 700ms, and Back reverses it. The chart no longer flies.</p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · the Signal's own screen</span>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="stackhdr"><span class="back">‹</span>Signal</div>
+        <div class="appbody">
+          <div class="acard">
+            <p class="sigtitle xl">Vomiting, day 55 of the rabbit trial</p>
+            <svg class="chart drawin" id="det-chart-static" data-bars="3,3,2,4,2,3,2,3,2" data-labels="Jul 19,,,,Aug 16,,,,Sep 13" data-mark="0.857" data-marklabel="trial · Jul 25" data-cover="1111111,1111111,1111111,1111111,0011111,1111111,1111110,0111111,11111--" data-partial="5 days so far" data-counts="all" viewBox="0 0 288 120" role="img" aria-label="Weekly vomiting for nine weeks with each week's logged days beneath it"></svg>
+            <p class="lead" style="margin-top:10px">Nyx has vomited 21 times in the trial's 55 days, against 19 in the 55 before.</p>
+            <svg class="chart drawin-x" id="det-compare-static" data-compare="19,21" data-complabels="The 55 days before,The trial's 55 days" data-logged="44,51" data-days="55" viewBox="0 0 288 66" role="img" aria-label="Nineteen episodes in the 55 days before, logged on 44 of them; 21 in the trial's 55 days, logged on 51."></svg>
+          </div>
+          <div class="acard">
+            <div class="seclabel">Timed from meals</div>
+            <svg class="chart drawin-dot" id="lane-a-static" data-dots="8,14,19,22,26,29,45,70,95,130,180,240,420" data-lanelabel="Before the trial" data-timed="13 timed of 19" data-buckets="6,6,1" viewBox="0 0 288 54" role="img" aria-label="Before the trial: 13 timed of 19. Six under 30 minutes, six between 30 minutes and 6 hours, one after 6 hours."></svg>
+            <svg class="chart drawin-dot" id="lane-b-static" data-dots="3,5,9,12,16,21,24" data-lanelabel="In the trial" data-timed="7 timed of 21" data-buckets="7,0,0" data-axis="1" viewBox="0 0 288 68" role="img" aria-label="In the trial: 7 timed of 21, all under 30 minutes."></svg>
+            <div class="lanecap">The counts under each lane: under 30 min · 30 min to 6 h · over 6 h. <b>6 + 14 episodes couldn't be timed against a meal — they aren't on the lanes.</b></div>
+          </div>
+          <div class="acard"><div class="seclabel row"><span>The episodes · 21, nine photographed</span><span class="door">All ›</span></div>
+            <div class="gallery"><div class="g b" role="img" aria-label="September 17, 5:11 PM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g" role="img" aria-label="September 17, 10:58 AM, photographed, read as keep an eye out"><small>Sep 17</small></div><div class="g c call" role="img" aria-label="September 8, 11:40 PM, photographed, read as worth a call"><small>Sep 8</small></div><div class="g" role="img" aria-label="September 2, 6:52 AM, photographed, read as keep an eye out"><small>Sep 2</small></div></div>
+            <div class="gcap"><span>Keep an eye out</span><span>Keep an eye out</span><span class="call">Worth a call</span><span>Keep an eye out</span></div>
+          </div>
+          <div class="acard"><div class="seclabel">Why this is a Signal</div><div style="font-size:12px;line-height:1.45;color:#525252">Two windows of equal length, compared as counts. Not a verdict on how Nyx is doing. Cerenia was given Sep 9–12, inside the trial window, and a diet change is one of several things that can move this. Day 55 of 56 on Royal Canin Selected Protein PR.</div></div>
+          <div class="acard door"><span>Keep it compact on Home</span><span class="dr">Fold</span></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" type="button" id="det-replay">Replay the screen's charts</button></div>
+      <p class="frame-cap"><b>What the lane brought with it.</b> Three things the shipped panel does that every chart on this page now does: a mark per fact, the count beside the marks, and the thing not counted said out loud. On the weekly chart that is the seven logged-day ticks under each bar; on the compare it is the strip of the window's days; on the lanes it is the untimed line. Nine of 21 episodes photographed is a count, not a gallery of 21.</p>
+    </div>
+    <div class="frame-slot">
+      <div class="conflict" style="margin-top:0">
+        <p><strong>Data Visualization Designer:</strong> the card's bars and the card's line now read the same weeks, and the bars sum to the sentence. A timing finding takes the lane, not weekly bars: bars answer "how often", the lane answers "when after eating". Two multiples, one axis, so the eye compares position, not scale.</p>
+        <p><strong>Dr. Chen:</strong> the falsification I tried: seven of seven in-trial episodes under 30 minutes, fourteen untimed. The lane shows seven dots crowded at the left and the caption says fourteen are missing, so nobody can read "all rapid on rabbit" off it. Held. And the pale bar is the before-window, not a verdict.</p>
+        <p><strong>Motion Designer:</strong> three beats: the screen rises (370ms), the chart draws in with it, the sentence and the receipt land together at 200ms; the lanes' dots pop in a stagger behind the compare. Under 700ms end to end, and the reverse is the same curve backwards.</p>
+        <p><strong>Dir. of Engineering:</strong> this is a route (<code>app/signal/[id].tsx</code>): back-gesture, deep link and VoiceOver focus for free, on the engines the app already ships. The flight is a spike on its own, not a gate on this.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §04 THE MONTH ───────────────────────── -->
+<section id="s04">
+  <div class="sec-head"><span class="sec-num">§04</span><h2>The month — the bars now sit over the rows</h2></div>
+  <div class="col">
+    <p>The page you loved, with three corrections from the data read. <strong>The weekly bars start on Sunday, the same day the rows do</strong>, so each bar is a row you can point at; the count sits on every bar with the week's logged days beneath it. <strong>A vomit day keeps its date</strong>, with the count in its corner, so the days that matter are still days. The legend gained the paler hairline for a meal left unfinished. Arrows move through the months, the layers fade in and out on the grid, the day opens in place. Below it, the weight card at six, two and one readings, dots by date on a fixed band. <strong>Press ‹ for August. Switch a layer. Tap a day.</strong></p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · Patterns, the month</span>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="stackhdr"><span class="back">‹</span>Patterns</div>
+        <div class="appbody">
+          <div class="acard">
+            <div class="monthnav"><button type="button" id="cal-prev" aria-label="Previous month">‹</button><b id="cal-label">September 2026</b><button type="button" id="cal-next" aria-label="Next month" disabled>›</button></div>
+            <svg class="chart drawin" id="week-chart" data-manual="1" data-bars="3,3,2,4,2,3,2,3,2" data-labels="Jul 19,,,,Aug 16,,,,Sep 13" data-mark="0.857" data-marklabel="trial · Jul 25" data-cover="1111111,1111111,1111111,1111111,0011111,1111111,1111110,0111111,11111--" data-partial="5 days so far" data-counts="all" viewBox="0 0 288 86" role="img" aria-label="Weekly vomiting across the nine weeks ending in the shown month, Sunday-start"></svg>
+            <div class="chips" id="cal-layers" style="margin-top:6px">
+              <button type="button" class="chip on" data-layer="vomit" aria-pressed="true">Vomiting</button>
+              <button type="button" class="chip on" data-layer="meals" aria-pressed="true">Meals</button>
+              <button type="button" class="chip" data-layer="meds" aria-pressed="false">Medication</button>
+              <button type="button" class="chip" data-layer="photos" aria-pressed="false">Photos</button>
+            </div>
+            <div style="font-size:12px;margin:2px 0 0" id="cal-line">Vomiting <b>6 times on 4 days</b> · through Sep 17 · 2 days unlogged</div>
+            <div class="cal2" id="cal"></div>
+            <div class="legend"><span><i style="background:#F43F5E"></i>vomit day, count in the corner</span><span><i style="background:#fff;box-shadow:inset 0 0 0 1px #EAEAEA"></i>logged</span><span><i style="background:#fff;box-shadow:inset 0 0 0 1px #EAEAEA, inset 0 -2px 0 #CFEFE8"></i>left some</span><span><i style="background:#F5F5F5"></i>nothing logged</span></div>
+          </div>
+          <div class="muted" style="text-align:center;font-size:10.5px;padding:2px 0">… What Nyx ate · Timing (the lane, as shipped) · The trial so far · What you noticed</div>
+        </div>
+      </div>
+      <p class="frame-cap"><b>Rows and bars agree.</b> Round 3's bars began on Monday over a grid whose rows began on Sunday, so no bar matched a row; now the ninth bar is the row with today in it. The Timing and Trial panels below the fold stay exactly as shipped: they are the bar this page was measured against.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag prop">Current · weight as dots by date, no fill, a fixed ±10% band</span>
+      <div class="mini-card">
+        <div class="seclabel row"><span>Weight · 6 readings</span><span class="door">All ›</span></div>
+        <svg class="chart drawin-dot" id="wt-dots" data-points="4.6,4.6,4.5,4.5,4.4,4.4" data-offsets="0,17,32,46,60,71" data-labels="Jul 3,,,,,Sep 12" viewBox="0 0 288 78" role="img" aria-label="Weight, six readings from July 3 to September 12, drawn by date on a band from 10 percent below to 10 percent above the first reading: 4.6 kilograms falling to 4.4"></svg>
+        <div class="samp">Down <b style="color:#0A0A0A">0.2 kg (4%)</b> since Jul 3 · a home scale moves about that much on its own</div>
+      </div>
+      <p class="frame-cap" style="margin-bottom:22px"><b>Ruled (you deferred to the designer).</b> Readings sit where their dates are, not evenly spaced; the band is fixed at ±10% of the first reading so a 4% change looks like 4% and not like a cliff; there is no fill, because a fill says "quantity from zero" and this axis does not start at zero; the delta is spoken beside its caveat.</p>
+      <span class="tag prop">Current · the same chart at one and two readings (ruled: it has to look good at low counts)</span>
+      <div style="display:grid;gap:12px">
+        <div class="mini-card">
+          <div class="seclabel row"><span>Weight · 1 reading</span><span class="door">Add ›</span></div>
+          <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px"><span style="font-family:var(--serif);font-size:30px;line-height:1;color:#0A0A0A">4.6 kg</span><span class="muted" style="font-size:11px">Sep 12</span></div>
+          <div class="samp">One reading is a number, not a line. The second one draws the band.</div>
+        </div>
+        <div class="mini-card">
+          <div class="seclabel row"><span>Weight · 2 readings</span><span class="door">All ›</span></div>
+          <svg class="chart drawin-dot" id="wt-two" data-points="4.6,4.5" data-offsets="0,17" data-labels="Aug 26,Sep 12" viewBox="0 0 288 78" role="img" aria-label="Weight, two readings: 4.6 kilograms on August 26 and 4.5 on September 12, on the same fixed band"></svg>
+          <div class="samp">Down <b style="color:#0A0A0A">0.1 kg (2%)</b> in 17 days · a home scale moves about that much on its own</div>
+        </div>
+      </div>
+      <p class="frame-cap"><b>Why the band is fixed.</b> With two readings a clipped range would make any change fill the plot; the ±10% band makes a 2% change look like 2% and leaves the chart the same shape it will have at six readings. At one reading the number is the chart. The area from round 1 is retired by your deferral to the designer.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §05 THE STANDARD ───────────────────────── -->
+<section id="s05">
+  <div class="sec-head"><span class="sec-num">§05</span><h2>Every chart brings the lane's information — the check</h2></div>
+  <div class="col">
+    <p>The shipped "Vomiting, timed from meals" lane does five things at once, and you named it the bar. Here is every chart on this page against those five. <strong>Any cell that is not a yes is a defect</strong>, not a style choice, and this table is D2-1's acceptance criteria (CUL-1064).</p>
+  </div>
+  <div class="tscroll"><table class="t">
+    <tr><th>Chart</th><th>A mark per fact</th><th>A count on every mark</th><th>The denominator in view</th><th>The uncounted disclosed</th><th>The window named</th></tr>
+    <tr><td>The timing lane (shipped; on the Signal's screen and Patterns)</td><td class="ok">a dot per timed episode, at its true minutes</td><td class="ok">the three bucket counts</td><td class="ok">"13 timed of 19"</td><td class="ok">"6 + 14 couldn't be timed — they aren't on the lanes"</td><td class="ok">before the trial · in the trial</td></tr>
+    <tr><td>Weekly bars (Home card, the Signal's screen, the month)</td><td class="ok">a bar per week, unsmoothed</td><td class="ok">the count on each bar</td><td class="ok">seven logged-day ticks under each week</td><td class="ok">hollow ticks; "5 days so far" on the partial week</td><td class="ok">the trial mark with its date; the first and last week dated</td></tr>
+    <tr><td>The compare (the Signal's screen)</td><td class="ok">one bar per window</td><td class="ok">19 · 21</td><td class="ok">the 55-day strip under each bar</td><td class="ok">"logged 44 of 55" · "51 of 55", hollow days on the strip</td><td class="ok">"the 55 days before" · "the trial's 55 days"</td></tr>
+    <tr><td>The day marks (the month)</td><td class="ok">a day per square; the count in the corner</td><td class="ok">the count, on the days that have one</td><td class="ok">the coverage hairline; grey = nothing logged</td><td class="ok">the line: "2 days unlogged"</td><td class="ok">the month, with arrows</td></tr>
+    <tr><td>The spine (Home)</td><td class="ok">a node per event; a compact node names its count</td><td class="ok">"3 meals", "3 min after eating"</td><td class="ok">the count line: 10 logged</td><td class="ok">the quiet day says "nothing logged yet"</td><td class="ok">today, dated in the header</td></tr>
+    <tr><td>Weight (dots by date)</td><td class="ok">a dot per reading, by date</td><td class="ok">the first and last values; the delta spoken</td><td class="ok">the fixed ±10% band</td><td class="ok">"a home scale moves about that much"</td><td class="ok">Jul 3 → Sep 12, 6 readings</td></tr>
+    <tr><td>Weight, the retired area (for the record)</td><td class="ok">a point per reading, evenly spaced</td><td>the last value only</td><td>none: the range is the data's</td><td>none</td><td class="ok">dated</td></tr>
+  </table></div>
+  <div class="col"><p style="font-size:14px;color:var(--ink-2)"><strong>What the table is for.</strong> Round 3 failed three of these cells without anyone noticing until the data read: the card's bars carried occurrence only, the compare said "fairly", the month's bars were on the wrong weekday. A table you can check beats a principle you can admire.</p></div>
+</section>
+
+<!-- ───────────────────────── §06 THE STAKEHOLDERS ───────────────────────── -->
+<section id="s06">
+  <div class="sec-head"><span class="sec-num">§06</span><h2>Six reads of round 3 — what each said, and what it moved</h2></div>
+  <div class="col">
+    <p>You asked for feedback that isn't just yours. Six lenses read round 3 in isolation, without the build conversation, each as its own subagent with only the page, the specs and the code: the two owners; Dr. Chen; Trust &amp; Safety with the Product Owner; the Data Scientist with a <strong>Data Visualization Designer</strong>; a <strong>Motion Designer</strong> with a <strong>Mobile Information Architect</strong>; the Director of Engineering with QA. The three specialists are new, seated at your word and written into <code>docs/personas.md</code> with a mandate each. Every lean was <em>go, with conditions</em>; the conditions are what this round built.</p>
+  </div>
+  <div class="stakes">
+    <div class="stake"><div class="who">Jordan and Sam, the owners <span class="lean cond">go, with conditions</span></div>
+      <p><b>Said</b> The photo tile on Home is the thing they would hide from a guest. The look belongs at the top. No FAB anywhere. "Full day" is redundant with the spine. A grazing cat's meals need one line ("3 small meals · 6:10–9:40 PM").</p>
+      <p><b>Moved</b> <a href="#s01">§01</a>, all five: no photo on Home, the look as the header, the FAB and tab bar on every frame, the door gone, the compaction rule.</p></div>
+    <div class="stake"><div class="who">Dr. Alex Chen, veterinarian <span class="lean cond">go, with conditions</span></div>
+      <p><b>Said</b> "The other three, monitor" reassures by aggregation. Cerenia inside the compare window must be named. Draw the monitor arrival, not only the worth-a-call. The legend lacks left-some. A worth-a-call may carry its photo; a monitor never.</p>
+      <p><b>Moved</b> <a href="#s03">§03</a>: each episode's verdict in the shipped words; "Why" names Cerenia. <a href="#s01">§01</a>: the arrival drawn is a "keep an eye out". <a href="#s04">§04</a>: the legend. <a href="#s02">§02</a>: her case, as option B.</p></div>
+    <div class="stake"><div class="who">Trust &amp; Safety · Product Owner <span class="lean cond">go, with conditions</span></div>
+      <p><b>Said</b> Gallery tiles need spoken labels. A health photo on Home is the shoulder-surf surface. The engine migration and the brand retirement are their own projects, not waves of this one. Three overlaps to reconcile: Noticed's slot, the intake-door ruling behind "Off her food", DP-5's verbiage.</p>
+      <p><b>Moved</b> <a href="#s03">§03</a> tiles announce date, time and verdict. <a href="#s02">§02</a> option A. <a href="#s09">§09</a> re-cut. The overlaps are listed under §09 for the go.</p></div>
+    <div class="stake"><div class="who">Data Scientist · Data Visualization Designer <span class="lean cond">go, with conditions</span></div>
+      <p><b>Said</b> The card's bars and its line read two different windows. Weekly bars carried occurrence only. "Compare fairly" adjudicates coverage the record cannot. Monday bars over Sunday rows. The count replaced the date. The weight's clipped range and fill. The chart family lacked the lane.</p>
+      <p><b>Moved</b> <a href="#s05">§05</a> is their standard as a table. Every bar has a count and its logged days; the card's line is week-consistent; the compare states numbers and shows logged days; Sunday-start everywhere; the date kept; weight as <a href="#s04">§04</a> option A; the lanes on <a href="#s03">§03</a>.</p></div>
+    <div class="stake"><div class="who">Motion Designer · Mobile Information Architect <span class="lean cond">go, with conditions</span></div>
+      <p><b>Said</b> The tick must BE the rail, not be swapped for one. The flight distorts and has no reverse. The screen landed in four beats. The tick's loop needs a written carve-out. Home is ~1.4 screens on a real day. The look as a node breaks chronology; make it the header. No FAB or tab bar. Two sixes on one screen.</p>
+      <p><b>Moved</b> <a href="#s01">§01</a>: the arrival rebuilt on one node; the viewport frame with the tab bar and FAB and a 96pt inset; the look as the header with its answered state; the door speaks coverage. <a href="#s03">§03</a>: three beats under 700ms, reversible. <a href="#s07">§07</a>: the carve-out. <b>Not taken</b> the 24pt thumbnail at the right of a node: you ruled no photos on Home.</p></div>
+    <div class="stake"><div class="who">Dir. of Engineering · QA <span class="lean cond">go on W1 without the flight · no-go on the engine migration as written</span></div>
+      <p><b>Said</b> Reanimated ships no shared-element transition on the new architecture, so the flight is a hand-rolled FLIP either way; cut it from wave 1. Route vs overlay must be decided before the screen is built. The spine needs an observe-only read of the analysis row plus guard entries. DaySpine is night-only by its own header. A long-day cap rule, with the read node never dropped. Fixtures missing: the zero-log day, a safety day, reduced motion, VoiceOver. The browser harness is not the device gate.</p>
+      <p><b>Moved</b> <a href="#s03">§03</a> is a route. <a href="#s01">§01</a> the quiet day, <a href="#s02">§02</a> the safety day, the compaction rule named. <a href="#s09">§09</a>: wave 1 on the shipped engines; the flight a spike; the migration its own project.</p></div>
+  </div>
+  <div class="col">
+    <h3>Where they disagree, surfaced rather than settled</h3>
+    <div class="conflict">
+      <p><strong>Motion Designer:</strong> keep the hero flight; make it uniform (one aspect for both charts) and reversible, and it is the best moment in the app.</p>
+      <p><strong>Dir. of Engineering:</strong> a measured FLIP over a native push, on device, is a week of work that gates nothing else; ship the route with the fold's physics and spike the flight separately.</p>
+      <p><strong>PM decision needed:</strong> R4-3 in §08. Drawn under the Engineering position.</p>
+    </div>
+    <div class="conflict">
+      <p><strong>Data Visualization Designer:</strong> weight is dots by date on a fixed band, no fill, the delta spoken.</p>
+      <p><strong>The round 1 ruling (PM, 2026-09-17):</strong> "area sparkline, agreed."</p>
+      <p><strong>PM decision needed:</strong> R4-4 in §08, a better-than-the-rule brief; both drawn in §04.</p>
+    </div>
+    <div class="conflict">
+      <p><strong>Dr. Chen</strong> and <strong>Trust &amp; Safety</strong> on the urgent photo: the clinic will ask to see it, versus Home is the surface a stranger sees. <strong>PM decision needed:</strong> R4-2 in §08; both drawn in §02.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §07 THE PRINCIPLES ───────────────────────── -->
+<section id="s07">
+  <div class="sec-head"><span class="sec-num">§07</span><h2>Three edits to the principles, from this round</h2></div>
+  <div class="col"><p>The v2.0 draft from round 1 stands (Principle 8, the data is the delight; Principle 9, motion is the record moving). These three edits come from your round 3 reactions and the six reads. Each is a Tier 2 edit that a go authorises; none is written yet.</p></div>
+  <div class="princ"><div class="pn"><span>Principle 3 · revised</span><span class="pill gold">edit</span></div><h4>Home has two jobs, not a list of zones.</h4><p>Home answers "is she okay" and "what happened today", in that order, and carries nothing that answers neither. Safety leads and is never dropped for a layout. What appears is decided by the record and the wedge, never by the principle: a running trial earns a place, a quiet record earns a question. Home carries no form; its writes are the look, a one-tap confirmation of something the app already described, and nothing else.</p><div class="test"><b>The test</b>Cover the Signal card: does the rest of Home still tell you what happened today? Cover Today: does the Signal still tell you whether she is okay? Anything left over is not Home's.</div></div>
+  <div class="princ"><div class="pn"><span>Principle 9 · the tick's carve-out</span><span class="pill gold">edit</span></div><h4>Chrome never moves on its own — except the one tick, while the app is working on the pet's behalf.</h4><p>The breathing tick is the app's only looping motion: 3pt wide, a 1.4s breath, only while a request is in flight, and it becomes the rail of the thing it was waiting for. Reduced motion renders it still at full opacity. No other loop exists, and this carve-out is written into the principle rather than inherited from the retired Whorl.</p><div class="test"><b>The test</b>If the loop is on screen, name the request it is waiting on. If you cannot, it is chrome.</div></div>
+  <div class="princ"><div class="pn"><span>Principle 8 · the five things</span><span class="pill gold">edit</span></div><h4>A chart is evidence the reader can check without a legend.</h4><p>A mark per fact. A count on every mark. The denominator in view. The uncounted disclosed. The window named. The shipped timing lane is the reference; §05 is the table any new chart is added to before it ships, and a cell that is not a yes is a defect.</p><div class="test"><b>The test</b>Hand the chart to Dr. Chen with the caption covered. Can she say what was counted, over what, and what was left out?</div></div>
+</section>
+
+<!-- ───────────────────────── §08 QUESTIONS + GO / NO-GO ───────────────────────── -->
+<section id="s08">
+  <div class="sec-head"><span class="sec-num">§08</span><h2>What I need from you — five questions, then the call</h2></div>
+  <div class="col"><p>Each question carries the assumption I drew under, so a "yes" costs nothing and a "no" says what to redraw. Then the go/no-go you asked for.</p></div>
+  <div class="qs">
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · the FAB's job</span><br><b>1 · The sentence that stopped.</b> "I don't want the 'log Zyrtec' on home. But I absolutely think that we should…" — should what? A dose as a fact on the spine once it is logged (drawn)? A reminder that a course is running, somewhere other than Home? Something in the FAB's menu?<span class="as">Drawn under: the dose appears on the spine as a fact when logged, like any other event; nothing else about medication is on Home.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · option A</span><br><b>2 · The urgent photo.</b> When a read is worth a call, does Home carry the words with the photo one tap away (option A), or the thumbnail on the node (option B)?<span class="as">Drawn under: A. R4-2 below.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · dots by date, drawn at low counts</span><br><b>3 · The weight.</b> Dots by date on a fixed band (option A) or the area you ruled in round 1 (option B)?<span class="as">Drawn under: A. R4-4 below.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · the flight is the destination, the route first</span><br><b>4 · The Signal's opening.</b> A route that rises and draws in (drawn, ships on today's engines), or the chart's flight from the card, as a spike after wave 1?<span class="as">Drawn under: the route now, the flight as a spike. R4-3 below.</span></div>
+    <div class="q"><span class="pill" style="margin-bottom:4px">ruled · Central</span><br><b>5 · The clock.</b> Sep 17 was first drawn in Eastern from the record's UTC timestamps; you are in Central, so the day is redrawn an hour earlier. The events and their order are unchanged.<span class="as">Robust time-zone settings are a separate, later issue: CUL-1061.</span></div>
+  </div>
+  <div class="brief"><p class="bid">R4-1 · Go / no-go — <span class="rec">ruled go, 2026-09-19</span></p>
+    <p><strong>Deciding:</strong> whether this project has converged enough to file.</p>
+    <ol>
+      <li><strong>Go.</strong> <span class="rec">Recommended</span> — §09 is filed in Linear as the project, with the toggle and the chart family first (two sessions at once) and the fixtures named on Home's issue. The four rule edits from round 3 and the three in §07 become Tier 2 edits on the specs they touch. <span class="rec">The next two sessions run bundle A and lane B.</span></li>
+      <li><strong>One more round.</strong> Say what is still not right and it is drawn fresh; nothing is filed.</li>
+      <li><strong>Park.</strong> The four pages stay as the record; CUL-1060 stays cancelled.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) is ten issues and a project; (2) is another page; (3) is nothing.</p>
+  </div>
+  <div class="gogo">
+    <div><b>Go looks like</b>the §09 table as a Linear project (ten issues, four steps, the fixtures on Home's issue, the §05 table as the chart family's acceptance criteria); the seven Tier 2 spec edits; the three specialist lenses graduating into the roster; round 4 becomes the design authority page and the archives stay.</div>
+    <div><b>No-go looks like</b>this page stays as the record with rounds 1–3; nothing in Linear; the specialist lenses retire with the project or wait for it; the three edits in §07 are not written; the chart family is not built ahead of a ruling.</div>
+  </div>
+  <div class="brief"><p class="bid">R4-2 · The urgent photo</p>
+    <p><strong>Deciding:</strong> what "unless urgent" means on Home.</p>
+    <ol>
+      <li><strong>Words on Home, the photo one tap in (§02 option A).</strong> <span class="rec">Recommended</span> — the urgency is the sentence and the rail; the photo is on the record where the vet sees it; Home stays safe to hold up.</li>
+      <li>The 44pt thumbnail on the node, for a worth-a-call only (§02 option B) — Dr. Chen's case.</li>
+    </ol>
+    <p><strong>Consequence:</strong> either is one rule in the spine renderer and a guard entry; (2) adds a photo read to Home's import closure.</p>
+  </div>
+  <div class="brief"><p class="bid">R4-3 · How the Signal's screen opens</p>
+    <p><strong>Deciding:</strong> the opening motion and what wave 1 is gated on.</p>
+    <ol>
+      <li><strong>A route: the screen rises with the fold's physics, its charts draw in, three beats under 700ms, Back reverses (§03).</strong> <span class="rec">Recommended</span> — ships on the engines the app has; back-gesture, deep link and VoiceOver come free.</li>
+      <li>The chart's flight from the card into the screen, built now as a measured FLIP over a native push — the Motion Designer's case; a week on device before the screen exists.</li>
+      <li>(1) now, and the flight as its own issue after step 2, with a go/no-go on the recording.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) or (3) keeps the Signal's issue an L; (2) makes it an XL gated on a dev-client rebuild.</p>
+  </div>
+  <div class="brief"><p class="bid">R4-4 · Weight — a better-than-the-rule brief</p>
+    <p><strong>The rule:</strong> "area sparkline, agreed" (your round 1 ruling, 2026-09-17), protecting a continuous measure from being drawn as bars.</p>
+    <p><strong>The better thing:</strong> dots by date on a fixed ±10% band with no fill and the delta spoken (§04 option A). Still protected: it is still a continuous measure drawn as one; what changes is that 4% now looks like 4%, a reading's date is where its dot is, and no fill implies a quantity from zero.</p>
+    <ol>
+      <li><strong>Dots by date, fixed band, no fill.</strong> <span class="rec">Recommended.</span></li>
+      <li>The area as ruled.</li>
+    </ol>
+    <p><strong>Consequence:</strong> one chart in the chart family either way; (1) amends the round 1 ruling in the session record.</p>
+  </div>
+</section>
+
+<!-- ───────────────────────── §09 THE PROJECT, ON A GO ───────────────────────── -->
+<section id="s09">
+  <div class="sec-head"><span class="sec-num">§09</span><h2>The project, filed — <a href="https://linear.app/projectnyx/project/design-v2-the-whole-day-35ed7930edbf" style="text-decoration:none">Design v2 — the whole day</a></h2></div>
+  <div class="tscroll"><table class="t">
+    <tr><th>Step</th><th>Lane</th><th>Issue</th><th>Size</th><th>Gate</th></tr>
+    <tr><td class="num">1</td><td><b>Bundle A</b> · one session, one PR</td><td><a href="https://linear.app/projectnyx/issue/CUL-1062">CUL-1062</a> <b>D2-0</b> the <code>design_v2</code> toggle and the flag-off guard · <a href="https://linear.app/projectnyx/issue/CUL-1063">CUL-1063</a> <b>D2-2</b> the FAB goes teal</td><td class="num">S + XS</td><td>none</td></tr>
+    <tr><td class="num">1</td><td><b>Lane B</b> · own session</td><td><a href="https://linear.app/projectnyx/issue/CUL-1064">CUL-1064</a> <b>D2-1</b> the chart family to the §05 standard, with the draw in</td><td class="num">M</td><td>none</td></tr>
+    <tr><td class="num">2</td><td>lane 1</td><td><a href="https://linear.app/projectnyx/issue/CUL-1065">CUL-1065</a> <b>D2-3</b> the Signal card and the Signal's own screen, as a route</td><td class="num">L</td><td>step 1 merged</td></tr>
+    <tr><td class="num">2</td><td>lane 2</td><td><a href="https://linear.app/projectnyx/issue/CUL-1066">CUL-1066</a> <b>D2-4</b> Home on a real day: the look as Today's header, the spine, no photo on Home, the med button gone</td><td class="num">L</td><td>step 1 merged</td></tr>
+    <tr><td class="num">2</td><td>lane 3</td><td><a href="https://linear.app/projectnyx/issue/CUL-1067">CUL-1067</a> <b>D2-5</b> Patterns: the month over the rows, layers, weight by date</td><td class="num">M</td><td>step 1 merged</td></tr>
+    <tr><td class="num">2</td><td>lane 4 · any time after step 1</td><td><a href="https://linear.app/projectnyx/issue/CUL-1068">CUL-1068</a> <b>D2-7</b> every wait its silhouette; the tick the one spinner</td><td class="num">M</td><td>D2-0 merged</td></tr>
+    <tr><td class="num">3</td><td>one session</td><td><a href="https://linear.app/projectnyx/issue/CUL-1069">CUL-1069</a> <b>D2-6</b> the flight, on device, recorded</td><td class="num">M</td><td>D2-3 merged · the dev client (CUL-616)</td></tr>
+    <tr><td class="num">3</td><td>PM</td><td><a href="https://linear.app/projectnyx/issue/CUL-1070">CUL-1070</a> <b>D2-9</b> the on-device pass: motion, haptics, Home on a real day</td><td class="num">PM</td><td>step 2 merged · the dev client</td></tr>
+    <tr><td class="num">4</td><td>one session</td><td><a href="https://linear.app/projectnyx/issue/CUL-1071">CUL-1071</a> <b>D2-8</b> GA: the toggle retired, the old surfaces deleted, Principles v2.0 and the seven spec edits</td><td class="num">M</td><td>steps 2–3 · D2-9's notes closed</td></tr>
+  </table></div>
+  <div class="col"><p style="font-size:14px;color:var(--ink-2)"><strong>How to run it, as you asked.</strong> Every issue carries a paste-ready kickoff prompt; bundle A's covers both of its issues. Step 1 is two sessions at once; step 2 is up to four at once; each issue names the files it owns and the files it must not touch, so the parallel branches do not collide. Nothing is bundled that would make a session rush its second half. <strong>Reconciled:</strong> CUL-616 is D2-9's one step; CUL-635 rides D2-8; CUL-383 is superseded by D2-3; CUL-140's calendar half by D2-5; CUL-847 shares D2-1; CUL-766 / CUL-830 (the engine migration) stay out and gate nothing. Out of scope on purpose: CUL-322, CUL-493, CUL-447. The time-zone deferral is <a href="https://linear.app/projectnyx/issue/CUL-1061">CUL-1061</a>.</p></div>
+</section>
+
+<p class="foot">The Whole Day · round 4 · 2026-09-18, reacted and ruled 2026-09-19 · CUL-1060 · the committed source is <code>docs/culprit-design-v4-mockups.html</code>; rounds 1–3 are archives at their own URLs. §01's Thursday is Nyx's September 17 from the record, event for event, in Central time; every other number on the page is illustrative and shaped like the record. No app code changed this session.</p>
+</div>
+<script>
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var ROSE = '#F43F5E', ROSE_SOFT = '#F5C0CA', TEAL = '#00C2A8', TEAL_SOFT = '#86D9CC', TEAL_WASH = '#E0FBF7', MED = '#5B7A9E';
+  var INK = '#0A0A0A', INK2 = '#525252', INK3 = '#737373', RULE = '#EAEAEA', EMPTY = '#F0F0F0', IDLE = '#C9C9C9', BAND = '#F3F3F3';
+  var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.__errors = []; window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });
+  function el(tag, attrs, parent) { var n = document.createElementNS(NS, tag); for (var k in attrs) if (Object.prototype.hasOwnProperty.call(attrs, k)) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; }
+  function text(parent, x, y, s, attrs) { var t = el('text', Object.assign({ x: x, y: y, 'font-family': 'Geist, -apple-system, sans-serif', 'font-size': 9, fill: INK3 }, attrs || {}), parent); t.textContent = s; return t; }
+  function topRounded(x, y, w, hh, r) { r = Math.max(0, Math.min(r, w / 2, hh)); var b = y + hh; return 'M' + x + ',' + b + ' L' + x + ',' + (y + r) + ' Q' + x + ',' + y + ' ' + (x + r) + ',' + y + ' L' + (x + w - r) + ',' + y + ' Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + ' L' + (x + w) + ',' + b + ' Z'; }
+  function nums(s) { return s.split(',').map(function (v) { return v.trim(); }); }
+  function h(tag, cls, html) { var n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
+  function clear(svg) { while (svg.firstChild) svg.removeChild(svg.firstChild); }
+
+  /* ── the record (illustrative, shaped like Nyx's): two months, Sunday-start ── */
+  var MONTHS = {
+    '2026-08': { label: 'August 2026', days: 31, lead: 6, today: null,
+      sym: { 1: 1, 3: 1, 7: 1, 11: 2, 12: 1, 14: 1, 19: 1, 21: 1, 23: 1, 27: 2, 30: 1 }, unlogged: { 16: true, 17: true }, some: { 7: true, 11: true, 27: true }, photos: { 11: 'monitor', 23: 'call' }, meds: {},
+      bars: '2,2,3,3,2,4,2,3,2', labels: 'Jul 5,,,,Aug 2,,,,Aug 30', mark: 2.857, marklabel: 'trial · Jul 25', cover: '1111111,1111011,1111111,1111111,1111111,1111111,0011111,1111111,1111110', partial: '',
+      line: 'Vomiting <b>13 times on 11 days</b> · 2 days unlogged' },
+    '2026-09': { label: 'September 2026', days: 30, lead: 2, today: 17,
+      sym: { 2: 1, 8: 2, 11: 1, 17: 2 }, unlogged: { 5: true, 6: true }, some: { 8: true, 13: true }, photos: { 2: 'monitor', 8: 'call', 17: 'monitor' }, meds: { 9: true, 10: true, 11: true, 12: true },
+      bars: '3,3,2,4,2,3,2,3,2', labels: 'Jul 19,,,,Aug 16,,,,Sep 13', mark: 0.857, marklabel: 'trial · Jul 25', cover: '1111111,1111111,1111111,1111111,0011111,1111111,1111110,0111111,11111--', partial: '5 days so far',
+      line: 'Vomiting <b>6 times on 4 days</b> · through Sep 17 · 2 days unlogged' }
+  };
+  var ORDER = ['2026-08', '2026-09'];
+  var WDN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var VOMIT_TIMES = ['6:52 AM', '11:40 PM', '2:15 PM'];
+  function weekday(m, d) { return WDN[(m.lead + d - 1) % 7]; }
+  function isFuture(m, d) { return m.today != null && d > m.today; }
+  function eventsOf(m, d) {
+    if (m.unlogged[d]) return [];
+    var rows = [['meal', 'Selected Protein PR · 5:47 AM']];
+    if (m.meds[d]) rows.push(['med', 'Cerenia · given · 8:00 AM']);
+    for (var i = 0; i < (m.sym[d] || 0); i++) rows.push(['sym', 'Vomit · ' + VOMIT_TIMES[i] + (i === 0 && m.photos[d] ? ' · photo, ' + (m.photos[d] === 'call' ? 'worth a call' : 'keep an eye out') : ''), i === 0 ? m.photos[d] : null]);
+    rows.push(['meal', (m.some[d] ? 'Selected Protein PR · left some' : 'Selected Protein PR') + ' · 6:10 PM']);
+    return rows;
+  }
+  function dotColor(kind) { return kind === 'sym' ? ROSE : (kind === 'med' ? MED : TEAL); }
+  function dayHeading(m, d) { var evs = eventsOf(m, d); var name = weekday(m, d) + ', ' + m.label.split(' ')[0].slice(0, 3) + ' ' + d; if (isFuture(m, d)) return name + ' · ahead'; return name + ' · ' + (evs.length ? evs.length + (evs.length === 1 ? ' event' : ' events') : 'nothing logged'); }
+  function eventsHtml(m, d) {
+    if (isFuture(m, d)) return '<div class="ev"><span class="muted">Not yet.</span></div>';
+    var evs = eventsOf(m, d);
+    if (!evs.length) return '<div class="ev"><span class="muted">No entries this day — not the same as a quiet day.</span></div>';
+    return evs.map(function (e) { return '<div class="ev"><i style="background:' + dotColor(e[0]) + '"></i><span>' + e[1] + '</span></div>'; }).join('');
+  }
+  function railFor(m, d) { return m.sym[d] ? ROSE : (m.unlogged[d] || isFuture(m, d) ? IDLE : TEAL); }
+
+  /* ── snap reset + two frames with a timer behind them (rounds 2 and 3's lessons) ── */
+  function snapReset(root, fn) {
+    root.classList.add('snap'); fn();
+    void root.offsetWidth; root.querySelectorAll('*').forEach(function (n) { if (n.getBoundingClientRect) n.getBoundingClientRect(); });
+    root.classList.remove('snap'); void root.offsetWidth;
+  }
+  function twoFrames(fn) { var done = false; var go = function () { if (done) return; done = true; fn(); }; requestAnimationFrame(function () { requestAnimationFrame(go); }); setTimeout(go, 120); }
+
+  /* ── the day mark, with its layers; the date stays, the count sits in the corner ── */
+  function dayMark(m, d) {
+    var c = document.createElement('button'); c.type = 'button';
+    var cls = 'dm'; var future = isFuture(m, d);
+    if (future) cls += ' future'; else if (!m.unlogged[d]) cls += ' logged' + (m.some[d] ? ' some' : '');
+    if (m.sym[d]) cls += ' sym' + (m.sym[d] >= 2 ? ' two' : '');
+    if (m.today === d) cls += ' today';
+    c.className = cls;
+    c.textContent = String(d);
+    if (m.sym[d]) c.appendChild(h('span', 'cnt', String(m.sym[d])));
+    if (m.meds[d]) c.appendChild(h('span', 'lay md'));
+    if (m.photos[d]) c.appendChild(h('span', 'lay ph' + (m.photos[d] === 'call' ? ' call' : '')));
+    c.setAttribute('aria-label', weekday(m, d) + ' ' + d + (future ? ', ahead' : (m.unlogged[d] ? ', nothing logged' : (m.sym[d] ? ', vomiting logged ' + m.sym[d] + (m.sym[d] === 1 ? ' time' : ' times') : ', logged, no vomiting'))));
+    c.disabled = future;
+    return c;
+  }
+  function makeOpener(detailEl, m) {
+    var open = null;
+    return function toggle(cell, d) {
+      if (open && open.cell === cell) { open.dd.classList.remove('in'); cell.classList.remove('sel'); open = null; setTimeout(function () { if (!open) detailEl.classList.remove('open'); }, 400); return; }
+      if (open) open.cell.classList.remove('sel');
+      detailEl.innerHTML = '';
+      var dd = h('div', 'dd'); var rail = h('div', 'drail'); rail.style.background = railFor(m, d);
+      var box = h('div', 'dbox'); var tx = h('div', 'dtext', '<b>' + dayHeading(m, d) + '</b>' + eventsHtml(m, d));
+      box.appendChild(tx); dd.appendChild(rail); dd.appendChild(box); detailEl.appendChild(dd);
+      detailEl.classList.add('open'); cell.classList.add('sel'); void dd.offsetWidth;
+      requestAnimationFrame(function () { dd.classList.add('in'); });
+      open = { cell: cell, dd: dd };
+    };
+  }
+  function calendar(node, m) {
+    node.innerHTML = '';
+    ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function (w) { node.appendChild(h('div', 'wd', w)); });
+    var weeks = [], week = []; for (var i = 0; i < m.lead; i++) week.push(null);
+    for (var d = 1; d <= m.days; d++) { week.push(d); if (week.length === 7) { weeks.push(week); week = []; } }
+    if (week.length) { while (week.length < 7) week.push(null); weeks.push(week); }
+    var openers = [];
+    weeks.forEach(function (w) {
+      var detail = h('div', 'day-detail'); var toggle = makeOpener(detail, m); openers.push(detail);
+      w.forEach(function (d) {
+        if (!d) { node.appendChild(h('div', 'dm blank')); return; }
+        var c = dayMark(m, d);
+        c.addEventListener('click', function () {
+          openers.forEach(function (o) { if (o !== detail && o.classList.contains('open')) { var dd = o.querySelector('.dd'); if (dd) dd.classList.remove('in'); setTimeout(function () { o.classList.remove('open'); }, 380); } });
+          toggle(c, d);
+        });
+        node.appendChild(c);
+      });
+      node.appendChild(detail);
+    });
+  }
+
+  /* ── charts: every one to the §05 standard ─────────────────────── */
+  // Weekly bars: a count on every bar, seven logged-day ticks under each week
+  // (hollow = unlogged, absent = not yet), the partial week said in words, the
+  // trial mark at its real day inside its week (a fraction of a slot).
+  function bars(svg) {
+    clear(svg);
+    var vals = nums(svg.dataset.bars), labels = svg.dataset.labels ? nums(svg.dataset.labels) : [];
+    var mark = svg.dataset.mark ? Number(svg.dataset.mark) : null, partial = svg.dataset.partial || '';
+    var cover = svg.dataset.cover ? nums(svg.dataset.cover) : null, allCounts = svg.dataset.counts === 'all';
+    var vb = svg.viewBox.baseVal, W = vb.width, H = vb.height;
+    var hasLabels = labels.some(Boolean), padL = 6, padR = 6, padT = 20, tickH = cover ? 8 : 0, padB = (hasLabels ? 14 : 4) + tickH;
+    var n = vals.length, slot = (W - padL - padR) / n, gap = 3, bw = Math.min(slot - gap, 26);
+    var max = Math.max.apply(null, vals.map(Number).concat([1])), base = H - padB, plotH = base - padT;
+    el('line', { x1: padL, x2: W - padR, y1: base + 0.5, y2: base + 0.5, stroke: RULE }, svg);
+    if (mark != null) { var mx = padL + mark * slot; el('line', { x1: mx, x2: mx, y1: 9, y2: base, stroke: INK3, 'stroke-width': 1, 'stroke-dasharray': '2 3' }, svg); text(svg, mx + 3, 7, svg.dataset.marklabel || '', { 'font-size': 8 }); }
+    if (partial) text(svg, W - padR, 7, partial, { 'text-anchor': 'end', 'font-size': 8 });
+    var last = -1;
+    vals.forEach(function (v, i) { var num = Number(v); if (num) last = i; });
+    vals.forEach(function (v, i) {
+      var x = padL + i * slot + (slot - bw) / 2, num = Number(v), isLast = i === n - 1;
+      if (!num) { el('rect', { x: x, y: base - 2, width: bw, height: 2, rx: 1, fill: EMPTY }, svg); if (allCounts) text(svg, x + bw / 2, base - 5, '0', { 'text-anchor': 'middle', 'font-size': 8.5, fill: INK3, 'class': 'lab' }); }
+      else {
+        var hh = Math.max(4, num / max * plotH);
+        el('path', { d: topRounded(x, base - hh, bw, hh, 3), fill: (partial && isLast) ? ROSE_SOFT : ROSE, 'class': 'b' }, svg);
+        if (allCounts || i === last) text(svg, x + bw / 2, base - hh - 3.5, String(num), { 'text-anchor': 'middle', 'font-size': i === last ? 10 : 9, 'font-weight': i === last ? 600 : 500, fill: i === last ? INK : INK2, 'class': 'lab' });
+      }
+      if (cover && cover[i]) {
+        var s = cover[i], tw = (bw - 6) / 7;
+        for (var k = 0; k < 7 && k < s.length; k++) {
+          var ch = s.charAt(k), tx = x + k * (tw + 1);
+          if (ch === '1') el('rect', { x: tx, y: base + 3, width: tw, height: 3, rx: 0.8, fill: TEAL_SOFT }, svg);
+          else if (ch === '0') el('rect', { x: tx + 0.4, y: base + 3.4, width: Math.max(0.5, tw - 0.8), height: 2.2, rx: 0.8, fill: 'none', stroke: IDLE, 'stroke-width': 0.8 }, svg);
+        }
+      }
+    });
+    labels.forEach(function (l, i) { if (!l) return; var a = i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle'); var x = i === 0 ? padL : (i === n - 1 ? W - padR : padL + i * slot + slot / 2); text(svg, x, H - 3, l, { 'text-anchor': a }); });
+  }
+  // The compare: one bar per window, the count beside it, and under each bar the
+  // window's days as a strip, the unlogged ones hollow — coverage drawn, never judged.
+  function compare(svg) {
+    clear(svg);
+    var vals = nums(svg.dataset.compare).map(Number), labels = nums(svg.dataset.complabels), logged = nums(svg.dataset.logged).map(Number), days = Number(svg.dataset.days);
+    var vb = svg.viewBox.baseVal, W = vb.width, labelW = 104, padR = 30, track = W - labelW - padR, max = Math.max.apply(null, vals);
+    vals.forEach(function (v, i) {
+      var y = 6 + i * 30, w = Math.max(6, v / max * track);
+      text(svg, 0, y + 9, labels[i], { fill: INK2, 'font-size': 9.5 });
+      text(svg, 0, y + 20, 'logged ' + logged[i] + ' of ' + days + ' days', { fill: INK3, 'font-size': 8 });
+      el('rect', { x: labelW, y: y, width: track, height: 11, rx: 3, fill: EMPTY }, svg);
+      el('rect', { x: labelW, y: y, width: w, height: 11, rx: 3, fill: i === 1 ? ROSE : ROSE_SOFT, 'class': 'bx' }, svg);
+      text(svg, labelW + w + 5, y + 9, String(v), { fill: INK, 'font-weight': 600, 'font-size': 10, 'class': 'lab' });
+      var tw = track / days;
+      for (var d = 0; d < days; d++) {
+        var tx = labelW + d * tw;
+        if (d < logged[i]) el('rect', { x: tx, y: y + 14, width: Math.max(0.6, tw - 0.7), height: 3, fill: TEAL_SOFT }, svg);
+        else el('rect', { x: tx + 0.3, y: y + 14.4, width: Math.max(0.4, tw - 1.3), height: 2.2, fill: 'none', stroke: IDLE, 'stroke-width': 0.6 }, svg);
+      }
+    });
+  }
+  // The lane: the shipped patternsTiming geometry — linear to 30 min over the first
+  // fifth, log₂ to 8h over the rest; one dot per timed episode at its true minutes;
+  // the rapid and long bands shaded; the bucket counts in a row under the lane, one per region.
+  function lanePos(m) { var early = 30, max = 480; m = Math.max(0, Math.min(m, max)); if (m <= early) return (m / early) * 0.2; return 0.2 + (Math.log(m / early) / Math.log(max / early)) * 0.8; }
+  function lane(svg) {
+    clear(svg);
+    var mins = nums(svg.dataset.dots).map(Number), buckets = nums(svg.dataset.buckets), axis = svg.dataset.axis === '1';
+    var vb = svg.viewBox.baseVal, W = vb.width, laneTop = 13, laneH = 26, cy = laneTop + laneH / 2, longStart = lanePos(360);
+    text(svg, 0, 8, svg.dataset.lanelabel, { fill: INK, 'font-size': 9.5, 'font-weight': 600 });
+    text(svg, W, 8, svg.dataset.timed, { fill: INK2, 'font-size': 9, 'text-anchor': 'end' });
+    el('rect', { x: 0, y: laneTop, width: 0.2 * W, height: laneH, fill: BAND, rx: 3 }, svg);
+    el('rect', { x: longStart * W, y: laneTop, width: (1 - longStart) * W, height: laneH, fill: BAND, rx: 3 }, svg);
+    el('line', { x1: 0, x2: W, y1: cy + 0.5, y2: cy + 0.5, stroke: RULE }, svg);
+    var placed = []; var sorted = mins.slice().sort(function (a, b) { return a - b; });
+    sorted.forEach(function (m) {
+      var p = lanePos(m), row = 0, order = [0, 1, -1, 2, -2, 3, -3];
+      for (var r = 0; r < order.length; r++) { var ok = placed.every(function (q) { return q.row !== order[r] || Math.abs(q.p - p) > 0.03; }); if (ok) { row = order[r]; break; } }
+      placed.push({ p: p, row: row });
+      el('circle', { cx: Math.max(4, Math.min(W - 4, p * W)), cy: cy + row * 7, r: 3.2, fill: ROSE, 'class': 'dt' }, svg);
+    });
+    var by = laneTop + laneH + 9;
+    text(svg, 2, by, buckets[0], { fill: INK, 'font-size': 9, 'font-weight': 600, 'class': 'lab' });
+    text(svg, 0.2 * W + 3, by, buckets[1], { fill: INK, 'font-size': 9, 'font-weight': 600, 'class': 'lab' });
+    text(svg, longStart * W + 3, by, buckets[2], { fill: INK, 'font-size': 9, 'font-weight': 600, 'class': 'lab' });
+    if (axis) {
+      var ay = laneTop + laneH + 13;
+      el('line', { x1: 0, x2: W, y1: ay + 0.5, y2: ay + 0.5, stroke: RULE }, svg);
+      [[0, 'ate'], [30, '30m'], [60, '1h'], [120, '2h'], [240, '4h'], [480, '8h+']].forEach(function (t, i, arr) { var x = lanePos(t[0]) * W; text(svg, x, ay + 11, t[1], { 'text-anchor': i === 0 ? 'start' : (i === arr.length - 1 ? 'end' : 'middle'), 'font-size': 8.5 }); });
+    }
+  }
+  // Weight, option A: dots by date on a fixed ±10% band around the first reading, no fill.
+  function dotsByDate(svg) {
+    clear(svg);
+    var vals = nums(svg.dataset.points).map(Number), offs = nums(svg.dataset.offsets).map(Number), labels = svg.dataset.labels ? nums(svg.dataset.labels) : [];
+    var vb = svg.viewBox.baseVal, W = vb.width, H = vb.height, padL = 8, padR = 44, padT = 10, padB = 14;
+    var ref = vals[0], lo = ref * 0.9, hi = ref * 1.1, n = vals.length, base = H - padB, plotH = base - padT, maxOff = Math.max.apply(null, offs);
+    function px(o) { return padL + o / maxOff * (W - padL - padR); } function py(v) { return base - (v - lo) / (hi - lo) * plotH; }
+    el('line', { x1: padL, x2: W - padR, y1: py(hi) + 0.5, y2: py(hi) + 0.5, stroke: RULE, 'stroke-dasharray': '2 3' }, svg);
+    el('line', { x1: padL, x2: W - padR, y1: py(lo) + 0.5, y2: py(lo) + 0.5, stroke: RULE, 'stroke-dasharray': '2 3' }, svg);
+    el('line', { x1: padL, x2: W - padR, y1: py(ref) + 0.5, y2: py(ref) + 0.5, stroke: RULE }, svg);
+    text(svg, W - padR + 4, py(hi) + 3, '+10%', { 'font-size': 8 }); text(svg, W - padR + 4, py(lo) + 3, '−10%', { 'font-size': 8 });
+    vals.forEach(function (v, i) { el('circle', { cx: px(offs[i]), cy: py(v), r: i === n - 1 ? 3.6 : 2.6, fill: TEAL, stroke: '#fff', 'stroke-width': 1.5, 'class': 'dt' }, svg); });
+    text(svg, px(offs[n - 1]) + 7, py(vals[n - 1]) + 3.5, vals[n - 1].toFixed(1) + ' kg', { fill: INK, 'font-weight': 600, 'font-size': 10, 'class': 'lab' });
+    text(svg, px(0) + 5, py(vals[0]) - 6, vals[0].toFixed(1), { 'font-size': 8.5, 'class': 'lab' });
+    labels.forEach(function (l, i) { if (!l) return; text(svg, px(offs[i]), H - 3, l, { 'text-anchor': i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle') }); });
+  }
+  // Weight, option B: the area as ruled in round 1 (kept for the decision).
+  function area(svg) {
+    clear(svg);
+    var vals = nums(svg.dataset.area).map(Number), labels = svg.dataset.labels ? nums(svg.dataset.labels) : [];
+    var vb = svg.viewBox.baseVal, W = vb.width, H = vb.height, padL = 8, padR = 34, padT = 10, padB = 14;
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), span = Math.max(hi - lo, 0.3); lo -= span * 0.35; hi += span * 0.2;
+    var n = vals.length, base = H - padB, plotH = base - padT;
+    function px(i) { return padL + i * (W - padL - padR) / (n - 1); } function py(v) { return base - (v - lo) / (hi - lo) * plotH; }
+    var pts = vals.map(function (v, i) { return px(i) + ',' + py(v); });
+    el('line', { x1: padL, x2: W - padR, y1: base + 0.5, y2: base + 0.5, stroke: RULE }, svg);
+    el('path', { d: 'M' + px(0) + ',' + base + ' L' + pts.join(' L') + ' L' + px(n - 1) + ',' + base + ' Z', fill: TEAL_WASH }, svg);
+    el('polyline', { points: pts.join(' '), fill: 'none', stroke: TEAL, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+    vals.forEach(function (v, i) { if (i !== n - 1) el('circle', { cx: px(i), cy: py(v), r: 2.2, fill: TEAL, stroke: '#fff', 'stroke-width': 1.5 }, svg); });
+    el('circle', { cx: px(n - 1), cy: py(vals[n - 1]), r: 3.6, fill: TEAL, stroke: '#fff', 'stroke-width': 2 }, svg);
+    text(svg, px(n - 1) + 7, py(vals[n - 1]) + 3.5, vals[n - 1].toFixed(1) + ' kg', { fill: INK, 'font-weight': 600, 'font-size': 10 });
+    labels.forEach(function (l, i) { if (!l) return; text(svg, px(i), H - 3, l, { 'text-anchor': i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle') }); });
+  }
+  function arm(svg, sel, stagger) {
+    if (!svg || REDUCED) return;
+    var marks = svg.querySelectorAll(sel);
+    marks.forEach(function (r, i) { r.style.transitionDelay = (i * stagger) + 'ms'; });
+    snapReset(svg, function () { svg.classList.remove('play'); svg.classList.add('armed'); });
+    marks.forEach(function (r) { void getComputedStyle(r).transform; });
+    twoFrames(function () { svg.classList.remove('armed'); svg.classList.add('play'); });
+  }
+  function armAny(svg) { if (!svg) return; if (svg.classList.contains('drawin')) arm(svg, 'path.b', 40); else if (svg.classList.contains('drawin-x')) arm(svg, 'rect.bx', 120); else if (svg.classList.contains('drawin-dot')) arm(svg, 'circle.dt', 28); }
+  function playArrive(arr) { if (!arr) return; snapReset(arr, function () { arr.classList.remove('in'); }); twoFrames(function () { arr.classList.add('in'); }); }
+
+  /* ── wire: charts ─────────────────────────────────────────────── */
+  document.querySelectorAll('svg[data-bars]').forEach(bars);
+  document.querySelectorAll('svg[data-compare]').forEach(compare);
+  document.querySelectorAll('svg[data-dots]').forEach(lane);
+  document.querySelectorAll('svg[data-points]').forEach(dotsByDate);
+  document.querySelectorAll('svg[data-area]').forEach(area);
+
+  /* ── wire: Home ───────────────────────────────────────────────── */
+  var home = document.getElementById('home'), sigCard = document.getElementById('sig-card'), sigChart = document.getElementById('sig-chart');
+  var detail = document.getElementById('detail'), detBack = document.getElementById('det-back'), spineRead = document.getElementById('spine-read');
+  var DET_CHARTS = ['det-chart', 'det-compare', 'det-lane-a', 'det-lane-b'].map(function (id) { return document.getElementById(id); });
+  function playWait() {
+    if (!home) return;
+    snapReset(home, function () { home.classList.remove('in'); if (spineRead) spineRead.classList.remove('in'); sigChart.classList.remove('play'); sigChart.classList.add('armed'); });
+    setTimeout(function () {
+      home.classList.add('in');
+      setTimeout(function () { armAny(sigChart); }, 140);
+      setTimeout(function () { playArrive(spineRead); }, 1100);
+    }, REDUCED ? 300 : 900);
+  }
+  var waitBtn = document.getElementById('wait-replay'); if (waitBtn) waitBtn.addEventListener('click', playWait);
+  var readBtn = document.getElementById('read-replay'); if (readBtn) readBtn.addEventListener('click', function () { playArrive(spineRead); });
+  var sigBtn = document.getElementById('sig-replay'); if (sigBtn) sigBtn.addEventListener('click', function () { armAny(sigChart); });
+
+  // The Signal's screen opens as a ROUTE: the screen rises with the fold's physics
+  // and its charts draw in — three beats, under 700ms, and Back reverses it. No flight.
+  function openDetail() {
+    if (!detail || detail.classList.contains('on')) return;
+    detail.scrollTop = 0; detail.setAttribute('aria-hidden', 'false');
+    snapReset(detail, function () { DET_CHARTS.forEach(function (s) { if (s) { s.classList.remove('play'); s.classList.add('armed'); } }); });
+    detail.classList.add('on');
+    setTimeout(function () { armAny(DET_CHARTS[0]); }, 40);
+    setTimeout(function () { armAny(DET_CHARTS[1]); armAny(DET_CHARTS[2]); armAny(DET_CHARTS[3]); }, 220);
+    var b = document.getElementById('det-back'); if (b) b.focus({ preventScroll: true });
+  }
+  function closeDetail() { if (!detail) return; detail.classList.remove('on'); detail.setAttribute('aria-hidden', 'true'); if (sigCard) sigCard.focus({ preventScroll: true }); }
+  if (sigCard) { sigCard.addEventListener('click', openDetail); sigCard.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(); } }); }
+  if (detBack) detBack.addEventListener('click', closeDetail);
+  var detReplay = document.getElementById('det-replay'); if (detReplay) detReplay.addEventListener('click', function () { armAny(document.getElementById('det-chart-static')); setTimeout(function () { armAny(document.getElementById('det-compare-static')); armAny(document.getElementById('lane-a-static')); armAny(document.getElementById('lane-b-static')); }, 200); });
+
+  // The look: a chip becomes a fact with a time; Change brings the chips back.
+  var look = document.getElementById('look');
+  if (look) {
+    look.querySelectorAll('.lchips .chip[data-word]').forEach(function (c) { c.addEventListener('click', function () { document.getElementById('look-word').textContent = c.dataset.word; document.getElementById('look-gloss').textContent = c.dataset.gloss; look.classList.add('answered'); }); });
+    var chg = document.getElementById('look-change'); if (chg) chg.addEventListener('click', function () { look.classList.remove('answered'); });
+  }
+  // Compact nodes open in place with the fold's physics; one open at a time per spine.
+  document.querySelectorAll('.node1.nc').forEach(function (n) {
+    var dd = n.nextElementSibling && n.nextElementSibling.classList.contains('ncdd') ? n.nextElementSibling.querySelector('.dd') : null;
+    function toggle() { if (!dd) return; var open = n.getAttribute('aria-expanded') === 'true'; n.setAttribute('aria-expanded', open ? 'false' : 'true'); if (open) dd.classList.remove('in'); else { void dd.offsetWidth; requestAnimationFrame(function () { dd.classList.add('in'); }); } }
+    n.addEventListener('click', toggle); n.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  });
+
+  /* ── wire: the month ──────────────────────────────────────────── */
+  var cal = document.getElementById('cal'), calLabel = document.getElementById('cal-label'), calPrev = document.getElementById('cal-prev'), calNext = document.getElementById('cal-next'), calLine = document.getElementById('cal-line'), weekChart = document.getElementById('week-chart');
+  var mi = ORDER.length - 1;
+  function showMonth(i, animate) {
+    mi = i; var m = MONTHS[ORDER[i]];
+    calendar(cal, m); calLabel.textContent = m.label; calLine.innerHTML = m.line;
+    calPrev.disabled = i === 0; calNext.disabled = i === ORDER.length - 1;
+    weekChart.dataset.bars = m.bars; weekChart.dataset.labels = m.labels; weekChart.dataset.mark = String(m.mark); weekChart.dataset.marklabel = m.marklabel; weekChart.dataset.cover = m.cover; weekChart.dataset.partial = m.partial;
+    bars(weekChart); if (animate) armAny(weekChart);
+  }
+  if (cal) {
+    showMonth(mi, false);
+    calPrev.addEventListener('click', function () { if (mi > 0) showMonth(mi - 1, true); });
+    calNext.addEventListener('click', function () { if (mi < ORDER.length - 1) showMonth(mi + 1, true); });
+    document.getElementById('cal-layers').querySelectorAll('.chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        var on = chip.classList.toggle('on'); chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+        var L = chip.dataset.layer;
+        if (L === 'photos') cal.classList.toggle('L-photos', on);
+        if (L === 'meds') cal.classList.toggle('L-meds', on);
+        if (L === 'vomit') cal.classList.toggle('L-noVomit', !on);
+        if (L === 'meals') cal.classList.toggle('L-noMeals', !on);
+      });
+    });
+  }
+
+  /* ── first-view plays, once each: Home's wait, the month's chart, every static chart ── */
+  var once = {};
+  var plays = [];
+  if (home) plays.push([home, playWait]);
+  if (weekChart) plays.push([weekChart, function () { armAny(weekChart); }]);
+  document.querySelectorAll('svg.drawin, svg.drawin-x, svg.drawin-dot').forEach(function (s) { if (s.dataset.manual || s === weekChart) return; plays.push([s, function () { armAny(s); }]); });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) { entries.forEach(function (e) { if (!e.isIntersecting) return; plays.forEach(function (p) { if (p[0] === e.target && !once.hasOwnProperty(p[0].id + '@' + plays.indexOf(p))) { once[p[0].id + '@' + plays.indexOf(p)] = true; p[1](); io.unobserve(e.target); } }); }); }, { threshold: 0.35 });
+    plays.forEach(function (p) { io.observe(p[0]); });
+  } else plays.forEach(function (p) { p[1](); });
+})();
+</script>
+</body>
+</html>
