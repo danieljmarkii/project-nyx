@@ -82,4 +82,4 @@ React to the frames and rule R-1 … R-11. R-9's yes is also CUL-616's one step 
 
 **Two assumptions stated on the issues rather than decided silently:** (1) the FAB colour ships to every account rather than behind the toggle (one token, no layout risk, ruled outright); (2) the FAB's contrast is checked before the token is chosen — the bright accent on a near-white ground sits near the 3:1 non-text line, so the deeper accent ink may be what lands, still teal. The Product Owner's dissent that the waits (D2-7) could be their own project is recorded on that issue; it stays here because it ships behind the same flag.
 
-**PR:** #875 was closed by the PM on 2026-09-18 without merging; the round 4 docs and this record go up on a fresh draft PR from the same branch now that the go is ruled.
+**Outcome:** shipped via #876 (the four rounds, `docs/personas.md`, the CLAUDE.md directive and this record; #875 was closed by the PM on 2026-09-18 without merging, before the go was ruled). CI green on all three checks; squash-merged at the PM's word (`/wrap and merge`).
