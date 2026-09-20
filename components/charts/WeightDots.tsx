@@ -15,7 +15,9 @@ import { useDrawIn } from '../motion/drawInMotion';
 //   a mark per fact ........ a dot per reading, where its date is — not evenly spaced
 //   a count on every mark .. the first and last values printed; the delta is the CALLER's line
 //   the denominator ........ the band, its edges labelled +10 % / −10 % of the first reading
-//   the uncounted .......... a reading past the band is drawn at the edge and SAID (the label)
+//   the uncounted .......... a reading past the band is drawn at the edge as a HOLLOW dot with
+//                            its value printed beside it, and said in the label — so a 35 %
+//                            loss never draws like a 10 % one to a sighted reader either
 //   the window named ....... the first and last dates under their dots
 //
 // NO FILL. A fill says "quantity from zero" and this axis does not start at zero; there
@@ -114,16 +116,31 @@ export function WeightDots({ model, unit, formatDate, drawIn = false, identity =
                 return (
                   <Animated.View
                     key={`${p.ms}-${i}`}
-                    testID={`weight-dot-${i}`}
+                    testID={`weight-dot-${i}${p.clipped ? '-clipped' : ''}`}
                     style={[
                       styles.dot,
                       last && styles.dotLast,
+                      p.clipped && styles.dotClipped,
                       { left: px(p.x) - size / 2, top: py(p.y) - size / 2, width: size, height: size, borderRadius: size / 2 },
                       markStyle(i),
                     ]}
                   />
                 );
               })}
+              {/* A clipped reading that is not the last prints its own value: the dot sits on
+                  the band's edge, so the number is the only thing that says how far past it. */}
+              {model.points.map((p, i) =>
+                p.clipped && i !== n - 1 ? (
+                  <Animated.View
+                    key={`clip-${p.ms}-${i}`}
+                    style={[styles.firstValue, { left: px(p.x) + 5, top: p.y <= 0 ? py(p.y) - 16 : py(p.y) + 4 }, labelStyle]}
+                  >
+                    <ThemedText style={styles.smallValue} testID={`weight-clipped-value-${i}`}>
+                      {p.value.toFixed(1)}
+                    </ThemedText>
+                  </Animated.View>
+                ) : null,
+              )}
               {/* The first value, small, above its dot; the last value with its unit beside its dot. */}
               <Animated.View style={[styles.firstValue, { left: px(model.first.x) + 5, top: py(model.first.y) - 16 }, labelStyle]}>
                 <ThemedText style={styles.smallValue} testID="weight-first-value">
@@ -199,6 +216,12 @@ const styles = StyleSheet.create({
   },
   dotLast: {
     backgroundColor: theme.colorTextSecondary,
+  },
+  // Past the band: hollow, so it cannot pass for a reading AT the band's edge.
+  dotClipped: {
+    backgroundColor: theme.colorSurface,
+    borderColor: theme.colorTextSecondary,
+    borderWidth: 1.5,
   },
   firstValue: {
     position: 'absolute',

@@ -49,9 +49,22 @@ describe('WeightDots — the §05 row', () => {
     expect(ua.getByTestId('weight-edge-lo').props.children).toBe('−10%');
     // The first dot sits at the same height in both: the band did not stretch to fit the 7.
     expect(flat(ua.getByTestId('weight-dot-0').props.style).top).toBeCloseTo(flat(ub.getByTestId('weight-dot-0').props.style).top, 6);
-    // The 7 is drawn at the band's edge and SAID.
-    expect(flat(ub.getByTestId('weight-dot-1').props.style).top).toBeCloseTo(56 - 4, 6);
+    // The 7 is drawn at the band's edge, HOLLOW, and SAID.
+    expect(flat(ub.getByTestId('weight-dot-1-clipped').props.style).top).toBeCloseTo(56 - 4, 6);
+    expect(flat(ub.getByTestId('weight-dot-1-clipped').props.style).backgroundColor).toBe(theme.colorSurface);
     expect(ub.getByTestId('weight-dots').props.accessibilityLabel).toContain('1 reading outside the band');
+  });
+
+  it('B9: a clipped reading in the middle of the series prints its own value, so a 35 % loss never draws like a 10 % one', () => {
+    const m = weightBand([r(4.6, '2026-06-01T08:00:00Z'), r(4.3, '2026-07-01T08:00:00Z'), r(4.0, '2026-08-01T08:00:00Z'), r(3.7, '2026-09-01T08:00:00Z')]);
+    const { getByTestId, queryByTestId } = measured(<WeightDots model={m} unit="kg" formatDate={fmt} />);
+    expect(getByTestId('weight-dot-2-clipped')).toBeTruthy();
+    expect(getByTestId('weight-dot-3-clipped')).toBeTruthy();
+    expect(getByTestId('weight-clipped-value-2').props.children).toBe('4.0');
+    // The last reading already prints its value with the unit; no second label for it.
+    expect(queryByTestId('weight-clipped-value-3')).toBeNull();
+    expect(getByTestId('weight-last-value').props.children).toBe('3.7 kg');
+    expect(getByTestId('weight-dots').props.accessibilityLabel).toContain('2 readings outside the band');
   });
 
   it('no fill anywhere: no area node in the tree, and no path primitive in the source', () => {

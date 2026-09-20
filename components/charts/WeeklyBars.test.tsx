@@ -93,6 +93,22 @@ describe('WeeklyBars — the §05 row', () => {
     expect(left).toBeCloseTo((6 / 7) * 100, 6);
   });
 
+  it('a mark off the chart keeps its words, placed; episodes outside the weeks get a visible line', () => {
+    const off = weeklyBuckets({
+      episodeDays: ['2026-06-01', '2026-09-21'],
+      loggedDays: [],
+      weeksEnding: '2026-09-22',
+      today: '2026-09-22',
+      weeks: 2,
+      mark: { day: '2026-06-01', label: 'trial · Jun 1' },
+    });
+    const { getByTestId, queryByTestId } = render(<WeeklyBars model={off} noun="vomiting" />);
+    expect(getByTestId('weekly-mark-label').props.children).toBe('trial · Jun 1, before these weeks');
+    fireEvent(getByTestId('weekly-plot'), 'layout', { nativeEvent: { layout: { width: 300, height: 64 } } });
+    expect(queryByTestId('weekly-mark-line')).toBeNull(); // nothing to draw, only to say
+    expect(getByTestId('weekly-outside-line').props.children).toBe('1 earlier episode not in these weeks');
+  });
+
   it('the first and last weeks are dated', () => {
     const { getByTestId, queryByTestId } = render(<WeeklyBars model={model} noun="vomiting" />);
     expect(getByTestId('weekly-date-0').props.children).toBe('Sep 6');
@@ -103,7 +119,7 @@ describe('WeeklyBars — the §05 row', () => {
   it('speaks the counts, the coverage and the disclosure in one label', () => {
     const { getByTestId } = render(<WeeklyBars model={model} noun="vomiting" />);
     const label = getByTestId('weekly-bars').props.accessibilityLabel as string;
-    expect(label).toContain('Counts by week: 3, 0, 1. 4 in all.');
+    expect(label).toContain('Counts by week: 3, 0, 1. 4 in these 3 weeks.');
     expect(label).toContain('Days logged per week: 3 of 7, 0 of 7, 2 of 3.');
     expect(label).toContain('3 days so far');
     expect(label).toContain('Trial · Sep 12');

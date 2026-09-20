@@ -27,6 +27,16 @@
 // is `weightBand`, whose x axis is by DATE and takes ISO instants — parsed to ms on both
 // sides (C-40), never compared as text.
 //
+// ── WHAT THE CALLER OWES (the adversarial pass on CUL-1064, B5 / B6) ──────────
+// Two facts cannot be recovered below a day key, so the input SHAPE carries them:
+//   • `episodeDays` is one entry per EPISODE, after the engine's own re-log collapse
+//     (`episodeGapHours`, `lib/mealTiming.ts`). Four rows of one bout are one episode.
+//     `episodeDaysOf` below is the one call that does this — a caller with instants
+//     goes through it, never through its own day-key map.
+//   • A lane takes one entry per episode with `null` where the episode could not be
+//     timed, so "N timed of M" is the array's own shape, never a separate `total` a
+//     caller could under-count into "every episode could be timed".
+//
 // ── COVERAGE IS NEVER GATED ON THE THING COUNTED (C-3) ───────────────────────
 // `loggedDays` and `episodeDays` are separate inputs. A week's seven ticks come from the
 // first; its count comes from the second; the model never infers "logged" from "had an
@@ -42,6 +52,7 @@ import {
 } from './patternsTiming';
 import {
   classifyGapMinutes,
+  collapseEpisodes,
   DEFAULT_MEAL_TIMING_CONFIG,
   type MealTimingConfig,
   type TimingBand,
@@ -78,11 +89,32 @@ function plural(n: number, one: string, many = `${one}s`): string {
   return n === 1 ? one : many;
 }
 
+function finiteInt(value: number, what: string): number {
+  if (!Number.isFinite(value)) throw new Error(`chartModels: ${what} must be a finite number, got ${value}`);
+  return Math.floor(value);
+}
+
+/**
+ * Episode day keys from instants, through the engine's own re-log collapse: same-type
+ * rows within `episodeGapHours` are ONE episode (`collapseEpisodes`, `lib/mealTiming.ts`),
+ * so a bout logged four times twenty minutes apart is one bar unit, not four. `keyOf`
+ * is the caller's local-day key for an instant (`toLocalDayKey(new Date(ms))` on the
+ * device) — the one zone decision, made by the caller.
+ */
+export function episodeDaysOf(
+  rows: readonly { ms: number }[],
+  keyOf: (ms: number) => string,
+  config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG,
+): string[] {
+  return collapseEpisodes(rows.filter((r) => Number.isFinite(r.ms)), config.episodeGapHours).map((r) => keyOf(r.ms));
+}
+
 // ── Weekly bars ───────────────────────────────────────────────────────────────
 
-/** One of a week's seven days: logged (a filled tick), unlogged (a hollow tick), or
- *  not yet arrived (no tick — the partial week's remainder). */
-export type DayCoverage = 'logged' | 'unlogged' | 'ahead';
+/** One of a week's seven days: logged (a filled tick), unlogged (a hollow tick), not yet
+ *  arrived (no tick — the partial week's remainder), or before the record began (no tick
+ *  either: a day nobody COULD have logged is not a day nobody logged). */
+export type DayCoverage = 'logged' | 'unlogged' | 'ahead' | 'before_record';
 
 export interface WeekBucket {
   /** The week's Sunday, as a day key. */
@@ -93,9 +125,11 @@ export interface WeekBucket {
   count: number;
   /** Sunday → Saturday. */
   days: [DayCoverage, DayCoverage, DayCoverage, DayCoverage, DayCoverage, DayCoverage, DayCoverage];
-  /** Some of the week's days have not arrived. */
+  /** The week holds today: some days have arrived and some have not. A week wholly
+   *  ahead is not partial (nothing of it has happened), and at most one week is. */
   partial: boolean;
-  /** Days that HAVE arrived (1–7). On a full week, 7. */
+  /** Days that could have been logged: arrived, and on or after the record's start
+   *  (0–7). The denominator under this week's ticks. */
   daysSoFar: number;
   /** Logged days among those that have arrived. */
   loggedCount: number;
@@ -103,8 +137,12 @@ export interface WeekBucket {
 
 export interface WeeklyMark {
   /** The mark's position in week slots — `weekIndex + weekday / 7`, so a Saturday mark
-   *  sits at the right edge of its week's slot and a Sunday at its left. */
-  slot: number;
+   *  sits at the right edge of its week's slot and a Sunday at its left. Null when the
+   *  mark's day is outside the drawn weeks: there is no line to draw, and the WORDS
+   *  still say so (C-37 — a date may reach outside the window if the sentence says which). */
+  slot: number | null;
+  /** Where the mark fell relative to the drawn weeks. */
+  outside: null | 'before' | 'after';
   /** The mark's own words ("trial · Jul 25"). */
   label: string;
   /** The day key it stands on. */
@@ -123,8 +161,13 @@ export interface WeeklyBucketsInput {
   today: string;
   /** How many weeks to draw, ending with `weeksEnding`'s week. */
   weeks: number;
-  /** An optional dated mark (a trial's start). Outside the drawn weeks → `mark: null`. */
+  /** An optional dated mark (a trial's start). Outside the drawn weeks it is kept and
+   *  said, never dropped — an absent mark must not read as "no trial". */
   mark?: { day: string; label: string };
+  /** The day the record began (the pet's earliest entry). Days before it are
+   *  `before_record`: no tick, not in any denominator. Omitted → every arrived day counts,
+   *  which inflates the denominator for a window older than the pet (C-19's anchor). */
+  recordStart?: string;
 }
 
 export interface WeeklyBucketsModel {
@@ -133,7 +176,9 @@ export interface WeeklyBucketsModel {
   total: number;
   /** Episodes BEFORE the first drawn week — disclosed, never silently dropped. */
   before: number;
-  /** Episodes AFTER the last drawn week (a future-dated row). Disclosed likewise. */
+  /** Episodes dated after the last drawn week OR after `today` (a future-dated row).
+   *  Never in a bar: a bar over a day that has not arrived would be a count over a
+   *  coverage of nothing. Disclosed likewise. */
   after: number;
   /** The tallest bar, for the renderer's scale (≥ 1 so a chart of zeros still has a scale). */
   max: number;
@@ -153,9 +198,10 @@ export interface WeeklyBucketsModel {
  * days that HAVE arrived counted for its "N days so far".
  */
 export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
-  const weeks = Math.max(1, Math.floor(input.weeks));
+  const weeks = Math.max(1, finiteInt(input.weeks, 'weeks'));
   const endIdx = indexOfKey(input.weeksEnding, 'weeksEnding');
   const todayIdx = indexOfKey(input.today, 'today');
+  const recordIdx = input.recordStart != null ? indexOfKey(input.recordStart, 'recordStart') : null;
   const lastStart = weekStartIndex(endIdx);
   const firstStart = lastStart - 7 * (weeks - 1);
 
@@ -169,7 +215,7 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
     const idx = indexOfKey(key, 'episodeDays[]');
     const w = Math.floor((idx - firstStart) / 7);
     if (w < 0) before += 1;
-    else if (w >= weeks) after += 1;
+    else if (w >= weeks || idx > todayIdx) after += 1;
     else counts[w] += 1;
   }
 
@@ -179,10 +225,16 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
     const days: DayCoverage[] = [];
     let daysSoFar = 0;
     let loggedCount = 0;
+    let arrived = 0;
     for (let d = 0; d < 7; d++) {
       const idx = start + d;
       if (idx > todayIdx) {
         days.push('ahead');
+        continue;
+      }
+      arrived += 1;
+      if (recordIdx != null && idx < recordIdx) {
+        days.push('before_record');
         continue;
       }
       daysSoFar += 1;
@@ -198,7 +250,8 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
       endKey: dayKeyFromIndex(start + 6),
       count: counts[w],
       days: days as WeekBucket['days'],
-      partial: daysSoFar < 7,
+      // Partial means "today is in this week": some of it has happened, some has not.
+      partial: arrived > 0 && arrived < 7,
       daysSoFar,
       loggedCount,
     });
@@ -208,7 +261,8 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
   if (input.mark) {
     const idx = indexOfKey(input.mark.day, 'mark.day');
     const slot = (idx - firstStart) / 7;
-    if (slot >= 0 && slot < weeks) mark = { slot, label: input.mark.label, day: input.mark.day };
+    const outside: WeeklyMark['outside'] = slot < 0 ? 'before' : slot >= weeks ? 'after' : null;
+    mark = { slot: outside ? null : slot, outside, label: input.mark.label, day: input.mark.day };
   }
 
   const total = counts.reduce((a, b) => a + b, 0);
@@ -224,15 +278,18 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
   };
 }
 
-/** "5 days so far" — the partial week's own words (§05: the uncounted disclosed). */
+/** "5 days so far" — the partial week's own words (§05: the uncounted disclosed). The
+ *  count is the days that have ARRIVED in the week, whatever the record's start: the
+ *  sentence is about the calendar, and the ticks beneath say which of them could be logged. */
 export function daysSoFarLabel(week: WeekBucket): string | null {
   if (!week.partial) return null;
-  return `${week.daysSoFar} ${plural(week.daysSoFar, 'day')} so far`;
+  const arrived = week.days.filter((d) => d !== 'ahead').length;
+  return `${arrived} ${plural(arrived, 'day')} so far`;
 }
 
 // ── The compare ───────────────────────────────────────────────────────────────
 
-export type StripDay = 'logged' | 'unlogged';
+export type StripDay = 'logged' | 'unlogged' | 'before_record';
 
 export interface CompareWindowInput {
   /** The window's name, as the reader meets it ("The 55 days before", "The trial's 55 days"). */
@@ -244,6 +301,9 @@ export interface CompareWindowInput {
   /** One entry PER EPISODE. */
   episodeDays: readonly string[];
   loggedDays: readonly string[];
+  /** The day the record began. Window days before it are `before_record` on the strip,
+   *  out of the logged-days count, and said in the coverage line. */
+  recordStart?: string;
 }
 
 export interface CompareWindow {
@@ -254,7 +314,10 @@ export interface CompareWindow {
   loggedCount: number;
   /** The window's days in order, filled or hollow. */
   strip: StripDay[];
-  /** "logged 44 of 55 days" — coverage stated, never judged. */
+  /** Window days before the record began (zero without `recordStart`). */
+  beforeRecord: number;
+  /** "logged 44 of 55 days" — coverage stated, never judged; with a record younger than
+   *  the window, "logged 4 of 10 days · 3 before the record began". */
   coverageLine: string;
   /** Episodes that fell outside the window's `days` — for the caller's disclosure. */
   outside: number;
@@ -266,9 +329,10 @@ export interface CompareWindowsModel {
   max: number;
 }
 
-function compareWindow(input: CompareWindowInput): CompareWindow {
-  const days = Math.max(0, Math.floor(input.days));
+function compareWindow(input: CompareWindowInput): CompareWindow & { start: number } {
+  const days = Math.max(0, finiteInt(input.days, 'days'));
   const start = indexOfKey(input.startDay, 'startDay');
+  const recordIdx = input.recordStart != null ? indexOfKey(input.recordStart, 'recordStart') : null;
   const loggedSet = new Set<number>();
   for (const key of input.loggedDays) loggedSet.add(indexOfKey(key, 'loggedDays[]'));
   let count = 0;
@@ -280,18 +344,28 @@ function compareWindow(input: CompareWindowInput): CompareWindow {
   }
   const strip: StripDay[] = [];
   let loggedCount = 0;
+  let beforeRecord = 0;
   for (let d = 0; d < days; d++) {
-    const logged = loggedSet.has(start + d);
+    const idx = start + d;
+    if (recordIdx != null && idx < recordIdx) {
+      strip.push('before_record');
+      beforeRecord += 1;
+      continue;
+    }
+    const logged = loggedSet.has(idx);
     strip.push(logged ? 'logged' : 'unlogged');
     if (logged) loggedCount += 1;
   }
+  const base = `logged ${loggedCount} of ${days} ${plural(days, 'day')}`;
   return {
+    start,
     label: input.label,
     days,
     count,
     loggedCount,
     strip,
-    coverageLine: `logged ${loggedCount} of ${days} ${plural(days, 'day')}`,
+    beforeRecord,
+    coverageLine: beforeRecord > 0 ? `${base} · ${beforeRecord} before the record began` : base,
     outside,
   };
 }
@@ -300,10 +374,17 @@ function compareWindow(input: CompareWindowInput): CompareWindow {
  * Two windows, each with its count and its own coverage strip. The model carries no
  * word about whether the two are comparable — that is the reader's call from the strips,
  * and the §05 table lists "fairly" as exactly the word round 3 got wrong.
+ *
+ * The windows must not overlap: an episode in both would be counted twice and presented
+ * as a comparison of two things. That is a caller bug, refused here rather than drawn.
  */
 export function compareWindows(before: CompareWindowInput, during: CompareWindowInput): CompareWindowsModel {
-  const a = compareWindow(before);
-  const b = compareWindow(during);
+  const { start: aStart, ...a } = compareWindow(before);
+  const { start: bStart, ...b } = compareWindow(during);
+  const overlap = Math.min(aStart + a.days, bStart + b.days) - Math.max(aStart, bStart);
+  if (overlap > 0) {
+    throw new Error(`chartModels: compare windows overlap by ${overlap} ${plural(overlap, 'day')} — an episode would be counted in both`);
+  }
   return { windows: [a, b], max: Math.max(1, a.count, b.count) };
 }
 
@@ -322,10 +403,12 @@ export interface LaneDot {
 export interface LaneInput {
   /** The lane's window, named ("Before the trial", "In the trial"). */
   label: string;
-  /** Minutes-since-eating for every episode that COULD be timed. */
-  timedMinutes: readonly number[];
-  /** Every episode in the window, timed or not — the denominator. */
-  total: number;
+  /** ONE ENTRY PER EPISODE in the window: its minutes since eating, or `null` where it
+   *  could not be timed against a meal. The array's length is the denominator and its
+   *  nulls are the disclosure, so a caller cannot hand over only the timed ones and
+   *  have the chart say every episode was timed. A negative or non-finite minute is an
+   *  impossible value and is treated as untimed, never drawn at 0 as if it were rapid. */
+  episodeMinutes: readonly (number | null)[];
 }
 
 export interface LaneModel {
@@ -336,7 +419,8 @@ export interface LaneModel {
   bucketCounts: [number, number, number];
   timedCount: number;
   total: number;
-  /** `total − timed`, floored at zero. Rendered by the component unconditionally. */
+  /** `total − timed` — the entries that were null or impossible. Rendered by the
+   *  component unconditionally. */
   untimedCount: number;
   /** "13 timed of 19". */
   timedLine: string;
@@ -360,14 +444,10 @@ export function timingLanesAxis(config: MealTimingConfig = DEFAULT_MEAL_TIMING_C
   };
 }
 
-/**
- * One lane's dots and counts. A `total` below the timed count is a caller error and is
- * raised to the timed count rather than printing a negative disclosure.
- */
+/** One lane's dots and counts, from one entry per episode. */
 export function laneDots(input: LaneInput, config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG): LaneModel {
-  const minutes = input.timedMinutes
-    .filter((m) => Number.isFinite(m))
-    .map((m) => Math.max(0, m))
+  const minutes = input.episodeMinutes
+    .filter((m): m is number => typeof m === 'number' && Number.isFinite(m) && m >= 0)
     .sort((a, b) => a - b);
   const positions = minutes.map((m) => patternsTimingPos(m, config));
   const rows = assignJitterRows(positions);
@@ -378,7 +458,7 @@ export function laneDots(input: LaneInput, config: MealTimingConfig = DEFAULT_ME
     return { pos: positions[i], jitterRow: rows[i], band, minutes: m };
   });
   const timedCount = dots.length;
-  const total = Math.max(Math.floor(input.total), timedCount);
+  const total = input.episodeMinutes.length;
   return {
     label: input.label,
     dots,
@@ -406,7 +486,8 @@ export function lanesUntimedLine(lanes: readonly LaneModel[]): string {
   }
   const joined = lanes.length > 1 ? counts.join(' + ') : String(sum);
   const noun = plural(sum, 'episode');
-  const verb = lanes.length > 1 ? "they aren't on the lanes" : sum === 1 ? "it isn't on the lane" : "they aren't on the lane";
+  const laneWord = lanes.length > 1 ? 'the lanes' : 'the lane';
+  const verb = sum === 1 ? `it isn't on ${laneWord}` : `they aren't on ${laneWord}`;
   return `${joined} ${noun} couldn't be timed against a meal — ${verb}.`;
 }
 
@@ -452,7 +533,8 @@ export interface WeightBandModel {
   delta: number | null;
   /** last − first as a fraction of the first reading, or null below two readings. */
   deltaFrac: number | null;
-  /** Whole days between the first and last reading, or null below two. */
+  /** Whole days between the first and last reading, ROUNDED (20 h → 1; 11 h → 0 — a
+   *  caller saying "in N days" says "the same day" at 0), or null below two. */
   spanDays: number | null;
 }
 
@@ -462,10 +544,16 @@ export interface WeightBandModel {
  * point sits at x = 0.5 rather than dividing by zero.
  */
 export function weightBand(readings: readonly WeightBandReading[]): WeightBandModel {
+  // Sorted by instant, with a TOTAL order: two readings at one instant tie-break on the
+  // value, then on the spelling of the instant. The band's reference, every y, the clip
+  // set and the delta's sign all follow the first reading, so an order left to the
+  // caller's array would let the same record read "down" or "up" (C-42's lesson — no
+  // time column is unique — applied to a JS sort). The tie-break is arbitrary and
+  // written down; what it must not be is the caller's.
   const parsed = readings
     .map((r) => ({ ...r, ms: Date.parse(r.occurredAt) }))
     .filter((r) => Number.isFinite(r.ms) && Number.isFinite(r.value))
-    .sort((a, b) => a.ms - b.ms);
+    .sort((a, b) => a.ms - b.ms || a.value - b.value || (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
   if (parsed.length === 0) {
     return { state: 'empty', points: [], band: null, first: null, last: null, delta: null, deltaFrac: null, spanDays: null };
   }

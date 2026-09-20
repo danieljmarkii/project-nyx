@@ -7,13 +7,17 @@ import {
   dayMarkA11yLabel,
   dayMarkDateWord,
   lanesBucketCaption,
+  markWord,
   timingLanesA11yLabel,
   weeklyBarsA11yLabel,
+  weeklyOutsideLine,
   weightDotsA11yLabel,
   weightWord,
   type DayMarkFacts,
 } from './chartCopy';
 import { compareWindows, laneDots, weeklyBuckets, weightBand } from './chartModels';
+
+const laneOf = (label: string, timed: number[], total: number) => ({ label, episodeMinutes: [...timed, ...Array<null>(Math.max(0, total - timed.length)).fill(null)] });
 
 const NO_VERDICT = /\b(fair|fairly|better|worse|improv\w*|clear|fine|good|bad|normal|healthy|okay)\b|!/i;
 
@@ -30,12 +34,13 @@ describe('weeklyBarsA11yLabel', () => {
   it('speaks the window, the counts, the total, the coverage, the partial week, the mark and the outside', () => {
     const label = weeklyBarsA11yLabel(model, 'vomiting');
     expect(label).toContain('Vomiting by week, 3 weeks from Sep 6 to Sep 26, weeks starting Sunday.');
-    expect(label).toContain('Counts by week: 2, 0, 1. 3 in all.');
+    expect(label).toContain('Counts by week: 2, 0, 1. 3 in these 3 weeks.');
+    expect(label).not.toContain('in all'); // a window total is never spoken as a record total (CUL-223)
     expect(label).toContain('Days logged per week: 1 of 7, 0 of 7, 1 of 3.');
     expect(label).toContain('The week of Sep 20 has 3 days so far.');
     expect(label).toContain('Trial · Sep 12.');
-    expect(label).toContain('1 earlier episode before this window.');
-    expect(label).toContain('1 episode dated after this window.');
+    expect(label).toContain('1 earlier episode not in these weeks · 1 episode dated after what is drawn.');
+    expect(weeklyOutsideLine(model)).toBe('1 earlier episode not in these weeks · 1 episode dated after what is drawn');
     expect(label).not.toMatch(NO_VERDICT);
   });
 
@@ -43,9 +48,30 @@ describe('weeklyBarsA11yLabel', () => {
     const one = weeklyBuckets({ episodeDays: ['2026-08-01', '2026-08-02'], loggedDays: [], weeksEnding: '2026-09-22', today: '2026-09-30', weeks: 1 });
     const label = weeklyBarsA11yLabel(one, 'vomiting');
     expect(label).toContain('1 week from');
-    expect(label).toContain('2 earlier episodes before this window.');
+    expect(label).toContain('2 earlier episodes not in these weeks.');
     expect(label).not.toContain('so far');
-    expect(label).not.toContain('after this window');
+    expect(label).not.toContain('dated after');
+    expect(weeklyOutsideLine(weeklyBuckets({ episodeDays: [], loggedDays: [], weeksEnding: '2026-09-22', today: '2026-09-30', weeks: 1 }))).toBeNull();
+  });
+
+  it('a mark off the chart is placed in words; a wholly-ahead week reads "not yet"; days before the record are said', () => {
+    const m = weeklyBuckets({
+      episodeDays: [],
+      loggedDays: ['2026-09-13'],
+      weeksEnding: '2026-09-26',
+      today: '2026-09-15',
+      weeks: 3,
+      mark: { day: '2026-06-01', label: 'trial · Jun 1' },
+      recordStart: '2026-09-10',
+    });
+    expect(markWord(m.mark!)).toBe('trial · Jun 1, before these weeks');
+    const label = weeklyBarsA11yLabel(m, 'vomiting');
+    expect(label).toContain('Trial · Jun 1, before these weeks.');
+    expect(label).toContain('Days logged per week: 0 of 3, 1 of 3, not yet.');
+    expect(label).toContain('The week of Sep 13 has 3 days so far.');
+    expect(label).toContain('4 days before the record began, not counted.');
+    const after = weeklyBuckets({ episodeDays: [], loggedDays: [], weeksEnding: '2026-09-26', today: '2026-09-26', weeks: 1, mark: { day: '2026-12-01', label: 'trial · Dec 1' } });
+    expect(markWord(after.mark!)).toBe('trial · Dec 1, after these weeks');
   });
 });
 
@@ -64,8 +90,8 @@ describe('compareBarsA11yLabel', () => {
 
 describe('timingLanesA11yLabel + lanesBucketCaption', () => {
   it('reads each lane with its denominator and three buckets, then the untimed disclosure', () => {
-    const a = laneDots({ label: 'Before the trial', timedMinutes: [10, 100, 400], total: 5 });
-    const b = laneDots({ label: 'In the trial', timedMinutes: [5], total: 4 });
+    const a = laneDots(laneOf('Before the trial', [10, 100, 400], 5));
+    const b = laneDots(laneOf('In the trial', [5], 4));
     const label = timingLanesA11yLabel([a, b], 30, 6);
     expect(label).toBe(
       'Timed from meals. Before the trial: 3 timed of 5. 1 under 30 minutes, 1 between 30 minutes and 6 hours, 1 after 6 hours. In the trial: 1 timed of 4. 1 under 30 minutes, 0 between 30 minutes and 6 hours, 0 after 6 hours. ' +

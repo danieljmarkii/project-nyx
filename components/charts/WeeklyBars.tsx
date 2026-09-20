@@ -4,7 +4,7 @@ import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { daysSoFarLabel, type WeeklyBucketsModel } from '../../lib/chartModels';
-import { dateWord, weeklyBarsA11yLabel } from '../../lib/chartCopy';
+import { dateWord, markWord, weeklyBarsA11yLabel, weeklyOutsideLine } from '../../lib/chartCopy';
 import { ThemedText } from '../ui/ThemedText';
 import { DRAW_IN_ORIGIN, useDrawIn } from '../motion/drawInMotion';
 import { CoverageTick } from './CoverageTick';
@@ -15,8 +15,10 @@ import { CoverageTick } from './CoverageTick';
 //   a mark per fact ........ a bar per week, its height the week's count
 //   a count on every mark .. the number above every bar, a zero included
 //   the denominator ........ seven coverage ticks under each week (filled / hollow)
-//   the uncounted .......... no tick on a day ahead; "N days so far" on the partial week
-//   the window named ....... the first and last week dated; the mark with its date
+//   the uncounted .......... no tick on a day ahead or before the record; "N days so far"
+//                            on the week holding today; episodes outside the weeks in words
+//   the window named ....... the first and last week dated; the mark with its date, and
+//                            "before these weeks" when it fell off the chart
 //
 // Everything counted is counted in `lib/chartModels.ts` (`weeklyBuckets`); this file only
 // draws. Daylight ground: the bars take the symptom rose as a GLYPH tint (C-1 — a fill,
@@ -64,7 +66,8 @@ export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', p
   const slot = n > 0 ? width / n : 0;
   const partial = model.weeks.find((w) => w.partial) ?? null;
   const partialLabel = partial ? daysSoFarLabel(partial) : null;
-  const markX = model.mark && width > 0 ? model.mark.slot * slot : null;
+  const markX = model.mark && model.mark.slot != null && width > 0 ? model.mark.slot * slot : null;
+  const outside = weeklyOutsideLine(model);
   const middle = n >= 5 && n % 2 === 1 ? Math.floor(n / 2) : -1;
 
   return (
@@ -72,8 +75,8 @@ export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', p
       <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         {/* The header line: the mark's words at the left, the partial week's at the right. */}
         <Animated.View style={[styles.headerRow, labelStyle]}>
-          <ThemedText style={styles.headerText} numberOfLines={1}>
-            {model.mark ? model.mark.label : ''}
+          <ThemedText style={styles.headerText} numberOfLines={1} testID="weekly-mark-label">
+            {model.mark ? markWord(model.mark) : ''}
           </ThemedText>
           {partialLabel != null && (
             <ThemedText style={styles.headerText} testID="weekly-partial-label">
@@ -120,6 +123,15 @@ export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', p
             );
           })}
         </View>
+
+        {/* What the window left out, for sighted readers too — the spoken label says the same. */}
+        {outside != null && (
+          <Animated.View style={labelStyle}>
+            <ThemedText style={styles.outside} testID="weekly-outside-line">
+              {outside}
+            </ThemedText>
+          </Animated.View>
+        )}
 
         {/* The window, named: the first and last week dated (and the middle one on a long run). */}
         <Animated.View style={[styles.datesRow, labelStyle]}>
@@ -215,6 +227,11 @@ const styles = StyleSheet.create({
     width: '75%',
     maxWidth: MAX_BAR_WIDTH,
     marginTop: 3,
+  },
+  outside: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginTop: theme.space0_5,
   },
   datesRow: {
     flexDirection: 'row',

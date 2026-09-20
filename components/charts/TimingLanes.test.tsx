@@ -9,6 +9,8 @@ import { laneDots, timingLanesAxis } from '../../lib/chartModels';
 import { patternsTimingPos } from '../../lib/patternsTiming';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 
+const laneOf = (label: string, timed: number[], total: number) => ({ label, episodeMinutes: [...timed, ...Array<null>(Math.max(0, total - timed.length)).fill(null)] });
+
 // The charts' internals are hidden from assistive tech behind ONE spoken label (the
 // shipped lane's pattern), so the queries below opt into hidden elements to reach them.
 configure({ defaultIncludeHiddenElements: true });
@@ -18,8 +20,8 @@ jest.mock('../../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true)
 const mockedReduced = useReducedMotion as jest.Mock;
 
 const axis = timingLanesAxis();
-const before = laneDots({ label: 'Before the trial', timedMinutes: [8, 14, 19, 22, 26, 29, 45, 70, 95, 130, 180, 240, 420], total: 19 });
-const during = laneDots({ label: 'In the trial', timedMinutes: [3, 5, 9, 12, 16, 21, 24], total: 21 });
+const before = laneDots(laneOf('Before the trial', [8, 14, 19, 22, 26, 29, 45, 70, 95, 130, 180, 240, 420], 19));
+const during = laneDots(laneOf('In the trial', [3, 5, 9, 12, 16, 21, 24], 21));
 const DOT_R = 3.5;
 
 const flat = (style: unknown): Record<string, number> => StyleSheet.flatten(style as never) as Record<string, number>;
@@ -37,7 +39,7 @@ describe('TimingLanes — the §05 row', () => {
     const dot = flat(getByTestId('timing-dot-0-7').props.style);
     expect(dot.left).toBeCloseTo(patternsTimingPos(70) * 300 - DOT_R, 6);
     // And the same minute lands in the same place on the other lane.
-    const other = laneDots({ label: 'x', timedMinutes: [70], total: 1 });
+    const other = laneDots(laneOf('x', [70], 1));
     const { getByTestId: get2 } = render(<TimingLanes lanes={[other]} axis={axis} />);
     fireEvent(get2('timing-lane-track-0'), 'layout', { nativeEvent: { layout: { width: 300, height: 60 } } });
     expect(flat(get2('timing-dot-0-0').props.style).left).toBeCloseTo(dot.left, 6);
@@ -70,7 +72,7 @@ describe('TimingLanes — the §05 row', () => {
   });
 
   it('the untimed line renders at zero too — nothing to disclose is itself disclosed', () => {
-    const all = laneDots({ label: 'All timed', timedMinutes: [10, 20], total: 2 });
+    const all = laneDots(laneOf('All timed', [10, 20], 2));
     const { getByTestId } = render(<TimingLanes lanes={[all]} axis={axis} />);
     expect(getByTestId('timing-untimed-line').props.children).toBe('Every episode could be timed against a meal.');
   });

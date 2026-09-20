@@ -3,7 +3,9 @@ import { theme } from '../../constants/theme';
 
 // CoverageTick — one day's coverage under a bar (CUL-1064, §05 "the denominator in
 // view"). Filled = logged, hollow = unlogged, ahead = the slot is held but nothing is
-// drawn (a day that has not happened is not a day nobody logged). Shared by the weekly
+// drawn (a day that has not happened is not a day nobody logged), before_record = the
+// slot is held and nothing is drawn either (a day nobody COULD have logged is not a day
+// nobody logged — the pet was not in the app yet). Shared by the weekly
 // bars (seven per week) and the compare (one per window day), so the two strips can
 // never disagree about what a filled tick means.
 //
@@ -23,7 +25,7 @@ import { theme } from '../../constants/theme';
 // than left implicit, which is this paragraph. If a surface ever needs a tick to be read
 // on its own, it needs a wider strip or a coarser one, not a smaller floor.
 
-export type CoverageTickState = 'logged' | 'unlogged' | 'ahead';
+export type CoverageTickState = 'logged' | 'unlogged' | 'ahead' | 'before_record';
 
 interface Props {
   state: CoverageTickState;
@@ -36,7 +38,12 @@ export function CoverageTick({ state, testID }: Props) {
       testID={testID}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={[styles.tick, state === 'logged' && styles.logged, state === 'unlogged' && styles.unlogged, state === 'ahead' && styles.ahead]}
+      style={[
+        styles.tick,
+        state === 'logged' && styles.logged,
+        state === 'unlogged' && styles.unlogged,
+        (state === 'ahead' || state === 'before_record') && styles.absent,
+      ]}
     />
   );
 }
@@ -58,7 +65,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colorTickIdle,
     backgroundColor: 'transparent',
   },
-  ahead: {
+  absent: {
     backgroundColor: 'transparent',
   },
 });

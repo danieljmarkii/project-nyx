@@ -16,6 +16,7 @@ import {
   type CompareWindowsModel,
   type LaneModel,
   type WeeklyBucketsModel,
+  type WeeklyMark,
   type WeightBandModel,
 } from './chartModels';
 
@@ -32,10 +33,28 @@ export function dateWord(dayKey: string): string {
   return formatCalendarDate(dayKey) ?? dayKey;
 }
 
+/** The mark's words, with where it fell when it is not on the chart: "trial · Jun 1,
+ *  before these weeks". A mark off the chart is SAID, never dropped (C-37). */
+export function markWord(mark: WeeklyMark): string {
+  if (mark.outside === 'before') return `${mark.label}, before these weeks`;
+  if (mark.outside === 'after') return `${mark.label}, after these weeks`;
+  return mark.label;
+}
+
+/** "3 earlier episodes not in these weeks · 1 dated after" — what the window left out,
+ *  for sighted readers too; null when nothing was. */
+export function weeklyOutsideLine(model: WeeklyBucketsModel): string | null {
+  const parts: string[] = [];
+  if (model.before > 0) parts.push(`${model.before} earlier ${pluralize(model.before, 'episode')} not in these weeks`);
+  if (model.after > 0) parts.push(`${model.after} ${pluralize(model.after, 'episode')} dated after what is drawn`);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 /**
- * The weekly bars in one sentence: the window, the counts by week, the total, the
- * partial week's days so far, the logged days per week, the mark, and anything the
- * window left out.
+ * The weekly bars in one sentence: the window, the counts by week, the total OVER THESE
+ * WEEKS (never "in all" — a display window may index, only the record may be spoken as a
+ * total, CUL-223), the logged days per week, the partial week's days so far, the mark,
+ * and anything the window left out.
  */
 export function weeklyBarsA11yLabel(model: WeeklyBucketsModel, noun: string): string {
   const n = model.weeks.length;
@@ -43,13 +62,19 @@ export function weeklyBarsA11yLabel(model: WeeklyBucketsModel, noun: string): st
   parts.push(
     `${capitalize(noun)} by week, ${n} ${pluralize(n, 'week')} from ${dateWord(model.firstKey)} to ${dateWord(model.lastKey)}, weeks starting Sunday.`,
   );
-  parts.push(`Counts by week: ${model.weeks.map((w) => w.count).join(', ')}. ${model.total} in all.`);
-  parts.push(`Days logged per week: ${model.weeks.map((w) => `${w.loggedCount} of ${w.daysSoFar}`).join(', ')}.`);
+  parts.push(`Counts by week: ${model.weeks.map((w) => w.count).join(', ')}. ${model.total} in these ${n} ${pluralize(n, 'week')}.`);
+  parts.push(
+    `Days logged per week: ${model.weeks
+      .map((w) => (w.days.every((d) => d === 'ahead') ? 'not yet' : `${w.loggedCount} of ${w.daysSoFar}`))
+      .join(', ')}.`,
+  );
   const partial = model.weeks.find((w) => w.partial);
   if (partial) parts.push(`The week of ${dateWord(partial.startKey)} has ${daysSoFarLabel(partial)}.`);
-  if (model.mark) parts.push(`${capitalize(model.mark.label)}.`);
-  if (model.before > 0) parts.push(`${model.before} earlier ${pluralize(model.before, 'episode')} before this window.`);
-  if (model.after > 0) parts.push(`${model.after} ${pluralize(model.after, 'episode')} dated after this window.`);
+  const beforeRecord = model.weeks.reduce((a, w) => a + w.days.filter((d) => d === 'before_record').length, 0);
+  if (beforeRecord > 0) parts.push(`${beforeRecord} ${pluralize(beforeRecord, 'day')} before the record began, not counted.`);
+  if (model.mark) parts.push(`${capitalize(markWord(model.mark))}.`);
+  const outside = weeklyOutsideLine(model);
+  if (outside) parts.push(`${capitalize(outside)}.`);
   return parts.join(' ');
 }
 

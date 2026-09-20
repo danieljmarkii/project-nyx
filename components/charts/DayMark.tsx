@@ -16,6 +16,14 @@ import { ThemedText } from '../ui/ThemedText';
 // the count and keeps its date and its hairline: the reader switched a layer, they did
 // not learn the day was fine. Coverage is spoken either way.
 //
+// COVERAGE OUTRANKS THE COUNT, AND THAT IS THE CALLER'S BURDEN TO KEEP TRUE. An
+// `unlogged` day speaks "nothing logged" and drops its count (both channels agree, so a
+// screen reader and the eye never disagree) — which is only honest because an episode day
+// IS a logged day (`CORRELATION_SYMPTOM_TYPES` in `lib/patternsTiming.ts` makes a vomit day
+// count). A caller deriving `coverage` from a feeding-only logged-day set would make the
+// accusing half disappear behind an absence claim. The month (D2-5) must derive
+// `coverage` from the same set that makes an episode a logged day, never from meals alone.
+//
 // A DAY AHEAD IS NOT A CONTROL. It renders as a plain View with no press handler and no
 // `disabled` (C-7: `disabled` claims a control exists and is unavailable; there is no
 // control on a day that has not happened). The split is by host, not by a flag on one
