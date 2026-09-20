@@ -169,12 +169,18 @@ export function patternsTimingAxis(
 // signal-card module's large dependency graph — it is ~10 lines of generic geometry,
 // and row→px is the renderer's call either way. Row index 0,1,2,3,4… maps to signed
 // offsets 0,−1,+1,−2,+2… (alternating around the centre line).
+//
+// EXPORTED since CUL-1064 (the chart family): `lib/chartModels.ts`'s `laneDots` lays the
+// Signal screen's two lanes with THIS function, so a dot collides on the small multiples
+// exactly where it collides on the shipped panel — the "reuse, never re-derive" the issue
+// binds on `patternsTimingPos` / `patternsTimingAxis`, extended to the third piece of the
+// lane's geometry. A second copy would be a second collision gap to keep in step.
 
 /** Min x-gap (lane fraction) before two dots are treated as colliding — about one
  *  small dot on a ~300px lane. */
 const DOT_COLLISION_GAP = 0.028;
 
-function assignJitterRows(sortedPositions: number[]): number[] {
+export function assignJitterRows(sortedPositions: number[]): number[] {
   const lastXByRow: number[] = [];
   return sortedPositions.map((x) => {
     let row = 0;
