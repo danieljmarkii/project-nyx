@@ -112,6 +112,12 @@ const ALWAYS_SCANNED = [
   // the card ticks on every chip tap and must stay unscanned, so the withheld half had to
   // leave it. Proven by mutation — a `selectChip` import here reds the build.
   'components/home/LookWithheldEntry.tsx',
+  // CUL-1064 (D2-1) — the month's day mark. It paints a photo dot in the rose when the
+  // per-incident read said `worth_a_call`, and carries none of the MARKERS (it is a
+  // square over the caller's facts). C-16's third turn: a NEW file that paints a safety
+  // verdict is named here the PR it ships, not the PR after a buzz lands on it. Proven by
+  // mutation — a `commitSymptom` import there reds the build.
+  'components/charts/DayMark.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;
