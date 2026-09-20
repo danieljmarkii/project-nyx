@@ -179,6 +179,38 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // opt-in and no server gate is owed.
     serverCost: false,
   },
+  {
+    // Design v2 — the whole day (CUL-1062, D2-0). Joins the shelf seed-first:
+    // D2-0 registers the flag + the shelf card dark + the flag-off guard; the
+    // later lanes (D2-3 the Signal card + route, D2-4 Home on a real day, D2-5
+    // the month on Patterns, D2-7 the waits) render behind
+    // `live = eligible && optedIn` through hooks/useDesignV2.ts, so being in the
+    // cohort turns nothing on by itself. A rollout gate only (PM, 2026-09-19:
+    // "behind a beta toggle too") — GA is every account, and D2-8 retires the
+    // row along with the old surfaces.
+    key: 'design_v2',
+    title: 'Design v2',
+    // nyx-voice (PM-ruled verbatim on round 4): concrete about the three
+    // surfaces the owner will notice, no exclamation, and it promises no
+    // insight — a redesign draws the same record differently. The second
+    // sentence is the flag-off guarantee said to the owner, and it is the
+    // promise guards/designV2FlagOff.test.tsx keeps.
+    blurb:
+      'The new Home, the Signal’s own screen and the month on Patterns. Switch it off and the app is exactly as it was.',
+    owner: 'Design v2 — the whole day / Design',
+    addedDate: '2026-09-20',
+    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a
+    // timer that disables the redesign under the cohort. Graduation here is
+    // D2-8 (GA), which waits on the PM's own device pass (D2-9), so the call on
+    // this row may legitimately be "extend" until that pass has run.
+    reviewBy: '2026-12-20',
+    // Client-render-only: the redesign changes how Home, the Signal and
+    // Patterns are DRAWN — the same rows, the same engine, the same report —
+    // and no Edge Function reads the key, so no server resource is spent per
+    // opt-in and no server gate is owed. The B-712 "server-cost betas gate
+    // server-side" rule is checked and does not bite.
+    serverCost: false,
+  },
   // Two Signal betas graduated to GA and were retired from the shelf (CUL-546 Phase 1 /
   // CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design uplift, B-721) and
   // `signals_v2` (the "deeper signals" lanes, B-755). Removing the row removes the shelf
