@@ -1,0 +1,104 @@
+-- ============================================================
+-- design_v2 — seed the Design v2 rollout flag
+-- (Design v2 — the whole day, D2-0 / CUL-1062)
+-- See: docs/culprit-design-v4-mockups.html (round 4, the design authority —
+--      its ledger draws the beta row) and the vet_visits template (065) it
+--      mirrors verbatim — a dark allowlist flag, flag-off byte-identical,
+--      seed-first, a beta shelf before GA, retire on a PM GA call only.
+-- ============================================================
+-- The redesign (the new Home on a real day, the Signal's own screen, the
+-- month on Patterns, the waits and their silhouettes) ships DARK behind one
+-- allowlist flag so every Design v2 client PR (D2-3 the Signal route, D2-4
+-- Home, D2-5 Patterns, D2-7 the waits) lands invisible and the surfaces can
+-- bake on a hand-picked cohort before they reach anyone else. This migration
+-- seeds that single eligibility flag. It is the D2-0 gate the whole project
+-- queues behind — seed-first: the seed + the client registration + the shelf
+-- row + the flag-off guard land BEFORE any consumer.
+--
+--   design_v2    Eligibility for the Design v2 surfaces. Resolved client-side
+--                by resolveAllowlistFlag (lib/appConfig.ts) against the
+--                caller's uid, then AND-ed with the beta-shelf opt-in (the
+--                B-712 two-gate shape) in hooks/useDesignV2.ts — the one hook
+--                every gated surface reads. Flag-off => Home / Patterns / the
+--                Signal route are byte-identical to today; flag-on + opted-in
+--                => the redesigned surfaces render (D2-3, …).
+--
+-- PM (2026-09-19): "ensure this redesign is behind a beta toggle too". This is
+-- a ROLLOUT GATE ONLY, never a permanent one and never a Premium gate — the
+-- redesign is the app's own surfaces, not a convenience (Principle 7), so GA
+-- is every account and the flag exists only to bake the surfaces on a cohort
+-- before a PM GA call (flipping enabled:true, then D2-8's removal PR, which
+-- also deletes the old surfaces).
+--
+-- CLIENT-RENDER-ONLY (`serverCost: false`): like vet_visits (065) / daily_look
+-- (063) / log_picker_v2 (056) / event_types_v2 (061), this flag gates only
+-- what the CLIENT draws. No Edge Function reads the key — neither `ask` nor
+-- `generate-signal` nor `generate-report` — and nothing in the redesign
+-- changes a write path or a record: the same rows, the same engine, the same
+-- report, drawn differently. So there is deliberately NO server-side
+-- registration of this key (supabase/functions/_shared/flags.ts is a generic
+-- resolver and needs no per-key entry), and the B-712 "server-cost betas must
+-- gate server-side" rule is checked and does not bite here.
+--
+-- THE ALLOWLIST SHAPE (B-712): reuses the experimental-flag primitive seeded
+-- for Ask (037), the widget (054), the Signal uplift (055), the log picker
+-- (056), the taxonomy (061), Noticed (063) and the vet-visit companion (065)
+-- verbatim —
+--   {"enabled": bool, "allowlist": ["<user-uuid>", …]}
+-- Resolution (already implemented, client-side): enabled=true => on for
+-- everyone (the GA end state); else on iff the caller's uid is in allowlist;
+-- malformed/absent => fail CLOSED (off). No new mechanism, no new table, no
+-- new column, no new policy — app_config already exists (030) with its
+-- read-only-to-authenticated RLS, which this row inherits unchanged.
+--
+-- SHIP-DARK (seed-first, default nobody): {"enabled": false, "allowlist": []}
+-- means the redesign is eligible for no one. Creating this row changes nothing
+-- an owner can see. Cohort enablement (the PM's uid) is a later, recorded
+-- config UPDATE (an app_config write, not a deploy side effect), deliberately
+-- NOT baked into this seed — the 037/054/055/056/061/063/065 lesson: a
+-- re-applied seed must never reset a live allowlist. The App Review demo
+-- account (CUL-188) is deliberately NOT allowlisted (the widget precedent /
+-- DB-1): allowlist values are readable by every authenticated client (B-744),
+-- so allowlisting the demo would leak its UUID and show the reviewer a
+-- surface GA users can't reach. Retirement is a removal PR (D2-8) on an
+-- explicit PM GA call, never silent.
+--
+-- Scope: this PR seeds one app_config row (the schema half), isolated per the
+-- CLAUDE.md migration-isolation rule. Riding the SAME PR (the 055/056/061/
+-- 063/065 composition): the client registration in lib/appConfig.ts
+-- (ALLOWLIST_FLAG_KEYS + ALLOWLIST_FLAGS_UNSET), the BETA_REGISTRY row + shelf
+-- card (lib/betaFeatures.ts, app/settings/beta.tsx), the hook
+-- (hooks/useDesignV2.ts), the empty namespace (components/designV2/) and the
+-- flag-off guard (guards/designV2FlagOff.test.tsx). Safe for the same reasons:
+-- none of it is schema, the seed is inert without the registration (the flag
+-- can't even be read — extractAllowlistFlags picks only known keys, and
+-- useAllowlistFlag is typed to the registered union), and the shelf card
+-- self-gates on an eligibility that is false for every account under the dark
+-- seed. Nothing CONSUMES the flag yet (D2-0) — the guard asserts exactly
+-- that, and reds the day D2-3 lands the first consumer.
+--
+-- Also riding this PR, NOT behind this flag: D2-2, the FAB's disc going from
+-- the dark neutral to the accent ink (CUL-1063). One token in one file, no
+-- layout risk, PM-ruled outright on round 4 — so it ships to every account.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive — 1 new seed row in an existing table;
+--                     no column, type, table, row, or policy is dropped,
+--                     renamed, retyped, or altered.)
+--   Rollback:     DELETE FROM app_config WHERE key = 'design_v2';
+--   Backfill:     N/A — one brand-new config row; no existing data is read or
+--                 written.
+--   Affected tables: app_config (INSERT only). Row-count sanity check before
+--                 applying:
+--                   SELECT key FROM app_config WHERE key = 'design_v2';
+--                   -- expect: 0 rows (the key does not exist yet)
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING makes the seed idempotent AND safe: if this migration is
+-- ever re-applied after the flag has been flipped/allowlisted in prod, it
+-- preserves the live value rather than resetting it to the shipped-dark seed.
+-- (Same discipline as the 030/037/054/055/056/061/063/065 seeds.)
+
+INSERT INTO app_config (key, value) VALUES
+  ('design_v2', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

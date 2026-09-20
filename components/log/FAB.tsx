@@ -490,7 +490,16 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: theme.colorNeutralDark,
+    // The accent INK, not the bright accent (CUL-1063 / D2-2, PM-ruled teal on
+    // round 4). A floating disc must clear 3:1 against the ground it floats over
+    // (WCAG 1.4.11, the non-text target C-1 cites), and the bright teal measures
+    // 2.17:1 on colorNeutralLight and 2.26:1 on the white card — under the line
+    // on both. The ink clears at 4.95:1 / 5.17:1, and the white plus clears the
+    // ink at 5.17:1. Same accent, one notch darker; pinned in
+    // constants/theme.contrast.test.ts so "simplify to colorAccent" is a red
+    // build. Ships to every account, not behind design_v2: one token, no
+    // layout risk.
+    backgroundColor: theme.colorAccentInk,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',

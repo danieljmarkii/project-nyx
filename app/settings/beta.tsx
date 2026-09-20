@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, FlaskConical, Info, LayoutGrid, Shapes, SquarePen, Stethoscope } from 'lucide-react-native';
+import { Eye, FlaskConical, Info, LayoutGrid, Palette, Shapes, SquarePen, Stethoscope } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -100,6 +100,16 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
         onHint:
           'It’s on. Open your pet’s profile and look for Vet visits, under the vet report — book the next appointment there, or log one that already happened.',
       };
+    case 'design_v2':
+      // No on-state hint at D2-0: nothing renders behind the flag yet, and a hint
+      // that said "there is nothing to see yet" would be accurate today and false
+      // the day D2-3 lands — the VV-0 mistake, whose first consumer had to pay
+      // that debt. So the first Design v2 lane to land a surface owes this hint,
+      // naming where the redesign shows (guards/designV2FlagOff.test.tsx's
+      // tripwire names that PR). A palette reads as "how the app looks",
+      // distinct from the widget grid, the picker pen, the taxonomy shapes,
+      // Noticed's eye and the vet's stethoscope.
+      return { Icon: Palette };
     default:
       return { Icon: FlaskConical };
   }

@@ -142,4 +142,21 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(queryByText('Home screen widget')).toBeNull();
     expect(queryByText('Noticed')).toBeNull();
   });
+
+  it('renders the Design v2 card for an allowlisted account, opt-in default off (CUL-1062)', () => {
+    // D2-0 AC: the Beta shelf shows the Design v2 row ONLY for eligible accounts;
+    // opt-in is default off; being eligible turns nothing on. Allowlisted for
+    // design_v2 → the card renders (title + the PM-ruled blurb) with its switch
+    // OFF; the betas this account isn't allowlisted for stay gated away. The
+    // zero-eligible case (dark seed reaches nobody → no card) is the B-729 test
+    // above.
+    setAllowlist({ design_v2: gatedToPm });
+    const { getByText, queryByText, getByRole } = render(<BetaFeaturesScreen />);
+
+    expect(getByText('Design v2')).toBeTruthy();
+    expect(getByText(/Switch it off and the app is exactly as it was/)).toBeTruthy();
+    expect(getByRole('switch').props.value).toBe(false);
+    expect(queryByText('Home screen widget')).toBeNull();
+    expect(queryByText('Vet visits')).toBeNull();
+  });
 });

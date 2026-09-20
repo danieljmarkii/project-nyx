@@ -86,6 +86,22 @@ export type AppConfigKey = keyof AppConfigValues;
 // so there is no server-side registration of it. Nothing consumes it yet (VV-0
 // — pinned by guards/vetVisitsFlagOff.test.tsx).
 //
+// `design_v2` is the Design v2 rollout flag (Design v2 — the whole day,
+// migration 070 — D2-0 / CUL-1062) — same shape, same fail-closed resolution.
+// It gates the redesign's CLIENT surfaces (the Signal card + route D2-3, Home on
+// a real day D2-4, the month on Patterns D2-5, the waits D2-7) AND-ed with the
+// beta-shelf opt-in — through ONE hook, `hooks/useDesignV2.ts`, which is the
+// only file that reads this key directly. A ROLLOUT gate only (PM, 2026-09-19:
+// "behind a beta toggle too"): GA is every account — the redesign is the app's
+// own surfaces, never a Premium gate — and D2-8 retires the flag and deletes
+// the old surfaces. Client-render-only: nothing in the redesign changes a
+// write path, a row or the engine (the same record, drawn differently), and no
+// Edge Function reads the key, so there is no server-side registration of it.
+// Nothing consumes it yet (D2-0 — pinned by guards/designV2FlagOff.test.tsx).
+// Not to be confused with the RETIRED `signal_design_v2` below: that was the
+// 2026-08 Signal/Home uplift, GA'd and gone from this union; this is the 2026-09
+// whole-day redesign.
+//
 // Two keys that once lived here have GRADUATED to GA and been retired client-side
 // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
 // uplift, migration 055) and `signals_v2` (the Signals-v2 lanes, migration 057). The
@@ -101,6 +117,7 @@ export const ALLOWLIST_FLAG_KEYS = [
   'event_types_v2',
   'daily_look',
   'vet_visits',
+  'design_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -120,6 +137,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   event_types_v2: undefined,
   daily_look: undefined,
   vet_visits: undefined,
+  design_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

@@ -51,7 +51,7 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget + log-picker + event-types + Noticed + vet-visits betas, all client-only (no server cost)', () => {
+  it('ships the widget + log-picker + event-types + Noticed + vet-visits + Design v2 betas, all client-only (no server cost)', () => {
     // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
     // retired from the shelf (CUL-547 + CUL-548).
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
@@ -86,10 +86,21 @@ describe('BETA_REGISTRY', () => {
     expect(vetVisits).toBeDefined();
     expect((vetVisits as BetaFeature).serverCost).toBe(false);
 
+    // Design v2 (CUL-1062 / D2-0) joined the shelf seed-first. Client-render only —
+    // the redesign draws the same record differently and no Edge Function reads the
+    // key — so no server gate is owed here either. The blurb is the PM-ruled round-4
+    // string, and its second sentence is the flag-off promise the guard keeps.
+    const designV2 = BETA_REGISTRY.find((b) => b.key === 'design_v2');
+    expect(designV2).toBeDefined();
+    expect((designV2 as BetaFeature).serverCost).toBe(false);
+    expect((designV2 as BetaFeature).blurb).toBe(
+      'The new Home, the Signal’s own screen and the month on Patterns. Switch it off and the app is exactly as it was.',
+    );
+
     // The graduated keys (signal_design_v2 / signals_v2) are no longer in the
     // AllowlistFlagKey union, so a `.key === '…'` check for them won't type-check — the
     // length assertion + the missing shelf cards are what pin their removal.
-    expect(BETA_REGISTRY).toHaveLength(5);
+    expect(BETA_REGISTRY).toHaveLength(6);
   });
 });
 
@@ -167,6 +178,7 @@ describe('deriveBetaShelf (B-747)', () => {
       event_types_v2: gatedTo('uid-1'),
       daily_look: gatedTo('uid-1'),
       vet_visits: gatedTo('uid-1'),
+      design_v2: gatedTo('uid-1'),
     });
     expect(deriveBetaShelf(everything, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(
       BETA_REGISTRY.map((b) => b.key),
