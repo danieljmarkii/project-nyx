@@ -4,6 +4,7 @@ import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { lanesUntimedLine, type LaneAxis, type LaneModel } from '../../lib/chartModels';
+import { LANE_GEOMETRY, LANE_HEIGHT_PT } from '../../lib/patternsTiming';
 import { lanesBucketCaption, timingLanesA11yLabel } from '../../lib/chartCopy';
 import { ThemedText } from '../ui/ThemedText';
 import { useDrawIn } from '../motion/drawInMotion';
@@ -43,13 +44,13 @@ interface Props {
   identity?: string;
 }
 
-// The shipped lane's constants (`components/dashboard/TimingDistribution.tsx`), so the
-// two drawings of one episode agree to the point.
-const DOT_SIZE = 7;
+// The shipped lane's pixels, read from the one place both drawings share
+// (`LANE_GEOMETRY` in `lib/patternsTiming.ts`) — never restated here.
+const DOT_SIZE = LANE_GEOMETRY.dotSize;
 const DOT_R = DOT_SIZE / 2;
-const ROW_GAP = 10;
-const JITTER_CAP = 3;
-const LANE_HEIGHT = 2 * (JITTER_CAP * ROW_GAP + DOT_R) + 8;
+const ROW_GAP = LANE_GEOMETRY.rowGap;
+const JITTER_CAP = LANE_GEOMETRY.jitterCap;
+const LANE_HEIGHT = LANE_HEIGHT_PT;
 
 export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }: Props) {
   const reducedMotion = useReducedMotion();
@@ -83,6 +84,10 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes' }:
                 {lane.timedLine}
               </ThemedText>
             </View>
+            {/* ONE measurement, off the first lane: the lanes are stacked full-width in one
+                column, so every lane is the first lane's width. A caller laying lanes side
+                by side would break that and needs a per-lane measure — it is an assumption
+                of this layout, stated here rather than left to be discovered. */}
             <View style={styles.lane} onLayout={l === 0 ? onLayout : undefined} testID={`timing-lane-track-${l}`}>
               {width > 0 && (
                 <>

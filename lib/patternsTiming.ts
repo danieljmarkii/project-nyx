@@ -101,6 +101,24 @@ export const CORRELATION_SYMPTOM_TYPES = [
  *  end rather than overflowing — the axis's last tick carries the `+`. */
 export const PATTERNS_TIMING_AXIS_MAX_MIN = 480;
 
+/**
+ * The lane's DRAWING geometry, shared by the Patterns panel (`TimingDistribution`) and
+ * the Signal screen's small multiples (`TimingLanes`, CUL-1064) so one episode sits at
+ * the same point and the same jitter row on both — a second copy of these numbers is a
+ * second lane to keep in step (the `assignJitterRows` reasoning, applied to the pixels).
+ */
+export const LANE_GEOMETRY = {
+  /** One episode dot, in pt. */
+  dotSize: 7,
+  /** Vertical distance between jitter rows, in pt. */
+  rowGap: 10,
+  /** Rows above / below the centre line before density just stacks (bounded height). */
+  jitterCap: 3,
+} as const;
+
+/** The lane's height from the geometry above: both jitter extents plus the dot, plus 8pt. */
+export const LANE_HEIGHT_PT = 2 * (LANE_GEOMETRY.jitterCap * LANE_GEOMETRY.rowGap + LANE_GEOMETRY.dotSize / 2) + 8;
+
 /** Fraction of the lane the linear head `[0, rapidWindowMinutes]` occupies; the log₂
  *  tail gets the rest. 0.2 keeps sub-30-min episodes distinguishable while leaving the
  *  30m→8h tail room to spread. A drawing constant, not a clinical one. */

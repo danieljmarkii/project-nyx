@@ -10,6 +10,18 @@ import { theme } from '../../constants/theme';
 // Colour is never the only carrier here: the strip's sibling text says "logged N of M"
 // and the chart's accessibility label speaks the same numbers. The tick is the shape of
 // that sentence, not a second source of it.
+//
+// A DISCLOSED EXCEPTION to the Data Visualization Designer's floor ("no strip under ~20pt
+// per mark on a phone", docs/personas.md § Specialist lenses). Seven ticks under a 26pt
+// bar are ~3pt each and a 55-day strip is ~4pt a day. The floor is written for a mark
+// that CARRIES a fact the reader must pick out (a dot per episode); a coverage tick
+// carries none on its own — the fact is the count in words: "logged 8 of 10 days" beside
+// the compare's strip, "N days so far" over the weekly chart's partial week, and every
+// week's "N of 7" in the spoken label — and the strip is the texture that lets a thin
+// week LOOK thin at a glance. Round 4 §04 / §05 draws exactly this density and the PM ruled that table the
+// standard; the code-reviewer on CUL-1064 asked that the exception be recorded rather
+// than left implicit, which is this paragraph. If a surface ever needs a tick to be read
+// on its own, it needs a wider strip or a coarser one, not a smaller floor.
 
 export type CoverageTickState = 'logged' | 'unlogged' | 'ahead';
 

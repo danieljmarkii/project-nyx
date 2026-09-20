@@ -347,11 +347,11 @@ describe('weightBand — dots by date on a fixed ±10 % band', () => {
     expect(weightBand([]).state).toBe('empty');
     const one = weightBand([r(4.6, '2026-09-12T08:00:00Z')]);
     expect(one.state).toBe('number');
-    expect(one.deltaKg).toBeNull();
+    expect(one.delta).toBeNull();
     expect(one.points[0].x).toBe(0.5);
     const two = weightBand([r(4.6, '2026-08-26T08:00:00Z'), r(4.5, '2026-09-12T08:00:00Z')]);
     expect(two.state).toBe('pair');
-    expect(two.deltaKg).toBeCloseTo(-0.1, 9);
+    expect(two.delta).toBeCloseTo(-0.1, 9);
     expect(two.deltaFrac).toBeCloseTo(-0.1 / 4.6, 9);
     expect(two.spanDays).toBe(17);
   });

@@ -32,7 +32,7 @@ beforeEach(() => mockedReduced.mockReturnValue(false));
 
 describe('CompareBars — the §05 row', () => {
   it('one bar per window with the count beside it', () => {
-    const { getByTestId } = render(<CompareBars model={model} noun="episode" />);
+    const { getByTestId } = render(<CompareBars model={model} noun="vomiting" />);
     expect(getByTestId('compare-bar-0')).toBeTruthy();
     expect(getByTestId('compare-bar-1')).toBeTruthy();
     expect(getByTestId('compare-count-0').props.children).toBe(3);
@@ -44,21 +44,21 @@ describe('CompareBars — the §05 row', () => {
       { label: 'Before', startDay: '2026-07-01', days: 5, episodeDays: [], loggedDays: [] },
       { label: 'During', startDay: '2026-07-06', days: 5, episodeDays: ['2026-07-07'], loggedDays: [] },
     );
-    const { getByTestId, queryByTestId } = render(<CompareBars model={zero} noun="episode" />);
+    const { getByTestId, queryByTestId } = render(<CompareBars model={zero} noun="vomiting" />);
     expect(getByTestId('compare-count-0').props.children).toBe(0);
     expect(queryByTestId('compare-bar-0')).toBeNull(); // no fill for zero — the number carries it
     expect(getByTestId('compare-bar-1')).toBeTruthy();
   });
 
   it('the window\'s day strip under each bar, hollow where nothing was logged', () => {
-    const { getAllByTestId } = render(<CompareBars model={model} noun="episode" />);
+    const { getAllByTestId } = render(<CompareBars model={model} noun="vomiting" />);
     expect(getAllByTestId(/^compare-tick-0-\d+-/)).toHaveLength(10);
     expect(getAllByTestId(/^compare-tick-0-\d+-unlogged$/)).toHaveLength(2);
     expect(getAllByTestId(/^compare-tick-1-\d+-logged$/)).toHaveLength(10);
   });
 
   it('"logged N of M days" in words, under the window\'s name', () => {
-    const { getByTestId, getByText } = render(<CompareBars model={model} noun="episode" />);
+    const { getByTestId, getByText } = render(<CompareBars model={model} noun="vomiting" />);
     expect(getByTestId('compare-coverage-0').props.children).toBe('logged 8 of 10 days');
     expect(getByTestId('compare-coverage-1').props.children).toBe('logged 10 of 10 days');
     expect(getByText('The 10 days before')).toBeTruthy();
@@ -66,9 +66,9 @@ describe('CompareBars — the §05 row', () => {
   });
 
   it('speaks both counts and both coverages in one label', () => {
-    const { getByTestId } = render(<CompareBars model={model} noun="episode" />);
+    const { getByTestId } = render(<CompareBars model={model} noun="vomiting" />);
     expect(getByTestId('compare-bars').props.accessibilityLabel).toBe(
-      "3 episodes in the 10 days before, logged 8 of 10 days; 4 in the trial's 10 days, logged 10 of 10 days.",
+      "Vomiting: 3 in the 10 days before, logged 8 of 10 days; 4 in the trial's 10 days, logged 10 of 10 days.",
     );
   });
 
@@ -85,15 +85,15 @@ describe('CompareBars — the §05 row', () => {
 
   it('draws in on the FACT, extends from the left edge, and is static under reduced motion', () => {
     const spy = jest.spyOn(Animated, 'parallel');
-    const { getByTestId } = render(<CompareBars model={model} noun="episode" />);
+    const { getByTestId } = render(<CompareBars model={model} noun="vomiting" />);
     expect(spy).not.toHaveBeenCalled();
     const style = StyleSheet.flatten(getByTestId('compare-bar-1').props.style);
     expect(style.transformOrigin).toBe('left');
-    render(<CompareBars model={model} noun="episode" drawIn />);
+    render(<CompareBars model={model} noun="vomiting" drawIn />);
     expect(spy).toHaveBeenCalled();
     spy.mockClear();
     mockedReduced.mockReturnValue(true);
-    render(<CompareBars model={model} noun="episode" drawIn />);
+    render(<CompareBars model={model} noun="vomiting" drawIn />);
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });

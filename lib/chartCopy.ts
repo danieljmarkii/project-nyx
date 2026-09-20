@@ -53,11 +53,12 @@ export function weeklyBarsA11yLabel(model: WeeklyBucketsModel, noun: string): st
   return parts.join(' ');
 }
 
-/** "19 episodes in the 55 days before, logged 44 of 55 days; 21 in the trial's 55 days, logged 51 of 55 days." */
+/** "Vomiting: 19 in the 55 days before, logged 44 of 55 days; 21 in the trial's 55 days,
+ *  logged 51 of 55 days." The noun is the same lower-case word every chart takes. */
 export function compareBarsA11yLabel(model: CompareWindowsModel, noun: string): string {
   const [a, b] = model.windows;
   const lower = (s: string) => (s.length === 0 ? s : s[0].toLowerCase() + s.slice(1));
-  return `${a.count} ${pluralize(a.count, noun)} in ${lower(a.label)}, ${a.coverageLine}; ${b.count} in ${lower(b.label)}, ${b.coverageLine}.`;
+  return `${capitalize(noun)}: ${a.count} in ${lower(a.label)}, ${a.coverageLine}; ${b.count} in ${lower(b.label)}, ${b.coverageLine}.`;
 }
 
 /** The lanes' caption under the counts — what the three numbers under each lane are. */

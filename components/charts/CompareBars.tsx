@@ -31,7 +31,8 @@ import { CoverageTick } from './CoverageTick';
 
 interface Props {
   model: CompareWindowsModel;
-  /** What is counted, singular ("episode") — for the label a screen reader hears. */
+  /** What is counted, lower-case ("vomiting") — the SAME word `WeeklyBars` and `DayMark`
+   *  take, so a screen that draws all three hands one noun to each. */
   noun: string;
   drawIn?: boolean;
   identity?: string;

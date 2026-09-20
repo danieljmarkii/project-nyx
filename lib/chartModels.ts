@@ -446,8 +446,10 @@ export interface WeightBandModel {
   band: { ref: number; lo: number; hi: number } | null;
   first: WeightPoint | null;
   last: WeightPoint | null;
-  /** last − first, in the caller's unit, or null below two readings. The caller SPEAKS the delta. */
-  deltaKg: number | null;
+  /** last − first in the caller's unit (the readings' own — lbs on the app's surfaces),
+   *  or null below two readings. Unit-free by NAME so no caller reads a kilogram into it.
+   *  The caller SPEAKS the delta. */
+  delta: number | null;
   /** last − first as a fraction of the first reading, or null below two readings. */
   deltaFrac: number | null;
   /** Whole days between the first and last reading, or null below two. */
@@ -465,7 +467,7 @@ export function weightBand(readings: readonly WeightBandReading[]): WeightBandMo
     .filter((r) => Number.isFinite(r.ms) && Number.isFinite(r.value))
     .sort((a, b) => a.ms - b.ms);
   if (parsed.length === 0) {
-    return { state: 'empty', points: [], band: null, first: null, last: null, deltaKg: null, deltaFrac: null, spanDays: null };
+    return { state: 'empty', points: [], band: null, first: null, last: null, delta: null, deltaFrac: null, spanDays: null };
   }
   const ref = parsed[0].value;
   const lo = ref * (1 - WEIGHT_BAND_FRAC);
@@ -494,7 +496,7 @@ export function weightBand(readings: readonly WeightBandReading[]): WeightBandMo
     band: { ref, lo, hi },
     first,
     last,
-    deltaKg: n >= 2 ? last.value - first.value : null,
+    delta: n >= 2 ? last.value - first.value : null,
     deltaFrac: n >= 2 && ref !== 0 ? (last.value - first.value) / ref : null,
     spanDays: n >= 2 ? Math.round(span / 86_400_000) : null,
   };
