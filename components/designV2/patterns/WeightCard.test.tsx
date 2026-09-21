@@ -126,6 +126,25 @@ describe('WeightCard (Design v2)', () => {
     expect(line).not.toContain('home scale');
   });
 
+  it('the caveat has an ABSOLUTE gate in pounds: a 70 kg dog down 5 % is 7.7 lbs, and no scale wobbles that', () => {
+    const { getByTestId } = measured(<WeightCard readings={[r(70, at(2026, 7, 3)), r(66.5, at(2026, 9, 12))]} readingCount={2} petId="p1" />);
+    const line = getByTestId('weight-card-delta').props.children as string;
+    expect(line).toBe('Down 7.7 lbs (5%) since Jul 3');
+    expect(line).not.toContain('home scale');
+  });
+
+  it('a 300 g kitten down 20 g is spoken as a loss with its percentage, never "No change", never the caveat', () => {
+    // The app rounds pounds to 0.1 upstream (`kgToLbsNum`: 0.7 → 0.6 lbs here), so the
+    // move survives display precision on this path; the sub-precision branch is pinned in
+    // lib/chartCopy.test.ts. What the card must never do is print "No change" or the
+    // scale caveat beside a 14 % loss in a fading kitten.
+    const { getByTestId } = measured(<WeightCard readings={[r(0.3, at(2026, 7, 3)), r(0.28, at(2026, 9, 12))]} readingCount={2} petId="p1" />);
+    const line = getByTestId('weight-card-delta').props.children as string;
+    expect(line).toMatch(/^Down 0\.1 lbs \(14%\) since Jul 3$/);
+    expect(line).not.toContain('No change');
+    expect(line).not.toContain('home scale');
+  });
+
   it('the dots are neutral grey — never the accent, never the rose', () => {
     const { getByTestId } = measured(<WeightCard readings={SIX} readingCount={6} petId="p1" />);
     const bg = flat(getByTestId('weight-dot-0').props.style).backgroundColor as unknown as string;

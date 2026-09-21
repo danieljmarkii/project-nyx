@@ -78,6 +78,12 @@ export type MonthPhoto = 'none' | 'seen' | 'worth_a_call';
 export interface MonthDay {
   key: string;
   dayOfMonth: number;
+  /** The day is in the first or last row but belongs to the neighbouring month. It is
+   *  DRAWN (dim, dated) so the row IS the bar above it: an episode on Aug 31 sits in
+   *  September's first row and in the bar over it, and hiding it as a blank pad left a bar
+   *  of 3 over a row that showed 1 (the adversarial pass on CUL-1067). It is never in
+   *  the month's own counts or its line. */
+  outsideMonth: boolean;
   /** Episodes on the day. Zero is a day with none, not a missing number. */
   count: number;
   coverage: MonthCoverage;
@@ -87,11 +93,9 @@ export interface MonthDay {
   today: boolean;
 }
 
-/** One grid row, Sunday → Saturday. `null` pads the days outside the month. */
-export type MonthRow = [
-  MonthDay | null, MonthDay | null, MonthDay | null, MonthDay | null,
-  MonthDay | null, MonthDay | null, MonthDay | null,
-];
+/** One grid row, Sunday → Saturday. Every slot is a day: the neighbouring months' days
+ *  in the first and last row are `outsideMonth`. */
+export type MonthRow = [MonthDay, MonthDay, MonthDay, MonthDay, MonthDay, MonthDay, MonthDay];
 
 export interface MonthPhotoDay {
   day: string;
@@ -255,13 +259,33 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   let aheadCount = 0;
   for (const k of input.episodeDays) {
     const i = indexOfKey(k, 'episodeDays[]');
-    if (i < firstIdx || i > lastIdx) continue;
     if (i > todayIdx) {
-      aheadCount += 1;
+      // Only the month's own days are disclosed as "dated ahead": a neighbouring month's
+      // future day is not this month's claim.
+      if (i >= firstIdx && i <= lastIdx) aheadCount += 1;
       continue;
     }
     counts.set(i, (counts.get(i) ?? 0) + 1);
   }
+
+  const dayAt = (i: number, outsideMonth: boolean): MonthDay => {
+    let coverage: MonthCoverage;
+    if (i > todayIdx) coverage = 'ahead';
+    else if (recordEmpty || (recordIdx != null && i < recordIdx)) coverage = 'before_record';
+    else if (leftSome.has(i)) coverage = 'left_some';
+    else if (logged.has(i)) coverage = 'logged';
+    else coverage = 'unlogged';
+    return {
+      key: dayKeyFromIndex(i),
+      dayOfMonth: Number(dayKeyFromIndex(i).slice(8, 10)),
+      outsideMonth,
+      count: coverage === 'ahead' ? 0 : (counts.get(i) ?? 0),
+      coverage,
+      medication: coverage !== 'ahead' && dosed.has(i),
+      photo: coverage === 'ahead' ? 'none' : (photos.get(i) ?? 'none'),
+      today: i === todayIdx,
+    };
+  };
 
   const days: MonthDay[] = [];
   let count = 0;
@@ -270,42 +294,24 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   let beforeRecordDays = 0;
   let aheadDays = 0;
   for (let d = 0; d < n; d++) {
-    const i = firstIdx + d;
-    let coverage: MonthCoverage;
-    if (i > todayIdx) {
-      coverage = 'ahead';
-      aheadDays += 1;
-    } else if (recordEmpty || (recordIdx != null && i < recordIdx)) {
-      coverage = 'before_record';
-      beforeRecordDays += 1;
-    } else if (leftSome.has(i)) {
-      coverage = 'left_some';
-    } else if (logged.has(i)) {
-      coverage = 'logged';
-    } else {
-      coverage = 'unlogged';
-      unloggedDays += 1;
-    }
-    const c = counts.get(i) ?? 0;
-    if (c > 0) {
-      count += c;
+    const day = dayAt(firstIdx + d, false);
+    if (day.coverage === 'ahead') aheadDays += 1;
+    else if (day.coverage === 'before_record') beforeRecordDays += 1;
+    else if (day.coverage === 'unlogged') unloggedDays += 1;
+    if (day.count > 0) {
+      count += day.count;
       episodeDayCount += 1;
     }
-    days.push({
-      key: dayKeyFromIndex(i),
-      dayOfMonth: d + 1,
-      count: c,
-      coverage,
-      medication: coverage !== 'ahead' && dosed.has(i),
-      photo: coverage === 'ahead' ? 'none' : (photos.get(i) ?? 'none'),
-      today: i === todayIdx,
-    });
+    days.push(day);
   }
 
-  // The grid: Sunday-start rows, padded with null outside the month.
+  // The grid: Sunday-start rows; the neighbouring months' days in the first and last
+  // row are drawn as `outsideMonth`, so every row is the seven days its bar counts.
   const lead = weekdayOfIndex(firstIdx);
-  const cells: (MonthDay | null)[] = Array<MonthDay | null>(lead).fill(null).concat(days);
-  while (cells.length % 7 !== 0) cells.push(null);
+  const cells: MonthDay[] = [];
+  for (let d = lead; d > 0; d--) cells.push(dayAt(firstIdx - d, true));
+  cells.push(...days);
+  for (let i = lastIdx + 1; cells.length % 7 !== 0; i++) cells.push(dayAt(i, true));
   const rows: MonthRow[] = [];
   for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7) as MonthRow);
 
@@ -417,14 +423,16 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
   return parts.join(' · ');
 }
 
-/** The month in one sentence for a screen reader: the line, then the layers' totals. */
-export function monthA11yLabel(model: MonthModel): string {
+/** The month in one sentence for a screen reader: the line, then the totals of the
+ *  layers that are ON — the eye and the ear hear the same layers (DayMark's own rule; a
+ *  layer-blind label spoke medication days the grid did not draw). */
+export function monthA11yLabel(model: MonthModel, layers: { meds: boolean; photos: boolean } = { meds: true, photos: true }): string {
   const dosed = model.days.filter((d) => d.medication).length;
   const photographed = model.days.filter((d) => d.photo !== 'none').length;
   const called = model.days.filter((d) => d.photo === 'worth_a_call').length;
   const parts = [`${model.label}.`, `${model.line}.`];
-  if (dosed > 0) parts.push(`Medication on ${dosed} ${plural(dosed, 'day')}.`);
-  if (photographed > 0) {
+  if (layers.meds && dosed > 0) parts.push(`Medication on ${dosed} ${plural(dosed, 'day')}.`);
+  if (layers.photos && photographed > 0) {
     parts.push(
       `Photos on ${photographed} ${plural(photographed, 'day')}${called > 0 ? `, ${called} read as worth a call` : ''}.`,
     );

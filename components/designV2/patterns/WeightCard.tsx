@@ -43,12 +43,16 @@ interface Props {
 }
 
 const UNIT = 'lbs';
+/** A home scale's own wobble, in the display unit: about 0.2 kg on a bathroom or pet
+ *  scale, 0.44 lbs — rounded to the display's one decimal. The caveat's ABSOLUTE gate
+ *  (`weightDeltaLine`); the fractional one is `HOME_SCALE_NOISE_FRAC`. */
+const HOME_SCALE_NOISE_LBS = 0.5;
 
 export function WeightCard({ readings, readingCount, petName, petId, drawIn = false }: Props) {
   const name = petNameOrYours(petName);
   const model = weightBand(readings.map((r) => ({ value: kgToLbsNum(r.weightKg), occurredAt: r.occurredAt })));
   const count = Math.max(readingCount, model.points.length);
-  const delta = weightDeltaLine(model, UNIT, formatWeightDate);
+  const delta = weightDeltaLine(model, UNIT, formatWeightDate, HOME_SCALE_NOISE_LBS);
 
   return (
     <View style={styles.card} testID="weight-card-v2">

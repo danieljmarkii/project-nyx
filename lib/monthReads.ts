@@ -6,14 +6,19 @@
 // ── ONE PREDICATE PER FACT, EACH THE NEIGHBOUR'S ──────────────────────────────
 //   • An EPISODE is a vomit row after the engine's re-log collapse (`episodeDaysOf`,
 //     D2-1) — four rows of one bout are one mark.
-//   • A LOGGED day is a feeding OR a correlation-symptom day — the Trial panel's own
-//     denominator (`lib/patternsTrial.ts`, mirroring the engine's `loggedDaysIn`), so
-//     the month's "unlogged" and the panel's "logged N of M" one scroll apart partition
-//     the same days (C-4). That set includes vomit, so an episode day is a logged day by
-//     construction — the burden `DayMark`'s header puts on this caller. NOT medication
-//     alone, and never a look (a look never enters another surface's coverage line —
-//     `docs/nyx-daily-look-requirements.md`): a dosed day with no meal or symptom logged
-//     draws its slate dot on a grey square and SAYS so.
+//   • A LOGGED day is a day the owner logged ANYTHING about the pet — every event type
+//     except a look (`check_in`: a look never enters another surface's coverage line,
+//     `docs/nyx-daily-look-requirements.md`). This is the COVERAGE question, and the
+//     answer is the PM's ruling on it (R3, 2026-08-28: "a logged cough IS a logged day",
+//     `lib/patternsTiming.ts`'s own comment on `CORRELATION_SYMPTOM_TYPES`). The first
+//     draft borrowed the Trial panel's `loggedDays` — the engine's COMPARISON-GATE set
+//     (feeding OR vomit / diarrhea / itch / scratch / skin) — and a stool-, cough-,
+//     lethargy- or dose-only day drew grey with its own rows one tap away (the
+//     adversarial pass on CUL-1067). Same word, two questions, two constants (C-34):
+//     the panel's "logged N of M" gates whether a vomiting comparison may be published
+//     and stays the gate set; the month's grey square says whether the owner logged, and
+//     is this. Because vomit is in it, an episode day is a logged day by construction —
+//     the burden `DayMark`'s header puts on this caller.
 //   • A LEFT-SOME day is a qualifying meal (`qualifyingIntakeMeals`: rated, non-treat,
 //     non-free-fed) that was not finished (`isFinishedMeal`) — the intake lens's own
 //     definition, so the paler hairline and the Meals calendar count the same meals.
@@ -33,7 +38,7 @@
 import { getDb, getTimeline, type TimelineRow } from './db';
 import { supabase } from './supabase';
 import { episodeDaysOf } from './chartModels';
-import { CORRELATION_SYMPTOM_TYPES, TIMING_SYMPTOM_TYPE } from './patternsTiming';
+import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
 import { getActiveArrangementsForPet } from './feedingArrangements';
 import { escalationSurvivesFailure } from './incidentReadState';
@@ -58,6 +63,8 @@ export interface MonthReadRange {
 }
 
 const MS_PER_DAY = 86_400_000;
+/** The daily look's event type — the one row that is never coverage (§5.6, T-5). */
+const LOOK_EVENT_TYPE = 'check_in';
 /** Delivered doses — B-618 D1's therapy-delivered count. */
 const DELIVERED_ADHERENCE = ['given', 'partial'] as const;
 
@@ -141,11 +148,10 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     .filter((r) => Number.isFinite(r.ms));
   const episodeDays = episodeDaysOf(vomitRows, keyOf).filter((k) => inRange(k, range));
 
-  // Logged: a feeding OR a correlation-symptom day — the Trial panel's predicate.
+  // Logged: any surviving event that is not a look (the coverage question, see the header).
   const loggedSet = new Set<string>();
-  const symptomTypes = new Set<string>(CORRELATION_SYMPTOM_TYPES);
   for (const r of eventRows) {
-    if (r.event_type !== 'meal' && !symptomTypes.has(r.event_type)) continue;
+    if (r.event_type === LOOK_EVENT_TYPE) continue;
     const k = keyOfIso(r.occurred_at);
     if (k && inRange(k, range)) loggedSet.add(k);
   }
@@ -227,6 +233,10 @@ export async function readWorthACall(eventIds: readonly string[]): Promise<Set<s
 
 /** A single day's events never approach this; a safe ceiling (the drill-in's own). */
 const DAY_ROW_LIMIT = 200;
+// STATED BLIND SPOT (C-41): the limit is applied by `getTimeline` over the three-day
+// slack window, newest first, so past ~200 rows in three days the target day would
+// truncate silently. Unreachable at any plausible volume; said here so it is not read
+// as coverage.
 
 /**
  * Every surviving event on one LOCAL day, oldest first. The bounds are the local day's

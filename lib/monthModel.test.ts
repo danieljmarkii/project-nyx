@@ -38,16 +38,17 @@ function septModel(over: Partial<Parameters<typeof buildMonthModel>[0]> = {}) {
 }
 
 describe('the grid', () => {
-  it('rows start on Sunday and are padded with null outside the month', () => {
+  it('rows start on Sunday; the neighbouring months\' days in the edge rows are drawn as outsideMonth', () => {
     const m = septModel();
     expect(daysInMonth(2026, 8)).toBe(30);
     expect(m.rows).toHaveLength(5);
-    expect(m.rows[0].slice(0, 2)).toEqual([null, null]);
-    expect(m.rows[0][2]?.key).toBe('2026-09-01');
-    expect(m.rows[4][3]?.key).toBe('2026-09-30');
-    expect(m.rows[4].slice(4)).toEqual([null, null, null]);
+    expect(m.rows[0].slice(0, 2).map((d) => [d.key, d.outsideMonth, d.dayOfMonth])).toEqual([['2026-08-30', true, 30], ['2026-08-31', true, 31]]);
+    expect(m.rows[0][2].key).toBe('2026-09-01');
+    expect(m.rows[0][2].outsideMonth).toBe(false);
+    expect(m.rows[4][3].key).toBe('2026-09-30');
+    expect(m.rows[4].slice(4).map((d) => [d.key, d.outsideMonth])).toEqual([['2026-10-01', true], ['2026-10-02', true], ['2026-10-03', true]]);
     expect(m.days).toHaveLength(30);
-    expect(m.days.every((d, i) => d.dayOfMonth === i + 1)).toBe(true);
+    expect(m.days.every((d, i) => d.dayOfMonth === i + 1 && !d.outsideMonth)).toBe(true);
   });
 
   it('every day keeps its date and carries its count; a day with none is a zero, not a gap', () => {
@@ -117,12 +118,19 @@ describe('the grid', () => {
     expect(byKey.get('2026-09-04')?.medication).toBe(false);
     expect(byKey.get('2026-09-02')?.photo).toBe('worth_a_call');
     expect(byKey.get('2026-09-05')?.photo).toBe('seen');
+    // In PRODUCTION's order — the read sorts the escalation first — the worse verdict
+    // still wins; last-write-wins would downgrade it (mutant M6, the adversarial pass).
+    const prodOrder = septModel({ photoDays: [{ day: '2026-09-02', verdict: 'worth_a_call' }, { day: '2026-09-02', verdict: 'seen' }] });
+    expect(prodOrder.days.find((d) => d.key === '2026-09-02')?.photo).toBe('worth_a_call');
     // Ahead: a plain day, whatever a future-dated row claims.
     expect(byKey.get('2026-09-25')?.medication).toBe(false);
     expect(byKey.get('2026-09-25')?.photo).toBe('none');
     expect(monthA11yLabel(m)).toBe(
       'September 2026. Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged. Medication on 1 day. Photos on 2 days, 1 read as worth a call.',
     );
+    // The label speaks only the layers that are ON — the ear and the eye agree.
+    expect(monthA11yLabel(m, { meds: false, photos: false })).toBe('September 2026. Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged.');
+    expect(monthA11yLabel(m, { meds: true, photos: false })).toBe('September 2026. Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged. Medication on 1 day.');
   });
 });
 
@@ -156,11 +164,39 @@ describe('the bars over the rows (AC 1)', () => {
     for (let r = 0; r < m.rows.length; r++) {
       const b = m.barIndexOfRow[r];
       if (b == null) continue;
-      const rowSum = m.rows[r].reduce((a, d) => a + (d?.count ?? 0), 0);
-      // Bar 6 also holds Aug 30 – 31, outside this month's rows; the fixture has no
-      // episodes there, so the sums agree exactly.
-      expect(m.weekly.weeks[b].count).toBe(rowSum);
+      expect(m.weekly.weeks[b].count).toBe(m.rows[r].reduce((a, d) => a + d.count, 0));
     }
+  });
+
+  it('an episode on a neighbouring month\'s day in the edge row is DRAWN there, so the bar is the row (the adversarial pass)', () => {
+    // The fixture the first draft avoided (C-35): Aug 30, Aug 31 and Sep 2 all sit in
+    // September's first row. The bar over it reads 3; so must the row; the LINE counts
+    // September alone.
+    const m = septModel({ episodeDays: ['2026-08-30', '2026-08-31', '2026-09-02'], loggedDays: range('2026-08-01', TODAY) });
+    expect(m.weekly.weeks[6].count).toBe(3);
+    expect(m.rows[0].map((d) => d.count)).toEqual([1, 1, 0, 1, 0, 0, 0]);
+    expect(m.rows[0][0].outsideMonth).toBe(true);
+    expect(m.count).toBe(1);
+    expect(m.line).toBe('Vomiting 1 time on 1 day · through Sep 17');
+    for (let r = 0; r < m.rows.length; r++) {
+      const b = m.barIndexOfRow[r];
+      if (b != null) expect(m.weekly.weeks[b].count).toBe(m.rows[r].reduce((a, d) => a + d.count, 0));
+    }
+  });
+
+  it('an episode on the month\'s LAST day is counted and drawn (mutant M3)', () => {
+    const m = buildMonthModel({ year: 2026, month: 7, today: TODAY, noun: 'vomiting', episodeDays: ['2026-08-31'], loggedDays: range('2026-08-01', '2026-08-31') });
+    expect(m.count).toBe(1);
+    expect(m.days[30].count).toBe(1);
+    expect(m.line).toBe('Vomiting 1 time on 1 day · through Aug 31');
+  });
+
+  it('the BARS honour the record\'s start too: pre-record days carry no tick and leave the denominator (mutant M18)', () => {
+    const m = septModel({ recordStart: '2026-09-10', loggedDays: range('2026-09-10', TODAY), episodeDays: ['2026-09-11'] });
+    const week = m.weekly.weeks[7]; // the week of Sep 6: Sep 6–9 before the record, 10–12 in it
+    expect(week.days).toEqual(['before_record', 'before_record', 'before_record', 'before_record', 'logged', 'logged', 'logged']);
+    expect(week.daysSoFar).toBe(3);
+    expect(m.weekly.weeks[6].days.every((d) => d === 'before_record')).toBe(true);
   });
 
   it('a past month draws its nine weeks ending with its own last row; no partial week', () => {
@@ -258,6 +294,7 @@ describe('the line (AC 5, C-3)', () => {
     expect(m.line).not.toMatch(/unlogged/);
     expect(m.days.filter((d) => d.coverage === 'ahead')).toHaveLength(13);
     expect(m.days.filter((d) => d.coverage === 'before_record')).toHaveLength(17);
+    expect(m.rows.flat().filter((d) => d.outsideMonth).every((d) => d.coverage === 'before_record' || d.coverage === 'ahead')).toBe(true);
     // Without the flag, a missing record start still means every arrived day counts —
     // the caller says which it is.
     expect(septModel({ recordStart: null, episodeDays: [], loggedDays: [] }).unloggedDays).toBe(17);

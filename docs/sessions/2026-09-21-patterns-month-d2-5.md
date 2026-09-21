@@ -28,9 +28,11 @@ cover so the bars and the grid feed off one read.
 
 **The reads, `lib/monthReads.ts`.** One predicate per fact, each the neighbour's: an
 episode is a vomit row through the engine's re-log collapse (`episodeDaysOf`); a LOGGED
-day is a feeding OR a correlation-symptom day — the Trial panel's own denominator, so the
-month's "unlogged" and the panel's "logged N of M" one scroll apart partition the same
-days (C-4), and an episode day is a logged day by construction; a left-some day is an
+day is any day the owner logged anything about the pet — every event type but a look —
+the COVERAGE question as the PM ruled it (R3: a logged cough is a logged day), distinct
+from the Trial panel's gate-set denominator (same word, two questions, two constants —
+C-34; the first draft borrowed the gate set and a stool-only day drew grey with its own
+rows one tap away); an episode day is a logged day by construction; a left-some day is an
 unfinished qualifying meal by the intake lens's own definition (`qualifyingIntakeMeals` +
 `isFinishedMeal`, the latter now exported); a dosed day is a delivered dose (given or
 partial, B-618 D1); a photographed day is a surviving attachment, its verdict one batched
@@ -91,9 +93,12 @@ month read over a fixture that would answer.
 - **The AI summary and the dashboard's empty state are absent flag-on.** The design
   authority's frame has the month first and no summary; an empty month is a designed
   state (its line says what is unlogged). A decision brief for the PM is on the issue.
-- **A dosed day with no meal or symptom logged is grey with a slate dot.** The
-  coverage predicate is the Trial panel's, so the two surfaces partition the same days;
-  the spoken label says "nothing logged, medication".
+- **The coverage predicate is the coverage question, not the engine's gate set.** The
+  first draft borrowed the Trial panel's `loggedDays` for the C-4 partition; the
+  adversarial pass showed the two surfaces answer different questions (a stool-, cough-
+  or dose-only day is logged coverage and not a comparison-gate day), so the month counts
+  every event but a look and says so in its header. The Trial panel's line is untouched.
+  A decision brief on the issue names the choice.
 - **No History door on the day.** History's `?date=` is a UTC day and the month's day
   is local; a door that lands on the wrong day is worse than none (CUL-1073).
 - **`monthReadRange` lives in `lib/`, not the component.** The flag-off guard wraps
@@ -117,8 +122,75 @@ month read over a fixture that would answer.
 
 ## Reviews
 
-REVIEWS_PENDING
+Three isolated reads ran against the first commit; every finding they made that is a
+build matter is fixed in the second and third commits.
+
+**The code-reviewer** blocked on one thing: the month cache's staleness guard was ONE
+global counter, so a focus refresh landing while August paged in discarded August's
+result and its loading flag — a skeleton with no retry until the owner paged away and
+back. Staleness is now per key (month and day), pinned by a test that was run red against
+the global counter. It also flagged the three-deep relative imports the issue's own
+`components/designV2/patterns/` path forces (CLAUDE.md's "no chain longer than one
+level"); left as the issue specified, named in the PR.
+
+**The product read (`pm-feature-review`)** found the legibility failures a build
+conversation cannot see: a pet with no record read *21 days unlogged* on its first
+screen; the Vomiting chip reached the grid but not the bars or the sentence; the legend
+had no key for the medication, photo or worth-a-call dots (the two off-by-default layers
+drew unexplained marks); the one-reading weight door opened a list of the number on
+screen where the frame draws *Add ›*; the cold-start invitation was unreachable flag-on.
+All five fixed. It also raised six PM decisions (below).
+
+**The adversarial pass** returned FAIL, with two findings on the never-reassure axis and
+a 40-mutant battery (31 caught). Fixed: the home-scale caveat was gated on a FRACTION
+and justified by an ABSOLUTE noise floor (C-34) — a 70 kg dog down 3.5 kg got the
+sentence written to soften a wobble; it now needs both gates (5 % and 0.5 lbs). "No
+change" was decided by display rounding — a 300 g kitten down 20 g printed it; it is
+decided by the fact now, and a sub-precision move prints "less than 0.1 lbs" with its
+percentage. The day's subtitle counted EPISODES beside the rows it enumerated, so a bout
+chained across midnight printed "No vomit logged" above two vomit rows; the sheet counts
+its rows. The coverage predicate answered a coverage question with the engine's gate
+set (above). The edge bars counted neighbouring-month days the grid hid as blank pads
+(a bar of 3 over a row showing 1) — those days are drawn now, dimmed, so every row is the
+seven days its bar counts, and the fixture the first test avoided (C-35) is asserted.
+Two mutually-redundant escalation safeguards were unproven (the model's fixture listed
+the verdicts in the inverse of production's order); both are pinned. The four real
+survived mutants have tests (the month's last-day episode, the bars' `recordStart`, the
+episode type filter, an error beside a payload). Also taken: an interior reading outside
+the band is disclosed beside the delta so "No change" never stands over a 30 % dip; a
+zero or negative reading is dropped by `weightBand`; the spoken month label speaks only
+the layers that are on; `readDayRows`' limit blind spot is stated.
+
+## Decision briefs for the PM (on the issue)
+
+1. The month charts vomiting only; the per-symptom tiles are gone flag-on, so a
+   diet-trial dog with itch and a diarrhea cat have no symptom surface on Patterns.
+2. The coverage predicate: every event but a look (built), versus the Trial panel's gate
+   set (the first draft) — the two surfaces now answer different questions on purpose.
+3. White on the symptom rose at 3.7:1 (D2-1's open flag) — needs an eye on a device.
+4. The weight dot hue (D2-1's open conflict) — neutral grey shipped as the safer side.
+5. The AI summary and the KPI column absent flag-on — the ruled frame, with a cost to Sam.
+6. The Photos layer is off by default, so a worth-a-call read draws nothing on the month
+   until the owner turns it on.
 
 ## DoD
 
-DOD_PENDING
+- Acceptance criteria: all eight pass (the PR body's checklist maps each to its test).
+- Types pass; the affected suites green in UTC and under Kiritimati / Chatham /
+  Honolulu; the full suite green.
+- Tests: `lib/monthModel.test.ts`, `lib/monthReads.test.ts` (real SQLite, the production
+  DDL), `lib/chartCopy.test.ts` (+ the delta line), `lib/chartModels.test.ts` (B13
+  re-contracted), `components/motion/openInPlaceMotion.test.ts`, the two component
+  suites, `app/insights/designV2.test.tsx`; the new haptics entries and the flag-off gate
+  proven by mutation.
+- No new secret.
+- Persona sign-off: Data Visualization Designer ✓ (the §05 columns on the month and the
+  weight) · Data Scientist ✓ (C-3 separation, the coverage question named, the partition
+  stated) · Dr. Chen ✓ (the caveat's two gates, "No change" by fact, the legend keyed) ·
+  Sam ✓ (left-some is the paler hairline) · Jordan ✓ (the arrows, the day in place) ·
+  Designer ⚠ (decisions 1, 3, 5 above) · Engineer ✓ (C-12, C-14, C-29, C-30, C-40) ·
+  T&S N/A.
+- Adversarial review: the pass above — its counterexamples, what broke, what held.
+- Future-self: one model, one read module and one motion hook for the month; the risk in
+  twelve months is a second symptom lens restating the predicate instead of taking a
+  noun — the model already takes one.

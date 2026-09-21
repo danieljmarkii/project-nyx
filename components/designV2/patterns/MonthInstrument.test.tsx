@@ -83,9 +83,10 @@ describe('MonthInstrument', () => {
     await act(async () => answer(facts()));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     expect(getByTestId('month-label').props.children).toBe('September 2026');
-    // Thirty day marks and the pads that align them to Sunday.
-    expect(getAllByTestId('daymark')).toHaveLength(30);
-    expect(getAllByTestId('month-pad')).toHaveLength(2 + 3);
+    // Thirty-five squares: the month's thirty and the five neighbouring-month days that
+    // fill the edge rows, drawn dim so each row is the seven days its bar counts.
+    expect(getAllByTestId('daymark')).toHaveLength(35);
+    expect(getAllByTestId('month-outside-day')).toHaveLength(2 + 3);
     // One read, over the nine weeks' first Sunday through the month's last day.
     expect(readFacts).toHaveBeenCalledTimes(1);
     expect(readFacts).toHaveBeenCalledWith('p1', { fromKey: '2026-07-19', toKey: '2026-09-30' });
@@ -126,12 +127,12 @@ describe('MonthInstrument', () => {
     const { getByTestId, getAllByTestId, getByText, queryByTestId } = mount();
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     const marks = getAllByTestId('daymark');
-    const sep2 = marks[1];
+    const sep2 = marks[3]; // Aug 30, Aug 31 lead the first row
     expect(sep2.props.accessibilityLabel).toContain('September 2');
     // The rose square, the date on it, the count in its corner as its own node.
     expect(flat(sep2.props.style).backgroundColor).toBe(theme.colorEventSymptom);
     const dates = getAllByTestId('daymark-date').map((n) => n.props.children);
-    expect(dates).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
+    expect(dates).toEqual([30, 31, ...Array.from({ length: 30 }, (_, i) => i + 1), 1, 2, 3]);
     const counts = getAllByTestId('daymark-count').map((n) => n.props.children);
     expect(counts).toEqual([2, 1, 2, 1]);
     // Vomiting off: the rose, the counts, the BARS and the sentence's count go; the
@@ -143,18 +144,18 @@ describe('MonthInstrument', () => {
     expect(getByTestId('weekly-bars')).toBeTruthy();
     expect(getByTestId('month-line').props.children).toBe('Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged');
     fireEvent.press(getByText('Vomiting'));
-    expect(getAllByTestId('daymark-date')).toHaveLength(30);
+    expect(getAllByTestId('daymark-date')).toHaveLength(35);
     expect(() => getAllByTestId('daymark-count')).toThrow();
-    expect(flat(getAllByTestId('daymark')[1].props.style).backgroundColor).not.toBe(theme.colorEventSymptom);
+    expect(flat(getAllByTestId('daymark')[3].props.style).backgroundColor).not.toBe(theme.colorEventSymptom);
     expect(getAllByTestId('daymark-hairline-logged').length).toBeGreaterThan(10);
     // Meals off: the left-some day draws the plain hairline — still logged, never grey.
     expect(getByTestId('daymark-hairline-left_some')).toBeTruthy();
     fireEvent.press(getByText('Meals'));
     expect(() => getByTestId('daymark-hairline-left_some')).toThrow();
-    expect(getAllByTestId('daymark')[3].props.accessibilityLabel).toContain('logged');
-    expect(getAllByTestId('daymark')[3].props.accessibilityLabel).not.toContain('nothing logged');
+    expect(getAllByTestId('daymark')[5].props.accessibilityLabel).toContain('logged');
+    expect(getAllByTestId('daymark')[5].props.accessibilityLabel).not.toContain('nothing logged');
     // The two unlogged days stay grey whatever the layers say.
-    expect(getAllByTestId('daymark')[7].props.accessibilityLabel).toContain('nothing logged');
+    expect(getAllByTestId('daymark')[9].props.accessibilityLabel).toContain('nothing logged');
     // Medication and Photos are off by default and draw on demand.
     expect(() => getByTestId('daymark-layer-medication')).toThrow();
     fireEvent.press(getByText('Medication'));
@@ -175,13 +176,13 @@ describe('MonthInstrument', () => {
     expect(getAllByRole('checkbox').map((c) => c.props.accessibilityState.checked)).toEqual([true, true, false, true]);
   });
 
-  it('the legend includes left-some and names its scope; a layer\'s key appears with the layer, with its count', async () => {
+  it('the legend includes left-some; a layer\'s key appears with the layer, with its count', async () => {
     const { getByTestId, getByText, queryByTestId } = mount();
     await waitFor(() => expect(getByTestId('month-legend')).toBeTruthy());
     expect(getByText('vomit day, count in the corner')).toBeTruthy();
     expect(getByText('logged')).toBeTruthy();
     expect(getByText('left some')).toBeTruthy();
-    expect(getByText('nothing logged (no meal or symptom)')).toBeTruthy();
+    expect(getByText('nothing logged')).toBeTruthy();
     // Off by default: no unexplained dot, no key for it.
     expect(queryByTestId('month-legend-medication')).toBeNull();
     expect(queryByTestId('month-legend-photo')).toBeNull();
@@ -269,7 +270,7 @@ describe('MonthInstrument', () => {
     const { getByTestId, getAllByTestId, queryAllByTestId, getByText, queryByTestId, toJSON } = mount(undefined, readDay);
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     const marks = getAllByTestId('daymark');
-    fireEvent.press(marks[1]); // Sep 2, in row 0
+    fireEvent.press(marks[3]); // Sep 2, in row 0 (after Aug 30 and 31)
     await waitFor(() => expect(getByTestId('day-slot')).toBeTruthy());
     // Under ITS row: the slot is a child of row 0, and there is exactly one.
     expect(queryAllByTestId('day-slot')).toHaveLength(1);
@@ -278,9 +279,10 @@ describe('MonthInstrument', () => {
     await waitFor(() => expect(getByTestId('day-detail')).toBeTruthy());
     await waitFor(() => expect(getByText('Wednesday, September 2')).toBeTruthy());
     expect(readDay).toHaveBeenCalledWith('p1', '2026-09-02');
-    await waitFor(() => expect(getByText('Vomit logged 2 times · everything this day:')).toBeTruthy());
+    // The sheet counts the vomit ROWS it lists (one here), not the corner's episode count.
+    await waitFor(() => expect(getByText('Vomit logged 1 time · everything this day:')).toBeTruthy());
     // A second day opens and the first closes: still exactly one slot, now under row 1.
-    fireEvent.press(marks[10]); // Sep 11, in row 1
+    fireEvent.press(marks[12]); // Sep 11, in row 1
     await waitFor(() => expect(getByText('Friday, September 11')).toBeTruthy());
     // The first day's slot leaves as its rail trails; once it has, exactly one slot is
     // left, under row 1.
@@ -291,7 +293,7 @@ describe('MonthInstrument', () => {
     expect(getByTestId('month-row-1').findAllByProps({ testID: 'day-slot' }).length).toBeGreaterThan(0);
     expect(getByTestId('month-row-0').findAllByProps({ testID: 'day-slot' })).toHaveLength(0);
     // Tapping the open day again closes it.
-    fireEvent.press(marks[10]);
+    fireEvent.press(marks[12]);
     await waitFor(() => expect(queryByTestId('day-detail')).toBeNull(), { timeout: 4000 });
     await waitFor(() => expect(queryAllByTestId('day-slot')).toHaveLength(0), { timeout: 4000 });
   }, 20_000);
@@ -299,11 +301,31 @@ describe('MonthInstrument', () => {
   it('a day ahead is not a control; a day before the record is a plain dim square', async () => {
     const { getByTestId, getAllByTestId, getAllByLabelText } = mount(jest.fn(async () => facts({ recordStart: '2026-09-10', loggedDays: range('2026-09-10', TODAY), episodeDays: ['2026-09-11'] })));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
-    expect(getAllByTestId('month-before-record')).toHaveLength(9);
-    expect(getAllByLabelText(/^\w+, September \d+, before the record began$/).length).toBe(9);
+    // September 1–9, and the two August days drawn in the first row.
+    expect(getAllByTestId('month-before-record')).toHaveLength(9 + 2);
+    expect(getAllByLabelText(/^\w+, September \d+, before the record began$/)).toHaveLength(9);
+    expect(getAllByLabelText(/^\w+, August \d+, before the record began$/)).toHaveLength(2);
     const ahead = getAllByTestId('daymark').filter((n) => String(n.props.accessibilityLabel).includes('ahead'));
-    expect(ahead).toHaveLength(13);
+    expect(ahead).toHaveLength(13 + 3); // September's thirteen and October's three in the last row
     for (const n of ahead) expect(n.props.accessibilityRole).toBeUndefined();
+  });
+
+  it("the day's subtitle counts the vomit ROWS it lists, never the corner's episode count (the adversarial pass)", async () => {
+    // Three rows of one bout: the corner says 1 (an episode), the sheet lists three vomit
+    // rows and must say three — "1 time" over three rows, or "No vomit logged" over rows
+    // that chained from the day before, is CUL-62's class.
+    const readDay = jest.fn(async (): Promise<never[]> => [
+      row('a', 'vomit', '2026-09-05T07:00:00Z'),
+      row('b', 'vomit', '2026-09-05T07:40:00Z'),
+      row('c', 'vomit', '2026-09-05T08:30:00Z'),
+    ]);
+    const { getByTestId, getAllByTestId, getByText } = mount(undefined, readDay);
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    const sep5 = getAllByTestId('daymark')[6];
+    expect(sep5.props.accessibilityLabel).toContain('September 5');
+    expect(sep5.props.accessibilityLabel).toContain('vomiting logged 1 time');
+    fireEvent.press(sep5);
+    await waitFor(() => expect(getByText('Vomit logged 3 times · everything this day:')).toBeTruthy(), { timeout: 4000 });
   });
 
   it('a pet with no record: every day says "nothing logged yet", the line invites the first entry', async () => {
@@ -311,6 +333,7 @@ describe('MonthInstrument', () => {
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     expect(getByTestId('month-line').props.children).toBe('Nothing logged yet · the month fills in from the first entry');
     expect(getAllByLabelText(/^\w+, September \d+, nothing logged yet$/)).toHaveLength(17);
+    expect(getAllByLabelText(/^\w+, August \d+, nothing logged yet$/)).toHaveLength(2);
     // Nowhere to page back to.
     expect(getByTestId('month-prev').props.accessibilityState.disabled).toBe(true);
   });

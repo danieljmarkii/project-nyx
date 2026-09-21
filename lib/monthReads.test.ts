@@ -130,17 +130,26 @@ describe('readMonthFacts against the production DDL', () => {
     for (const k of facts.episodeDays) expect(facts.loggedDays).toContain(k);
   });
 
-  it('logged is a feeding OR a correlation-symptom day — not a dose, not a look, not a weight', async () => {
+  it('logged is any day the owner logged anything — a cough, a stool, a dose, a weigh-in — and never a look', async () => {
+    // The COVERAGE question (PM R3: "a logged cough IS a logged day"), not the engine's
+    // comparison-gate set the first draft borrowed — under which a stool-, cough-,
+    // lethargy- or dose-only day drew grey with its own rows one tap away.
     meal(at('2026-09-03'), 'all');
     ev('diarrhea', at('2026-09-04'));
     ev('itch', at('2026-09-05'));
-    ev('cough', at('2026-09-06')); // NOT in the correlation set (CUL-676's ruling)
+    ev('cough', at('2026-09-06'));
     dose(at('2026-09-07'), 'given');
-    ev('check_in', at('2026-09-08'));
+    ev('check_in', at('2026-09-08')); // a look is never coverage
     ev('weight_check', at('2026-09-09'));
+    ev('stool_normal', at('2026-09-10'));
+    ev('lethargy', at('2026-09-11'));
+    ev('sneeze', at('2026-09-12'));
     const facts = await readMonthFacts(PET, RANGE);
-    expect(facts.loggedDays).toEqual(['2026-09-03', '2026-09-04', '2026-09-05']);
+    expect(facts.loggedDays).toEqual(['2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12']);
+    expect(facts.loggedDays).not.toContain('2026-09-08');
     expect(facts.dosedDays).toEqual(['2026-09-07']);
+    // And none of those is an EPISODE: the month counts vomiting alone (mutant R20).
+    expect(facts.episodeDays).toEqual([]);
   });
 
   it('left-some is an unfinished QUALIFYING meal: rated, non-treat, non-free-fed', async () => {
@@ -196,10 +205,26 @@ describe('readMonthFacts against the production DDL', () => {
     ]);
   });
 
+  it('a day holding one seen photo and one worth-a-call photo answers the escalation FIRST (mutant R14)', async () => {
+    const a = ev('vomit', at('2026-09-02', 7));
+    const b = ev('stool', at('2026-09-02', 19));
+    photo(a);
+    photo(b);
+    mockVerdictAnswer = async () => ({ data: [{ event_id: b, recommendation: 'worth_a_call' }], error: null });
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.photoDays).toEqual([
+      { day: '2026-09-02', verdict: 'worth_a_call' },
+      { day: '2026-09-02', verdict: 'seen' },
+    ]);
+  });
+
   it('a verdict the server could not answer is `seen`, never a colour (offline, error, throw)', async () => {
     const a = ev('vomit', at('2026-09-02'));
     photo(a);
     mockVerdictAnswer = async () => ({ data: null, error: { message: 'offline' } });
+    expect((await readMonthFacts(PET, RANGE)).photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
+    // An error BESIDE a payload is still an error: nothing in it is trusted (mutant R11).
+    mockVerdictAnswer = async () => ({ data: [{ event_id: a, recommendation: 'worth_a_call' }], error: { message: 'partial' } });
     expect((await readMonthFacts(PET, RANGE)).photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
     mockVerdictAnswer = async () => {
       throw new Error('network');

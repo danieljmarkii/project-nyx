@@ -16,6 +16,7 @@ import {
   type MonthModel,
 } from '../../../lib/monthModel';
 import { readDayRows, readMonthFacts, type MonthFacts } from '../../../lib/monthReads';
+import { TIMING_SYMPTOM_TYPE } from '../../../lib/patternsTiming';
 import { describeDayEvents, daySheetSubtitle } from '../../../lib/dayEvents';
 import type { EventTintCategory } from '../../../lib/dayEvents';
 import type { TimelineRow } from '../../../lib/db';
@@ -315,7 +316,7 @@ export function MonthInstrument({
             ))}
           </View>
 
-          <ThemedText style={styles.line} accessibilityLabel={layers.vomit ? monthA11yLabel(model) : undefined} testID="month-line">
+          <ThemedText style={styles.line} accessibilityLabel={layers.vomit ? monthA11yLabel(model, layers) : undefined} testID="month-line">
             {layers.vomit ? model.line : model.coverageLine}
           </ThemedText>
 
@@ -333,25 +334,20 @@ export function MonthInstrument({
               return (
                 <View key={`row-${r}`} testID={`month-row-${r}`}>
                   <View style={styles.weekRow}>
-                    {row.map((day, c) =>
-                      day == null ? (
-                        <View key={`pad-${r}-${c}`} style={styles.pad} testID="month-pad" />
-                      ) : (
-                        <GridDay
-                          key={day.key}
-                          day={day}
-                          layers={layers}
-                          recordEmpty={model.recordEmpty}
-                          selected={openDay === day.key}
-                          onPress={() => void openDayInPlace(day.key)}
-                        />
-                      ),
-                    )}
+                    {row.map((day) => (
+                      <GridDay
+                        key={day.key}
+                        day={day}
+                        layers={layers}
+                        recordEmpty={model.recordEmpty}
+                        selected={openDay === day.key}
+                        onPress={() => void openDayInPlace(day.key)}
+                      />
+                    ))}
                   </View>
                   <DaySlot
                     shown={openInRow}
                     dayKey={openInRow ? (openDay as string) : null}
-                    day={openInRow ? (model.days.find((d) => d.key === openDay) ?? null) : null}
                     load={openInRow ? (dayLoads.get(openDay as string) ?? null) : null}
                     onRetry={() => openDay && void openDayInPlace(openDay)}
                   />
@@ -399,7 +395,7 @@ function GridDay({
   // plain "logged" hairline — coverage never changes with a layer, only the second fact
   // painted over it.
   const coverage = day.coverage === 'left_some' && !layers.meals ? 'logged' : day.coverage;
-  return (
+  const mark = (
     <DayMark
       dayKey={day.key}
       dayOfMonth={day.dayOfMonth}
@@ -414,19 +410,28 @@ function GridDay({
       onPress={day.coverage === 'ahead' ? undefined : onPress}
     />
   );
+  // A neighbouring month's day in the first or last row is DRAWN, dimmed, with its
+  // date and its mark: the row is the seven days its bar counts, so a bar of 3 over a
+  // row never sits above one rose square and two blanks. It is not in the month's line.
+  if (day.outsideMonth) {
+    return (
+      <View style={styles.outsideMonth} testID="month-outside-day">
+        {mark}
+      </View>
+    );
+  }
+  return mark;
 }
 
 /** The day opening in place under its row — the slot, the rail, the rows. */
 function DaySlot({
   shown,
   dayKey,
-  day,
   load,
   onRetry,
 }: {
   shown: boolean;
   dayKey: string | null;
-  day: MonthDay | null;
   load: DayLoad;
   onRetry: () => void;
 }) {
@@ -474,7 +479,14 @@ function DaySlot({
             </View>
           ) : (
             <>
-              <ThemedText style={styles.daySubtitle}>{daySheetSubtitle(DRILL_LABEL, day?.count ?? 0, items.length)}</ThemedText>
+              {/* The sheet's number counts what the sheet ENUMERATES — the vomit rows below
+                  it — never the corner's count: the corner is EPISODES (the bars' unit,
+                  after the re-log collapse), and a bout that chained across midnight or
+                  twelve rows of one bout would print "No vomit logged" or "1 time" above
+                  the very rows it lists (CUL-62's class). The two units are stated here. */}
+              <ThemedText style={styles.daySubtitle}>
+                {daySheetSubtitle(DRILL_LABEL, items.filter((it) => it.eventType === TIMING_SYMPTOM_TYPE).length, items.length)}
+              </ThemedText>
               {items.map((it, i) => (
                 <View
                   key={i}
@@ -533,8 +545,9 @@ function RowsStage({
  *  count on every mark — the product read found the layer dots drawn with no visible
  *  count while the spoken label already stated it). The four coverage rows are always
  *  there; a layer's row appears with the layer, so the two off-by-default layers never
- *  put an unexplained dot on the page. "nothing logged" carries its scope: the coverage
- *  predicate is a meal or a symptom (the Trial panel's), so a dosed-only day is grey. */
+ *  put an unexplained dot on the page. "nothing logged" is literally true: a grey square
+ *  is a day the owner logged nothing about the pet (every event type but a look —
+ *  `lib/monthReads.ts`), so a dosed-only or stool-only day is never grey. */
 function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
   const dosedDays = model.days.filter((d) => d.medication).length;
   const photoDays = model.days.filter((d) => d.photo !== 'none').length;
@@ -560,7 +573,7 @@ function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
       </View>
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchUnlogged]} />
-        <ThemedText style={styles.legendText}>nothing logged (no meal or symptom)</ThemedText>
+        <ThemedText style={styles.legendText}>nothing logged</ThemedText>
       </View>
       {layers.meds && (
         <View style={styles.legendItem} testID="month-legend-medication">
@@ -637,9 +650,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: GRID_GAP,
   },
-  pad: {
+  // A neighbouring month's day: drawn at half strength so the month's own days lead.
+  outsideMonth: {
     flex: 1,
-    aspectRatio: 1,
+    opacity: 0.45,
   },
   beforeRecord: {
     flex: 1,
