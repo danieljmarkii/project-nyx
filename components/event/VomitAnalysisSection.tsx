@@ -56,7 +56,7 @@ import { useObservationFold } from './useObservationFold';
 // the never-reassure invariant survives the cap by construction (there is no path
 // from either to a reassuring verdict).
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
-type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
+export type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
 
 interface AnalysisRow {
   status: Status;

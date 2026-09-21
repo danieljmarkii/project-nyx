@@ -110,6 +110,8 @@ const RAIL_COLOR: Record<PriorityClass, string> = {
 // downward arithmetic above shows never crosses the hairline into the next face. The card
 // grows ~12pt for the control row's box; a real control costs its floor.
 const FACE_HITSLOP = { top: 8, left: 8, right: 8, bottom: 0 } as const;
+/** D2-3: the face-as-door's hint, told apart from the shipped "Shows the evidence…". */
+export const DOOR_A11Y_HINT = 'Opens this signal';
 const CONTROL_HITSLOP = 8;
 const CONTROL_MIN_HEIGHT = 28;
 
@@ -321,7 +323,9 @@ function cardFaceReceiptA11y(finding: SignalFinding): string | null {
 // safety expands render the phone-call script — the facts to say on a vet call (§9). A
 // FALLING reflection (SR-5) draws its density disclosure/withheld line + the mid-trial
 // adjacency. Correlation still adds nothing here (its sample line carries it — S10).
-function ExpandedReceipts({
+// Exported for the Signal's own screen (D2-3 / CUL-1065), which carries the safety
+// phone script under the flag — the same receipts, never a second script.
+export function ExpandedReceipts({
   finding,
   petName,
   trialRunning,
@@ -573,6 +577,12 @@ interface Props {
   // CUL-785 (§3.4) — the record's last episode for this finding's symptom, for the strip's
   // count line and label; threaded to `FoldedStrip` unchanged.
   lastEpisodeIso?: string | null;
+  // D2-3 (CUL-1065, Design v2) — the face is a DOOR. Present, the face tap opens the
+  // Signal's own screen and nothing else: no expand, no control row (`Keep it compact`
+  // moved to the screen and the strip; the evidence IS the screen). Absent — every
+  // flag-off caller — the card behaves exactly as shipped. The folded strip is untouched
+  // either way: it re-opens on tap as before.
+  onOpen?: (finding: SignalFinding) => void;
 }
 
 export function InsightCard({
@@ -587,6 +597,7 @@ export function InsightCard({
   folded = false,
   onUnfold,
   lastEpisodeIso = null,
+  onOpen,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   // FS-9: the evidence toggle uses the shipped LayoutAnimation idiom, skipped under
@@ -659,8 +670,9 @@ export function InsightCard({
   const backBecauseLine = backBecause ? backBecauseCopy(backBecause) : null;
   if (backBecauseLine) accessibilityLabel = `${backBecauseLine} ${accessibilityLabel}`;
 
-  // The fold control renders only when a host wired it AND the class folds on this build.
-  const foldable = onFold != null && canFold(cached.finding);
+  // The fold control renders only when a host wired it AND the class folds on this build —
+  // and never on a door (D2-3: the control lives on the screen and the strip).
+  const foldable = onOpen == null && onFold != null && canFold(cached.finding);
 
   function animateOwnerCaused() {
     if (reducedMotion) return;
@@ -670,6 +682,12 @@ export function InsightCard({
   function toggle() {
     // A press mid-transition is a no-op: the row is already on its way somewhere.
     if (motion.phase !== 'idle') return;
+    if (onOpen) {
+      // The door: the screen is the evidence. The touch still clears a Back-because line.
+      onTouch?.(cached.finding);
+      onOpen(cached.finding);
+      return;
+    }
     animateOwnerCaused();
     setExpanded((e) => !e);
     onTouch?.(cached.finding);
@@ -776,9 +794,9 @@ export function InsightCard({
           onPress={toggle}
           hitSlop={FACE_HITSLOP}
           accessibilityRole="button"
-          accessibilityState={{ expanded }}
+          accessibilityState={onOpen ? undefined : { expanded }}
           accessibilityLabel={accessibilityLabel}
-          accessibilityHint="Shows the evidence behind this insight"
+          accessibilityHint={onOpen ? DOOR_A11Y_HINT : 'Shows the evidence behind this insight'}
           testID="insight-face"
         >
           {backBecauseLine ? <ThemedText style={styles.backBecause}>{backBecauseLine}</ThemedText> : null}
@@ -803,7 +821,9 @@ export function InsightCard({
         {/* The control row (DF-3): the evidence verb as a real button — the same action as the
             face tap — and, on a foldable card, `Keep it compact` beside it. The evidence verb
             keeps the accent ink; the fold verb sits in grey so the doorway to the evidence
-            stays the brighter of the two. */}
+            stays the brighter of the two. A DOOR (D2-3) has no control row: the face is the
+            one verb, and the screen carries the rest. */}
+        {onOpen ? null : (
         <View style={styles.controlRow}>
           <Pressable
             onPress={toggle}
@@ -833,6 +853,7 @@ export function InsightCard({
             </Pressable>
           ) : null}
         </View>
+        )}
         {/* §3.3: in the expanded state the row also carries the one-line contract, so sighted
             owners learn what brings a folded card back without a zone-level line (§6). */}
         {expanded && foldable ? <ThemedText style={styles.foldCaption}>{FOLD_CAPTION}</ThemedText> : null}

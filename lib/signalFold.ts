@@ -535,7 +535,32 @@ export async function writeFoldEntries(petId: string, entries: PetFoldEntries): 
     await AsyncStorage.setItem(SIGNAL_FOLD_STORAGE_KEY, JSON.stringify(store));
   } catch (e) {
     console.warn('[signalFold] write failed:', e);
+    return;
   }
+  notifyFoldStore(petId);
+}
+
+// ── A second writer (D2-3 · CUL-1065) ─────────────────────────────────────────
+// The Signal's own screen folds the Home card from OFF Home (*Keep it compact on Home*),
+// so Home's `useSignalFold` needs to hear that the store moved while it was not looking:
+// its reconcile keys on the findings' content, and a fold written elsewhere changes no
+// finding. One in-process listener list, notified after a successful write, keyed by pet
+// so a listener for another pet ignores it. Never persisted, never synced — the store on
+// disk is still the one source; this is only the knock on the door.
+
+type FoldStoreListener = (petId: string) => void;
+const foldListeners = new Set<FoldStoreListener>();
+
+/** Hear every successful `writeFoldEntries`. Returns the unsubscribe. */
+export function subscribeFoldStore(listener: FoldStoreListener): () => void {
+  foldListeners.add(listener);
+  return () => {
+    foldListeners.delete(listener);
+  };
+}
+
+function notifyFoldStore(petId: string): void {
+  for (const l of foldListeners) l(petId);
 }
 
 /**
