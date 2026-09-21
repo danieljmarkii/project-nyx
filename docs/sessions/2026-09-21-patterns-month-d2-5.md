@@ -3,7 +3,7 @@
 **Date:** 2026-09-21
 
 CUL-1067, step 2 lane 3 of the Linear project *Design v2 — the whole day*. Shipped via
-**#PR_NUMBER** (draft). The plan was posted on the issue before coding (the plan-gate);
+**#882** (draft). The plan was posted on the issue before coding (the plan-gate);
 the session was unattended, so the build proceeded on it with every call reversible in
 review, the D2-1 precedent.
 
