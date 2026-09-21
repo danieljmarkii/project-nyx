@@ -107,6 +107,11 @@ export interface MonthModelInput {
   /** The record's first day (the pet's earliest entry). Days before it are
    *  `before_record`. Omitted → every arrived day is in the denominator. */
   recordStart?: string | null;
+  /** The pet has NO entries at all. Then no day is a day nobody logged — there is no
+   *  record for a day to be missing from — so every arrived day is `before_record` and
+   *  the line invites the first entry rather than counting weeks of "unlogged" on an
+   *  account that is minutes old (the product read on CUL-1067). */
+  recordEmpty?: boolean;
   /** One entry PER EPISODE, after the engine's re-log collapse (`episodeDaysOf`). */
   episodeDays: readonly string[];
   /** Days with any logging under the caller's predicate. Duplicates are fine. */
@@ -162,6 +167,11 @@ export interface MonthModel {
   /** The line above the grid — "Vomiting 6 times on 4 days · through Sep 17 · 2 days
    *  unlogged". Nothing about coverage when fully covered (C-3). */
   line: string;
+  /** The line with the symptom layer OFF: the window and its coverage, no count — the
+   *  layer leaves the whole card (bars, corners, sentence), the coverage never does. */
+  coverageLine: string;
+  /** `recordEmpty` echoed, so a renderer can name the state ("nothing logged yet"). */
+  recordEmpty: boolean;
   noun: string;
 }
 
@@ -223,6 +233,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
 
   const isCurrent = todayIdx >= firstIdx && todayIdx <= lastIdx;
   const isAhead = todayIdx < firstIdx;
+  const recordEmpty = input.recordEmpty === true;
   const lastDrawnIdx = Math.min(lastIdx, todayIdx);
 
   const toSet = (keys: readonly string[] | undefined, what: string): Set<number> => {
@@ -264,7 +275,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     if (i > todayIdx) {
       coverage = 'ahead';
       aheadDays += 1;
-    } else if (recordIdx != null && i < recordIdx) {
+    } else if (recordEmpty || (recordIdx != null && i < recordIdx)) {
       coverage = 'before_record';
       beforeRecordDays += 1;
     } else if (leftSome.has(i)) {
@@ -320,7 +331,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     return w;
   });
 
-  const line = buildLine({
+  const lineFacts: LineFacts = {
     noun,
     count,
     episodeDayCount,
@@ -328,9 +339,12 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     unloggedDays,
     beforeRecordDays,
     isAhead,
+    recordEmpty,
     allBeforeRecord: !isAhead && beforeRecordDays > 0 && beforeRecordDays === n - aheadDays,
     lastDrawnKey,
-  });
+  };
+  const line = buildLine(lineFacts);
+  const coverageLine = buildLine(lineFacts, { withCount: false });
 
   return {
     year,
@@ -352,6 +366,8 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     beforeRecordDays,
     aheadDays,
     line,
+    coverageLine,
+    recordEmpty,
     noun,
   };
 }
@@ -364,6 +380,7 @@ interface LineFacts {
   unloggedDays: number;
   beforeRecordDays: number;
   isAhead: boolean;
+  recordEmpty: boolean;
   allBeforeRecord: boolean;
   lastDrawnKey: string;
 }
@@ -379,20 +396,24 @@ interface LineFacts {
  * as unlogged, not quiet. Days before the record are named separately, because they are
  * not days nobody logged; and a month wholly before the record says only that.
  */
-export function buildLine(f: LineFacts): string {
+export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): string {
+  const withCount = opts.withCount !== false;
   if (f.isAhead) return 'Nothing yet · this month has not started';
+  // An empty record is an invitation, never a count of days nobody logged (Principle 5).
+  if (f.recordEmpty) return 'Nothing logged yet · the month fills in from the first entry';
   if (f.allBeforeRecord) return 'Before the record began';
   const parts: string[] = [];
-  if (f.count === 0) parts.push(`No ${f.noun} logged`);
+  if (!withCount) parts.push(`Through ${dateWord(f.lastDrawnKey)}`);
+  else if (f.count === 0) parts.push(`No ${f.noun} logged`, `through ${dateWord(f.lastDrawnKey)}`);
   else {
     parts.push(
       `${capitalize(f.noun)} ${f.count} ${plural(f.count, 'time')} on ${f.episodeDayCount} ${plural(f.episodeDayCount, 'day')}`,
+      `through ${dateWord(f.lastDrawnKey)}`,
     );
   }
-  parts.push(`through ${dateWord(f.lastDrawnKey)}`);
   if (f.unloggedDays > 0) parts.push(`${f.unloggedDays} ${plural(f.unloggedDays, 'day')} unlogged`);
   if (f.beforeRecordDays > 0) parts.push(`${f.beforeRecordDays} ${plural(f.beforeRecordDays, 'day')} before the record`);
-  if (f.aheadCount > 0) parts.push(`${f.aheadCount} dated ahead, not drawn`);
+  if (withCount && f.aheadCount > 0) parts.push(`${f.aheadCount} dated ahead, not drawn`);
   return parts.join(' · ');
 }
 

@@ -95,14 +95,15 @@ jest.mock('../../lib/weight', () => {
 });
 // The month's reads — a fixture that WOULD answer, so an absent read is a gate held and
 // never a read that had nothing to say.
-const mockReadMonthFacts = jest.fn(async () => ({
+const SOME_FACTS: import('../../lib/monthReads').MonthFacts = {
   episodeDays: ['2026-09-02'],
   loggedDays: ['2026-09-01', '2026-09-02', '2026-09-03'],
   leftSomeDays: [],
   dosedDays: [],
   photoDays: [],
   recordStart: '2026-06-01',
-}));
+};
+const mockReadMonthFacts = jest.fn(async () => SOME_FACTS);
 jest.mock('../../lib/monthReads', () => ({
   readMonthFacts: (...a: unknown[]) => mockReadMonthFacts(...(a as [])),
   readDayRows: jest.fn(async () => []),
@@ -136,6 +137,7 @@ function seed() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockReadMonthFacts.mockResolvedValue(SOME_FACTS);
   seed();
 });
 
@@ -164,6 +166,24 @@ describe('Patterns × Design v2', () => {
     expect(json.indexOf('month-instrument')).toBeGreaterThan(-1);
     expect(json.indexOf('month-instrument')).toBeLessThan(json.indexOf('weight-card-v2'));
     expect(getByText('Log a weigh-in')).toBeTruthy();
+  });
+
+  it('flag ON, cold start: the warm invitation leads and the month follows it (Principle 5)', async () => {
+    mockDesignV2 = true;
+    A.getSymptomCounts.mockResolvedValue([]);
+    A.getSymptomFrequencyByDay.mockResolvedValue([]);
+    A.getMealTreatComposition.mockResolvedValue({ meal: 0, treat: 0, other: 0, unclassified: 0, total: 0 });
+    const weight = jest.requireMock('../../lib/weight') as { getWeightHistory: jest.Mock; getWeightReadingCount: jest.Mock };
+    weight.getWeightHistory.mockResolvedValueOnce([]);
+    weight.getWeightReadingCount.mockResolvedValueOnce(0);
+    // Every read (the mount's and the focus refresh's) answers an empty record.
+    mockReadMonthFacts.mockResolvedValue({ episodeDays: [], loggedDays: [], leftSomeDays: [], dosedDays: [], photoDays: [], recordStart: null });
+    const { getByText, getByTestId, toJSON } = render(<PatternsScreen />);
+    await waitFor(() => expect(getByText(/still getting to know/i)).toBeTruthy());
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    expect(getByTestId('month-line').props.children).toBe('Nothing logged yet · the month fills in from the first entry');
+    const json = JSON.stringify(toJSON());
+    expect(json.indexOf('still getting to know')).toBeLessThan(json.indexOf('month-instrument'));
   });
 
   it('flag OFF: no redesign node AND no redesign read, over a fixture that would answer (the async half of the guard)', async () => {

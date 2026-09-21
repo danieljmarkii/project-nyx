@@ -130,8 +130,13 @@ export function MonthInstrument({
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [dayLoads, setDayLoads] = useState<Map<string, DayLoad>>(new Map());
   const [drawTick, setDrawTick] = useState(0);
-  const loadIdRef = useRef(0);
-  const dayLoadRef = useRef(0);
+  // Staleness is PER KEY, never one counter for the whole card (the code-reviewer on
+  // this PR): a month's fetch can only be superseded by a later fetch of the SAME
+  // month. With one global id, a refresh of the current month landing while August was
+  // paging in discarded August's result AND its loading flag, and August sat on its
+  // skeleton with no error and no retry until the owner paged away and back.
+  const loadIds = useRef<Map<string, number>>(new Map());
+  const dayLoadIds = useRef<Map<string, number>>(new Map());
 
   const shownKey = monthKey(shown);
 
@@ -139,20 +144,21 @@ export function MonthInstrument({
     async (m: Month, force: boolean) => {
       const key = monthKey(m);
       if (!force && cache.has(key)) return;
-      const myId = ++loadIdRef.current;
+      const myId = (loadIds.current.get(key) ?? 0) + 1;
+      loadIds.current.set(key, myId);
       setLoadingKey(key);
       setFailedKey((f) => (f === key ? null : f));
       try {
         const facts = await readFacts(petId, monthReadRange(m, today));
-        if (loadIdRef.current !== myId) return;
-        // Keyed write: a slow fetch lands on ITS month, never over another.
+        if (loadIds.current.get(key) !== myId) return;
+        // Keyed write: a fetch lands on ITS month, never over another.
         setCache((prev) => new Map(prev).set(key, facts));
       } catch (e) {
-        if (loadIdRef.current !== myId) return;
+        if (loadIds.current.get(key) !== myId) return;
         console.error('[month] load failed:', e);
         setFailedKey(key);
       } finally {
-        if (loadIdRef.current === myId) setLoadingKey(null);
+        if (loadIds.current.get(key) === myId) setLoadingKey((k) => (k === key ? null : k));
       }
     },
     [cache, petId, readFacts, today],
@@ -178,6 +184,7 @@ export function MonthInstrument({
             ...shown,
             today,
             recordStart: facts.recordStart,
+            recordEmpty: facts.recordStart == null,
             episodeDays: facts.episodeDays,
             loggedDays: facts.loggedDays,
             leftSomeDays: facts.leftSomeDays,
@@ -212,14 +219,15 @@ export function MonthInstrument({
       }
       setOpenDay(dayKey);
       if (dayLoads.get(dayKey) != null && !('error' in (dayLoads.get(dayKey) as object))) return;
-      const myId = ++dayLoadRef.current;
+      const myId = (dayLoadIds.current.get(dayKey) ?? 0) + 1;
+      dayLoadIds.current.set(dayKey, myId);
       setDayLoads((prev) => new Map(prev).set(dayKey, null));
       try {
         const rows = await readDay(petId, dayKey);
-        if (dayLoadRef.current !== myId) return;
+        if (dayLoadIds.current.get(dayKey) !== myId) return;
         setDayLoads((prev) => new Map(prev).set(dayKey, { rows }));
       } catch (e) {
-        if (dayLoadRef.current !== myId) return;
+        if (dayLoadIds.current.get(dayKey) !== myId) return;
         console.error('[month] day load failed:', e);
         setDayLoads((prev) => new Map(prev).set(dayKey, { error: true }));
       }
@@ -286,7 +294,12 @@ export function MonthInstrument({
         </View>
       ) : (
         <>
-          <WeeklyBars model={model.weekly} noun={NOUN} drawIn={drawTick > 0} identity={`${shownKey}:${drawTick}`} />
+          {/* The symptom layer is the whole vomiting drawing — the bars, the corners AND the
+              sentence — so switching it off takes all three, and leaves the coverage: the
+              product read found a chip that reached only the grid read as broken. */}
+          {layers.vomit && (
+            <WeeklyBars model={model.weekly} noun={NOUN} drawIn={drawTick > 0} identity={`${shownKey}:${drawTick}`} />
+          )}
 
           {/* The layers: four independent toggles, wrapping, each announcing its checked state. */}
           <View style={styles.chips} accessibilityLabel="Layers" testID="month-layers">
@@ -302,8 +315,8 @@ export function MonthInstrument({
             ))}
           </View>
 
-          <ThemedText style={styles.line} accessibilityLabel={monthA11yLabel(model)} testID="month-line">
-            {model.line}
+          <ThemedText style={styles.line} accessibilityLabel={layers.vomit ? monthA11yLabel(model) : undefined} testID="month-line">
+            {layers.vomit ? model.line : model.coverageLine}
           </ThemedText>
 
           <View style={styles.weekdayHeader} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
@@ -328,6 +341,7 @@ export function MonthInstrument({
                           key={day.key}
                           day={day}
                           layers={layers}
+                          recordEmpty={model.recordEmpty}
                           selected={openDay === day.key}
                           onPress={() => void openDayInPlace(day.key)}
                         />
@@ -346,7 +360,7 @@ export function MonthInstrument({
             })}
           </View>
 
-          <Legend />
+          <Legend model={model} layers={layers} />
         </>
       )}
     </View>
@@ -356,12 +370,24 @@ export function MonthInstrument({
 /** One grid day: a `DayMark` for a day of the record, a plain dim square for a day
  *  before it (DayMark's coverage vocabulary has no "before the record", and that day
  *  is neither unlogged nor ahead — it is a day nobody could have logged). */
-function GridDay({ day, layers, selected, onPress }: { day: MonthDay; layers: MonthLayers; selected: boolean; onPress: () => void }) {
+function GridDay({
+  day,
+  layers,
+  recordEmpty,
+  selected,
+  onPress,
+}: {
+  day: MonthDay;
+  layers: MonthLayers;
+  recordEmpty: boolean;
+  selected: boolean;
+  onPress: () => void;
+}) {
   if (day.coverage === 'before_record') {
     return (
       <View
         accessible
-        accessibilityLabel={`${dayMarkDateWord(day.key)}, before the record began`}
+        accessibilityLabel={`${dayMarkDateWord(day.key)}, ${recordEmpty ? 'nothing logged yet' : 'before the record began'}`}
         style={styles.beforeRecord}
         testID="month-before-record"
       >
@@ -502,9 +528,18 @@ function RowsStage({
   );
 }
 
-/** The legend, cold-readable: four swatches, each the mark it names, and the count's
- *  place said in words. Colour is never the only carrier — every swatch has its label. */
-function Legend() {
+/** The legend, cold-readable: a swatch for every mark the grid can draw RIGHT NOW, each
+ *  the mark it names, and the count in words beside the layers that draw one (§05: a
+ *  count on every mark — the product read found the layer dots drawn with no visible
+ *  count while the spoken label already stated it). The four coverage rows are always
+ *  there; a layer's row appears with the layer, so the two off-by-default layers never
+ *  put an unexplained dot on the page. "nothing logged" carries its scope: the coverage
+ *  predicate is a meal or a symptom (the Trial panel's), so a dosed-only day is grey. */
+function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
+  const dosedDays = model.days.filter((d) => d.medication).length;
+  const photoDays = model.days.filter((d) => d.photo !== 'none').length;
+  const calledDays = model.days.filter((d) => d.photo === 'worth_a_call').length;
+  const dayWord = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
   return (
     <View style={styles.legend} testID="month-legend">
       <View style={styles.legendItem}>
@@ -525,8 +560,26 @@ function Legend() {
       </View>
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchUnlogged]} />
-        <ThemedText style={styles.legendText}>nothing logged</ThemedText>
+        <ThemedText style={styles.legendText}>nothing logged (no meal or symptom)</ThemedText>
       </View>
+      {layers.meds && (
+        <View style={styles.legendItem} testID="month-legend-medication">
+          <View style={[styles.legendDot, styles.legendDotMedication]} />
+          <ThemedText style={styles.legendText}>medication given · {dayWord(dosedDays)}</ThemedText>
+        </View>
+      )}
+      {layers.photos && (
+        <>
+          <View style={styles.legendItem} testID="month-legend-photo">
+            <View style={[styles.legendDot, styles.legendDotPhoto]} />
+            <ThemedText style={styles.legendText}>photographed · {dayWord(photoDays)}</ThemedText>
+          </View>
+          <View style={styles.legendItem} testID="month-legend-photo-call">
+            <View style={[styles.legendDot, styles.legendDotPhotoCall]} />
+            <ThemedText style={styles.legendText}>photo read as worth a call · {dayWord(calledDays)}</ThemedText>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -728,6 +781,24 @@ const styles = StyleSheet.create({
   },
   swatchHairlineLeftSome: {
     backgroundColor: theme.colorAccentWashDeep,
+  },
+  // The layer dots, drawn at DayMark's own size and colours so the key IS the mark.
+  legendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginHorizontal: 3,
+  },
+  legendDotMedication: {
+    backgroundColor: theme.colorEventMedication,
+  },
+  legendDotPhoto: {
+    backgroundColor: theme.colorTextTertiary,
+  },
+  legendDotPhotoCall: {
+    backgroundColor: theme.colorEventSymptomInk,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colorSurface,
   },
   stateBox: {
     gap: theme.space1,

@@ -123,7 +123,7 @@ describe('MonthInstrument', () => {
   });
 
   it('a day mark keeps its date; the count is in the corner; a layer off does not change coverage (AC 3)', async () => {
-    const { getByTestId, getAllByTestId, getByText } = mount();
+    const { getByTestId, getAllByTestId, getByText, queryByTestId } = mount();
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     const marks = getAllByTestId('daymark');
     const sep2 = marks[1];
@@ -134,7 +134,14 @@ describe('MonthInstrument', () => {
     expect(dates).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
     const counts = getAllByTestId('daymark-count').map((n) => n.props.children);
     expect(counts).toEqual([2, 1, 2, 1]);
-    // Vomiting off: the rose and the counts go; the hairlines and the dates stay.
+    // Vomiting off: the rose, the counts, the BARS and the sentence's count go; the
+    // hairlines, the dates and the coverage stay.
+    fireEvent.press(getByText('Vomiting'));
+    expect(queryByTestId('weekly-bars')).toBeNull();
+    expect(getByTestId('month-line').props.children).toBe('Through Sep 17 · 2 days unlogged');
+    fireEvent.press(getByText('Vomiting'));
+    expect(getByTestId('weekly-bars')).toBeTruthy();
+    expect(getByTestId('month-line').props.children).toBe('Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged');
     fireEvent.press(getByText('Vomiting'));
     expect(getAllByTestId('daymark-date')).toHaveLength(30);
     expect(() => getAllByTestId('daymark-count')).toThrow();
@@ -168,13 +175,21 @@ describe('MonthInstrument', () => {
     expect(getAllByRole('checkbox').map((c) => c.props.accessibilityState.checked)).toEqual([true, true, false, true]);
   });
 
-  it('the legend includes left-some, and reads cold', async () => {
-    const { getByTestId, getByText } = mount();
+  it('the legend includes left-some and names its scope; a layer\'s key appears with the layer, with its count', async () => {
+    const { getByTestId, getByText, queryByTestId } = mount();
     await waitFor(() => expect(getByTestId('month-legend')).toBeTruthy());
     expect(getByText('vomit day, count in the corner')).toBeTruthy();
     expect(getByText('logged')).toBeTruthy();
     expect(getByText('left some')).toBeTruthy();
-    expect(getByText('nothing logged')).toBeTruthy();
+    expect(getByText('nothing logged (no meal or symptom)')).toBeTruthy();
+    // Off by default: no unexplained dot, no key for it.
+    expect(queryByTestId('month-legend-medication')).toBeNull();
+    expect(queryByTestId('month-legend-photo')).toBeNull();
+    fireEvent.press(getByText('Medication'));
+    expect(getByText('medication given · 1 day')).toBeTruthy();
+    fireEvent.press(getByText('Photos'));
+    expect(getByText('photographed · 1 day')).toBeTruthy();
+    expect(getByText('photo read as worth a call · 1 day')).toBeTruthy();
   });
 
   it('adjacent day marks never share hit area: the rendered gap clears both slops (C-5)', async () => {
@@ -212,6 +227,39 @@ describe('MonthInstrument', () => {
     await waitFor(() => expect(getByTestId('month-label').props.children).toBe('May 2026'));
     expect(getByTestId('month-prev').props.accessibilityState.disabled).toBe(true);
     expect(getByTestId('month-prev').props.accessibilityLabel).toContain('first month with a record');
+  });
+
+  it('a refresh of the current month landing while another month pages in never strands that month (per-key staleness)', async () => {
+    // The code-reviewer's repro: page to August (its read pending), a refresh forces the
+    // current month to re-read, then August resolves. With one global staleness counter
+    // August's result AND its loading flag were both discarded — a skeleton forever.
+    const pending = new Map<string, (f: MonthFacts) => void>();
+    const readFacts = jest.fn(
+      (_pet: string, range: { fromKey: string; toKey: string }) =>
+        new Promise<MonthFacts>((res) => {
+          pending.set(range.toKey, res);
+        }),
+    );
+    const { getByTestId, rerender } = render(
+      <MonthInstrument petId="p1" today={TODAY} readFacts={readFacts} readDay={jest.fn(async () => [])} refreshTick={0} />,
+    );
+    await act(async () => pending.get('2026-09-30')!(facts()));
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    fireEvent.press(getByTestId('month-prev'));
+    await waitFor(() => expect(getByTestId('month-skeleton')).toBeTruthy());
+    // The refresh lands mid-page: the current month re-reads.
+    rerender(<MonthInstrument petId="p1" today={TODAY} readFacts={readFacts} readDay={jest.fn(async () => [])} refreshTick={1} />);
+    await waitFor(() => expect(readFacts).toHaveBeenCalledTimes(3));
+    // August resolves AFTER the refresh was issued: it must still land.
+    await act(async () => pending.get('2026-08-31')!(facts({ episodeDays: ['2026-08-03'] })));
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    expect(getByTestId('month-label').props.children).toBe('August 2026');
+    expect(getByTestId('month-line').props.children).toMatch(/^Vomiting 1 time on 1 day · through Aug 31/);
+    // And the refreshed September lands too, without touching August's slot.
+    await act(async () => pending.get('2026-09-30')!(facts()));
+    fireEvent.press(getByTestId('month-next'));
+    await waitFor(() => expect(getByTestId('month-label').props.children).toBe('September 2026'));
+    expect(getByTestId('month-grid')).toBeTruthy();
   });
 
   it('the day opens in place under its row, one at a time, and closes (AC 4; C-14: no Modal)', async () => {
@@ -256,6 +304,15 @@ describe('MonthInstrument', () => {
     const ahead = getAllByTestId('daymark').filter((n) => String(n.props.accessibilityLabel).includes('ahead'));
     expect(ahead).toHaveLength(13);
     for (const n of ahead) expect(n.props.accessibilityRole).toBeUndefined();
+  });
+
+  it('a pet with no record: every day says "nothing logged yet", the line invites the first entry', async () => {
+    const { getByTestId, getAllByLabelText } = mount(jest.fn(async () => facts({ recordStart: null, episodeDays: [], loggedDays: [], leftSomeDays: [], dosedDays: [], photoDays: [] })));
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    expect(getByTestId('month-line').props.children).toBe('Nothing logged yet · the month fills in from the first entry');
+    expect(getAllByLabelText(/^\w+, September \d+, nothing logged yet$/)).toHaveLength(17);
+    // Nowhere to page back to.
+    expect(getByTestId('month-prev').props.accessibilityState.disabled).toBe(true);
   });
 
   it('monthReadRange: the nine weeks\' first Sunday through the month\'s last day, and never after the month', () => {

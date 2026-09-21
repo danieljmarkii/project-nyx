@@ -57,15 +57,23 @@ export function WeightCard({ readings, readingCount, petName, petId, drawIn = fa
           {count > 0 ? `Weight · ${count} ${pluralize(count, 'reading')}` : 'Weight'}
         </ThemedText>
         {count > 0 && (
+          // The header's door: "All ›" into the readings list — except at ONE reading,
+          // where the design authority draws "Add ›" (§04): a list holding the number
+          // already on screen is a dead end, and the wanted next step is the second
+          // reading that draws the band.
           <Pressable
             style={styles.door}
-            onPress={() => router.push({ pathname: '/weight-history', params: { petId } })}
+            onPress={() =>
+              count === 1
+                ? router.push('/log?type=weight_check')
+                : router.push({ pathname: '/weight-history', params: { petId } })
+            }
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel={`All ${count} ${pluralize(count, 'reading')}`}
+            accessibilityLabel={count === 1 ? 'Add a second reading' : `All ${count} ${pluralize(count, 'reading')}`}
             testID="weight-card-door"
           >
-            <ThemedText style={styles.doorText}>All</ThemedText>
+            <ThemedText style={styles.doorText}>{count === 1 ? 'Add' : 'All'}</ThemedText>
             <ChevronRight size={14} color={theme.colorTextTertiary} strokeWidth={2} />
           </Pressable>
         )}

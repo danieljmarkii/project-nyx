@@ -238,9 +238,29 @@ describe('the line (AC 5, C-3)', () => {
     expect(ahead.barIndexOfRow.every((b) => b == null)).toBe(true);
   });
 
-  it('buildLine pluralises and orders its clauses', () => {
-    const base = { noun: 'vomiting', count: 1, episodeDayCount: 1, aheadCount: 0, unloggedDays: 1, beforeRecordDays: 1, isAhead: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
-    expect(buildLine(base)).toBe('Vomiting 1 time on 1 day · through Sep 17 · 1 day unlogged · 1 day before the record');
+  it('buildLine pluralises and orders its clauses; without the count it is the window and its coverage', () => {
+    const base = { noun: 'vomiting', count: 1, episodeDayCount: 1, aheadCount: 2, unloggedDays: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
+    expect(buildLine(base)).toBe('Vomiting 1 time on 1 day · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
+    expect(buildLine(base, { withCount: false })).toBe('Through Sep 17 · 1 day unlogged · 1 day before the record');
+  });
+
+  it('the coverage line drops the count and keeps the coverage — the layer leaves, the coverage never does', () => {
+    const m = septModel();
+    expect(m.coverageLine).toBe('Through Sep 17 · 2 days unlogged');
+    expect(septModel({ loggedDays: range('2026-07-01', TODAY) }).coverageLine).toBe('Through Sep 17');
+  });
+
+  it('a pet with no record at all: an invitation, never weeks of "unlogged" on a first screen (Principle 5)', () => {
+    const m = septModel({ recordStart: null, recordEmpty: true, episodeDays: [], loggedDays: [] });
+    expect(m.recordEmpty).toBe(true);
+    expect(m.unloggedDays).toBe(0);
+    expect(m.line).toBe('Nothing logged yet · the month fills in from the first entry');
+    expect(m.line).not.toMatch(/unlogged/);
+    expect(m.days.filter((d) => d.coverage === 'ahead')).toHaveLength(13);
+    expect(m.days.filter((d) => d.coverage === 'before_record')).toHaveLength(17);
+    // Without the flag, a missing record start still means every arrived day counts —
+    // the caller says which it is.
+    expect(septModel({ recordStart: null, episodeDays: [], loggedDays: [] }).unloggedDays).toBe(17);
   });
 });
 

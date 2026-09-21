@@ -94,9 +94,12 @@ describe('WeightCard (Design v2)', () => {
     expect(queryByTestId('weight-area')).toBeNull();
   });
 
-  it('n = 1: the number and its date, the note, no band', () => {
+  it('n = 1: the number and its date, the note, no band; the door is "Add ›" into the weigh-in (§04)', () => {
     const { getByTestId, queryByTestId } = render(<WeightCard readings={[r(4.6, at(2026, 9, 12))]} readingCount={1} petId="p1" />);
     expect(getByTestId('weight-card-header').props.children).toBe('Weight · 1 reading');
+    expect(getByTestId('weight-card-door').props.accessibilityLabel).toBe('Add a second reading');
+    fireEvent.press(getByTestId('weight-card-door'));
+    expect(router.push).toHaveBeenLastCalledWith('/log?type=weight_check');
     expect(getByTestId('weight-number-value').props.children).toBe('10.1 lbs');
     expect(getByTestId('weight-card-note').props.children).toBe('One reading is a number, not a line. The second one draws the band.');
     expect(queryByTestId('weight-plot')).toBeNull();

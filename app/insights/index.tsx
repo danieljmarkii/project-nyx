@@ -364,8 +364,11 @@ export default function PatternsScreen() {
         >
           {designV2 ? (
             <>
-              {/* The month leads on every record — an empty month is a designed state
-                  (its line says what is unlogged), so no separate empty state above it. */}
+              {/* The cold-start moment stays reachable flag-on (Principle 5): on a record
+                  with nothing to chart the warm invitation leads, and the month follows
+                  it — an empty month is itself a designed state ("nothing logged yet"),
+                  never weeks of "unlogged" on an account that is minutes old. */}
+              {dashState === 'empty' && <DashboardEmptyState petName={petName} />}
               <MonthInstrument
                 key={`month:${activePet.id}`}
                 petId={activePet.id}
