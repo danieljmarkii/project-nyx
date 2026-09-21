@@ -12,11 +12,13 @@ const mockReadPhotographed = jest.fn();
 const mockReadFeedings = jest.fn();
 const mockReadSpans = jest.fn();
 const mockReadAnalysis = jest.fn();
+const mockReadOnsets = jest.fn();
 jest.mock('../../../lib/spineReads', () => ({
   readPhotographedIds: (...a: unknown[]) => mockReadPhotographed(...a),
   readFeedingsSince: (...a: unknown[]) => mockReadFeedings(...a),
   readFreeFedSpans: (...a: unknown[]) => mockReadSpans(...a),
   readAnalysisRows: (...a: unknown[]) => mockReadAnalysis(...a),
+  readVomitOnsetsSince: (...a: unknown[]) => mockReadOnsets(...a),
 }));
 const mockOutstanding = jest.fn((_id: string) => false);
 let settleChain: (() => void) | null = null;
@@ -71,6 +73,7 @@ beforeEach(() => {
     SEP_17.filter((r) => r.event_type === 'meal').map((r) => ({ ms: Date.parse(r.occurred_at), confidence: 'witnessed', form: null, foodType: 'meal' })),
   );
   mockReadSpans.mockResolvedValue([]);
+  mockReadOnsets.mockResolvedValue([]);
   mockReadAnalysis.mockResolvedValue(new Map());
   useEventStore.setState({ todayEvents: [], todayRead: null });
 });
@@ -140,22 +143,40 @@ describe('the ten-event day', () => {
     expect(t.getByText(/4 min after eating/)).toBeTruthy();
   });
 
-  it('issues the analysis read for the PHOTOGRAPHED symptoms only, and never a trigger', async () => {
+  it('issues the analysis read for the day\u2019s SYMPTOM rows, and never a trigger', async () => {
     render(<TodayCard />);
     await waitFor(() => expect(mockReadAnalysis).toHaveBeenCalled());
     const ids = mockReadAnalysis.mock.calls.map((c) => [...(c[0] as string[])].sort());
-    expect(ids[ids.length - 1]).toEqual(['v1', 'v2']);
+    expect(ids[ids.length - 1]).toEqual(['c1', 'v1', 'v2']);
     const analysis = require('../../../lib/analysis');
     expect(analysis.triggerVomitAnalysis).not.toHaveBeenCalled();
     expect(analysis.triggerStoolAnalysis).not.toHaveBeenCalled();
   });
 
-  it('a day with no photographed symptom issues NO server read at all', async () => {
-    mockReadPhotographed.mockResolvedValue(new Set());
+  it('a day with no symptom issues NO server read at all', async () => {
+    useEventStore.setState({ todayEvents: SEP_17.filter((r) => r.event_type === 'meal') as never });
     const t = render(<TodayCard />);
-    await waitFor(() => expect(t.getByTestId('spine-node-v1')).toBeTruthy());
+    await waitFor(() => expect(t.getByTestId('spine-node-compact:m1')).toBeTruthy());
     await act(async () => {});
     expect(mockReadAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('a landed escalation renders even when the local attachment read failed (F5)', async () => {
+    mockReadPhotographed.mockRejectedValue(new Error('locked'));
+    mockReadAnalysis.mockResolvedValue(
+      new Map([['v2', { event_id: 'v2', status: 'completed', recommendation: 'worth_a_call', read_text: 'x', dismissed_at: null }]]),
+    );
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v2').props.children).toBe('Worth a call'));
+  });
+
+  it('reads the vomit onsets back by the lane\u2019s episode gap so a midnight bout collapses as the lane collapses it (F2)', async () => {
+    render(<TodayCard />);
+    await waitFor(() => expect(mockReadOnsets).toHaveBeenCalled());
+    const since = Date.parse(mockReadOnsets.mock.calls[0][1] as string);
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    expect(dayStart.getTime() - since).toBe(3 * 3_600_000);
   });
 
   it('a landed read renders on its node in the shipped words', async () => {

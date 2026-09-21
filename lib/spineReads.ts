@@ -11,8 +11,23 @@
 import { getDb } from './db';
 import { supabase } from './supabase';
 import { readFreeFedSpans, foodLabelOf, type FeedingRow } from './patternsTiming';
+import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import type { FreeFedSpan, OnsetConfidence } from './mealTiming';
+import type { MonthRow } from './monthCoverage';
 import type { SpineAnalysisRow } from './spineNode';
+
+// ── C-40: two ISO spellings of one instant do not compare as TEXT ─────────────
+// A local write stores `…T04:00:00.000Z`; a hydrated row stores PostgREST's
+// `…T04:00:00+00:00`; `'+'` sorts before `'.'`, so a lexical `>=` in SQL drops the
+// hydrated row at the exact bound second. Every bounded read here therefore takes the
+// SQL bound a whole day EARLY (a generous lexical pre-filter, never the decision) and
+// decides the bound in JS on parsed instants.
+const BOUND_SLACK_MS = 24 * 3_600_000;
+
+function sqlBoundFor(sinceIso: string): { sqlSince: string; sinceMs: number } {
+  const sinceMs = Date.parse(sinceIso);
+  return { sqlSince: new Date(sinceMs - BOUND_SLACK_MS).toISOString(), sinceMs };
+}
 
 /** Which of these events carry at least one attachment — the photo GLYPH's fact. */
 export async function readPhotographedIds(eventIds: readonly string[]): Promise<Set<string>> {
@@ -32,6 +47,7 @@ export async function readPhotographedIds(eventIds: readonly string[]): Promise<
  * Patterns lane), bounded; the mapping is its mapping.
  */
 export async function readFeedingsSince(petId: string, sinceIso: string): Promise<FeedingRow[]> {
+  const { sqlSince, sinceMs } = sqlBoundFor(sinceIso);
   const rows = await getDb().getAllAsync<{
     occurred_at: string;
     occurred_at_confidence: string | null;
@@ -44,7 +60,7 @@ export async function readFeedingsSince(petId: string, sinceIso: string): Promis
      JOIN events e ON e.id = m.event_id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE e.pet_id = ? AND e.deleted_at IS NULL AND e.occurred_at >= ?`,
-    [petId, sinceIso],
+    [petId, sqlSince],
   );
   return rows
     .map((r) => ({
@@ -53,7 +69,28 @@ export async function readFeedingsSince(petId: string, sinceIso: string): Promis
       form: foodLabelOf(r.brand, r.product_name) ?? r.food_type ?? null,
       foodType: r.food_type,
     }))
-    .filter((r) => Number.isFinite(r.ms));
+    .filter((r) => Number.isFinite(r.ms) && r.ms >= sinceMs);
+}
+
+/** The pet's vomit onsets from `sinceIso` on — the caller passes the day's start minus
+ *  the lane's episode gap, so the collapse can run over the unbounded list before the
+ *  day windows it (`lib/mealTiming.ts`; the adversarial pass, F2). */
+export async function readVomitOnsetsSince(
+  petId: string,
+  sinceIso: string,
+): Promise<{ ms: number; confidence: OnsetConfidence | null }[]> {
+  const { sqlSince, sinceMs } = sqlBoundFor(sinceIso);
+  const rows = await getDb().getAllAsync<{ occurred_at: string; occurred_at_confidence: string | null }>(
+    `SELECT occurred_at, occurred_at_confidence FROM events
+     WHERE pet_id = ? AND event_type = ? AND deleted_at IS NULL AND occurred_at >= ?`,
+    [petId, TIMING_SYMPTOM_TYPE, sqlSince],
+  );
+  return rows
+    .map((r) => ({
+      ms: Date.parse(r.occurred_at),
+      confidence: (r.occurred_at_confidence as OnsetConfidence | null) ?? null,
+    }))
+    .filter((r) => Number.isFinite(r.ms) && r.ms >= sinceMs);
 }
 
 export { readFreeFedSpans };
@@ -79,12 +116,19 @@ export async function readAnalysisRows(
   return out;
 }
 
-/** Every non-deleted row's instant for this pet since `sinceIso` — the month door's
- *  population. The caller derives the day keys (`monthCoverage`) in the owner's zone. */
-export async function readMonthOccurredAts(petId: string, sinceIso: string): Promise<string[]> {
-  const rows = await getDb().getAllAsync<{ occurred_at: string }>(
-    `SELECT occurred_at FROM events WHERE pet_id = ? AND deleted_at IS NULL AND occurred_at >= ?`,
-    [petId, sinceIso],
+/** Every non-deleted row's instant AND type for this pet since `sinceIso` — the month
+ *  door's population. The type rides along so `monthCoverage` can refuse a look (floor
+ *  5) where a test can see it; the caller derives the day keys in the owner's zone. */
+export async function readMonthRows(petId: string, sinceIso: string): Promise<MonthRow[]> {
+  const { sqlSince, sinceMs } = sqlBoundFor(sinceIso);
+  const rows = await getDb().getAllAsync<{ occurred_at: string; event_type: string }>(
+    `SELECT occurred_at, event_type FROM events WHERE pet_id = ? AND deleted_at IS NULL AND occurred_at >= ?`,
+    [petId, sqlSince],
   );
-  return rows.map((r) => r.occurred_at);
+  return rows
+    .filter((r) => {
+      const ms = Date.parse(r.occurred_at);
+      return Number.isFinite(ms) && ms >= sinceMs;
+    })
+    .map((r) => ({ occurredAt: r.occurred_at, eventType: r.event_type }));
 }

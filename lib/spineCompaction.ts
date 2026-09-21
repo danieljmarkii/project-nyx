@@ -3,11 +3,15 @@
 // afternoon. I would not want three identical lines").
 //
 // ── THE RULE, IN ONE SENTENCE ────────────────────────────────────────────────
-// Consecutive meal nodes with NOTHING between them share one line. Everything else is
-// its own node, and everything else is also what a group may never cross: a symptom, a
-// medication, a look, a weight — and a PHOTOGRAPHED meal, because a photo is a fact the
-// compact line would hide (the spine's photo glyph is per node, and a group has no node
-// to hang it on).
+// Consecutive SAME-KIND meal nodes with NOTHING between them share one line. Everything
+// else is its own node, and everything else is also what a group may never cross: a
+// symptom, a medication, a look, a weight — a PHOTOGRAPHED meal, because a photo is a
+// fact the compact line would hide (the spine's photo glyph is per node, and a group has
+// no node to hang it on) — and a meal of the OTHER KIND: a treat run and a meal run are
+// two lines, never "3 meals" over two Temptations and a bowl. On the wedge surface an
+// unwitnessed treat is the canonical trial contaminant (the adversarial pass, F3), so a
+// compact line that turned treats into meals would hide the one thing the day should
+// show without an expand.
 //
 // The rule is stated over CHRONOLOGICAL order, not input order. Home's store hands rows
 // newest-first; the spine reads top-to-bottom through the day; so the first thing this
@@ -32,6 +36,9 @@ export interface CompactableNode {
   /** The row's chronological key — `describeDayEvent`'s `timeMs`. */
   timeMs: number;
   hasPhoto: boolean;
+  /** `mealRowLabel`'s word for a meal row ('Meal' | 'Treat'); null off a meal. A run is
+   *  one kind only. */
+  mealKind: 'Meal' | 'Treat' | null;
 }
 
 /** One line on the spine: a single node, or a run of meals that share a line. A compact
@@ -45,7 +52,12 @@ export type CompactGroup<T extends CompactableNode> =
  *  effect, C-34: a test that restates the rule is a tautology with fixtures — this one
  *  reads it). */
 export function isCompactable(node: CompactableNode): boolean {
-  return node.category === 'meal' && !node.hasPhoto;
+  return node.category === 'meal' && !node.hasPhoto && node.mealKind !== null;
+}
+
+/** May these two compactable nodes share a line? Same kind, or no line. */
+export function sameRun(a: CompactableNode, b: CompactableNode): boolean {
+  return isCompactable(a) && isCompactable(b) && a.mealKind === b.mealKind;
 }
 
 /** Chronological order, stable on ties (two rows at one instant keep their input order,
@@ -59,8 +71,8 @@ export function sortChronological<T extends CompactableNode>(nodes: readonly T[]
 
 /**
  * Fold a day's nodes into spine lines. Sorted first; then a maximal run of compactable
- * nodes of length ≥ 2 becomes one `compact` group, and every other node — including a
- * lone compactable meal — is a `single`.
+ * nodes OF ONE KIND of length ≥ 2 becomes one `compact` group, and every other node —
+ * including a lone compactable meal — is a `single`.
  *
  * Total: never throws, never drops a node (flattening the result in order is the
  * sorted input — pinned by the sweep).
@@ -76,6 +88,8 @@ export function compactSpine<T extends CompactableNode>(nodes: readonly T[]): Co
   };
   for (const node of sorted) {
     if (isCompactable(node)) {
+      // A kind change closes the run and opens the next; a treat never joins a meal line.
+      if (run.length > 0 && !sameRun(run[run.length - 1], node)) flush();
       run.push(node);
       continue;
     }

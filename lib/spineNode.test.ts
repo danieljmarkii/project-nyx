@@ -138,6 +138,23 @@ describe('buildSpine — the ten-event day', () => {
     expect(model.nodes[0].kind === 'compact' && model.nodes[0].title).toBe('2 treats');
   });
 
+  it('treats and a meal in one run are TWO lines, never "3 meals" (F3 — the trial contaminant stays visible)', () => {
+    const rows = [
+      row('t1', 'meal', 8, 0, { food_product_name: 'Temptations', food_type: 'treat' }),
+      row('t2', 'meal', 8, 5, { food_product_name: 'Temptations', food_type: 'treat' }),
+      row('m1', 'meal', 9, 0, PR),
+    ];
+    const model = buildSpine(input({ rows, feedings: [], photographed: new Set() }));
+    expect(model.nodes.map((n) => (n.kind === 'compact' ? n.title : n.title))).toEqual(['2 treats', 'Meal']);
+  });
+
+  it('a row with an unparseable instant is dropped, never drawn at the epoch (F6 — the door drops it too)', () => {
+    const rows = [row('m', 'meal', 8, 0, PR), { ...row('x', 'vomit', 9, 0), occurred_at: 'not a date' }];
+    const model = buildSpine(input({ rows, feedings: [], photographed: new Set() }));
+    expect(model.total).toBe(1);
+    expect(model.nodes.map((n) => n.id)).toEqual(['m']);
+  });
+
   it('the photographed vomits carry the glyph fact; the meals do not', () => {
     const model = buildSpine(input());
     const v1 = model.nodes.find((n) => n.id === 'v1');
@@ -181,20 +198,47 @@ describe('buildSpine — the timing is the lane’s, never imputed', () => {
 
   it('yesterday’s bowl times a 6 AM vomit — the feedings are the caller’s lookback, not today’s rows', () => {
     const rows = [row('v', 'vomit', 6, 0)];
-    const lastNight = [{ ms: at(-2, 0), confidence: 'witnessed' as const, form: null }];
+    const lastNight = [{ ms: at(4, 30), confidence: 'witnessed' as const, form: null }];
     const v = buildSpine(input({ rows, feedings: lastNight, photographed: new Set() })).nodes[0];
-    expect(v.kind === 'event' && v.timing).toBe('8 h after eating');
+    expect(v.kind === 'event' && v.timing).toBe('1 h 30 min after eating');
+  });
+
+  it('a bout that straddles midnight is ONE episode, as it is on the lane — the 00:30 row gets nothing (F2)', () => {
+    // Supper 22:00, vomit 23:00 (yesterday), vomit 00:30 (today). The lane collapses the
+    // two into one episode opened at 23:00 and times it at 60 min; Home's first draft
+    // windowed before collapsing and printed "2 h 30 min after eating" on the 00:30 row —
+    // a number the lane never computed. The prior onset is the caller's (the read reaches
+    // back by the episode gap), and an episode it opens is the lane's, not this row's.
+    const rows = [row('v', 'vomit', 0, 30)];
+    const supper = [{ ms: at(-2, 0), confidence: 'witnessed' as const, form: null }];
+    const prior = [{ ms: at(-1, 0), confidence: 'witnessed' as const }];
+    const v = buildSpine(input({ rows, feedings: supper, priorOnsets: prior, photographed: new Set() })).nodes[0];
+    expect(v.kind === 'event' && v.timing).toBeNull();
+    // Without the prior onset the same row IS an episode opener, timed in the mid band.
+    const alone = buildSpine(input({ rows, feedings: supper, priorOnsets: [], photographed: new Set() })).nodes[0];
+    expect(alone.kind === 'event' && alone.timing).toBe('2 h 30 min after eating');
+  });
+
+  it('the LONG band speaks the lane’s band label, never "12 h after eating" off an unlogged dinner (F8)', () => {
+    const rows = [row('v', 'vomit', 20, 0)];
+    const breakfastOnly = [{ ms: at(8, 0), confidence: 'witnessed' as const, form: null }];
+    const v = buildSpine(input({ rows, feedings: breakfastOnly, photographed: new Set() })).nodes[0];
+    expect(v.kind === 'event' && v.timing).toBe('6h or more after eating');
   });
 });
 
 describe('timingLine', () => {
   it('speaks minutes under an hour, hours above, and a remainder of five or more', () => {
-    expect(timingLine(3)).toBe('3 min after eating');
-    expect(timingLine(59.4)).toBe('59 min after eating');
-    expect(timingLine(120)).toBe('2 h after eating');
-    expect(timingLine(124)).toBe('2 h after eating');
-    expect(timingLine(140)).toBe('2 h 20 min after eating');
-    expect(timingLine(-1)).toBe('0 min after eating');
+    expect(timingLine(3, 'rapid')).toBe('3 min after eating');
+    expect(timingLine(59.4, 'mid')).toBe('59 min after eating');
+    expect(timingLine(120, 'mid')).toBe('2 h after eating');
+    expect(timingLine(124, 'mid')).toBe('2 h after eating');
+    expect(timingLine(140, 'mid')).toBe('2 h 20 min after eating');
+    expect(timingLine(-1, 'rapid')).toBe('0 min after eating');
+  });
+  it('the long band is the lane\u2019s label, whatever the number', () => {
+    expect(timingLine(360, 'long')).toBe('6h or more after eating');
+    expect(timingLine(1440, 'long')).toBe('6h or more after eating');
   });
 });
 
@@ -259,11 +303,17 @@ describe('the read on a node — nodeReadOf', () => {
     const r = nodeReadOf(landed('v', 'looks_fine_to_me'), false);
     expect(r.state === 'landed' && r.tone).toBe('attn');
   });
-  it('a read is only ever attached to a PHOTOGRAPHED symptom row', () => {
-    // The same analysis map, but the vomit carries no attachment: the node says nothing.
+  it('a read the record holds attaches to its SYMPTOM row even when the local photo fact is missing (F5 — a lagging attachment read never hides an escalation)', () => {
     const model = buildSpine(input({ photographed: new Set(), analysis: new Map([['v1', landed('v1', 'worth_a_call')]]) }));
     const v1 = model.nodes.find((n) => n.id === 'v1');
-    expect(v1?.kind === 'event' && v1.read).toEqual({ state: 'none' });
+    expect(v1?.kind === 'event' && v1.read).toMatchObject({ state: 'landed', tone: 'attn' });
+    expect(v1?.kind === 'event' && v1.photo).toBe(false);
+  });
+
+  it('a read never attaches to a MEAL, whatever the map holds', () => {
+    const model = buildSpine(input({ analysis: new Map([['m1', landed('m1', 'worth_a_call')]]), working: new Set(['m2']) }));
+    const morning = model.nodes[0];
+    expect(morning.kind === 'compact' && morning.rows.every((r) => r.read.state === 'none')).toBe(true);
   });
 });
 

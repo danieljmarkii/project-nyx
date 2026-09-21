@@ -2,7 +2,8 @@
 // whole day, D2-4 / CUL-1066; the round-4 page §01).
 //
 // The last row on Home, and the only door to Patterns on it. It speaks COVERAGE — how
-// many of the month's days so far hold anything — never a count of episodes, so it
+// many of the month's days so far hold an event (a look-only day does not count, floor
+// 5; `lib/monthCoverage.ts`) — never a count of episodes, so it
 // cannot rhyme with the Signal's line above it or the day's count line (three populations,
 // `lib/monthCoverage.ts`). LEFT-ALIGNED, with nothing tappable at the row's right edge:
 // the FAB floats over that corner at scroll end, and an inset clears the disc only at the
@@ -16,7 +17,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { monthCoverage, monthCoverageLine } from '../../../lib/monthCoverage';
-import { readMonthOccurredAts } from '../../../lib/spineReads';
+import { readMonthRows } from '../../../lib/spineReads';
 import { useEventStore } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
@@ -41,10 +42,10 @@ export function CoverageDoor({ onPress }: { onPress?: () => void }) {
     start.setDate(1);
     start.setHours(0, 0, 0, 0);
     const since = new Date(start.getTime() - 24 * 3_600_000).toISOString();
-    readMonthOccurredAts(petId, since)
-      .then((ats) => {
+    readMonthRows(petId, since)
+      .then((rows) => {
         if (cancelled) return;
-        setLine({ petId, text: monthCoverageLine(monthCoverage(ats, now)) });
+        setLine({ petId, text: monthCoverageLine(monthCoverage(rows, now)) });
       })
       .catch((e) => console.warn('[CoverageDoor] month read failed:', e));
     return () => {

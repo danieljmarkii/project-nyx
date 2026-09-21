@@ -2,9 +2,12 @@
 // tappable at the row's right edge under the FAB (C-5).
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+// `lib/monthCoverage` now reads the event category (`lib/dayEvents`), whose closure
+// reaches `lib/supabase`; stubbed at the boundary as every sibling suite does.
+jest.mock('../../../lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 const mockReadMonth = jest.fn();
 jest.mock('../../../lib/spineReads', () => ({
-  readMonthOccurredAts: (...a: unknown[]) => mockReadMonth(...a),
+  readMonthRows: (...a: unknown[]) => mockReadMonth(...a),
 }));
 jest.mock('../../../store/petStore', () => ({
   usePetStore: (sel: (s: { activePet: { id: string } }) => unknown) => sel({ activePet: { id: 'p1' } }),
@@ -21,9 +24,9 @@ import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { CoverageDoor, COVERAGE_DOOR_LABEL } from './CoverageDoor';
 
-function local(day: number, hour: number): string {
+function local(day: number, hour: number, eventType = 'meal'): { occurredAt: string; eventType: string } {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), day, hour).toISOString();
+  return { occurredAt: new Date(now.getFullYear(), now.getMonth(), day, hour).toISOString(), eventType };
 }
 
 beforeEach(() => {
@@ -53,6 +56,13 @@ describe('CoverageDoor', () => {
     const style = StyleSheet.flatten(row.props.style) as { alignSelf?: string; flexDirection?: string };
     expect(style.alignSelf).toBe('flex-start');
     expect(style.flexDirection).toBe('row');
+  });
+
+  it('a month of looks alone is a month with nothing logged (floor 5)', async () => {
+    const today = new Date().getDate();
+    mockReadMonth.mockResolvedValue([local(today, 8, 'check_in'), local(1, 8, 'check_in')]);
+    const t = render(<CoverageDoor />);
+    await waitFor(() => expect(t.getByText(new RegExp(`logged 0 of ${today} day`))).toBeTruthy());
   });
 
   it('is one control with one label that carries the line', async () => {

@@ -90,8 +90,9 @@ unchanged and the owed deploy is the same deploy.
 
 - **One tap = one word = one look.** The page rules the chip is the save; the card's
   multi-word Done bar is not on the header. Multi-word looks remain on the record editor.
-- **Looks are not spine nodes on Home.** The header is today's look; the recap spine keeps
-  its hollow bead. The count line never counted them anyway.
+- **Looks are not spine nodes on Home, and not logged days on the door.** The header is
+  today's look; the recap spine keeps its hollow bead; floor 5 keeps the look out of the
+  month's coverage (F1 above corrected the plan's premise).
 - **The count line follows `buildCountChips`'s order** (symptoms first, the recap's rule)
   rather than the mock's "7 meals · 2 vomits".
 - **The header's question is its own string** (`lookHeaderQuestion`: *How does Nyx seem
@@ -105,10 +106,63 @@ unchanged and the owed deploy is the same deploy.
   issue before coding; no go-ahead can arrive mid-session, so the build proceeded on the
   plan with every call reversible in review.
 
-## Reviews
+## The two reviews
 
-_Filled in below once the two isolated passes return (the adversarial pass on the
-spine's clinical and statistical logic; the code-reviewer on the diff)._
+**The code-reviewer** (round 1) blocked on one thing: the answered row's Undo and
+Change faced each other across an 8pt gap with symmetric 8pt slops — CUL-612's exact
+class, on a pair where Undo's tap IS its confirm. They take the completion cards'
+asymmetric `HITSLOP_ACTION_LEFT` / `_RIGHT` now, and the suite asserts the facing sum
+fits the gap. Two nits taken (the retry's floor spelled out; the header's rail is the
+accent token, not a borrowed meal tint). Verified clean: C-41 both halves, RLS on the
+`.in()` read (server-scoped by `pet_id`), C-33, C-16, C-30, the ink discipline.
+
+**The adversarial pass** (round 2) returned **FAIL** with eight findings, two of them
+HIGH, and both HIGH ones were a module's own header asserting a property the code did
+not have:
+
+- **F1 — the month door counted a look-only day as logged.** My plan's premise was
+  wrong: I had read STATUS.md's line on CUL-891 as "a look counts as a logged day" when
+  the report's fix (`generate-report/report.ts`, CUL-891) did the opposite — it EXCLUDED
+  looks after measuring "3 days with a log" become "31" from tapping a chip once a day —
+  and §5.6 / floor 5 say it in one line: a look joins no coverage line of any other
+  surface. The pass ran Sam's September: seventeen looks, three meal days, and the door
+  read *logged 17 of 17 days* under a Today card reading *Nothing logged yet today*.
+  Fixed where a test can see it: the month rows carry their type and the pure model
+  refuses a look (the mutation that survived — "which rows the door counts" — is now
+  pinned by a look-only fixture). Verified at file:line before changing anything.
+- **F2 — a bout straddling midnight was re-timed with a number the lane never
+  computed.** `lib/mealTiming.ts` says in capitals "collapse on the full list, then
+  window"; the first draft windowed today's rows, then collapsed. Supper 22:00, vomit
+  23:00, vomit 00:30 → the lane says one episode at 60 min; Home printed "2 h 30 min
+  after eating" on the 00:30 row. Now the card reads the vomit onsets back by the lane's
+  episode gap, the model collapses over prior + today, and a row absorbed into an episode
+  a prior onset opened gets nothing. Fixture added, the caller's `since` asserted.
+- **F3 — treats and a meal folded into "3 meals".** The issue's own words were
+  "consecutive *same-type* meal nodes"; the run is now one kind only (a treat run and a
+  meal run are two lines), and the property sweep mixes kinds.
+- **F5 — a failed attachment read silently hid an escalation.** The analysis read was
+  gated on the local photo fact; a `worth_a_call` in the record vanished when that read
+  failed or lagged hydration. The read is now issued for the day's symptom rows (an
+  analysis row exists only for a photographed incident, so the photo fact was a
+  redundant, fragile gate) and attaches to a symptom node whenever the record holds one.
+  A meal never carries a read (pinned).
+- **F6** — an unparseable instant drew at the epoch on the spine while the door dropped
+  it; the spine drops it now. **F7** — two lexical ISO bounds in new SQL (C-40, instance
+  five); every bounded read takes the SQL bound a day early and decides on parsed
+  instants. **F8** — the long band printed "12 h after eating" off a breakfast-only
+  logger, an intake fact derived from an absence of logs; the long band now speaks the
+  lane's own label ("6h or more after eating").
+- **F4 — flagged, not fixed:** a read already in the record when Home opens renders its
+  verdict line without the record's "a single photo can't tell you how she is" caveat.
+  A deliberate choice (the sentence belongs to the arrival), but it is the closest thing
+  on Home to reassurance-by-absence, so it is a Dr. Chen brief on the issue, not a ✓.
+
+The pass's own accounting: fourteen mutations, eleven caught; the three survivors were
+exactly F1's population, F3's title and the meal-never-carries-a-read rule, each now
+pinned. What held under everything thrown at it: `nodeReadOf` (the full status ×
+recommendation matrix, an unknown fourth verdict failing toward the rose, dismissed
+reads staying dismissed), the compaction (a 400-day sweep plus the pass's own), the
+timezone honesty of the month door, and the never-reassure line.
 
 ## Residuals
 

@@ -12,10 +12,11 @@
 //     (`lib/spineReads.ts`), re-read whenever the row set or the sync tick changes. A
 //     failed read leaves the previous facts in place; a node without them is a node
 //     without a glyph or a timing, never a wrong one.
-//   • The reads on the photographed symptoms — `event_ai_analysis`, OBSERVED, never
-//     triggered (the issue: "an observe-only read … never a trigger"). Issued only for
-//     rows that have a photo, so a day with none issues no server read at all — which is
-//     also what the flag-off proof measures (C-41: no row AND no read).
+//   • The reads on today's symptoms — `event_ai_analysis`, OBSERVED, never triggered
+//     (the issue: "an observe-only read … never a trigger"). Issued for the day's symptom
+//     rows (a row exists only for a photographed one), so a day with no symptom issues no
+//     server read at all — which is also what the flag-off proof measures (C-41: no row
+//     AND no read).
 //   • The `working` fact — `analysisChainOutstanding` per photographed row (C-30). While a
 //     chain is outstanding the node shows the breathing tick; when it settles the rows are
 //     re-read and the read lands ON that node. A row the server left at `pending` is
@@ -37,8 +38,10 @@ import {
   readFeedingsSince,
   readFreeFedSpans,
   readPhotographedIds,
+  readVomitOnsetsSince,
   type FreeFedSpan,
 } from '../../../lib/spineReads';
+import type { OnsetConfidence } from '../../../lib/mealTiming';
 import type { FeedingRow } from '../../../lib/patternsTiming';
 import { eventTintCategory } from '../../../lib/dayEvents';
 import { useEventStore } from '../../../store/eventStore';
@@ -72,6 +75,8 @@ interface Facts {
   photographed: Set<string>;
   feedings: FeedingRow[];
   freeFedSpans: FreeFedSpan[];
+  /** Vomit onsets BEFORE the day inside the lane's episode gap (`lib/spineNode.ts`). */
+  priorOnsets: { ms: number; confidence: OnsetConfidence | null }[];
 }
 
 export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: Props) {
@@ -116,10 +121,23 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
     let cancelled = false;
     const ids = rowKey ? rowKey.split('|') : [];
     const since = new Date(dayStartMs - DEFAULT_MEAL_TIMING_CONFIG.feedingLookbackHours * 3_600_000).toISOString();
-    Promise.all([readPhotographedIds(ids), readFeedingsSince(petId, since), readFreeFedSpans(petId)])
-      .then(([photographed, feedings, freeFedSpans]) => {
+    // The onsets the collapse must see before the day windows it: the episode gap back.
+    const gapSince = new Date(dayStartMs - DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours * 3_600_000).toISOString();
+    Promise.all([
+      readPhotographedIds(ids),
+      readFeedingsSince(petId, since),
+      readFreeFedSpans(petId),
+      readVomitOnsetsSince(petId, gapSince),
+    ])
+      .then(([photographed, feedings, freeFedSpans, onsets]) => {
         if (cancelled || activePetIdRef.current !== petId) return;
-        setFacts({ petId, photographed, feedings, freeFedSpans });
+        setFacts({
+          petId,
+          photographed,
+          feedings,
+          freeFedSpans,
+          priorOnsets: onsets.filter((o) => o.ms < dayStartMs),
+        });
       })
       .catch((e) => console.warn('[TodayCard] facts read failed:', e));
     return () => {
@@ -128,11 +146,12 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
   }, [petId, rowKey, dayStartMs, hydrationTick]);
 
   // ── The reads, observed ───────────────────────────────────────────────────────
-  const photographedSymptoms = useMemo(() => {
-    if (!facts || facts.petId !== petId) return [];
-    return symptomIds.filter((id) => facts.photographed.has(id));
-  }, [facts, petId, symptomIds]);
-  const photographedKey = photographedSymptoms.join('|');
+  // For EVERY symptom row today, not only the ones the local attachment read says have
+  // a photo: an `event_ai_analysis` row exists only for a photographed incident, so the
+  // photo fact is redundant as a gate — and fragile, since a failed or lagging attachment
+  // read would otherwise hide a `worth_a_call` sitting in the record (the adversarial
+  // pass, F5). A day with no symptom issues no server read at all.
+  const photographedKey = symptomIds.join('|');
 
   const refreshAnalysis = useCallback(async (ids: string[]) => {
     if (ids.length === 0) {
@@ -199,6 +218,7 @@ export function TodayCard({ trialNotEating = null, onLookLayout, onOpenEvent }: 
         working,
         feedings: facts && facts.petId === petId ? facts.feedings : [],
         freeFedSpans: facts && facts.petId === petId ? facts.freeFedSpans : [],
+        priorOnsets: facts && facts.petId === petId ? facts.priorOnsets : [],
       }),
     [rows, facts, petId, analysis, working],
   );

@@ -9,7 +9,7 @@
 // TIMEZONE HONESTY (C-29): every instant is an offset from one UTC anchor and the rule
 // only ever compares instants, so nothing here depends on the runner's zone.
 
-import { compactSpine, isCompactable, sortChronological, type CompactableNode } from './spineCompaction';
+import { compactSpine, isCompactable, sameRun, sortChronological, type CompactableNode } from './spineCompaction';
 import type { EventTintCategory } from './dayEvents';
 
 const BASE = Date.parse('2026-09-17T05:00:00Z');
@@ -21,8 +21,9 @@ function node(
   category: EventTintCategory,
   timeMs: number,
   hasPhoto = false,
+  mealKind: 'Meal' | 'Treat' | null = category === 'meal' ? 'Meal' : null,
 ): CompactableNode {
-  return { id, category, timeMs, hasPhoto };
+  return { id, category, timeMs, hasPhoto, mealKind };
 }
 
 /** The issue's fixture, handed over NEWEST-FIRST the way the Home store does — the rule
@@ -89,6 +90,18 @@ describe('compactSpine — the ten-event day becomes six nodes', () => {
     expect(groups.map((g) => g.kind)).toEqual(['single', 'single', 'single']);
   });
 
+  it('a treat never joins a meal line — two Temptations and a bowl are two lines (F3)', () => {
+    const groups = compactSpine([
+      node('t1', 'meal', at(8, 0), false, 'Treat'),
+      node('t2', 'meal', at(8, 5), false, 'Treat'),
+      node('m1', 'meal', at(9, 0)),
+    ]);
+    expect(groups.map((g) => (g.kind === 'compact' ? g.nodes.map((n) => n.id) : g.node.id))).toEqual([
+      ['t1', 't2'],
+      'm1',
+    ]);
+  });
+
   it('a look and a medication both break a run', () => {
     for (const cat of ['look', 'medication', 'other'] as const) {
       const groups = compactSpine([
@@ -132,7 +145,8 @@ function randomDay(rng: () => number): CompactableNode[] {
     const category = CATEGORIES[Math.floor(rng() * CATEGORIES.length)];
     // Coarse minutes so ties (two rows at one instant) actually occur in the sweep.
     const timeMs = at(0, Math.floor(rng() * 48) * 30);
-    nodes.push(node(`n${i}`, category, timeMs, rng() < 0.15));
+    const kind = category === 'meal' ? (rng() < 0.3 ? 'Treat' : 'Meal') : null;
+    nodes.push(node(`n${i}`, category, timeMs, rng() < 0.15, kind));
   }
   // Shuffle: the rule must not depend on input order.
   for (let i = nodes.length - 1; i > 0; i--) {
@@ -154,33 +168,36 @@ describe('compactSpine — properties over 400 random days', () => {
     const flat = groups.flatMap((g) => (g.kind === 'compact' ? g.nodes : [g.node]));
     expect(flat.map((n) => n.id)).toEqual(sorted.map((n) => n.id));
 
-    // 2. A group holds only compactable nodes, and at least two of them.
+    // 2. A group holds only compactable nodes of ONE kind, and at least two of them.
     for (const g of groups) {
       if (g.kind !== 'compact') continue;
       expect(g.nodes.length).toBeGreaterThanOrEqual(2);
       for (const n of g.nodes) expect(isCompactable(n)).toBe(true);
+      expect(new Set(g.nodes.map((n) => n.mealKind)).size).toBe(1);
     }
 
     // 3. NEVER ACROSS: a group is contiguous in chronological order, so no non-compactable
-    //    node can sit between two of its members.
+    //    node — and no node of the other kind — can sit between two of its members.
     for (const g of groups) {
       if (g.kind !== 'compact') continue;
       const first = sorted.indexOf(g.nodes[0]);
       const last = sorted.indexOf(g.nodes[g.nodes.length - 1]);
-      for (let k = first; k <= last; k++) expect(isCompactable(sorted[k])).toBe(true);
+      for (let k = first; k <= last; k++) expect(sameRun(sorted[first], sorted[k])).toBe(true);
       expect(last - first + 1).toBe(g.nodes.length);
     }
 
-    // 4. MAXIMAL: two chronologically adjacent compactable nodes are in the same line.
-    //    (Sam: the rule must never draw two identical meal lines back to back.)
+    // 4. MAXIMAL: two chronologically adjacent compactable nodes of one kind are in the
+    //    same line. (Sam: the rule must never draw two identical meal lines back to back.)
     const lineOf = new Map<string, number>();
     groups.forEach((g, gi) => {
       if (g.kind === 'compact') g.nodes.forEach((n) => lineOf.set(n.id, gi));
       else lineOf.set(g.node.id, gi);
     });
     for (let k = 1; k < sorted.length; k++) {
-      if (isCompactable(sorted[k - 1]) && isCompactable(sorted[k])) {
+      if (sameRun(sorted[k - 1], sorted[k])) {
         expect(lineOf.get(sorted[k - 1].id)).toBe(lineOf.get(sorted[k].id));
+      } else if (isCompactable(sorted[k - 1]) && isCompactable(sorted[k])) {
+        expect(lineOf.get(sorted[k - 1].id)).not.toBe(lineOf.get(sorted[k].id));
       }
     }
   });

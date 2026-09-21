@@ -11,12 +11,19 @@
 // ── WHERE EACH FACT COMES FROM ─────────────────────────────────────────────────
 //   • The row's words — `describeDayEvent` (the drill-in's mapper), so a meal, a dose
 //     and a look are named exactly as History, the day sheet and the recap name them.
-//   • "N min after eating" — `classifyEpisodeSet` in `lib/mealTiming`, over the day's
-//     vomit onsets collapsed with the lane's own gap, against the same feedings and
-//     free-fed spans the Patterns lane reads. The SAME predicate, never re-derived (the
-//     issue's own line; G9). A row the lane would not time — discovered, free-fed, no
-//     preceding feeding, or absorbed into an earlier episode by the collapse — gets
-//     NOTHING, never an imputed number.
+//   • "N min after eating" — `classifyEpisodeSet` in `lib/mealTiming`, over the vomit
+//     onsets collapsed with the lane's own gap, against the same feedings and free-fed
+//     spans the Patterns lane reads. The SAME predicate, never re-derived (the issue's
+//     own line; G9). COLLAPSE FIRST, THEN WINDOW (`lib/mealTiming.ts`'s own capitals):
+//     the caller hands over the onsets that precede the day inside the episode gap
+//     (`priorOnsets`), so a bout that straddles midnight is one episode on Home as it is
+//     on the lane, and its 00:30 row gets NOTHING rather than a number the lane never
+//     computed (the adversarial pass, F2). A row the lane would not time — discovered,
+//     free-fed, no preceding feeding, or absorbed into an earlier episode — gets
+//     nothing, never an imputed number. The rapid and mid bands speak the minutes; the
+//     long band speaks the lane's own band label ("6h or more after eating"), because a
+//     bare "24 h after eating" states an intake fact off an absence of logs (F8) —
+//     whether Home should say "since her last logged meal" is Dr. Chen's, on the issue.
 //   • The read — an `event_ai_analysis` row observed for the event (never triggered
 //     from Home), or the `working` fact that a chain is outstanding (C-30). The verdict's
 //     words are `INCIDENT_REC_LABEL`, the record's own map.
@@ -54,9 +61,10 @@ import {
   type FreeFedSpan,
   type MealTimingConfig,
   type OnsetConfidence,
+  type TimingBand,
 } from './mealTiming';
 import { compactSpine, type CompactGroup } from './spineCompaction';
-import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
+import { TIMING_SYMPTOM_TYPE, timingBandLabel } from './patternsTiming';
 
 // ── Inputs ─────────────────────────────────────────────────────────────────────
 
@@ -104,6 +112,10 @@ export interface SpineInput {
    *  yesterday's included (a 6 AM vomit is timed against last night's bowl). */
   feedings: readonly FeedingInput[];
   freeFedSpans: readonly FreeFedSpan[];
+  /** Vomit onsets BEFORE the day, inside the lane's episode gap — so the collapse runs
+   *  over the unbounded list before the day windows it (`lib/mealTiming.ts`: "COLLAPSE
+   *  ON THE FULL LIST, THEN WINDOW"). Empty when the record has none. */
+  priorOnsets?: readonly { ms: number; confidence?: OnsetConfidence | null }[];
   config?: MealTimingConfig;
 }
 
@@ -223,10 +235,12 @@ export function nodeReadOf(
 
 // ── Timing ──────────────────────────────────────────────────────────────────────
 
-/** "3 min after eating" · "2 h after eating" · "2 h 20 min after eating". Minutes are
- *  rounded; an hour figure drops a remainder under five minutes, which is inside what a
- *  witnessed onset can honestly claim. */
-export function timingLine(minutes: number): string {
+/** "3 min after eating" · "2 h after eating" · "2 h 20 min after eating" — for the rapid
+ *  and mid bands. The LONG band takes the lane's own band label rather than a number:
+ *  "12 h after eating" off a breakfast-only logger is a claim about an unlogged dinner.
+ *  Minutes are rounded; an hour figure drops a remainder under five minutes. */
+export function timingLine(minutes: number, band: TimingBand, config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG): string {
+  if (band === 'long') return timingBandLabel(band, config);
   const m = Math.max(0, Math.round(minutes));
   if (m < 60) return `${m} min after eating`;
   const h = Math.floor(m / 60);
@@ -241,19 +255,25 @@ export function timingLine(minutes: number): string {
  */
 function timingsByRow(
   rows: readonly SpineEventInput[],
+  priorOnsets: readonly { ms: number; confidence?: OnsetConfidence | null }[],
   feedings: readonly FeedingInput[],
   freeFedSpans: readonly FreeFedSpan[],
   config: MealTimingConfig,
 ): Map<string, string> {
-  const onsets = rows
+  const todays = rows
     .filter((r) => r.event_type === TIMING_SYMPTOM_TYPE)
     .map((r) => ({
-      id: r.id,
+      id: r.id as string | null,
       ms: Date.parse(r.occurred_at),
       confidence: (r.occurred_at_confidence as OnsetConfidence | null | undefined) ?? null,
     }))
     .filter((r) => Number.isFinite(r.ms));
-  const episodes = collapseEpisodes(onsets, config.episodeGapHours);
+  // The onsets before the day carry no id: an episode THEY open is the lane's, and a
+  // row of today's absorbed into it gets no line.
+  const prior = priorOnsets
+    .filter((o) => Number.isFinite(o.ms))
+    .map((o) => ({ id: null as string | null, ms: o.ms, confidence: o.confidence ?? null }));
+  const episodes = collapseEpisodes([...prior, ...todays], config.episodeGapHours);
   const dist = classifyEpisodeSet(
     episodes.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })),
     feedings,
@@ -265,7 +285,7 @@ function timingsByRow(
     // Keyed back through the episode that carries this onset — the row the collapse
     // kept, never a later row of the same bout.
     const opener = episodes.find((e) => e.ms === eligible.onsetMs);
-    if (opener) out.set(opener.id, timingLine(eligible.minutesSinceFeeding));
+    if (opener?.id) out.set(opener.id, timingLine(eligible.minutesSinceFeeding, eligible.band, config));
   }
   return out;
 }
@@ -292,8 +312,14 @@ function eventNode(
     detail = [food, described.detail].filter((s): s is string => !!s).join(' · ') || null;
   }
   const photo = input.photographed.has(row.id);
+  // The read attaches to a SYMPTOM whenever the record holds one for it — or the server
+  // is producing one — not only when the local attachment fact is in: an
+  // `event_ai_analysis` row exists only for a photographed incident, so the photo fact
+  // is redundant as a gate and merely fragile as one (a failed or lagging attachment
+  // read must never hide a `worth_a_call`; the adversarial pass, F5). A meal never
+  // carries a read, whatever the map holds.
   const read: NodeRead =
-    category === 'symptom' && photo
+    category === 'symptom' && (photo || input.analysis.has(row.id) || input.working.has(row.id))
       ? nodeReadOf(input.analysis.get(row.id), input.working.has(row.id))
       : { state: 'none' };
   return {
@@ -329,8 +355,8 @@ function compactNode(rows: SpineEventNode[]): SpineCompactNode {
   const last = rows[rows.length - 1];
   const foods = rows.map((r) => r.food);
   const sameFood = foods.every((f) => f !== null && f === foods[0]);
-  const allTreats = rows.every((r) => r.title === 'Treat');
-  const noun = allTreats ? 'treats' : 'meals';
+  // One kind per run (`compactSpine`), so the first member names the line.
+  const noun = rows[0].title === 'Treat' ? 'treats' : 'meals';
   return {
     kind: 'compact',
     id: `compact:${first.id}`,
@@ -347,13 +373,22 @@ function compactNode(rows: SpineEventNode[]): SpineCompactNode {
 /** The day, as the spine draws it. Pure and total. */
 export function buildSpine(input: SpineInput): SpineModel {
   const config = input.config ?? DEFAULT_MEAL_TIMING_CONFIG;
-  // A look is the header's, not the spine's (T-5; the recap spine keeps its bead).
-  const rows = input.rows.filter((r) => eventTintCategory(r.event_type) !== 'look');
-  const timing = timingsByRow(rows, input.feedings, input.freeFedSpans, config);
-  const nodes = rows.map((r) => eventNode(r, input, timing));
-  const groups: CompactGroup<SpineEventNode & { hasPhoto: boolean }>[] = compactSpine(
-    nodes.map((n) => ({ ...n, hasPhoto: n.photo })),
+  // A look is the header's, not the spine's (T-5; the recap spine keeps its bead). A row
+  // whose instant cannot be parsed is dropped rather than drawn at the epoch — the month
+  // door drops it too, so the populations agree on the same bad row (F6).
+  const rows = input.rows.filter(
+    (r) => eventTintCategory(r.event_type) !== 'look' && Number.isFinite(Date.parse(r.occurred_at)),
   );
+  const timing = timingsByRow(rows, input.priorOnsets ?? [], input.feedings, input.freeFedSpans, config);
+  const nodes = rows.map((r) => eventNode(r, input, timing));
+  const groups: CompactGroup<SpineEventNode & { hasPhoto: boolean; mealKind: 'Meal' | 'Treat' | null }>[] =
+    compactSpine(
+      nodes.map((n) => ({
+        ...n,
+        hasPhoto: n.photo,
+        mealKind: n.category === 'meal' ? (n.title === 'Treat' ? 'Treat' : 'Meal') : null,
+      })),
+    );
   const lines: SpineNode[] = groups.map((g) =>
     g.kind === 'compact'
       ? compactNode(g.nodes.map(strip))
@@ -363,8 +398,8 @@ export function buildSpine(input: SpineInput): SpineModel {
   return { total: countable.length, counts: buildCountChips(countable), nodes: lines };
 }
 
-function strip(n: SpineEventNode & { hasPhoto: boolean }): SpineEventNode {
-  const { hasPhoto: _hasPhoto, ...node } = n;
+function strip(n: SpineEventNode & { hasPhoto: boolean; mealKind: 'Meal' | 'Treat' | null }): SpineEventNode {
+  const { hasPhoto: _hasPhoto, mealKind: _mealKind, ...node } = n;
   return node;
 }
 
