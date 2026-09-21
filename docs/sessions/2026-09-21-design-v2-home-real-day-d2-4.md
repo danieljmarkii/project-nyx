@@ -32,9 +32,10 @@ shipped `SignalZone`; nothing here waits on lane 1's merge order.
   recommendation says nothing (absence is never wellness); a dismissed read stays dismissed;
   an unknown verdict fails toward the rose. The count line is `buildCountChips` led by the
   total of the same population — looks are never events.
-- `lib/monthCoverage.ts` — "September · logged N of M days": distinct local days with any
-  non-deleted row this month to date; a look counts as a logged day (§5.6) and never as an
-  event. Three populations on Home, none rhyming.
+- `lib/monthCoverage.ts` — "September · logged N of M days": distinct local days with an
+  EVENT this month to date; a look-only day does not count (floor 5 / §5.6 — the first
+  draft had this backwards; see the adversarial pass, F1). Three populations on Home,
+  none rhyming.
 - `lib/spineReads.ts` — the four bounded reads (the photo set, the feedings inside the
   lookback so last night's bowl times a 6 AM vomit, the free-fed spans, the month's
   instants) plus the one server read, `event_ai_analysis`, OBSERVED and never triggered.
