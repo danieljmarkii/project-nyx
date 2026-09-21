@@ -1,3 +1,6 @@
+// `IncidentReadCard` (the rail width this suite imports) reads the Design v2 gate, whose
+// hook reaches the Supabase client; the gate is not this suite's subject.
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
 import { render, fireEvent } from '@testing-library/react-native';
 import { Text as RNText } from 'react-native';
 import {

@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
+import { EventSilhouette } from '../../components/designV2/waits/EventSilhouette';
+import { useDesignV2 } from '../../hooks/useDesignV2';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { theme } from '../../constants/theme';
@@ -24,7 +26,7 @@ import {
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
 import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
-import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
+import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT } from '../../lib/eventPhoto';
 import { foodFormatTag } from '../../lib/food';
 import { kgToLbs } from '../../lib/weight';
 import { supabase } from '../../lib/supabase';
@@ -51,7 +53,7 @@ import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { isStoolEvent, hasPerIncidentRead } from '../../constants/eventTypes';
 
-const HERO_HEIGHT = 320;
+const HERO_HEIGHT = EVENT_HERO_HEIGHT;
 const SIGNED_URL_TTL_SEC = 60 * 60;
 // The hero and the full-screen viewer render the SAME resolved URI, so serving a
 // screen-sized transform (imgproxy — Pro) instead of the multi-MB original means
@@ -190,6 +192,7 @@ export default function EventDetailScreen() {
   const [doubleDose, setDoubleDose] = useState<DoubleDoseResult | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+  const designV2 = useDesignV2();
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // The name of the pet this EVENT belongs to, not whichever pet is active
@@ -704,9 +707,15 @@ export default function EventDetailScreen() {
   }
 
   if (loading && !event) {
+    // D2-7 (CUL-1068): behind `design_v2` the local-row read is the screen's own
+    // silhouette, never a spinner; flag-off the whorl, untouched.
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingState}><WhorlSpinner size="md" ground="day" /></View>
+        {designV2 ? (
+          <EventSilhouette />
+        ) : (
+          <View style={styles.loadingState}><WhorlSpinner size="md" ground="day" /></View>
+        )}
       </SafeAreaView>
     );
   }

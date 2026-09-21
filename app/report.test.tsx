@@ -18,8 +18,38 @@ jest.mock('react-native-safe-area-context', () => {
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() } }));
 jest.mock('react-native-webview', () => ({ WebView: () => null }));
 jest.mock('@react-native-community/datetimepicker', () => () => null);
-jest.mock('../components/brand/NightMoment', () => ({ NightMoment: () => null }));
-jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
+// The two shipped waits and the two Design v2 ones, each a marker: the D2-7 cases below
+// assert the SWAP behind the gate, and the send-moment cases never see any of them.
+jest.mock('../components/brand/NightMoment', () => {
+  const { Text } = require('react-native');
+  const React = require('react');
+  return {
+    NightMoment: ({ visible }: { visible: boolean }) =>
+      visible ? React.createElement(Text, { testID: 'night-moment' }, 'night') : null,
+  };
+});
+jest.mock('../components/brand/WhorlSpinner', () => {
+  const { Text } = require('react-native');
+  const React = require('react');
+  return { WhorlSpinner: () => React.createElement(Text, { testID: 'whorl' }, 'whorl') };
+});
+jest.mock('../components/designV2/waits/ReportSilhouette', () => {
+  const { Text } = require('react-native');
+  const React = require('react');
+  return {
+    ReportSilhouette: ({ petName, working }: { petName: string; working: boolean }) =>
+      React.createElement(Text, { testID: 'report-silhouette' }, `${petName} ${working}`),
+  };
+});
+jest.mock('../components/designV2/waits/Tick', () => {
+  const { Text } = require('react-native');
+  const React = require('react');
+  return {
+    Tick: ({ working }: { working: boolean }) => React.createElement(Text, { testID: 'tick' }, String(working)),
+  };
+});
+const mockUseDesignV2 = jest.fn(() => false);
+jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
 // Noticed's toggle stays off: its gate is not this suite's subject.
 jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
@@ -69,8 +99,56 @@ const DOCS_LINE = 'Your saved vet documents aren’t part of this report. Share 
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUseDesignV2.mockReturnValue(false);
   mockedLibrary.mockResolvedValue([]);
 });
+
+// D2-7 (CUL-1068) — the report's waits behind `design_v2`. The guard covers the first
+// frame; the soft-refresh pill is the async half, proven here.
+describe('the waits behind design_v2 (D2-7)', () => {
+  it('flag-off: the first build is the night moment, and a refresh is the whorl', async () => {
+    mockedGenerate.mockResolvedValue(report());
+    const { getByTestId, queryByTestId, findByText } = render(<ReportScreen />);
+    expect(getByTestId('night-moment')).toBeTruthy();
+    expect(queryByTestId('report-silhouette')).toBeNull();
+    await findByText('Send to vet');
+    // A range change regenerates in place under the pill.
+    mockedGenerate.mockReturnValue(new Promise(() => {}));
+    fireEvent.press(await findByText('Custom…'));
+    expect(await screenFind(getByTestId, 'whorl')).toBeTruthy();
+    expect(queryByTestId('tick')).toBeNull();
+  });
+
+  it('flag-on: the first build is the silhouette naming the pet with the tick working; no night moment', () => {
+    mockUseDesignV2.mockReturnValue(true);
+    mockedGenerate.mockReturnValue(new Promise(() => {}));
+    const { getByTestId, queryByTestId } = render(<ReportScreen />);
+    expect(getByTestId('report-silhouette').props.children).toBe('Mochi true');
+    expect(queryByTestId('night-moment')).toBeNull();
+    expect(queryByTestId('whorl')).toBeNull();
+  });
+
+  it('flag-on: the silhouette leaves when the report lands, and a refresh is the tick, not the whorl', async () => {
+    mockUseDesignV2.mockReturnValue(true);
+    mockedGenerate.mockResolvedValue(report());
+    const { getByTestId, queryByTestId, findByText } = render(<ReportScreen />);
+    await findByText('Send to vet');
+    expect(queryByTestId('report-silhouette')).toBeNull();
+    mockedGenerate.mockReturnValue(new Promise(() => {}));
+    fireEvent.press(await findByText('Custom…'));
+    expect((await screenFind(getByTestId, 'tick')).props.children).toBe('true');
+    expect(queryByTestId('whorl')).toBeNull();
+    expect(queryByTestId('night-moment')).toBeNull();
+  });
+});
+
+async function screenFind(getByTestId: (id: string) => ReturnType<typeof render>['UNSAFE_root'], id: string) {
+  let node: unknown;
+  await waitFor(() => {
+    node = getByTestId(id);
+  });
+  return node as { props: { children: unknown } };
+}
 
 describe('the allowed-list gap, before Send (CUL-861)', () => {
   it('a running trial with no list: the line and Send anyway — no plain Send to vet, and no Set it up', async () => {

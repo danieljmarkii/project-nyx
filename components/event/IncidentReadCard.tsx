@@ -20,7 +20,9 @@
 import { Animated, View, StyleSheet, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
 import { type ArrivalRail } from '../motion/arrivalMotion';
+import { useDesignV2 } from '../../hooks/useDesignV2';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
+import { Tick } from '../designV2/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
 
 /** The shipped recommendation enum. Named here only to pick a tone. */
@@ -42,12 +44,28 @@ export const RAIL_TICK_HEIGHT = 16;
  * The pending state: a 16pt tick of rail beside the whorl and the copy. The tick is what
  * PR 3 grows into the card's rail, so the read does not arrive from nowhere — it arrives
  * from the mark that was already standing there.
+ *
+ * Behind `design_v2` (D2-7 / CUL-1068) the whorl goes and the tick itself breathes —
+ * "the photo is the hero, the tick breathes" (round 2 §06) — in the same 3×16 slot, so
+ * the arrival grows out of exactly the mark it did before. `working` is the section's
+ * own fact (the server has been asked, or the row says it is being read): the breathing
+ * tick renders only then. The other pending case — a local row being READ off storage
+ * when an old incident is opened — is a fetch, not a request (arrivalMotion's own
+ * distinction), and keeps the still tick, flag-on and flag-off alike.
  */
-export function IncidentReadPending({ onLayout }: { onLayout?: (e: LayoutChangeEvent) => void }) {
+export function IncidentReadPending({
+  onLayout,
+  working = false,
+}: {
+  onLayout?: (e: LayoutChangeEvent) => void;
+  /** A read is being produced — the section's `working || status === 'pending'`. */
+  working?: boolean;
+}) {
+  const designV2 = useDesignV2();
   return (
     <View style={styles.pendingBox} onLayout={onLayout}>
-      <View style={styles.pendingTick} />
-      <WhorlSpinner size="sm" ground="day" />
+      {designV2 && working ? <Tick working={working} /> : <View style={styles.pendingTick} />}
+      {!designV2 && <WhorlSpinner size="sm" ground="day" />}
       <ThemedText style={styles.pendingText}>{INCIDENT_READ_PENDING_LABEL}</ThemedText>
     </View>
   );

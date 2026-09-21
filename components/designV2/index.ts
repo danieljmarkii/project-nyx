@@ -19,3 +19,9 @@
 // `SignalZone` and `app/signal/[id]` import the modules they draw; these re-exports are
 // the namespace's table of contents.
 //
+// D2-7 (CUL-1068) added `waits/`: the tick — the one loop behind the flag — and the
+// silhouettes the cold start, the report and the event screen show. Their hosts
+// import the modules they draw; this file exports nothing, and a helper belongs in
+// `lib/` — a non-component export would be wrapped into a component by the guard's
+// switch.
+export {};
