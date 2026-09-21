@@ -126,6 +126,22 @@ const ALWAYS_SCANNED = [
   // mutation on CUL-1065: a `commitSymptom` import in each reds the build.
   'components/designV2/signal/SignalScreen.tsx',
   'components/designV2/signal/EpisodeGallery.tsx',
+  // CUL-1066 (D2-4) — Home's spine node. It paints a landed `worth_a_call` in the rose
+  // ink beneath a photographed vomit and hosts the read's ARRIVAL on that node — the
+  // exact moment a "landed" buzz would read as natural (the incident arrival's G4). It
+  // carries none of the MARKERS (the verdict is a `tone` off the pure model, never the
+  // enum word), so it is named by hand. Proven by mutation — a `selectChip` import there
+  // reds the build. Its sibling `LookHeader.tsx` is deliberately NOT here: the header
+  // ticks on every chip tap (`selectChip`, T-10) and is not a safety surface; the
+  // emergency door it opens is its own scanned file (`LookEmergencySheet.tsx`).
+  'components/designV2/home/SpineNodeRow.tsx',
+  // CUL-1067 (D2-5) — the month instrument draws `DayMark` (and so `worth_a_call`)
+  // over a whole month and lists a day's incidents in place; the motion hook beneath
+  // that day is where a "landed" haptic would read as natural, exactly the fold's and
+  // the arrival's case above. Both named the PR they ship; proven by mutation (a
+  // `commitSymptom` import in either reds the build).
+  'components/designV2/patterns/MonthInstrument.tsx',
+  'components/motion/openInPlaceMotion.ts',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

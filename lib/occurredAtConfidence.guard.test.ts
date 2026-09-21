@@ -123,6 +123,13 @@ const ALLOWED: Record<string, string> = {
     'found/window path can never apply to one. The mirror matters because the card renders ' +
     'the arrival from this in-memory row before Home re-reads the record, so a mirror that ' +
     'disagreed with the insert would show a confidence the database does not hold.',
+  'components/designV2/home/LookHeader.tsx':
+    'The look as Today\u2019s header behind design_v2 (D2-4 / CUL-1066). The SAME mirror ' +
+    'LookCard makes, for the same reason: prependEvent restates the row insertLook just ' +
+    'wrote, at the clock instant of the tap, so the answered row draws from the in-memory ' +
+    'row before Home re-reads the record. A look is a perception at a moment the owner was ' +
+    'present for; nothing here reads a clock the owner did not see and no metadata is ' +
+    'consulted. One tap is one word is one look, so the claim is per row and never inferred.',
 };
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

@@ -49,7 +49,7 @@ import { Animated } from 'react-native';
 import { SignalScreen, KEEP_COMPACT_LABEL, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
 import { NO_READ_LABEL } from './EpisodeGallery';
 import SignalRoute, { OFF_TITLE } from '../../../app/signal/[id]';
-import { REC_LABEL } from '../../event/VomitAnalysisSection';
+import { INCIDENT_REC_LABEL as REC_LABEL } from '../../../lib/incidentReadState';
 import { buildSignalScreenModel, type SignalScreenEpisode, type SignalScreenInput } from '../../../lib/signalScreen';
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding } from '../../../lib/signal';
 import { SIGNAL_OPEN_MOTION } from '../../motion/signalOpenMotion';

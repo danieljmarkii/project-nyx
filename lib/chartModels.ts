@@ -550,9 +550,13 @@ export function weightBand(readings: readonly WeightBandReading[]): WeightBandMo
   // caller's array would let the same record read "down" or "up" (C-42's lesson — no
   // time column is unique — applied to a JS sort). The tie-break is arbitrary and
   // written down; what it must not be is the caller's.
+  // A reading of zero or less is not a weight: with `ref = 0` the band collapses to a
+  // point and every reading draws at the centre line, `clipped: false`; a negative ref
+  // inverts the band so a loss draws upward (the adversarial pass on CUL-1067). Such a
+  // row is dropped here, and the caller's count still speaks the record.
   const parsed = readings
     .map((r) => ({ ...r, ms: Date.parse(r.occurredAt) }))
-    .filter((r) => Number.isFinite(r.ms) && Number.isFinite(r.value))
+    .filter((r) => Number.isFinite(r.ms) && Number.isFinite(r.value) && r.value > 0)
     .sort((a, b) => a.ms - b.ms || a.value - b.value || (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
   if (parsed.length === 0) {
     return { state: 'empty', points: [], band: null, first: null, last: null, delta: null, deltaFrac: null, spanDays: null };

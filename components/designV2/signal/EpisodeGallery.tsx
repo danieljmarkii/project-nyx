@@ -5,7 +5,7 @@ import { theme } from '../../../constants/theme';
 import type { GalleryTile, SignalScreenEpisodes } from '../../../lib/signalScreen';
 import { EVENT_ATTACHMENT_BUCKET } from '../../../lib/attachments';
 import { getSignedUrl } from '../../../lib/storage';
-import { REC_LABEL, type Recommendation } from '../../event/VomitAnalysisSection';
+import { INCIDENT_REC_LABEL, type IncidentRecommendation } from '../../../lib/incidentReadState';
 import type { EpisodeVerdict } from '../../../lib/signalScreen';
 import { ThemedText } from '../../ui/ThemedText';
 
@@ -13,9 +13,9 @@ import { ThemedText } from '../../ui/ThemedText';
 // design authority `docs/culprit-design-v4-mockups.html` §03 "The episodes · 21, nine
 // photographed").
 //
-// EACH TILE CARRIES ITS OWN READ, IN THE SHIPPED WORDS. `REC_LABEL` is imported from the
-// per-incident read that wrote the verdict, never restated, so "Keep an eye out" here is
-// the same "Keep an eye out" on the record. There is no summary line, no "the other
+// EACH TILE CARRIES ITS OWN READ, IN THE SHIPPED WORDS. `INCIDENT_REC_LABEL` is the one
+// map the per-incident read and Home's spine node share (`lib/incidentReadState.ts`),
+// never restated, so "Keep an eye out" here is the same "Keep an eye out" on the record. There is no summary line, no "the other
 // three": Dr. Chen's round-3 finding is that an aggregate over reads reassures, and the
 // model has no field to put one in. A tile with no read says "No read yet" — the absence
 // of a verdict is never wellness.
@@ -47,8 +47,8 @@ const TILE_TRANSFORM = { width: 320, height: 320, resize: 'cover' as const };
 // The verdict enum the model carries (`lib/` cannot import a component) and the one the
 // shipped read declares are two spellings of the same union; both assignments below stop
 // compiling the day one gains a member the other lacks.
-const LABELS: Record<EpisodeVerdict, string> = REC_LABEL;
-const LABELS_BACK: Record<Recommendation, string> = LABELS;
+const LABELS: Record<EpisodeVerdict, string> = INCIDENT_REC_LABEL;
+const LABELS_BACK: Record<IncidentRecommendation, string> = LABELS;
 void LABELS_BACK;
 /** "No read yet" — an episode whose photo has no verdict on the record (pending, failed,
  *  or never read). Said, never blank: a missing word under a photo reads as "nothing found". */

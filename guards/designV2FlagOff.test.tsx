@@ -22,17 +22,20 @@
 //
 //     the tree with the flag off  ===  the tree with components/designV2/ stubbed out
 //
-// It is green today (the namespace is empty), it reds the instant a redesign node
-// renders with the flag off, it stays green when that node is gated correctly,
-// and it is immune to unrelated churn because both sides move together.
+// It reds the instant a redesign node renders with the flag off, it stays green
+// when that node is gated correctly (D2-5's month and weight card are the first
+// two), and it is immune to unrelated churn because both sides move together.
 //
 // The convention it depends on: the redesign's rendering lives in
 // `components/designV2/`. A screen may hold the gate (`useDesignV2()`) but it
 // delegates the drawing there — UI written inline in a screen is invisible to the
-// equality half. The D2-0 tripwire (EXACTLY ZERO consumers of the hook, C-32) was
-// deleted by D2-3 (CUL-1065), the PR that landed the first consumer; the
-// `every consumer draws through the namespace` test below is what the empty-set
-// assertion handed over to, and the consumer list is now asserted by name.
+// equality half. The C-32 tripwire that made that stick — EXACTLY ZERO consumers of
+// the hook, named for the PR that would red it — did its job on the three step-2 lanes
+// that landed the same day (D2-5 / CUL-1067, Patterns; D2-4 / CUL-1066, Home; D2-3 /
+// CUL-1065, the Signal card and its route): each reads the gate and draws through the
+// namespace, and the consumer set below is now PINNED rather than floored — "every
+// consumer is gated" proves nothing over an empty set, and a consumer that joins
+// unlisted reds here in the diff that adds it.
 //
 // ── ONE HOOK, ONE CALL SHAPE ────────────────────────────────────────────────────
 //
@@ -363,9 +366,9 @@ function withRedesignAbsent<T>(fn: () => T): T {
   }
 }
 
-// Registered at module scope, before any screen is loaded. The mutation proof at the
-// foot of this file drives the same switch against a synthetic leak, so the equality
-// half is known to bite independently of what the namespace holds today.
+// Registered at module scope, before any screen is loaded. `index.ts` alone at D2-0;
+// `patterns/`, `home/` and `signal/` since step 2 — and the mutation proof at the foot
+// of this file is what proved the mechanism before there was anything real to switch.
 for (const abs of designV2UiModules()) registerSwitchable(abs);
 
 /**
@@ -448,6 +451,13 @@ describe('D2-0 — flag-off is byte-identical to an app without the redesign', (
 });
 
 // ── The consumer scans ──────────────────────────────────────────────────────────
+// The D2-0 tripwire (`gateConsumers() === []`) was deleted by the first consumers to
+// land — CUL-1067 (D2-5, the month on Patterns), CUL-1066 (D2-4, Home on a real day) and
+// CUL-1065 (D2-3, the Signal card and its route), merged the same day; its three debts
+// went with them: the namespace's first modules (`components/designV2/patterns/`,
+// `home/`, `signal/`), the beta shelf's on-state hint (`app/settings/beta.tsx`, naming
+// all three), and the Signal route joining SURFACES.
+
 /**
  * Detector (a): the gate's call shape. A consumer is any file that calls
  * `useDesignV2()`. The hook's own declaration (`export function useDesignV2()`)
@@ -600,11 +610,15 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the redesign has one gate, and its consumers stay inside the namespace', () => {
-  it('the gate has consumers now — the D2-0 empty-set tripwire was deleted by CUL-1065 (C-32)', () => {
-    // The debts the tripwire named are paid in that diff: the namespace's first modules,
-    // the beta shelf's on-state hint, and the Signal route in SURFACES. Asserted by name
-    // so a third consumer is a deliberate edit here, never a drift.
-    expect(gateConsumers()).toEqual(['app/signal/[id].tsx', 'components/home/SignalZone.tsx']);
+  it('Home, Patterns, the Signal zone and the Signal route consume the gate (D2-4, D2-5, D2-3), and every consumer is a known one', () => {
+    // The set is PINNED, not floored: a new consumer is a new surface or a new card,
+    // and it joins this list in the diff that adds it — with its flag-off proof.
+    expect(gateConsumers()).toEqual([
+      'app/(tabs)/index.tsx',
+      'app/insights/index.tsx',
+      'app/signal/[id].tsx',
+      'components/home/SignalZone.tsx',
+    ]);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {

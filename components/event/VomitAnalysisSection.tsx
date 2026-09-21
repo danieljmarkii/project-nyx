@@ -30,7 +30,7 @@ import {
   VomitEditableFields,
   EditableVomitField,
 } from '../../lib/analysis';
-import { escalationSurvivesFailure } from '../../lib/incidentReadState';
+import { escalationSurvivesFailure, INCIDENT_REC_LABEL } from '../../lib/incidentReadState';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -81,14 +81,9 @@ const SELECT_COLS =
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
   'ai_raw_payload, edited_at, dismissed_at, error';
 
-// THE verdict words. Exported for the Signal screen's episode gallery (D2-3 / CUL-1065),
-// which puts each photographed episode's own read beneath its tile in exactly these
-// words — reused, never restated, so the gallery and the record can never disagree.
-export const REC_LABEL: Record<Recommendation, string> = {
-  worth_a_call: 'Worth a call',
-  monitor: 'Keep an eye out',
-  not_enough_to_say: 'Not enough to say yet',
-};
+// The words live in lib/incidentReadState.ts (INCIDENT_REC_LABEL) since D2-4 (CUL-1066),
+// so Home's spine node and this card cannot name one verdict two ways.
+const REC_LABEL: Record<Recommendation, string> = INCIDENT_REC_LABEL;
 
 export function VomitAnalysisSection(
   { eventId, petId, petName, hasPhoto }:

@@ -10,12 +10,12 @@
 // here; UI written inline in a screen is invisible to that guard, and the guard's
 // per-consumer rule reds a file that reads the hook without importing from here.
 //
-// Helpers do not belong here — a non-component export would be wrapped into a
-// component by the guard's switch; a predicate goes in `lib/` (`lib/signalRoute.ts`,
-// `lib/signalLead.ts`, `lib/signalScreen.ts` are this lane's).
+// The first surface landed with D2-4 (CUL-1066): `home/` holds Today's card — the
+// look header, the spine, its nodes — and the coverage door. A screen imports the
+// module it draws (`components/designV2/home/TodayCard`), never this index, so the
+// guard's switch wraps the module the screen actually reaches.
 //
-// D2-3 (CUL-1065) landed the first modules: the Signal card on Home and the
-// Signal's own screen.
-export { SignalLeadCard } from './signal/SignalLeadCard';
-export { SignalScreen } from './signal/SignalScreen';
-export { SignalOpenLink } from './signal/SignalOpenLink';
+// D2-3 (CUL-1065) added `signal/`: the Signal card on Home and the Signal's own screen.
+// `SignalZone` and `app/signal/[id]` import the modules they draw; these re-exports are
+// the namespace's table of contents.
+//

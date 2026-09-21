@@ -167,6 +167,18 @@ load-bearing, and eight surviving mutations — the round that mattered, as on D
   default for `slide_from_bottom`.
 - The flight (D2-6) lands on this route; nothing here pre-empts it.
 
+## The merge with main (at wrap)
+
+D2-4 (#880) and D2-5 (#882) landed on `main` while this lane was in review, so `main` was
+merged into the branch before the squash: five seams, none of them logic — both guards'
+lists (the haptics `ALWAYS_SCANNED` keeps every lane's entries; the flag-off guard's
+consumer set is the union of the four consumers, pinned), the namespace index (main's
+`home/` note plus this lane's `signal/` exports), the beta hint (one sentence naming all
+three surfaces), and the verdict-label map, which D2-4 had lifted to
+`lib/incidentReadState.ts` — the gallery now imports `INCIDENT_REC_LABEL` from there, so
+the record, Home's spine node and the Signal's gallery name one verdict one way. The
+merged tree typechecks and every suite either lane touches passes (63 suites).
+
 ## DoD
 
 - Acceptance criteria: see the PR body's checklist (all eight pass in tests; the motion's
