@@ -127,6 +127,13 @@ const ALWAYS_SCANNED = [
   // ticks on every chip tap (`selectChip`, T-10) and is not a safety surface; the
   // emergency door it opens is its own scanned file (`LookEmergencySheet.tsx`).
   'components/designV2/home/SpineNodeRow.tsx',
+  // CUL-1067 (D2-5) — the month instrument draws `DayMark` (and so `worth_a_call`)
+  // over a whole month and lists a day's incidents in place; the motion hook beneath
+  // that day is where a "landed" haptic would read as natural, exactly the fold's and
+  // the arrival's case above. Both named the PR they ship; proven by mutation (a
+  // `commitSymptom` import in either reds the build).
+  'components/designV2/patterns/MonthInstrument.tsx',
+  'components/motion/openInPlaceMotion.ts',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;
