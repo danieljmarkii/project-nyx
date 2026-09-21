@@ -280,6 +280,7 @@ const styles = StyleSheet.create({
   },
   failed: { marginTop: theme.space1, gap: theme.space0_5 },
   failedText: { fontSize: theme.textMD, color: theme.colorTextSecondary, lineHeight: theme.lineHeightBody },
-  retry: { alignSelf: 'flex-start', paddingVertical: theme.space1 },
+  // 28 + 2 × the 8pt slop = the 44pt floor (C-5), spelled out as the chips do.
+  retry: { alignSelf: 'flex-start', paddingVertical: theme.space1, minHeight: 44 - 16, justifyContent: 'center' },
   retryText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorAccentInk },
 });

@@ -169,6 +169,20 @@ describe('a tap is a fact with a time', () => {
     expect(t.getByTestId('look-header-undo')).toBeTruthy();
   });
 
+  it('Undo and Change never share hit area across the row gap (C-5, CUL-612)', async () => {
+    const t = render(<LookHeader />);
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-header-chip-subdued'));
+    });
+    const undo = t.getByTestId('look-header-undo');
+    const change = t.getByTestId('look-header-change');
+    const row = t.getByTestId('look-header-answered');
+    const gap = (StyleSheet.flatten(row.props.style) as { gap?: number }).gap ?? 0;
+    // The facing edges: Undo's right reach + Change's left reach must fit in the gap.
+    expect(undo.props.hitSlop.right + change.props.hitSlop.left).toBeLessThanOrEqual(gap);
+    expect(gap).toBeGreaterThan(0);
+  });
+
   it('Change returns the chips, and a second tap is a SECOND entry — never an edit of the first', async () => {
     const t = render(<LookHeader />);
     await act(async () => {

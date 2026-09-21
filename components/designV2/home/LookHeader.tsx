@@ -69,6 +69,7 @@ import {
   type LookWithheldFacts,
 } from '../../../lib/lookWithheld';
 import { insertLook } from '../../../lib/looks';
+import { HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT } from '../../../lib/completionCard';
 import { wordsFromLocalText, wordsToLocalText } from '../../../lib/lookWordsCodec';
 import { formatTime } from '../../../lib/utils';
 import { LOOK_DWELL_MS, useMomentStore } from '../../../store/momentStore';
@@ -529,16 +530,26 @@ function AnsweredRow({
           {` · ${time}`}
         </ThemedText>
       </Animated.View>
+      {/* THE ACTION PAIR'S TOUCH TARGETS (C-5, CUL-612): Undo and Change face each other
+          across the row's 8pt gap for the dwell, and Undo's tap IS its confirm (§5.6) — so
+          the two take the completion cards' asymmetric slops, each yielding the facing
+          edge (4 + 4 = the gap), never a symmetric 8 that overlaps by half. */}
       {undoLive ? (
         <Animated.View style={{ opacity: undoOpacity }}>
-          <Pressable onPress={onUndo} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Undo. ${head}`} testID="look-header-undo">
+          <Pressable
+            onPress={onUndo}
+            hitSlop={HITSLOP_ACTION_LEFT}
+            accessibilityRole="button"
+            accessibilityLabel={`Undo. ${head}`}
+            testID="look-header-undo"
+          >
             <ThemedText style={styles.control}>{LOOK_UNDO}</ThemedText>
           </Pressable>
         </Animated.View>
       ) : null}
       <Pressable
         onPress={onChange}
-        hitSlop={8}
+        hitSlop={HITSLOP_ACTION_RIGHT}
         accessibilityRole="button"
         accessibilityLabel="Change. Shows the words again for another look"
         testID="look-header-change"
@@ -648,7 +659,9 @@ const styles = StyleSheet.create({
     marginTop: theme.space0_5 + theme.spaceMicro,
     minHeight: 44 - HEADER_CHIP_REACH * 2,
   },
-  rail: { width: 3, height: 18, borderRadius: 2, backgroundColor: theme.colorEventMeal },
+  // The accent as a GLYPH (a 3pt bar, never text) — C-1's rule is about text on a light
+  // ground, and a bar is what the guard's `color:` scan does not touch.
+  rail: { width: 3, height: 18, borderRadius: 2, backgroundColor: theme.colorAccent },
   answeredBody: { flex: 1, minWidth: 0 },
   answeredText: { fontSize: theme.textSM, color: theme.colorTextSecondary },
   answeredQuiet: { color: theme.colorTextTertiary },
