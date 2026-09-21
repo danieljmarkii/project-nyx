@@ -118,6 +118,13 @@ const ALWAYS_SCANNED = [
   // verdict is named here the PR it ships, not the PR after a buzz lands on it. Proven by
   // mutation — a `commitSymptom` import there reds the build.
   'components/charts/DayMark.tsx',
+  // CUL-1067 (D2-5) — the month instrument draws `DayMark` (and so `worth_a_call`)
+  // over a whole month and lists a day's incidents in place; the motion hook beneath
+  // that day is where a "landed" haptic would read as natural, exactly the fold's and
+  // the arrival's case above. Both named the PR they ship; proven by mutation (a
+  // `commitSymptom` import in either reds the build).
+  'components/designV2/patterns/MonthInstrument.tsx',
+  'components/motion/openInPlaceMotion.ts',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

@@ -505,9 +505,15 @@ describe('weightBand — dots by date on a fixed ±10 % band', () => {
     expect(weightBand([r(5, '2026-08-26T08:00:00Z'), r(5, '2026-09-12T08:00:00Z')]).spanDays).toBe(17);
   });
 
-  it('B13: a zero first reading yields no fraction (defence in depth — the write path forbids it)', () => {
+  it('B13: a zero or negative reading is not a weight — dropped, never a collapsed or inverted band (D2-5\'s adversarial pass)', () => {
+    // With ref = 0 the band collapsed to a point and every reading drew at the centre,
+    // unclipped, over a `null` delta; a negative ref inverted the band so a loss drew
+    // upward. The write path forbids both; the model no longer trusts that.
     const m = weightBand([r(0, '2026-07-01T08:00:00Z'), r(4.5, '2026-09-01T08:00:00Z')]);
+    expect(m.state).toBe('number');
+    expect(m.points.map((p) => p.value)).toEqual([4.5]);
     expect(m.deltaFrac).toBeNull();
-    expect(m.delta).toBe(4.5);
+    expect(m.delta).toBeNull();
+    expect(weightBand([r(-1, '2026-07-01T08:00:00Z'), r(4.5, '2026-09-01T08:00:00Z')]).points.map((p) => p.value)).toEqual([4.5]);
   });
 });
