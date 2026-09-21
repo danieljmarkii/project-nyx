@@ -32,11 +32,16 @@ export const INCIDENT_READ_SECTION_LABEL = 'AI READ';
 export function IncidentReadSection({
   arrival,
   pending,
+  working = false,
   children,
 }: {
   arrival: IncidentArrival;
   /** The analysis has not resolved — the pending box is the section's whole content. */
   pending: boolean;
+  /** A read is being PRODUCED (the section's `working || status === 'pending'`), as
+   *  opposed to a local row being read — the pending tick breathes only for the first
+   *  (D2-7, behind `design_v2`). */
+  working?: boolean;
   /** The landed content: the read card, or the failed / capped / not-enough card. */
   children?: ReactNode;
 }) {
@@ -56,6 +61,7 @@ export function IncidentReadSection({
   if (pending) {
     slot = (
       <IncidentReadPending
+        working={working}
         onLayout={(e) => arrival.onPendingLayout(e.nativeEvent.layout.height, e.nativeEvent.layout.y)}
       />
     );

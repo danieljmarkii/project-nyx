@@ -303,7 +303,7 @@ export function StoolAnalysisSection(
   // Pending / actively working. Same photoless rule: no spinner for a photoless
   // event — a contextual escalation pops in clean when it resolves (B-363).
   if (hasPhoto && (working || status === 'pending')) {
-    return <IncidentReadSection arrival={arrival} pending />;
+    return <IncidentReadSection arrival={arrival} pending working />;
   }
 
   // Failed — UNLESS the record already holds an escalation, which outlives a failed

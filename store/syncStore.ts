@@ -18,6 +18,19 @@ interface SyncState {
   coldStartHydrating: boolean;
   setColdStartHydrating: (v: boolean) => void;
 
+  // D2-7 (CUL-1068) — THE COLD-START HANDOFF. Bumped exactly once, by the Design v2
+  // cold-start silhouette, at the instant the silhouette begins its crossfade into
+  // Home (i.e. `coldStartHydrating` true → false, on a device that showed the
+  // silhouette). It is the FACT a first-frame draw-in must arm on (C-30): Home's
+  // chart mounts BEHIND the silhouette, so "first render" would play the draw
+  // unseen and then `hydrationTick` would re-arm it — the double play the issue
+  // forbids. D2-4's Home passes this as the draw-in's `identity` and arms on its
+  // change, never on mount, so the record fills the shape once and after it.
+  // Zero means no handoff has happened this session (a returning device never
+  // cold-starts; its chart draws on its own first mount as the fold's rules allow).
+  coldStartHandoff: number;
+  bumpColdStartHandoff: () => void;
+
   // B-054 §6 — reactive refresh-after-hydrate. Bumped at the end of every
   // completed sync cycle so screens reading local SQLite (Home, Trend, History)
   // re-read and surface rows another device just pushed, without a manual
@@ -55,6 +68,9 @@ export const useSyncStore = create<SyncState>((set) => ({
 
   coldStartHydrating: false,
   setColdStartHydrating: (coldStartHydrating) => set({ coldStartHydrating }),
+
+  coldStartHandoff: 0,
+  bumpColdStartHandoff: () => set((s) => ({ coldStartHandoff: s.coldStartHandoff + 1 })),
 
   hydrationTick: 0,
   bumpHydrationTick: () => set((s) => ({ hydrationTick: s.hydrationTick + 1 })),

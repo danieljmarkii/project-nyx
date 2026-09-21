@@ -8,6 +8,9 @@ import { theme } from '../constants/theme';
 import { Header, PrimaryButton, SectionLabel, ThemedText } from '../components/ui';
 import { NightMoment } from '../components/brand/NightMoment';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
+import { ReportSilhouette } from '../components/designV2/waits/ReportSilhouette';
+import { Tick } from '../components/designV2/waits/Tick';
+import { useDesignV2 } from '../hooks/useDesignV2';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
@@ -263,6 +266,13 @@ export default function ReportScreen() {
   const lookOptedIn = useBetaOptIn('daily_look');
   const showNotesOption = lookEligible && lookOptedIn;
 
+  // D2-7 (CUL-1068): behind `design_v2` the first build's wait is the report's own
+  // silhouette with the tick beside "Writing {pet}'s report…", and the soft-refresh
+  // pill's whorl is the tick. Flag-off is the night moment and the whorl, untouched.
+  // The screen holds the gate; `components/designV2/waits/` draws.
+  const designV2 = useDesignV2();
+  const building = status === 'loading' && !report;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header title="Vet report" leading="back" onLeadingPress={() => router.back()} />
@@ -421,7 +431,7 @@ export default function ReportScreen() {
               // pointerEvents=none so the report stays scrollable underneath.
               <View style={styles.updatingOverlay} pointerEvents="none">
                 <View style={styles.updatingPill}>
-                  <WhorlSpinner size="sm" ground="day" />
+                  {designV2 ? <Tick working={regenerating} /> : <WhorlSpinner size="sm" ground="day" />}
                   <Text style={styles.updatingText}>Updating…</Text>
                 </View>
               </View>
@@ -492,12 +502,18 @@ export default function ReportScreen() {
         </>
       )}
       {/* First build — a full-screen wait with nothing to show yet → the night moment
-          (§6). Real work on the pet's behalf, expected >~2s. */}
-      <NightMoment
-        visible={status === 'loading' && !report}
-        title={activePet ? `Building ${activePet.name}’s report…` : 'Building the report…'}
-        subtitle="Pulling together the full record."
-      />
+          (§6). Real work on the pet's behalf, expected >~2s. Flag-on, the report's own
+          silhouette in the same slot: it is mounted only while building, since it has
+          no dissolve of its own — the report's blocks become the page. */}
+      {designV2 ? (
+        building && <ReportSilhouette petName={activePet?.name} working={building} />
+      ) : (
+        <NightMoment
+          visible={building}
+          title={activePet ? `Building ${activePet.name}’s report…` : 'Building the report…'}
+          subtitle="Pulling together the full record."
+        />
+      )}
       </View>
     </SafeAreaView>
   );

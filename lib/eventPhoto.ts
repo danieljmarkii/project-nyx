@@ -5,6 +5,14 @@
 // wouldn't cheaply catch: a stale fallback URL surviving a photo removal, or a
 // live "Add photo" target flashing over an existing photo mid-fallback.
 
+/**
+ * The event screen's photo hero, in points. Held here — beside the display predicate
+ * the screen already imports — rather than in the screen, so the Design v2 event
+ * silhouette (D2-7) can be the hero's shape without importing a route: the two answer
+ * the same question ("how tall is the hero"), so they are one constant (C-34).
+ */
+export const EVENT_HERO_HEIGHT = 320;
+
 export interface EventPhotoInput {
   // On-device file (preferred — no network). null when absent or cache-evicted.
   localUri: string | null;

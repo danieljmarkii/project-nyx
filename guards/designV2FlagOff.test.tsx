@@ -4,8 +4,9 @@
 // The whole project ships dark behind one flag (PM, 2026-09-19: "ensure this
 // redesign is behind a beta toggle too"), so the promise every Design v2 lane
 // inherits is "flag-off is byte-identical" — the second sentence of the shelf
-// row's own blurb. This file is the mechanical form of that promise over the two
-// surfaces the redesign reaches at step 1: Home and Patterns. The Signal's own
+// row's own blurb. This file is the mechanical form of that promise over the
+// surfaces the redesign reaches: Home and Patterns at step 1; the three waits
+// (the cold start, the report, the event screen) since D2-7. The Signal's own
 // screen joins the list when D2-3 lands it as a route.
 //
 // ── THE SHAPE, INHERITED FROM guards/vetVisitsFlagOff.test.tsx (C-36) ──────────
@@ -22,16 +23,17 @@
 //
 //     the tree with the flag off  ===  the tree with components/designV2/ stubbed out
 //
-// It is green today (the namespace is empty), it reds the instant a redesign node
-// renders with the flag off, it stays green when that node is gated correctly,
-// and it is immune to unrelated churn because both sides move together.
+// It reds the instant a redesign node renders with the flag off, it stays green
+// when that node is gated correctly, and it is immune to unrelated churn because
+// both sides move together.
 //
 // The convention it depends on: the redesign's rendering lives in
 // `components/designV2/`. A screen may hold the gate (`useDesignV2()`) but it
 // delegates the drawing there — UI written inline in a screen is invisible to the
-// equality half. `FIRST_CONSUMER_LANDS` below is the C-32 tripwire that makes that
-// stick: it asserts EXACTLY ZERO consumers of the hook today and names the PR that
-// will red it, because "every consumer is gated" proves nothing over an empty set.
+// equality half. Until the first consumer landed (D2-7), a C-32 tripwire here
+// asserted EXACTLY ZERO consumers of the hook, because "every consumer is gated"
+// proves nothing over an empty set; its successor is the "once a consumer exists,
+// the namespace holds a component" test below, which now bites.
 //
 // ── ONE HOOK, ONE CALL SHAPE ────────────────────────────────────────────────────
 //
@@ -69,6 +71,20 @@
 // proves a gate only when the thing gated was available to leak). D2-4 owes that
 // for Home, D2-5 for Patterns, D2-3 for the Signal route it adds here.
 //
+// D2-7 (CUL-1068) added the three WAITS, and each is stated here the same way:
+//   • Cold start (`components/ColdStartOverlay.tsx`) — SYNCHRONOUS: the overlay reads
+//     `coldStartHydrating` off the store, which this file arranges to `true` before
+//     both renders, so the wait is in the first frame on both sides. Covered.
+//   • Report (`app/report.tsx`) — the first frame IS the build wait (`status` seeds
+//     'loading'), so the silhouette / night moment swap is in the tree. Covered. The
+//     soft-refresh pill (a whorl → the tick) renders only after a report has landed
+//     and a range changes — async, NOT covered here; proven in app/report.test.tsx.
+//   • Event (`app/event/[id].tsx`) — the first frame IS the load wait (`loading`
+//     seeds true, and with no `id` the read never runs). Covered. The read section's
+//     pending tick (`IncidentReadPending`, flag-on the breathing tick) renders only
+//     once the local row has loaded — async, NOT covered here; proven flag-on and
+//     flag-off in components/event/IncidentReadCard.test.tsx.
+//
 // ── WHY MOCKING HEAVY CHILDREN IS SAFE HERE ────────────────────────────────────
 //
 // The mocks below exist only to get two real screens to mount under jest. They
@@ -83,7 +99,7 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), canGoBack: () => true },
   Stack: { Screen: () => null },
   useNavigation: () => ({ isFocused: () => true, addListener: () => () => {} }),
   useLocalSearchParams: () => ({}),
@@ -127,9 +143,59 @@ jest.mock('../lib/db', () => {
     getDb: () => db,
     getRecentFoods: jest.fn(async () => []),
     getTimeline: jest.fn(async () => []),
+    // The event screen's reads — none of them run (no `id`), all of them answer empty.
+    getEventById: jest.fn(async () => null),
+    getEventAttachment: jest.fn(async () => null),
+    getEventAttachments: jest.fn(async () => []),
+    getEventSource: jest.fn(async () => 'now'),
+    getMealForEvent: jest.fn(async () => null),
+    getDoseForEvent: jest.fn(async () => null),
+    getDoubleDoseFlag: jest.fn(async () => null),
+    updateMealIntake: jest.fn(),
+    updateDoseAdherence: jest.fn(),
+    updateDoseHowGiven: jest.fn(),
   };
 });
-jest.mock('../lib/sync', () => ({ syncNow: jest.fn(), syncPendingVetVisits: jest.fn() }));
+jest.mock('../lib/sync', () => ({
+  syncNow: jest.fn(),
+  syncPendingVetVisits: jest.fn(),
+  syncPendingMeals: jest.fn(),
+  syncPendingMedicationAdministrations: jest.fn(),
+}));
+// The report screen's leaves (the set app/report.test.tsx stands up): the WebView and
+// the date picker are native, the generator is the network, the library is a read.
+jest.mock('react-native-webview', () => ({ WebView: () => null }));
+jest.mock('@react-native-community/datetimepicker', () => () => null);
+jest.mock('../lib/pdf', () => ({
+  flushBeforeReport: jest.fn(async () => ({ pending: 0, quarantined: 0 })),
+  reportFreshnessLine: () => null,
+  generateVetReport: jest.fn(() => new Promise(() => {})),
+  shareReportPdf: jest.fn(async () => true),
+}));
+jest.mock('../lib/vetDocumentLibrary', () => ({ readVetLibrary: jest.fn(async () => []) }));
+// The event screen's leaves (the set app/event/incidentScreen.test.tsx stands up). The
+// two analysis sections are deliberately NOT mocked: they reach the namespace (the
+// pending tick), and a mocked child is invisible to the differential.
+jest.mock('expo-image-picker', () => ({
+  launchCameraAsync: jest.fn(),
+  launchImageLibraryAsync: jest.fn(),
+  requestCameraPermissionsAsync: jest.fn(),
+}));
+jest.mock('expo-file-system', () => ({ File: class { exists = true; constructor(_u: string) {} } }));
+jest.mock('../lib/storage', () => ({
+  uploadPhoto: jest.fn(),
+  getSignedUrl: jest.fn(async () => null),
+  compressForUpload: jest.fn(),
+  persistCapture: jest.fn(),
+  MAX_EDGE_PX: 1600,
+}));
+jest.mock('../lib/attachments', () => ({ detachEventAttachment: jest.fn(), detachOtherEventAttachments: jest.fn() }));
+jest.mock('../lib/analysis', () => ({
+  triggerVomitAnalysis: jest.fn(),
+  triggerStoolAnalysis: jest.fn(),
+  claimAnalysisChain: jest.fn(() => ({ settle: jest.fn() })),
+  awaitAnalysisChain: jest.fn(async () => false),
+}));
 jest.mock('../lib/haptics', () => ({ destructiveConfirm: jest.fn(), pullThreshold: jest.fn() }));
 jest.mock('../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn(async () => undefined) }));
 jest.mock('../hooks/useWidgetPetLink', () => ({ useWidgetPetLink: () => {} }));
@@ -220,6 +286,7 @@ import * as path from 'path';
 import { render } from '@testing-library/react-native';
 import { blankComments } from './blankComments';
 import { createFixtureRoot, writeFixture, removeFixtureRoot } from './fixtureRoot';
+import { useSyncStore } from '../store/syncStore';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -374,9 +441,33 @@ for (const abs of designV2UiModules()) registerSwitchable(abs);
  * `every app/ consumer is a listed surface` test below is what makes that a
  * build failure rather than a convention to remember.
  */
-const SURFACES: ReadonlyArray<{ name: string; rel: string; load: () => ComponentType }> = [
+interface Surface {
+  name: string;
+  rel: string;
+  load: () => ComponentType;
+  /** State the surface needs to be IN its wait, applied before both renders. */
+  arrange?: () => void;
+  /**
+   * The non-vacuity floor for a surface too small for the node count: a string its
+   * flag-off tree must carry. Stronger than the count (it names the content), and the
+   * only floor the cold start can clear — the overlay is four nodes of night moment.
+   */
+  mustContain?: string;
+}
+
+const SURFACES: ReadonlyArray<Surface> = [
   { name: 'Home', rel: 'app/(tabs)/index.tsx', load: () => require('../app/(tabs)/index').default },
   { name: 'Patterns', rel: 'app/insights/index.tsx', load: () => require('../app/insights/index').default },
+  // The three waits (D2-7 / CUL-1068). Their blind spots are stated in the header.
+  {
+    name: 'Cold start',
+    rel: 'components/ColdStartOverlay.tsx',
+    load: () => require('../components/ColdStartOverlay').ColdStartOverlay,
+    arrange: () => useSyncStore.setState({ coldStartHydrating: true }),
+    mustContain: "Catching up on Mochi's history…",
+  },
+  { name: 'Report', rel: 'app/report.tsx', load: () => require('../app/report').default },
+  { name: 'Event', rel: 'app/event/[id].tsx', load: () => require('../app/event/[id]').default },
 ];
 
 /** Rendered nodes in a normalized tree — the non-vacuity measure below. */
@@ -417,25 +508,32 @@ describe('D2-0 — flag-off is byte-identical to an app without the redesign', (
     // C-38: a floor that iterates the list under test is green when an entry is
     // removed from it. The surface set is pinned by NAME here (the two the spec
     // names), and each name is checked against the repository.
-    expect(SURFACES.map((s) => s.name)).toEqual(['Home', 'Patterns']);
+    expect(SURFACES.map((s) => s.name)).toEqual(['Home', 'Patterns', 'Cold start', 'Report', 'Event']);
     for (const s of SURFACES) expect(fs.existsSync(path.join(REPO_ROOT, s.rel))).toBe(true);
   });
 
-  it.each(SURFACES)('$name renders identically with the redesign absent', ({ load }) => {
+  it.each(SURFACES)('$name renders identically with the redesign absent', ({ load, arrange, mustContain }) => {
+    arrange?.();
     const present = treeFor(load);
+    arrange?.();
     const absent = withRedesignAbsent(() => treeFor(load));
 
     // NON-VACUITY, asserted before the equality rather than assumed by it: an
     // equality over two empty things is the failure mode of this whole file.
-    expect(nodeCount(present)).toBeGreaterThan(MIN_SURFACE_NODES);
+    if (mustContain != null) expect(JSON.stringify(present)).toContain(mustContain);
+    else expect(nodeCount(present)).toBeGreaterThan(MIN_SURFACE_NODES);
 
     expect(present).toEqual(absent);
   });
 });
 
 // ── The consumer scans ──────────────────────────────────────────────────────────
-/** The PR that lands the first consumer and deletes this file's D2-0 tripwire. */
-const FIRST_CONSUMER_LANDS = 'CUL-1065 (D2-3 — the Signal card and its route)';
+// The D2-0 tripwire (`gateConsumers() === []`, C-32) stood here until the first
+// consumer landed — D2-7's waits (CUL-1068), which was also the PR that made the
+// "once a consumer exists, the namespace holds a component" test bite. One of the
+// three debts it named is still open: the Beta shelf's on-state hint for `design_v2`
+// (app/settings/beta.tsx), which D2-3 (CUL-1065) writes with the first SCREEN the
+// redesign shows.
 
 /**
  * Detector (a): the gate's call shape. A consumer is any file that calls
@@ -455,7 +553,11 @@ const DIRECT_OPT_IN_READ_RE = /useBetaOptIn\(\s*['"]design_v2['"]\s*\)/;
  */
 const ALIASED_HOOK_RE = /\b(?:useDesignV2|useAllowlistFlag|useBetaOptIn)\s+as\s+\w+/;
 /**
- * A VALUE import from the namespace, at any relative depth. `import type` is
+ * A VALUE import from the namespace, at any relative depth — `../../components/
+ * designV2/…` from a route, `./designV2/…` or `../designV2/…` from a file already
+ * inside `components/` (the waits' hosts, D2-7). The detector keys on the PATH
+ * SEGMENT `designV2/`, not on `components/`, and refuses a `lib/designV2/` (a helper
+ * directory, should one ever exist, is not the namespace). `import type` is
  * excluded: a type is erased and renders nothing, so a type-only import would
  * satisfy the rule while the file drew its redesign UI inline.
  *
@@ -464,7 +566,8 @@ const ALIASED_HOOK_RE = /\b(?:useDesignV2|useAllowlistFlag|useBetaOptIn)\s+as\s+
  * from "forget the convention" to "write a line that does nothing"; the equality
  * half remains the real backstop for anything that renders.
  */
-const IMPORTS_NAMESPACE_RE = /(?:^|\n)\s*import\s+(?!type\s)[^;\n]*from\s+['"][^'"]*components\/designV2\//;
+const IMPORTS_NAMESPACE_RE =
+  /(?:^|\n)\s*import\s+(?!type\s)[^;\n]*from\s+['"](?:[^'"]*\/)?designV2\/(?<!lib\/designV2\/)/;
 
 /**
  * Collapse the whitespace inside a braced import's specifier list, dropping
@@ -589,15 +692,6 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the redesign has one gate, and its consumers stay inside the namespace', () => {
-  it(`D2-0 tripwire: nothing consumes useDesignV2() yet — deleted by ${FIRST_CONSUMER_LANDS}`, () => {
-    // C-32: an empty set is an assertion, and it is deleted by the PR that
-    // invalidates it rather than edited into a list of what happens to be true.
-    // Three debts go with it: the namespace's first module, the beta shelf's
-    // on-state hint for `design_v2` (app/settings/beta.tsx, which today says
-    // nothing because nothing renders), and the Signal route joining SURFACES.
-    expect(gateConsumers()).toEqual([]);
-  });
-
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
     // One hook, one call shape (see the header). A second direct read of the key
     // is a second door the call-shape scan cannot see, so it is refused outright.
@@ -671,9 +765,15 @@ describe('the redesign has one gate, and its consumers stay inside the namespace
     const typeOnly = `import type { A } from '../../components/designV2/A';`;
     const inlineTypeOnly = `import {\n  type A,\n} from '../../components/designV2/A';`;
     const none = `import { View } from 'react-native';\nimport { x } from '../../lib/designV2';`;
+    const sibling = `import { Tick } from '../designV2/waits/Tick';`;
+    const child = `import { ColdStartSilhouette } from './designV2/waits/ColdStartSilhouette';`;
+    const helperDir = `import { x } from '../../lib/designV2/helper';`;
 
     expect(drawsThroughNamespace('app/s.tsx', single)).toBe(true);
     expect(drawsThroughNamespace('app/s.tsx', multi)).toBe(true);
+    expect(drawsThroughNamespace('components/event/Card.tsx', sibling)).toBe(true);
+    expect(drawsThroughNamespace('components/Overlay.tsx', child)).toBe(true);
+    expect(drawsThroughNamespace('app/s.tsx', helperDir)).toBe(false);
     expect(drawsThroughNamespace('app/s.tsx', typeOnly)).toBe(false);
     expect(drawsThroughNamespace('app/s.tsx', inlineTypeOnly)).toBe(false);
     expect(drawsThroughNamespace('app/s.tsx', none)).toBe(false);
