@@ -4,9 +4,9 @@
 // The whole project ships dark behind one flag (PM, 2026-09-19: "ensure this
 // redesign is behind a beta toggle too"), so the promise every Design v2 lane
 // inherits is "flag-off is byte-identical" — the second sentence of the shelf
-// row's own blurb. This file is the mechanical form of that promise over the two
-// surfaces the redesign reaches at step 1: Home and Patterns. The Signal's own
-// screen joins the list when D2-3 lands it as a route.
+// row's own blurb. This file is the mechanical form of that promise over the
+// surfaces the redesign reaches: Home and Patterns (step 1), and the Signal's own
+// screen, the route D2-3 (CUL-1065) landed.
 //
 // ── THE SHAPE, INHERITED FROM guards/vetVisitsFlagOff.test.tsx (C-36) ──────────
 //
@@ -29,9 +29,10 @@
 // The convention it depends on: the redesign's rendering lives in
 // `components/designV2/`. A screen may hold the gate (`useDesignV2()`) but it
 // delegates the drawing there — UI written inline in a screen is invisible to the
-// equality half. `FIRST_CONSUMER_LANDS` below is the C-32 tripwire that makes that
-// stick: it asserts EXACTLY ZERO consumers of the hook today and names the PR that
-// will red it, because "every consumer is gated" proves nothing over an empty set.
+// equality half. The D2-0 tripwire (EXACTLY ZERO consumers of the hook, C-32) was
+// deleted by D2-3 (CUL-1065), the PR that landed the first consumer; the
+// `every consumer draws through the namespace` test below is what the empty-set
+// assertion handed over to, and the consumer list is now asserted by name.
 //
 // ── ONE HOOK, ONE CALL SHAPE ────────────────────────────────────────────────────
 //
@@ -67,7 +68,10 @@
 // async half in the screen's own suite: flag-off renders no redesign node AND
 // issues no redesign read, over a fixture that would answer if called (an absence
 // proves a gate only when the thing gated was available to leak). D2-4 owes that
-// for Home, D2-5 for Patterns, D2-3 for the Signal route it adds here.
+// for Home, D2-5 for Patterns; D2-3 paid it for the Signal route
+// (`components/designV2/signal/SignalScreen.test.tsx`, "the route, flag-off") and
+// for the Home card (`components/home/SignalZone.designV2.test.tsx`, "flag-off
+// issues no lead read").
 //
 // ── WHY MOCKING HEAVY CHILDREN IS SAFE HERE ────────────────────────────────────
 //
@@ -236,7 +240,7 @@ const DESIGN_V2_UI_DIR = path.join(REPO_ROOT, NAMESPACE_PREFIX);
 /** The one file allowed to read the key directly — the gate every surface reads. */
 const THE_HOOK = 'hooks/useDesignV2.ts';
 
-/** Absolute paths of every module in the namespace. Only `index.ts` until D2-3. */
+/** Absolute paths of every module in the namespace. */
 function designV2UiModules(dir: string = DESIGN_V2_UI_DIR): string[] {
   if (!fs.existsSync(dir)) return [];
   const out: string[] = [];
@@ -359,8 +363,9 @@ function withRedesignAbsent<T>(fn: () => T): T {
   }
 }
 
-// Registered at module scope, before any screen is loaded. Only `index.ts` at D2-0
-// — which is exactly why the mutation proof at the foot of this file exists.
+// Registered at module scope, before any screen is loaded. The mutation proof at the
+// foot of this file drives the same switch against a synthetic leak, so the equality
+// half is known to bite independently of what the namespace holds today.
 for (const abs of designV2UiModules()) registerSwitchable(abs);
 
 /**
@@ -370,13 +375,22 @@ for (const abs of designV2UiModules()) registerSwitchable(abs);
  *
  * This list is the guard's SCOPE: a surface absent from it has its flag-off tree
  * checked by nothing (C-41). Home and Patterns are the two the redesign touches at
- * step 1; D2-3 adds the Signal's route in the same diff that creates it. The
+ * step 1; the Signal's route joined with the diff that created it (D2-3). The
  * `every app/ consumer is a listed surface` test below is what makes that a
  * build failure rather than a convention to remember.
+ *
+ * THE ROUTE'S BLIND SPOT, STATED: under this file's `useLocalSearchParams` mock the
+ * route has no params, so its flag-off tree is the inline "nothing to show" screen
+ * — the same tree a flag-off deep link WITH params renders, because the gate is
+ * read before the params are. What this comparison cannot see is the flag-ON tree
+ * (the namespace's screen), and what it cannot see for any surface is a node whose
+ * render waits on a read (the header's stated limit). The route's own suite proves
+ * that half: flag-off, no `loadSignalScreen` call is issued.
  */
 const SURFACES: ReadonlyArray<{ name: string; rel: string; load: () => ComponentType }> = [
   { name: 'Home', rel: 'app/(tabs)/index.tsx', load: () => require('../app/(tabs)/index').default },
   { name: 'Patterns', rel: 'app/insights/index.tsx', load: () => require('../app/insights/index').default },
+  { name: 'the Signal route', rel: 'app/signal/[id].tsx', load: () => require('../app/signal/[id]').default },
 ];
 
 /** Rendered nodes in a normalized tree — the non-vacuity measure below. */
@@ -417,7 +431,7 @@ describe('D2-0 — flag-off is byte-identical to an app without the redesign', (
     // C-38: a floor that iterates the list under test is green when an entry is
     // removed from it. The surface set is pinned by NAME here (the two the spec
     // names), and each name is checked against the repository.
-    expect(SURFACES.map((s) => s.name)).toEqual(['Home', 'Patterns']);
+    expect(SURFACES.map((s) => s.name)).toEqual(['Home', 'Patterns', 'the Signal route']);
     for (const s of SURFACES) expect(fs.existsSync(path.join(REPO_ROOT, s.rel))).toBe(true);
   });
 
@@ -434,9 +448,6 @@ describe('D2-0 — flag-off is byte-identical to an app without the redesign', (
 });
 
 // ── The consumer scans ──────────────────────────────────────────────────────────
-/** The PR that lands the first consumer and deletes this file's D2-0 tripwire. */
-const FIRST_CONSUMER_LANDS = 'CUL-1065 (D2-3 — the Signal card and its route)';
-
 /**
  * Detector (a): the gate's call shape. A consumer is any file that calls
  * `useDesignV2()`. The hook's own declaration (`export function useDesignV2()`)
@@ -589,13 +600,11 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the redesign has one gate, and its consumers stay inside the namespace', () => {
-  it(`D2-0 tripwire: nothing consumes useDesignV2() yet — deleted by ${FIRST_CONSUMER_LANDS}`, () => {
-    // C-32: an empty set is an assertion, and it is deleted by the PR that
-    // invalidates it rather than edited into a list of what happens to be true.
-    // Three debts go with it: the namespace's first module, the beta shelf's
-    // on-state hint for `design_v2` (app/settings/beta.tsx, which today says
-    // nothing because nothing renders), and the Signal route joining SURFACES.
-    expect(gateConsumers()).toEqual([]);
+  it('the gate has consumers now — the D2-0 empty-set tripwire was deleted by CUL-1065 (C-32)', () => {
+    // The debts the tripwire named are paid in that diff: the namespace's first modules,
+    // the beta shelf's on-state hint, and the Signal route in SURFACES. Asserted by name
+    // so a third consumer is a deliberate edit here, never a drift.
+    expect(gateConsumers()).toEqual(['app/signal/[id].tsx', 'components/home/SignalZone.tsx']);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
@@ -642,10 +651,7 @@ describe('the redesign has one gate, and its consumers stay inside the namespace
     // somewhere `treeFor` cannot stub — every comparison above vacuously green.
     // `index.ts` alone does not count: it exports nothing.
     const drawing = designV2UiModules().filter((abs) => path.basename(abs) !== 'index.ts');
-    if (gateConsumers().length === 0) {
-      expect(drawing).toEqual([]);
-      return;
-    }
+    expect(gateConsumers().length).toBeGreaterThan(0);
     expect(drawing.length).toBeGreaterThan(0);
   });
 

@@ -56,7 +56,7 @@ import { useObservationFold } from './useObservationFold';
 // the never-reassure invariant survives the cap by construction (there is no path
 // from either to a reassuring verdict).
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
-type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
+export type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
 
 interface AnalysisRow {
   status: Status;
@@ -81,7 +81,10 @@ const SELECT_COLS =
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
   'ai_raw_payload, edited_at, dismissed_at, error';
 
-const REC_LABEL: Record<Recommendation, string> = {
+// THE verdict words. Exported for the Signal screen's episode gallery (D2-3 / CUL-1065),
+// which puts each photographed episode's own read beneath its tile in exactly these
+// words — reused, never restated, so the gallery and the record can never disagree.
+export const REC_LABEL: Record<Recommendation, string> = {
   worth_a_call: 'Worth a call',
   monitor: 'Keep an eye out',
   not_enough_to_say: 'Not enough to say yet',

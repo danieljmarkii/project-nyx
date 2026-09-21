@@ -118,6 +118,14 @@ const ALWAYS_SCANNED = [
   // verdict is named here the PR it ships, not the PR after a buzz lands on it. Proven by
   // mutation — a `commitSymptom` import there reds the build.
   'components/charts/DayMark.tsx',
+  // CUL-1065 (D2-3) — the Signal's own screen and its episode gallery. The gallery paints
+  // each photographed episode's read in the shipped words, `worth_a_call` included, in the
+  // symptom ink; the screen hosts it and the safety phone script. Neither carries the
+  // MARKERS (the verdict key rides a model field, the script comes in through an import),
+  // so both are named here the PR they ship — C-16's rule, its fourth turn. Proven by
+  // mutation on CUL-1065: a `commitSymptom` import in each reds the build.
+  'components/designV2/signal/SignalScreen.tsx',
+  'components/designV2/signal/EpisodeGallery.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

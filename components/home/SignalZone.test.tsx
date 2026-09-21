@@ -10,6 +10,12 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
 // CUL-785: the last-episode date read (useLastEpisodeDates) — an empty record here.
+// D2-3 (CUL-1065): the zone reads the Design v2 gate and imports the namespace, whose
+// loader reaches `lib/supabase`. This suite is the SHIPPED (flag-off) surface: the gate
+// answers false and the client is never constructed. The flag-on surface has its own
+// suite (`SignalZone.designV2.test.tsx`).
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
+jest.mock('../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
 jest.mock('../../lib/db', () => ({
   getDb: () => ({ getAllSync: () => [{ last: null }] }),
 }));
