@@ -135,7 +135,7 @@ trigger. CI green on the first head (typecheck + jest, the three timezones, deno
   model at the same width) · Dr. Chen N/A · T&S ✓ (nothing new crosses a boundary; the
   clone is the owner's own chart) · QA ✓ (sixteen mutants, all pinned).
 - Adversarial review: N/A — motion only; no clinical or statistical logic. The
-  `code-reviewer` ran on the diff (findings in the PR thread).
+  `code-reviewer` ran on the diff (the section above; its one fix taken in the second commit).
 - Future-self: a second shared-element flight (a photo tile into its record, say) reuses
   the store and the host with a new element and rects; the risk in twelve months is a
   second store for a second flight. The header says the host is generic.
