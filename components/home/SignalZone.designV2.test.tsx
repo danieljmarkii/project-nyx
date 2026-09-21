@@ -22,7 +22,9 @@ jest.mock('../../lib/signalArrival', () => ({ hasPlayedArrival: async () => true
 jest.mock('../../lib/haptics', () => ({ insightArrival: jest.fn() }));
 
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import { HEADER_ROW_GAP } from '../designV2/signal/SignalOpenLink';
 import { SignalZone } from './SignalZone';
 import { DOOR_A11Y_HINT } from './InsightCard';
 import type { SignalState } from '../../hooks/useSignal';
@@ -117,6 +119,20 @@ describe('flag-on', () => {
     await waitFor(() => expect(view.getByTestId('signal-open-link')).toBeTruthy());
     fireEvent.press(view.getByTestId('signal-open-link'));
     expect(router.push).toHaveBeenCalledWith('/signal/reflection%3Avomit?pet=pet-1');
+  });
+
+  it('C-5: the header link and the lead face below it never share hit area (pinned off the rendered styles)', async () => {
+    mockUseSignal.mockReturnValue(state([benignLead]));
+    const view = render(<SignalZone />);
+    await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
+    const link = view.getByTestId('signal-open-link');
+    const face = view.getByTestId('signal-lead-face');
+    const linkDown = (link.props.hitSlop as { bottom: number }).bottom;
+    const faceUp = (face.props.hitSlop as { top: number }).top;
+    // The header row's gap to the first row, off the flattened style of the row itself.
+    const gap = (StyleSheet.flatten(view.getByTestId('signal-open-row').props.style) as { marginBottom: number }).marginBottom;
+    expect(gap).toBe(HEADER_ROW_GAP);
+    expect(gap).toBeGreaterThanOrEqual(linkDown + faceUp);
   });
 
   it('a secondary card is the shipped compact card with a door and no control row', async () => {

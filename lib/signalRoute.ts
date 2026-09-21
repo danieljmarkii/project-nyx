@@ -12,19 +12,16 @@ export function signalScreenHref(petId: string, identity: string): string {
   return `${SIGNAL_ROUTE_PREFIX}${encodeURIComponent(identity)}?pet=${encodeURIComponent(petId)}`;
 }
 
-/** The route's params, decoded; null when either is missing (a malformed deep link). */
+/** The route's params; null when either is missing (a malformed deep link). Read as
+ *  given: `useLocalSearchParams` has already decoded every value once, and a second
+ *  decode would turn a literal `%` in an identity into a different key. */
 export function parseSignalRouteParams(params: {
   id?: string | string[];
   pet?: string | string[];
 }): { identity: string; petId: string } | null {
   const one = (v: string | string[] | undefined): string | null => {
     const s = Array.isArray(v) ? v[0] : v;
-    if (typeof s !== 'string' || s.length === 0) return null;
-    try {
-      return decodeURIComponent(s);
-    } catch {
-      return s;
-    }
+    return typeof s === 'string' && s.length > 0 ? s : null;
   };
   const identity = one(params.id);
   const petId = one(params.pet);

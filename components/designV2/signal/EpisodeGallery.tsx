@@ -3,8 +3,10 @@ import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import type { GalleryTile, SignalScreenEpisodes } from '../../../lib/signalScreen';
+import { EVENT_ATTACHMENT_BUCKET } from '../../../lib/attachments';
 import { getSignedUrl } from '../../../lib/storage';
-import { REC_LABEL } from '../../event/VomitAnalysisSection';
+import { REC_LABEL, type Recommendation } from '../../event/VomitAnalysisSection';
+import type { EpisodeVerdict } from '../../../lib/signalScreen';
 import { ThemedText } from '../../ui/ThemedText';
 
 // EpisodeGallery — the photographed episodes on the Signal's screen (D2-3 · CUL-1065;
@@ -33,16 +35,27 @@ import { ThemedText } from '../../ui/ThemedText';
 // A haptic never belongs here: this file paints `worth_a_call`, and it is named in
 // `guards/haptics.test.ts`'s ALWAYS_SCANNED (proven by mutation on CUL-1065).
 
-const BUCKET = 'nyx-event-attachments';
+const BUCKET = EVENT_ATTACHMENT_BUCKET;
 const SIGNED_URL_TTL_SEC = 60 * 60;
-/** A square tile transform — a few tens of KB, not the multi-MB original (B-207's rule). */
+/** A square tile transform — a few tens of KB, not the multi-MB original (B-207's rule).
+ *  Signed PER TILE on purpose: the batch signer (`getSignedUrls`, the Foods grid's
+ *  primitive) has no transform — the Storage API signs a transform one URL at a time —
+ *  and nine 320px tiles are a few hundred KB where nine originals are tens of MB. The
+ *  request count is bounded by the photographed episodes in the drawn weeks. */
 const TILE_TRANSFORM = { width: 320, height: 320, resize: 'cover' as const };
+
+// The verdict enum the model carries (`lib/` cannot import a component) and the one the
+// shipped read declares are two spellings of the same union; both assignments below stop
+// compiling the day one gains a member the other lacks.
+const LABELS: Record<EpisodeVerdict, string> = REC_LABEL;
+const LABELS_BACK: Record<Recommendation, string> = LABELS;
+void LABELS_BACK;
 /** "No read yet" — an episode whose photo has no verdict on the record (pending, failed,
  *  or never read). Said, never blank: a missing word under a photo reads as "nothing found". */
 export const NO_READ_LABEL = 'No read yet';
 
 export function verdictWord(verdict: GalleryTile['verdict']): string {
-  return verdict ? REC_LABEL[verdict] : NO_READ_LABEL;
+  return verdict ? LABELS[verdict] : NO_READ_LABEL;
 }
 
 /** The tile in one sentence, for the screen reader. */

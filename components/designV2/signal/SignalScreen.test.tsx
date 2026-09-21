@@ -316,7 +316,7 @@ describe('the route, app/signal/[id]', () => {
   });
 
   it('flag-on: mounts the screen for the route’s pet and identity, and rises with the fold’s physics', async () => {
-    mockParams = { id: 'reflection%3Avomit', pet: 'pet-1' };
+    mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
     mockUseDesignV2.mockReturnValue(true);
     mockLoadSignalScreen.mockResolvedValue(ready(benign));
     const view = render(<SignalRoute />);
