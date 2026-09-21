@@ -22,16 +22,17 @@
 //
 //     the tree with the flag off  ===  the tree with components/designV2/ stubbed out
 //
-// It is green today (the namespace is empty), it reds the instant a redesign node
-// renders with the flag off, it stays green when that node is gated correctly,
-// and it is immune to unrelated churn because both sides move together.
+// It reds the instant a redesign node renders with the flag off, it stays green
+// when that node is gated correctly (D2-5's month and weight card are the first
+// two), and it is immune to unrelated churn because both sides move together.
 //
 // The convention it depends on: the redesign's rendering lives in
 // `components/designV2/`. A screen may hold the gate (`useDesignV2()`) but it
 // delegates the drawing there — UI written inline in a screen is invisible to the
-// equality half. `FIRST_CONSUMER_LANDS` below is the C-32 tripwire that makes that
-// stick: it asserts EXACTLY ZERO consumers of the hook today and names the PR that
-// will red it, because "every consumer is gated" proves nothing over an empty set.
+// equality half. The C-32 tripwire that made that stick — EXACTLY ZERO consumers of
+// the hook, named for the PR that would red it — did its job on D2-5 (CUL-1067), the
+// first consumer: Patterns reads the gate and draws through the namespace, and the
+// consumer scans below now measure a non-empty set.
 //
 // ── ONE HOOK, ONE CALL SHAPE ────────────────────────────────────────────────────
 //
@@ -359,8 +360,9 @@ function withRedesignAbsent<T>(fn: () => T): T {
   }
 }
 
-// Registered at module scope, before any screen is loaded. Only `index.ts` at D2-0
-// — which is exactly why the mutation proof at the foot of this file exists.
+// Registered at module scope, before any screen is loaded. `index.ts` alone at D2-0,
+// the two `patterns/` modules since D2-5 — and the mutation proof at the foot of this
+// file is what proved the mechanism before there was anything real to switch.
 for (const abs of designV2UiModules()) registerSwitchable(abs);
 
 /**
@@ -434,8 +436,10 @@ describe('D2-0 — flag-off is byte-identical to an app without the redesign', (
 });
 
 // ── The consumer scans ──────────────────────────────────────────────────────────
-/** The PR that lands the first consumer and deletes this file's D2-0 tripwire. */
-const FIRST_CONSUMER_LANDS = 'CUL-1065 (D2-3 — the Signal card and its route)';
+// The D2-0 tripwire (`gateConsumers() === []`) was deleted by CUL-1067 (D2-5 — the
+// month on Patterns), the first consumer to land; its three debts went with it: the
+// namespace's first modules (`components/designV2/patterns/`), the beta shelf's on-state
+// hint (`app/settings/beta.tsx`), and — still D2-3's — the Signal route joining SURFACES.
 
 /**
  * Detector (a): the gate's call shape. A consumer is any file that calls
@@ -589,15 +593,6 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the redesign has one gate, and its consumers stay inside the namespace', () => {
-  it(`D2-0 tripwire: nothing consumes useDesignV2() yet — deleted by ${FIRST_CONSUMER_LANDS}`, () => {
-    // C-32: an empty set is an assertion, and it is deleted by the PR that
-    // invalidates it rather than edited into a list of what happens to be true.
-    // Three debts go with it: the namespace's first module, the beta shelf's
-    // on-state hint for `design_v2` (app/settings/beta.tsx, which today says
-    // nothing because nothing renders), and the Signal route joining SURFACES.
-    expect(gateConsumers()).toEqual([]);
-  });
-
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
     // One hook, one call shape (see the header). A second direct read of the key
     // is a second door the call-shape scan cannot see, so it is refused outright.

@@ -160,3 +160,37 @@ export function weightDotsA11yLabel(model: WeightBandModel, unit: string, dateOf
   const tail = clipped > 0 ? ` ${clipped} ${pluralize(clipped, 'reading')} outside the band, drawn at its edge.` : '';
   return `Weight, ${n} readings from ${dateOf(model.first.occurredAt)} to ${dateOf(model.last.occurredAt)}, drawn by date on a band from 10 percent below to 10 percent above the first reading: ${weightWord(model.first.value, unit)} to ${weightWord(model.last.value, unit)}.${tail}`;
 }
+
+// ── The weight's spoken delta (D2-5 · CUL-1067) ───────────────────────────────
+
+/** Above this fraction of the first reading the home-scale caveat is NOT spoken: a home
+ *  scale moves a few percent on its own, and saying so beside a 15 % loss would be
+ *  reassurance on the one danger signal weight has (B-186's guardrail — a weight trend
+ *  never reassures). The bound is a home scale's own noise (a 0.1–0.2 kg wobble on a
+ *  4–5 kg cat), stated here once. */
+export const HOME_SCALE_NOISE_FRAC = 0.05;
+
+/** The caveat, verbatim from the design authority (§04). */
+export const HOME_SCALE_CAVEAT = 'a home scale moves about that much on its own';
+
+/**
+ * "Down 0.2 kg (4%) since Jul 3 · a home scale moves about that much on its own" — the
+ * delta spoken beside its caveat, or "No change since Jul 3". Null below two readings
+ * (the number is the chart). Direction words only, never a verdict: down is not "lost"
+ * and up is not "gained"; a flat line is "no change", never "steady".
+ *
+ * The caveat is GATED, not decorative: it prints only while the move is inside a home
+ * scale's own noise, so the sentence beside a large loss carries the loss and nothing
+ * that softens it.
+ */
+export function weightDeltaLine(model: WeightBandModel, unit: string, dateOf: (iso: string) => string): string | null {
+  if (model.delta == null || model.deltaFrac == null || !model.first) return null;
+  const since = `since ${dateOf(model.first.occurredAt)}`;
+  const abs = Math.abs(model.delta);
+  // Rounded to the displayed precision first, so "0.04" never prints as "Down 0.0".
+  const shown = Math.round(abs * 10) / 10;
+  if (shown === 0) return `No change ${since}`;
+  const pct = Math.round(Math.abs(model.deltaFrac) * 100);
+  const head = `${model.delta < 0 ? 'Down' : 'Up'} ${shown.toFixed(1)} ${unit} (${pct}%) ${since}`;
+  return Math.abs(model.deltaFrac) <= HOME_SCALE_NOISE_FRAC ? `${head} · ${HOME_SCALE_CAVEAT}` : head;
+}

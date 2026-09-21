@@ -175,3 +175,41 @@ describe('dateWord', () => {
     expect(dateWord('not-a-key')).toBe('not-a-key');
   });
 });
+
+describe('weightDeltaLine (D2-5)', () => {
+  const { weightBand } = jest.requireActual('./chartModels') as typeof import('./chartModels');
+  const { weightDeltaLine, HOME_SCALE_CAVEAT, HOME_SCALE_NOISE_FRAC } = jest.requireActual('./chartCopy') as typeof import('./chartCopy');
+  const fmt = (iso: string) => iso.slice(5, 10);
+  const r = (value: number, occurredAt: string) => ({ value, occurredAt });
+
+  it('speaks the delta with its percentage and the caveat inside a home scale\'s noise', () => {
+    const m = weightBand([r(4.6, '2026-07-03T08:00:00Z'), r(4.5, '2026-08-03T08:00:00Z'), r(4.4, '2026-09-12T08:00:00Z')]);
+    expect(weightDeltaLine(m, 'kg', fmt)).toBe(`Down 0.2 kg (4%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
+    const up = weightBand([r(4.6, '2026-07-03T08:00:00Z'), r(4.7, '2026-09-12T08:00:00Z')]);
+    expect(weightDeltaLine(up, 'kg', fmt)).toBe(`Up 0.1 kg (2%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
+  });
+
+  it('the caveat is GATED: past the noise bound a loss prints alone, with nothing that softens it (Dr. Chen)', () => {
+    const loss = weightBand([r(10, '2026-07-03T08:00:00Z'), r(8.5, '2026-09-12T08:00:00Z')]);
+    const line = weightDeltaLine(loss, 'lbs', fmt);
+    expect(line).toBe('Down 1.5 lbs (15%) since 07-03');
+    expect(line).not.toContain('home scale');
+    // The bound itself is inclusive and named once.
+    const atBound = weightBand([r(10, '2026-07-03T08:00:00Z'), r(10 * (1 - HOME_SCALE_NOISE_FRAC), '2026-09-12T08:00:00Z')]);
+    expect(weightDeltaLine(atBound, 'lbs', fmt)).toContain(HOME_SCALE_CAVEAT);
+    const pastBound = weightBand([r(10, '2026-07-03T08:00:00Z'), r(10 * (1 - HOME_SCALE_NOISE_FRAC) - 0.1, '2026-09-12T08:00:00Z')]);
+    expect(weightDeltaLine(pastBound, 'lbs', fmt)).not.toContain(HOME_SCALE_CAVEAT);
+  });
+
+  it('no verdict words: down is not "lost", flat is "no change", never "steady"', () => {
+    const flat = weightBand([r(4.6, '2026-07-03T08:00:00Z'), r(4.62, '2026-09-12T08:00:00Z')]);
+    expect(weightDeltaLine(flat, 'kg', fmt)).toBe('No change since 07-03');
+    const m = weightBand([r(10, '2026-07-03T08:00:00Z'), r(8.5, '2026-09-12T08:00:00Z')]);
+    expect(weightDeltaLine(m, 'lbs', fmt)).not.toMatch(/lost|gained|steady|stable|holding|improv|good|healthy|!/i);
+  });
+
+  it('null below two readings — one reading is a number, not a line', () => {
+    expect(weightDeltaLine(weightBand([r(4.6, '2026-09-12T08:00:00Z')]), 'kg', fmt)).toBeNull();
+    expect(weightDeltaLine(weightBand([]), 'kg', fmt)).toBeNull();
+  });
+});
