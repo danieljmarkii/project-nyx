@@ -107,7 +107,8 @@ describe('flag-on', () => {
     expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead);
     expect(view.getByTestId('signal-lead-title').props.children).toBe('Vomiting, the last 2 weeks');
     fireEvent.press(view.getByTestId('signal-lead-face'));
-    expect(router.push).toHaveBeenCalledWith('/signal/reflection%3Avomit?pet=pet-1');
+    // The door measures its chart first (D2-6), then pushes.
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/signal/reflection%3Avomit?pet=pet-1'));
     // The face never folds: no fold control on the lead, and the strip is not drawn.
     expect(view.queryByTestId('insight-fold-control')).toBeNull();
     expect(view.queryByTestId('insight-folded-strip')).toBeNull();

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -6,6 +7,7 @@ import { useDesignV2 } from '../../hooks/useDesignV2';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { parseSignalRouteParams } from '../../lib/signalRoute';
 import { SignalScreen } from '../../components/designV2/signal/SignalScreen';
+import { FLIGHT_MOTION, peekFlight } from '../../components/motion/flightMotion';
 import { SIGNAL_OPEN_MOTION } from '../../components/motion/signalOpenMotion';
 import { Header } from '../../components/ui/Header';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -26,6 +28,12 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // the screen rises with the fold's physics and Back is the same curve reversed, natively.
 // Reduced motion: `none`. (`animationDuration` is honoured on iOS; Android takes the
 // platform's default for the animation, which is inside the 700ms budget.)
+//
+// THE FLIGHT (D2-6 · CUL-1069): when the card staged one for this identity, the slide is
+// SUPPRESSED — the transition is a `fade` at the flight's `groundMs`, so Home crossfades
+// into the screen under the chart flying at the root (`FlightHost`), and Back is the same
+// fade reversed. Latched on the first render: the pop must use the transition the push
+// used, whatever the store says by then.
 
 export const OFF_TITLE = 'Nothing to show here';
 export const OFF_BODY = "This screen is part of a redesign that isn't on for this account yet.";
@@ -35,14 +43,15 @@ export default function SignalRoute() {
   const reducedMotion = useReducedMotion();
   const params = useLocalSearchParams<{ id?: string; pet?: string }>();
   const parsed = parseSignalRouteParams(params);
+  const [flew] = useState(() => (live && parsed ? peekFlight(parsed.identity) : false));
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <Stack.Screen
         options={{
           headerShown: false,
-          animation: reducedMotion ? 'none' : 'slide_from_bottom',
-          animationDuration: SIGNAL_OPEN_MOTION.riseMs,
+          animation: reducedMotion ? 'none' : flew ? 'fade' : 'slide_from_bottom',
+          animationDuration: flew ? FLIGHT_MOTION.groundMs : SIGNAL_OPEN_MOTION.riseMs,
           gestureEnabled: true,
           fullScreenGestureEnabled: true,
         }}

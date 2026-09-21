@@ -43,9 +43,26 @@ jest.mock('react-native-safe-area-context', () => {
 });
 const mockUseDesignV2 = jest.fn(() => false);
 jest.mock('../../../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
+// The weekly chart, real, with its props recorded — the flown chart must not draw in (D2-6).
+const mockWeeklyProps = jest.fn();
+jest.mock('../../charts/WeeklyBars', () => {
+  const actual = jest.requireActual('../../charts/WeeklyBars');
+  return {
+    ...actual,
+    WeeklyBars: (props: Record<string, unknown>) => {
+      mockWeeklyProps(props);
+      return actual.WeeklyBars(props);
+    },
+  };
+});
+// The measurement is the platform's; the suite plays it (D2-6): the hero's window rect.
+let mockHeroRect: { x: number; y: number; width: number; height: number } | null = { x: 16, y: 180, width: 361, height: 168 };
+jest.mock('../../../lib/measureNode', () => ({
+  measureNodeInWindow: (_node: unknown, cb: (r: unknown) => void) => cb(mockHeroRect),
+}));
 
 import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Animated } from 'react-native';
+import { Animated, Dimensions, StyleSheet } from 'react-native';
 import { SignalScreen, KEEP_COMPACT_LABEL, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
 import { NO_READ_LABEL } from './EpisodeGallery';
 import SignalRoute, { OFF_TITLE } from '../../../app/signal/[id]';
@@ -53,6 +70,8 @@ import { INCIDENT_REC_LABEL as REC_LABEL } from '../../../lib/incidentReadState'
 import { buildSignalScreenModel, type SignalScreenEpisode, type SignalScreenInput } from '../../../lib/signalScreen';
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding } from '../../../lib/signal';
 import { SIGNAL_OPEN_MOTION } from '../../motion/signalOpenMotion';
+import { FLIGHT_MOTION, abortFlight, getFlightState, landFlight, setHeroReady, settleOutbound, stageFlight } from '../../motion/flightMotion';
+import { createElement } from 'react';
 import { dayKeyFromIndex, localDayIndexOf } from '../../../lib/utils';
 
 const shift = (key: string, d: number) => dayKeyFromIndex((localDayIndexOf(key) as number) + d);
@@ -337,5 +356,188 @@ describe('the route, app/signal/[id]', () => {
     expect(mockLoadSignalScreen).not.toHaveBeenCalled();
     const options = (mockStackScreen.mock.calls[0][0] as unknown as { options: Record<string, unknown> }).options;
     expect(options.animation).toBe('none');
+  });
+});
+
+describe('the flight’s landing (D2-6 · CUL-1069)', () => {
+  // The test window (jest-expo's 750pt) — the hero's ratio is derived from it, as the screen does.
+  const WINDOW = Dimensions.get('window').width;
+  const INNER = WINDOW - 2 * 24 - 2 * 24 - 3 - 16;
+  const OUTER = WINDOW - 2 * 16;
+  const RATIO = OUTER / INNER;
+  const SOURCE = { x: 67, y: 300, width: INNER, height: 130 };
+  const layoutHero = (view: ReturnType<typeof render>) =>
+    fireEvent(view.getByTestId('signal-hero'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: INNER, height: 130 } } });
+  const stage = (identity = 'reflection:vomit') =>
+    stageFlight({ identity, title: 'Vomiting, the last 8 weeks', source: SOURCE, element: createElement('View') });
+  let resolveLoad: ((v: unknown) => void) | null = null;
+  const pending = () =>
+    new Promise((resolve) => {
+      resolveLoad = resolve;
+    });
+
+  beforeEach(() => {
+    abortFlight();
+    mockHeroRect = { x: 16, y: 180, width: 361, height: 168 };
+    resolveLoad = null;
+  });
+  afterEach(() => abortFlight());
+
+  it('while the read is in flight: the Header, the title the card handed over, and the hero SLOT at the clone’s size — measured, it lands the flight', () => {
+    stage();
+    mockLoadSignalScreen.mockReturnValue(pending());
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    expect(view.getByTestId('signal-flight-skeleton')).toBeTruthy();
+    expect(view.getByText('Vomiting, the last 8 weeks')).toBeTruthy();
+    const slot = view.getByTestId('signal-hero-slot');
+    const style = StyleSheet.flatten(slot.props.style);
+    // The slot is the clone's box scaled by the same ratio the hero uses.
+    expect(style.width).toBe(OUTER);
+    expect(style.height).toBeCloseTo(SOURCE.height * RATIO, 6);
+    expect(getFlightState().phase).toBe('staged');
+    act(() => {
+      fireEvent(slot, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: OUTER, height: style.height } } });
+    });
+    expect(getFlightState().phase).toBe('outbound');
+    expect(getFlightState().flight?.target).toEqual(mockHeroRect);
+  });
+
+  it('the hero mounts HIDDEN under the clone, does not draw in, reports its rect and its existence — and the release is one commit', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    const hero = view.getByTestId('signal-section-weekly');
+    expect(StyleSheet.flatten(hero.props.style)).toMatchObject({ opacity: 0 });
+    // The chart that flew in is the static frame: no draw in.
+    expect(view.getByTestId('weekly-bars')).toBeTruthy();
+    expect(mockWeeklyProps).toHaveBeenLastCalledWith(expect.objectContaining({ drawIn: false }));
+    expect(view.getByTestId('signal-hero').props.style.transform[0].scale).toBeCloseTo(RATIO, 10);
+    expect(view.getByTestId('signal-hero').props.style.width).toBe(INNER);
+    // The inner lays out → the wrapper reserves the scaled height and reports the rect.
+    act(() => layoutHero(view));
+    expect(getFlightState().phase).toBe('outbound');
+    expect(getFlightState().flight?.target).toEqual(mockHeroRect);
+    expect(getFlightState().flight?.heroReady).toBe(true);
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style).height).toBeCloseTo(130 * RATIO, 6);
+    // The spring rests: the store goes idle in ONE update, and the hero shows in that render.
+    act(() => settleOutbound());
+    expect(getFlightState().phase).toBe('idle');
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style).opacity).toBeUndefined();
+  });
+
+  it('Back reverses the flight before the pop; the hero hides again under the returning clone', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    act(() => layoutHero(view));
+    act(() => settleOutbound());
+    expect(getFlightState().phase).toBe('idle');
+    fireEvent.press(view.getByLabelText('Back'));
+    expect(getFlightState().phase).toBe('inbound');
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style)).toMatchObject({ opacity: 0 });
+  });
+
+  it('a screen that did NOT fly in never reverses on Back, and its chart draws in as D2-3 shipped', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.queryByTestId('signal-flight-skeleton')).toBeNull();
+    expect(mockWeeklyProps).toHaveBeenLastCalledWith(expect.objectContaining({ drawIn: true }));
+    fireEvent.press(view.getByLabelText('Back'));
+    expect(getFlightState().phase).toBe('idle');
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second screen for the same finding that did NOT fly in never reverses the first one’s lingering record', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const first = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(first.getByTestId('signal-screen-body')).toBeTruthy());
+    act(() => layoutHero(first));
+    act(() => settleOutbound());
+    expect(getFlightState()).toMatchObject({ phase: 'idle', flight: { identity: 'reflection:vomit' } });
+    const second = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(second.getByTestId('signal-screen-body')).toBeTruthy());
+    fireEvent.press(second.getByLabelText('Back'));
+    expect(getFlightState().phase).toBe('idle');
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaving any other way (the gesture, the fold control) aborts the flight — the record too, so a later visit cannot reverse onto it', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    act(() => layoutHero(view));
+    act(() => settleOutbound());
+    expect(getFlightState().flight).not.toBeNull();
+    view.unmount();
+    expect(getFlightState()).toEqual({ phase: 'idle', flight: null });
+  });
+
+  it('unmounting during the reverse leaves the inbound flight alone — the host is flying it home', async () => {
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    act(() => layoutHero(view));
+    act(() => settleOutbound());
+    fireEvent.press(view.getByLabelText('Back'));
+    view.unmount();
+    expect(getFlightState().phase).toBe('inbound');
+  });
+
+  it('a flight staged for ANOTHER finding is not this screen’s: no skeleton, no reverse, and it is not aborted by this screen', async () => {
+    stage('reflection:diarrhea');
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.queryByTestId('signal-flight-skeleton')).toBeNull();
+    fireEvent.press(view.getByLabelText('Back'));
+    expect(getFlightState().phase).toBe('staged');
+    view.unmount();
+    expect(getFlightState().phase).toBe('staged');
+  });
+
+  it('a late read: the flight lands on the slot and rests before the hero exists; the hero’s arrival is the release', async () => {
+    stage();
+    mockLoadSignalScreen.mockReturnValue(pending());
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    act(() => {
+      fireEvent(view.getByTestId('signal-hero-slot'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: OUTER, height: 168 } } });
+    });
+    act(() => settleOutbound());
+    expect(getFlightState().phase).toBe('landed');
+    await act(async () => {
+      resolveLoad?.(ready(benign));
+    });
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style)).toMatchObject({ opacity: 0 });
+    act(() => layoutHero(view));
+    expect(getFlightState().phase).toBe('idle');
+    expect(StyleSheet.flatten(view.getByTestId('signal-section-weekly').props.style).opacity).toBeUndefined();
+  });
+
+  it('the route: a staged flight suppresses the slide — a fade at the flight’s ground beat — and latches it for the pop', async () => {
+    mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
+    mockUseDesignV2.mockReturnValue(true);
+    mockReduced.mockReturnValue(false);
+    stage();
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalRoute />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    const first = (mockStackScreen.mock.calls[0][0] as unknown as { options: Record<string, unknown> }).options;
+    expect(first.animation).toBe('fade');
+    expect(first.animationDuration).toBe(FLIGHT_MOTION.groundMs);
+    expect(first.gestureEnabled).toBe(true);
+    // Released — the store is idle — and the route still says fade: the pop uses the push's transition.
+    act(() => layoutHero(view));
+    act(() => settleOutbound());
+    expect(getFlightState().phase).toBe('idle');
+    const last = (mockStackScreen.mock.calls[mockStackScreen.mock.calls.length - 1][0] as unknown as { options: Record<string, unknown> }).options;
+    expect(last.animation).toBe('fade');
   });
 });

@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
+import { useReducedMotion } from '../../../hooks/useReducedMotion';
+import { measureNodeInWindow } from '../../../lib/measureNode';
 import { useSyncStore } from '../../../store/syncStore';
 import type { CachedFinding, PriorityClass, SignalFinding } from '../../../lib/signal';
 import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
 import { WeeklyBars } from '../../charts/WeeklyBars';
 import { DOOR_A11Y_HINT, InsightCard, RAIL_WIDTH } from '../../home/InsightCard';
+import { FLIGHT_ENABLED, FLIGHT_MOTION, flightActiveFor, retargetSource, stageFlight, useFlightState } from '../../motion/flightMotion';
 import { Skeleton } from '../../ui/Skeleton';
 import { ThemedText } from '../../ui/ThemedText';
 
@@ -32,6 +35,32 @@ import { ThemedText } from '../../ui/ThemedText';
 // read is in flight the card is a content-shaped skeleton (C-12: a read that has not
 // answered is never an empty chart); a read that fails falls back to the shipped card,
 // which draws from the cache alone — correct-but-plain over confidently blank.
+//
+// THE FLIGHT (D2-6 · CUL-1069, `components/motion/flightMotion.ts`): the door measures the
+// chart in window coordinates first, stages the flight with the chart's own element, and
+// only then opens — so the clone is on screen at the chart's place before the push. While
+// a flight is live for this finding the chart is hidden (the clone IS the chart); on the
+// way back it re-measures so the clone lands where the chart is now. A measurement the
+// platform declines, reduced motion, a chartless card or the kill switch off: the plain
+// door, D2-3's rise.
+
+/**
+ * The chart's width on Home, from the window's: the page's padding (`app/(tabs)/index.tsx`
+ * `styles.scroll`), the zone's `Card` padding, the rail and the row's gap. The screen's
+ * hero is this layout scaled (one aspect for both charts — the flight's contract), so the
+ * formula lives here with the card that owns the layout, and `SignalLeadCard.test.tsx`
+ * pins every term against the rendered styles.
+ */
+export const LEAD_CHART_INSETS = {
+  pagePadding: theme.space3,
+  cardPadding: theme.space3,
+  rail: RAIL_WIDTH,
+  rowGap: theme.space2,
+} as const;
+export function leadChartWidth(windowWidth: number): number {
+  const { pagePadding, cardPadding, rail, rowGap } = LEAD_CHART_INSETS;
+  return windowWidth - 2 * pagePadding - 2 * cardPadding - rail - rowGap;
+}
 
 const RAIL_COLOR: Record<PriorityClass, string> = {
   safety: theme.colorEventSymptom,
@@ -58,6 +87,30 @@ export function SignalLeadCard({ cached, petId, petName, onOpen, trialRunning = 
   const identity = foldIdentity(cached.finding);
   const safety = cached.finding.priorityClass === 'safety';
   const [load, setLoad] = useState<Load>({ status: 'loading' });
+  const reducedMotion = useReducedMotion();
+  const flightState = useFlightState();
+  const flightLive = flightActiveFor(flightState, identity);
+  const chartRef = useRef<View>(null);
+
+  // On the way back the chart may not be where it was (a re-ranked Home, a scroll): tell
+  // the inbound clone where to land. Twice — once now, once after the ground has faded in,
+  // when a screen the navigator had detached is measurable again. Zeros are declined.
+  const inbound = flightState.phase === 'inbound' && flightState.flight?.identity === identity;
+  useEffect(() => {
+    if (!inbound) return;
+    let cancelled = false;
+    const attempt = () =>
+      measureNodeInWindow(chartRef.current, (rect) => {
+        if (!cancelled && rect && rect.width > 0 && rect.height > 0) retargetSource(identity, rect);
+      });
+    const t1 = setTimeout(attempt, 0);
+    const t2 = setTimeout(attempt, FLIGHT_MOTION.groundMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [inbound, identity]);
 
   useEffect(() => {
     if (safety) return;
@@ -111,14 +164,28 @@ export function SignalLeadCard({ cached, petId, petName, onOpen, trialRunning = 
 
   const { model } = load;
   const label = model.line ? `${model.title}. ${model.line}.` : `${model.title}.`;
+  const chart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} identity={identity} /> : null;
+  const open = () => {
+    onTouch?.(cached.finding);
+    onOpen(cached.finding);
+  };
+  const press = () => {
+    if (!FLIGHT_ENABLED || reducedMotion || !chart) {
+      open();
+      return;
+    }
+    measureNodeInWindow(chartRef.current, (rect) => {
+      if (rect && rect.width > 0 && rect.height > 0) {
+        stageFlight({ identity, title: model.title, source: rect, element: chart });
+      }
+      open();
+    });
+  };
   return (
     <View style={styles.row} testID="signal-lead-card">
       <View style={[styles.rail, { backgroundColor: rail }]} />
       <Pressable
-        onPress={() => {
-          onTouch?.(cached.finding);
-          onOpen(cached.finding);
-        }}
+        onPress={press}
         hitSlop={FACE_HITSLOP}
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -131,9 +198,13 @@ export function SignalLeadCard({ cached, petId, petName, onOpen, trialRunning = 
         <ThemedText style={styles.title} testID="signal-lead-title">
           {model.title}
         </ThemedText>
-        {model.weekly && model.noun ? (
+        {chart ? (
           <View style={styles.chart}>
-            <WeeklyBars model={model.weekly} noun={model.noun} identity={identity} />
+            {/* The measured node: the chart's own box, no margin — the same box the screen's
+                hero slot reproduces. `collapsable={false}` so the view exists natively. */}
+            <View ref={chartRef} collapsable={false} style={flightLive ? styles.chartHidden : undefined} testID="signal-lead-chart">
+              {chart}
+            </View>
           </View>
         ) : null}
         {model.line ? (
@@ -175,6 +246,9 @@ const styles = StyleSheet.create({
   },
   chart: {
     marginTop: theme.space0_5,
+  },
+  chartHidden: {
+    opacity: 0,
   },
   line: {
     fontSize: theme.textSM,
