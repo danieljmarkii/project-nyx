@@ -1,6 +1,6 @@
 # D2-3 — the Signal card (title + chart + line) and the Signal's own screen, as a route
 
-**Date:** 2026-09-21 · **Issue:** CUL-1065 (step 2, lane 1 of *Design v2 — the whole day*) · **Shipped via #PR_NUMBER** (draft)
+**Date:** 2026-09-21 · **Issue:** CUL-1065 (step 2, lane 1 of *Design v2 — the whole day*) · **Shipped via #881** (draft)
 
 The Signal card on Home becomes a title, a weekly chart and one line; tapping it opens
 the Signal's own screen with the evidence drawn. Behind the `design_v2` beta toggle
@@ -38,8 +38,9 @@ an answered look, the feedings and free-fed spans the lanes time against through
 `classifyEpisodeSet`, the trial through `loadTrialPredicateFacts` + `isTrialRunning`, the
 delivered doses) and makes ONE PostgREST read, the per-incident verdicts from
 `event_ai_analysis`, chunked by id and paged on a total key (C-42). *Why this is a
-Signal* composes the shipped `evidenceText`, "Two windows of N days, compared as counts.
-Not a verdict on how {pet} is doing.", **each drug dosed inside either compare window
+Signal* composes the shipped `evidenceText`, "Two windows of N days, logged on A and B
+of them. Compared as counts, not a verdict on how {pet} is doing.", **each drug dosed
+inside either compare window
 with its dates from the record** ("Cerenia was given Sep 9–12, inside the trial's 55
 days."; a course across the start says "across both windows"; nothing when none), the
 diet-change sentence and the diet line. The gallery is one tile per photographed episode
@@ -89,6 +90,55 @@ proven by mutation (the route drawing the namespace ungated reds "the Signal rou
 renders identically with the redesign absent"). `app/settings/beta.tsx` gets the on-state
 hint the tripwire named.
 
+## The two reviews
+
+**The code-reviewer** (commit 2) blocked on one thing: the header's "Open ›" and the
+lead face 8pt below it shared hit area (C-5) — the link now reaches 0 down, pinned off
+the rendered styles. Taken too: the attachment bucket from `lib/attachments`, the two
+verdict unions held in lockstep at compile time, one decode of the route params. Not
+taken: batch signing for the gallery — the batch signer has no transform, and nine 320px
+tiles cost less than nine originals; the reason is in the gallery's header.
+
+**The adversarial pass** (commit 3) returned FAIL with eight breaks, the first four
+load-bearing, and eight surviving mutations — the round that mattered, as on D2-1:
+
+- **A day-one trial drew one day against one day.** "The 1 day before: 1 · The trial's
+  1 day: 0" — a full bar beside an empty one, the n=1 picture the never-reassure
+  invariant forbids, on a safety card. Now a floor: below `MIN_COMPARE_DAYS` (mirrored
+  from the diet-trial spec's `MIN_INTERPRETABLE_DAYS`, same question, C-34) there is no
+  compare and one lane, and *Why* says "Day 1 of the rabbit trial — fewer than 7 days in,
+  so there is no before-and-during compare yet."
+- **A re-logged bout lost its photo and its read.** The collapse keeps a bout's first
+  row; the owner who photographs the blood and re-logs twenty minutes later has the
+  photo on the second. `boutMembers` walks the collapse's own gap rule so every row of
+  a bout is asked for attachments, and the bout's tile is the row that holds the photo
+  (its read is keyed there; it opens that record).
+- **The compare sentence named only the calendar denominator.** A diligent baseline
+  against a drifting trial — 19 over 55 logged days, 5 over 16, one rate — reads as a 4×
+  improvement from the bars, and "two windows of 55 days" beside a partial enumeration
+  is C-3's claim. The sentence now names both: "Two windows of 55 days, logged on 16
+  and 55 of them. Compared as counts, not a verdict on how Nyx is doing." Naming an
+  asymmetry is not the word "fairly".
+- **The verdict read stopped at a short page**, against its own C-42 comment — under a
+  cap of 50 it lost a `worth_a_call` (CUL-975's own failure, a cheque the code did not
+  cash, C-38). It advances by the rows received and stops on an empty page.
+- Then: a `%` in a drug or food name deleted the confounder line (B-733's drop rule was
+  written for a decoration; this line is Dr. Chen's condition) — the strength token is
+  now stripped and the line kept; a future-dated episode was a tile but not a bar
+  (C-4) — the gallery is bounded by today; the gallery's count was a display-window
+  count spoken as a record fact (CUL-223) — it names its weeks; two dose dates a year
+  apart printed as one date (C-19) — the compare is capped at the chart's 84 days a side,
+  so its dates are always the last twelve months'; and the compare now takes the DAY
+  COUNTER the title states as its one authority, ending today, never re-derived from the
+  start day (the pass's M05: every fixture had built one from the other).
+- The eight survivors are each pinned: `MIN_WEEKS` at a one-day lookback, an odd
+  lookback's halves, `recordStart` on the bars and the compare, the medication window's
+  edges, a pending row over a stale recommendation, the looks join's `deleted_at`, and
+  the title's verdict list by content (the property test read the same list — a C-34
+  tautology; the list is now asserted word by word).
+- A latent C-40 in the dose read (a text bound between the two ISO spellings, absorbed
+  by a day of slack) is closed: the bound compares the fixed-width first 19 characters.
+
 ## Decisions made in-session
 
 - **The gallery's population is the chart's** — the episodes inside the drawn weeks —
@@ -96,7 +146,9 @@ hint the tripwire named.
   the bars above them (C-4 across sections).
 - **Nine bars, not eight.** The Sunday-start weeks a 56-day lookback touches on a
   Thursday are nine (eight whole and the partial). The issue's "Sunday-start weeks ending
-  in the current week" is honoured; the count follows.
+  in the current week" is honoured; the count follows. The title says "the last 8 weeks"
+  above nine bars — both honest, one-line to change if the device pass reads it as a
+  mismatch.
 - **The phone script stays reachable.** A safety finding's tap used to reveal it; under
   the flag the tap goes to the screen, so the screen carries it, after the why.
 - **The safety lead keeps the shipped card, with the door** (S1) rather than a chart
@@ -126,8 +178,27 @@ hint the tripwire named.
   `components/motion/signalOpenMotion.test.ts` (7), `SignalLeadCard.test.tsx` (5),
   `SignalScreen.test.tsx` (13), `SignalZone.designV2.test.tsx` (5).
 - No new secret.
-- Persona sign-off: REVIEW_SIGNOFF
-- Adversarial review: ADVERSARIAL_LINE
+- Persona sign-off: Designer ✓ (S1 on the safety lead; the title's register; the door as
+  the one verb) · Data Scientist + Data Vis ✓ (one window predicate, C-4 property-tested;
+  the compare names both logged counts; §05 charts reused) · Dr. Chen ✓ (per-episode reads
+  in the shipped words, no aggregate; the confounder named with its dates and kept through
+  a "%" name; the day-one floor) · Motion Designer ✓ (three beats inside 700ms on the
+  fold's physics; the chart's 780ms label tail stated) · Engineer ✓ (the route; C-9; C-42
+  paging by rows received; the guards proven by mutation) · T&S ✓ (the owner's own photos,
+  signed URLs as today, RLS-scoped) · QA ✓ (the eight ACs mapped to tests in the PR body).
+- Adversarial review (`adversarial-reviewer`, isolated): tried a trial on **day 1** → the
+  compare drew one day against one day — **BROKE**, fixed with the floor; tried a
+  **diligent-baseline / drifting-trial** record (19 over 55 logged days vs 5 over 16,
+  one rate) → the bars read a 4× improvement and the sentence named only the calendar —
+  **BROKE**, the sentence names both logged counts; tried a **re-logged bout with the
+  photo on the second row** → photo and its `worth_a_call` dropped — **BROKE**, fixed by
+  `boutMembers`; tried the verdict read under a **max-rows cap of 50** → truncated at
+  the first short page — **BROKE**, pages by rows received; tried a **future-dated
+  episode** → a tile but not a bar — **BROKE**, bounded by today; tried a **daily staple
+  cluster** ("chicken and duck") → the title names both members ✓; tried a **re-logged
+  bout on the bars** → one episode everywhere ✓; tried **absent per-episode reads** →
+  "No read yet", no aggregate, no field for one ✓; tried the **three CI zones** →
+  identical bucketing ✓. Mutation battery: 28 applied, 8 survived, all 8 now pinned.
 - Future-self: one window predicate for four surfaces (the card's bars, its line, the
   compare, the lanes) and one screen model; the risk in twelve months is a fifth surface
   (the month, the report) restating a window instead of adding a spec here. The header's

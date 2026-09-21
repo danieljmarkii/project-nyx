@@ -254,6 +254,15 @@ describe('PROPERTY: no title carries a verdict word — every type × every symp
     expect(checked).toBe(SYMPTOMS.length * 14 * trials.length);
   });
 
+  it('the list is pinned by content — deleting a word is a decision here, never a drift (the property test reads the same list, C-34)', () => {
+    expect([...TITLE_VERDICT_WORDS]).toEqual([
+      'down', 'up', 'better', 'worse', 'worsening', 'improving', 'improved', 'fewer', 'more', 'quieter', 'calmer',
+      'resolved', 'cleared', 'clear', 'settled', 'normal', 'fine', 'good', 'bad', 'rising', 'falling', 'spike', 'done', 'complete',
+    ]);
+    // And each one, on its own, is caught in a title-shaped sentence.
+    for (const w of TITLE_VERDICT_WORDS) expect(hasTitleVerdictWord(`Vomiting, ${w} this week`)).toBe(true);
+  });
+
   it('the list holds every word the issue names, and the predicate reads them as whole words', () => {
     for (const w of ['down', 'up', 'better', 'worse', 'improving', 'fewer', 'more']) expect(TITLE_VERDICT_WORDS).toContain(w);
     expect(hasTitleVerdictWord('Vomiting, up this week')).toBe(true);

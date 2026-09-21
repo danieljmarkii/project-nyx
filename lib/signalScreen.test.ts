@@ -34,6 +34,7 @@ const mockLoadTrialPredicateFacts = jest.fn();
 jest.mock('./dietTrialFacts', () => ({ loadTrialPredicateFacts: (...a: unknown[]) => mockLoadTrialPredicateFacts(...a) }));
 
 import {
+  boutMembers,
   buildSignalScreenModel,
   doseDatesPhrase,
   loadSignalScreen,
@@ -41,6 +42,7 @@ import {
   readLoggedDays,
   readSignalEpisodes,
   readVerdicts,
+  safeLabel,
   trialLine,
   VERDICT_CHUNK,
   VERDICT_PAGE,
@@ -52,7 +54,8 @@ import {
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding, TrialResponseFinding } from './signal';
 import { hasTitleVerdictWord } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
-import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
+import { signalCompareSpec } from './signalWindows';
+import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf, toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
 
 const idx = (key: string): number => {
@@ -203,7 +206,7 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
     expect(drawn).toBe(24);
     expect(model.episodes?.total).toBe(drawn);
     expect(model.episodes?.photographedCount).toBe(9);
-    expect(model.episodes?.countLine).toBe('24, nine photographed');
+    expect(model.episodes?.countLine).toBe('24 in these 9 weeks, nine photographed');
     const tiles = model.episodes?.tiles ?? [];
     expect(tiles).toHaveLength(9);
     for (let i = 1; i < tiles.length; i++) {
@@ -221,7 +224,9 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
 
   it('“Why this is a Signal”: the shipped why, the compare as counts, the diet line — and no medication when none was dosed', () => {
     expect(model.why[0].length).toBeGreaterThan(0);
-    expect(model.why).toContain('Two windows of 55 days, compared as counts. Not a verdict on how Nyx is doing.');
+    // Both windows' logged days are NAMED in the sentence (B3: a diligent baseline against
+    // a drifting trial reads as an improvement from the bars alone).
+    expect(model.why).toContain('Two windows of 55 days, logged on 16 and 55 of them. Compared as counts, not a verdict on how Nyx is doing.');
     expect(model.why).toContain('A diet change is one of several things that can move this.');
     expect(model.why[model.why.length - 1]).toBe('Day 55 of 56 on Royal Canin Selected Protein PR.');
     expect(model.why.join(' ')).not.toMatch(/was given/);
@@ -229,11 +234,11 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
 
   it('a photographed count of zero says so; a count past twelve is a numeral', () => {
     const none = buildSignalScreenModel(mockInput({ episodes: mockInput().episodes.map((e) => ({ ...e, photo: null })) }));
-    expect(none.episodes?.countLine).toBe('24, none photographed');
+    expect(none.episodes?.countLine).toBe('24 in these 9 weeks, none photographed');
     const all = buildSignalScreenModel(
       mockInput({ episodes: mockInput().episodes.map((e) => ({ ...e, photo: { localUri: null, storagePath: 'p' } })) }),
     );
-    expect(all.episodes?.countLine).toBe('24, 24 photographed');
+    expect(all.episodes?.countLine).toBe('24 in these 9 weeks, 24 photographed');
     expect(all.episodes?.tiles.map((t) => t.verdict).filter((v) => v != null)).toHaveLength(4);
   });
 });
@@ -275,11 +280,30 @@ describe('the medication inside the window (Dr. Chen’s condition on round 3)',
     ]);
   });
 
-  it('without a trial the halves are named, and a drug name that trips the screen is dropped (B-733)', () => {
+  it('without a trial the halves are named; a strength token in a drug name is REPAIRED, never the line dropped (B5)', () => {
     const lines = medicationLines(
       mockInput({ trial: null, doses: [{ drugLabel: 'Baytril 2.5%', dayKey: THURSDAY }, { drugLabel: 'Cerenia', dayKey: shift(THURSDAY, -40) }] }),
     );
-    expect(lines).toEqual(['Cerenia was given Aug 8, inside the 28 days before.']);
+    expect(lines).toEqual(['Baytril was given Sep 17, inside the recent 28 days.', 'Cerenia was given Aug 8, inside the 28 days before.']);
+    // The confounder disclosure survives an ordinary injectable's strength; the diet line
+    // survives a "95%" single-protein food; a label that is ONLY a percentage is dropped.
+    expect(trialLine(trial({ foodLabel: 'Weruva 95% Chicken Paté' }))).toBe('Day 55 of 56 on Weruva Chicken Paté.');
+    expect(trialLine(trial({ foodLabel: '100%' }))).toBe('Day 55 of 56.');
+    expect(safeLabel('Baytril 2.5%')).toBe('Baytril');
+    expect(safeLabel('Metacam 1,5 %')).toBe('Metacam');
+    expect(safeLabel('Vomit ↓ fix')).toBeNull();
+    expect(safeLabel('')).toBeNull();
+    const model = buildSignalScreenModel(mockInput({ trial: trial({ foodLabel: '50%' }) }));
+    expect(model.why[model.why.length - 1]).toBe('Day 55 of 56.');
+  });
+
+  it('the window edges (M13): the before window’s first day is in, the day before it is out, today is in', () => {
+    const [before] = signalCompareSpec(chronicity(), THURSDAY, trial());
+    const first = before.startDay;
+    const inLines = medicationLines(mockInput({ doses: [{ drugLabel: 'Cerenia', dayKey: first }, { drugLabel: 'Cerenia', dayKey: THURSDAY }] }));
+    expect(inLines).toEqual([`Cerenia was given on 2 days between ${formatCalendarDate(first)} and Sep 17, across both windows.`]);
+    expect(medicationLines(mockInput({ doses: [{ drugLabel: 'Cerenia', dayKey: shift(first, -1) }] }))).toEqual([]);
+    expect(medicationLines(mockInput({ doses: [{ drugLabel: 'Cerenia', dayKey: shift(THURSDAY, 1) }] }))).toEqual([]);
   });
 
   it('the dose-day phrase: one day, a run, a scatter', () => {
@@ -297,6 +321,26 @@ describe('the diet line', () => {
     expect(trialLine(trial({ dayCounter: 57 }))).toBe('Day 57 — 1 day past the window you set on Royal Canin Selected Protein PR.');
     expect(trialLine(trial({ foodLabel: null }))).toBe('Day 55 of 56.');
     expect(trialLine(trial({ targetDays: 0, foodLabel: null }))).toBe('Day 55.');
+  });
+
+  it('a trial under the floor: no compare, one lane, and the floor said in Why (B1 — never two one-day bars)', () => {
+    const young = trial({ dayCounter: 1, startDay: THURSDAY });
+    const model = buildSignalScreenModel(mockInput({ trial: young }));
+    expect(model.title).toBe('Vomiting, day 1 of the rabbit trial');
+    expect(model.compare).toBeNull();
+    expect(model.lanes?.lanes.map((l) => l.label)).toEqual(['The last 56 days']);
+    expect(model.why).toContain('Day 1 of the rabbit trial — fewer than 7 days in, so there is no before-and-during compare yet.');
+    expect(model.why.join(' ')).not.toMatch(/Two windows/);
+    expect(model.why[model.why.length - 1]).toBe('Day 1 of 56 on Royal Canin Selected Protein PR.');
+    expect(model.weekly?.mark?.day).toBe(THURSDAY);
+  });
+
+  it('a future-dated episode is on neither the bars nor the gallery (B6, C-4)', () => {
+    const base = mockInput();
+    const model = buildSignalScreenModel({ ...base, episodes: [...base.episodes, episode(shift(THURSDAY, 1), 9), episode(shift(THURSDAY, 3), 9, { photo: { localUri: null, storagePath: 'p' } })] });
+    expect(model.weekly?.after).toBe(2);
+    expect(model.episodes?.total).toBe(model.weekly?.total);
+    expect(model.episodes?.photographedCount).toBe(9);
   });
 
   it('is absent without a trial, and so is the diet-change sentence; the compare is the two halves', () => {
@@ -419,22 +463,40 @@ function chainReturning(pages: Array<{ data: unknown[] | null; error: { message:
 }
 
 describe('readVerdicts — chunked by id, paged on a total key (C-42)', () => {
-  it('pages until a short page, and reads a pending row as no verdict', () => {
-    const ids = Array.from({ length: 7 }, (_, i) => `e${i}`);
-    const full = Array.from({ length: VERDICT_PAGE }, (_, i) => ({ event_id: `x${i}`, status: 'completed', recommendation: 'monitor' }));
+  it('advances by the rows RECEIVED and stops on an empty page — a short page under a lower cap is not the end (B4)', () => {
+    // A server capping at 40 rows a page, 100 ids all with rows: three pages, then empty.
+    const ids = Array.from({ length: 100 }, (_, i) => `e${i}`);
+    const rows = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ event_id: `e${from + i}`, status: 'completed', recommendation: i % 7 === 0 ? 'worth_a_call' : 'monitor' }));
     const { chain, calls } = chainReturning([
-      { data: full, error: null },
-      { data: [{ event_id: 'e1', status: 'completed', recommendation: 'worth_a_call' }, { event_id: 'e2', status: 'pending', recommendation: null }], error: null },
+      { data: rows(0, 40), error: null },
+      { data: rows(40, 40), error: null },
+      { data: rows(80, 20), error: null },
+      { data: [], error: null },
     ]);
     mockFrom.mockReturnValue(chain);
     return readVerdicts(ids).then((out) => {
       expect(calls.ranges).toEqual([
         [0, VERDICT_PAGE - 1],
-        [VERDICT_PAGE, 2 * VERDICT_PAGE - 1],
+        [40, 40 + VERDICT_PAGE - 1],
+        [80, 80 + VERDICT_PAGE - 1],
+        [100, 100 + VERDICT_PAGE - 1],
       ]);
+      expect(Object.keys(out)).toHaveLength(100);
+      expect(out.e87).toBe('worth_a_call');
+      expect(out.e77).toBe('monitor');
+    });
+  });
+
+  it('a pending row is no verdict even when it carries a stale recommendation (M18)', () => {
+    const { chain } = chainReturning([
+      { data: [{ event_id: 'e1', status: 'completed', recommendation: 'worth_a_call' }, { event_id: 'e2', status: 'pending', recommendation: 'monitor' }], error: null },
+      { data: [], error: null },
+    ]);
+    mockFrom.mockReturnValue(chain);
+    return readVerdicts(['e1', 'e2', 'e3']).then((out) => {
       expect(out.e1).toBe('worth_a_call');
       expect(out.e2).toBeNull();
-      expect(out.x0).toBe('monitor');
       expect('e3' in out).toBe(false);
     });
   });
@@ -444,11 +506,13 @@ describe('readVerdicts — chunked by id, paged on a total key (C-42)', () => {
     const { chain, calls } = chainReturning([
       { data: null, error: { message: 'boom' } },
       { data: [{ event_id: `e${VERDICT_CHUNK}`, status: 'completed', recommendation: 'not_enough_to_say' }], error: null },
+      { data: [], error: null },
     ]);
     mockFrom.mockReturnValue(chain);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     return readVerdicts(ids).then((out) => {
-      expect(calls.ins.map((c) => c.length)).toEqual([VERDICT_CHUNK, 5]);
+      // The second chunk pages twice: its one row, then the empty page that ends it.
+      expect(calls.ins.map((c) => c.length)).toEqual([VERDICT_CHUNK, 5, 5]);
       expect(out[`e${VERDICT_CHUNK}`]).toBe('not_enough_to_say');
       expect('e0' in out).toBe(false);
       expect(chain.order).toHaveBeenCalledWith('event_id', { ascending: true });
@@ -466,7 +530,7 @@ describe('the local reads', () => {
     mockReadFreeFedSpans.mockReset();
   });
 
-  it('readSignalEpisodes: a re-logged bout is one episode, its photo found, vomiting timed through the one predicate', async () => {
+  it('readSignalEpisodes: a re-logged bout is one episode, its photo found ON THE SECOND ROW (B2), vomiting timed through the one predicate', async () => {
     mockGetAllAsync
       .mockResolvedValueOnce([
         { id: 'a', occurred_at: noon(2026, 9, 17, 17, 11), occurred_at_confidence: 'witnessed' },
@@ -474,25 +538,44 @@ describe('the local reads', () => {
         { id: 'b', occurred_at: noon(2026, 9, 15, 10, 58), occurred_at_confidence: 'witnessed' },
         { id: 'c', occurred_at: 'garbage', occurred_at_confidence: null },
       ])
-      .mockResolvedValueOnce([{ event_id: 'b', local_uri: 'file:///b.jpg', storage_path: 'p/b.jpg' }]);
+      // The photo is on the re-log, not the bout's first row.
+      .mockResolvedValueOnce([
+        { event_id: 'a2', local_uri: null, storage_path: 'p/a2.jpg' },
+        { event_id: 'b', local_uri: 'file:///b.jpg', storage_path: 'p/b.jpg' },
+      ]);
     mockReadFeedingRows.mockResolvedValue([
       { ms: Date.parse(noon(2026, 9, 17, 17, 7)), confidence: 'witnessed', form: 'kibble', foodType: 'meal' },
     ]);
     mockReadFreeFedSpans.mockResolvedValue([]);
 
     const episodes = await readSignalEpisodes('pet-1', 'vomit');
-    expect(episodes.map((e) => e.eventId).sort()).toEqual(['a', 'b']);
-    const a = episodes.find((e) => e.eventId === 'a');
+    expect(episodes).toHaveLength(2);
+    // The bout is ONE episode, timed from its first row, and its tile is the row that
+    // holds the photo — so the read is looked up for `a2` and the tile opens `a2`.
+    const bout = episodes.find((e) => e.dayKey === '2026-09-17');
     const b = episodes.find((e) => e.eventId === 'b');
-    expect(a?.dayKey).toBe('2026-09-17');
-    expect(a?.minutesSinceMeal).toBe(4);
-    expect(a?.photo).toBeNull();
+    expect(bout?.eventId).toBe('a2');
+    expect(bout?.minutesSinceMeal).toBe(4);
+    expect(bout?.photo).toEqual({ localUri: null, storagePath: 'p/a2.jpg' });
     expect(b?.minutesSinceMeal).toBeNull();
     expect(b?.photo).toEqual({ localUri: 'file:///b.jpg', storagePath: 'p/b.jpg' });
-    // The attachment read is scoped to the pet AND the episodes' ids.
+    // The attachment read is scoped to the pet AND EVERY row of every bout.
     const [sql, params] = mockGetAllAsync.mock.calls[1] as [string, unknown[]];
     expect(sql).toMatch(/event_attachments/);
-    expect(params).toEqual(['pet-1', 'b', 'a']); // chronological, the collapse's order
+    expect(params).toEqual(['pet-1', 'a', 'a2', 'b']);
+  });
+
+  it('boutMembers walks the collapse’s own chained gap: a slow drip is one bout, a gap starts another', () => {
+    const rows = [
+      { id: 'r1', ms: 0 },
+      { id: 'r2', ms: 60 * 60_000 },
+      { id: 'r3', ms: 2 * 60 * 60_000 },
+      { id: 'r4', ms: 12 * 60 * 60_000 },
+    ];
+    const reps = [rows[0], rows[3]];
+    const m = boutMembers(rows, reps, 6);
+    expect(m.get('r1')).toEqual(['r1', 'r2', 'r3']);
+    expect(m.get('r4')).toEqual(['r4']);
   });
 
   it('readSignalEpisodes: a cough is never timed — the feeding read is not issued', async () => {
@@ -509,6 +592,11 @@ describe('the local reads', () => {
     const out = await readLoggedDays('pet-1');
     expect(out.loggedDays).toEqual(['2026-09-10', '2026-09-12', '2026-09-17']);
     expect(out.recordStart).toBe('2026-09-10');
+    // An UNDONE look is not a logged day (M20): the looks read joins the parent event and
+    // keeps only live ones — a string literal nothing else red-flags, pinned here (C-37).
+    const [, looksSql] = mockGetAllAsync.mock.calls.map((c) => c[0] as string);
+    expect(looksSql).toMatch(/JOIN events e ON e\.id = l\.event_id/);
+    expect(looksSql).toMatch(/e\.deleted_at IS NULL/);
   });
 });
 
@@ -564,6 +652,8 @@ describe('loadSignalScreen', () => {
     // Doses are read from a day before the earlier window's first day, delivered only.
     const doseCall = mockGetAllAsync.mock.calls.find(([sql]) => /medication_administrations/.test(sql as string)) as [string, unknown[]];
     expect(doseCall[0]).toMatch(/adherence IN \('given', 'partial'\)/);
+    // C-40: the bound compares the fixed-width prefix, never the two spellings whole.
+    expect(doseCall[0]).toMatch(/substr\(e\.occurred_at, 1, 19\) >= substr\(\?, 1, 19\)/);
     expect(Date.parse(doseCall[1][2] as string)).toBeLessThan(Date.parse(`${today}T00:00:00Z`) - 100 * 86_400_000);
     expect(mockLoadTrialPredicateFacts).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }), expect.any(Number));
   });

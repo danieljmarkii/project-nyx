@@ -56,7 +56,9 @@ import {
   signalLanes,
   signalSymptomOf,
   signalWeeks,
+  trialTooYoungToCompare,
   weekLine,
+  MIN_COMPARE_DAYS,
   type SignalLanesModel,
   type SignalTrialWindow,
 } from './signalWindows';
@@ -168,17 +170,20 @@ function indexOf(key: string): number {
   return i;
 }
 
-/** The episodes inside the drawn weeks — what the chart counts and the gallery shows. */
-function episodesInWeeks(episodes: readonly SignalScreenEpisode[], weekly: WeeklyBucketsModel): SignalScreenEpisode[] {
+/** The episodes inside the drawn weeks — what the chart counts and the gallery shows.
+ *  Bounded above by TODAY, the bound the buckets use: a mis-dated episode tomorrow is
+ *  "dated after what is drawn" on the chart and must not be a tile (C-4 — the two counts
+ *  partition; adversarial pass, B6). */
+function episodesInWeeks(episodes: readonly SignalScreenEpisode[], weekly: WeeklyBucketsModel, today: string): SignalScreenEpisode[] {
   const first = indexOf(weekly.firstKey);
-  const last = indexOf(weekly.lastKey);
+  const last = Math.min(indexOf(weekly.lastKey), indexOf(today));
   return episodes.filter((e) => {
     const i = indexOf(e.dayKey);
     return i >= first && i <= last;
   });
 }
 
-function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScreenInput['verdicts']): SignalScreenEpisodes {
+function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScreenInput['verdicts'], weeks: number): SignalScreenEpisodes {
   const photographed = inWeeks
     .filter((e): e is SignalScreenEpisode & { photo: SignalScreenPhoto } => e.photo != null)
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
@@ -195,7 +200,10 @@ function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScre
   });
   const total = inWeeks.length;
   const n = photographed.length;
-  const countLine = n === 0 ? `${total}, none photographed` : `${total}, ${smallNumber(n)} photographed`;
+  // The count names its window (CUL-223: a display-window count spoken as a record fact
+  // is the anti-pattern; adversarial pass, B8): these are the drawn weeks' episodes.
+  const scope = `${total} in these ${weeks} ${plural(weeks, 'week')}`;
+  const countLine = n === 0 ? `${scope}, none photographed` : `${scope}, ${smallNumber(n)} photographed`;
   return { total, photographedCount: n, countLine, tiles };
 }
 
@@ -224,6 +232,23 @@ function lowerFirst(s: string): string {
 }
 
 /**
+ * An owner-typed label (a drug, a food) made safe for a Signal line: a strength or a
+ * percentage token ("Baytril 2.5%", "Weruva 95% Chicken") is REMOVED rather than the
+ * whole line dropped. The B-733 rule dropped the med-context line on a benign card as
+ * decoration; here the line is the confounder disclosure Dr. Chen conditioned round 3
+ * on, and "95%" foods and "2.5%" injectables are ordinary names — a better-than-the-rule
+ * case (adversarial pass, B5). Null only when the repaired label still trips the screen.
+ */
+export function safeLabel(label: string | null | undefined): string | null {
+  const stripped = (label ?? '')
+    .replace(/\s*\d+(?:[.,]\d+)?\s*%/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!stripped || hasBannedSignalVocabulary(stripped)) return null;
+  return stripped;
+}
+
+/**
  * The medication lines: one per drug dosed inside either compare window, dated from the
  * record. Which window is said ("the trial's 55 days" / "the 55 days before it" / "both
  * windows"), because a course that straddles the start is a different fact from one
@@ -237,7 +262,7 @@ export function medicationLines(input: SignalScreenInput): string[] {
   const end = duringStart + during.days - 1;
   const byDrug = new Map<string, { before: string[]; during: string[] }>();
   for (const d of input.doses) {
-    const label = d.drugLabel.trim();
+    const label = safeLabel(d.drugLabel);
     if (!label) continue;
     const i = indexOf(d.dayKey);
     if (i < beforeStart || i > end) continue;
@@ -264,7 +289,8 @@ export function medicationLines(input: SignalScreenInput): string[] {
  *  (the medication-duration rule D7, applied to the trial); past the window, the shipped
  *  strip's own words. */
 export function trialLine(trial: SignalTrialWindow): string {
-  const on = trial.foodLabel ? ` on ${trial.foodLabel}` : '';
+  const food = safeLabel(trial.foodLabel);
+  const on = food ? ` on ${food}` : '';
   const over = trial.dayCounter - trial.targetDays;
   if (trial.targetDays > 0 && over > 0) {
     return `Day ${trial.dayCounter} — ${over} ${plural(over, 'day')} past the window you set${on}.`;
@@ -278,8 +304,22 @@ export function whyLines(input: SignalScreenInput, compare: CompareWindowsModel 
   const { finding } = input.cached;
   const lines: string[] = [evidenceText(finding, input.petName)];
   if (compare) {
-    const n = compare.windows[0].days;
-    lines.push(`Two windows of ${n} ${plural(n, 'day')}, compared as counts. Not a verdict on how ${input.petName} is doing.`);
+    const [a, b] = compare.windows;
+    const n = a.days;
+    // The logged days are NAMED in the sentence, both windows, always (S2: the control
+    // side is present where the claim is; C-3: "two windows of 55 days" beside a partial
+    // enumeration is a claim about the enumeration). A diligent baseline against a
+    // drifting trial — 19 over 55 logged days vs 5 over 16, one rate — reads as a 4×
+    // improvement from the bars alone; the sentence is where the reader learns why not
+    // (adversarial pass, B3). Naming the asymmetry is not the word "fairly".
+    lines.push(
+      `Two windows of ${n} ${plural(n, 'day')}, logged on ${a.loggedCount} and ${b.loggedCount} of them. Compared as counts, not a verdict on how ${input.petName} is doing.`,
+    );
+  } else if (trialTooYoungToCompare(input.trial)) {
+    // The floor, said (B1): no compare below `MIN_COMPARE_DAYS` days on the diet.
+    lines.push(
+      `${trialDayWord(input.trial as SignalTrialWindow)} — fewer than ${MIN_COMPARE_DAYS} days in, so there is no before-and-during compare yet.`,
+    );
   }
   lines.push(...medicationLines(input));
   if (input.trial) {
@@ -287,6 +327,11 @@ export function whyLines(input: SignalScreenInput, compare: CompareWindowsModel 
     lines.push(trialLine(input.trial));
   }
   return lines.filter((l) => l.trim().length > 0 && !hasBannedSignalVocabulary(l));
+}
+
+/** "Day 2 of the trial" — the floor line's opening. */
+function trialDayWord(trial: SignalTrialWindow): string {
+  return `Day ${trial.dayCounter} of the ${lowerFirst(trial.identity)}`;
 }
 
 // ── The builder (pure) ────────────────────────────────────────────────────────
@@ -327,7 +372,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     recordStart: input.recordStart,
   };
   const weekly = signalWeeks(windows);
-  const compare = signalCompare(windows);
+  const compare = trialTooYoungToCompare(input.trial) ? null : signalCompare(windows);
   // The lanes time against meals, which the engine does for vomiting only (the shipped
   // panel's symptom); a cough has no "minutes after eating".
   const lanes =
@@ -339,7 +384,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
           episodes: input.episodes.map((e) => ({ dayKey: e.dayKey, minutesSinceMeal: e.minutesSinceMeal })),
         })
       : null;
-  const inWeeks = episodesInWeeks(input.episodes, weekly);
+  const inWeeks = episodesInWeeks(input.episodes, weekly, input.today);
 
   return {
     identity,
@@ -351,7 +396,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     weekLine: weekLine(weekly),
     compare,
     lanes,
-    episodes: galleryOf(inWeeks, input.verdicts),
+    episodes: galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
     why: whyLines(input, compare),
     foldable: canFold(finding),
     safety,
@@ -398,17 +443,35 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
   const episodes = collapseEpisodes(stamped, DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours);
   if (episodes.length === 0) return [];
 
-  const ids = episodes.map((e) => e.id);
-  const placeholders = ids.map(() => '?').join(',');
+  // A bout is EVERY row the collapse folded into its representative — the owner who logs
+  // a vomit at 17:11, photographs the blood and re-logs at 17:31 has the photo (and its
+  // read) on the SECOND row. Attachments are read for every member, and a bout's photo is
+  // the first member's that has one (adversarial pass, B2). The same chained-gap rule as
+  // the collapse (`collapseEpisodes`: a new episode starts >gap after its predecessor).
+  const members = boutMembers(stamped, episodes, DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours);
+  const allIds = stamped.map((r) => r.id);
+  const placeholders = allIds.map(() => '?').join(',');
   const attachments = await db.getAllAsync<AttachmentRow>(
     `SELECT event_id, local_uri, storage_path FROM event_attachments
      WHERE pet_id = ? AND event_id IN (${placeholders})
      ORDER BY sort_order ASC, created_at DESC`,
-    [petId, ...ids],
+    [petId, ...allIds],
   );
-  const photoByEvent = new Map<string, SignalScreenPhoto>();
+  const photoByRow = new Map<string, SignalScreenPhoto>();
   for (const a of attachments) {
-    if (!photoByEvent.has(a.event_id)) photoByEvent.set(a.event_id, { localUri: a.local_uri, storagePath: a.storage_path });
+    if (!photoByRow.has(a.event_id)) photoByRow.set(a.event_id, { localUri: a.local_uri, storagePath: a.storage_path });
+  }
+  // The bout's photo, and the ROW that holds it — the tile opens that record and the
+  // verdict is read for that row, since the read is keyed on the photographed event.
+  const photoByEpisode = new Map<string, { eventId: string; photo: SignalScreenPhoto }>();
+  for (const e of episodes) {
+    for (const id of members.get(e.id) ?? [e.id]) {
+      const photo = photoByRow.get(id);
+      if (photo) {
+        photoByEpisode.set(e.id, { eventId: id, photo });
+        break;
+      }
+    }
   }
 
   let minutesByOnset = new Map<number, number>();
@@ -422,13 +485,39 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
     minutesByOnset = new Map(timing.eligible.map((t) => [t.onsetMs, t.minutesSinceFeeding]));
   }
 
-  return episodes.map((e) => ({
-    eventId: e.id,
-    occurredAt: e.occurred_at,
-    dayKey: toLocalDayKey(new Date(e.ms)),
-    minutesSinceMeal: minutesByOnset.get(e.ms) ?? null,
-    photo: photoByEvent.get(e.id) ?? null,
-  }));
+  return episodes.map((e) => {
+    const held = photoByEpisode.get(e.id) ?? null;
+    return {
+      eventId: held ? held.eventId : e.id,
+      occurredAt: e.occurred_at,
+      dayKey: toLocalDayKey(new Date(e.ms)),
+      minutesSinceMeal: minutesByOnset.get(e.ms) ?? null,
+      photo: held ? held.photo : null,
+    };
+  });
+}
+
+/** Representative id → every member id of its bout, walking the collapse's own chained
+ *  gap rule over the same sorted rows, so the two can never disagree about a boundary. */
+export function boutMembers<T extends { id: string; ms: number }>(
+  rows: readonly T[],
+  representatives: readonly T[],
+  gapHours: number,
+): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const sorted = [...rows].sort((a, b) => a.ms - b.ms);
+  const repIds = new Set(representatives.map((r) => r.id));
+  const gapMs = gapHours * 3_600_000;
+  let current: string | null = null;
+  let prev = Number.NEGATIVE_INFINITY;
+  for (const r of sorted) {
+    if (current === null || r.ms - prev > gapMs || (repIds.has(r.id) && r.id !== current)) current = r.id;
+    const list = out.get(current) ?? [];
+    list.push(r.id);
+    out.set(current, list);
+    prev = r.ms;
+  }
+  return out;
 }
 
 /** Every local day with any log: an event of any type, or an answered look (a look is a
@@ -462,7 +551,11 @@ export async function readDoseDays(petId: string, fromIso: string): Promise<Sign
        LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
       WHERE ma.pet_id = ? AND e.pet_id = ? AND e.deleted_at IS NULL
         AND ma.adherence IN ('given', 'partial')
-        AND e.occurred_at >= ?`,
+        AND substr(e.occurred_at, 1, 19) >= substr(?, 1, 19)`,
+    // C-40: a local write spells an instant `…T04:00:00.000Z`, a hydrated row `…T04:00:00+00:00`,
+    // and '+' sorts before '.', so a text bound drops the hydrated row at the boundary
+    // second. The fixed-width first 19 characters are the same spelling on both sides,
+    // so the bound compares equal instants as equal; the day of slack stays.
     [petId, petId, fromIso],
   );
   const out: SignalDoseDay[] = [];
@@ -503,9 +596,10 @@ export async function readSignalTrial(
 
 /** Ids per `.in()` chunk — well under PostgREST's URL budget. */
 export const VERDICT_CHUNK = 100;
-/** Rows per page inside a chunk. A chunk holds at most VERDICT_CHUNK ids and one row per
- *  event, so a page this size holds a whole chunk when the cap is at least this — and if
- *  it is not, the loop pages on regardless (C-42). */
+/** Rows ASKED for per page inside a chunk. The loop advances by the rows RECEIVED and
+ *  stops on an empty page, never on a short one: under a `max-rows` cap below this
+ *  number a page comes back short while rows remain, and a read that stopped there lost
+ *  a `worth_a_call` (C-42 — CUL-975's own failure; adversarial pass, B4). */
 export const VERDICT_PAGE = 100;
 
 /**
@@ -518,7 +612,7 @@ export async function readVerdicts(eventIds: readonly string[]): Promise<Record<
   const out: Record<string, EpisodeVerdict | null> = {};
   for (let c = 0; c < eventIds.length; c += VERDICT_CHUNK) {
     const chunk = eventIds.slice(c, c + VERDICT_CHUNK);
-    for (let from = 0; ; from += VERDICT_PAGE) {
+    for (let from = 0; ; ) {
       const { data, error } = await supabase
         .from('event_ai_analysis')
         .select('event_id, status, recommendation')
@@ -535,7 +629,10 @@ export async function readVerdicts(eventIds: readonly string[]): Promise<Record<
       for (const row of page) {
         out[row.event_id] = row.status === 'pending' ? null : (row.recommendation ?? null);
       }
-      if (page.length < VERDICT_PAGE) break;
+      // Advance by what arrived; an empty page is the end. A chunk holds at most
+      // VERDICT_CHUNK ids and one row each, so this terminates at any ceiling.
+      if (page.length === 0) break;
+      from += page.length;
     }
   }
   return out;

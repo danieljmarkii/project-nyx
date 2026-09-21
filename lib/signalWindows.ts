@@ -43,6 +43,7 @@ import {
   type WeeklyBucketsModel,
 } from './chartModels';
 import type { SignalFinding, SignalSymptomType } from './signal';
+import { MIN_INTERPRETABLE_DAYS } from './dietTrial';
 import { dayKeyFromIndex, localDayIndexOf } from './utils';
 
 /** The engine's default lookback, for the finding types whose payload carries none
@@ -52,6 +53,22 @@ export const DEFAULT_WINDOW_DAYS = 56;
 export const MAX_WEEKS = 12;
 /** The fewest: a two-week finding still gets "this week · last week". */
 export const MIN_WEEKS = 2;
+/**
+ * The compare's floor on a trial: below this many days on the diet there is no
+ * before-and-during compare and no two-lane split — a day-one trial drawing "1 day
+ * before: 1 · the trial's 1 day: 0" is the n=1 picture the never-reassure invariant
+ * forbids (adversarial pass, B1). MIRRORED from the diet-trial spec's own floor
+ * (`MIN_INTERPRETABLE_DAYS`, `lib/dietTrial.ts`): same value, same question — "is the
+ * trial old enough for a reading" (C-34).
+ */
+export const MIN_COMPARE_DAYS = MIN_INTERPRETABLE_DAYS;
+/**
+ * The longest compare window, each side: the chart's own cap in days. A 400-day trial
+ * compared whole is two 400-day strips and dose dates a year apart with no year on them
+ * (C-19); capped, the two windows together are under a year, so a year-less date inside
+ * them is always the last twelve months' (adversarial pass, B7).
+ */
+export const MAX_COMPARE_DAYS = MAX_WEEKS * 7;
 
 /** The running (or graced) trial, as the Signal's surfaces need it — a value the screen's
  *  loader builds from `loadTrialPredicateFacts` + `getDietTrialProgress`, never a store read. */
@@ -192,10 +209,20 @@ export interface SignalWindowSpec {
   days: number;
 }
 
+/** True when the trial is too young for a compare (`MIN_COMPARE_DAYS`); the screen then
+ *  draws no compare, one lane, and says why in *Why this is a Signal*. */
+export function trialTooYoungToCompare(trial: SignalTrialWindow | null): boolean {
+  return trial != null && trial.dayCounter < MIN_COMPARE_DAYS;
+}
+
 /**
- * The two windows the screen compares. Equal length, adjacent, never overlapping: on a
- * running trial the trial's own days and the same count before it; otherwise the two
- * halves of the finding's lookback, ending today.
+ * The two windows the screen compares. Equal length, never overlapping: on a running
+ * trial the trial's own days — the DAY COUNTER the title states, ending today, so the
+ * two can never disagree — and the same count immediately before the trial; past the cap,
+ * the trial's LAST N days and the N before the trial (a gap between them, named);
+ * otherwise the two halves of the finding's lookback, ending today. A trial under the
+ * floor takes the no-trial shape: the halves, ending today, with the trial inside them
+ * undivided (the caller says so).
  */
 export function signalCompareSpec(
   finding: SignalFinding,
@@ -203,12 +230,26 @@ export function signalCompareSpec(
   trial: SignalTrialWindow | null,
 ): [SignalWindowSpec, SignalWindowSpec] {
   const todayIdx = indexOf(today, 'today');
-  if (trial) {
-    const startIdx = indexOf(trial.startDay, 'trial.startDay');
-    const days = Math.max(1, todayIdx - startIdx + 1);
+  if (trial && !trialTooYoungToCompare(trial)) {
+    const run = Math.max(1, Math.floor(trial.dayCounter));
+    const days = Math.min(run, MAX_COMPARE_DAYS);
+    const capped = days < run;
+    // The trial's window ends today and is `days` long — anchored on today and the day
+    // counter, never re-derived from `startDay` (one authority for "day N").
+    const duringStart = todayIdx - days + 1;
+    // The days before the TRIAL, not before the window: when capped the two are apart.
+    const trialStart = todayIdx - run + 1;
     return [
-      { label: `The ${days} ${plural(days, 'day')} before`, startDay: dayKeyFromIndex(startIdx - days), days },
-      { label: `The trial's ${days} ${plural(days, 'day')}`, startDay: trial.startDay, days },
+      {
+        label: capped ? `The ${days} days before the trial` : `The ${days} ${plural(days, 'day')} before`,
+        startDay: dayKeyFromIndex(trialStart - days),
+        days,
+      },
+      {
+        label: capped ? `The trial's last ${days} days` : `The trial's ${days} ${plural(days, 'day')}`,
+        startDay: dayKeyFromIndex(duringStart),
+        days,
+      },
     ];
   }
   const half = Math.max(1, Math.floor(signalWindowDays(finding) / 2));
@@ -237,11 +278,12 @@ export interface SignalLaneSpec {
   endDay: string;
 }
 
-/** Before the trial · in the trial, or one lane over the lookback. */
+/** Before the trial · in the trial, or one lane over the lookback (a trial under the
+ *  compare floor takes the one lane too — no two-lane split over a day or two). */
 export function signalLaneSpec(finding: SignalFinding, today: string, trial: SignalTrialWindow | null): SignalLaneSpec[] {
   const [before, during] = signalCompareSpec(finding, today, trial);
   const endOf = (w: SignalWindowSpec) => dayKeyFromIndex(indexOf(w.startDay, 'startDay') + w.days - 1);
-  if (trial) {
+  if (trial && !trialTooYoungToCompare(trial)) {
     return [
       { label: 'Before the trial', startDay: before.startDay, endDay: endOf(before) },
       { label: 'In the trial', startDay: during.startDay, endDay: endOf(during) },

@@ -10,7 +10,9 @@
 
 import {
   DEFAULT_WINDOW_DAYS,
+  MAX_COMPARE_DAYS,
   MAX_WEEKS,
+  MIN_COMPARE_DAYS,
   MIN_WEEKS,
   signalCompare,
   signalCompareSpec,
@@ -20,6 +22,7 @@ import {
   signalWeekCount,
   signalWeeks,
   signalWindowDays,
+  trialTooYoungToCompare,
   weekLine,
   weekLineNumbers,
   type SignalTrialWindow,
@@ -32,6 +35,7 @@ import type {
   SymptomWorseningFinding,
   TrialResponseFinding,
 } from './signal';
+import { MIN_INTERPRETABLE_DAYS } from './dietTrial';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
 
 const idx = (key: string): number => {
@@ -158,8 +162,26 @@ describe('signalWeekCount — enough weeks for the lookback, the trial, never pa
     expect(signalWeekCount(chronicity(), THURSDAY, null)).toBe(9);
     expect(signalWeeks({ finding: chronicity(), today: THURSDAY, trial: null, episodeDays: [], loggedDays: [] }).firstKey).toBe('2026-07-19');
     expect(signalWeekCount(worsening(), THURSDAY, null)).toBe(3);
-    // A one-week lookback on a Sunday is one week — the floor holds it at two.
+    // A one-week lookback on a Sunday is one week — the floor holds it at two; so is a
+    // one-DAY lookback (the floor's own case, pinned so the floor is not decorative).
     expect(signalWeekCount(worsening({ windowDays: 7 }), SUNDAY, null)).toBe(MIN_WEEKS);
+    expect(signalWeekCount(worsening({ windowDays: 1 }), THURSDAY, null)).toBe(MIN_WEEKS);
+    expect(MIN_WEEKS).toBe(2);
+  });
+
+  it('a young pet: days before the record are not "unlogged" on the ticks (recordStart, C-3)', () => {
+    const m = signalWeeks({
+      finding: worsening(),
+      today: THURSDAY,
+      trial: null,
+      episodeDays: [],
+      loggedDays: [THURSDAY],
+      recordStart: shift(THURSDAY, -2),
+    });
+    const flat = m.weeks.flatMap((w) => w.days);
+    expect(flat.filter((d) => d === 'before_record').length).toBeGreaterThan(0);
+    expect(flat.filter((d) => d === 'unlogged')).toHaveLength(2);
+    expect(flat.filter((d) => d === 'logged')).toHaveLength(1);
   });
 
   it('widens to a trial longer than the lookback, so the mark is on the chart', () => {
@@ -251,23 +273,80 @@ describe('the compare — two equal windows, adjacent, never overlapping', () =>
     expect(before).toEqual({ label: 'The 28 days before', startDay: shift(THURSDAY, -55), days: 28 });
   });
 
-  it('a trial that started today compares one day against the one before', () => {
-    const [before, during] = signalCompareSpec(chronicity(), THURSDAY, trialFor(THURSDAY, 1));
-    expect(during.days).toBe(1);
-    expect(before.days).toBe(1);
-    expect(during.label).toBe("The trial's 1 day");
+  it('a trial under the floor draws NO trial compare — a day-one trial is the n=1 picture (the floor mirrors the diet-trial spec)', () => {
+    expect(MIN_COMPARE_DAYS).toBe(MIN_INTERPRETABLE_DAYS);
+    for (const day of [1, 2, MIN_COMPARE_DAYS - 1]) {
+      const trial = trialFor(THURSDAY, day);
+      expect(trialTooYoungToCompare(trial)).toBe(true);
+      // The no-trial shape: the halves of the lookback, ending today — the trial inside
+      // them undivided, and the lanes one lane.
+      const [before, during] = signalCompareSpec(chronicity(), THURSDAY, trial);
+      expect(during.label).toBe('The recent 28 days');
+      expect(before.label).toBe('The 28 days before');
+      expect(signalLaneSpec(chronicity(), THURSDAY, trial).map((l) => l.label)).toEqual(['The last 56 days']);
+    }
+    const atFloor = trialFor(THURSDAY, MIN_COMPARE_DAYS);
+    expect(trialTooYoungToCompare(atFloor)).toBe(false);
+    expect(signalCompareSpec(chronicity(), THURSDAY, atFloor)[1].label).toBe(`The trial's ${MIN_COMPARE_DAYS} days`);
+    expect(trialTooYoungToCompare(null)).toBe(false);
   });
 
-  it('PROPERTY: equal length, adjacent, disjoint, and the compare model accepts them', () => {
+  it('the trial’s window is the DAY COUNTER the title states, ending today — never re-derived from the start day', () => {
+    // The two are equal by construction in production; here they are made to disagree so
+    // the test can see which one the compare follows (a fixture that cannot disagree
+    // measures nothing, C-35).
+    const trial: SignalTrialWindow = { ...trialFor(THURSDAY, 55), startDay: shift(THURSDAY, -30) };
+    const [before, during] = signalCompareSpec(chronicity(), THURSDAY, trial);
+    expect(during.days).toBe(55);
+    expect(during.startDay).toBe(shift(THURSDAY, -54));
+    expect(before.startDay).toBe(shift(THURSDAY, -109));
+  });
+
+  it('past the cap: the trial’s LAST 84 days against the 84 before the trial, a gap between them, both named', () => {
+    const trial = trialFor(THURSDAY, 200);
+    const [before, during] = signalCompareSpec(chronicity(), THURSDAY, trial);
+    expect(MAX_COMPARE_DAYS).toBe(84);
+    expect(during).toEqual({ label: "The trial's last 84 days", startDay: shift(THURSDAY, -83), days: 84 });
+    expect(before).toEqual({ label: 'The 84 days before the trial', startDay: shift(THURSDAY, -199 - 84), days: 84 });
+    // Two windows together are under a year, so a year-less date inside them is always
+    // the last twelve months' (C-19).
+    expect(2 * MAX_COMPARE_DAYS + 1).toBeLessThan(365);
+    const lanes = signalLaneSpec(chronicity(), THURSDAY, trial);
+    expect(lanes[1]).toEqual({ label: 'In the trial', startDay: shift(THURSDAY, -83), endDay: THURSDAY });
+  });
+
+  it('an odd lookback splits by the floor: 15 days is two windows of 7, ending today', () => {
+    const [before, during] = signalCompareSpec(chronicity({ windowDays: 15 }), THURSDAY, null);
+    expect(during).toEqual({ label: 'The recent 7 days', startDay: shift(THURSDAY, -6), days: 7 });
+    expect(before).toEqual({ label: 'The 7 days before', startDay: shift(THURSDAY, -13), days: 7 });
+  });
+
+  it('a compare reaching before the record’s first day says so, and counts none of those days as unlogged', () => {
+    const m = signalCompare({
+      finding: chronicity(),
+      today: THURSDAY,
+      trial: trialFor(THURSDAY, 55),
+      episodeDays: [THURSDAY],
+      loggedDays: [THURSDAY],
+      recordStart: shift(THURSDAY, -60),
+    });
+    expect(m.windows[0].coverageLine).toBe('logged 0 of 55 days · 49 before the record began');
+    expect(m.windows[0].strip.filter((d) => d === 'before_record')).toHaveLength(49);
+  });
+
+  it('PROPERTY: equal length, disjoint, ending today; adjacent unless capped; the model accepts them', () => {
     const rnd = lcg(0xc0de);
     for (let t = 0; t < 200; t++) {
       const today = shift(SUNDAY, Math.floor(rnd() * 400) - 200);
       const finding = chronicity({ windowDays: 1 + Math.floor(rnd() * 120) });
-      const trial = rnd() < 0.5 ? trialFor(today, 1 + Math.floor(rnd() * 120)) : null;
+      const trial = rnd() < 0.5 ? trialFor(today, 1 + Math.floor(rnd() * 240)) : null;
       const [before, during] = signalCompareSpec(finding, today, trial);
       expect(before.days).toBe(during.days);
       expect(before.days).toBeGreaterThan(0);
-      expect(idx(before.startDay) + before.days).toBe(idx(during.startDay));
+      expect(before.days).toBeLessThanOrEqual(MAX_COMPARE_DAYS);
+      const capped = trial != null && !trialTooYoungToCompare(trial) && trial.dayCounter > MAX_COMPARE_DAYS;
+      if (capped) expect(idx(before.startDay) + before.days).toBeLessThan(idx(during.startDay));
+      else expect(idx(before.startDay) + before.days).toBe(idx(during.startDay));
       expect(idx(during.startDay) + during.days - 1).toBe(idx(today));
       const m = signalCompare({ finding, today, trial, episodeDays: [today, shift(today, -3)], loggedDays: [today] });
       expect(m.windows[0].days).toBe(before.days);
@@ -335,6 +414,9 @@ describe('what the caller owes', () => {
     expect(() => signalWeeks({ finding: f, today: '2026-09-17T12:00:00Z', trial: null, episodeDays: [], loggedDays: [] })).toThrow(
       /day key/,
     );
-    expect(() => signalCompareSpec(f, THURSDAY, { ...trialFor(THURSDAY), startDay: 'not-a-day' })).toThrow(/day key/);
+    // The compare never reads `startDay` (the day counter is its authority); the mark does.
+    expect(() => signalWeeks({ finding: f, today: THURSDAY, trial: { ...trialFor(THURSDAY), startDay: 'not-a-day' }, episodeDays: [], loggedDays: [] })).toThrow(
+      /day key/,
+    );
   });
 });
