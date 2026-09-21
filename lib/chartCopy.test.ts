@@ -175,3 +175,72 @@ describe('dateWord', () => {
     expect(dateWord('not-a-key')).toBe('not-a-key');
   });
 });
+
+describe('weightDeltaLine (D2-5)', () => {
+  const { weightBand } = jest.requireActual('./chartModels') as typeof import('./chartModels');
+  const { weightDeltaLine, HOME_SCALE_CAVEAT, HOME_SCALE_NOISE_FRAC } = jest.requireActual('./chartCopy') as typeof import('./chartCopy');
+  const fmt = (iso: string) => iso.slice(5, 10);
+  const r = (value: number, occurredAt: string) => ({ value, occurredAt });
+  /** The caller's absolute gate, in the readings' unit: 0.2 kg here (the card passes 0.5 lbs). */
+  const NOISE = 0.2;
+  const line = (readings: { value: number; occurredAt: string }[], unit = 'kg') => weightDeltaLine(weightBand(readings), unit, fmt, NOISE);
+
+  it('speaks the delta with its percentage and the caveat inside BOTH of a home scale\'s bounds', () => {
+    expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.5, '2026-08-03T08:00:00Z'), r(4.4, '2026-09-12T08:00:00Z')])).toBe(
+      `Down 0.2 kg (4%) since 07-03 · ${HOME_SCALE_CAVEAT}`,
+    );
+    expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.7, '2026-09-12T08:00:00Z')])).toBe(`Up 0.1 kg (2%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
+  });
+
+  it('the fractional gate: past the noise bound a loss prints alone, with nothing that softens it (Dr. Chen)', () => {
+    const loss = line([r(10, '2026-07-03T08:00:00Z'), r(8.5, '2026-09-12T08:00:00Z')]);
+    expect(loss).toBe('Down 1.5 kg (15%) since 07-03');
+    expect(loss).not.toContain('home scale');
+    // Just inside the fractional bound on a pet where both gates agree: the caveat prints.
+    const inside = line([r(4, '2026-07-03T08:00:00Z'), r(4 * (1 - HOME_SCALE_NOISE_FRAC) + 0.02, '2026-09-12T08:00:00Z')]);
+    expect(inside).toContain(HOME_SCALE_CAVEAT);
+  });
+
+  it('the ABSOLUTE gate: a scale does not wobble 3.5 kg — a 70 kg dog down 5 % gets no caveat (C-34, the adversarial pass)', () => {
+    const dog = line([r(70, '2026-07-03T08:00:00Z'), r(66.5, '2026-09-12T08:00:00Z')]);
+    expect(dog).toBe('Down 3.5 kg (5%) since 07-03');
+    expect(dog).not.toContain('home scale');
+    const bigCat = line([r(9, '2026-07-03T08:00:00Z'), r(8.55, '2026-09-12T08:00:00Z')]);
+    expect(bigCat).not.toContain('home scale');
+    // And a 4.6 kg cat down 0.15 kg is inside both: the caveat prints.
+    expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.45, '2026-09-12T08:00:00Z')])).toContain(HOME_SCALE_CAVEAT);
+  });
+
+  it('"No change" is decided by the FACT, never by display rounding: a 300 g kitten down 20 g is a 7 % loss', () => {
+    // 0.66 lbs → 0.616 lbs: Δ −0.044 rounds to 0.0 on the display; the fraction does not.
+    const kitten = line([r(0.66, '2026-07-03T08:00:00Z'), r(0.616, '2026-09-12T08:00:00Z')], 'lbs');
+    expect(kitten).toBe('Down less than 0.1 lbs (7%) since 07-03');
+    expect(kitten).not.toContain('No change');
+    expect(kitten).not.toContain('home scale');
+    // An exactly equal pair is "No change"; a sub-precision move inside both gates keeps the caveat.
+    expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.6, '2026-09-12T08:00:00Z')])).toBe('No change since 07-03');
+    expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.62, '2026-09-12T08:00:00Z')])).toBe(`Up less than 0.1 kg since 07-03 · ${HOME_SCALE_CAVEAT}`);
+  });
+
+  it('a reading outside the band between the ends is disclosed — "No change" never stands alone over a 30 % dip', () => {
+    const dip = line([r(5.0, '2026-07-03T08:00:00Z'), r(3.5, '2026-08-03T08:00:00Z'), r(5.0, '2026-09-12T08:00:00Z')]);
+    expect(dip).toBe('No change since 07-03 · 1 reading outside the band');
+  });
+
+  it('no verdict words: down is not "lost", flat is "no change", never "steady"', () => {
+    const m = line([r(10, '2026-07-03T08:00:00Z'), r(8.5, '2026-09-12T08:00:00Z')], 'lbs');
+    expect(m).not.toMatch(/lost|gained|steady|stable|holding|improv|good|healthy|!/i);
+  });
+
+  it('null below two readings — one reading is a number, not a line', () => {
+    expect(line([r(4.6, '2026-09-12T08:00:00Z')])).toBeNull();
+    expect(line([])).toBeNull();
+  });
+
+  it('a zero or negative reading is not a weight: dropped by the band, never a flat line over it', () => {
+    const m = weightBand([r(0, '2026-07-03T08:00:00Z'), r(4.5, '2026-09-12T08:00:00Z')]);
+    expect(m.state).toBe('number');
+    expect(m.points).toHaveLength(1);
+    expect(weightBand([r(-1, '2026-07-03T08:00:00Z')]).state).toBe('empty');
+  });
+});

@@ -156,7 +156,64 @@ export function weightDotsA11yLabel(model: WeightBandModel, unit: string, dateOf
   if (model.state === 'empty' || !model.first || !model.last) return 'Weight, no readings.';
   if (model.state === 'number') return `Weight, one reading: ${weightWord(model.first.value, unit)} on ${dateOf(model.first.occurredAt)}.`;
   const n = model.points.length;
+  // Interior readings only: the last reading's distance is what the delta itself says.
   const clipped = model.points.filter((p) => p.clipped).length;
   const tail = clipped > 0 ? ` ${clipped} ${pluralize(clipped, 'reading')} outside the band, drawn at its edge.` : '';
   return `Weight, ${n} readings from ${dateOf(model.first.occurredAt)} to ${dateOf(model.last.occurredAt)}, drawn by date on a band from 10 percent below to 10 percent above the first reading: ${weightWord(model.first.value, unit)} to ${weightWord(model.last.value, unit)}.${tail}`;
+}
+
+// ── The weight's spoken delta (D2-5 · CUL-1067) ───────────────────────────────
+
+/** The home-scale caveat needs TWO gates, and this is the first: the move as a fraction
+ *  of the first reading. On its own it is C-34 verbatim — a percentage inherits the
+ *  pet's mass, a scale's noise does not, so a 5 % bound alone printed the caveat beside a
+ *  3.5 kg loss on a 70 kg dog (the adversarial pass on CUL-1067). */
+export const HOME_SCALE_NOISE_FRAC = 0.05;
+
+/** The caveat, verbatim from the design authority (§04). */
+export const HOME_SCALE_CAVEAT = 'a home scale moves about that much on its own';
+
+/**
+ * "Down 0.2 kg (4%) since Jul 3 · a home scale moves about that much on its own" — the
+ * delta spoken beside its caveat, or "No change since Jul 3". Null below two readings
+ * (the number is the chart). Direction words only, never a verdict: down is not "lost"
+ * and up is not "gained"; a flat line is "no change", never "steady".
+ *
+ * The caveat is GATED, not decorative, and by BOTH of a scale's bounds: the move must be
+ * inside `HOME_SCALE_NOISE_FRAC` of the first reading AND inside `noiseAbs`, the scale's
+ * own wobble in the caller's display unit (WeightCard: 0.2 kg ≈ 0.5 lbs). A 5 %
+ * unintentional loss in a cat is a workup trigger; a 3.5 kg drop in a dog is not a
+ * scale wobble at any percentage — neither gets the sentence written to soften a wobble.
+ *
+ * "No change" is decided by the FACT (`delta === 0`), never by the display rounding: a
+ * 300 g kitten losing 20 g is a 0.04 lb move that rounds to 0.0 and is a 7 % loss, and
+ * the card must say the 7 %, not "No change". A move under the display's precision
+ * prints as "less than 0.1 lbs" with its percentage.
+ *
+ * A reading outside the band BETWEEN the ends is disclosed beside the delta: first
+ * versus last cannot see a 30 % dip that recovered, and a screen reader that hears "one
+ * reading outside the band" must not then hear "No change" standing alone. The last
+ * reading's own distance is the delta, so it is not counted twice.
+ */
+export function weightDeltaLine(
+  model: WeightBandModel,
+  unit: string,
+  dateOf: (iso: string) => string,
+  noiseAbs: number,
+): string | null {
+  if (model.delta == null || model.deltaFrac == null || !model.first) return null;
+  const since = `since ${dateOf(model.first.occurredAt)}`;
+  // Interior readings only: the last reading's distance is what the delta itself says.
+  // Interior readings only: the last reading's distance is what the delta itself says.
+  const clipped = model.points.filter((p, i) => p.clipped && i !== model.points.length - 1).length;
+  const clippedTail = clipped > 0 ? ` · ${clipped} ${pluralize(clipped, 'reading')} outside the band` : '';
+  if (model.delta === 0) return `No change ${since}${clippedTail}`;
+  const abs = Math.abs(model.delta);
+  const shown = Math.round(abs * 10) / 10;
+  const pct = Math.round(Math.abs(model.deltaFrac) * 100);
+  const dir = model.delta < 0 ? 'Down' : 'Up';
+  const amount = shown === 0 ? `less than 0.1 ${unit}` : `${shown.toFixed(1)} ${unit}`;
+  const head = `${dir} ${amount}${pct > 0 ? ` (${pct}%)` : ''} ${since}`;
+  const inNoise = Math.abs(model.deltaFrac) <= HOME_SCALE_NOISE_FRAC && abs <= noiseAbs;
+  return `${head}${inNoise ? ` · ${HOME_SCALE_CAVEAT}` : ''}${clippedTail}`;
 }

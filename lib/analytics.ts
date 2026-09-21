@@ -765,7 +765,7 @@ function isFreeFedMeal(m: AnalyticsMeal, freeFed: ReadonlySet<string>): boolean 
 
 /** A meal counts as "finished" at most/all (score ≥ FINISHED_SCORE). ONE definition,
  *  shared by the rate, its sparkline series, and the decline detector's good-meal idea. */
-function isFinishedMeal(m: AnalyticsMeal): boolean {
+export function isFinishedMeal(m: AnalyticsMeal): boolean {
   return (INTAKE_SCORE[m.intakeRating as string] ?? 0) >= FINISHED_SCORE;
 }
 

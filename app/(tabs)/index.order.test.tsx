@@ -49,6 +49,16 @@ jest.mock('../../components/home/LookExits', () => ({
 }));
 jest.mock('../../components/home/TodayZone', () => ({ TodayZone: marker('today') }));
 jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend') }));
+// D2-4 (CUL-1066) — the gate, OFF here: this file pins the shipped order. The Design
+// v2 surfaces are markers too, so a flag-on order can be pinned beside it below without
+// mounting the spine's reads. The hook is mocked at the module boundary because its
+// real import reaches `lib/supabase`, which throws at import with no env.
+let mockDesignV2 = false;
+jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
+jest.mock('../../components/designV2/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
+jest.mock('../../components/designV2/home/CoverageDoor', () => ({
+  CoverageDoor: marker('coverage-door'),
+}));
 
 jest.mock('../../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn() }),
@@ -101,6 +111,10 @@ function zoneOrder(tree: unknown, out: string[] = []): string[] {
 }
 
 describe('AC 3 — the appointment strip sits under the Signal, in the context register', () => {
+  beforeEach(() => {
+    mockDesignV2 = false;
+  });
+
   it('renders the zones in the ruled order', () => {
     const order = zoneOrder(render(<HomeScreen />).toJSON());
 
@@ -135,5 +149,28 @@ describe('AC 3 — the appointment strip sits under the Signal, in the context r
     expect(order.indexOf('appointment')).toBeGreaterThan(order.indexOf('signal'));
     expect(order.indexOf('appointment')).toBeLessThan(order.indexOf('trial'));
     expect(order.indexOf('appointment')).toBeGreaterThan(order.indexOf('cross-pet-safety'));
+  });
+
+  it('flag-on (D2-4): the Signal and the strips lead, Today is the spine, the door closes the feed — no med strip, no look card, no trend', () => {
+    // The same list, under `design_v2`: the medication strip's write is retired (a dose
+    // is a fact on the spine once logged), the look is Today's header inside the card,
+    // and the coverage door is the last row (left-aligned, C-5). The Signal's card is
+    // the SHIPPED one until D2-3 merges — the composition does not wait on lane 1.
+    mockDesignV2 = true;
+    const order = zoneOrder(render(<HomeScreen />).toJSON());
+    expect(order).toEqual([
+      'header',
+      'sky',
+      'cross-pet-safety',
+      'signal',
+      'appointment',
+      'trial',
+      'today-v2',
+      'coverage-door',
+      'look-exits',
+    ]);
+    expect(order).not.toContain('med');
+    expect(order).not.toContain('trend');
+    expect(order).not.toContain('look');
   });
 });

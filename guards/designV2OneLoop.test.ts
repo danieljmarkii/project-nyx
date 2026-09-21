@@ -24,6 +24,17 @@
 // review; the second is D2-8's sweep, and the CLAUDE.md § Loading indicators rewrite
 // that lands with it.
 //
+// THE REGISTRY IS AN EXEMPTION (C-32), and it exists because step 2's four lanes were
+// built in parallel: lanes 1–3 landed the same day as this guard, each drawing its
+// sub-second waits with the shipped `Skeleton` (a shimmer, one `Animated.loop`) or the
+// `WhorlSpinner`, and D2-4 breathing its node's tick through the arrival's own value
+// (`TICK_BREATH` in `components/motion/arrivalMotion.ts` — the same 1400ms / 0.35, so
+// the tick's component reads its numbers from there). Each entry below names what
+// loops, who reaches it, and the issue that removes it; the staleness test reds an
+// entry the moment it stops looping or stops being reached, so the list can only
+// shrink. A new looping import is a new entry with a new owner, never a silent
+// addition — and the goal state is the empty registry.
+//
 // Proven by mutation at the foot: a fixture namespace holding a planted loop outside
 // the tick, and a fixture module importing a looping helper, each red the walk.
 import * as fs from 'fs';
@@ -35,6 +46,20 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const NAMESPACE_REL = 'components/designV2';
 /** The one file allowed to loop. */
 const THE_TICK = 'components/designV2/waits/Tick.tsx';
+
+/**
+ * Modules OUTSIDE the namespace that loop and that the namespace reaches today. An
+ * exemption, each with its owner (C-32). Removed by CUL-1075 (the step-2 waits pass),
+ * except the arrival's breath, which is the tick's second spelling and is unified there.
+ */
+const KNOWN_LOOP_IMPORTS: Readonly<Record<string, string>> = {
+  'components/motion/arrivalMotion.ts':
+    "D2-4's node breathes its tick through the arrival's own value so it can become the rail; the one carve-out, spelled twice — unified by CUL-1075",
+  'components/ui/Skeleton.tsx':
+    'the shimmer under the sub-second waits of SignalLeadCard, LookHeader, TodayCard and MonthInstrument (lanes 1–3) — swapped for waits/Silhouette by CUL-1075',
+  'components/brand/WhorlSpinner.tsx':
+    "SignalScreen's loading state (lane 1) — the screen's own silhouette by CUL-1075",
+};
 
 const LOOP_RE = /\bAnimated\.loop\s*\(/;
 const FOREVER_RE = /\biterations\s*:\s*-1\b/;
@@ -114,9 +139,16 @@ describe('D2-7 — the tick is the only loop behind design_v2', () => {
     expect(written).toEqual([THE_TICK]);
   });
 
-  it('nothing the namespace imports from outside itself loops', () => {
+  it('nothing the namespace imports from outside itself loops, beyond the registered exemptions', () => {
     const { imported } = walk(REPO_ROOT, NAMESPACE_REL);
-    expect(imported).toEqual([]);
+    expect(imported.filter((r) => !(r in KNOWN_LOOP_IMPORTS))).toEqual([]);
+  });
+
+  it('every registered exemption still loops and is still reached — a stale entry is deleted, never kept', () => {
+    // C-32: a registry entry that no longer describes a live hole reads as coverage
+    // for a hole that has moved. Each entry must still be found by the walk it exempts.
+    const { imported } = walk(REPO_ROOT, NAMESPACE_REL);
+    for (const rel of Object.keys(KNOWN_LOOP_IMPORTS)) expect(imported).toContain(rel);
   });
 
   it('the detectors read both spellings of forever, and only those', () => {

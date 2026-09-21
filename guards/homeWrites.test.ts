@@ -175,6 +175,15 @@ const ALLOW: Record<string, readonly string[]> = {
   // coverage line, Patterns or an engine input. The two guards compose: that one
   // bounds what a visit may influence, this one bounds what Home may write.
   'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
+  // CUL-1066 (D2-4) — THE LOOK, AS TODAY'S HEADER behind `design_v2`. The same class as
+  // `LookCard` (the carve-out §0.1 opened for the look on 2026-09-10), reached through a
+  // second file because flag-on Home draws the look here and not there; it is not a
+  // fourth class. Exactly `insertLook`: the header has no note field (the note stays on
+  // the record screen, T-22), so `updateLookNote` is NOT allowed here — a helper this
+  // file does not reach is a hole the allow-set would be pre-authorising (C-32). Flag-on,
+  // `MedStrip`'s confirm is not mounted, so Home's live write classes under the flag are
+  // two: this look and the appointment strip's resolution.
+  'components/designV2/home/LookHeader.tsx': ['insertLook'],
 };
 
 /**
@@ -540,10 +549,20 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // question to the PM before a line of the strip was written. The amendment is
     // recorded in `docs/nyx-med-strip-requirements.md` §0.1; the reason it qualifies
     // is on the ALLOW entry above.
+    //
+    // It fired a THIRD time on CUL-1066 (D2-4), and that one is NOT a new class: the
+    // look, drawn by a second file (`components/designV2/home/LookHeader.tsx`) behind
+    // `design_v2`, reaching ONE of the look's two helpers. It passes the three tests
+    // above in the same words the note did — the look's own row, no new record, ruled
+    // (the round-4 page §01). What the flag changes is which classes are MOUNTED: flag-on
+    // the med strip is not, so live Home carries two (the look, the appointment strip);
+    // the allow-set still names the med strip because the file still exists, still
+    // writes, and is still mounted flag-off — the closure walks files, not flags.
     expect(ALLOW).toEqual({
       'components/home/MedStrip.tsx': ['insertMedicationDose'],
       'components/home/LookCard.tsx': ['insertLook', 'updateLookNote'],
       'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
+      'components/designV2/home/LookHeader.tsx': ['insertLook'],
     });
   });
 

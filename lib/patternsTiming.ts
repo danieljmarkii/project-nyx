@@ -416,7 +416,10 @@ export async function readFeedingRows(petId: string): Promise<FeedingRow[]> {
     .filter((r) => Number.isFinite(r.ms));
 }
 
-function foodLabelOf(brand: string | null, product: string | null): string | null {
+/** The feeding's evidence-only form label (brand + product). Exported for Home's bounded
+ *  feeding read (`lib/spineReads.ts`, D2-4), which must label a feeding exactly as the lane
+ *  does rather than re-derive it. */
+export function foodLabelOf(brand: string | null, product: string | null): string | null {
   const label = [brand, product].filter((s) => !!s && s.trim().length > 0).join(' ').trim();
   return label.length > 0 ? label : null;
 }

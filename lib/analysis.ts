@@ -109,6 +109,16 @@ export function awaitAnalysisChain(eventId: string): Promise<boolean> {
   return analysisChains.get(eventId)?.promise ?? Promise.resolve(false);
 }
 
+/** Is a chain claimed and not yet settled for this event? The `working` FACT for a
+ *  surface that only OBSERVES a read (Home's spine node, D2-4 / CUL-1066; C-30): true
+ *  means this runtime has asked, or is about to ask, the server for this event's read,
+ *  which is what the arrival's trigger must switch on — never "the pending box is on
+ *  screen". Home never triggers; it awaits the claim it finds (`awaitAnalysisChain`)
+ *  and re-reads the row when it settles. */
+export function analysisChainOutstanding(eventId: string): boolean {
+  return analysisChains.has(eventId);
+}
+
 // Kicks off per-incident AI analysis for a vomit event (B-027). The
 // analyze-vomit Edge Function reads the event AND its photo from Supabase, so we
 // flush the event first (attachment rows FK to it), then force THIS event's

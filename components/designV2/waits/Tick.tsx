@@ -31,8 +31,14 @@ import { Animated, Easing, StyleProp, StyleSheet, ViewStyle } from 'react-native
 import { theme } from '../../../constants/theme';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { useAppActive } from '../../../hooks/useAppActive';
+import { TICK_BREATH } from '../../motion/arrivalMotion';
 
-/** The tick, written down (the Motion Designer's durations). */
+/**
+ * The tick, written down (the Motion Designer's durations). The breath's two numbers
+ * are the arrival's `TICK_BREATH` — D2-4's node breathes its tick through the arrival's
+ * own value (so it can become the rail), and the same question has one answer (C-34):
+ * a second constant here would be the mirrored-constant trap the moment either moved.
+ */
 export const TICK_MOTION = {
   /** The rail's width — the tick IS a length of rail. */
   width: 3,
@@ -40,9 +46,9 @@ export const TICK_MOTION = {
   height: 16,
   radius: 2,
   /** One full breath, in and out. */
-  breathMs: 1400,
+  breathMs: TICK_BREATH.cycleMs,
   /** The trough of the breath; the crest is full opacity. */
-  restOpacity: 0.35,
+  restOpacity: TICK_BREATH.lowOpacity,
 } as const;
 
 export interface TickProps {

@@ -101,15 +101,18 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
           'It’s on. Open your pet’s profile and look for Vet visits, under the vet report — book the next appointment there, or log one that already happened.',
       };
     case 'design_v2':
-      // No on-state hint at D2-0: nothing renders behind the flag yet, and a hint
-      // that said "there is nothing to see yet" would be accurate today and false
-      // the day D2-3 lands — the VV-0 mistake, whose first consumer had to pay
-      // that debt. So the first Design v2 lane to land a surface owes this hint,
-      // naming where the redesign shows (guards/designV2FlagOff.test.tsx's
-      // tripwire names that PR). A palette reads as "how the app looks",
-      // distinct from the widget grid, the picker pen, the taxonomy shapes,
+      // The on-state hint. Three lanes landed the same day, each writing it for the
+      // surface it shipped (D2-4 / CUL-1066 Home's Today; D2-5 / CUL-1067 the month on
+      // Patterns; D2-3 / CUL-1065 the Signal card and its screen), so it names all three
+      // and nothing more (the VV-0 lesson: a hint that says "nothing to see yet" is true
+      // the day it ships and false the day after). A palette reads as "how the app
+      // looks", distinct from the widget grid, the picker pen, the taxonomy shapes,
       // Noticed's eye and the vet's stethoscope.
-      return { Icon: Palette };
+      return {
+        Icon: Palette,
+        onHint:
+          'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
+      };
     default:
       return { Icon: FlaskConical };
   }

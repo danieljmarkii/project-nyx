@@ -5,13 +5,20 @@ import { usePetStore } from '../store/petStore';
 
 export function useEvents() {
   const { activePet } = usePetStore();
-  const { todayEvents, setTodayEvents, prependEvent } = useEventStore();
+  const { todayEvents, setTodayEvents, setTodayRead, prependEvent } = useEventStore();
 
   const loadTodayEvents = useCallback(async () => {
     if (!activePet) return;
     const db = getDb();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+    // The read's state, per pet (C-12). A re-read for the SAME pet keeps `ready` — the
+    // rows on screen are still that pet's and a skeleton over them on every sync tick
+    // would flash; a switch or a cold open starts at `loading`.
+    const prior = useEventStore.getState().todayRead;
+    if (!prior || prior.petId !== activePet.id || prior.state === 'failed') {
+      setTodayRead({ petId: activePet.id, state: 'loading' });
+    }
 
     // The medication join (ma + mi) mirrors getTimeline so a dose loaded on a cold
     // Home open carries its drug name — without it, drug_generic_name is only ever
@@ -45,14 +52,16 @@ export function useEvents() {
         [activePet.id, todayStart.toISOString()]
       );
       setTodayEvents(events);
+      setTodayRead({ petId: activePet.id, state: 'ready' });
     } catch (e) {
       // No silent failures in the data path (house rule) — and the widened
       // medication JOIN gives the read more ways to fail (e.g. a cache table
       // not yet populated on a fresh install). Log and leave prior state intact;
       // a focus/refresh re-runs this load rather than blanking Today on a transient error.
       console.warn('[useEvents] loadTodayEvents failed:', e);
+      setTodayRead({ petId: activePet.id, state: 'failed' });
     }
-  }, [activePet]);
+  }, [activePet, setTodayEvents, setTodayRead]);
 
   return { todayEvents, loadTodayEvents, prependEvent };
 }
