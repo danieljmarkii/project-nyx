@@ -20,6 +20,9 @@ jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 jest.mock('../../lib/signalArrival', () => ({ hasPlayedArrival: async () => true, markArrivalPlayed: async () => {} }));
 jest.mock('../../lib/haptics', () => ({ insightArrival: jest.fn() }));
+// The door measures its chart before it pushes (D2-6); this suite proves the DOOR, so the
+// platform declines at once and nothing is staged — the staging is `SignalLeadCard.test.tsx`'s.
+jest.mock('../../lib/measureNode', () => ({ measureNodeInWindow: (_n: unknown, cb: (r: null) => void) => cb(null) }));
 
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
@@ -107,7 +110,7 @@ describe('flag-on', () => {
     expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', benignLead);
     expect(view.getByTestId('signal-lead-title').props.children).toBe('Vomiting, the last 2 weeks');
     fireEvent.press(view.getByTestId('signal-lead-face'));
-    // The door measures its chart first (D2-6), then pushes.
+    // The door measures first (declined here, see the mock above), then pushes.
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/signal/reflection%3Avomit?pet=pet-1'));
     // The face never folds: no fold control on the lead, and the strip is not drawn.
     expect(view.queryByTestId('insight-fold-control')).toBeNull();

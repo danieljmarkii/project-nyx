@@ -8,8 +8,10 @@
 // ships no shared-element transition on the new architecture and RN 0.86 is Fabric-only).
 //
 //   First    the card measures its chart in WINDOW coordinates and STAGES the flight here:
-//            the rect, the chart's own element (`WeeklyBars` over the card's model — already
-//            drawn, so it never draws in again) and the title. Then it pushes the route.
+//            the rect, the chart's element (a `WeeklyBars` over the card's model, built with
+//            `drawIn` off — the host mounts a FRESH instance of it, sharing no state with the
+//            card's own, and it draws no draw-in because the element says so) and the title.
+//            Then it pushes the route.
 //   Last     the screen measures where its chart will sit and LANDS the flight: the target.
 //   Invert   the clone is laid out at the SOURCE's size and starts at the source's place.
 //   Play     three values on the native driver — translateX, translateY and ONE scale —

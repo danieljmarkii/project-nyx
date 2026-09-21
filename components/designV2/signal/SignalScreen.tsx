@@ -185,9 +185,18 @@ function FlightSkeleton({ flight, windowWidth }: { flight: FlightRecord; windowW
   const outer = windowWidth - 2 * theme.space2;
   const scale = inner > 0 ? outer / inner : 1;
   const slotRef = useRef<View>(null);
+  // A measurement that answers after the skeleton has gone (a fast read) must not land a
+  // stale slot over the hero's own rect — the same guard the card's retarget carries.
+  const gone = useRef(false);
+  useEffect(
+    () => () => {
+      gone.current = true;
+    },
+    [],
+  );
   const onLayout = () =>
     measureNodeInWindow(slotRef.current, (rect) => {
-      if (rect && rect.width > 0 && rect.height > 0) landFlight(flight.identity, rect);
+      if (!gone.current && rect && rect.width > 0 && rect.height > 0) landFlight(flight.identity, rect);
     });
   return (
     <View style={styles.scroll} testID="signal-flight-skeleton">

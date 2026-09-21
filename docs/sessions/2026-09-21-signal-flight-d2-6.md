@@ -100,6 +100,24 @@ applied, two survived on the first pass (the reverse without `flew`; the flown c
 drawing in), both pinned — the second by recording the real chart's props through a
 pass-through mock. Full suite 431 suites / 9,539 tests green; `tsc` clean.
 
+## The code review
+
+The `code-reviewer` (isolated) returned fix-before-merge on one thing and held the rest:
+the zone's door test claimed flight coverage it did not have (under jest the View ref's
+`measureInWindow` never answers, so the door went through the grace timeout and the
+declined branch — 285 ms per test and nothing staged); the suite now mocks the
+measurement to decline at once and says so, the staging being the card suite's. Taken
+too: the skeleton's late measurement is guarded against its own unmount (the card's
+retarget already was), and the module header no longer implies the clone shares state
+with the card's chart (it is a fresh `WeeklyBars` instance; the "no draw in" comes from
+the element's own prop). Noted, not changed: a retarget that arrives while `landed` pins
+rather than springs — in the shipped flow it arrives in the same tick as the release, so
+React batches the two into one commit and the clone is gone before any jump could paint;
+the recording's step 2 checks the slot's estimated height against the hero's real one.
+Held: the store's machine, the spring derivation, the width arithmetic against the real
+paddings, the one engine, the haptics guard, the clone's a11y hiding, C-30 on every
+trigger. CI green on the first head (typecheck + jest, the three timezones, deno).
+
 ## DoD
 
 - ACs 1–3 and 5 pass in tests (the uniform scale; ≤ 700 ms with three beats, reversible,
