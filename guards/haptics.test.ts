@@ -126,6 +126,14 @@ const ALWAYS_SCANNED = [
   // mutation on CUL-1065: a `commitSymptom` import in each reds the build.
   'components/designV2/signal/SignalScreen.tsx',
   'components/designV2/signal/EpisodeGallery.tsx',
+  // CUL-1069 (D2-6) — the Signal chart's flight: the module that owns the spring and the
+  // root host that draws the clone. The landing is exactly where a "landed" buzz would
+  // read as natural, on the chart of a screen that paints `worth_a_call`; neither file
+  // carries the MARKERS (a `.ts` hook is invisible to `walk()` — the fold's own reason —
+  // and the host draws whatever element it is handed). Named the PR they ship (C-16);
+  // proven by mutation on CUL-1069: a `commitSymptom` import in each reds the build.
+  'components/motion/flightMotion.ts',
+  'components/motion/FlightHost.tsx',
   // CUL-1066 (D2-4) — Home's spine node. It paints a landed `worth_a_call` in the rose
   // ink beneath a photographed vomit and hosts the read's ARRIVAL on that node — the
   // exact moment a "landed" buzz would read as natural (the incident arrival's G4). It

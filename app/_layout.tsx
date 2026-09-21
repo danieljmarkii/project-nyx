@@ -37,6 +37,7 @@ import { MedicationCompletionCard } from '../components/ui/MedicationCompletionC
 import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
+import { FlightHost } from '../components/motion/FlightHost';
 
 // Hold the native splash until the font gate releases, so the first painted
 // frame is already in the v1.2 faces — no system→custom flash, and no blank
@@ -322,6 +323,11 @@ export default function RootLayout() {
         <Stack.Screen name="settings/feedback" />
         <Stack.Screen name="settings/password" />
       </Stack>
+      {/* The Signal chart's flight (D2-6 / CUL-1069): the clone lives HERE, above the whole
+          stack, because a push would unmount anything inside a screen — the chart lifts off
+          Home and lands on the Signal's screen across the transition. Renders nothing when
+          no flight is up; hidden from touch and from assistive tech. */}
+      <FlightHost />
       {/* The Noticed card's intake door (CUL-870 / N-3b). It is mounted HERE, beside the
           completion cards, rather than inside the card that opens it: the sheet writes a
           meal, and a meal write reachable from Home's import closure is a third Home
