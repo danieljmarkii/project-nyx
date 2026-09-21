@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSyncStore } from './syncStore';
 import {
   usePetStore,
   resolveActivePet,
@@ -278,6 +279,50 @@ describe('petStore', () => {
     const s = usePetStore.getState();
     expect(s.pets).toEqual([]);
     expect(s.activePet).toBeNull();
+  });
+
+  // CUL-511 (B-784): a pet WRITE is a hydration — the named daily-summary body is
+  // re-resolved on `hydrationTick`, and a rename / a second pet / an archive back to one
+  // has to reach it without waiting for a sync cycle. Loads and re-points never bump:
+  // a load that counted as a hydration could re-enter the hydration it was answering.
+  describe('hydration tick (CUL-511)', () => {
+    const tick = () => useSyncStore.getState().hydrationTick;
+    beforeEach(() => {
+      useSyncStore.setState({ hydrationTick: 0 });
+    });
+
+    it('addPet bumps once — the single→multi transition reaches the notification', () => {
+      usePetStore.setState({ ...INITIAL, pets: [pixel], activePet: pixel });
+      usePetStore.getState().addPet(juniper);
+      expect(tick()).toBe(1);
+    });
+
+    it('updatePet bumps once — a rename reaches the notification', () => {
+      usePetStore.setState({ ...INITIAL, pets: [pixel], activePet: pixel });
+      usePetStore.getState().updatePet({ name: 'Pixel II' });
+      expect(tick()).toBe(1);
+    });
+
+    it('removePet bumps once — an archive back to one pet reaches the notification', () => {
+      usePetStore.setState({ ...INITIAL, pets: [pixel, juniper], activePet: pixel });
+      usePetStore.getState().removePet('pet-2');
+      expect(tick()).toBe(1);
+    });
+
+    it('a write that changed nothing does not bump: updatePet with no active pet, removePet of an unknown id', () => {
+      usePetStore.setState(INITIAL);
+      usePetStore.getState().updatePet({ name: 'ghost' });
+      usePetStore.setState({ ...INITIAL, pets: [pixel], activePet: pixel });
+      usePetStore.getState().removePet('pet-404');
+      expect(tick()).toBe(0);
+    });
+
+    it('a load or a re-point never bumps: setPets, selectPet, patchPetById', () => {
+      usePetStore.getState().setPets([pixel, juniper], 'pet-1');
+      usePetStore.getState().selectPet('pet-2');
+      usePetStore.getState().patchPetById('pet-1', { weight_kg: 4 });
+      expect(tick()).toBe(0);
+    });
   });
 
   it('removePet with an unknown id is a no-op', () => {
