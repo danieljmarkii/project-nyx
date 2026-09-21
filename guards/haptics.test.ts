@@ -118,6 +118,15 @@ const ALWAYS_SCANNED = [
   // verdict is named here the PR it ships, not the PR after a buzz lands on it. Proven by
   // mutation — a `commitSymptom` import there reds the build.
   'components/charts/DayMark.tsx',
+  // CUL-1066 (D2-4) — Home's spine node. It paints a landed `worth_a_call` in the rose
+  // ink beneath a photographed vomit and hosts the read's ARRIVAL on that node — the
+  // exact moment a "landed" buzz would read as natural (the incident arrival's G4). It
+  // carries none of the MARKERS (the verdict is a `tone` off the pure model, never the
+  // enum word), so it is named by hand. Proven by mutation — a `selectChip` import there
+  // reds the build. Its sibling `LookHeader.tsx` is deliberately NOT here: the header
+  // ticks on every chip tap (`selectChip`, T-10) and is not a safety surface; the
+  // emergency door it opens is its own scanned file (`LookEmergencySheet.tsx`).
+  'components/designV2/home/SpineNodeRow.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

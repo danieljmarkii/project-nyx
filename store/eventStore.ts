@@ -76,8 +76,20 @@ export interface NyxEvent {
   look_note?: string | null;
 }
 
+/** Where Today's read stands, FOR WHICH PET (C-12 — a read that hasn't answered is never
+ *  an empty record; the first frame is `todayEvents=[]` for every pet, so a surface that
+ *  draws an empty state off the array alone lies for a frame on every cold open and on
+ *  every pet switch). Written only by `useEvents.loadTodayEvents`; read by Home's Design
+ *  v2 spine (D2-4), which draws a skeleton until `ready` and a retry on `failed`. */
+export interface TodayRead {
+  petId: string;
+  state: 'loading' | 'ready' | 'failed';
+}
+
 interface EventState {
   todayEvents: NyxEvent[];
+  todayRead: TodayRead | null;
+  setTodayRead: (read: TodayRead | null) => void;
   setTodayEvents: (events: NyxEvent[]) => void;
   prependEvent: (event: NyxEvent) => void;
   removeFromToday: (eventId: string) => void;
@@ -94,6 +106,8 @@ interface EventState {
 
 export const useEventStore = create<EventState>((set) => ({
   todayEvents: [],
+  todayRead: null,
+  setTodayRead: (todayRead) => set({ todayRead }),
   setTodayEvents: (todayEvents) => set({ todayEvents }),
   prependEvent: (event) =>
     set((state) => ({ todayEvents: [event, ...state.todayEvents] })),

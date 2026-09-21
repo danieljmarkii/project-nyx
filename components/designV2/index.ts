@@ -10,8 +10,11 @@
 // written inline in a screen is invisible to that guard, and the guard's
 // per-consumer rule reds a file that reads the hook without importing from here.
 //
-// Empty at D2-0 on purpose. The first lane to land a surface (D2-3, the Signal
-// card + route) adds its modules and deletes the guard's zero-consumer tripwire.
+// The first surface landed with D2-4 (CUL-1066): `home/` holds Today's card — the
+// look header, the spine, its nodes — and the coverage door. A screen imports the
+// module it draws (`components/designV2/home/TodayCard`), never this index, so the
+// guard's switch wraps the module the screen actually reaches.
+//
 // Helpers do not belong here — a non-component export would be wrapped into a
 // component by the guard's switch; a predicate goes in `lib/`.
 export {};

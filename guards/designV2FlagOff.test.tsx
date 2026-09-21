@@ -29,9 +29,9 @@
 // The convention it depends on: the redesign's rendering lives in
 // `components/designV2/`. A screen may hold the gate (`useDesignV2()`) but it
 // delegates the drawing there — UI written inline in a screen is invisible to the
-// equality half. `FIRST_CONSUMER_LANDS` below is the C-32 tripwire that makes that
-// stick: it asserts EXACTLY ZERO consumers of the hook today and names the PR that
-// will red it, because "every consumer is gated" proves nothing over an empty set.
+// equality half. The consumer set below is PINNED (it was a zero-consumer tripwire
+// until D2-4 landed Home, C-32): "every consumer is gated" proves nothing over an
+// empty set, and a consumer that joins unlisted reds here in the diff that adds it.
 //
 // ── ONE HOOK, ONE CALL SHAPE ────────────────────────────────────────────────────
 //
@@ -434,8 +434,12 @@ describe('D2-0 — flag-off is byte-identical to an app without the redesign', (
 });
 
 // ── The consumer scans ──────────────────────────────────────────────────────────
-/** The PR that lands the first consumer and deletes this file's D2-0 tripwire. */
-const FIRST_CONSUMER_LANDS = 'CUL-1065 (D2-3 — the Signal card and its route)';
+/** The first consumer landed with CUL-1066 (D2-4 — Home on a real day), ahead of the
+ *  Signal lane the D2-0 tripwire had named; the tripwire is deleted (C-32: an empty set
+ *  is an assertion, deleted by the PR that invalidates it) and its three debts are paid
+ *  there: the namespace's first modules (`components/designV2/home/`), the beta shelf's
+ *  on-state hint (`app/settings/beta.tsx`), and — for D2-3 still — the Signal route
+ *  joining SURFACES in the diff that creates it (the `app/` consumer test below). */
 
 /**
  * Detector (a): the gate's call shape. A consumer is any file that calls
@@ -589,13 +593,10 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the redesign has one gate, and its consumers stay inside the namespace', () => {
-  it(`D2-0 tripwire: nothing consumes useDesignV2() yet — deleted by ${FIRST_CONSUMER_LANDS}`, () => {
-    // C-32: an empty set is an assertion, and it is deleted by the PR that
-    // invalidates it rather than edited into a list of what happens to be true.
-    // Three debts go with it: the namespace's first module, the beta shelf's
-    // on-state hint for `design_v2` (app/settings/beta.tsx, which today says
-    // nothing because nothing renders), and the Signal route joining SURFACES.
-    expect(gateConsumers()).toEqual([]);
+  it('Home consumes the gate (D2-4), and every consumer is a known one', () => {
+    // The set is PINNED, not floored: a new consumer is a new surface or a new card,
+    // and it joins this list in the diff that adds it — with its flag-off proof.
+    expect(gateConsumers()).toEqual(['app/(tabs)/index.tsx']);
   });
 
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
