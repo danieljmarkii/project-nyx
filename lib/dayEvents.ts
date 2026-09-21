@@ -109,8 +109,10 @@ export interface DayEventDisplay {
   timeMs: number;
 }
 
-/** brand · product — matches EventRow so the two surfaces name a food identically. */
-function foodLabelOf(row: TimelineRow): string | null {
+/** brand · product — matches EventRow so the two surfaces name a food identically.
+ *  Exported for Home's spine node (D2-4), which names a meal's food in a compact line and
+ *  must not re-derive this rule. */
+export function foodLabelOf(row: TimelineRow): string | null {
   if (row.food_brand && row.food_product_name) return `${row.food_brand} · ${row.food_product_name}`;
   return row.food_product_name ?? row.food_brand ?? null;
 }

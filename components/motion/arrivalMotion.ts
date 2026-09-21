@@ -464,3 +464,339 @@ export function useIncidentArrival({
     noteStage,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// The read's arrival ON A SPINE NODE (Design v2 — the whole day, D2-4 / CUL-1066; the
+// round-4 page §01, rebuilt on the Motion Designer's read: "the tick must BE the rail,
+// not be swapped for one").
+//
+// The incident screen's arrival above crossfades a pending box OUT and grows a card's
+// rail IN — two nodes, one moment. On Home's spine there is no box to leave: the node
+// is a line, the read is a slot beneath it, and the thing that was waiting is a 3pt
+// breathing tick. So here the tick is ONE Animated.View that is the rail before, during
+// and after — it stops breathing, recolours to the verdict's tone (a step: colour is not
+// a native-driver property, and a JS-driven colour on a node carrying a native transform
+// is not allowed), and grows over `railLeadMs` on the fold's own numbers; the slot opens
+// 80ms behind it on `UNFOLD_LAYOUT`; the sentence lands last. The node-identity test in
+// the renderer's suite is what pins "one node".
+//
+// THE BREATH is Principle 9's carve-out, written down (the page §07): 3pt wide, a 1.4s
+// breath, only while a request is in flight, still at full opacity under reduced motion,
+// and it ends on blur. It is the app's only looping motion, and it runs on the native
+// driver alongside the transform the same node takes later — both native, which is the
+// one combination a single node may carry.
+//
+// THE TRIGGER is the caller's FACT (C-30): `awaitingRead` is "the server was asked" (the
+// chain is outstanding, or the row itself is `pending`) — never "the pending line is on
+// screen", which is also true while Home is still reading which rows have a photo. The
+// edge is awaiting → landed, on THIS mount; a read already in the record when Home opened
+// paints on the first frame and never arrives.
+//
+// The two-engine split and the absolute-rail-during-layout rule are inherited from the
+// hook above verbatim, for the same Fabric reason.
+
+/** The breath: a 1.4s cycle between full and a third, ease in and out. Written here, once,
+ *  and read by the principle's test rather than restated. */
+export const TICK_BREATH = {
+  cycleMs: 1400,
+  lowOpacity: 0.35,
+} as const;
+
+export type NodeArrivalPhase = 'idle' | 'arriving' | 'crossfade';
+
+export interface NodeArrivalValues {
+  /** The tick's breath while waiting (1 ⇄ lowOpacity); pinned at 1 the rest of the time. */
+  tickOpacity: Animated.Value;
+  /** The waiting line's opacity as it leaves (1 → 0 in beat 1's window). */
+  pendingOpacity: Animated.Value;
+  /** The landed words' opacity (0 → 1 with the slot, or over `durationFast`). */
+  bodyOpacity: Animated.Value;
+  /** The landed words' translateY (−`driftPt` → 0; 0 under reduced motion). */
+  bodyShift: Animated.Value;
+  /** The rail's scaleY about its own centre (tick/height → 1). */
+  railScale: Animated.Value;
+  /** The rail's translateY, so the seeded tick sits where the waiting tick was. */
+  railShift: Animated.Value;
+}
+
+export interface NodeArrival {
+  phase: NodeArrivalPhase;
+  /** A beat is in flight — the slot clips to `heldHeight`, the waiting line overlays. */
+  inFlight: boolean;
+  /** The waiting line's height, held on the slot through beat 1; null once released. */
+  heldHeight: number | null;
+  /** The rail's explicit height while it is out of the slot's flow; null when in flow. */
+  railHeight: number | null;
+  /** The breath is running: awaiting, motion allowed, app active. The renderer binds
+   *  `tickOpacity` only while this is true, so an idle rail never carries the loop. */
+  breathing: boolean;
+  values: NodeArrivalValues;
+  /** The waiting line's own layout, read while it is the thing in the slot. */
+  onPendingLayout: (height: number) => void;
+  /** The landed words' height — the rail's explicit height for beat 1. */
+  onContentLayout: (height: number) => void;
+}
+
+interface NodeParams {
+  /** A read is being PRODUCED (C-30) — see the header. */
+  awaitingRead: boolean;
+  /** The landed words are on screen. The edge needs both halves: the fact fell AND the
+   *  slot now shows content (a row that resolved to nothing never arrives — and never
+   *  fires beat 2's GLOBAL `configureNext` over an unrelated commit). */
+  landed: boolean;
+  reducedMotion: boolean;
+  appActive: boolean;
+  /** The node's identity — a change mid-flight abandons the choreography. */
+  identity: string;
+  /** The waiting tick's height, from the renderer that draws it. */
+  tickHeight: number;
+}
+
+export function useNodeArrival({
+  awaitingRead,
+  landed,
+  reducedMotion,
+  appActive,
+  identity,
+  tickHeight,
+}: NodeParams): NodeArrival {
+  const [phase, setPhase] = useState<NodeArrivalPhase>('idle');
+  const [heldHeight, setHeldHeight] = useState<number | null>(null);
+  const [railHeight, setRailHeight] = useState<number | null>(null);
+
+  const values = useRef<NodeArrivalValues>({
+    tickOpacity: new Animated.Value(1),
+    pendingOpacity: new Animated.Value(1),
+    bodyOpacity: new Animated.Value(1),
+    bodyShift: new Animated.Value(0),
+    railScale: new Animated.Value(1),
+    railShift: new Animated.Value(0),
+  }).current;
+
+  const phaseRef = useRef<NodeArrivalPhase>('idle');
+  const tickRef = useRef(tickHeight);
+  tickRef.current = tickHeight;
+  const pendingH = useRef<number | null>(null);
+  const railBeatArmed = useRef(false);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const running = useRef<Animated.CompositeAnimation[]>([]);
+  const breath = useRef<Animated.CompositeAnimation | null>(null);
+  const mounted = useRef(true);
+
+  const later = useCallback((ms: number, fn: () => void) => {
+    const t = setTimeout(() => {
+      timers.current = timers.current.filter((x) => x !== t);
+      if (mounted.current) fn();
+    }, ms);
+    timers.current.push(t);
+  }, []);
+  const clearTimers = useCallback(() => {
+    for (const t of timers.current) clearTimeout(t);
+    timers.current = [];
+  }, []);
+  const run = useCallback((anim: Animated.CompositeAnimation, onDone: () => void) => {
+    running.current.push(anim);
+    anim.start(({ finished }) => {
+      running.current = running.current.filter((a) => a !== anim);
+      if (!finished || !mounted.current) return;
+      onDone();
+    });
+  }, []);
+  const stopAll = useCallback(() => {
+    for (const a of running.current) a.stop();
+    running.current = [];
+    clearTimers();
+  }, [clearTimers]);
+  const timing = useCallback(
+    (value: Animated.Value, toValue: number, duration: number, easing: (t: number) => number, delay = 0) =>
+      Animated.timing(value, { toValue, duration, delay, easing, useNativeDriver: true }),
+    [],
+  );
+
+  // ── The breath ──────────────────────────────────────────────────────────────
+  const breathing = awaitingRead && !reducedMotion && appActive;
+  useEffect(() => {
+    if (!breathing) {
+      breath.current?.stop();
+      breath.current = null;
+      // Still, at FULL opacity — reduced motion and blur alike render the tick present,
+      // never faded (§07: "reduced motion renders it still at full opacity").
+      values.tickOpacity.setValue(1);
+      return;
+    }
+    const half = TICK_BREATH.cycleMs / 2;
+    const loop = Animated.loop(
+      Animated.sequence([
+        timing(values.tickOpacity, TICK_BREATH.lowOpacity, half, Easing.inOut(Easing.sin)),
+        timing(values.tickOpacity, 1, half, Easing.inOut(Easing.sin)),
+      ]),
+    );
+    breath.current = loop;
+    loop.start();
+    return () => {
+      loop.stop();
+      if (breath.current === loop) breath.current = null;
+      values.tickOpacity.setValue(1);
+    };
+  }, [breathing, timing, values]);
+
+  // ── The beats ───────────────────────────────────────────────────────────────
+  const rest = useCallback(() => {
+    values.pendingOpacity.setValue(1);
+    values.bodyOpacity.setValue(1);
+    values.bodyShift.setValue(0);
+    values.railScale.setValue(1);
+    values.railShift.setValue(0);
+  }, [values]);
+
+  const go = useCallback((p: NodeArrivalPhase) => {
+    phaseRef.current = p;
+    setPhase(p);
+  }, []);
+
+  const goIdle = useCallback(() => {
+    rest();
+    clearTimers();
+    railBeatArmed.current = false;
+    setHeldHeight(null);
+    setRailHeight(null);
+    go('idle');
+  }, [rest, clearTimers, go]);
+
+  const settle = useCallback(() => {
+    if (phaseRef.current === 'idle') return;
+    stopAll();
+    goIdle();
+  }, [stopAll, goIdle]);
+
+  const railLead = useCallback(
+    (height: number) => {
+      if (phaseRef.current !== 'arriving') return;
+      const from = pendingH.current;
+      const tick = tickRef.current;
+      if (from == null || !(height > 0)) return;
+      values.railScale.setValue(tick / height);
+      values.railShift.setValue(from / 2 - height / 2);
+      setRailHeight(height);
+      run(
+        Animated.parallel([
+          timing(values.railScale, 1, FOLD_MOTION.railLeadMs, Easing.out(Easing.cubic)),
+          timing(values.railShift, 0, FOLD_MOTION.railLeadMs, Easing.out(Easing.cubic)),
+        ]),
+        () => {
+          values.railScale.setValue(1);
+          values.railShift.setValue(0);
+        },
+      );
+    },
+    [run, timing, values],
+  );
+
+  const openSlot = useCallback(() => {
+    if (phaseRef.current !== 'arriving') return;
+    LayoutAnimation.configureNext(UNFOLD_LAYOUT);
+    setHeldHeight(null);
+    run(
+      Animated.parallel([
+        timing(values.bodyOpacity, 1, FOLD_MOTION.openMs, Easing.inOut(Easing.quad)),
+        timing(values.bodyShift, 0, FOLD_MOTION.landMs, Easing.out(Easing.cubic), FOLD_MOTION.landDelayMs),
+      ]),
+      () => {
+        values.bodyOpacity.setValue(1);
+        values.bodyShift.setValue(0);
+        later(FOLD_MOTION.settleSlackMs, goIdle);
+      },
+    );
+  }, [run, timing, values, later, goIdle]);
+
+  const begin = useCallback(() => {
+    if (phaseRef.current !== 'idle') return;
+    if (reducedMotion) {
+      values.bodyOpacity.setValue(0);
+      values.bodyShift.setValue(0);
+      go('crossfade');
+      run(timing(values.bodyOpacity, 1, theme.durationFast, Easing.out(Easing.quad)), () => {
+        values.bodyOpacity.setValue(1);
+        goIdle();
+      });
+      later(theme.durationFast + FOLD_MOTION.settleSlackMs * 2, settle);
+      return;
+    }
+    values.pendingOpacity.setValue(1);
+    values.bodyOpacity.setValue(0);
+    values.bodyShift.setValue(-FOLD_MOTION.driftPt);
+    values.railScale.setValue(1);
+    values.railShift.setValue(0);
+    railBeatArmed.current = true;
+    setHeldHeight(pendingH.current);
+    go('arriving');
+    run(timing(values.pendingOpacity, 0, FOLD_MOTION.railLeadMs, Easing.out(Easing.quad)), () => {
+      values.pendingOpacity.setValue(0);
+    });
+    later(FOLD_MOTION.railLagMs, openSlot);
+    later(FOLD_MOTION.railLagMs + FOLD_MOTION.openMs + FOLD_MOTION.settleSlackMs * 2, () => {
+      if (phaseRef.current === 'arriving') settle();
+    });
+  }, [reducedMotion, values, run, timing, later, openSlot, goIdle, settle, go]);
+
+  // ── The edge: awaiting → landed, on THIS mount ──────────────────────────────
+  const wasAwaiting = useRef(awaitingRead);
+  useLayoutEffect(() => {
+    const was = wasAwaiting.current;
+    wasAwaiting.current = awaitingRead;
+    if (!was || awaitingRead) return;
+    if (!landed) return;
+    begin();
+  }, [awaitingRead, landed, begin]);
+
+  const onPendingLayout = useCallback((height: number) => {
+    if (phaseRef.current !== 'idle') return;
+    pendingH.current = height;
+  }, []);
+
+  const onContentLayout = useCallback(
+    (height: number) => {
+      if (phaseRef.current !== 'arriving' || !railBeatArmed.current) return;
+      railBeatArmed.current = false;
+      railLead(height);
+    },
+    [railLead],
+  );
+
+  // Blur finishes, never pauses (the incident arrival's rule, and the breath's own).
+  useEffect(() => {
+    if (!appActive) settle();
+  }, [appActive, settle]);
+
+  const lastIdentity = useRef(identity);
+  useEffect(() => {
+    if (lastIdentity.current === identity) return;
+    lastIdentity.current = identity;
+    pendingH.current = null;
+    wasAwaiting.current = awaitingRead;
+    if (phaseRef.current !== 'idle') {
+      stopAll();
+      goIdle();
+    }
+  }, [identity, awaitingRead, stopAll, goIdle]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      stopAll();
+      breath.current?.stop();
+    };
+  }, [stopAll]);
+
+  return {
+    phase,
+    inFlight: phase === 'arriving',
+    heldHeight,
+    railHeight: phase === 'arriving' ? railHeight : null,
+    breathing,
+    values,
+    onPendingLayout,
+    onContentLayout,
+  };
+}

@@ -30,9 +30,11 @@
 // `components/designV2/`. A screen may hold the gate (`useDesignV2()`) but it
 // delegates the drawing there — UI written inline in a screen is invisible to the
 // equality half. The C-32 tripwire that made that stick — EXACTLY ZERO consumers of
-// the hook, named for the PR that would red it — did its job on D2-5 (CUL-1067), the
-// first consumer: Patterns reads the gate and draws through the namespace, and the
-// consumer scans below now measure a non-empty set.
+// the hook, named for the PR that would red it — did its job on the two step-2 lanes
+// that landed the same day (D2-5 / CUL-1067, Patterns; D2-4 / CUL-1066, Home): each
+// reads the gate and draws through the namespace, and the consumer set below is now
+// PINNED rather than floored — "every consumer is gated" proves nothing over an empty
+// set, and a consumer that joins unlisted reds here in the diff that adds it.
 //
 // ── ONE HOOK, ONE CALL SHAPE ────────────────────────────────────────────────────
 //
@@ -436,10 +438,12 @@ describe('D2-0 — flag-off is byte-identical to an app without the redesign', (
 });
 
 // ── The consumer scans ──────────────────────────────────────────────────────────
-// The D2-0 tripwire (`gateConsumers() === []`) was deleted by CUL-1067 (D2-5 — the
-// month on Patterns), the first consumer to land; its three debts went with it: the
-// namespace's first modules (`components/designV2/patterns/`), the beta shelf's on-state
-// hint (`app/settings/beta.tsx`), and — still D2-3's — the Signal route joining SURFACES.
+// The D2-0 tripwire (`gateConsumers() === []`) was deleted by the first consumers to
+// land — CUL-1067 (D2-5, the month on Patterns) and CUL-1066 (D2-4, Home on a real day),
+// merged the same day; its three debts went with them: the namespace's first modules
+// (`components/designV2/patterns/`, `components/designV2/home/`), the beta shelf's
+// on-state hint (`app/settings/beta.tsx`, naming both), and — still D2-3's — the Signal
+// route joining SURFACES.
 
 /**
  * Detector (a): the gate's call shape. A consumer is any file that calls
@@ -593,6 +597,12 @@ function mockedModuleClosure(): string[] {
 }
 
 describe('the redesign has one gate, and its consumers stay inside the namespace', () => {
+  it('Home and Patterns consume the gate (D2-4, D2-5), and every consumer is a known one', () => {
+    // The set is PINNED, not floored: a new consumer is a new surface or a new card,
+    // and it joins this list in the diff that adds it — with its flag-off proof.
+    expect(gateConsumers()).toEqual(['app/(tabs)/index.tsx', 'app/insights/index.tsx']);
+  });
+
   it('the key is read directly in exactly one file — the hook — for both gates', () => {
     // One hook, one call shape (see the header). A second direct read of the key
     // is a second door the call-shape scan cannot see, so it is refused outright.
