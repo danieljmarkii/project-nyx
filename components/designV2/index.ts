@@ -10,8 +10,10 @@
 // written inline in a screen is invisible to that guard, and the guard's
 // per-consumer rule reds a file that reads the hook without importing from here.
 //
-// Empty at D2-0 on purpose. The first lane to land a surface (D2-3, the Signal
-// card + route) adds its modules and deletes the guard's zero-consumer tripwire.
-// Helpers do not belong here — a non-component export would be wrapped into a
-// component by the guard's switch; a predicate goes in `lib/`.
+// Empty at D2-0 on purpose; the first modules landed with D2-7 (`waits/` — the tick
+// and the silhouettes, CUL-1068), which also deleted the guard's zero-consumer
+// tripwire. Each lane adds its own directory (`signal/`, `home/`, `patterns/`); this
+// file exports nothing, and modules are imported by path. Helpers do not belong
+// here — a non-component export would be wrapped into a component by the guard's
+// switch; a predicate goes in `lib/`.
 export {};

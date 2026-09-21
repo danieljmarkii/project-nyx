@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
   },
   headerCopy: {
     flex: 1,
-    gap: theme.spaceMicro + 2,
+    gap: theme.spaceMicro * 2,
   },
   body: {
     padding: theme.space2,
