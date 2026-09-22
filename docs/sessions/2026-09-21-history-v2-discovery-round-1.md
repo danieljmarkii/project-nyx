@@ -1,6 +1,6 @@
 # History v2 — discovery round 1: the interviews and the mock page
 
-**Date:** 2026-09-21 (ended 2026-09-22 UTC) · **Issue:** CUL-1076 (project *Design v2 — the whole day*) · **Mode:** DISCOVERY · **Shipped via** the draft PR on `claude/design-v2-history-tab-ikxfm4` (number recorded below once assigned)
+**Date:** 2026-09-21 (ended 2026-09-22 UTC) · **Issue:** CUL-1076 (project *Design v2 — the whole day*) · **Mode:** DISCOVERY · **Shipped via #885** (draft, `claude/design-v2-history-tab-ikxfm4`)
 
 **PM prompt:** get up to speed on *Design v2 — the whole day*, then "let's focus on the History tab": six observations (the tap-to-expand feels weird; a boring list; include it in the design program; the filters are a work of art, keep them; are we leaning into the AI and is Claude returning more than we show; could notes feed other areas), "interview and follow a similar ideation process as used in the Linear project", end game "a round of mockups and options for the future of this screen(s)", "a solid swing".
 
