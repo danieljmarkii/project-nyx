@@ -13,8 +13,6 @@ import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { EventTypeSheet } from './EventTypeSheet';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { useUiStore } from '../../store/uiStore';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
@@ -56,15 +54,6 @@ export function FAB() {
   const [recentFoods, setRecentFoods] = useState<{ petId: string; foods: PickerFood[] } | null>(null);
   const [logging, setLogging] = useState<string | null>(null);
   const fabAnim = useRef(new Animated.Value(0)).current;
-
-  // B-745 PR 2 — the More-events destination is the new bottom sheet when
-  // log_picker_v2 is live (the B-712 two-gate beta shape: server allowlist ×
-  // local opt-in, both hooks called unconditionally then combined). Flag-off keeps
-  // the shipped full-screen push, byte-identical (FL-1). Only the "More events"
-  // destination is gated; the quick-food and Vomit/Loose-stool taps are unchanged.
-  const pickerEligible = useAllowlistFlag('log_picker_v2');
-  const pickerOptedIn = useBetaOptIn('log_picker_v2');
-  const pickerV2 = pickerEligible && pickerOptedIn;
 
   // CUL-871 (T-21) — THE FAB STEPS ASIDE for a Home capture overlay. The Noticed grid's
   // pinned Done bar stands exactly where this button does (its box is 72–128 pt off the
@@ -387,19 +376,18 @@ export function FAB() {
 
                 <View style={styles.divider} />
 
-                {/* More events → the type grid. Flag-on (B-745 PR 2) this rises as a
-                    bottom sheet over the current tab; flag-off it pushes the shipped
-                    full-screen picker, byte-identical. The photo-first "Attach photo"
-                    entry it used to carry was retired in B-745 PR 1 (R4: every log
-                    starts from the event; photos still attach inside each event flow),
-                    as was the older "Log with photo" row before it — both were
-                    redundant second pathways to this one destination. */}
+                {/* More events → the type grid, as a bottom sheet over the current tab
+                    (B-745 PR 2; out of beta with CUL-962, so it never pushes /log any
+                    more). The photo-first "Attach photo" entry it used to carry was
+                    retired in B-745 PR 1 (R4: every log starts from the event; photos
+                    still attach inside each event flow), as was the older "Log with
+                    photo" row before it — both were redundant second pathways to this
+                    one destination. */}
                 <TouchableOpacity
                   style={styles.menuAction}
                   onPress={() => {
                     closeMenu();
-                    if (pickerV2) setEventSheetVisible(true);
-                    else router.push('/log');
+                    setEventSheetVisible(true);
                   }}
                   activeOpacity={0.7}
                 >

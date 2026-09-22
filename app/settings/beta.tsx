@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, FlaskConical, Info, LayoutGrid, Palette, Shapes, SquarePen, Stethoscope } from 'lucide-react-native';
+import { Eye, FlaskConical, Info, LayoutGrid, Palette, Stethoscope } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -59,18 +59,6 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
         onHint:
           'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
       };
-    case 'log_picker_v2':
-      // No on-state hint: the new log picker takes effect the moment it's on — the owner
-      // reaches it by tapping the FAB, nothing to place or do (unlike the widget). A
-      // distinct "log an entry" glyph helps it read apart from the widget (grid) card.
-      return { Icon: SquarePen };
-    case 'event_types_v2':
-      // No on-state hint either: once the capture PRs land, the new types simply
-      // appear in the log picker — nothing to place or do. A "kinds of things" glyph
-      // (Shapes), distinct from the widget grid and the picker pen; deliberately not
-      // a "+" mark, which reads as a tappable add-affordance on a non-interactive
-      // tile (the pm-feature-review finding on the hint glyph).
-      return { Icon: Shapes };
     case 'daily_look':
       // No on-state hint: Noticed appears as a once-a-day card on Home the moment
       // it's on — nothing to place or do (unlike the widget), and at N-0 no

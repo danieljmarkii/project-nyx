@@ -704,7 +704,7 @@ describe('§6 pairing rule — CATEGORY_TINT and SYMPTOM_TYPES move together', (
 });
 
 describe('the §7 detail-contract rows — the per-leaf capture/detail contract, pinned', () => {
-  it('cough: witnessed-by-construction, no photo, Breathing family, all species, v2-gated tile', () => {
+  it('cough: witnessed-by-construction, no photo, Breathing family, all species', () => {
     expect(EVENT_TYPES.cough).toMatchObject({
       label: 'Cough',
       family: 'respiratory',
@@ -713,7 +713,6 @@ describe('the §7 detail-contract rows — the per-leaf capture/detail contract,
       confidenceModel: 'witnessed', // D10 — no Saw it / Found it; a window claim is unwritable
       hasFood: false,
       hasSeverity: false,
-      v2Only: true,             // the TILE is gated; the vocabulary is not (§12 FL-1)
     });
   });
 
@@ -726,13 +725,7 @@ describe('the §7 detail-contract rows — the per-leaf capture/detail contract,
       confidenceModel: 'witnessed',
       hasFood: false,
       hasSeverity: false,
-      v2Only: true,
     });
-  });
-
-  it('exactly the W1 pair is v2-gated — pre-W1 leaves are untouched by the flag', () => {
-    const gated = (Object.keys(EVENT_TYPES) as EventTypeKey[]).filter((k) => EVENT_TYPES[k].v2Only);
-    expect(gated.sort()).toEqual(['cough', 'sneeze']);
   });
 
   it('both are symptoms (tint + calm-not-celebrate beat + soft commit haptic all derive from this)', () => {

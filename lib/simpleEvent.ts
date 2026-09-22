@@ -9,7 +9,7 @@
 // This helper exists for the same reason lib/meals.ts's insertMeal does: the write
 // was hand-inlined in app/log.tsx's handleConfirm, and B-745 PR 3 adds a SECOND
 // entry point — the in-sheet confirm (components/log/SimpleEventConfirm, reached
-// from the More-events bottom sheet when log_picker_v2 is live). Two hand-written
+// from the More-events bottom sheet). Two hand-written
 // copies of the same INSERT + photo-trigger + sync + regen would drift, so both
 // callers route through here. The event-INSERT SQL and the photo→AI-read trigger
 // are identical to what handleConfirm did — this only relocates them so a new

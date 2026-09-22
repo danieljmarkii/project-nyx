@@ -18,7 +18,6 @@ import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/Time
 import { resolveTimeModeChange, resolveFoundModeChange, sourceAfterPointEdit, refreshedNowPoint, DEFAULT_WINDOW_SPAN_MS, buildTimeFields as deriveTimeFields } from '../lib/eventTimeEdit';
 import { insertSimpleEvent } from '../lib/simpleEvent';
 import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
-import { EventIcon } from '../components/event/EventIcon';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../constants/eventTypes';
@@ -28,8 +27,6 @@ import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAppActive } from '../hooks/useAppActive';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
-import { useAllowlistFlag } from '../hooks/useAppConfig';
-import { useBetaOptIn } from '../lib/betaFeatures';
 import { useMomentStore } from '../store/momentStore';
 import { getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
@@ -45,7 +42,7 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 import { applyMealTrialFlag } from '../lib/mealTrialFlag';
 import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, OccurredConfidence } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'medication' | 'simple' | 'stool-type' | 'weight';
+type Step = 'type' | 'food' | 'medication' | 'simple' | 'weight';
 
 // B-010 — the time fields a logged event carries. occurred_at is always a
 // single derived point; confidence + window bounds describe its certainty.
@@ -61,22 +58,6 @@ export default function LogModal() {
   const { activePet, pets } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
-  // B-745 — the More-events redesign is dark behind `log_picker_v2` (the B-712
-  // two-gate beta shape): server allowlist eligibility × the local opt-in, never one
-  // alone (both hooks called unconditionally — Rules of Hooks — then combined, like
-  // SignalZone). Flag-off renders the shipped flat grid byte-identical (FL-1); only
-  // the grouped-grid PRESENTATION is gated. The rest of PR 1 (the glyph family, the
-  // shared Header, photo-first removal) is systemic and lands on both paths.
-  const pickerEligible = useAllowlistFlag('log_picker_v2');
-  const pickerOptedIn = useBetaOptIn('log_picker_v2');
-  const pickerV2 = pickerEligible && pickerOptedIn;
-  // W1 taxonomy expansion (event_types_v2, CUL-675) — same two-gate shape. Gates
-  // the grouped grid's TILE LIST only (the Breathing group + the ruled regroup);
-  // the flat grid never carries a v2 tile at any flag state, and EVENT_TYPES
-  // itself is never flag-gated (§12 FL-1 — reads stay ungated by design).
-  const taxonomyEligible = useAllowlistFlag('event_types_v2');
-  const taxonomyOptedIn = useBetaOptIn('event_types_v2');
-  const taxonomyV2 = taxonomyEligible && taxonomyOptedIn;
   const showNamedMoment = useMomentStore((s) => s.showNamed);
   const showMealMoment = useMomentStore((s) => s.showMeal);
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
@@ -216,12 +197,12 @@ export default function LogModal() {
       setStep('food');
     } else if (typeParam === 'medication') {
       // Medication has hasFood:false but needs its own picker, not the simple
-      // step — special-cased like stool_normal (handleTypeSelect mirrors this).
+      // step — special-cased here (handleTypeSelect mirrors this).
       setSelectedType('medication');
       setStep('medication');
     } else if (typeParam === 'weight_check') {
       // Weight has hasFood:false but needs its own numeric step, not the simple
-      // step — special-cased like medication/stool (handleTypeSelect mirrors this).
+      // step — special-cased like medication (handleTypeSelect mirrors this).
       setSelectedType('weight_check');
       seedWeightPrefill();
       setStep('weight');
@@ -280,11 +261,8 @@ export default function LogModal() {
     if (config.hasFood) setStep('food');
     else if (type === 'medication') setStep('medication');
     else if (type === 'weight_check') { seedWeightPrefill(); setStep('weight'); }
-    // B-745 PR 2 — the flag-on grouped grid SPLITS Stool inline (its Normal/Loose
-    // segments emit stool_normal / diarrhea directly), so only the flag-off flat
-    // grid's single Stool tile still opens the Normal/Loose sub-step. diarrhea never
-    // reaches here from the flat grid (it's filtered out), so it falls to 'simple'.
-    else if (type === 'stool_normal' && !pickerV2) setStep('stool-type');
+    // Stool needs no branch: the grid's split tile emits stool_normal / diarrhea
+    // directly from its Normal / Loose segments (B-745 PR 2), so both go to 'simple'.
     else setStep('simple');
   }
 
@@ -984,7 +962,7 @@ export default function LogModal() {
     // Combo mode (B-156 PR B2b) opened straight into the medication picker from the
     // meal card, so there's no type-grid to step back to — back closes the modal.
     if (isComboMode && step === 'medication') { router.back(); return; }
-    if (step === 'food' || step === 'medication' || step === 'simple' || step === 'stool-type' || step === 'weight') {
+    if (step === 'food' || step === 'medication' || step === 'simple' || step === 'weight') {
       setSelectedType(null);
       setWeightLbsStr('');
       // CUL-505 — the photo and the note are per-event state too. Left standing, a
@@ -1164,8 +1142,6 @@ export default function LogModal() {
           onLeadingPress={() => router.back()}
         />
         <EventTypePicker
-          grouped={pickerV2}
-          expanded={taxonomyV2}
           species={activePet?.species}
           onSelectType={handleTypeSelect}
         />
@@ -1254,36 +1230,6 @@ export default function LogModal() {
           onAnswer={handleComboConfirmAnswer}
           onNotSure={handleComboConfirmDismiss}
         />
-      </SafeAreaView>
-    );
-  }
-
-  // ── Stool sub-type (normal vs loose) ───────────────────────────────────────
-
-  if (step === 'stool-type') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Header title="What kind of stool?" leading="back" onLeadingPress={handleBack} />
-        <View style={styles.stoolChoiceContainer}>
-          <TouchableOpacity
-            style={styles.stoolChoiceBtn}
-            onPress={() => { setSelectedType('stool_normal'); setStep('simple'); }}
-            activeOpacity={0.7}
-          >
-            <EventIcon type="stool_normal" size={24} />
-            <ThemedText style={styles.stoolChoiceLabel}>Normal</ThemedText>
-            <ThemedText style={styles.stoolChoiceHint}>Formed, typical</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.stoolChoiceBtn, styles.stoolChoiceBtnLoose]}
-            onPress={() => { setSelectedType('diarrhea'); setStep('simple'); }}
-            activeOpacity={0.7}
-          >
-            <EventIcon type="diarrhea" size={24} color={theme.colorEventSymptom} />
-            <ThemedText style={styles.stoolChoiceLabel}>Loose</ThemedText>
-            <ThemedText style={styles.stoolChoiceHint}>Soft, runny, or diarrhea</ThemedText>
-          </TouchableOpacity>
-        </View>
       </SafeAreaView>
     );
   }
@@ -1542,37 +1488,5 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     flex: 1,
     lineHeight: theme.lineHeightSM,
-  },
-  // ── Stool choice ──
-  stoolChoiceContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    padding: theme.space2,
-    gap: theme.space2,
-    alignItems: 'stretch',
-  },
-  stoolChoiceBtn: {
-    flex: 1,
-    borderRadius: theme.radiusMedium,
-    backgroundColor: theme.colorNeutralLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.space1,
-    paddingVertical: theme.space4,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-  },
-  stoolChoiceBtnLoose: {
-    backgroundColor: theme.colorEventSymptomLight,
-    borderColor: theme.colorEventSymptomLight,
-  },
-  stoolChoiceLabel: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  stoolChoiceHint: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
   },
 });

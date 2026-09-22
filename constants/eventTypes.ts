@@ -86,59 +86,51 @@ interface EventTypeConfig {
    *  false by the §6 rule (no visual evidence). */
   hasPhoto: boolean;
   confidenceModel: EventConfidenceModel;
-  /** §12 FL-1 — the event_types_v2 exposure gate. `true` marks a leaf whose GRID
-   *  TILE exists only on the expanded (flag-on) grouped grid. EVENT_TYPES itself
-   *  is NEVER flag-gated: it is the shared record vocabulary (labels, glyphs,
-   *  tint) and must be complete on every device that can READ a row — a
-   *  household's flag-off device renders a beta device's cough rows fully labeled
-   *  and rose-tinted, by design (§8/§12). Only capture is gated. */
-  v2Only: boolean;
 }
 
 export const EVENT_TYPES = {
-  meal:         { label: 'Meal',         icon: UtensilsCrossed,  hasSeverity: false, hasFood: true,  family: 'foodCare',       species: 'all', hasPhoto: false, confidenceModel: 'witnessed', v2Only: false },
-  vomit:        { label: 'Vomit',        icon: VomitGlyph,       hasSeverity: false, hasFood: false, family: 'digestion',      species: 'all', hasPhoto: true,  confidenceModel: 'artifact',  v2Only: false },
-  diarrhea:     { label: 'Loose stool',  icon: StoolLooseGlyph,  hasSeverity: false, hasFood: false, family: 'digestion',      species: 'all', hasPhoto: true,  confidenceModel: 'artifact',  v2Only: false },
-  stool_normal: { label: 'Stool',        icon: StoolFormedGlyph, hasSeverity: false, hasFood: false, family: 'digestion',      species: 'all', hasPhoto: true,  confidenceModel: 'artifact',  v2Only: false },
-  // W1 (taxonomy spec §13a, CUL-675) — the respiratory pair, dark behind
-  // event_types_v2 (v2Only gates the TILE, never the vocabulary). Both are
-  // witnessed-by-construction (D10): a cough is heard, never found later, so
-  // there is no Saw it / Found it and no photo zone (hasPhoto false). Rendered
-  // directly under Digestion per the confirmed round-3 W1 frame.
-  cough:        { label: 'Cough',        icon: AudioLines,       hasSeverity: false, hasFood: false, family: 'respiratory',    species: 'all', hasPhoto: false, confidenceModel: 'witnessed', v2Only: true  },
-  sneeze:       { label: 'Sneeze',       icon: Wind,             hasSeverity: false, hasFood: false, family: 'respiratory',    species: 'all', hasPhoto: false, confidenceModel: 'witnessed', v2Only: true  },
-  lethargy:     { label: 'Lethargy',     icon: BatteryLow,       hasSeverity: false, hasFood: false, family: 'energyBehavior', species: 'all', hasPhoto: true,  confidenceModel: 'artifact',  v2Only: false },
-  itch:         { label: 'Itch/Scratch', icon: PawPrint,         hasSeverity: false, hasFood: false, family: 'skinCoat',       species: 'all', hasPhoto: true,  confidenceModel: 'artifact',  v2Only: false },
+  meal:         { label: 'Meal',         icon: UtensilsCrossed,  hasSeverity: false, hasFood: true,  family: 'foodCare',       species: 'all', hasPhoto: false, confidenceModel: 'witnessed' },
+  vomit:        { label: 'Vomit',        icon: VomitGlyph,       hasSeverity: false, hasFood: false, family: 'digestion',      species: 'all', hasPhoto: true,  confidenceModel: 'artifact' },
+  diarrhea:     { label: 'Loose stool',  icon: StoolLooseGlyph,  hasSeverity: false, hasFood: false, family: 'digestion',      species: 'all', hasPhoto: true,  confidenceModel: 'artifact' },
+  stool_normal: { label: 'Stool',        icon: StoolFormedGlyph, hasSeverity: false, hasFood: false, family: 'digestion',      species: 'all', hasPhoto: true,  confidenceModel: 'artifact' },
+  // W1 (taxonomy spec §13a, CUL-675) — the respiratory pair, out of beta with the
+  // grid that carries them (CUL-962). Both are witnessed-by-construction (D10): a
+  // cough is heard, never found later, so there is no Saw it / Found it and no
+  // photo zone (hasPhoto false). Rendered directly under Digestion per the
+  // confirmed round-3 W1 frame.
+  cough:        { label: 'Cough',        icon: AudioLines,       hasSeverity: false, hasFood: false, family: 'respiratory',    species: 'all', hasPhoto: false, confidenceModel: 'witnessed' },
+  sneeze:       { label: 'Sneeze',       icon: Wind,             hasSeverity: false, hasFood: false, family: 'respiratory',    species: 'all', hasPhoto: false, confidenceModel: 'witnessed' },
+  lethargy:     { label: 'Lethargy',     icon: BatteryLow,       hasSeverity: false, hasFood: false, family: 'energyBehavior', species: 'all', hasPhoto: true,  confidenceModel: 'artifact' },
+  itch:         { label: 'Itch/Scratch', icon: PawPrint,         hasSeverity: false, hasFood: false, family: 'skinCoat',       species: 'all', hasPhoto: true,  confidenceModel: 'artifact' },
   // Medication (B-117 PR 3). Not a symptom (stays out of SYMPTOM_TYPES, so no
   // rose category tint) and not food — it routes to its own MedicationPicker
-  // step in app/log.tsx (like stool_normal's sub-step), never the food picker.
-  // `medication` is already a live events.event_type enum value (migration 001);
+  // step in app/log.tsx, never the food picker. `medication` is already a live events.event_type enum value (migration 001);
   // this only exposes it in the quick-log UI.
-  medication:   { label: 'Medication',   icon: Pill,             hasSeverity: false, hasFood: false, family: 'foodCare',       species: 'all', hasPhoto: true,  confidenceModel: 'witnessed', v2Only: false },
+  medication:   { label: 'Medication',   icon: Pill,             hasSeverity: false, hasFood: false, family: 'foodCare',       species: 'all', hasPhoto: true,  confidenceModel: 'witnessed' },
   // Weight (B-186). Not a symptom (stays out of SYMPTOM_TYPES — no rose tint) and
   // not food: it routes to its own numeric `weight` sub-step in app/log.tsx (like
-  // stool_normal/medication), and the measured value lands in the weight_checks
-  // child (migration 024). `weight_check` is already a live events.event_type enum
+  // medication), and the measured value lands in the weight_checks child
+  // (migration 024). `weight_check` is already a live events.event_type enum
   // value (migration 001); this exposes it in the quick-log UI for the first time.
-  weight_check: { label: 'Weight',        icon: Scale,           hasSeverity: false, hasFood: false, family: 'measurements',   species: 'all', hasPhoto: true,  confidenceModel: 'witnessed', v2Only: false },
-  other:        { label: 'Other',        icon: Ellipsis,         hasSeverity: false, hasFood: false, family: 'more',           species: 'all', hasPhoto: true,  confidenceModel: 'artifact',  v2Only: false },
+  weight_check: { label: 'Weight',        icon: Scale,           hasSeverity: false, hasFood: false, family: 'measurements',   species: 'all', hasPhoto: true,  confidenceModel: 'witnessed' },
+  other:        { label: 'Other',        icon: Ellipsis,         hasSeverity: false, hasFood: false, family: 'more',           species: 'all', hasPhoto: true,  confidenceModel: 'artifact' },
   // Noticed — the daily look (CUL-868 / N-2; docs/nyx-daily-look-requirements.md).
   // A `check_in` event is the PARENT of a `looks` row, exactly as `weight_check` is
   // the parent of a `weight_checks` row: the words, the outcome and the local day
-  // live on the child. It is here because reads are never flag-gated (§12 FL-1) —
-  // History, the day spine and the drill-in must be able to name a look on any
-  // build — and it is NOT a symptom (out of SYMPTOM_TYPES, its own 'look' tint
-  // category), so no count, denominator or engine lane can reach it (T-5).
+  // live on the child. It is here because History, the day spine and the drill-in
+  // must be able to name a look on any build — and it is NOT a symptom (out of
+  // SYMPTOM_TYPES, its own 'look' tint category), so no count, denominator or
+  // engine lane can reach it (T-5).
   //
-  // NO PICKER TILE, IN EITHER GRID (R6; E-6). There is no `hidden` field, and
-  // `v2Only` gates the tile the WRONG WAY (it hides from the flat grid and SHOWS on
-  // the expanded one), so both grids exclude this key explicitly and a test renders
-  // both and asserts no tile: the log flow's + menu is not the door to a look — the
-  // Home card is (N-4a), and a second door would ask the owner to choose one.
+  // NO PICKER TILE (R6; E-6). There is no `hidden` field on this shape, so the one
+  // grid's derivation (`expandedPickerGroups`, below) excludes this key by name, and
+  // a test renders the grid and asserts no tile: the log flow's + menu is not the
+  // door to a look — the Home card is (N-4a), and a second door would ask the owner
+  // to choose one.
   // hasPhoto false: a look is a perception, and there is nothing to photograph
   // (§5.2). confidenceModel 'witnessed' by construction — there is nothing to find
   // (taxonomy D10, spec §5.4).
-  check_in:     { label: 'Noticed',      icon: Eye,              hasSeverity: false, hasFood: false, family: 'energyBehavior', species: 'all', hasPhoto: false, confidenceModel: 'witnessed', v2Only: false },
+  check_in:     { label: 'Noticed',      icon: Eye,              hasSeverity: false, hasFood: false, family: 'energyBehavior', species: 'all', hasPhoto: false, confidenceModel: 'witnessed' },
 } as const satisfies Record<string, EventTypeConfig>;
 
 // Severity (1–5 scale) removed from MVP — photos carry the clinical weight.
@@ -203,8 +195,9 @@ export function hasPerIncidentRead(type: string | null | undefined): boolean {
 
 // ── The family groups (presentation, §3) ─────────────────────────────────────
 
-/** Family display order + owner-facing labels for the EXPANDED (event_types_v2)
- *  grid — the confirmed round-3 W1 frame, which is the W1-PR-2 design authority:
+/** Family display order + owner-facing labels for the event-type grid (the sheet
+ *  and `/log` render the same one) — the confirmed round-3 W1 frame, which is the
+ *  W1-PR-2 design authority:
  *  symptom families lead (B-745 R1), Breathing sits directly under Digestion, and
  *  Other closes the grid alone under More (never a sibling of Meal). The GI group
  *  is "Digestion" — never "Tummy" (P3); the respiratory family renders as
@@ -237,8 +230,8 @@ interface PickerEntryShape {
  *  within-family matrix rank, §6), filtered to the active pet's species.
  *
  *  Rules carried here so every wave inherits them:
- *  • `diarrhea` is never a tile — it is the split Stool tile's "Loose" segment
- *    (the same filter the flat grid applies).
+ *  • `diarrhea` is never a tile — it is the split Stool tile's "Loose" segment.
+ *  • `check_in` is never a tile — a look is made on the Home card (E-6).
  *  • Species: an entry renders when it is 'all' or matches the pet; a species
  *    outside dog/cat (or unknown) renders the 'all' set only (§3).
  *  • A family with no visible entries renders no header (a cat never sees a
@@ -253,9 +246,9 @@ export function expandedPickerGroups<K extends string>(
     const familyKeys = keys.filter((key) => {
       if (key === 'diarrhea') return false;
       // `check_in` is a look's parent, never a tile (E-6): the Home card is the only
-      // door to a look, and `v2Only` cannot express "no tile" — it would SHOW the key
-      // on exactly this grid. Excluded here rather than by a config field so the
-      // exclusion is one line in the derivation both grids' tests read.
+      // door to a look. The entry shape has no `hidden` field, so the exclusion is
+      // this one line in the one grid's derivation — the line the picker's
+      // no-Noticed-tile test goes red without.
       if (key === 'check_in') return false;
       const entry = entries[key];
       if (entry.family !== family.key) return false;
