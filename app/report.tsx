@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Alert, Switch, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -18,6 +18,7 @@ import { useBetaOptIn } from '../lib/betaFeatures';
 import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
 import { readVetLibrary } from '../lib/vetDocumentLibrary';
 import { VET_FILES_ENTRY_ENABLED } from '../lib/vetFilesEntry';
+import { CUSTOM_RANGE_SETTLE_MS, isCustomWindowEdit } from '../lib/reportRange';
 import {
   flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
   type VetReport, type VetReportParams,
@@ -146,11 +147,34 @@ export default function ReportScreen() {
     return { ...base, startDate: customStartKey, endDate: customEndKey };
   }, [petId, rangeMode, customStartKey, customEndKey, includeNotes]);
 
+  // CUL-371 — the params the report is actually BUILT from. An edit of the custom
+  // window already on screen (From, then To) settles for CUSTOM_RANGE_SETTLE_MS before
+  // it lands here, so the two taps cost one build instead of two; every other change
+  // (the first request, a pet change, Default ↔ Custom) lands at once. The decision is
+  // `isCustomWindowEdit` (lib/reportRange, pure, tested); this is only its timer. The
+  // ref mirrors the state so the effect can compare against what LANDED, not against
+  // an edit still waiting — a third tap inside the window compares to the built report.
+  const [settledParams, setSettledParams] = useState<VetReportParams | null>(requestParams);
+  const settledRef = useRef<VetReportParams | null>(requestParams);
+  useEffect(() => {
+    const land = () => {
+      settledRef.current = requestParams;
+      setSettledParams(requestParams);
+    };
+    if (!isCustomWindowEdit(settledRef.current, requestParams)) {
+      land();
+      return undefined;
+    }
+    const timer = setTimeout(land, CUSTOM_RANGE_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [requestParams]);
+
   // `token` guards against a stale response: if the pet or the selected range
   // changes while a generate call is in flight, the older response must not
   // overwrite the newer one.
   const load = useCallback(
     async (token?: { cancelled: boolean }) => {
+      const requestParams = settledParams;
       if (!requestParams) {
         setErrorMsg('Add a pet before generating a report.');
         setStatus('error');
@@ -184,11 +208,12 @@ export default function ReportScreen() {
         setStatus('error');
       }
     },
-    [requestParams],
+    [settledParams],
   );
 
-  // Regenerate whenever the pet or the chosen window changes. The report is a
-  // snapshot; changing the range re-generates against the latest data.
+  // Regenerate whenever the pet or the chosen window changes (once a custom-window
+  // edit has settled — above). The report is a snapshot; changing the range
+  // re-generates against the latest data.
   useEffect(() => {
     const token = { cancelled: false };
     load(token);
@@ -332,8 +357,9 @@ export default function ReportScreen() {
               calendar (the native iOS placement), so the dismiss control is visible
               the moment the tall picker opens instead of below the fold on a small
               screen. Android uses a self-dismissing modal, so no toolbar there. The
-              date already applies live (the report re-generates on change), so "Done"
-              just collapses the calendar to reveal the updated report. */}
+              date already applies live (the report re-generates once the edit
+              settles), so "Done" just collapses the calendar to reveal the updated
+              report. */}
           {Platform.OS === 'ios' && (showStartPicker || showEndPicker) && rangeMode === 'custom' && (
             <View style={styles.pickerToolbar}>
               <TouchableOpacity
