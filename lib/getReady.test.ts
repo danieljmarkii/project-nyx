@@ -20,7 +20,7 @@ import { medHistoryCutoffMs } from './rundown';
 import { visibleFindings } from './signalVisible';
 import type { AnalyticsMeal, IntakeDeclineFlag } from './analytics';
 import type { WorthRaisingInput } from './getReady';
-import type { CachedFinding, SignalFinding } from './signal';
+import type { CachedFinding, IntakeDeclineFinding, SignalFinding } from './signal';
 import type { Rundown, RundownTile } from './rundown';
 import type { MedicationCourse, MedicationCourseEnd } from './medicationHistory';
 import type { TrialStripModel } from './dietTrialCard';
@@ -172,8 +172,17 @@ function detect(meals: AnalyticsMeal[], nowMs: number): IntakeDeclineFlag[] {
  * (`generate-signal/phrasing.ts` `templateIntakeDecline`, mirrored — the app's
  * type-check does not reach `supabase/functions`). The merge never reads this text;
  * it is here so the verbatim assertions quote a real Signal sentence.
+ *
+ * NARROWER THAN THE TEMPLATE, and loudly so (C-36): it mirrors only the one-day span
+ * ("today"), because every fixture here is a cat and a cat's `daysBelowBaseline` is
+ * always 1. The template's "the last N days" branch is not mirrored; a fixture that
+ * reaches it throws here rather than going green over a sentence production never
+ * writes.
  */
 function signalFrom(flags: IntakeDeclineFlag[], pet = 'Mochi'): CachedFinding[] {
+  if (flags.some((f) => f.trigger === 'consecutive_low' && f.daysBelowBaseline > 1)) {
+    throw new Error('signalFrom mirrors only the one-day span; extend it before using a multi-day fixture');
+  }
   const serverOrder = [...flags].sort(
     (a, b) => (a.trigger === 'refused_normal_food' ? 0 : 1) - (b.trigger === 'refused_normal_food' ? 0 : 1),
   );
@@ -919,7 +928,14 @@ describe('one clock, everywhere in this module', () => {
 // Proven by mutation, each rule red on the case named for it: no dedupe, dedupe on
 // "the cache answered", dedupe on any intake decline, trigger-only identity, a
 // nameless refusal never matching, no case fold, an unknown decline matching, both
-// placement shortcuts, and a swapped engine order.
+// placement shortcuts, placement walking past another lane's row, a strict null check
+// on an older cache's missing food field, and a swapped engine order. The screen's
+// wiring (the declines dropped, or only the first passed) is proven red in
+// `app/rundown.getready.test.tsx`, and the loader's in `lib/dietTrialFacts.test.ts`.
+//
+// Two mutants survive and are EQUIVALENT in production, stated rather than tested
+// around: removing the label `.trim()` (both sides already trim), and removing the
+// `consecutive_low` early return (its food field is always null on both sides).
 //
 // STATED BLIND SPOT (C-36): the merge reads the Signal rows this list RETURNS, not
 // `input.findings`. Today the two are the same set of intake declines —
@@ -1150,7 +1166,12 @@ describe('CUL-950 — what counts as the SAME refused food', () => {
   const deviceSeeing = (chicken: { id: string; label: string | null }) =>
     intakeDeclineFacts(detect(refusedYesterday(chicken), DETECT_NOW), 'Mochi');
 
-  it('a device refusal with NO food name (its food cache lacks the item) matches the Signal’s refusal', () => {
+  it('a device refusal with NO food name matches the Signal’s refusal (defensive — unreachable today)', () => {
+    // NOT A SHAPE PRODUCTION CREATES TODAY, and labelled so (C-35/C-36). The device's
+    // meal read drops a meal whose food row is missing (`classifyRatedMeals` keeps
+    // `foodType === 'meal'` only), and the capture forms refuse a blank brand and
+    // product — so a device refusal never carries a null label now. This pins the
+    // panel's ruled answer for the day that read changes: one refusal, read once.
     const local = deviceSeeing({ id: CHICKEN.id, label: null });
     expect(local.map((l) => [l.trigger, l.refusedFoodLabel])).toEqual([['refused_normal_food', null]]);
     const { rows } = buildWorthRaising(input({ findings: findings(), intakeDecline: local }));
@@ -1175,6 +1196,71 @@ describe('CUL-950 — what counts as the SAME refused food', () => {
         intakeDecline: deviceSeeing({ id: CHICKEN.id, label: 'Purina Chicken Pâté Kitten' }),
       }),
     );
+    expect(rows.map((r) => r.source)).toEqual(['signal', 'intake']);
+  });
+});
+
+describe('CUL-950 — two more shapes the adversarial pass tried', () => {
+  it('seats a surviving device row INSIDE the intake run, above a later safety row', () => {
+    // The Signal leads with its refusal and follows with a chronicity card (the
+    // engine's safety order: intake before chronicity). The device's low day is not
+    // on the list, so it joins the intake run — after the refusal, and never below a
+    // row from another lane.
+    const yesterday = [
+      ...baseline(),
+      meal(1, 8, CHICKEN, 'refused'),
+      meal(1, 9, SALMON, 'all'),
+      meal(1, 10, SALMON, 'all'),
+    ];
+    const today = [...yesterday, meal(0, 8, SALMON, 'picked'), meal(0, 10, SALMON, 'picked')];
+    const chronicity = finding({
+      text: 'Mochi has been vomiting on and off for 5 weeks — worth a word with your vet.',
+      rank: 1,
+      finding: {
+        type: 'symptom_chronicity',
+        priorityClass: 'safety',
+        symptomType: 'vomit',
+        episodeCount: 9,
+        spanDays: 35,
+        activeWeeks: 5,
+        symptomDays: 9,
+        daysSinceLastEpisode: 3,
+        firstOnsetIso: new Date(DETECT_NOW - 35 * DAY).toISOString(),
+        tier: 'standard',
+        windowDays: 90,
+      } satisfies SignalFinding,
+    });
+    const findings = [...signalFrom(detect(yesterday, CACHE_NOW)), chronicity];
+    const { rows } = buildWorthRaising(
+      input({ findings, intakeDecline: intakeDeclineFacts(detect(today, DETECT_NOW), 'Mochi') }),
+    );
+    expect(rows.map((r) => r.text)).toEqual([
+      findings[0].text,
+      'Mochi has eaten less than usual today.',
+      chronicity.text,
+    ]);
+  });
+
+  it('reads a cached refusal from an older engine (no food field) as unnamed, not as a crash', () => {
+    // The engine writes `refusedFoodLabel` on every intake finding today; a cache from
+    // before that field would lack it. It must read as an unnamed Signal refusal — the
+    // named device refusal is kept beside it — never throw and take the page down.
+    const [cached] = signalFrom(
+      detect(
+        [...baseline(), meal(1, 8, CHICKEN, 'refused'), meal(1, 9, SALMON, 'all'), meal(1, 10, SALMON, 'all')],
+        CACHE_NOW,
+      ),
+    );
+    const { refusedFoodLabel: _dropped, ...olderShape } = cached.finding as IntakeDeclineFinding;
+    const legacy = { ...cached, finding: olderShape as unknown as SignalFinding };
+    const local = intakeDeclineFacts(
+      detect(
+        [...baseline(), meal(1, 8, CHICKEN, 'refused'), meal(1, 9, SALMON, 'all'), meal(1, 10, SALMON, 'all')],
+        DETECT_NOW,
+      ),
+      'Mochi',
+    );
+    const { rows } = buildWorthRaising(input({ findings: [legacy], intakeDecline: local }));
     expect(rows.map((r) => r.source)).toEqual(['signal', 'intake']);
   });
 });

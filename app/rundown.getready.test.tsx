@@ -83,6 +83,8 @@ const mockTrialGate: { holdNext: boolean; release: null | (() => void) } = {
   holdNext: false,
   release: null,
 };
+// What the loader resolves to — null (no trial running) unless a test sets it.
+const mockTrialInput: { current: unknown } = { current: null };
 jest.mock('../lib/dietTrialFacts', () => ({
   loadDietTrialFacts: jest.fn(async () => {
     if (mockTrialGate.holdNext) {
@@ -91,7 +93,7 @@ jest.mock('../lib/dietTrialFacts', () => ({
         mockTrialGate.release = resolve;
       });
     }
-    return null;
+    return mockTrialInput.current;
   }),
 }));
 
@@ -167,6 +169,7 @@ beforeEach(() => {
   mockAppointment.questions = null;
   mockTrialGate.holdNext = false;
   mockTrialGate.release = null;
+  mockTrialInput.current = null;
   for (const k of Object.keys(mockAppointments)) delete mockAppointments[k];
   (buildRundown as jest.Mock).mockResolvedValue(FIXTURE);
 });
@@ -469,5 +472,49 @@ describe('re-reading after the edit this screen launches (CUL-952)', () => {
     // rundown, which is the honest fallback rather than an error.
     expect(r.getByTestId('rundown-block')).toBeTruthy();
     delete mockAppointments['appt-1'];
+  });
+});
+
+// ── CUL-950 — the device's declines reach Worth raising, every one of them ─────────
+//
+// `buildWorthRaising` is proven in `lib/getReady.test.ts`; this is the WIRING, the one
+// line in this screen that carries the device's safety facts across. The adversarial
+// pass found it unguarded: `intakeDecline: []` in its place left every test green,
+// because the loader here was stubbed to "no trial" and nothing ever arrived to drop.
+describe('CUL-950 — the device’s intake declines reach the list', () => {
+  it('renders EVERY device decline, in the engine’s order, when the Signal cannot be read', async () => {
+    // The shape `loadDietTrialFacts` returns for a cat twelve days into a trial whose
+    // device holds two declines: the facts and the first one's sentence, from one read.
+    const low = 'Mochi has eaten less than usual today.';
+    const refusal = 'Mochi just turned down Purina Chicken Pâté, which Mochi normally eats.';
+    const started = new Date(Date.now() - 12 * 86_400_000);
+    mockTrialInput.current = {
+      trial: {
+        status: 'active',
+        startedAt: `${started.getFullYear()}-${String(started.getMonth() + 1).padStart(2, '0')}-${String(started.getDate()).padStart(2, '0')}`,
+        targetDurationDays: 42,
+        foodLabel: 'Hill’s z/d',
+      },
+      nowMs: Date.now(),
+      petName: 'Mochi',
+      species: 'cat',
+      intakeDeclineHeadline: low,
+      intakeDeclineFacts: [
+        { trigger: 'consecutive_low', refusedFoodLabel: null, headline: low },
+        { trigger: 'refused_normal_food', refusedFoodLabel: 'Purina Chicken Pâté', headline: refusal },
+      ],
+    };
+
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(low)).toBeTruthy());
+    expect(r.getByText(refusal)).toBeTruthy();
+    expect(r.getByText('Worth raising')).toBeTruthy();
+
+    // The engine's order: the refusal is read to the vet before the low day.
+    const order = [refusal, low].map((t) => JSON.stringify(r.toJSON()).indexOf(t));
+    expect(order[0]).toBeGreaterThan(-1);
+    expect(order[0]).toBeLessThan(order[1]);
   });
 });

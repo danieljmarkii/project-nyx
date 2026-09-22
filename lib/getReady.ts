@@ -390,10 +390,16 @@ function intakeRank(trigger: IntakeDeclineTrigger | null): number {
  *     older food and dropped the newer one.
  *   • A device refusal with NO food name matches any Signal refusal. The device
  *     cannot show it is a second food, and printing both would read one refusal to
- *     the vet as two ("Chicken Pâté" and "a food they usually finish").
+ *     the vet as two ("Chicken Pâté" and "a food they usually finish"). DEFENSIVE,
+ *     and unreachable today (adversarial pass): the device's meal read drops a meal
+ *     whose food row is missing (`classifyRatedMeals` keeps `foodType === 'meal'`
+ *     only), and the capture forms refuse a blank brand and product. It is the ruled
+ *     answer for the day that read changes, not a path anything takes now.
  *   • A Signal refusal with no food name matches only an unnamed device refusal, so
  *     a named device refusal is kept beside it. Rare (the server's food row was
- *     missing), and it errs toward stating the food.
+ *     missing), and it errs toward stating the food. `!= null`, not `!== null`: a
+ *     cache written by an older engine may lack the field entirely, and that must
+ *     read as unnamed rather than crash the page.
  *
  * Labels compare trimmed and case-folded only (Class A). The two sides build them
  * the same way from NOT NULL columns, so they differ only after a rename — and a
@@ -404,7 +410,7 @@ function sameDecline(local: LocalIntakeDecline, signal: IntakeDeclineFinding): b
   if (local.trigger === 'consecutive_low') return true;
   if (local.refusedFoodLabel === null) return true;
   return (
-    signal.refusedFoodLabel !== null &&
+    signal.refusedFoodLabel != null &&
     foldLabel(local.refusedFoodLabel) === foldLabel(signal.refusedFoodLabel)
   );
 }
