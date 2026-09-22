@@ -330,8 +330,8 @@ export function EventTypeSheet({ visible, onClose }: Props) {
             offering a discard dialog as the route to finishing a log.
 
             This is the shape every other note-bearing surface already uses, including
-            app/log.tsx's flag-off path for this exact field, so flag-on stops being
-            worse than flag-off (the class the D12 host gate exists to catch).
+            app/log.tsx for this exact field, so the sheet is never worse than the
+            full-screen log at the one moment the owner is typing.
 
             THE SHEET'S 80% CAP IS A PIXEL VALUE, NOT A PERCENTAGE, and that is
             load-bearing rather than tidy. A percentage resolves against the parent's

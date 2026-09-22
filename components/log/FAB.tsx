@@ -242,9 +242,9 @@ export function FAB() {
                 moment the pets land; no need to close and reopen the menu.
 
                 `More events` goes with the rest even though it could arguably stay:
-                flag-on it opens the sheet, which now says this for itself (a second
-                surface repeating the message), and flag-off it pushes bare /log —
-                the same dead end. The menu gets one answer. */}
+                it opens the sheet, which says this for itself, so keeping the row
+                would put a second surface one tap away only to repeat the message.
+                The menu gets one answer. */}
             {!activePet && (
               <EmptyState
                 // Shared with the log sheet (lib/logCopy) — one state, two capture
@@ -429,8 +429,8 @@ export function FAB() {
         onClose={() => setSwitcherVisible(false)}
       />
 
-      {/* B-745 PR 2 — the More-events destination as a bottom sheet (flag-on). Always
-          mounted with the FAB so it renders over whichever tab is active; inert until
+      {/* B-745 PR 2 — the More-events destination as a bottom sheet. Always mounted
+          with the FAB so it renders over whichever tab is active; inert until
           setEventSheetVisible(true). Owns its own pet switcher internally. */}
       <EventTypeSheet
         visible={eventSheetVisible}

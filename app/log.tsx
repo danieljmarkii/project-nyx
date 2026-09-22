@@ -1287,7 +1287,7 @@ export default function LogModal() {
     // leaf (cough/sneeze) drops the Saw it / Found it affordance entirely — it
     // gets the plain witnessed time row, whose "Change" covers late logging.
     // Every pre-W1 simple type keeps both affordances (their fields describe the
-    // shipped surfaces), so flag-off capture stays byte-identical (FL-1).
+    // surfaces they shipped with), so W1 changed nothing about how they log.
     const simpleConfig = selectedType ? EVENT_TYPES[selectedType] : null;
     const witnessedOnly = simpleConfig?.confidenceModel === 'witnessed';
     const offersPhoto = simpleConfig ? simpleConfig.hasPhoto : true;
