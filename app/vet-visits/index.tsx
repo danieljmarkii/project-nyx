@@ -371,6 +371,30 @@ export default function VetVisitsScreen() {
                   router.push(`/vet-visits/edit-appointment?appointment=${home.next?.id}`)
                 }
               />
+              {/* EVERY OTHER UPCOMING BOOKING (CUL-970). This section used to hold
+                  one row because the read kept one, so a second booking — a recheck
+                  in three weeks and the annual in six months — was on no screen at
+                  all. The lead keeps its card; the rest are plain rows under it, each
+                  with its own doors, because each is a booking the owner may want to
+                  take notes on or move. Same gates as the lead: *How did it go?* only
+                  on the day. */}
+              {home.later.map((appt) => (
+                <View key={appt.id} style={styles.laterRow}>
+                  <AppointmentBlock appointment={appt} style={styles.laterBlock} />
+                  <AppointmentActions
+                    petName={petName}
+                    onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
+                    onHowDidItGo={
+                      appt.isToday
+                        ? () => router.push(`/vet-visits/after?appointment=${appt.id}`)
+                        : undefined
+                    }
+                    onChange={() =>
+                      router.push(`/vet-visits/edit-appointment?appointment=${appt.id}`)
+                    }
+                  />
+                </View>
+              ))}
             </View>
           ) : null}
 
@@ -509,6 +533,19 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
     borderWidth: 1,
     borderColor: theme.colorBorder,
+  },
+  laterRow: {
+    // A plain row: no card ground, a rule above it. The doors sit on the section's
+    // edge exactly as the lead's do.
+    marginTop: theme.space2,
+    paddingTop: theme.space2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorder,
+  },
+  laterBlock: {
+    // The lead block's inner padding, without its ground, so the date stamps of every
+    // booking under *Next* sit in one column.
+    paddingHorizontal: 12,
   },
   list: {
     marginTop: 4,

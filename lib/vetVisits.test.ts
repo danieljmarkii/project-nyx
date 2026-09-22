@@ -304,14 +304,14 @@ describe('the Pet-tab card model', () => {
   const now = new Date(2026, 8, 14);
 
   it('is empty only when there is neither a visit nor a booking', () => {
-    expect(buildVetVisitsCardModel({ next: null, awaiting: [], visits: [] }, now).isEmpty).toBe(true);
+    expect(buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: [] }, now).isEmpty).toBe(true);
   });
 
   it('is NOT empty for a first-ever booking with no history', () => {
     // Day one of the feature, and the card is doing its job rather than showing a
     // designed absence over a real appointment.
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment(), now), awaiting: [], visits: [] },
+      { next: buildAppointmentView(appointment(), now), later: [], awaiting: [], visits: [] },
       now,
     );
     expect(model.isEmpty).toBe(false);
@@ -324,7 +324,7 @@ describe('the Pet-tab card model', () => {
     // context comes from the row it sits in — and so dropped the year inside a
     // sentence that has no such context.
     const rows = [buildVisitListRow(visit({ visited_at: '2024-07-30' }), NO_LINKS, now)];
-    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
+    const line = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).lastVisitLine;
     expect(line).toBe('Last visit Jul 30, 2024 — GI follow-up.');
   });
 
@@ -333,14 +333,14 @@ describe('the Pet-tab card model', () => {
       buildVisitListRow(visit(), { ...NO_LINKS, medicationNames: ['Cerenia'], trialCount: 1 }, now),
       buildVisitListRow(visit({ id: 'v2', visited_at: '2026-05-02' }), NO_LINKS, now),
     ];
-    const model = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now);
+    const model = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now);
     expect(model.countLabel).toBe('2 visits');
     expect(model.lastVisitLine).toBe('Last visit Jul 30 — GI follow-up. Plan: trial started, Cerenia.');
   });
 
   it('says "1 visit", not "1 visits"', () => {
     const rows = [buildVisitListRow(visit(), NO_LINKS, now)];
-    expect(buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).countLabel).toBe('1 visit');
+    expect(buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).countLabel).toBe('1 visit');
   });
 
   it('keeps a drug name cased, and never calls paperwork a plan', () => {
@@ -354,7 +354,7 @@ describe('the Pet-tab card model', () => {
         now,
       ),
     ];
-    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
+    const line = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).lastVisitLine;
     expect(line).toBe('Last visit Jul 30 — GI follow-up. Plan: trial started, Cerenia, recheck set.');
     expect(line).not.toMatch(/cerenia/);
     expect(line).not.toMatch(/document/);
@@ -362,7 +362,7 @@ describe('the Pet-tab card model', () => {
 
   it('omits the plan half rather than announcing that a visit left nothing behind', () => {
     const rows = [buildVisitListRow(visit(), NO_LINKS, now)];
-    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
+    const line = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).lastVisitLine;
     expect(line).toBe('Last visit Jul 30 — GI follow-up.');
     expect(line).not.toMatch(/no plan|nothing/i);
   });

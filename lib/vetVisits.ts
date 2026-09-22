@@ -434,6 +434,23 @@ export interface VetVisitsHome {
    */
   next: AppointmentView | null;
   /**
+   * Every OTHER live booking on or after today, soonest first — the rows after
+   * `next` (CUL-970).
+   *
+   * "What else is booked" is a different question from "what is next", and nothing
+   * answered it: this read took `upcoming[0]` and dropped the rest, so a recheck in
+   * three weeks and the annual in six months — exactly what a vet sends an owner home
+   * with — showed as one booking, and the second appeared on no screen at all until
+   * the first was logged or cancelled. Nothing stops the owner making it, either:
+   * `bookVetAppointment` is a bare INSERT.
+   *
+   * A slice of the same in-memory split, never a second query, so `next` and `later`
+   * cannot disagree about what "live" or "upcoming" means. The LIST renders these
+   * under *Next*; the Pet-tab card and Home's strip stay singular on purpose — both
+   * answer "what is next", and neither is a list.
+   */
+  later: AppointmentView[];
+  /**
    * Bookings whose DAY HAS PASSED with no visit logged against them, newest first.
    * "What is on file" — the list's question, which is a different one.
    *
@@ -453,7 +470,7 @@ export interface VetVisitsHome {
 }
 
 /** The zero value, so five call sites do not each restate the shape. */
-export const EMPTY_VET_VISITS_HOME: VetVisitsHome = { next: null, awaiting: [], visits: [] };
+export const EMPTY_VET_VISITS_HOME: VetVisitsHome = { next: null, later: [], awaiting: [], visits: [] };
 
 export function buildVisitListRow(
   visit: LocalVetVisit,
@@ -626,13 +643,20 @@ export async function readVetVisitsHome(petId: string, now: Date = new Date()): 
   // until the adversarial pass drove it.
   const dayStart = startOfLocalDay(now).getTime();
   const instantOf = (a: LocalVetAppointment) => new Date(a.scheduled_at).getTime();
-  const upcoming = appointments.filter((a) => instantOf(a) >= dayStart);
-  const past = appointments.filter((a) => instantOf(a) < dayStart);
+  // Re-sorted by INSTANT, not left in the SQL's text order (C-40). The two spellings
+  // of one instant agree on their first 19 characters, so the text order was only
+  // ever wrong at an exact-second tie — harmless while one row was shown and the
+  // rest discarded, and a visible reordering now that `later` renders them. A stable
+  // sort, so rows at the same instant keep the order the read gave them.
+  const sorted = [...appointments].sort((a, b) => instantOf(a) - instantOf(b));
+  const upcoming = sorted.filter((a) => instantOf(a) >= dayStart);
+  const past = sorted.filter((a) => instantOf(a) < dayStart);
 
   const links = await readVisitLinks(visits);
 
   return {
     next: upcoming[0] ? buildAppointmentView(upcoming[0], now) : null,
+    later: upcoming.slice(1).map((a) => buildAppointmentView(a, now)),
     // Newest first: the one that just passed is the one the owner is thinking about.
     awaiting: past.reverse().map((a) => buildAppointmentView(a, now)),
     visits: visits.map((v) => buildVisitListRow(v, links.get(v.id) ?? emptyLinks(v.next_visit_at), now)),

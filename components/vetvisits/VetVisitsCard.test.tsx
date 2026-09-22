@@ -57,7 +57,7 @@ function renderCard(model: ReturnType<typeof buildVetVisitsCardModel>, handlers 
 }
 
 describe('the zero state', () => {
-  const empty = buildVetVisitsCardModel({ next: null, awaiting: [], visits: [] }, NOW);
+  const empty = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: [] }, NOW);
 
   it('renders E2\'s two doors in place of the appointment and the plan line', () => {
     const props = renderCard(empty);
@@ -81,6 +81,7 @@ describe('the populated card', () => {
     const model = buildVetVisitsCardModel(
       {
         next: buildAppointmentView(appointment, NOW),
+        later: [],
         awaiting: [],
         visits: [buildVisitListRow(visit, { ...NO_LINKS, medicationNames: ['Cerenia'] }, NOW)],
       },
@@ -101,7 +102,7 @@ describe('the populated card', () => {
     // either go nowhere or be `disabled`, which is an accessibility claim that a
     // control exists and is unavailable (C-7).
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment, NOW), awaiting: [], visits: [] },
+      { next: buildAppointmentView(appointment, NOW), later: [], awaiting: [], visits: [] },
       NOW,
     );
     renderCard(model);
@@ -111,7 +112,7 @@ describe('the populated card', () => {
 
   it('shows a first booking without the zero state, and with no count or plan line', () => {
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment, NOW), awaiting: [], visits: [] },
+      { next: buildAppointmentView(appointment, NOW), later: [], awaiting: [], visits: [] },
       NOW,
     );
     renderCard(model);
@@ -125,7 +126,7 @@ describe('the populated card', () => {
 
   it('reads the appointment as one sentence rather than four fragments', () => {
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment, NOW), awaiting: [], visits: [] },
+      { next: buildAppointmentView(appointment, NOW), later: [], awaiting: [], visits: [] },
       NOW,
     );
     renderCard(model);
@@ -137,7 +138,7 @@ describe('the populated card', () => {
 
 describe('the notes door (CUL-966)', () => {
   const booked = buildVetVisitsCardModel(
-    { next: buildAppointmentView(appointment, NOW), awaiting: [], visits: [] },
+    { next: buildAppointmentView(appointment, NOW), later: [], awaiting: [], visits: [] },
     NOW,
   );
 
@@ -158,7 +159,7 @@ describe('the notes door (CUL-966)', () => {
 
   it('renders no notes door when there is no next appointment', () => {
     const pastOnly = buildVetVisitsCardModel(
-      { next: null, awaiting: [], visits: [buildVisitListRow(visit, NO_LINKS, NOW)] },
+      { next: null, later: [], awaiting: [], visits: [buildVisitListRow(visit, NO_LINKS, NOW)] },
       NOW,
     );
     renderCard(pastOnly);
