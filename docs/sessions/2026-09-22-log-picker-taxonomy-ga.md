@@ -1,6 +1,6 @@
 # Out of beta, step 1: the log sheet and more event types for every account
 
-**Date:** 2026-09-22 · **Issues:** CUL-961 (the flip, no PR), CUL-962 (the removal) · shipped via #__PR__
+**Date:** 2026-09-22 · **Issues:** CUL-961 (the flip, no PR), CUL-962 (the removal) · shipped via #891
 **Project:** Out of beta — the log sheet, more event types, vet visits (P-CUL-16), milestone 1
 
 ---
@@ -68,13 +68,21 @@ named, plus the picker's snapshot.
 ## Verification
 
 - `tsc --noEmit` clean.
-- Full `jest --ci`: __JEST__.
+- Full `jest --ci`: 441 suites, 9666 tests, green. The ten touched suites are also green under
+  `TZ=Pacific/Kiritimati` (247 tests), the CI job's UTC+14 case.
 - The closing grep (`log_picker_v2|event_types_v2|v2Only|pickerV2|taxonomyV2|PICKER_GROUPS`,
   `.ts`/`.tsx`, outside `supabase/migrations/`) returns nothing.
 - No guard file, nothing under `supabase/`, and not `app/edit-event.tsx` (#846) in the
   diff. `symptomLists`, `completionCard`, `haptics`, `geistRollout`, `recordPetName`,
   `homeWrites` and `edgeFunctionDeploy` are green and untouched.
-- `code-reviewer`: __REVIEW__.
+- `code-reviewer`: **ship-ready, no correctness findings.** It independently re-diffed the
+  snapshot (byte-identical) and walked every re-pointed test (none vacuous). It found four
+  comments still describing flag paths this PR deleted: the FL-1 note on `/log`'s simple
+  step, the FAB's no-pet rationale for More events and its sheet mount, and the sheet's
+  CUL-755 note measured against a flag-off path and "the D12 host gate". All four were
+  reworded in `5d3edaa`. One residual is left as is: `fullWidthRegularKeys` keeps a
+  split-tile branch that no caller can reach (`expandedFullWidthKeys` short-circuits split
+  groups first). It is pre-existing and harmless, not worth churn in a deletion PR.
 - Adversarial review: **N/A.** No detection, threshold or escalation logic changes; gating
   removed around shipped, tested capture code.
 
@@ -104,6 +112,16 @@ T&S N/A (no new data surface; the wipe list is unchanged).
 JS only: no native module, no `app.json` / plugin change. It reaches the phone through the
 **GA build**, which is project step 7 (A-Native, carrying steps 1, 5 and 6), and CUL-962
 must be in the 1.2.0 cut (CUL-559). Runtime B (Metro + tunnel) is the per-push check.
+
+## Board and docs
+
+- `STATUS.md`: two lines. The Event Taxonomy row no longer says W1's GA queues behind the
+  log-picker host gate, and the *Out of beta* project gets its row. It was live since
+  2026-09-22 and missing from the table.
+- CUL-962: description patched with the four corrections; plan, outcome and the #891
+  attachment posted. CUL-961: before/after posted, Done.
+- The stale "blocked by CUL-663" relations on CUL-961 / CUL-962 were left in place. The PM
+  was told and didn't ask for them to be removed.
 
 ## What's next
 
