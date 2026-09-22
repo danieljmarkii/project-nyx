@@ -19,6 +19,8 @@ const mockBook = jest.fn(async (_input: BookArgs) => 'new-appointment');
 const mockLog = jest.fn(async (_input: LogArgs) => 'new-visit');
 const mockCancel = jest.fn(async (_id: string) => undefined);
 let mockHome: VetVisitsHome = { next: null, later: [], awaiting: [], visits: [] };
+// The prep columns a remove confirm reads off the row at press time (CUL-987 D2).
+let mockDetail: { questions: string | null; notes_draft: string | null } | null = null;
 
 jest.mock('expo-router', () => ({
   Redirect: () => null,
@@ -66,6 +68,7 @@ jest.mock('../../lib/vetVisits', () => {
     bookVetAppointment: (input: BookArgs) => mockBook(input),
     logVetVisit: (input: LogArgs) => mockLog(input),
     cancelVetAppointment: (id: string) => mockCancel(id),
+    readAppointmentById: jest.fn(async () => mockDetail),
   };
 });
 
@@ -89,6 +92,7 @@ beforeEach(() => {
   mockLog.mockImplementation(async () => 'new-visit');
   mockParams = {};
   mockHome = { next: null, later: [], awaiting: [], visits: [] };
+  mockDetail = null;
   mockStoreState = { pets: [PET_A, PET_B], activePet: PET_A };
 });
 
@@ -318,7 +322,8 @@ describe('changing a booked appointment (CUL-952)', () => {
 
     fireEvent.press(await screen.findByText('It didn’t happen'));
 
-    expect(spy).toHaveBeenCalled();
+    // Awaited: the confirm asks the record for the row's prep first (CUL-987 D2).
+    await waitFor(() => expect(spy).toHaveBeenCalled());
     const [title, body] = spy.mock.calls[0];
     expect(title).toBe('Remove this appointment?');
     // The day has passed, so the copy must not call it "upcoming".
@@ -587,5 +592,65 @@ describe('every upcoming booking renders under Next (CUL-970)', () => {
     render(<VetVisitsScreen />);
     await screen.findByText('Riverside Animal Hospital · annual exam');
     expect(screen.queryByText('How did it go?')).toBeNull();
+  });
+});
+
+// ── CUL-987 — the block is a door, and the remove confirm names the prep ─────────
+
+describe('the appointment block opens Get ready, in every bucket (CUL-987 D1)', () => {
+  const { buildAppointmentView } = jest.requireActual('../../lib/vetVisits');
+  function booking(id: string, days: number, reason: string) {
+    return buildAppointmentView({
+      id,
+      pet_id: 'pet-a',
+      scheduled_at: instantDaysOut(days),
+      clinic_name: 'Riverside Animal Hospital',
+      vet_name: null,
+      reason,
+      vet_visit_id: null,
+      cancelled_at: null,
+      deleted_at: null,
+    });
+  }
+
+  it.each([
+    ['the lead under Next', 'recheck', 'Riverside Animal Hospital · recheck'],
+    ['a later booking', 'annual', 'Riverside Animal Hospital · annual exam'],
+    ['a passed day waiting on an answer', 'passed', 'Riverside Animal Hospital · dental'],
+  ])('%s', async (_label, id, where) => {
+    const { router } = require('expo-router');
+    mockHome = {
+      next: booking('recheck', 21, 'recheck'),
+      later: [booking('annual', 180, 'annual exam')],
+      awaiting: [booking('passed', -7, 'dental')],
+      visits: [],
+    };
+    render(<VetVisitsScreen />);
+    await screen.findByText(where);
+
+    fireEvent.press(screen.getByLabelText(new RegExp(`${where}$`)));
+    expect(router.push).toHaveBeenLastCalledWith({ pathname: '/rundown', params: { appointmentId: id } });
+  });
+});
+
+describe('the list’s remove confirm names what goes with the row (CUL-987 D2)', () => {
+  it('names the notes typed for this visit', async () => {
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockHome = {
+      next: null,
+      later: [],
+      awaiting: [{
+        id: 'a-past', petId: 'pet-a', scheduledAt: instantDaysOut(-7), stamp: { day: '15', month: 'Sep' },
+        when: 'Tue, Sep 15', day: 'Tue, Sep 15', where: 'Riverside Animal Hospital', isToday: false,
+      }],
+      visits: [],
+    };
+    mockDetail = { questions: null, notes_draft: 'Ask about the limp' };
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('It didn’t happen'));
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][1]).toMatch(/Your notes for this visit go with it\. Nothing else in the record changes\.$/);
+    spy.mockRestore();
   });
 });

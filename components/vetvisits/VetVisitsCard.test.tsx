@@ -48,6 +48,7 @@ function renderCard(model: ReturnType<typeof buildVetVisitsCardModel>, handlers 
   const props = {
     onOpen: jest.fn(),
     onTakeNotes: jest.fn(),
+    onGetReady: jest.fn(),
     onBook: jest.fn(),
     onLogPast: jest.fn(),
     ...handlers,
@@ -164,5 +165,20 @@ describe('the notes door (CUL-966)', () => {
     );
     renderCard(pastOnly);
     expect(screen.queryByText('Take notes')).toBeNull();
+  });
+});
+
+// CUL-987 D1 — the block on the Pet tab is the door to Get ready.
+describe('the appointment block opens Get ready (CUL-987 D1)', () => {
+  it('hands the NEXT appointment’s id to Get ready', () => {
+    const model = buildVetVisitsCardModel(
+      { next: buildAppointmentView(appointment, NOW), later: [], awaiting: [], visits: [] },
+      NOW,
+    );
+    const props = renderCard(model);
+    fireEvent.press(screen.getByLabelText(/Riverside/));
+    expect(props.onGetReady).toHaveBeenCalledWith(appointment.id);
+    // Not the notes door, which is its own control under the block.
+    expect(props.onTakeNotes).not.toHaveBeenCalled();
   });
 });

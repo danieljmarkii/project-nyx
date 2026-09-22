@@ -20,9 +20,11 @@ import {
   cancelVetAppointment,
   EMPTY_VET_VISITS_HOME,
   logVetVisit,
+  readAppointmentById,
   readVetVisitsHome,
   readVisitPrefill,
   removeAppointmentCopy,
+  type AppointmentDetail,
   type AppointmentView,
   type VetVisitsHome,
   type VisitPrefill,
@@ -240,8 +242,23 @@ export default function VetVisitsScreen() {
    * strip and the edit screen; the `Alert` is here because this namespace is where
    * the screen lives.
    */
-  function confirmDidntHappen(appt: AppointmentView) {
-    const copy = removeAppointmentCopy(appt.scheduledAt, petName);
+  async function confirmDidntHappen(appt: AppointmentView) {
+    // The prep is read at PRESS TIME, from the record (CUL-987 D2): the list's view
+    // never selects the questions or the draft, and the confirm has to name them when
+    // they are about to go with the row. A failed read is a failed remove — never a
+    // confirm missing the sentence that makes "Nothing else changes" true.
+    let detail: AppointmentDetail | null;
+    try {
+      detail = await readAppointmentById(appt.id);
+    } catch (err) {
+      console.warn('[vet-visits] prep read failed:', err);
+      Alert.alert('Couldn\u2019t remove it', 'The appointment is still here \u2014 try again.');
+      return;
+    }
+    const copy = removeAppointmentCopy(appt.scheduledAt, petName, {
+      questions: detail?.questions ?? null,
+      notesDraft: detail?.notes_draft ?? null,
+    });
     Alert.alert(copy.title, copy.body, [
       { text: 'Keep it', style: 'cancel' },
       {
@@ -261,6 +278,12 @@ export default function VetVisitsScreen() {
         },
       },
     ]);
+  }
+
+  /** Get ready for this booking — the block's door (CUL-987 D1). The appointment's
+   *  own id rides the route, so Get ready scopes itself to ITS pet (AC 11). */
+  function openGetReady(appointmentId: string) {
+    router.push({ pathname: '/rundown', params: { appointmentId } });
   }
 
   // A dark feature is dark on every door, including a deep link. No chrome, no
@@ -341,7 +364,12 @@ export default function VetVisitsScreen() {
           {home.next ? (
             <View style={styles.section}>
               <SectionLabel label="Next" header />
-              <AppointmentBlock appointment={home.next} style={styles.nextBlock} />
+              <AppointmentBlock
+                appointment={home.next}
+                style={styles.nextBlock}
+                // CUL-987 D1: the block opens Get ready wherever it renders.
+                onPress={() => openGetReady(home.next!.id)}
+              />
               {/* THE GATE SPLITS (CUL-966). It used to withhold BOTH doors until the
                   appointment's own day, for a reason that only ever described one of
                   them: *How did it go?* on a recheck booked six weeks out is a
@@ -380,7 +408,11 @@ export default function VetVisitsScreen() {
                   on the day. */}
               {home.later.map((appt) => (
                 <View key={appt.id} style={styles.laterRow}>
-                  <AppointmentBlock appointment={appt} style={styles.laterBlock} />
+                  <AppointmentBlock
+                    appointment={appt}
+                    style={styles.laterBlock}
+                    onPress={() => openGetReady(appt.id)}
+                  />
                   <AppointmentActions
                     petName={petName}
                     onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
@@ -408,7 +440,13 @@ export default function VetVisitsScreen() {
               <SectionLabel label="Waiting on you" header />
               {home.awaiting.map((appt) => (
                 <View key={appt.id}>
-                  <AppointmentBlock appointment={appt} style={styles.nextBlock} />
+                  <AppointmentBlock
+                    appointment={appt}
+                    style={styles.nextBlock}
+                    // A passed day too (the PM's "all faces"): Get ready's ⋯ holds
+                    // *Change*, beside the one on this row.
+                    onPress={() => openGetReady(appt.id)}
+                  />
                   {/* Notes are here too (CUL-966: no gate means no gate). The first
                       draft withheld them on the reasoning that the day has passed and
                       this would offer "a room they have left" — but the owner reading
@@ -419,7 +457,7 @@ export default function VetVisitsScreen() {
                     petName={petName}
                     onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
                     onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${appt.id}`)}
-                    onDidntHappen={() => confirmDidntHappen(appt)}
+                    onDidntHappen={() => void confirmDidntHappen(appt)}
                     // *Change* is here too, not only under *Next*, because the
                     // commonest reason a booking lands in this bucket is that the
                     // visit MOVED and nobody told the app. Without it the only

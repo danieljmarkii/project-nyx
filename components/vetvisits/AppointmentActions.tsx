@@ -49,12 +49,11 @@ interface Props {
 // placed inside an `accessible` container is hidden from assistive tech entirely.
 // The block states; this acts.
 //
-// *Get ready* is VV-5's and is LEFT OUT rather than rendered inert: `disabled` is an
-// accessibility claim that a control exists and is unavailable (C-7), which would be
-// a lie about one that has not been built. The doors arrive with their destinations —
-// the rule `AppointmentBlock` already states, and the rule CUL-952 was: *Change the
-// appointment* shipped on Get ready's ⋯ with no destination, so it pushed the visits
-// list, where the only control is *Add*.
+// *Get ready* is not a door in this row: it is the appointment BLOCK above it, which
+// opens Get ready wherever it renders (CUL-987 D1) — a fourth labelled door here would
+// be a second way to the same place. The doors arrive with their destinations, the
+// rule CUL-952 was: *Change the appointment* shipped on Get ready's ⋯ with no
+// destination, so it pushed the visits list, where the only control is *Add*.
 //
 // THE ORDER IS FIXED HERE, not per caller, and it is chosen so one order reads
 // correctly in both buckets. Under *Next* the row is `Take notes · Change` (plus the

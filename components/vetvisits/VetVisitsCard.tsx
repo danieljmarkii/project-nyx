@@ -17,6 +17,8 @@ interface Props {
    * this door at booking distance (CUL-966) — see the header note.
    */
   onTakeNotes: (appointmentId: string) => void;
+  /** Opens Get ready for `model.next` — the block's own door (CUL-987 D1). */
+  onGetReady: (appointmentId: string) => void;
   /** E2's two doors, rendered here only at zero visits and zero bookings. */
   onBook: () => void;
   onLogPast: () => void;
@@ -46,7 +48,9 @@ interface Props {
 // the target size and the a11y wording match the list exactly — and it takes only
 // `onAtTheVet`, because *How did it go?* is gated and does not belong on a card
 // whose job is "what is next".
-export function VetVisitsCard({ model, petName, onOpen, onTakeNotes, onBook, onLogPast, style }: Props) {
+export function VetVisitsCard({
+  model, petName, onOpen, onTakeNotes, onGetReady, onBook, onLogPast, style,
+}: Props) {
   if (model.isEmpty) {
     return (
       <Card style={style}>
@@ -74,7 +78,14 @@ export function VetVisitsCard({ model, petName, onOpen, onTakeNotes, onBook, onL
 
       {model.next ? (
         <>
-          <AppointmentBlock appointment={model.next} variant="inset" style={styles.appointment} />
+          <AppointmentBlock
+            appointment={model.next}
+            variant="inset"
+            style={styles.appointment}
+            // At booking distance this is the only door to Get ready: Home's strip
+            // reaches five days, and Get ready's ⋯ is where the booking is changed.
+            onPress={() => onGetReady(model.next!.id)}
+          />
           {/* Directly under the block it is about, so "this visit" needs no label to
               disambiguate it from the last-visit line below. A touchable cannot live
               INSIDE the block — that is one `accessible` node on purpose, and a

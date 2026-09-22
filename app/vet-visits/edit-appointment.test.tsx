@@ -67,13 +67,18 @@ jest.mock('../../lib/vetVisits', () => {
       if (mockReadThrows) throw new Error('db down');
       return mockRow && mockRow.vet_visit_id === null ? mockRow : null;
     }),
+    // The remove confirm's press-time prep read (CUL-987 D2) — the looser reader,
+    // which filters deleted and cancelled rows only.
+    readAppointmentById: jest.fn(async () => mockRow),
     updateAppointmentDetails: (id: string, patch: unknown) => mockUpdate(id, patch),
     cancelVetAppointment: (id: string) => mockCancel(id),
   };
 });
 
+// Mutable so D3's multi-pet line can be driven both ways (CUL-987).
+let mockPets: Array<{ id: string; name: string }> = [{ id: 'pet-a', name: 'Nyx' }];
 jest.mock('../../store/petStore', () => ({
-  usePetStore: (sel: (s: unknown) => unknown) => sel({ pets: [{ id: 'pet-a', name: 'Nyx' }] }),
+  usePetStore: (sel: (s: unknown) => unknown) => sel({ pets: mockPets }),
   resolveRecordPetName: (pets: Array<{ id: string; name: string }>, id: string | null) =>
     (id ? pets.find((p) => p.id === id)?.name : null) || 'your pet',
 }));
@@ -110,6 +115,7 @@ beforeEach(() => {
   mockCancel.mockImplementation(async () => undefined);
   mockReadThrows = false;
   mockRow = row();
+  mockPets = [{ id: 'pet-a', name: 'Nyx' }];
 });
 
 describe('seeding from the record', () => {
@@ -264,6 +270,8 @@ describe('removing', () => {
     await screen.findByText('Change this appointment');
     fireEvent.press(screen.getByText('Remove this appointment'));
 
+    // Awaited: the confirm re-reads the row's prep first (CUL-987 D2).
+    await waitFor(() => expect(spy).toHaveBeenCalled());
     const [title, body] = spy.mock.calls[0];
     expect(title).toBe('Remove this appointment?');
     // Ahead of its day, so "upcoming" is the true word here.
@@ -319,5 +327,48 @@ describe('the three states below "has a row"', () => {
     // C-12: a read that has not answered is never an empty record, and a failed one
     // must never be dressed as "no longer on the record".
     expect(screen.queryByText('This appointment is no longer on the record.')).toBeNull();
+  });
+});
+
+// ── CUL-987 — the remove confirm names the prep; the edit names its one pet ──────
+
+describe('the remove confirm names what goes with the row (CUL-987 D2)', () => {
+  it('names the saved questions, BEFORE "Nothing else in the record changes"', async () => {
+    mockRow = row({
+      questions: JSON.stringify([
+        { id: 'q1', text: 'Weight?', source: 'owner' },
+        { id: 'q2', text: 'Food?', source: 'owner' },
+        { id: 'q3', text: 'Recheck?', source: 'owner' },
+      ]),
+    });
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    render(<EditAppointmentScreen />);
+    await screen.findByText('Change this appointment');
+    fireEvent.press(screen.getByText('Remove this appointment'));
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][1]).toMatch(/Your 3 questions for this visit go with it\. Nothing else in the record changes\.$/);
+    spy.mockRestore();
+  });
+
+  it('still tells the SAVE that the prep stays — the two fates on one screen', async () => {
+    mockRow = row({ notes_draft: 'Ask about the limp' });
+    render(<EditAppointmentScreen />);
+    expect(await screen.findByText('Your notes for this visit stay with it.')).toBeTruthy();
+  });
+});
+
+describe('the multi-pet scope line (CUL-987 D3)', () => {
+  it('says it moves this pet’s appointment only, in a two-pet account', async () => {
+    mockPets = [{ id: 'pet-a', name: 'Nyx' }, { id: 'pet-b', name: 'Moss' }];
+    render(<EditAppointmentScreen />);
+    // The RECORD's pet (pet-a), never the other one.
+    expect(await screen.findByText('This changes Nyx’s appointment only.')).toBeTruthy();
+  });
+
+  it('says nothing in a one-pet account', async () => {
+    render(<EditAppointmentScreen />);
+    await screen.findByText('Change this appointment');
+    expect(screen.queryByText(/appointment only/)).toBeNull();
   });
 });
