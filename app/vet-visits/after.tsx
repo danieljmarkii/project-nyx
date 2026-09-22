@@ -418,9 +418,9 @@ export default function AfterVisitScreen() {
       void applyTrialVerdict(verdict);
       return;
     }
-    // `endActiveTrial` stamps its own local today and takes no date, so this is the
-    // same day it will write rather than one handed to it — the two agree unless the
-    // dialog is held open across midnight.
+    // ONE day value, named in the confirm AND handed to `endActiveTrial` — the
+    // course path's rule, for the same reason: computed twice, the day on screen and
+    // the day written can straddle midnight while the dialog is open.
     const endOn = localDateKey(new Date());
     confirmEnd(
       endTrialCopy({
@@ -432,7 +432,7 @@ export default function AfterVisitScreen() {
     );
   }
 
-  async function applyTrialVerdict(verdict: TrialVerdict, endOn?: string) {
+  async function applyTrialVerdict(verdict: TrialVerdict, endOn: string | null = null) {
     if (busyRow || !trial) return;
     setBusyRow('trial');
     try {
@@ -459,6 +459,9 @@ export default function AfterVisitScreen() {
           // trial that has reached its target the honest token is `completed`, which
           // is also the only one `endActiveTrial` will attach an outcome to.
           reason: complete ? 'completed' : 'vet_advised',
+          // The day the confirm showed. Only *Ended* reaches this branch, and only
+          // through the confirm, so it is always present here.
+          endedOn: endOn ?? undefined,
         });
         // The row stays, saying the trial ended — and it does NOT turn into *Start a
         // trial*, which is what the null trial read below would otherwise render: the

@@ -144,11 +144,14 @@ export function endTrialCopy(args: {
   const food = args.foodLabel?.trim();
   return {
     title: food ? `End the ${food} trial?` : 'End the diet trial?',
-    // The timeline only, NOT the report. An ENDED-EARLY trial is written `abandoned`
-    // with `completed_at` NULL, and the deployed report still keys off
-    // `completed_at` (B-455), so a sentence promising how the report shows it would
-    // be a claim the reader does not yet honour.
-    body: `${args.petName}’s trial ends today, ${args.endLabel}. Everything logged during it stays on the timeline.`,
+    // The same claim the course confirm makes about its doses, and for the same
+    // reason it holds: it is about the ENTRIES logged during the trial — events, which
+    // ending the trial does not touch — not about how the report renders the trial
+    // itself (that reads `ended_at` first, `trialEndValue` in generate-report). A
+    // first draft said "the timeline" alone, and beside the course confirm's "and in
+    // vet reports" the gap read as "ending the trial takes it out of the report"
+    // (pm-feature-review, Jordan).
+    body: `${args.petName}’s trial ends today, ${args.endLabel}. Everything logged during it stays on the timeline and in vet reports.`,
     keepLabel: 'Keep it',
     confirmLabel: 'End it',
   };

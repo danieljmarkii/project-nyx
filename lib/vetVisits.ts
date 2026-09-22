@@ -1385,10 +1385,13 @@ export function appointmentPrepNote(
  * owner moved Pip's recheck and Moss's Home kept leading with the old Tuesday. The
  * line names the pet the change reaches — the record's, never the active one.
  *
- * Only where it can be true AND can matter: a single-pet account has no other
- * appointment it could be mistaken for, and a sentence about "only" with nothing
- * else in the house reads as a warning about nothing. `petCount` is the store's
- * `pets` — the non-archived set, the one "Also for" offers from.
+ * Keyed on the ACCOUNT, as ruled (D3 (a): "in accounts with more than one pet, and
+ * nowhere else"): a single-pet account has no other pet's appointment it could be
+ * mistaken for, so the line would warn about nothing. It still renders on a booking
+ * that was never paired — there is no link between paired rows to ask (spec §10
+ * parks one), so the account is the narrowest honest scope, not a sign that this
+ * booking has a twin. `petCount` is the store's `pets` — the non-archived set, the
+ * one "Also for" offers from.
  */
 export function appointmentEditScopeNote(petName: string, petCount: number): string | null {
   return petCount > 1 ? `This changes ${petName}\u2019s appointment only.` : null;

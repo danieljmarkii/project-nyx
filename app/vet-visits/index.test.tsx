@@ -582,6 +582,22 @@ describe('every upcoming booking renders under Next (CUL-970)', () => {
     expect(router.push).toHaveBeenLastCalledWith('/vet-visits/edit-appointment?appointment=annual');
   });
 
+  it('gives each booking’s doors a label a screen reader can tell apart (the date)', async () => {
+    // With more than one booking under Next, "Take notes for Nyx’s visit" read out
+    // identically per row (pm-feature-review) — the label now carries the booking's
+    // own `when`, the same string the block beside it shows.
+    const lead = booking('recheck', 21, 'recheck');
+    const later = booking('annual', 180, 'annual exam');
+    mockHome = { next: lead, later: [later], awaiting: [], visits: [] };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Riverside Animal Hospital · annual exam');
+
+    expect(screen.getByLabelText(`Take notes for Nyx’s visit, ${lead.when}`)).toBeTruthy();
+    expect(screen.getByLabelText(`Take notes for Nyx’s visit, ${later.when}`)).toBeTruthy();
+    expect(screen.getByLabelText(`Change Nyx’s appointment, ${later.when}`)).toBeTruthy();
+    expect(lead.when).not.toBe(later.when);
+  });
+
   it('keeps *How did it go?* off a later booking that is not today', async () => {
     mockHome = {
       next: booking('recheck', 21, 'recheck'),

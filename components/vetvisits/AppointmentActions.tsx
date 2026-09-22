@@ -28,6 +28,13 @@ interface Props {
   onChange?: () => void;
   /** Named in both labels, so a multi-pet list never leaves "which pet" to position. */
   petName: string;
+  /**
+   * The appointment's own `when` ('Wed, Oct 28'), appended to every label (CUL-970).
+   * Once *Next* holds more than one booking, "Take notes for Pip's visit" is read out
+   * identically per row, and a screen-reader user cannot tell which booking a door is
+   * for. Optional only for a caller that renders one booking alone.
+   */
+  when?: string;
 }
 
 // The two doors under a booked appointment (CUL-902 VV-4; re-gated CUL-966).
@@ -67,7 +74,9 @@ export function AppointmentActions({
   onDidntHappen,
   onChange,
   petName,
+  when,
 }: Props) {
+  const which = when ? `, ${when}` : '';
   return (
     <View style={styles.row}>
       {onAtTheVet ? (
@@ -76,7 +85,7 @@ export function AppointmentActions({
           onPress={onAtTheVet}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Take notes for ${petName}’s visit`}
+          accessibilityLabel={`Take notes for ${petName}’s visit${which}`}
         >
           <ThemedText style={styles.actionLabel}>Take notes</ThemedText>
         </TouchableOpacity>
@@ -87,7 +96,7 @@ export function AppointmentActions({
           onPress={onHowDidItGo}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Log how ${petName}’s visit went`}
+          accessibilityLabel={`Log how ${petName}’s visit went${which}`}
         >
           <ThemedText style={styles.actionLabel}>How did it go?</ThemedText>
         </TouchableOpacity>
@@ -101,7 +110,7 @@ export function AppointmentActions({
           // The label says whose and what, because the visible text is a bare
           // pronoun — "It didn’t happen" announced alone, out of the block above it,
           // names nothing.
-          accessibilityLabel={`${petName}’s visit didn’t happen`}
+          accessibilityLabel={`${petName}’s visit didn’t happen${which}`}
         >
           {/* Home's own verb, verbatim (`AppointmentStrip`'s *It didn’t*), so one
               write has one name wherever the app offers it. Here it carries NO
@@ -116,7 +125,7 @@ export function AppointmentActions({
           onPress={onChange}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Change ${petName}’s appointment`}
+          accessibilityLabel={`Change ${petName}’s appointment${which}`}
         >
           <ThemedText style={styles.actionLabel}>Change</ThemedText>
         </TouchableOpacity>

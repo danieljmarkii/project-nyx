@@ -616,6 +616,9 @@ describe('CUL-951 — *Ended* confirms first, and never turns into *Start a tria
     fireEvent.press(screen.getByText('Ended'));
     await screen.findByText('Ended today');
     expect(endActiveTrial).toHaveBeenCalledTimes(1);
+    // The day the confirm named is the day handed to the write — one value, as on
+    // the course path (code-review finding: computed twice, they can straddle midnight).
+    expect(endActiveTrial.mock.calls[0][0]).toMatchObject({ trialId: 'trial-1', endedOn: localToday() });
     expect(screen.getByText('Hill’s z/d')).toBeTruthy();
     expect(screen.queryByText('Start a trial')).toBeNull();
     expect(screen.queryByText('A new food to try?')).toBeNull();

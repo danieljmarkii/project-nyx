@@ -298,7 +298,7 @@ describe('the Stopped / Ended confirm (CUL-951)', () => {
     const c = endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Juniper', endLabel: 'Sep 22' });
     expect(c.title).toBe('End the Hill’s z/d trial?');
     expect(c.body).toBe(
-      'Juniper’s trial ends today, Sep 22. Everything logged during it stays on the timeline.',
+      'Juniper’s trial ends today, Sep 22. Everything logged during it stays on the timeline and in vet reports.',
     );
     expect(c.confirmLabel).toBe('End it');
   });
@@ -310,9 +310,13 @@ describe('the Stopped / Ended confirm (CUL-951)', () => {
       .toBe('End the diet trial?');
   });
 
-  it('makes no claim about the vet report for a trial (B-455: an ended-early trial still reads as ongoing there)', () => {
-    const c = endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Nyx', endLabel: 'Sep 22' });
-    expect(c.body).not.toMatch(/report/i);
+  it('makes the same promise about entries as the course confirm — no silent gap between the two', () => {
+    // Read back to back in one recheck, a trial confirm that drops "and in vet reports"
+    // reads as "ending the trial takes it out of the report".
+    const trial = endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Nyx', endLabel: 'Sep 22' });
+    const course = stopCourseCopy({ drugName: 'Motozol', petName: 'Nyx', endLabel: 'Sep 22' });
+    expect(trial.body).toMatch(/stays on the timeline and in vet reports\.$/);
+    expect(course.body).toMatch(/stay on the timeline and in vet reports\.$/);
   });
 
   it('carries no exclamation mark and never says the cancel is the *Keep* verdict', () => {

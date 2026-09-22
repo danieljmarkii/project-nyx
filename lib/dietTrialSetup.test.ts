@@ -405,6 +405,28 @@ describe('endActiveTrial', () => {
     expect(params[5]).toBeNull(); // outcome_notes
   });
 
+  it('writes the day the caller SHOWED, when it passes one (CUL-951)', async () => {
+    // The after-visit confirm names the day before the owner confirms; computing it
+    // again here could land on the other side of midnight from the one on screen.
+    await endActiveTrial({ trialId: 't-1', reason: 'vet_advised', endedOn: '2026-09-22' });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[1]).toBe('2026-09-22'); // ended_at
+    expect(params[2]).toBeNull();         // completed_at — an early end, unchanged
+  });
+
+  it('writes the same shown day into completed_at on a completed trial', async () => {
+    await endActiveTrial({ trialId: 't-1', reason: 'completed', endedOn: '2026-09-22' });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[1]).toBe('2026-09-22');
+    expect(params[2]).toBe('2026-09-22');
+  });
+
+  it('refuses a malformed day rather than writing it into a DATE the report reads', async () => {
+    await expect(endActiveTrial({ trialId: 't-1', reason: 'completed', endedOn: 'Sep 22' }))
+      .rejects.toThrow(/YYYY-MM-DD/);
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
   it('kicks a flush so the ending row lands before any next trial starts', async () => {
     await endActiveTrial({ trialId: 't-1', reason: 'completed' });
     await flush();

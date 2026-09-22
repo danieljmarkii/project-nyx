@@ -665,9 +665,22 @@ export async function endActiveTrial(params: {
    *  the guard below, which is a clinical rule and not a tidiness one. */
   outcome?: TrialOutcome | null;
   outcomeNotes?: string | null;
+  /**
+   * The 'YYYY-MM-DD' local day to end on, when the caller has ALREADY SHOWN the owner
+   * a date (CUL-951: the after-visit confirm says "ends today, Sep 22"). Passing it is
+   * what makes the date on screen and the date written one value — computed twice,
+   * the two can land on either side of local midnight while a dialog is open.
+   * Omitted, the trial ends on the device's local today, exactly as before.
+   */
+  endedOn?: string;
 }): Promise<void> {
   const db = getDb();
-  const today = toLocalDayKey(new Date());
+  if (params.endedOn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(params.endedOn)) {
+    // A malformed day would be written verbatim into a DATE the report reads; refuse
+    // it loudly rather than fall back to a date the caller did not show.
+    throw new Error(`endActiveTrial: endedOn must be YYYY-MM-DD, got ${params.endedOn}`);
+  }
+  const today = params.endedOn ?? toLocalDayKey(new Date());
   const now = new Date().toISOString();
   const completed = params.reason === 'completed';
 
