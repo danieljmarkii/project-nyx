@@ -736,6 +736,83 @@ describe('the store shell', () => {
     expect(await readFoldEntries('pet-new')).toHaveProperty('n');
   });
 
+  // CUL-826 — the two interleavings the pre-write re-check alone cannot close, each
+  // driven through the real writer and the real clear (C-34: stub the READ, never the
+  // rule). Each was run red against the single-bump / no-repair code before the fix.
+  it('a write that STARTS after the clear began is caught too (the second bump) — the map cannot resurrect', async () => {
+    // The write starts after the first bump, so it snapshots the already-bumped epoch,
+    // reads the PRE-wipe blob, and its pre-write re-check compares EQUAL — under a
+    // single bump it writes the previous account's map back after the clear resolved.
+    await writeFoldEntries('pet-a', { a: foldedEntry(postprandial, NOW) });
+    let releaseRemoval: () => void = () => {};
+    const removalGate = new Promise<void>((r) => {
+      releaseRemoval = r;
+    });
+    // Swapped by hand, not spied (the C-12 case's note: a restored spy over the mock's
+    // own jest.fn leaves its storage inconsistent for the cases after it).
+    const realRemove = AsyncStorage.removeItem.bind(AsyncStorage);
+    let gatedOnce = false;
+    (AsyncStorage as unknown as { removeItem: (k: string) => Promise<void> }).removeItem = async (k: string) => {
+      if (gatedOnce) return realRemove(k);
+      gatedOnce = true;
+      await removalGate;
+      return realRemove(k);
+    };
+
+    const clearing = clearSignalFold();
+    // Starts now — after the first bump, before the removal has landed.
+    const inFlight = writeFoldEntries('pet-b', { b: foldedEntry(reflection, NOW) });
+    releaseRemoval();
+    await clearing;
+    await inFlight;
+    (AsyncStorage as unknown as { removeItem: typeof realRemove }).removeItem = realRemove;
+
+    expect(await AsyncStorage.getItem(SIGNAL_FOLD_STORAGE_KEY)).toBeNull();
+  });
+
+  it('a clear whose removal lands between the re-check and the setItem is repaired after the write', async () => {
+    // The removal is parked until the writer has passed its pre-write re-check and is
+    // inside its `setItem`; the write then lands LAST. Only the post-write repair can
+    // see this one, since every epoch check before the write was honestly equal.
+    await writeFoldEntries('pet-a', { a: foldedEntry(postprandial, NOW) });
+    const realSet = AsyncStorage.setItem.bind(AsyncStorage);
+    let clearing: Promise<void> | null = null;
+    (AsyncStorage as unknown as { setItem: (k: string, v: string) => Promise<void> }).setItem =
+      async (k: string, v: string) => {
+        if (clearing) return realSet(k, v);
+        // The writer is past its re-check. Land the whole clear now, then the write.
+        clearing = clearSignalFold();
+        await clearing;
+        return realSet(k, v);
+      };
+
+    await writeFoldEntries('pet-b', { b: foldedEntry(reflection, NOW) });
+    (AsyncStorage as unknown as { setItem: typeof realSet }).setItem = realSet;
+    expect(clearing).not.toBeNull();
+
+    expect(await AsyncStorage.getItem(SIGNAL_FOLD_STORAGE_KEY)).toBeNull();
+    expect(await readFoldEntries('pet-a')).toEqual({});
+  });
+
+  it('a prune whose write lands after a clear is repaired the same way', async () => {
+    await writeFoldEntries('pet-a', { a: foldedEntry(postprandial, NOW) });
+    await writeFoldEntries('pet-gone', { g: foldedEntry(reflection, NOW) });
+    const realSet = AsyncStorage.setItem.bind(AsyncStorage);
+    let clearedOnce = false;
+    (AsyncStorage as unknown as { setItem: (k: string, v: string) => Promise<void> }).setItem =
+      async (k: string, v: string) => {
+        if (clearedOnce) return realSet(k, v);
+        clearedOnce = true;
+        await clearSignalFold();
+        return realSet(k, v);
+      };
+
+    await pruneFoldStore(['pet-a']);
+    (AsyncStorage as unknown as { setItem: typeof realSet }).setItem = realSet;
+
+    expect(await AsyncStorage.getItem(SIGNAL_FOLD_STORAGE_KEY)).toBeNull();
+  });
+
   it('never throws — a write or clear failure is logged, not raised', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const set = jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('disk full'));
