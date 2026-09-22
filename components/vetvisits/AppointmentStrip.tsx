@@ -11,8 +11,10 @@ import { usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import {
   cancelVetAppointment,
+  readAppointmentById,
   readHomeAppointment,
   removeAppointmentCopy,
+  type AppointmentDetail,
   type HomeAppointment,
 } from '../../lib/vetVisits';
 import { hasAskedAboutAppointment, markAppointmentAsked } from '../../lib/appointmentAsked';
@@ -126,7 +128,9 @@ export function AppointmentStrip() {
     await markAppointmentAsked(id, new Date().toISOString());
   };
 
-  const onDidntHappen = () => {
+  const openGetReady = () => router.push({ pathname: '/rundown', params: { appointmentId: id } });
+
+  const onDidntHappen = async () => {
     // The copy moved to `lib/vetVisits` with CUL-952, when this stopped being the
     // only door onto this write — the visits list and the appointment edit reach it
     // too, and a destructive confirm that says three slightly different things about
@@ -137,7 +141,28 @@ export function AppointmentStrip() {
     // "upcoming visits" every single time, describing a booking that is by
     // construction not upcoming. The shared helper branches that one word on the
     // record instead of on which surface is asking.
-    const copy = removeAppointmentCopy(view.scheduledAt, activePet?.name ?? 'your pet');
+    //
+    // THE PREP IS READ AT PRESS TIME (CUL-987 D2). The confirm ends "Nothing else in
+    // the record changes", which is true of the trial and the courses and would be
+    // read as "nothing is lost" — while the questions and notes typed for this visit
+    // live on this row and become unreachable once it is cancelled. So when the row
+    // holds any, the confirm names them. Asked of the RECORD, not of the strip's
+    // state (which never selects them): a one-shot destructive control must ask what
+    // is true now (C-12 / CUL-825). A read that fails shows the failed-remove line,
+    // never a confirm missing the one sentence that makes it honest.
+    let detail: AppointmentDetail | null;
+    try {
+      detail = await readAppointmentById(id);
+    } catch (err) {
+      console.warn('[appointment-strip] prep read failed:', err);
+      Alert.alert('Couldn’t remove it', 'The appointment is still here — try again.');
+      return;
+    }
+    const copy = removeAppointmentCopy(
+      view.scheduledAt,
+      activePet?.name ?? 'your pet',
+      { questions: detail?.questions ?? null, notesDraft: detail?.notes_draft ?? null },
+    );
     Alert.alert(
       copy.title,
       copy.body,
@@ -170,11 +195,15 @@ export function AppointmentStrip() {
         // The DAY half, never the full `when`: built from the joined string the ask came
         // out as "Did Tuesday · 3:00 pm’s visit happen?".
         appointment={phase === 'upcoming' ? view : { ...view, when: `Did ${view.day}’s visit happen?` }}
+        // On BOTH faces (CUL-987 D1). On the ask it is the door for the answer the two
+        // buttons do not offer — "it moved" — through Get ready's ⋯ *Change*. A
+        // navigation, not a write: this file's one write is still *It didn't*.
+        onPress={openGetReady}
       />
       <View style={styles.doors}>
         {phase === 'upcoming' ? (
           <>
-            <Door label="Get ready" primary onPress={() => router.push({ pathname: '/rundown', params: { appointmentId: id } })} />
+            <Door label="Get ready" primary onPress={openGetReady} />
             {/* A DOOR, not a sheet. Home carries no form (see the header): the
                 question is typed in Get ready, beside the ones already there. */}
             <Door

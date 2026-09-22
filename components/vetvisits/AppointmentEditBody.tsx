@@ -37,6 +37,11 @@ interface Props {
    * than naming artifacts this owner has never seen.
    */
   prepNote: string | null;
+  /**
+   * "This changes Pip's appointment only." — `appointmentEditScopeNote`'s output,
+   * null outside a multi-pet account (CUL-987 D3).
+   */
+  scopeNote: string | null;
   saving: boolean;
   onSave: () => void;
   onRemove: () => void;
@@ -67,6 +72,7 @@ export function AppointmentEditBody({
   onChangeField,
   minimumDay,
   prepNote,
+  scopeNote,
   saving,
   onSave,
   onRemove,
@@ -198,6 +204,10 @@ export function AppointmentEditBody({
           never touches `questions` or `notes_draft` — asserted in
           `lib/vetVisitWrites.test.ts`. */}
       {prepNote ? <ThemedText style={styles.footnote}>{prepNote}</ThemedText> : null}
+      {/* Beside the prep line and above Save, for the same reason: it captions what
+          Save does. In a two-pet household the booking sheet's "Also for" made TWO
+          rows; this edit moves one of them (CUL-987 D3). */}
+      {scopeNote ? <ThemedText style={styles.footnote}>{scopeNote}</ThemedText> : null}
 
       <PrimaryButton label="Save changes" onPress={onSave} loading={saving} style={styles.save} />
 

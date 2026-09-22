@@ -11,6 +11,7 @@ import { PlanActionRow, PlanChipRow, PlanSettledRow } from './PlanRows';
 import {
   courseRowSubtitle,
   defaultRecheckDate,
+  settledVerdictLine,
   type CourseVerdict,
   type TrialVerdict,
 } from '../../lib/vetVisitPlan';
@@ -22,6 +23,16 @@ export interface TrialRow {
   label: string;
   /** 'Day 23 of 56', from the ONE shared day helper — never re-derived here (B-421). */
   dayLine: string | null;
+}
+
+/**
+ * A trial this screen ENDED (CUL-951) — a snapshot, because the trial read returns
+ * null once it has ended and the row still has to say what happened.
+ */
+export interface EndedTrialRow {
+  label: string;
+  /** 'YYYY-MM-DD' — the day the end was written. */
+  endedOn: string;
 }
 
 export interface AfterVisitFields {
@@ -40,11 +51,19 @@ export interface AfterVisitBodyProps {
 
   courses: ActiveCourse[];
   courseVerdicts: Readonly<Record<string, CourseVerdict>>;
+  /**
+   * Courses *Stopped* on this screen, id → the 'YYYY-MM-DD' written (CUL-951). Such a
+   * course is still in `courses` (the route keeps it in place) and renders as a
+   * settled row with no control: it has been answered, and there is no un-stopping.
+   */
+  settledCourses: Readonly<Record<string, string>>;
   onCourseVerdict: (course: ActiveCourse, verdict: CourseVerdict) => void;
   onAddCourse: () => void;
 
   trial: TrialRow | null;
   trialVerdict: TrialVerdict | null;
+  /** The trial *Ended* on this screen, or null. Wins over the *Start a trial* door. */
+  endedTrial: EndedTrialRow | null;
   onTrialVerdict: (verdict: TrialVerdict) => void;
   onStartTrial: () => void;
   onAddFood: () => void;
@@ -88,13 +107,16 @@ const TRIAL_OPTIONS = [
 export function AfterVisitBody(props: AfterVisitBodyProps) {
   const {
     petName, fields, onChangeField,
-    courses, courseVerdicts, onCourseVerdict, onAddCourse,
-    trial, trialVerdict, onTrialVerdict, onStartTrial, onAddFood,
+    courses, courseVerdicts, settledCourses, onCourseVerdict, onAddCourse,
+    trial, trialVerdict, endedTrial, onTrialVerdict, onStartTrial, onAddFood,
     nextVisitAt, onPickNextVisit, paperworkCount, onAddPaperwork,
     busyRow, saving, onSave,
   } = props;
   const [showDayPicker, setShowDayPicker] = useState(false);
   const [showNextPicker, setShowNextPicker] = useState(false);
+  const today = localDateKey(new Date());
+  const settledLine = (verdict: 'stopped' | 'ended', endedOn: string) =>
+    settledVerdictLine({ verdict, endedOn, today, endLabel: formatVisitDate(endedOn) });
 
   return (
     <View>
@@ -168,21 +190,32 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
 
       <SectionLabel label="The plan" header style={styles.planLabel} />
       <View style={styles.plan}>
-        {courses.map((course) => (
-          <PlanChipRow
-            key={course.id}
-            glyph={<Pill size={16} color={theme.colorEventMedication} strokeWidth={2} />}
-            title={course.drugName}
-            subtitle={courseRowSubtitle({
-              doseAmount: course.doseAmount,
-              sinceLabel: course.startedAt ? formatVisitDate(course.startedAt) : null,
-            })}
-            options={COURSE_OPTIONS}
-            value={courseVerdicts[course.id] ?? null}
-            onChange={(next) => onCourseVerdict(course, next as CourseVerdict)}
-            busy={busyRow === course.id}
-          />
-        ))}
+        {courses.map((course) =>
+          settledCourses[course.id] ? (
+            // Where the chips were, so the owner's eye finds the answer in the place
+            // they gave it. The glyph goes quiet: the course is no longer running.
+            <PlanSettledRow
+              key={course.id}
+              glyph={<Pill size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+              title={course.drugName}
+              subtitle={settledLine('stopped', settledCourses[course.id])}
+            />
+          ) : (
+            <PlanChipRow
+              key={course.id}
+              glyph={<Pill size={16} color={theme.colorEventMedication} strokeWidth={2} />}
+              title={course.drugName}
+              subtitle={courseRowSubtitle({
+                doseAmount: course.doseAmount,
+                sinceLabel: course.startedAt ? formatVisitDate(course.startedAt) : null,
+              })}
+              options={COURSE_OPTIONS}
+              value={courseVerdicts[course.id] ?? null}
+              onChange={(next) => onCourseVerdict(course, next as CourseVerdict)}
+              busy={busyRow === course.id}
+            />
+          ),
+        )}
 
         <PlanActionRow
           glyph={<Pill size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
@@ -202,6 +235,12 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
             value={trialVerdict}
             onChange={(next) => onTrialVerdict(next as TrialVerdict)}
             busy={busyRow === 'trial'}
+          />
+        ) : endedTrial ? (
+          <PlanSettledRow
+            glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+            title={endedTrial.label}
+            subtitle={settledLine('ended', endedTrial.endedOn)}
           />
         ) : (
           <PlanActionRow

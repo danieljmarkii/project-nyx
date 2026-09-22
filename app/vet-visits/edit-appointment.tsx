@@ -15,10 +15,12 @@ import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import {
+  appointmentEditScopeNote,
   appointmentPrepNote,
   cancelVetAppointment,
   composeScheduledAt,
   decomposeScheduledAt,
+  readAppointmentById,
   readEditableAppointment,
   removeAppointmentCopy,
   updateAppointmentDetails,
@@ -129,12 +131,29 @@ export default function EditAppointmentScreen() {
     }
   }
 
-  function handleRemove() {
+  async function handleRemove() {
     if (!appointmentId || !appointment) return;
     // The copy is `lib/vetVisits`' — three doors now reach this one write, and a
     // destructive confirm that says three slightly different things about the same
     // row is how an owner learns not to trust it.
-    const copy = removeAppointmentCopy(appointment.scheduled_at, petName);
+    //
+    // The prep is re-read at PRESS TIME rather than taken from the row this screen
+    // loaded on focus (CUL-987 D2; C-12 / CUL-825): a hydration pull can land while
+    // the screen is open, and the confirm's job is to say what leaves with the row
+    // NOW. The same read the three doors share, so all three say the same thing. A
+    // failed read is a failed remove, never a confirm missing that sentence.
+    let fresh: AppointmentDetail | null;
+    try {
+      fresh = await readAppointmentById(appointmentId);
+    } catch (err) {
+      console.warn('[vet-appointment-edit] prep read failed:', err);
+      Alert.alert('Couldn’t remove it', 'The appointment is still here — try again.');
+      return;
+    }
+    const copy = removeAppointmentCopy(appointment.scheduled_at, petName, {
+      questions: fresh?.questions ?? null,
+      notesDraft: fresh?.notes_draft ?? null,
+    });
     Alert.alert(
       copy.title,
       copy.body,
@@ -224,6 +243,7 @@ export default function EditAppointmentScreen() {
               // about the record, and it is null for the first-time rescheduler who
               // has never opened Get ready.
               prepNote={appointmentPrepNote(appointment.questions, appointment.notes_draft)}
+              scopeNote={appointmentEditScopeNote(petName, pets.length)}
               saving={saving}
               onSave={handleSave}
               onRemove={handleRemove}

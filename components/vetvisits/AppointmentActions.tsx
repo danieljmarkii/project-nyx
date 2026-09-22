@@ -28,6 +28,13 @@ interface Props {
   onChange?: () => void;
   /** Named in both labels, so a multi-pet list never leaves "which pet" to position. */
   petName: string;
+  /**
+   * The appointment's own `when` ('Wed, Oct 28'), appended to every label (CUL-970).
+   * Once *Next* holds more than one booking, "Take notes for Pip's visit" is read out
+   * identically per row, and a screen-reader user cannot tell which booking a door is
+   * for. Optional only for a caller that renders one booking alone.
+   */
+  when?: string;
 }
 
 // The two doors under a booked appointment (CUL-902 VV-4; re-gated CUL-966).
@@ -49,12 +56,11 @@ interface Props {
 // placed inside an `accessible` container is hidden from assistive tech entirely.
 // The block states; this acts.
 //
-// *Get ready* is VV-5's and is LEFT OUT rather than rendered inert: `disabled` is an
-// accessibility claim that a control exists and is unavailable (C-7), which would be
-// a lie about one that has not been built. The doors arrive with their destinations —
-// the rule `AppointmentBlock` already states, and the rule CUL-952 was: *Change the
-// appointment* shipped on Get ready's ⋯ with no destination, so it pushed the visits
-// list, where the only control is *Add*.
+// *Get ready* is not a door in this row: it is the appointment BLOCK above it, which
+// opens Get ready wherever it renders (CUL-987 D1) — a fourth labelled door here would
+// be a second way to the same place. The doors arrive with their destinations, the
+// rule CUL-952 was: *Change the appointment* shipped on Get ready's ⋯ with no
+// destination, so it pushed the visits list, where the only control is *Add*.
 //
 // THE ORDER IS FIXED HERE, not per caller, and it is chosen so one order reads
 // correctly in both buckets. Under *Next* the row is `Take notes · Change` (plus the
@@ -68,7 +74,9 @@ export function AppointmentActions({
   onDidntHappen,
   onChange,
   petName,
+  when,
 }: Props) {
+  const which = when ? `, ${when}` : '';
   return (
     <View style={styles.row}>
       {onAtTheVet ? (
@@ -77,7 +85,7 @@ export function AppointmentActions({
           onPress={onAtTheVet}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Take notes for ${petName}’s visit`}
+          accessibilityLabel={`Take notes for ${petName}’s visit${which}`}
         >
           <ThemedText style={styles.actionLabel}>Take notes</ThemedText>
         </TouchableOpacity>
@@ -88,7 +96,7 @@ export function AppointmentActions({
           onPress={onHowDidItGo}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Log how ${petName}’s visit went`}
+          accessibilityLabel={`Log how ${petName}’s visit went${which}`}
         >
           <ThemedText style={styles.actionLabel}>How did it go?</ThemedText>
         </TouchableOpacity>
@@ -102,7 +110,7 @@ export function AppointmentActions({
           // The label says whose and what, because the visible text is a bare
           // pronoun — "It didn’t happen" announced alone, out of the block above it,
           // names nothing.
-          accessibilityLabel={`${petName}’s visit didn’t happen`}
+          accessibilityLabel={`${petName}’s visit didn’t happen${which}`}
         >
           {/* Home's own verb, verbatim (`AppointmentStrip`'s *It didn’t*), so one
               write has one name wherever the app offers it. Here it carries NO
@@ -117,7 +125,7 @@ export function AppointmentActions({
           onPress={onChange}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Change ${petName}’s appointment`}
+          accessibilityLabel={`Change ${petName}’s appointment${which}`}
         >
           <ThemedText style={styles.actionLabel}>Change</ThemedText>
         </TouchableOpacity>

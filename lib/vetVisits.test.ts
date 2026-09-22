@@ -13,6 +13,7 @@ import {
   formatVisitWeekday,
   formatWhereLine,
   localDateKey,
+  appointmentEditScopeNote,
   appointmentPrepNote,
   removeAppointmentCopy,
   type AppointmentDetail,
@@ -304,14 +305,14 @@ describe('the Pet-tab card model', () => {
   const now = new Date(2026, 8, 14);
 
   it('is empty only when there is neither a visit nor a booking', () => {
-    expect(buildVetVisitsCardModel({ next: null, awaiting: [], visits: [] }, now).isEmpty).toBe(true);
+    expect(buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: [] }, now).isEmpty).toBe(true);
   });
 
   it('is NOT empty for a first-ever booking with no history', () => {
     // Day one of the feature, and the card is doing its job rather than showing a
     // designed absence over a real appointment.
     const model = buildVetVisitsCardModel(
-      { next: buildAppointmentView(appointment(), now), awaiting: [], visits: [] },
+      { next: buildAppointmentView(appointment(), now), later: [], awaiting: [], visits: [] },
       now,
     );
     expect(model.isEmpty).toBe(false);
@@ -324,7 +325,7 @@ describe('the Pet-tab card model', () => {
     // context comes from the row it sits in — and so dropped the year inside a
     // sentence that has no such context.
     const rows = [buildVisitListRow(visit({ visited_at: '2024-07-30' }), NO_LINKS, now)];
-    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
+    const line = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).lastVisitLine;
     expect(line).toBe('Last visit Jul 30, 2024 — GI follow-up.');
   });
 
@@ -333,14 +334,14 @@ describe('the Pet-tab card model', () => {
       buildVisitListRow(visit(), { ...NO_LINKS, medicationNames: ['Cerenia'], trialCount: 1 }, now),
       buildVisitListRow(visit({ id: 'v2', visited_at: '2026-05-02' }), NO_LINKS, now),
     ];
-    const model = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now);
+    const model = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now);
     expect(model.countLabel).toBe('2 visits');
     expect(model.lastVisitLine).toBe('Last visit Jul 30 — GI follow-up. Plan: trial started, Cerenia.');
   });
 
   it('says "1 visit", not "1 visits"', () => {
     const rows = [buildVisitListRow(visit(), NO_LINKS, now)];
-    expect(buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).countLabel).toBe('1 visit');
+    expect(buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).countLabel).toBe('1 visit');
   });
 
   it('keeps a drug name cased, and never calls paperwork a plan', () => {
@@ -354,7 +355,7 @@ describe('the Pet-tab card model', () => {
         now,
       ),
     ];
-    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
+    const line = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).lastVisitLine;
     expect(line).toBe('Last visit Jul 30 — GI follow-up. Plan: trial started, Cerenia, recheck set.');
     expect(line).not.toMatch(/cerenia/);
     expect(line).not.toMatch(/document/);
@@ -362,7 +363,7 @@ describe('the Pet-tab card model', () => {
 
   it('omits the plan half rather than announcing that a visit left nothing behind', () => {
     const rows = [buildVisitListRow(visit(), NO_LINKS, now)];
-    const line = buildVetVisitsCardModel({ next: null, awaiting: [], visits: rows }, now).lastVisitLine;
+    const line = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).lastVisitLine;
     expect(line).toBe('Last visit Jul 30 — GI follow-up.');
     expect(line).not.toMatch(/no plan|nothing/i);
   });
@@ -516,10 +517,11 @@ describe('appointmentPrepNote (CUL-952)', () => {
 
 describe('removeAppointmentCopy (CUL-952)', () => {
   const NOW = new Date(2026, 8, 16, 10, 0);
+  const NO_PREP = { questions: null, notesDraft: null };
 
   it('says "upcoming visits" for a booking still ahead', () => {
     const iso = composeScheduledAt(new Date(2026, 9, 28), new Date(2026, 9, 28, 15, 0));
-    const copy = removeAppointmentCopy(iso, 'Nyx', NOW);
+    const copy = removeAppointmentCopy(iso, 'Nyx', NO_PREP, NOW);
     expect(copy.title).toBe('Remove this appointment?');
     expect(copy.body).toContain('Nyx’s upcoming visits');
     expect(copy.body).toContain('Nothing else in the record changes.');
@@ -527,7 +529,7 @@ describe('removeAppointmentCopy (CUL-952)', () => {
 
   it('drops "upcoming" once the day has passed — the *Waiting on you* case', () => {
     const iso = composeScheduledAt(new Date(2026, 8, 8), new Date(2026, 8, 8, 15, 0));
-    const copy = removeAppointmentCopy(iso, 'Nyx', NOW);
+    const copy = removeAppointmentCopy(iso, 'Nyx', NO_PREP, NOW);
     // The row this control is most used on: the day passed and the visit never
     // happened, so calling it "upcoming" would be false on the one surface still
     // able to answer the question.
@@ -537,13 +539,82 @@ describe('removeAppointmentCopy (CUL-952)', () => {
 
   it('never says "Cancel" — the word iOS also uses for backing out of the dialog', () => {
     const iso = composeScheduledAt(new Date(2026, 9, 28), null);
-    const copy = removeAppointmentCopy(iso, 'Nyx', NOW);
+    const copy = removeAppointmentCopy(iso, 'Nyx', NO_PREP, NOW);
     expect(`${copy.title} ${copy.body}`.toLowerCase()).not.toContain('cancel');
   });
 
   it('names the pet it was given, never a generic stand-in', () => {
     const iso = composeScheduledAt(new Date(2026, 9, 28), null);
-    expect(removeAppointmentCopy(iso, 'Juniper', NOW).body).toContain('Juniper’s');
+    expect(removeAppointmentCopy(iso, 'Juniper', NO_PREP, NOW).body).toContain('Juniper’s');
+  });
+});
+
+// CUL-987 D2 — the remove confirm names what leaves with the appointment.
+describe('removeAppointmentCopy names the prep that goes with the row (CUL-987 D2)', () => {
+  const NOW = new Date(2026, 8, 16, 10, 0);
+  const iso = composeScheduledAt(new Date(2026, 9, 28), new Date(2026, 9, 28, 15, 0));
+  const questions = (n: number) =>
+    JSON.stringify(Array.from({ length: n }, (_, i) => ({ id: `q${i}`, text: `Question ${i}`, source: 'owner' })));
+
+  it('says the questions go, BEFORE "Nothing else in the record changes"', () => {
+    const { body } = removeAppointmentCopy(iso, 'Nyx', { questions: questions(4), notesDraft: null }, NOW);
+    expect(body).toBe(
+      'Wed, Oct 28 · 3:00 pm will be removed from Nyx’s upcoming visits. ' +
+        'Your 4 questions for this visit go with it. Nothing else in the record changes.',
+    );
+    // The order is the honesty: "else" has to come after the thing it excepts.
+    expect(body.indexOf('go with it')).toBeLessThan(body.indexOf('Nothing else'));
+  });
+
+  it('names one question, notes alone, and both — the same count the edit screen uses', () => {
+    expect(removeAppointmentCopy(iso, 'Nyx', { questions: questions(1), notesDraft: null }, NOW).body)
+      .toContain('Your question for this visit goes with it.');
+    expect(removeAppointmentCopy(iso, 'Nyx', { questions: null, notesDraft: 'ask about the weight' }, NOW).body)
+      .toContain('Your notes for this visit go with it.');
+    expect(removeAppointmentCopy(iso, 'Nyx', { questions: questions(2), notesDraft: 'x' }, NOW).body)
+      .toContain('Your questions and notes for this visit go with it.');
+  });
+
+  it('adds nothing for a row with no prep — the sentence names only what exists', () => {
+    const { body } = removeAppointmentCopy(iso, 'Nyx', { questions: '[]', notesDraft: '  ' }, NOW);
+    expect(body).toBe('Wed, Oct 28 · 3:00 pm will be removed from Nyx’s upcoming visits. Nothing else in the record changes.');
+  });
+
+  it('never tells the remover the prep STAYS — the edit screen’s form is the opposite fact', () => {
+    const { body } = removeAppointmentCopy(iso, 'Nyx', { questions: questions(3), notesDraft: 'x' }, NOW);
+    expect(body).not.toMatch(/stays? with it/);
+  });
+});
+
+describe('appointmentPrepNote’s two fates share one count (CUL-987 D2)', () => {
+  const q = (n: number) =>
+    JSON.stringify(Array.from({ length: n }, (_, i) => ({ id: `q${i}`, text: `Q${i}`, source: 'owner' })));
+
+  it('defaults to "stays" — the edit screen’s form is unchanged', () => {
+    expect(appointmentPrepNote(q(4), null)).toBe(appointmentPrepNote(q(4), null, 'stays'));
+  });
+
+  it.each([
+    [q(1), null, 'Your question for this visit goes with it.'],
+    [q(4), null, 'Your 4 questions for this visit go with it.'],
+    [null, 'draft', 'Your notes for this visit go with it.'],
+    [q(2), 'draft', 'Your questions and notes for this visit go with it.'],
+    [null, null, null],
+  ])('goes: %s / %s', (questions, notes, expected) => {
+    expect(appointmentPrepNote(questions, notes, 'goes')).toBe(expected);
+  });
+});
+
+// CUL-987 D3 — the edit says it moves one pet's appointment, in a multi-pet account.
+describe('appointmentEditScopeNote (CUL-987 D3)', () => {
+  it('names the record’s pet in a multi-pet account', () => {
+    expect(appointmentEditScopeNote('Pip', 2)).toBe('This changes Pip’s appointment only.');
+    expect(appointmentEditScopeNote('Pip', 3)).toBe('This changes Pip’s appointment only.');
+  });
+
+  it('says nothing in a one-pet account, where there is nothing else it could change', () => {
+    expect(appointmentEditScopeNote('Pip', 1)).toBeNull();
+    expect(appointmentEditScopeNote('Pip', 0)).toBeNull();
   });
 });
 
