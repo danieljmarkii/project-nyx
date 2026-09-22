@@ -238,10 +238,17 @@ export default function BetaFeaturesScreen() {
                 reversible; the reason the opt-in is safe to try. "pulled" (the locked
                 round-1 mock's word), not "switched off" — the intro already owns "switch
                 it back off" for the owner's own control, so reusing it here for OUR
-                retraction would double-duty the same phrase (nyx-voice PR 4 pass). */}
+                retraction would double-duty the same phrase (nyx-voice PR 4 pass).
+                CUL-224: the promise is scoped to what is ALREADY in the record. The
+                page-level "won't affect your records" was true only while the one beta
+                (the widget) read and never wrote; the shelf now carries betas an owner
+                records THROUGH (the log picker, Noticed, Vet visits), so a blanket
+                "won't affect" would be false the moment one of them is on. What stays
+                true for every beta, read-only or not: switching one on rewrites nothing
+                the owner has already logged. */}
             <Text style={styles.note}>
               Beta features may change or be pulled while we keep working on them. Turning one on
-              won’t affect your records.
+              doesn’t change anything already in your records.
             </Text>
           </>
         )}

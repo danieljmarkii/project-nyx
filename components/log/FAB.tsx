@@ -19,10 +19,10 @@ import { useUiStore } from '../../store/uiStore';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
-import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../../store/momentStore';
+import { useMomentStore } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
-import { evaluateMealLogTimeFlag, noteTrialFlagShown } from '../../lib/trialContaminant';
+import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import { noPetToLogForCopy } from '../../lib/logCopy';
 
 // Resolved once at module scope — a literal, shared with the log sheet (CUL-717).
@@ -32,8 +32,6 @@ export function FAB() {
   const { prependEvent } = useEventStore();
   const { pets, activePet } = usePetStore();
   const showMealMoment = useMomentStore((s) => s.showMeal);
-  const patchTrialFlag = useMomentStore((s) => s.patchTrialFlag);
-  const rescheduleMoment = useMomentStore((s) => s.rescheduleHide);
 
   const [open, setOpen] = useState(false);
   const [switcherVisible, setSwitcherVisible] = useState(false);
@@ -119,32 +117,6 @@ export function FAB() {
   const foodsForActivePet =
     activePet && recentFoods?.petId === activePet.id ? recentFoods.foods : null;
 
-  // B-351 slice 4 / B-693 — resolve the log-time trial heads-up (contents OR
-  // membership, whichever fires) and land it on the card that is already showing.
-  // Fire-and-forget by design: the meal is written, the card is up, and this is
-  // strictly additive information. One evaluator, one read of the food record
-  // (B-693 single-read composition). The ledger write happens ONLY if the patch
-  // landed, so the food's one-per-trial budget can never be spent on a heads-up the
-  // owner did not see.
-  async function applyTrialFlag(
-    eventId: string,
-    petId: string,
-    foodId: string,
-    occurredAt: string,
-  ) {
-    const flag = await evaluateMealLogTimeFlag({ petId, foodId, occurredAt });
-    if (!flag) return;
-    // Wait for the card to be on screen before patching. This path reveals
-    // synchronously (no delayMs), so it resolves at once — but the guard is kept
-    // identical to the picker path (app/log.tsx), where the reveal is deferred and
-    // a bare patch would race ahead of it and drop the heads-up. False = superseded
-    // by a newer log → skip the patch and rule 3's spend.
-    if (!(await whenMealCardVisible(eventId))) return;
-    if (!patchTrialFlag(eventId, flag)) return;
-    rescheduleMoment(MEAL_FLAGGED_DURATION_MS);
-    await noteTrialFlagShown(flag);
-  }
-
   async function handleQuickMeal(food: PickerFood) {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
     // of write, not the render-time closure (the queue-then-switch edge).
@@ -220,11 +192,12 @@ export function FAB() {
       // B-351 slice 4 / B-693 — resolve the trial heads-up and patch it onto the
       // card. Fire-and-forget (not awaited here) so the tapped row's spinner
       // (setLogging(null) in the finally) releases immediately on the wedge's
-      // fastest path. applyTrialFlag waits for the card to be on screen before
+      // fastest path. applyMealTrialFlag (lib/mealTrialFlag.ts — the ONE orchestration
+      // both meal doors share, CUL-354) waits for the card to be on screen before
       // patching — a no-op here (this path reveals synchronously), but the same
       // guard the picker path needs. The ledger write happens only once the
       // heads-up renders, so one the owner never saw can't spend the food's budget.
-      void applyTrialFlag(eventId, pet.id, food.id, occurredAtIso);
+      void applyMealTrialFlag({ eventId, petId: pet.id, foodId: food.id, occurredAt: occurredAtIso });
     } finally {
       setLogging(null);
     }

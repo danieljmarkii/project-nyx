@@ -104,6 +104,19 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(queryByText(/Switch one on to try it early/)).toBeNull();
   });
 
+  it('scopes the honesty note to what is ALREADY in the record — never a blanket promise (CUL-224)', () => {
+    // The page-level "won’t affect your records" was true only while the one beta
+    // (the widget) read and never wrote. The shelf now carries betas an owner records
+    // THROUGH — the log picker here — so the note may promise only what holds for
+    // every beta: switching one on rewrites nothing already logged.
+    setAllowlist({ log_picker_v2: gatedToPm });
+    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+
+    expect(getByText('Log screen redesign')).toBeTruthy();
+    expect(getByText(/Turning one on doesn’t change anything already in your records\./)).toBeTruthy();
+    expect(queryByText(/won’t affect your records/)).toBeNull();
+  });
+
   it('a non-eligible beta’s card still self-gates away while others render', () => {
     setAllowlist({ event_types_v2: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);

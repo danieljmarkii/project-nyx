@@ -2990,36 +2990,44 @@ async function hydrateDietTrialFoods(db: Db, stale: () => boolean): Promise<void
   const localById = await loadLocalRowMeta(db, 'diet_trial_foods', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
-  for (const f of toWrite) {
-    // NATURAL-KEY COLLISION RESOLUTION, and it is not optional — without it a
-    // single colliding local row throws and aborts the rest of the table's
-    // hydration. Full argument (and the proof that the `synced = 0` guard is both
-    // safe and complete) lives with the statement in lib/dietTrialMirror.ts.
-    await db.runAsync(DIET_TRIAL_FOOD_COLLISION_SQL, [
-      f.diet_trial_id, f.food_item_id, f.role, f.allowed_from, f.id,
-    ]);
-    // identity columns (diet_trial_id, pet_id, food_item_id) and created_at are
-    // immutable and deliberately omitted from the SET — created_at appears in the
-    // column list for the INSERT branch only, so that asymmetry is correct, not
-    // B-057 drift (mirrors hydrateMeals).
-    await db.runAsync(
-      `INSERT INTO diet_trial_foods
-        (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from,
-         allowed_until, deleted_at, created_at, updated_at, synced, sync_error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,1,NULL)
-       ON CONFLICT(id) DO UPDATE SET
-         role=excluded.role, food_label=excluded.food_label,
-         allowed_from=excluded.allowed_from, allowed_until=excluded.allowed_until,
-         deleted_at=excluded.deleted_at, updated_at=excluded.updated_at,
-         synced=1, sync_error=NULL
-       WHERE diet_trial_foods.synced = 1`,
-      [
-        f.id, f.diet_trial_id, f.pet_id, f.food_item_id, f.role ?? 'primary_diet',
-        f.food_label, f.allowed_from, f.allowed_until ?? null, f.deleted_at ?? null,
-        f.created_at, f.updated_at,
-      ],
-    );
-  }
+  // CUL-305 — the allowed set lands as ONE unit. The log-time trial heads-up reads
+  // this table's row count to decide whether a meal was off-diet, and its verdict
+  // spends a one-per-food-per-trial budget the owner never gets back; a reader that
+  // caught this loop half-way on a second device saw a wet+dry trial as single-food
+  // and burned that budget on a false heads-up. Inside one transaction no reader
+  // observes a partial set: it sees the set as it was, or the set as it is.
+  await db.withTransactionAsync(async () => {
+    for (const f of toWrite) {
+      // NATURAL-KEY COLLISION RESOLUTION, and it is not optional — without it a
+      // single colliding local row throws and aborts the rest of the table's
+      // hydration. Full argument (and the proof that the `synced = 0` guard is both
+      // safe and complete) lives with the statement in lib/dietTrialMirror.ts.
+      await db.runAsync(DIET_TRIAL_FOOD_COLLISION_SQL, [
+        f.diet_trial_id, f.food_item_id, f.role, f.allowed_from, f.id,
+      ]);
+      // identity columns (diet_trial_id, pet_id, food_item_id) and created_at are
+      // immutable and deliberately omitted from the SET — created_at appears in the
+      // column list for the INSERT branch only, so that asymmetry is correct, not
+      // B-057 drift (mirrors hydrateMeals).
+      await db.runAsync(
+        `INSERT INTO diet_trial_foods
+          (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from,
+           allowed_until, deleted_at, created_at, updated_at, synced, sync_error)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,1,NULL)
+         ON CONFLICT(id) DO UPDATE SET
+           role=excluded.role, food_label=excluded.food_label,
+           allowed_from=excluded.allowed_from, allowed_until=excluded.allowed_until,
+           deleted_at=excluded.deleted_at, updated_at=excluded.updated_at,
+           synced=1, sync_error=NULL
+         WHERE diet_trial_foods.synced = 1`,
+        [
+          f.id, f.diet_trial_id, f.pet_id, f.food_item_id, f.role ?? 'primary_diet',
+          f.food_label, f.allowed_from, f.allowed_until ?? null, f.deleted_at ?? null,
+          f.created_at, f.updated_at,
+        ],
+      );
+    }
+  });
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('diet_trial_foods', wm);
