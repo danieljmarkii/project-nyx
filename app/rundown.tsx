@@ -17,7 +17,7 @@ import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
-import { buildWorthRaising, type WorthRaising } from '../lib/getReady';
+import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
 import { loadDietTrialFacts } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
@@ -466,13 +466,14 @@ async function buildForAppointment(
     // suppresses the reassuring trial_response row rather than letting it through.
     suppressTrialResponse: trialInput ? isAnimalNotEating(trialInput) : true,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
-    // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards this
-    // headline because on Home the Signal card above the strip owns the statement —
-    // and Get ready has no Signal card above it, so passing only the strip dropped a
-    // device-local SAFETY fact on the page read aloud in the exam room. A default here
-    // would have handed that over silently (C-37: a default on a safety-relevant
-    // parameter is the decision).
-    intakeDeclineHeadline: trialInput?.intakeDeclineHeadline ?? null,
+    // REQUIRED on the input type, never defaulted. `resolveTrialStrip` discards the
+    // device's declines because on Home the Signal card above the strip owns the
+    // statement — and Get ready has no Signal card above it, so passing only the strip
+    // dropped a device-local SAFETY fact on the page read aloud in the exam room. A
+    // default here would have handed that over silently (C-37: a default on a
+    // safety-relevant parameter is the decision). EVERY flag, structured, so
+    // `buildWorthRaising` can drop only the ones the Signal already states (CUL-950).
+    intakeDecline: localIntakeDeclines(trialInput),
     rundown: built,
     nowMs: Date.now(),
   });

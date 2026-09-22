@@ -73,7 +73,7 @@ import {
 import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './trialContaminant';
 import { trialTargetProtein } from './trialProtein';
 import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
-import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
+import type { IntakeDeclineFact, TrialCardInput, TrialCardTrial } from './dietTrialCard';
 import { trialStartDayKey } from './trialWindowDates';
 
 export interface DietTrialFactsPet {
@@ -567,7 +567,10 @@ export async function loadDietTrialFacts(args: {
     // has. The CLAIM was already gated on it (`mayClaimAllMatched`); this is the
     // wiring the loader dropped between the module and the two owner surfaces.
     antigenArmDark: armDark,
-    intakeDeclineHeadline: decline,
+    // ONE read, both fields: the card's single sentence is the first fact's, so the
+    // two can never describe different declines (CUL-950).
+    intakeDeclineHeadline: decline[0]?.headline ?? null,
+    intakeDeclineFacts: decline,
     // The history, for the terminal cards — see the field's docstring.
     rangeRefusal: facts?.rangeRefusal ?? null,
     // R1 — the now-fact and the two inputs the live register's stand-down reads.
@@ -964,15 +967,36 @@ async function readArrangements(
 async function readIntakeDecline(
   pet: DietTrialFactsPet,
   nowMs: number,
-): Promise<string | null> {
+): Promise<IntakeDeclineFact[]> {
   try {
     const result = await getIntakeDecline(pet.id, pet.species, nowMs);
-    if (result.status !== 'watch' || result.flags.length === 0) return null;
-    return declineHeadline(result.flags[0], pet.name);
+    if (result.status !== 'watch') return [];
+    return intakeDeclineFacts(result.flags, pet.name);
   } catch (e) {
     console.error('[DietTrial] intake-decline read failed:', e);
-    return null;
+    return [];
   }
+}
+
+/**
+ * Every flag, in the detector's order, each with its own sentence (CUL-950).
+ *
+ * ALL of them, not `flags[0]`. The card states one decline, so it reads the first
+ * sentence; Get ready states each decline it cannot find in the Signal, and the one
+ * it most needs is often the SECOND flag. A cat that ate little today AND refused
+ * her trial food holds `[consecutive_low, refused_normal_food]`; with a cache
+ * that has neither, reading `flags[0]` alone put "eaten less than usual today" on
+ * the page read to the vet and never mentioned the trial food at all.
+ */
+export function intakeDeclineFacts(
+  flags: readonly IntakeDeclineFlag[],
+  petName: string,
+): IntakeDeclineFact[] {
+  return flags.map((flag) => ({
+    trigger: flag.trigger,
+    refusedFoodLabel: flag.refusedFoodLabel,
+    headline: declineHeadline(flag, petName),
+  }));
 }
 
 /** The card's own note supplies the "call your vet" half, so this line is the

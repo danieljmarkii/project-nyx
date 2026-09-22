@@ -95,11 +95,12 @@ const UNSCREENED: Record<string, string> = {
     '20 of 23 days) silently, with no test. A screen that deletes evidence to avoid a ' +
     'word is the wrong trade on a page a clinician reads.',
   intakeRow:
-    'QUOTED, not composed — `TrialCardInput.intakeDeclineHeadline` verbatim — AND a ' +
+    'QUOTED, not composed — each `IntakeDeclineFact.headline` verbatim, the sentence ' +
+    '`declineHeadline` wrote for that flag — AND a ' +
     'SAFETY row, which makes screening it the one thing this module may never do: ' +
     '`screen` DROPS on a trip, and dropping this row removes the only statement about ' +
     'a pet that has stopped eating, in the state (no network) where it is the only ' +
-    'safety fact the page has at all. Its copy is composed in `lib/dietTrialCard.ts` ' +
+    'safety fact the page has at all. Its copy is composed in `lib/dietTrialFacts.ts` ' +
     'and rendered unscreened on Home, where the same words already reach the owner.',
   weightRow:
     'QUOTED, not composed: the rundown’s own weight tile, rendered verbatim in the ' +
