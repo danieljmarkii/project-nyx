@@ -41,3 +41,11 @@ Three flags, one shape: flip (a config write, no PR) → removal PR → closeout
 ## Outcome
 
 No code, no schema, no deploy. One project, three issues, fourteen moves, two amendments, five pointer comments. CLAUDE.md and STATUS.md untouched (the closeout owns their edits; STATUS.md's vet-visits row will be stale until then, and that is the accepted cost of not writing to it every session).
+
+## Addendum — the three briefs ruled (PM, same day)
+
+- **D-A → (a).** The scripted sitting (CUL-1080) is the vet-visits bake; a real appointment before GA is a bonus pass, never a gate.
+- **D-B → (a).** Vet visits ships in the 1.2.0 store cut. CUL-905 now blocks CUL-559 beside CUL-962. The implications are written on CUL-559: no new permission or purpose string (the microphone is VV-7), the demo-account seed carries a booked appointment and a logged visit for App Review, CUL-556 inherits CUL-1080's steps on the GA build, one re-read of `docs/app-privacy-answers.md` for the visit fields, one added line on the installed-build smoke script.
+- **D-C → close.** CUL-939 closed as Done: the cancel (CUL-952) and the delete (VV-6, live at `generate-report` v15) both shipped.
+
+The critical path is unchanged in shape and one step longer in consequence: the store cut now waits on the whole vet-visits chain, which is the point of the ruling.
