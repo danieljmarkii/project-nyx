@@ -1,4 +1,4 @@
-import { Modal } from 'react-native';
+import { Alert, Modal, type AlertButton } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import AfterVisitScreen from './after';
 import type { ActiveCourse, AppointmentDetail } from '../../lib/vetVisits';
@@ -48,7 +48,7 @@ jest.mock('../../lib/sync', () => ({
   syncPendingVetVisits: jest.fn(async () => undefined),
   syncPendingVetDocuments: jest.fn(async () => undefined),
 }));
-jest.mock('../../lib/haptics', () => ({ commitVisit: jest.fn() }));
+jest.mock('../../lib/haptics', () => ({ commitVisit: jest.fn(), destructiveConfirm: jest.fn() }));
 jest.mock('../../lib/visitPaperwork', () => ({
   captureVisitPaperwork: jest.fn(async () => ({ groupId: null, skipped: null })),
   forgetPaperwork: jest.fn(async () => undefined),
@@ -129,6 +129,23 @@ function appointment(over: Partial<AppointmentDetail> = {}): AppointmentDetail {
   };
 }
 
+/**
+ * Answers the next `Alert.alert` by pressing the button with this label, and returns
+ * the spy. RN's Alert is a native call with no tree to press into, so the button's
+ * own `onPress` is what a tap would run.
+ */
+function answerAlertWith(label: string) {
+  return jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons?: AlertButton[]) => {
+    buttons?.find((b) => b.text === label)?.onPress?.();
+  });
+}
+
+/** Today's LOCAL day key, built from components (C-29) — what the screen writes. */
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function course(over: Partial<ActiveCourse> = {}): ActiveCourse {
   return {
     id: 'med-1',
@@ -153,6 +170,7 @@ function course(over: Partial<ActiveCourse> = {}): ActiveCourse {
 const modals = () => screen.UNSAFE_queryAllByType(Modal);
 
 beforeEach(() => {
+  jest.restoreAllMocks();
   jest.clearAllMocks();
   mockLogFromAppointment.mockImplementation(async () => 'new-visit');
   mockLinkCourse.mockImplementation(async () => true);
@@ -161,6 +179,9 @@ beforeEach(() => {
   mockAppointment = appointment();
   mockCourses = [];
   mockStoreState = { pets: [PET_A, PET_B], activePet: PET_A };
+  // Reset, not just cleared: the CUL-951 trial suite swaps this read's implementation,
+  // and `clearAllMocks` keeps implementations.
+  jest.requireMock('../../lib/dietTrialSetup').getActiveTrialForPet.mockImplementation(async () => null);
 });
 
 describe('AC 11 — the screen writes under the appointment’s pet', () => {
@@ -394,14 +415,16 @@ describe('AC 7 — the plan rows read the record before they ask', () => {
     expect(screen.queryByText('linked to this visit')).toBeNull();
   });
 
-  it('*Stopped* ends the course, and does NOT link it', async () => {
+  it('*Stopped* ends the course once confirmed, and does NOT link it', async () => {
     mockCourses = [course()];
+    const alert = answerAlertWith('Stop it');
     render(<AfterVisitScreen />);
     await screen.findByText('Cerenia');
 
     fireEvent.press(screen.getByText('Stopped'));
     const { endRegimen } = jest.requireMock('../../lib/medicationSetup');
     await waitFor(() => expect(endRegimen).toHaveBeenCalledTimes(1));
+    expect(alert).toHaveBeenCalledTimes(1);
     // `vet_visit_id` is where a course CAME FROM, and a course stopped at this visit
     // started somewhere else. Linking it would put it in the visit's plan tags as
     // something the vet prescribed here.
@@ -462,5 +485,154 @@ describe('CUL-945 — the quarantine repair runs where the owner already is', ()
     render(<AfterVisitScreen />);
     await screen.findByText('Save Nyx’s visit');
     await waitFor(() => expect(mockRepair).toHaveBeenCalledWith('pet-a'));
+  });
+});
+
+// CUL-951 — the one safety net on *Stopped* / *Ended* (C-21), and the row that says
+// what happened instead of vanishing. PM ruling 2026-09-22: a confirm BEFORE, naming
+// the course or trial and the day it ends.
+describe('CUL-951 — *Stopped* confirms first, then the row settles in place', () => {
+  it('asks before anything is written, naming the course, the pet and the day', async () => {
+    mockCourses = [course()];
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+
+    fireEvent.press(screen.getByText('Stopped'));
+    expect(alert).toHaveBeenCalledTimes(1);
+    const [title, body, buttons] = alert.mock.calls[0];
+    expect(title).toBe('Stop Cerenia?');
+    expect(body).toMatch(/^Nyx’s Cerenia course ends today, [A-Z][a-z]{2} \d{1,2}\./);
+    expect((buttons ?? []).map((b) => b.text)).toEqual(['Keep it', 'Stop it']);
+    expect(buttons?.[0].style).toBe('cancel');
+    expect(buttons?.[1].style).toBe('destructive');
+
+    // Nothing is written while the dialog is up — not the course, and not the visit
+    // row the first plan action would mint.
+    const { endRegimen } = jest.requireMock('../../lib/medicationSetup');
+    expect(endRegimen).not.toHaveBeenCalled();
+    expect(mockLogFromAppointment).not.toHaveBeenCalled();
+  });
+
+  it('*Keep it* writes nothing, mints no visit, and leaves the row unanswered', async () => {
+    mockCourses = [course()];
+    answerAlertWith('Keep it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+
+    await act(async () => { fireEvent.press(screen.getByText('Stopped')); });
+    const { endRegimen } = jest.requireMock('../../lib/medicationSetup');
+    const { destructiveConfirm } = jest.requireMock('../../lib/haptics');
+    expect(endRegimen).not.toHaveBeenCalled();
+    expect(mockLogFromAppointment).not.toHaveBeenCalled();
+    expect(destructiveConfirm).not.toHaveBeenCalled();
+    // The chips are still there to answer.
+    expect(screen.getByText('Keep')).toBeTruthy();
+    expect(screen.getByText('Stopped')).toBeTruthy();
+  });
+
+  it('writes the SAME day the confirm named, with the rigid haptic on the confirm', async () => {
+    mockCourses = [course()];
+    answerAlertWith('Stop it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+
+    fireEvent.press(screen.getByText('Stopped'));
+    const { endRegimen } = jest.requireMock('../../lib/medicationSetup');
+    await waitFor(() => expect(endRegimen).toHaveBeenCalledTimes(1));
+    expect(endRegimen).toHaveBeenCalledWith('med-1', localToday());
+    const { destructiveConfirm } = jest.requireMock('../../lib/haptics');
+    expect(destructiveConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the stopped course on screen, saying so, after the active read drops it', async () => {
+    // The two courses the record holds; stopping Cerenia makes the ACTIVE read return
+    // only Apoquel, which is what dropped the row before this fix.
+    mockCourses = [course(), course({ id: 'med-2', drugName: 'Apoquel' })];
+    const { endRegimen } = jest.requireMock('../../lib/medicationSetup');
+    endRegimen.mockImplementationOnce(async () => {
+      mockCourses = [course({ id: 'med-2', drugName: 'Apoquel' })];
+    });
+    answerAlertWith('Stop it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Cerenia');
+
+    fireEvent.press(screen.getAllByText('Stopped')[0]);
+    await screen.findByText('Stopped today');
+    expect(screen.getByText('Cerenia')).toBeTruthy();
+    // Settled means answered: Cerenia has no chips left, Apoquel still has its three.
+    expect(screen.getAllByText('Stopped')).toHaveLength(1);
+    expect(screen.getAllByText('Keep')).toHaveLength(1);
+    // In the place it held — above Apoquel, not re-sorted to the bottom.
+    const order = screen.getAllByText(/^(Cerenia|Apoquel)$/).map((n) => n.props.children);
+    expect(order).toEqual(['Cerenia', 'Apoquel']);
+  });
+});
+
+describe('CUL-951 — *Ended* confirms first, and never turns into *Start a trial*', () => {
+  const TRIAL = { id: 'trial-1', startedAt: '2026-09-01', targetDurationDays: 56, foodLabel: 'Hill’s z/d' };
+
+  beforeEach(() => {
+    const { getActiveTrialForPet } = jest.requireMock('../../lib/dietTrialSetup');
+    getActiveTrialForPet.mockImplementation(async () => TRIAL);
+  });
+
+  it('asks before ending, naming the trial and the day', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+
+    fireEvent.press(screen.getByText('Ended'));
+    const [title, body, buttons] = alert.mock.calls[0];
+    expect(title).toBe('End the Hill’s z/d trial?');
+    expect(body).toMatch(/^Nyx’s trial ends today, [A-Z][a-z]{2} \d{1,2}\./);
+    expect((buttons ?? []).map((b) => b.text)).toEqual(['Keep it', 'End it']);
+    const { endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
+    expect(endActiveTrial).not.toHaveBeenCalled();
+  });
+
+  it('*Keep it* leaves the trial running and unanswered', async () => {
+    answerAlertWith('Keep it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+
+    await act(async () => { fireEvent.press(screen.getByText('Ended')); });
+    const { endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
+    expect(endActiveTrial).not.toHaveBeenCalled();
+    expect(screen.getByText('Switched')).toBeTruthy();
+  });
+
+  it('once confirmed, the row says the trial ended — and *Start a trial* does not appear', async () => {
+    const { endActiveTrial, getActiveTrialForPet } = jest.requireMock('../../lib/dietTrialSetup');
+    endActiveTrial.mockImplementationOnce(async () => {
+      // The record after the end: no running trial, which is what rendered the
+      // *Start a trial* door in the ended trial's place.
+      getActiveTrialForPet.mockImplementation(async () => null);
+    });
+    answerAlertWith('End it');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+
+    fireEvent.press(screen.getByText('Ended'));
+    await screen.findByText('Ended today');
+    expect(endActiveTrial).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Hill’s z/d')).toBeTruthy();
+    expect(screen.queryByText('Start a trial')).toBeNull();
+    expect(screen.queryByText('A new food to try?')).toBeNull();
+    const { destructiveConfirm } = jest.requireMock('../../lib/haptics');
+    expect(destructiveConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('*Keep* and *Switched* open no confirm — only the irreversible chip asks', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+
+    await act(async () => { fireEvent.press(screen.getByText('Keep')); });
+    // *Switched* opens the trial sheet, whose own blocked step owns the end-and-start.
+    await act(async () => { fireEvent.press(screen.getByText('Switched')); });
+    expect(alert).not.toHaveBeenCalled();
+    const { endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
+    expect(endActiveTrial).not.toHaveBeenCalled();
   });
 });

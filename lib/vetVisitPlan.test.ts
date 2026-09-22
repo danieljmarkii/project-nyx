@@ -4,6 +4,10 @@ import {
   DEFAULT_RECHECK_WEEKS,
   defaultRecheckDate,
   describeVisitSave,
+  endTrialCopy,
+  mergePlanCourses,
+  settledVerdictLine,
+  stopCourseCopy,
   visitAnchorsAnything,
   trialVerdictLabel,
   VISIT_OFFLINE_LINE,
@@ -270,5 +274,107 @@ describe('visitAnchorsAnything — what the report window and Home key off', () 
       expect(s.homeLine !== null).toBe(anchors);
       expect(s.reportLine !== null).toBe(anchors);
     }
+  });
+});
+
+// CUL-951 — the one safety net on *Stopped* / *Ended*, and what the row says after.
+describe('the Stopped / Ended confirm (CUL-951)', () => {
+  it('names the course, the pet and the day it ends', () => {
+    const c = stopCourseCopy({ drugName: 'Motozol', petName: 'Nyx', endLabel: 'Sep 22' });
+    expect(c.title).toBe('Stop Motozol?');
+    expect(c.body).toBe(
+      'Nyx’s Motozol course ends today, Sep 22. Its logged doses stay on the timeline and in vet reports.',
+    );
+    expect(c.keepLabel).toBe('Keep it');
+    expect(c.confirmLabel).toBe('Stop it');
+  });
+
+  it('trims a drug name the record stored with padding', () => {
+    expect(stopCourseCopy({ drugName: ' Cerenia ', petName: 'Nyx', endLabel: 'Sep 22' }).title)
+      .toBe('Stop Cerenia?');
+  });
+
+  it('names the trial by its food, and the day it ends', () => {
+    const c = endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Juniper', endLabel: 'Sep 22' });
+    expect(c.title).toBe('End the Hill’s z/d trial?');
+    expect(c.body).toBe(
+      'Juniper’s trial ends today, Sep 22. Everything logged during it stays on the timeline.',
+    );
+    expect(c.confirmLabel).toBe('End it');
+  });
+
+  it('never reads "the Diet trial trial" for a trial with no food name', () => {
+    expect(endTrialCopy({ foodLabel: null, petName: 'Nyx', endLabel: 'Sep 22' }).title)
+      .toBe('End the diet trial?');
+    expect(endTrialCopy({ foodLabel: '  ', petName: 'Nyx', endLabel: 'Sep 22' }).title)
+      .toBe('End the diet trial?');
+  });
+
+  it('makes no claim about the vet report for a trial (B-455: an ended-early trial still reads as ongoing there)', () => {
+    const c = endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Nyx', endLabel: 'Sep 22' });
+    expect(c.body).not.toMatch(/report/i);
+  });
+
+  it('carries no exclamation mark and never says the cancel is the *Keep* verdict', () => {
+    const all = [
+      stopCourseCopy({ drugName: 'Motozol', petName: 'Nyx', endLabel: 'Sep 22' }),
+      endTrialCopy({ foodLabel: 'Hill’s z/d', petName: 'Nyx', endLabel: 'Sep 22' }),
+    ];
+    for (const c of all) {
+      expect(`${c.title} ${c.body} ${c.keepLabel} ${c.confirmLabel}`).not.toMatch(/!/);
+      // The cancel is a phrase, not the bare chip label: *Keep* would read as the
+      // verdict it is not.
+      expect(c.keepLabel).not.toBe('Keep');
+    }
+  });
+});
+
+describe('settledVerdictLine — the row says what happened instead of vanishing', () => {
+  it('says "today" on the day it was written', () => {
+    expect(settledVerdictLine({ verdict: 'stopped', endedOn: '2026-09-22', today: '2026-09-22', endLabel: 'Sep 22' }))
+      .toBe('Stopped today');
+    expect(settledVerdictLine({ verdict: 'ended', endedOn: '2026-09-22', today: '2026-09-22', endLabel: 'Sep 22' }))
+      .toBe('Ended today');
+  });
+
+  it('names the day once it is no longer today — a screen left open past midnight', () => {
+    expect(settledVerdictLine({ verdict: 'stopped', endedOn: '2026-09-22', today: '2026-09-23', endLabel: 'Sep 22' }))
+      .toBe('Stopped Sep 22');
+  });
+});
+
+describe('mergePlanCourses — a settled course keeps its place across a re-read', () => {
+  const a = { id: 'a', v: 1 };
+  const b = { id: 'b', v: 1 };
+  const c = { id: 'c', v: 1 };
+
+  it('keeps a settled course the active read no longer returns, in the place it held', () => {
+    // `b` was stopped: the read filters `status = 'active'` and drops it.
+    expect(mergePlanCourses([a, b, c], [a, c], new Set(['b'])).map((x) => x.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('drops an UNSETTLED course the read no longer returns — the record wins there', () => {
+    // Ended on another surface: nothing on this screen answered it, so nothing on this
+    // screen should keep claiming it is running.
+    expect(mergePlanCourses([a, b, c], [a, c], new Set()).map((x) => x.id)).toEqual(['a', 'c']);
+  });
+
+  it('takes the fresh row for everything not settled (a *Changed* dose shows)', () => {
+    const a2 = { id: 'a', v: 2 };
+    expect(mergePlanCourses([a, b], [a2, b], new Set())[0]).toBe(a2);
+  });
+
+  it('keeps the settled SNAPSHOT even if the read returns the row again', () => {
+    // A settled row is an answer given; a late read must not re-open its chips.
+    const b2 = { id: 'b', v: 2 };
+    expect(mergePlanCourses([a, b], [a, b2], new Set(['b']))[1]).toBe(b);
+  });
+
+  it('appends a newly added course after the rows already on screen', () => {
+    expect(mergePlanCourses([a, b], [c, a, b], new Set()).map((x) => x.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('is the fresh read on first load', () => {
+    expect(mergePlanCourses([], [c, a], new Set()).map((x) => x.id)).toEqual(['c', 'a']);
   });
 });

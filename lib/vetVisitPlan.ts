@@ -84,6 +84,133 @@ export function trialVerdictLabel(verdict: TrialVerdict): string {
   }
 }
 
+// ── The one safety net on *Stopped* / *Ended* (CUL-951) ─────────────────────────
+
+/**
+ * The confirm an owner sees before *Stopped* ends a course or *Ended* ends a trial.
+ *
+ * A CONFIRM BEFORE, NOT A WAY BACK AFTER (C-21 — exactly one safety net per
+ * destructive action; PM ruling 2026-09-22). Reversal would mean un-ending a course,
+ * which the app has no concept of, and the H1 register says *Ended* comes only from
+ * an owner action — so the action is made deliberate rather than undoable.
+ *
+ * The chips are three of equal weight and only one of them is irreversible, which is
+ * why the dialog NAMES what ends and WHEN: "Stop it?" over a bare chip would confirm
+ * the tap, not the consequence. The date is passed in by the caller as a label, the
+ * `courseRowSubtitle` precedent (this module formats no dates of its own), and the
+ * caller hands the SAME day to the write, so the date the owner is shown and the date
+ * the record gets are one value.
+ *
+ * *Keep it* is the cancel and mock round 6's A7 wording: it answers "Stop Motozol?"
+ * with what actually happens — the course stays. It does NOT select the *Keep* chip;
+ * the row goes back to its resting state, unanswered.
+ */
+export interface EndConfirmCopy {
+  title: string;
+  body: string;
+  /** The cancel — nothing is written. */
+  keepLabel: string;
+  /** The destructive button. */
+  confirmLabel: string;
+}
+
+export function stopCourseCopy(args: {
+  drugName: string;
+  petName: string;
+  /** 'Sep 22' — the day `endRegimen` will write, formatted by the caller. */
+  endLabel: string;
+}): EndConfirmCopy {
+  const drug = args.drugName.trim();
+  return {
+    title: `Stop ${drug}?`,
+    // The second sentence is the Pet tab's own end-medication confirm
+    // (`confirmEndRegimen`), word for word: the claim is about the DOSES, which are
+    // events and untouched by the course's status — so it holds whatever the report
+    // does with the ended course itself.
+    body: `${args.petName}’s ${drug} course ends today, ${args.endLabel}. Its logged doses stay on the timeline and in vet reports.`,
+    keepLabel: 'Keep it',
+    confirmLabel: 'Stop it',
+  };
+}
+
+export function endTrialCopy(args: {
+  /** The trial's food, or null — never the row's 'Diet trial' stand-in, which would
+   *  read "End the Diet trial trial?". */
+  foodLabel: string | null;
+  petName: string;
+  /** 'Sep 22' — the day `endActiveTrial` will write. */
+  endLabel: string;
+}): EndConfirmCopy {
+  const food = args.foodLabel?.trim();
+  return {
+    title: food ? `End the ${food} trial?` : 'End the diet trial?',
+    // The timeline only, NOT the report. An ENDED-EARLY trial is written `abandoned`
+    // with `completed_at` NULL, and the deployed report still keys off
+    // `completed_at` (B-455), so a sentence promising how the report shows it would
+    // be a claim the reader does not yet honour.
+    body: `${args.petName}’s trial ends today, ${args.endLabel}. Everything logged during it stays on the timeline.`,
+    keepLabel: 'Keep it',
+    confirmLabel: 'End it',
+  };
+}
+
+/**
+ * What a row says once *Stopped* or *Ended* has been confirmed — the row stays where
+ * it was and says what happened, instead of vanishing (CUL-951).
+ *
+ * The vanishing was the only feedback the screen gave: the course re-read filters
+ * `status = 'active'`, so an answered row simply left the list, and a trial left
+ * behind *Start a trial* — the app asking to start one a second after the owner said
+ * the vet stopped one.
+ *
+ * "today" only while it is still today. A screen left open past midnight would
+ * otherwise go on saying "today" about yesterday, so the other branch names the day.
+ */
+export function settledVerdictLine(args: {
+  verdict: 'stopped' | 'ended';
+  /** 'YYYY-MM-DD' — the day the write recorded. */
+  endedOn: string;
+  /** 'YYYY-MM-DD' — the reading device's local today. */
+  today: string;
+  /** 'Sep 22', for the not-today branch. */
+  endLabel: string;
+}): string {
+  const verb = args.verdict === 'stopped' ? 'Stopped' : 'Ended';
+  return args.endedOn === args.today ? `${verb} today` : `${verb} ${args.endLabel}`;
+}
+
+/**
+ * The course list after a re-read, with every course settled on this screen kept in
+ * the place it held (CUL-951).
+ *
+ * The re-read is the right source for everything ELSE — a course added through the
+ * sheet, a dose amount changed through *Changed* — so this only overrides it for the
+ * rows the owner has already answered with *Stopped*, which the read can no longer
+ * see (it filters `status = 'active'`). Order is the previous render's, with any new
+ * course appended: a list that re-sorted under the owner's thumb after every answer
+ * would put the next chip where the last one was.
+ *
+ * Generic over the row so the rule is testable without the record's shape.
+ */
+export function mergePlanCourses<T extends { id: string }>(
+  prev: ReadonlyArray<T>,
+  fresh: ReadonlyArray<T>,
+  settledIds: ReadonlySet<string>,
+): T[] {
+  const freshById = new Map(fresh.map((c) => [c.id, c] as const));
+  const kept: T[] = [];
+  for (const c of prev) {
+    if (settledIds.has(c.id)) kept.push(c);
+    else {
+      const next = freshById.get(c.id);
+      if (next) kept.push(next);
+    }
+  }
+  const seen = new Set(kept.map((c) => c.id));
+  for (const c of fresh) if (!seen.has(c.id)) kept.push(c);
+  return kept;
+}
+
 // ── The saved moment (mock D2) ──────────────────────────────────────────────────
 
 /** One line of "what was linked", in the order the moment lists them. */
