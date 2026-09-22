@@ -49,3 +49,5 @@ No code, no schema, no deploy. One project, three issues, fourteen moves, two am
 - **D-C → close.** CUL-939 closed as Done: the cancel (CUL-952) and the delete (VV-6, live at `generate-report` v15) both shipped.
 
 The critical path is unchanged in shape and one step longer in consequence: the store cut now waits on the whole vet-visits chain, which is the point of the ruling.
+
+**Later the same day:** the PM asked to rule CUL-950 / CUL-951 at pickup rather than as a batch. Milestone 0 is renamed to say so; CUL-970 needs no ruling and can start at once, CUL-987 is optional. Shipped via #887, merged by the PM's instruction at wrap.
