@@ -500,12 +500,13 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     nowMs: number,
     trialOver: Partial<typeof TRIAL_ROW> = {},
     arrangements: Array<Record<string, unknown>> = [],
+    decline: Record<string, unknown> = { status: 'none', flags: [] },
   ) {
     jest.resetModules();
     const db = stubDb(meals, trialOver, arrangements);
     jest.doMock('./db', () => ({ getDb: () => db }));
     jest.doMock('./analytics', () => ({
-      getIntakeDecline: jest.fn().mockResolvedValue({ status: 'none', flags: [] }),
+      getIntakeDecline: jest.fn().mockResolvedValue(decline),
     }));
     jest.doMock('./trialContaminant', () => ({
       loadTrialProteinContext: jest.fn().mockResolvedValue(null),
@@ -611,6 +612,51 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
       new Date(2026, 6, 6, 20).getTime(),
     );
     expect(input.freeFedOverlap).toBe(false);
+  });
+
+  // CUL-950 (A): Get ready states every decline the device holds that the Signal does
+  // not, so the loader hands over EVERY flag — not `flags[0]` — each with its identity
+  // and its own sentence, and the card's single headline is the first one's.
+  it('carries every intake-decline flag, and the headline is the first one’s', async () => {
+    const flag = (over: Record<string, unknown>) => ({
+      class: 'health_watch', species: 'dog', baselineScore: 4, recentScore: 1,
+      daysBelowBaseline: 0, refusedFoodLabel: null, ratedMealsConsidered: 8, ...over,
+    });
+    const input = await load(
+      [{ id: 'e1', at: new Date(2026, 6, 5, 8).toISOString(), food: 'f1' }],
+      new Date(2026, 6, 6, 20).getTime(),
+      {},
+      [],
+      {
+        status: 'watch',
+        flags: [
+          flag({ trigger: 'consecutive_low', daysBelowBaseline: 2 }),
+          flag({ trigger: 'refused_normal_food', refusedFoodLabel: 'Royal Canin Duck' }),
+        ],
+      },
+    );
+    expect(input.intakeDeclineFacts).toEqual([
+      {
+        trigger: 'consecutive_low',
+        refusedFoodLabel: null,
+        headline: 'Biscuit has left most of their food for 2 days.',
+      },
+      {
+        trigger: 'refused_normal_food',
+        refusedFoodLabel: 'Royal Canin Duck',
+        headline: 'Biscuit just turned down Royal Canin Duck, which Biscuit normally eats.',
+      },
+    ]);
+    expect(input.intakeDeclineHeadline).toBe(input.intakeDeclineFacts?.[0].headline);
+  });
+
+  it('carries no facts and no headline when the device holds no decline', async () => {
+    const input = await load(
+      [{ id: 'e1', at: new Date(2026, 6, 5, 8).toISOString(), food: 'f1' }],
+      new Date(2026, 6, 6, 20).getTime(),
+    );
+    expect(input.intakeDeclineFacts).toEqual([]);
+    expect(input.intakeDeclineHeadline).toBeNull();
   });
 
   // A NULL RANGE IS NOT A ZERO RECORD.

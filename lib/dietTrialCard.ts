@@ -85,7 +85,7 @@
 //   WITHHOLD THE READING when the record cannot support it.
 //   NEVER WITHHOLD THE FLOOR — the off-diet count is owed in every state.
 //
-import { getDietTrialProgress } from './analytics';
+import { getDietTrialProgress, type IntakeDeclineFlag } from './analytics';
 import {
   // The fire predicate's own floors, reused BY THE STAND-DOWN so the two
   // directions cannot drift apart — see `liveRefusal`.
@@ -237,6 +237,18 @@ export interface TrialExposureFacts {
   mayStateRecordClean: boolean;
 }
 
+/**
+ * One device-local intake-decline flag, carried whole: which decline it is, the food
+ * a refusal names, and the sentence `declineHeadline` composed for it. The identity
+ * fields are the flag's own, never parsed back out of the sentence.
+ */
+export interface IntakeDeclineFact {
+  trigger: IntakeDeclineFlag['trigger'];
+  /** The refused food's label (`refused_normal_food` only), or null when unnamed. */
+  refusedFoodLabel: string | null;
+  headline: string;
+}
+
 export interface TrialCardInput {
   /** null when this pet has no trial on record → state 0. */
   trial: TrialCardTrial | null;
@@ -247,6 +259,21 @@ export interface TrialCardInput {
   exposures?: TrialExposureFacts | null;
   /** §5.2 — a live intake-decline flag REPLACES the adherence line entirely. */
   intakeDeclineHeadline?: string | null;
+  /**
+   * EVERY live intake-decline flag the device holds, in the detector's order, each
+   * with its own sentence — where `intakeDeclineHeadline` is the first one's sentence
+   * alone. Set by `loadDietTrialFacts` in the same statement, from the same read, so
+   * `intakeDeclineFacts[0].headline === intakeDeclineHeadline` whenever both exist.
+   *
+   * Read by Get ready only (CUL-950). The card, the strip and the completion sheet
+   * keep reading the headline, because they state ONE decline and replace a line
+   * with it. Get ready has to know WHICH decline each sentence is, so it can drop
+   * the phone's sentence when the Signal says the same thing — and keep it when the
+   * Signal says something else. Optional so the dozens of hand-built inputs across
+   * the card's tests need not carry it; Get ready treats its absence as "unknown
+   * decline", which never matches and therefore never suppresses anything.
+   */
+  intakeDeclineFacts?: readonly IntakeDeclineFact[];
   /**
    * The WHOLE-RANGE refusal (`lib/dietTrial.TrialFacts.rangeRefusal`) — a
    * history, where `trialDietRefusal` is a now-fact.
