@@ -18,7 +18,9 @@ type LogArgs = { petId: string; visitedAt: string };
 const mockBook = jest.fn(async (_input: BookArgs) => 'new-appointment');
 const mockLog = jest.fn(async (_input: LogArgs) => 'new-visit');
 const mockCancel = jest.fn(async (_id: string) => undefined);
-let mockHome: VetVisitsHome = { next: null, awaiting: [], visits: [] };
+let mockHome: VetVisitsHome = { next: null, later: [], awaiting: [], visits: [] };
+// The prep columns a remove confirm reads off the row at press time (CUL-987 D2).
+let mockDetail: { questions: string | null; notes_draft: string | null } | null = null;
 
 jest.mock('expo-router', () => ({
   Redirect: () => null,
@@ -66,6 +68,7 @@ jest.mock('../../lib/vetVisits', () => {
     bookVetAppointment: (input: BookArgs) => mockBook(input),
     logVetVisit: (input: LogArgs) => mockLog(input),
     cancelVetAppointment: (id: string) => mockCancel(id),
+    readAppointmentById: jest.fn(async () => mockDetail),
   };
 });
 
@@ -88,7 +91,8 @@ beforeEach(() => {
   mockBook.mockImplementation(async () => 'new-appointment');
   mockLog.mockImplementation(async () => 'new-visit');
   mockParams = {};
-  mockHome = { next: null, awaiting: [], visits: [] };
+  mockHome = { next: null, later: [], awaiting: [], visits: [] };
+  mockDetail = null;
   mockStoreState = { pets: [PET_A, PET_B], activePet: PET_A };
 });
 
@@ -214,7 +218,7 @@ describe('the two doors are gated SEPARATELY (CUL-966)', () => {
   }
 
   it('offers both doors on the day', async () => {
-    mockHome = { next: nextAppt(true), awaiting: [], visits: [] };
+    mockHome = { next: nextAppt(true), later: [], awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
     expect(await screen.findByText('Take notes')).toBeTruthy();
     expect(screen.getByText('How did it go?')).toBeTruthy();
@@ -225,7 +229,7 @@ describe('the two doors are gated SEPARATELY (CUL-966)', () => {
     // Before this, a visit booked six weeks out had no notes field anywhere in the
     // app until the morning of — which is the moment people have stopped preparing,
     // not started.
-    mockHome = { next: nextAppt(false), awaiting: [], visits: [] };
+    mockHome = { next: nextAppt(false), later: [], awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
     await screen.findByText('Wed, Oct 28');
     expect(screen.getByText('Take notes')).toBeTruthy();
@@ -239,14 +243,14 @@ describe('the two doors are gated SEPARATELY (CUL-966)', () => {
     // no way back before VV-6's delete (CUL-939). Proven by mutation: drop the
     // `isToday` condition on `onHowDidItGo` in index.tsx and this reds while the
     // notes test above stays green, which is the asymmetry in one line.
-    mockHome = { next: nextAppt(false), awaiting: [], visits: [] };
+    mockHome = { next: nextAppt(false), later: [], awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
     await screen.findByText('Wed, Oct 28');
     expect(screen.queryByText('How did it go?')).toBeNull();
   });
 
   it('still renders the appointment itself — the gate is on the actions, not the row', async () => {
-    mockHome = { next: nextAppt(false), awaiting: [], visits: [] };
+    mockHome = { next: nextAppt(false), later: [], awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
     expect(await screen.findByText('Wed, Oct 28')).toBeTruthy();
     expect(screen.getByText('Next')).toBeTruthy();
@@ -271,7 +275,7 @@ describe('changing a booked appointment (CUL-952)', () => {
 
   it('offers Change under Next, pointed at the APPOINTMENT and not the list', async () => {
     const { router } = require('expo-router');
-    mockHome = { next: nextIn(42), awaiting: [], visits: [] };
+    mockHome = { next: nextIn(42), later: [], awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
 
     fireEvent.press(await screen.findByText('Change'));
@@ -282,7 +286,7 @@ describe('changing a booked appointment (CUL-952)', () => {
   });
 
   it('does NOT offer "It didn’t happen" on a booking still ahead', async () => {
-    mockHome = { next: nextIn(42), awaiting: [], visits: [] };
+    mockHome = { next: nextIn(42), later: [], awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
     await screen.findByText('Wed, Oct 28');
     // The app has not asked anything yet, so there is no question to answer. The
@@ -291,7 +295,7 @@ describe('changing a booked appointment (CUL-952)', () => {
   });
 
   it('offers BOTH answers on a booking whose day has passed', async () => {
-    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    mockHome = { next: null, later: [], awaiting: [nextIn(-7)], visits: [] };
     render(<VetVisitsScreen />);
     await screen.findByText('Wed, Oct 28');
 
@@ -305,7 +309,7 @@ describe('changing a booked appointment (CUL-952)', () => {
   });
 
   it('says so in the note under the bucket, not only in the buttons', async () => {
-    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    mockHome = { next: null, later: [], awaiting: [nextIn(-7)], visits: [] };
     render(<VetVisitsScreen />);
     await screen.findByText('Wed, Oct 28');
     expect(screen.getByText(/or\s+say it didn’t happen/)).toBeTruthy();
@@ -313,12 +317,13 @@ describe('changing a booked appointment (CUL-952)', () => {
 
   it('confirms before removing, and writes nothing until the confirm is taken', async () => {
     const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    mockHome = { next: null, later: [], awaiting: [nextIn(-7)], visits: [] };
     render(<VetVisitsScreen />);
 
     fireEvent.press(await screen.findByText('It didn’t happen'));
 
-    expect(spy).toHaveBeenCalled();
+    // Awaited: the confirm asks the record for the row's prep first (CUL-987 D2).
+    await waitFor(() => expect(spy).toHaveBeenCalled());
     const [title, body] = spy.mock.calls[0];
     expect(title).toBe('Remove this appointment?');
     // The day has passed, so the copy must not call it "upcoming".
@@ -333,7 +338,7 @@ describe('changing a booked appointment (CUL-952)', () => {
     const spy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
       (buttons ?? []).find((b) => b.text === 'Remove it')?.onPress?.();
     });
-    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    mockHome = { next: null, later: [], awaiting: [nextIn(-7)], visits: [] };
     render(<VetVisitsScreen />);
 
     fireEvent.press(await screen.findByText('It didn’t happen'));
@@ -347,7 +352,7 @@ describe('changing a booked appointment (CUL-952)', () => {
     const spy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
       (buttons ?? []).find((b) => b.text === 'Remove it')?.onPress?.();
     });
-    mockHome = { next: null, awaiting: [nextIn(-7)], visits: [] };
+    mockHome = { next: null, later: [], awaiting: [nextIn(-7)], visits: [] };
     render(<VetVisitsScreen />);
 
     fireEvent.press(await screen.findByText('It didn’t happen'));
@@ -378,6 +383,7 @@ describe('a booking whose day has passed', () => {
   it('is rendered, not hidden — with the day it needs and what to do about it', async () => {
     mockHome = {
       next: null,
+      later: [],
       awaiting: [
         {
           id: 'a-past',
@@ -405,6 +411,7 @@ describe('a booking whose day has passed', () => {
   it('does not count as the empty state, so the two doors do not replace it', async () => {
     mockHome = {
       next: null,
+      later: [],
       awaiting: [
         { id: 'a-past', petId: 'pet-a', scheduledAt: instantDaysOut(-7), stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '', isToday: false },
       ],
@@ -513,5 +520,153 @@ describe('the three states below "has rows" (C-12)', () => {
   it('renders the empty state once the read has answered with nothing', async () => {
     render(<VetVisitsScreen />);
     expect(await screen.findByText('Nyx’s visits, in one place')).toBeTruthy();
+  });
+});
+
+// ── CUL-970 — a second upcoming booking is on screen ────────────────────────────
+
+describe('every upcoming booking renders under Next (CUL-970)', () => {
+  // Built through the REAL view builder from rows shaped like the local table, so
+  // the labels are the ones production composes rather than hand-typed stand-ins
+  // (C-35). Anchored to `Date.now()` so the fixture never ages into the past (C-29).
+  const { buildAppointmentView } = jest.requireActual('../../lib/vetVisits');
+  function booking(id: string, days: number, reason: string) {
+    return buildAppointmentView({
+      id,
+      pet_id: 'pet-a',
+      scheduled_at: instantDaysOut(days),
+      clinic_name: 'Riverside Animal Hospital',
+      vet_name: null,
+      reason,
+      vet_visit_id: null,
+      cancelled_at: null,
+      deleted_at: null,
+    });
+  }
+
+  it('shows the recheck AND the annual — the second is no longer on no screen at all', async () => {
+    mockHome = {
+      next: booking('recheck', 21, 'recheck'),
+      later: [booking('annual', 180, 'annual exam')],
+      awaiting: [],
+      visits: [],
+    };
+    render(<VetVisitsScreen />);
+
+    expect(await screen.findByText('Riverside Animal Hospital · recheck')).toBeTruthy();
+    expect(screen.getByText('Riverside Animal Hospital · annual exam')).toBeTruthy();
+    // Under ONE Next label — "what else is booked" is part of "what is next", not a
+    // section of its own.
+    expect(screen.getAllByText('Next')).toHaveLength(1);
+  });
+
+  it('gives the later booking its own notes door and its own Change, pointed at ITS id', async () => {
+    const { router } = require('expo-router');
+    mockHome = {
+      next: booking('recheck', 21, 'recheck'),
+      later: [booking('annual', 180, 'annual exam')],
+      awaiting: [],
+      visits: [],
+    };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Riverside Animal Hospital · annual exam');
+
+    const notes = screen.getAllByText('Take notes');
+    const change = screen.getAllByText('Change');
+    expect(notes).toHaveLength(2);
+    expect(change).toHaveLength(2);
+
+    fireEvent.press(notes[1]);
+    expect(router.push).toHaveBeenLastCalledWith('/vet-visits/at-the-vet?appointment=annual');
+    fireEvent.press(change[1]);
+    expect(router.push).toHaveBeenLastCalledWith('/vet-visits/edit-appointment?appointment=annual');
+  });
+
+  it('gives each booking’s doors a label a screen reader can tell apart (the date)', async () => {
+    // With more than one booking under Next, "Take notes for Nyx’s visit" read out
+    // identically per row (pm-feature-review) — the label now carries the booking's
+    // own `when`, the same string the block beside it shows.
+    const lead = booking('recheck', 21, 'recheck');
+    const later = booking('annual', 180, 'annual exam');
+    mockHome = { next: lead, later: [later], awaiting: [], visits: [] };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Riverside Animal Hospital · annual exam');
+
+    expect(screen.getByLabelText(`Take notes for Nyx’s visit, ${lead.when}`)).toBeTruthy();
+    expect(screen.getByLabelText(`Take notes for Nyx’s visit, ${later.when}`)).toBeTruthy();
+    expect(screen.getByLabelText(`Change Nyx’s appointment, ${later.when}`)).toBeTruthy();
+    expect(lead.when).not.toBe(later.when);
+  });
+
+  it('keeps *How did it go?* off a later booking that is not today', async () => {
+    mockHome = {
+      next: booking('recheck', 21, 'recheck'),
+      later: [booking('annual', 180, 'annual exam')],
+      awaiting: [],
+      visits: [],
+    };
+    render(<VetVisitsScreen />);
+    await screen.findByText('Riverside Animal Hospital · annual exam');
+    expect(screen.queryByText('How did it go?')).toBeNull();
+  });
+});
+
+// ── CUL-987 — the block is a door, and the remove confirm names the prep ─────────
+
+describe('the appointment block opens Get ready, in every bucket (CUL-987 D1)', () => {
+  const { buildAppointmentView } = jest.requireActual('../../lib/vetVisits');
+  function booking(id: string, days: number, reason: string) {
+    return buildAppointmentView({
+      id,
+      pet_id: 'pet-a',
+      scheduled_at: instantDaysOut(days),
+      clinic_name: 'Riverside Animal Hospital',
+      vet_name: null,
+      reason,
+      vet_visit_id: null,
+      cancelled_at: null,
+      deleted_at: null,
+    });
+  }
+
+  it.each([
+    ['the lead under Next', 'recheck', 'Riverside Animal Hospital · recheck'],
+    ['a later booking', 'annual', 'Riverside Animal Hospital · annual exam'],
+    ['a passed day waiting on an answer', 'passed', 'Riverside Animal Hospital · dental'],
+  ])('%s', async (_label, id, where) => {
+    const { router } = require('expo-router');
+    mockHome = {
+      next: booking('recheck', 21, 'recheck'),
+      later: [booking('annual', 180, 'annual exam')],
+      awaiting: [booking('passed', -7, 'dental')],
+      visits: [],
+    };
+    render(<VetVisitsScreen />);
+    await screen.findByText(where);
+
+    fireEvent.press(screen.getByLabelText(new RegExp(`${where}$`)));
+    expect(router.push).toHaveBeenLastCalledWith({ pathname: '/rundown', params: { appointmentId: id } });
+  });
+});
+
+describe('the list’s remove confirm names what goes with the row (CUL-987 D2)', () => {
+  it('names the notes typed for this visit', async () => {
+    const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockHome = {
+      next: null,
+      later: [],
+      awaiting: [{
+        id: 'a-past', petId: 'pet-a', scheduledAt: instantDaysOut(-7), stamp: { day: '15', month: 'Sep' },
+        when: 'Tue, Sep 15', day: 'Tue, Sep 15', where: 'Riverside Animal Hospital', isToday: false,
+      }],
+      visits: [],
+    };
+    mockDetail = { questions: null, notes_draft: 'Ask about the limp' };
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('It didn’t happen'));
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][1]).toMatch(/Your notes for this visit go with it\. Nothing else in the record changes\.$/);
+    spy.mockRestore();
   });
 });

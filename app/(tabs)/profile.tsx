@@ -1721,6 +1721,7 @@ export default function ProfileScreen() {
             petName={activePet.name}
             onOpen={() => router.push('/vet-visits')}
             onTakeNotes={(id) => router.push(`/vet-visits/at-the-vet?appointment=${id}`)}
+            onGetReady={(id) => router.push({ pathname: '/rundown', params: { appointmentId: id } })}
             onBook={() => router.push('/vet-visits?add=booked')}
             onLogPast={() => router.push('/vet-visits?add=happened')}
             style={styles.sectionGap}

@@ -434,6 +434,23 @@ export interface VetVisitsHome {
    */
   next: AppointmentView | null;
   /**
+   * Every OTHER live booking on or after today, soonest first — the rows after
+   * `next` (CUL-970).
+   *
+   * "What else is booked" is a different question from "what is next", and nothing
+   * answered it: this read took `upcoming[0]` and dropped the rest, so a recheck in
+   * three weeks and the annual in six months — exactly what a vet sends an owner home
+   * with — showed as one booking, and the second appeared on no screen at all until
+   * the first was logged or cancelled. Nothing stops the owner making it, either:
+   * `bookVetAppointment` is a bare INSERT.
+   *
+   * A slice of the same in-memory split, never a second query, so `next` and `later`
+   * cannot disagree about what "live" or "upcoming" means. The LIST renders these
+   * under *Next*; the Pet-tab card and Home's strip stay singular on purpose — both
+   * answer "what is next", and neither is a list.
+   */
+  later: AppointmentView[];
+  /**
    * Bookings whose DAY HAS PASSED with no visit logged against them, newest first.
    * "What is on file" — the list's question, which is a different one.
    *
@@ -453,7 +470,7 @@ export interface VetVisitsHome {
 }
 
 /** The zero value, so five call sites do not each restate the shape. */
-export const EMPTY_VET_VISITS_HOME: VetVisitsHome = { next: null, awaiting: [], visits: [] };
+export const EMPTY_VET_VISITS_HOME: VetVisitsHome = { next: null, later: [], awaiting: [], visits: [] };
 
 export function buildVisitListRow(
   visit: LocalVetVisit,
@@ -626,13 +643,20 @@ export async function readVetVisitsHome(petId: string, now: Date = new Date()): 
   // until the adversarial pass drove it.
   const dayStart = startOfLocalDay(now).getTime();
   const instantOf = (a: LocalVetAppointment) => new Date(a.scheduled_at).getTime();
-  const upcoming = appointments.filter((a) => instantOf(a) >= dayStart);
-  const past = appointments.filter((a) => instantOf(a) < dayStart);
+  // Re-sorted by INSTANT, not left in the SQL's text order (C-40). The two spellings
+  // of one instant agree on their first 19 characters, so the text order was only
+  // ever wrong at an exact-second tie — harmless while one row was shown and the
+  // rest discarded, and a visible reordering now that `later` renders them. A stable
+  // sort, so rows at the same instant keep the order the read gave them.
+  const sorted = [...appointments].sort((a, b) => instantOf(a) - instantOf(b));
+  const upcoming = sorted.filter((a) => instantOf(a) >= dayStart);
+  const past = sorted.filter((a) => instantOf(a) < dayStart);
 
   const links = await readVisitLinks(visits);
 
   return {
     next: upcoming[0] ? buildAppointmentView(upcoming[0], now) : null,
+    later: upcoming.slice(1).map((a) => buildAppointmentView(a, now)),
     // Newest first: the one that just passed is the one the owner is thinking about.
     awaiting: past.reverse().map((a) => buildAppointmentView(a, now)),
     visits: visits.map((v) => buildVisitListRow(v, links.get(v.id) ?? emptyLinks(v.next_visit_at), now)),
@@ -1317,8 +1341,14 @@ export async function cancelVetAppointment(
 }
 
 /**
- * What the edit screen promises survives a change — or null when there is nothing
- * to promise (CUL-952).
+ * What the owner prepared for this visit, in one sentence — or null when there is
+ * nothing to name (CUL-952; the `goes` form CUL-987 D2).
+ *
+ * TWO FATES, ONE COUNT. The edit screen promises the prep SURVIVES a change
+ * (`stays`); the remove confirm says it LEAVES with the appointment (`goes`). They
+ * are the same fact about the same row read in opposite directions, so they are one
+ * function: a second counter beside the confirm is how "4 questions" on one screen
+ * becomes "3 questions" on the other (C-4).
  *
  * CONDITIONAL, because the unconditional version named two artifacts a first-time
  * rescheduler has never seen. An owner who has never opened Get ready has no
@@ -1332,21 +1362,51 @@ export async function cancelVetAppointment(
 export function appointmentPrepNote(
   questions: string | null,
   notesDraft: string | null,
+  fate: 'stays' | 'goes' = 'stays',
 ): string | null {
   const count = parseAppointmentQuestions(questions).length;
   const hasNotes = (notesDraft ?? '').trim().length > 0;
   if (count === 0 && !hasNotes) return null;
-  if (count > 0 && hasNotes) return 'Your questions and notes for this visit stay with it.';
-  if (hasNotes) return 'Your notes for this visit stay with it.';
+  // Plural subjects take the bare verb; a single question takes the -s form.
+  const plural = fate === 'stays' ? 'stay with it' : 'go with it';
+  const singular = fate === 'stays' ? 'stays with it' : 'goes with it';
+  if (count > 0 && hasNotes) return `Your questions and notes for this visit ${plural}.`;
+  if (hasNotes) return `Your notes for this visit ${plural}.`;
   return count === 1
-    ? 'Your question for this visit stays with it.'
-    : `Your ${count} questions for this visit stay with it.`;
+    ? `Your question for this visit ${singular}.`
+    : `Your ${count} questions for this visit ${plural}.`;
+}
+
+/**
+ * The edit screen's scope line in a multi-pet account (CUL-987 D3), or null.
+ *
+ * Booking offers *"Also for Moss"*, which mints a SECOND row under the other pet; an
+ * edit touches one row and correctly refuses to carry that. Nothing said so, so an
+ * owner moved Pip's recheck and Moss's Home kept leading with the old Tuesday. The
+ * line names the pet the change reaches — the record's, never the active one.
+ *
+ * Keyed on the ACCOUNT, as ruled (D3 (a): "in accounts with more than one pet, and
+ * nowhere else"): a single-pet account has no other pet's appointment it could be
+ * mistaken for, so the line would warn about nothing. It still renders on a booking
+ * that was never paired — there is no link between paired rows to ask (spec §10
+ * parks one), so the account is the narrowest honest scope, not a sign that this
+ * booking has a twin. `petCount` is the store's `pets` — the non-archived set, the
+ * one "Also for" offers from.
+ */
+export function appointmentEditScopeNote(petName: string, petCount: number): string | null {
+  return petCount > 1 ? `This changes ${petName}\u2019s appointment only.` : null;
 }
 
 /** The two strings the remove confirm shows. */
 export interface RemoveAppointmentCopy {
   title: string;
   body: string;
+}
+
+/** The two prep columns the remove confirm needs, raw — both nullable. */
+export interface AppointmentPrep {
+  questions: string | null;
+  notesDraft: string | null;
 }
 
 /**
@@ -1371,13 +1431,31 @@ export interface RemoveAppointmentCopy {
 export function removeAppointmentCopy(
   scheduledAt: string,
   petName: string,
+  /**
+   * The row's own prep columns, REQUIRED rather than defaulted (C-37: a default on
+   * the one argument that makes this confirm honest is the decision to omit it).
+   * Every caller reads the row first; a caller with nothing to say passes nulls.
+   */
+  prep: AppointmentPrep,
   now: Date = new Date(),
 ): RemoveAppointmentCopy {
   const when = formatAppointmentWhen(scheduledAt, now);
   const scope = appointmentDayReached(scheduledAt, now) ? 'visits' : 'upcoming visits';
+  // BETWEEN the removal and "Nothing else in the record changes" (CUL-987 D2). That
+  // sentence is true of the trial and the courses, and read alone it says nothing is
+  // lost — while a cancel stamps `cancelled_at`, every read filters cancelled rows,
+  // and the questions and notes typed for this visit go with the row. Naming them
+  // first is what keeps the last sentence true: "else" now means everything but them.
+  const goes = appointmentPrepNote(prep.questions, prep.notesDraft, 'goes');
   return {
     title: 'Remove this appointment?',
-    body: `${when} will be removed from ${petName}\u2019s ${scope}. Nothing else in the record changes.`,
+    body: [
+      `${when} will be removed from ${petName}\u2019s ${scope}.`,
+      goes,
+      'Nothing else in the record changes.',
+    ]
+      .filter(Boolean)
+      .join(' '),
   };
 }
 
