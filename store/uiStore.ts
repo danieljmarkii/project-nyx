@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { EventTypeKey } from '../constants/eventTypes';
 
 // Home's capture overlay — the one piece of card state that has to be visible OUTSIDE
 // Home's card tree (CUL-871 / N-4a; docs/nyx-daily-look-requirements.md T-21, and the
@@ -83,6 +84,46 @@ export interface IntakeDoorRequest {
   cardHasSelections: boolean;
 }
 
+/**
+ * The types the log sheet can open STRAIGHT AT its confirm (CUL-504). Everything the
+ * sheet completes in place, and nothing it hands off: Meal, Medication and Weight route
+ * out to their own screens from the grid, and a `check_in` is a look, whose only door is
+ * the Noticed card (E-6). Spelled here rather than imported from the sheet because this
+ * file is in Home's import closure (see below) and the sheet is not allowed to be.
+ */
+export type LogSheetConfirmType = Exclude<
+  EventTypeKey,
+  'meal' | 'medication' | 'weight_check' | 'check_in'
+>;
+
+/**
+ * THE LOG SHEET'S REQUEST (CUL-503 / CUL-504, "one door, one confirm").
+ *
+ * Every "start a log" door in the app opens ONE sheet, `EventTypeSheet`, mounted once by
+ * `components/log/LogSheetHost.tsx` in the root layout. It used to be mounted inside the
+ * FAB, which reached it by a prop, so every other door (the Home nudge, Ask's empty
+ * record, the day summary) pushed the full-screen `/log` picker instead and an owner met
+ * two different logging surfaces depending on how they arrived.
+ *
+ * Why the root and why a request, for the same two reasons as the intake door above:
+ *
+ *   • HOME'S CLOSURE. `TodayZone` is a Home card, and the sheet's confirm writes a row
+ *     (`insertSimpleEvent`). If the card imported the sheet, that write would join Home's
+ *     computed import closure and `guards/homeWrites.test.ts` would red on it — correctly,
+ *     because Home would then carry a fourth write class. The card publishes this request;
+ *     the host owns the surface.
+ *   • PRESENTATION. Ask and the day summary are root stack screens pushed OVER the tabs,
+ *     so a sheet mounted in the tabs layout would be presenting from a screen that is not
+ *     on top. The root mount sits above every stack screen.
+ *
+ * The request is the sheet's visibility: non-null while it is up. `initialType` starts
+ * the open at the confirm instead of the grid — the FAB's Vomit / Loose stool quick
+ * taps. Null opens the grid.
+ */
+export interface LogSheetRequest {
+  initialType: LogSheetConfirmType | null;
+}
+
 interface UiState {
   /** The live capture overlay, or null when no Home card owns the corner. */
   captureOverlay: CaptureOverlay | null;
@@ -91,6 +132,16 @@ interface UiState {
   intakeDoor: IntakeDoorRequest | null;
   openIntakeDoor: (request: IntakeDoorRequest) => void;
   closeIntakeDoor: () => void;
+  /** The log sheet's open request, or null when the sheet is down. */
+  logSheet: LogSheetRequest | null;
+  /** How many times the log sheet has been opened. Only ever counts up: the host keys
+   *  the sheet on it, so every open mounts a fresh sheet whose starting stage is read
+   *  at mount (EventTypeSheet's `initialType`), while a close keeps the instance so the
+   *  Modal still slides out. */
+  logSheetOpens: number;
+  /** Open the log sheet at its grid, or straight at the confirm for `initialType`. */
+  openLogSheet: (initialType?: LogSheetConfirmType) => void;
+  closeLogSheet: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -99,4 +150,12 @@ export const useUiStore = create<UiState>((set) => ({
   intakeDoor: null,
   openIntakeDoor: (intakeDoor) => set({ intakeDoor }),
   closeIntakeDoor: () => set({ intakeDoor: null }),
+  logSheet: null,
+  logSheetOpens: 0,
+  openLogSheet: (initialType) =>
+    set((st) => ({
+      logSheet: { initialType: initialType ?? null },
+      logSheetOpens: st.logSheetOpens + 1,
+    })),
+  closeLogSheet: () => set({ logSheet: null }),
 }));

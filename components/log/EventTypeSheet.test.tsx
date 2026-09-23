@@ -1,4 +1,6 @@
-// EventTypeSheet is the FAB's "More events" destination. B-745 PR 3 makes it a
+// EventTypeSheet is the app's one log sheet: the FAB's "More events" destination and,
+// since CUL-503 / CUL-504, every other in-app "start a log" door (the root-mounted
+// LogSheetHost opens it; the quick taps open it at a confirm). B-745 PR 3 makes it a
 // three-stage flow: the grouped grid → an in-sheet confirm for simple events
 // (symptom / stool / Other) → the completion beat, and it still ROUTES OUT to the
 // dedicated screens for Meal / Medication / Weight. This test pins that orchestration
@@ -87,6 +89,23 @@ jest.mock('./SimpleEventConfirm', () => {
     ),
   };
 });
+// A PASS-THROUGH around the real grid that counts its renders (CUL-504). Every test in
+// this file still gets the real tiles; the count exists for one claim — an
+// `initialType` open never renders the grid, not even for the frame before the confirm.
+// That claim is about WHEN the stage is decided (during render, not in an effect after
+// paint), and nothing in the rendered tree after the fact can tell the two apart.
+const mockGridRenders = { count: 0 };
+jest.mock('./EventTypePicker', () => {
+  const actual = jest.requireActual('./EventTypePicker');
+  return {
+    ...actual,
+    GroupedEventGrid: (props: Record<string, unknown>) => {
+      mockGridRenders.count += 1;
+      const Grid = actual.GroupedEventGrid;
+      return <Grid {...props} />;
+    },
+  };
+});
 jest.mock('./SheetLogBeat', () => {
   const { Text } = require('react-native');
   return {
@@ -109,6 +128,8 @@ import { render, fireEvent, act } from '@testing-library/react-native';
 import { Alert, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { EventTypeSheet } from './EventTypeSheet';
+import { LogSheetHost } from './LogSheetHost';
+import { useUiStore } from '../../store/uiStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
 import { PetAvatar } from '../pet/PetAvatar';
@@ -932,5 +953,128 @@ describe('EventTypeSheet — no pet to log for (CUL-681)', () => {
     expect(queryByText('Add a pet')).toBeNull();
     expect(queryByText('Archived pets')).toBeNull();
     expect(router.push).not.toHaveBeenCalled();
+  });
+});
+
+// ── CUL-504 — the quick taps open the sheet AT the confirm ────────────────────
+//
+// The FAB's Vomit / Loose stool rows name the event before the sheet opens, so the
+// sheet starts at that event's confirm (`initialType`) instead of the grid. They used
+// to push the full-screen /log confirm, one tap away in the same menu from this sheet's
+// own confirm for the same event. The confirm itself is the same component either way,
+// so the discard guard, the beat, the landing and Undo come with it; what is new, and
+// pinned here, is only where an open STARTS.
+describe('EventTypeSheet — opened at a confirm (CUL-504)', () => {
+  beforeEach(() => {
+    (router.push as jest.Mock).mockClear();
+    mockGridRenders.count = 0;
+    seedPets(1);
+  });
+
+  it('starts at the confirm for the type, naming the pet, and never renders the grid', () => {
+    const view = render(<EventTypeSheet visible initialType="vomit" onClose={jest.fn()} />);
+    expect(view.getByText('confirm:vomit:Nyx')).toBeTruthy();
+    expect(view.queryByText('Log for Nyx')).toBeNull();
+    // Not "the grid is gone now" — it was never drawn. An effect-driven stage change
+    // would render the grid first and then replace it, which is a picker flashing
+    // under the finger of an owner who already said what happened.
+    expect(mockGridRenders.count).toBe(0);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('Loose stool opens at the diarrhea confirm', () => {
+    const view = render(<EventTypeSheet visible initialType="diarrhea" onClose={jest.fn()} />);
+    expect(view.getByText('confirm:diarrhea:Nyx')).toBeTruthy();
+    expect(mockGridRenders.count).toBe(0);
+  });
+
+  it('captures the ACTIVE pet at the open, as a grid tap does', () => {
+    usePetStore.setState({
+      pets: [{ id: 'p1', name: 'Nyx' }, { id: 'p2', name: 'Mochi' }] as never,
+      activePet: { id: 'p2', name: 'Mochi' } as never,
+    });
+    const view = render(<EventTypeSheet visible initialType="vomit" onClose={jest.fn()} />);
+    expect(view.getByText('confirm:vomit:Mochi')).toBeTruthy();
+  });
+
+  // Parity with the flow it replaces: /log?type=vomit's back went to the type step, so
+  // "wrong type, take me back" still lands on the grid rather than closing the sheet.
+  it('back from the confirm lands on the grid', () => {
+    const view = render(<EventTypeSheet visible initialType="vomit" onClose={jest.fn()} />);
+    fireEvent.press(view.getByText('stub-back'));
+    expect(view.getByText('Log for Nyx')).toBeTruthy();
+    expect(view.getByText('Vomit')).toBeTruthy();
+  });
+
+  it('logs through the same confirm: the calm beat, naming the pet', () => {
+    const onClose = jest.fn();
+    const view = render(<EventTypeSheet visible initialType="vomit" onClose={onClose} />);
+    fireEvent.press(view.getByText('stub-logged'));
+    expect(view.getByText('beat:calm')).toBeTruthy();
+    expect(view.getByText('beat-pet:Nyx')).toBeTruthy();
+    fireEvent.press(view.getByText('stub-done'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('a half-filled confirm is still guarded on a scrim tap (CUL-612)', () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const onClose = jest.fn();
+    const view = render(<EventTypeSheet visible initialType="vomit" onClose={onClose} />);
+    fireEvent.press(view.getByText('stub-add-photo'));
+    fireEvent.press(view.getByLabelText('Close'));
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
+  // No pet, no confirm: a confirm with no one to write for is the CUL-681 defect in a
+  // new place. The open stays on the grid stage, which says why.
+  it('with no active pet it stays on the grid stage and says so', () => {
+    usePetStore.setState({ pets: [] as never, activePet: null as never });
+    const view = render(<EventTypeSheet visible initialType="vomit" onClose={jest.fn()} />);
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
+    expect(view.queryByText('confirm:vomit:Nyx')).toBeNull();
+  });
+
+  // The whole path the FAB takes, through the real host and the real store: the request
+  // it publishes is the one this sheet starts from, and the sheet's close clears it.
+  //
+  // This is the case that caught the first build. `initialType` was applied as a setState
+  // during render on the open's rising edge, and every direct render above passed — but
+  // through the host the sheet is MOUNTED CLOSED first, its reset effect queues no-op
+  // sets at mount, and React replayed them after the render-phase update: the owner who
+  // tapped Vomit landed on the grid. Only a sheet that is mounted closed and then opened
+  // by the store reproduces that, which is exactly the shape the app runs.
+  it('through the root host: the store request opens the confirm, and the close clears it', () => {
+    act(() => { useUiStore.setState({ logSheet: null }); });
+    const view = render(<LogSheetHost />);
+    expect(view.queryByText('confirm:vomit:Nyx')).toBeNull();
+
+    act(() => { useUiStore.getState().openLogSheet('vomit'); });
+    expect(view.getByText('confirm:vomit:Nyx')).toBeTruthy();
+
+    fireEvent.press(view.getByText('stub-logged'));
+    fireEvent.press(view.getByText('stub-done'));
+    expect(useUiStore.getState().logSheet).toBeNull();
+  });
+  it('every open through the host decides afresh: a plain open lands on the grid, a quick tap on its confirm', () => {
+    act(() => { useUiStore.setState({ logSheet: null }); });
+    const view = render(<LogSheetHost />);
+
+    act(() => { useUiStore.getState().openLogSheet('vomit'); });
+    expect(view.getByText('confirm:vomit:Nyx')).toBeTruthy();
+    act(() => { useUiStore.getState().closeLogSheet(); });
+
+    act(() => { useUiStore.getState().openLogSheet(); });
+    expect(view.getByText('Log for Nyx')).toBeTruthy();
+    expect(view.queryByText('confirm:vomit:Nyx')).toBeNull();
+    act(() => { useUiStore.getState().closeLogSheet(); });
+
+    mockGridRenders.count = 0;
+    act(() => { useUiStore.getState().openLogSheet('diarrhea'); });
+    expect(view.getByText('confirm:diarrhea:Nyx')).toBeTruthy();
+    // A reopen straight to a confirm is still never a grid frame, even with a sheet
+    // that has shown the grid before: the open mounts a fresh one.
+    expect(mockGridRenders.count).toBe(0);
   });
 });
