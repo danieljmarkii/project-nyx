@@ -21,13 +21,20 @@ import { PetSwitcherPanel } from '../pet/PetSwitcherSheet';
 import { PetAvatar } from '../pet/PetAvatar';
 import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
 import { noPetToLogForCopy } from '../../lib/logCopy';
+import type { LogSheetConfirmType } from '../../store/uiStore';
 
 // Resolved once at module scope — a literal, shared with the FAB menu (CUL-717).
 const noPetCopy = noPetToLogForCopy();
 
-// The "More events" destination as a bottom sheet over the current tab (B-745). The
-// FAB's More events row always opens this (out of beta with CUL-962); the full-screen
-// /log picker remains only for the bare-/log doors elsewhere in the app (CUL-503).
+// The app's one "start a log" surface, as a bottom sheet over the current screen (B-745).
+// Every in-app door opens it through `store/uiStore.ts` and the one root mount in
+// `components/log/LogSheetHost.tsx` (CUL-503): the FAB's More events and its Vomit /
+// Loose stool quick taps, the Home nudge, Ask's empty record and the day summary. The
+// full-screen /log picker remains only for the widget's log chip, which arrives as a
+// deep link and so needs a route to land on.
+//
+// `initialType` (CUL-504) opens the sheet straight at the confirm for one type — the
+// FAB's quick taps, which name the event before the sheet opens. Null opens the grid.
 //
 // PR 3 — the one-surface confirm. The sheet is now a three-stage flow:
 //   'grid'    → the grouped picker (frame 1; the family grid of the W1 frame, with
@@ -53,6 +60,10 @@ const noPetCopy = noPetToLogForCopy();
 interface Props {
   visible: boolean;
   onClose: () => void;
+  /** Open straight at the confirm for this type rather than at the grid (CUL-504). Read
+   *  at MOUNT, so a host that wants it honoured mounts a fresh sheet per open (the
+   *  one host, LogSheetHost, keys it per open); null or absent opens the grid. */
+  initialType?: LogSheetConfirmType | null;
 }
 
 type Stage = 'grid' | 'confirm' | 'done';
@@ -105,7 +116,7 @@ function TitleRowContent({ name, photoPath }: { name: string; photoPath: string 
   );
 }
 
-export function EventTypeSheet({ visible, onClose }: Props) {
+export function EventTypeSheet({ visible, onClose, initialType = null }: Props) {
   const { pets, activePet } = usePetStore();
   const insets = useSafeAreaInsets();
   // The sheet's height cap, in POINTS (CUL-755) — see the avoider below for why it is
@@ -115,9 +126,34 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   const sheetMaxHeight = windowHeight * 0.8;
   const [switcherVisible, setSwitcherVisible] = useState(false);
 
-  const [stage, setStage] = useState<Stage>('grid');
-  // The event being confirmed + the pet it writes to, captured at grid→confirm.
-  const [confirm, setConfirm] = useState<{ type: EventTypeKey; petId: string; petName: string } | null>(null);
+  // ── WHERE AN OPEN STARTS (CUL-504) ───────────────────────────────────────────
+  // A quick tap names its event before the sheet opens, so the sheet starts at that
+  // event's confirm instead of the grid. Decided in the state INITIALISERS, so it is
+  // true of the very first render: never in an effect, which runs after the first
+  // commit and would show the grid for a frame under the finger of an owner who already
+  // said what happened, and never as a setState during render, which is what this was
+  // first built as and what the host test caught. That shape races the reset effect
+  // below: its no-op sets at mount are queued in another lane, and React replays them
+  // AFTER the render-phase update, so an open through the store landed on the grid.
+  //
+  // So `initialType` is read at MOUNT, and the one host (LogSheetHost) mounts a fresh
+  // sheet for every open by keying it per open. A close keeps the instance, so the
+  // Modal still slides out; the next open replaces it.
+  //
+  // The pet is captured here exactly as a grid tap captures it in handleSelect: the
+  // confirm has no switcher, so this is the pet the confirm writes for. With no active
+  // pet the open stays on the grid stage, which renders the no-pet copy (CUL-681)
+  // rather than a confirm with no one to write for.
+  const openAtConfirm = visible && !!initialType && !!activePet;
+  const [stage, setStage] = useState<Stage>(openAtConfirm ? 'confirm' : 'grid');
+  // The event being confirmed + the pet it writes to, captured at grid→confirm (or at
+  // the open, for an `initialType` open).
+  const [confirm, setConfirm] = useState<{ type: EventTypeKey; petId: string; petName: string } | null>(
+    () =>
+      openAtConfirm && initialType && activePet
+        ? { type: initialType, petId: activePet.id, petName: activePet.name }
+        : null,
+  );
   const [beatTone, setBeatTone] = useState<MomentTone>('calm');
   // CUL-614 — what the beat SAYS, composed once from the record the confirm just
   // wrote. Held in state rather than recomputed on render so the sentence is fixed at
@@ -147,9 +183,10 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   // sheet to a stale 'done' beat that would then flash on the next open.
   const visibleRef = useRef(visible);
 
-  // Every open starts at the grid. Reset when the sheet is dismissed (by any path —
-  // backdrop, the completion beat's onClose, or the FAB) so a reopen never resurfaces
-  // a stale confirm/beat.
+  // Every open starts at the grid, unless it names an `initialType` (the state
+  // initialisers above). Reset when the sheet is dismissed (by any path — backdrop, the
+  // completion beat's onClose, or the host) so a reopen never resurfaces a stale
+  // confirm/beat.
   useEffect(() => {
     visibleRef.current = visible;
     // switcherVisible resets with the rest: every path that closes the sheet today
@@ -392,8 +429,8 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                 /log, whose pickers are themselves gated on activePet, so the owner
                 landed on an empty screen under a "What did your pet eat?" header.
 
-                Not a rare state, either: the FAB mounts unconditionally in the tabs
-                layout while pets hydrate from a NETWORK read (hooks/usePet.ts) that
+                Not a rare state, either: this sheet mounts unconditionally at the root
+                (LogSheetHost) while pets hydrate from a NETWORK read (hooks/usePet.ts) that
                 only runs once the session restores — so every cold start has a
                 window, and on a failed double-read that hook leaves the store empty
                 on purpose. The branch is reactive, so the grid replaces this copy the

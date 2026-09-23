@@ -33,6 +33,7 @@ import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { hydrateBetaOptIns } from '../lib/betaFeatures';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
 import { IntakeDoorHost } from '../components/log/IntakeDoorHost';
+import { LogSheetHost } from '../components/log/LogSheetHost';
 import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
 import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
@@ -335,6 +336,12 @@ export default function RootLayout() {
           through `store/uiStore.ts` and this host owns the surface — the same separation
           the FAB and every other meal path already have. */}
       <IntakeDoorHost />
+      {/* The log sheet (CUL-503 / CUL-504). Every "start a log" door opens this one
+          sheet through `store/uiStore.ts`: the FAB, the Home nudge, Ask's empty record
+          and the day summary. It lives HERE, not in the tabs layout beside the FAB,
+          because Ask and the day summary are stack screens pushed over the tabs and a
+          sheet has to present from above them. */}
+      <LogSheetHost />
       <MealCompletionCard />
       <MedicationCompletionCard />
       <NamedCompletionCard />
