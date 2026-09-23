@@ -82,9 +82,10 @@ afterEach(() => {
 
 describe('Settings — the Beta-features row gate (B-747)', () => {
   it('shows the row for an account eligible ONLY for a non-widget beta', () => {
-    // The B-747 regression case verbatim: log-picker allowlisted, widget dark.
-    // Pre-fix, this account had no row and therefore no path to the shelf.
-    setAllowlist({ log_picker_v2: gatedToPm });
+    // The B-747 regression case: a non-widget beta allowlisted, widget dark. (The
+    // original case used the log-picker beta, retired with CUL-962; Noticed is the
+    // same shape.) Pre-fix, this account had no row and therefore no path to the shelf.
+    setAllowlist({ daily_look: gatedToPm });
     const { getByText } = render(<SettingsScreen />);
     expect(getByText('Beta features')).toBeTruthy();
   });
@@ -95,8 +96,8 @@ describe('Settings — the Beta-features row gate (B-747)', () => {
   });
 
   it('counts every eligible+opted-in beta in the "N on" note, not just the widget', () => {
-    setAllowlist({ widget_enabled: gatedToPm, log_picker_v2: gatedToPm });
-    useBetaOptInStore.getState().setOptIn('log_picker_v2', true);
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm });
+    useBetaOptInStore.getState().setOptIn('daily_look', true);
     const { getByText, rerender, queryByText } = render(<SettingsScreen />);
     // Pre-fix, a non-widget opt-in was invisible to the count.
     expect(getByText('1 on')).toBeTruthy();

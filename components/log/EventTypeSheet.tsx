@@ -13,8 +13,6 @@ import { EmptyState } from '../ui/EmptyState';
 import { usePetStore } from '../../store/petStore';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../../constants/eventTypes';
 import { useMomentStore, type MomentTone } from '../../store/momentStore';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { GroupedEventGrid } from './EventTypePicker';
 import { SimpleEventConfirm, SHEET_HEADER_DISC } from './SimpleEventConfirm';
 import { summarizeLoggedRecord, type LoggedRecord } from '../../lib/completionCard';
@@ -28,11 +26,12 @@ import { noPetToLogForCopy } from '../../lib/logCopy';
 const noPetCopy = noPetToLogForCopy();
 
 // The "More events" destination as a bottom sheet over the current tab (B-745). The
-// FAB opens this instead of pushing the full-screen /log picker when log_picker_v2
-// is live; flag-off keeps the shipped push, byte-identical.
+// FAB's More events row always opens this (out of beta with CUL-962); the full-screen
+// /log picker remains only for the bare-/log doors elsewhere in the app (CUL-503).
 //
 // PR 3 — the one-surface confirm. The sheet is now a three-stage flow:
-//   'grid'    → the grouped picker (frame 1).
+//   'grid'    → the grouped picker (frame 1; the family grid of the W1 frame, with
+//               Cough / Sneeze under Breathing).
 //   'confirm' → a simple event (symptom / stool / Other) completes IN PLACE via
 //               SimpleEventConfirm — the picker never leaves the sheet, Home never
 //               leaves the screen (frames 2–3). Meal / Medication / Weight still
@@ -115,16 +114,6 @@ export function EventTypeSheet({ visible, onClose }: Props) {
   const { height: windowHeight } = useWindowDimensions();
   const sheetMaxHeight = windowHeight * 0.8;
   const [switcherVisible, setSwitcherVisible] = useState(false);
-
-  // W1 taxonomy expansion (event_types_v2, CUL-675) — the B-712 two-gate shape,
-  // exactly as the host sheet itself is gated: server allowlist × local opt-in,
-  // both hooks called unconditionally (Rules of Hooks) then combined. This gates
-  // the GRID'S TILE LIST only (the Breathing group's Cough/Sneeze tiles + the
-  // ruled regroup); EVENT_TYPES itself is never flag-gated (§12 FL-1), so a
-  // flag-off device still reads a beta device's cough rows fully labeled.
-  const taxonomyEligible = useAllowlistFlag('event_types_v2');
-  const taxonomyOptedIn = useBetaOptIn('event_types_v2');
-  const expanded = taxonomyEligible && taxonomyOptedIn;
 
   const [stage, setStage] = useState<Stage>('grid');
   // The event being confirmed + the pet it writes to, captured at grid→confirm.
@@ -341,8 +330,8 @@ export function EventTypeSheet({ visible, onClose }: Props) {
             offering a discard dialog as the route to finishing a log.
 
             This is the shape every other note-bearing surface already uses, including
-            app/log.tsx's flag-off path for this exact field, so flag-on stops being
-            worse than flag-off (the class the D12 host gate exists to catch).
+            app/log.tsx for this exact field, so the sheet is never worse than the
+            full-screen log at the one moment the owner is typing.
 
             THE SHEET'S 80% CAP IS A PIXEL VALUE, NOT A PERCENTAGE, and that is
             load-bearing rather than tidy. A percentage resolves against the parent's
@@ -483,7 +472,6 @@ export function EventTypeSheet({ visible, onClose }: Props) {
                       the panel above re-filters the grid before the next tap (§3). */}
                   <GroupedEventGrid
                     onSelectType={handleSelect}
-                    expanded={expanded}
                     species={activePet.species}
                   />
                 </ScrollView>

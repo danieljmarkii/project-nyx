@@ -124,10 +124,6 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
         ask_general_enabled: false,
         // widget_enabled (B-712) also carries account UUIDs — it must be wiped too.
         widget_enabled: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
-        // log_picker_v2 (B-745) is the same allowlist shape — account UUIDs wiped too.
-        log_picker_v2: { enabled: false, allowlist: ['bbbbbbbb-cccc-dddd-eeee-ffffffffffff'] },
-        // event_types_v2 (B-756 W1-PR-0) — same allowlist shape, account UUIDs wiped too.
-        event_types_v2: { enabled: false, allowlist: ['12121212-3434-5656-7878-909090909090'] },
         // daily_look (Noticed, N-0 / CUL-866) — same allowlist shape, account UUIDs wiped too.
         daily_look: { enabled: false, allowlist: ['13131313-4545-6767-8989-010101010101'] },
         // vet_visits (the vet-visit companion, VV-0 / CUL-898) — same allowlist shape,

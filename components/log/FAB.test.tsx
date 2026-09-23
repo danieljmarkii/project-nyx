@@ -21,12 +21,15 @@ jest.mock('../../lib/trialContaminant', () => ({
   evaluateMealLogTimeFlag: jest.fn(async () => null),
   noteTrialFlagShown: jest.fn(),
 }));
-// The log_picker_v2 two-gate pair. Both off: this file is about the FAB's own
-// switcher, not the sheet it can open.
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
-// Stubbed so its own tree (and its supabase edges) stay out of this file.
-jest.mock('./EventTypeSheet', () => ({ EventTypeSheet: () => null }));
+// Stubbed so its own tree (and its supabase edges) stay out of this file. It renders
+// a marker while `visible`, so the one thing only the FAB can answer — does More
+// events open the sheet — is observable without the sheet's internals.
+jest.mock('./EventTypeSheet', () => ({
+  EventTypeSheet: ({ visible }: { visible: boolean }) => {
+    const { Text } = require('react-native');
+    return visible ? <Text>event-sheet-open</Text> : null;
+  },
+}));
 
 // The switcher is stubbed to report the props it was GIVEN. Rendering the real
 // panel here would test the panel again; what only the FAB can answer is which
@@ -98,6 +101,24 @@ describe('FAB — the "Logging for" switcher', () => {
     seedPets(1);
     const view = await openMenu();
     expect(view.queryByLabelText('Logging for Nyx — switch pet')).toBeNull();
+  });
+});
+
+// ── More events → the sheet, never /log (CUL-962) ───────────────────────────
+//
+// Out of beta, More events has one destination: the bottom sheet over the current
+// tab. The full-screen push it fell back to while the picker was a beta went with
+// the flag, and nothing else in the tree would notice if it came back — the grep
+// that closed the removal finds flag keys, not a `router.push('/log')`. So this is
+// the pin. It is not a pre-fix guard (flag-off, the pre-removal tree pushed and this
+// test would have failed there by design); it is the contract the removal created.
+describe('FAB — More events', () => {
+  it('opens the event sheet over the current tab and pushes nothing', async () => {
+    const view = await openMenu();
+    expect(view.queryByText('event-sheet-open')).toBeNull();
+    fireEvent.press(view.getByText('More events'));
+    expect(view.getByText('event-sheet-open')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
   });
 });
 

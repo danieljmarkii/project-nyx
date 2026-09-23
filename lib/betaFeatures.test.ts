@@ -51,26 +51,13 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget + log-picker + event-types + Noticed + vet-visits + Design v2 betas, all client-only (no server cost)', () => {
+  it('ships the widget + Noticed + vet-visits + Design v2 betas, all client-only (no server cost)', () => {
     // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
-    // retired from the shelf (CUL-547 + CUL-548).
+    // retired from the shelf (CUL-547 + CUL-548), and the two capture betas (the log
+    // screen redesign, B-745, and more event types, B-756) followed (CUL-962).
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
     expect(widget).toBeDefined();
     expect((widget as BetaFeature).serverCost).toBe(false);
-
-    // B-745 joined the shelf (FL-2). Zero server component — the redesign is
-    // presentation/step-structure only (same event writes, same sync paths), so no
-    // server gate is owed.
-    const logPicker = BETA_REGISTRY.find((b) => b.key === 'log_picker_v2');
-    expect(logPicker).toBeDefined();
-    expect((logPicker as BetaFeature).serverCost).toBe(false);
-
-    // B-756 W1-PR-0 joined the shelf (taxonomy spec FL-2, seed-first). Capture has
-    // no server component — the engine/report membership work ships separately and
-    // is account-agnostic (§12) — so no server gate is owed here either.
-    const eventTypes = BETA_REGISTRY.find((b) => b.key === 'event_types_v2');
-    expect(eventTypes).toBeDefined();
-    expect((eventTypes as BetaFeature).serverCost).toBe(false);
 
     // Noticed (CUL-866 / N-0) joined the shelf seed-first (spec §10). Client-render
     // only — Noticed's writes are account-agnostic and a look never enters the engine
@@ -97,10 +84,10 @@ describe('BETA_REGISTRY', () => {
       'The new Home, the Signal’s own screen and the month on Patterns. Switch it off and the app is exactly as it was.',
     );
 
-    // The graduated keys (signal_design_v2 / signals_v2) are no longer in the
-    // AllowlistFlagKey union, so a `.key === '…'` check for them won't type-check — the
-    // length assertion + the missing shelf cards are what pin their removal.
-    expect(BETA_REGISTRY).toHaveLength(6);
+    // The four graduated keys are no longer in the AllowlistFlagKey union, so a
+    // `.key === '…'` check for them won't type-check — the length assertion + the
+    // missing shelf cards are what pin their removal.
+    expect(BETA_REGISTRY).toHaveLength(4);
   });
 });
 
@@ -119,15 +106,15 @@ describe('deriveBetaShelf (B-747)', () => {
   });
 
   it('B-747: an account eligible ONLY for a non-widget beta still gets the shelf', () => {
-    // The shipped bug: the Settings row gated on widget_enabled alone, so this
-    // account — allowlisted for the log-picker beta, widget dark — had no way to
-    // reach the shelf and opt in.
+    // The shipped bug: the Settings row gated on widget_enabled alone, so an account
+    // allowlisted for a non-widget beta (the log-picker beta, then; Noticed here,
+    // since that beta retired with CUL-962) had no way to reach the shelf and opt in.
     const shelf = deriveBetaShelf(
-      allow({ widget_enabled: dark, log_picker_v2: gatedTo('uid-1') }),
+      allow({ widget_enabled: dark, daily_look: gatedTo('uid-1') }),
       'uid-1',
       {},
     );
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['log_picker_v2']);
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['daily_look']);
     expect(shelf.activeCount).toBe(0); // eligible turns nothing on (Gate 2 untouched)
   });
 
@@ -141,11 +128,11 @@ describe('deriveBetaShelf (B-747)', () => {
   it('activeCount counts only betas that are eligible AND opted in', () => {
     const allowlist = allow({
       widget_enabled: gatedTo('uid-1'),
-      log_picker_v2: gatedTo('uid-1'),
+      daily_look: gatedTo('uid-1'),
     });
-    expect(deriveBetaShelf(allowlist, 'uid-1', { log_picker_v2: true }).activeCount).toBe(1);
+    expect(deriveBetaShelf(allowlist, 'uid-1', { daily_look: true }).activeCount).toBe(1);
     expect(
-      deriveBetaShelf(allowlist, 'uid-1', { widget_enabled: true, log_picker_v2: true })
+      deriveBetaShelf(allowlist, 'uid-1', { widget_enabled: true, daily_look: true })
         .activeCount,
     ).toBe(2);
   });
@@ -154,28 +141,26 @@ describe('deriveBetaShelf (B-747)', () => {
     // The widget path has already stopped rendering for this account, so telling
     // the owner it's "on" would claim something the app isn't doing.
     const shelf = deriveBetaShelf(
-      allow({ widget_enabled: dark, log_picker_v2: gatedTo('uid-1') }),
+      allow({ widget_enabled: dark, daily_look: gatedTo('uid-1') }),
       'uid-1',
       { widget_enabled: true },
     );
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['log_picker_v2']);
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['daily_look']);
     expect(shelf.activeCount).toBe(0);
   });
 
   it('enabled:true (a GA’d flag) is eligible for everyone, allowlist ignored', () => {
     const shelf = deriveBetaShelf(
-      allow({ event_types_v2: { enabled: true, allowlist: [] } }),
+      allow({ vet_visits: { enabled: true, allowlist: [] } }),
       'anyone',
       {},
     );
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['event_types_v2']);
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['vet_visits']);
   });
 
   it('eligible preserves registry order (the shelf renders in registry order)', () => {
     const everything = allow({
       widget_enabled: gatedTo('uid-1'),
-      log_picker_v2: gatedTo('uid-1'),
-      event_types_v2: gatedTo('uid-1'),
       daily_look: gatedTo('uid-1'),
       vet_visits: gatedTo('uid-1'),
       design_v2: gatedTo('uid-1'),

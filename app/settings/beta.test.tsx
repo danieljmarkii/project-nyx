@@ -78,11 +78,11 @@ describe('BetaFeaturesScreen — zero eligible betas (B-729)', () => {
 
 describe('BetaFeaturesScreen — eligible account', () => {
   it('renders a card per eligible beta and no empty state', () => {
-    setAllowlist({ widget_enabled: gatedToPm, event_types_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
     expect(getByText('Home screen widget')).toBeTruthy();
-    expect(getByText('More event types')).toBeTruthy();
+    expect(getByText('Noticed')).toBeTruthy();
     expect(getByText(/Switch one on to try it early/)).toBeTruthy();
     expect(queryByText('Nothing to try right now')).toBeNull();
   });
@@ -107,23 +107,24 @@ describe('BetaFeaturesScreen — eligible account', () => {
   it('scopes the honesty note to what is ALREADY in the record — never a blanket promise (CUL-224)', () => {
     // The page-level "won’t affect your records" was true only while the one beta
     // (the widget) read and never wrote. The shelf now carries betas an owner records
-    // THROUGH — the log picker here — so the note may promise only what holds for
+    // THROUGH — Noticed here, which writes a look (the case first used the log
+    // picker, retired with CUL-962) — so the note may promise only what holds for
     // every beta: switching one on rewrites nothing already logged.
-    setAllowlist({ log_picker_v2: gatedToPm });
+    setAllowlist({ daily_look: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('Log screen redesign')).toBeTruthy();
+    expect(getByText('Noticed')).toBeTruthy();
     expect(getByText(/Turning one on doesn’t change anything already in your records\./)).toBeTruthy();
     expect(queryByText(/won’t affect your records/)).toBeNull();
   });
 
   it('a non-eligible beta’s card still self-gates away while others render', () => {
-    setAllowlist({ event_types_v2: gatedToPm });
+    setAllowlist({ vet_visits: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('More event types')).toBeTruthy();
+    expect(getByText('Vet visits')).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
-    expect(queryByText('Log screen redesign')).toBeNull();
+    expect(queryByText('Noticed')).toBeNull();
   });
 
   it('renders the Noticed card for an allowlisted account, self-gated otherwise (CUL-866)', () => {
@@ -138,7 +139,7 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(getByText('Noticed')).toBeTruthy();
     expect(getByText(/once-a-day note of how they seemed/)).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
-    expect(queryByText('More event types')).toBeNull();
+    expect(queryByText('Vet visits')).toBeNull();
   });
 
   it('renders the Vet visits card for an allowlisted account, self-gated otherwise (CUL-898)', () => {
