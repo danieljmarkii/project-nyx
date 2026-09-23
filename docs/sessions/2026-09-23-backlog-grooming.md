@@ -53,7 +53,7 @@ Nothing under `supabase/` changed between the bundles (`c55d749`) and `8cc96bb`,
 **What it means.**
 
 - The whole v15 remediation wave (R-1, R-2, R-5, R-7, R-11, R-13, R-14, R-16, R-17, R-18 and their riders) has been live for a week. R-20's cold read (CUL-1002) needs no deploy first, only the trial-window one if it should read the current document.
-- The "standing hold" named in `STATUS.md` and `CLAUDE.md` did not exist. Both are corrected in this PR.
+- The "standing hold" named in `STATUS.md` and `CLAUDE.md` had cleared on 2026-09-15, and nobody recorded it. Both are corrected in this PR.
 - `generate-signal` went live **ahead of its client-build gate** (CUL-794). On the 08-29 TestFlight build, a pet whose only Signal is the stand-down marker can show a blank card for up to 7 days. No App Store user exists; the 1.2.0 build fixes it. The remaining behavioural check belongs in CUL-556.
 - The stale ledger is now steering work: today's sibling quick-win sweep excluded every Edge-closure item "because every function in `deploy-manifest.json` is `pending` or `hold`".
 
@@ -260,7 +260,7 @@ Triaged against `origin/main` @ `8cc96bb` in an isolated clone. The 8 clean PRs 
 
 | Kind | Count | Issues |
 |---|---|---|
-| State: → `In Review` | 4 | CUL-887, 933, 923, 847 |
+| State: → `In Review` | 5 | CUL-887, 933, 923, 847, 1034 (this PR) |
 | State: → `Todo` | 4 | CUL-70, 219, 929, 697 (reopened) |
 | State: → `Done` (shipped or obsolete) | 7 | CUL-631, 697 (later reopened), 886, 892, 897, 943, 1072 |
 | Duplicate | 16 | §6 |
@@ -269,7 +269,7 @@ Triaged against `origin/main` @ `8cc96bb` in an isolated clone. The 8 clean PRs 
 | `Waiting on PM` removed | 9 | CUL-44, 267, 615, 653, 741, 780, 929, 960, 965 |
 | Related links | 18 | §6 |
 | Issues filed | 2 | CUL-1099, CUL-1100 |
-| Comments | 31 | every write above carries its evidence; CUL-719 carries the outcome |
+| Comments | 32 | every write above carries its evidence; CUL-719 carries the outcome |
 
 Repo, in this PR: this record; `STATUS.md` (the vet-report row per CUL-1034, the standing-hold section, two stale clauses); `CLAUDE.md`'s at-a-glance hold sentence (net shorter; `guards/claudeMdBudget.test.ts` passes at 136,541 B).
 
