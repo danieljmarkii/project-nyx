@@ -130,6 +130,24 @@
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .foot { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
   .snap, .snap * { transition: none !important; animation-duration: 0s !important; }
+  details.fold { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 0 18px; margin-top: 18px; }
+  details.fold summary { cursor: pointer; font-weight: 600; font-size: 14.5px; color: var(--ink); padding: 14px 0; }
+  details.fold[open] summary { border-bottom: 1px solid var(--rule-soft); margin-bottom: 8px; }
+  details.fold > *:last-child { margin-bottom: 18px; }
+  .pair { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; margin-top: 18px; }
+  .pair .acard { width: 316px; max-width: 100%; }
+  /* an option, drawn for a decision, never the current proposal */
+  .optbox { border: 1.5px dashed var(--gold); border-radius: 6px; padding: 14px 16px 10px; background: var(--gold-wash); position: relative; }
+  .optbox > .tag.opt { margin-bottom: 10px; }
+  .optbox .frame-cap { color: var(--ink-2); }
+  .ledger .r { display: grid; grid-template-columns: 190px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  .ledger .r i { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: 1px 7px; margin-right: 6px; vertical-align: 1px; }
+  .ledger .r i.k { color: var(--ink-2); background: var(--rule-soft); } .ledger .r i.c { color: var(--teal-ink); background: var(--teal-wash); } .ledger .r i.d { color: var(--gold-ink); background: var(--gold-wash); }
+  @media (max-width: 640px) { .ledger .r { grid-template-columns: 1fr; gap: 4px; } }
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 14px; }
+  .facts div { border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; font-size: 13.5px; color: var(--ink-2); background: var(--paper-2); }
+  .facts div b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 3px; }
+  .facts div small { display: block; color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; margin-top: 5px; letter-spacing: .04em; }
 
   /* ── Phone frames (fixed app tokens; never themed by the page) ─────── */
   .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
@@ -213,10 +231,10 @@
   /* ── History: the list, drawn as days ──────────────────────────────── */
   .hist { display: grid; gap: 8px; }
   .dayc { background: #FFFFFF; border-radius: 16px; padding: 10px 14px 8px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
-  .dayhdr { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 0 2px; }
+  .dayhdr { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 8px; padding: 0 0 2px; flex-wrap: wrap; }
   .dayhdr .dn { font-size: 13.5px; font-weight: 600; color: #0A0A0A; white-space: nowrap; flex-shrink: 0; }
   .dayhdr .dn small { font-weight: 400; color: #737373; font-size: 11.5px; margin-left: 4px; }
-  .dayhdr .dc { font-size: 10.5px; color: #525252; text-align: right; line-height: 1.35; }
+  .dayhdr .dc { font-size: 10.5px; color: #525252; text-align: left; line-height: 1.35; }
   .dayhdr .dc b { color: #0A0A0A; font-weight: 600; }
   .dayhdr .dc .sym { color: #9F1239; }
   .countline { font-size: 11px; color: #525252; margin: 0 0 2px; }
@@ -238,17 +256,35 @@
   .node1 .nv.mon { color: #525252; }
   .node1 .nv.nes { color: #737373; font-weight: 500; }
   .node1 .nq { flex-basis: 100%; font-size: 11px; color: #525252; font-style: italic; margin-top: -2px; }
+  .node1 .nq.snip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  /* the first paint — the thread draws down once, the nodes land in sequence */
+  .dayc .spine::before { transform-origin: top; }
+  /* the rail draws over the fold's 370; each node lands as the rail passes (stagger = 370 ÷ nodes); the words land last; headers never move */
+  .dayc.arm .spine::before { transform: scaleY(0); transition: none; }
+  .dayc.play .spine::before { transform: scaleY(1); transition: transform 370ms cubic-bezier(.2,.8,.2,1); }
+  .dayc.arm .node1 { opacity: 0; transform: translateY(-4px); transition: none; }
+  .dayc.play .node1 { opacity: 1; transform: none; transition: opacity 300ms ease-out, transform 300ms ease-out; transition-delay: calc(var(--i, 0) * var(--step, 60ms)); }
+  .dayc.arm .node1 .nt, .dayc.arm .node1 .ntime, .dayc.arm .node1 .nq { opacity: 0; transition: none; }
+  .dayc.play .node1 .nt, .dayc.play .node1 .ntime, .dayc.play .node1 .nq { opacity: 1; transition: opacity 300ms ease-out; transition-delay: calc(400ms + var(--i, 0) * 20ms); }
+  /* the row leaving: 180 out, the box closes over 300, the rail trails */
+  .node1.leave { overflow: hidden; transition: max-height 300ms cubic-bezier(.2,.8,.2,1) 180ms, opacity 180ms ease-out, padding 300ms ease-out 180ms, margin 300ms ease-out 180ms; opacity: 0; max-height: 0 !important; padding-top: 0; padding-bottom: 0; margin: 0; }
+  .arr2.calm.gone { transition: opacity 150ms ease-out, max-height 150ms ease-out; opacity: 0; max-height: 0; overflow: hidden; }
+  /* the standing line — the diet in force, stated once */
+  .standing { display: flex; gap: 8px; align-items: center; font-size: 11px; color: #525252; padding: 0 2px 8px; position: sticky; top: 0; background: #FFFFFF; z-index: 3; }
+  .standing.read { font-style: italic; color: #737373; margin-top: -4px; position: static; } .standing.read .stick { background: #F43F5E; opacity: .55; height: 12px; }
+  .standing .stick { width: 3px; height: 14px; border-radius: 2px; background: #00C2A8; flex-shrink: 0; }
+  .standing b { color: #0A0A0A; font-weight: 600; }
   .node1 .ntime { font-size: 10.5px; color: #737373; white-space: nowrap; }
   .node1 .ntime .conf { font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-left: 4px; color: #737373; }
   .node1 .pg { display: inline-block; width: 11px; height: 9px; border: 1.3px solid #737373; border-radius: 2px; vertical-align: -1px; margin: 0 1px; }
   .node1 .qm { color: #737373; font-size: 12px; margin-left: 2px; }
   .node1 .chip { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 999px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px; }
-  .node1 .chip.ok { color: #0B7B6C; background: #E0FBF7; }
+  .node1 .chip.ok { color: #0B7B6C; background: #E0FBF7; font-weight: 500; }
   .node1 .chip.attn { color: #9F1239; background: #FFE4E6; }
   .node1.door { cursor: pointer; }
   .node1.door:focus-visible { outline: 2px solid #0B7B6C; }
-  .node1.door .ntime::after { content: "›"; color: #0B7B6C; margin-left: 5px; display: inline-block; }
-  .node1.nc .ntime::after { transition: transform 200ms ease-out; }
+  .hist.chev .node1.door .ntime::after { content: "›"; color: #0B7B6C; margin-left: 5px; display: inline-block; }
+  .node1.nc .ntime::after { content: "›"; color: #0B7B6C; margin-left: 5px; display: inline-block; transition: transform 200ms ease-out; }
   .node1.nc[aria-expanded="true"] .ntime::after { transform: rotate(90deg); }
   .ncdd { padding-left: 6px; }
   .dd { display: flex; gap: 9px; padding: 0 2px 2px; }
@@ -300,12 +336,20 @@
   .rail .d { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #EAEAEA; display: grid; place-items: center; font-size: 11px; color: #525252; cursor: pointer; border: 0; padding: 0; font-family: inherit; }
   .rail .d::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 4px; height: 2px; border-radius: 1px; background: #86D9CC; }
   .rail .d.none { background: #F5F5F5; box-shadow: none; color: #A3A3A3; } .rail .d.none::after { display: none; }
-  .rail .d.sym { background: #F43F5E; color: #FFFFFF; font-weight: 600; box-shadow: none; } .rail .d.sym::after { background: rgba(255,255,255,0.55); }
+  .rail .d.sym { color: #0A0A0A; font-weight: 600; } .rail .d.sym::after { left: 50%; right: auto; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: #F43F5E; bottom: 3px; }
   .rail .d.today { box-shadow: inset 0 0 0 1.5px #0A0A0A; }
   .rail .d.sel { box-shadow: inset 0 0 0 2px #0B7B6C; }
   .rail .d.future { background: transparent; box-shadow: inset 0 0 0 1px #EAEAEA; color: #C9C9C9; cursor: default; } .rail .d.future::after { display: none; }
-  .rail .d .cnt { position: absolute; top: 2px; right: 4px; font-size: 8px; font-weight: 700; color: #FFFFFF; line-height: 1; }
+  .rail .d .cnt { position: absolute; top: 2px; right: 3px; font-size: 8.5px; font-weight: 700; color: #0A0A0A; line-height: 1; }
   .rail .d:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 1px; }
+  .rail .d.out { background: transparent; box-shadow: none; color: transparent; cursor: default; } .rail .d.out::after { display: none; }
+  .rail .d.blank { background: transparent; box-shadow: none; cursor: default; } .rail .d.blank::after { display: none; }
+  .rail .d.quiet { color: #737373; } .rail .d.quiet::after { display: none; }
+  .rail.month .d { font-size: 10px; position: relative; }
+  .rail.month .d .mo { position: absolute; top: 1px; left: 3px; font-size: 7px; font-style: normal; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #737373; line-height: 1; }
+  .rail.arm .d { transform: scale(.6); opacity: 0; transition: none; }
+  .rail.play .d { transform: none; opacity: 1; transition: transform 300ms cubic-bezier(.2,.8,.2,1.05), opacity 200ms ease-out; transition-delay: calc(var(--i, 0) * 28ms); }
+  .railnav b small { font-weight: 400; color: #737373; font-size: 10px; }
   .railnav { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 4px; font-size: 11.5px; color: #0A0A0A; }
   .railnav b { font-weight: 600; }
   .railnav button { font: inherit; font-size: 13px; border: 0; background: #F5F5F5; color: #0B7B6C; border-radius: 999px; width: 26px; height: 26px; cursor: pointer; }
@@ -332,25 +376,44 @@
   /* note text on this page is illustrative */
   .illus { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #A3A3A3; }
   @media (prefers-reduced-motion: reduce) {
-    .dd .drail, .dd .dbox, .dd .dtext, .wait .wait-skel, .wait .wait-content, .screen.detail, .screen.detail .land, .arr2 .tick2, .arr2 .pend, .arr2 .dbox, .arr2 .dtext, .node1.nc .ntime::after { transition: none; }
+    .dd .drail, .dd .dbox, .dd .dtext, .wait .wait-skel, .wait .wait-content, .screen.detail, .screen.detail .land, .arr2 .tick2, .arr2 .pend, .arr2 .dbox, .arr2 .dtext, .node1.nc .ntime::after, .node1.leave, .arr2.calm.gone { transition: none; }
+    .dayc.arm .node1 .nt, .dayc.play .node1 .nt, .dayc.arm .node1 .ntime, .dayc.play .node1 .ntime, .dayc.arm .node1 .nq, .dayc.play .node1 .nq { transition: none; opacity: 1; }
     .tick2 { animation: none; opacity: 1; }
     .phone.vp .vpbody { scroll-behavior: auto; }
+    .dayc.arm .spine::before, .dayc.play .spine::before, .dayc.arm .node1, .dayc.play .node1, .rail.arm .d, .rail.play .d { transition: none; transform: none; opacity: 1; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
-<header class="mast">
-  <p class="eyebrow"><span>Culprit · History v2</span><span>CUL-1076 · discovery</span><span>2026-09-21</span><span class="roundtag">Round 1 · the record you can read</span></p>
+<header class="mast" id="mast">
+  <p class="eyebrow"><span>Culprit · History v2</span><span>CUL-1076 · discovery</span><span>2026-09-23</span><span class="roundtag">Round 2 · one proposal, refined</span></p>
   <h1>The record you can read</h1>
-  <p class="standfirst">History is the one daily-open surface still on the pre-v2 list. Six lenses read it cold and came back with <strong>one shape and four decisions</strong>: the record drawn as days in the spine's language, one door per row, the filters kept and extended, the photo's read as one word. Every frame here is <strong>Nyx's real Sep 4 – 21</strong>, event for event, in Central time. <strong>Scroll inside the phones. Tap a pill. Open "3 meals". Press every Replay twice.</strong></p>
-  <div class="howto"><b>How to read this page.</b> §00 is History as built, drawn honestly. §01 is what the six reads agreed History is for. §02 is the proposal, on the real fortnight, with the wait, the lens, a record and a read arriving. §03 is what every kind of row says. §04 draws the four decisions the reads split on, each option side by side. §05 the filters (kept), the sheets (extended), search. §06 what the AI returns against what each surface shows. §07 where notes flow, and where they may not. §08 the six reads. §09 the checks and the rules a build would carry. §10 the questions and the R-briefs. §11 what a go would file. Nothing is filed; nothing is built.</div>
-  <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Counts, times, types, whether a row has a photo, a read, a note: pulled from the record on 2026-09-21 (a service-role read scoped to the owner's account and Nyx's id). Note <em>text</em> was not read; where a note's words appear on this page they are the Designer's and are marked <span class="illus" style="color:var(--ink-3)">illustrative</span>. The lens counts in the sheets are real, per window.</div>
+  <p class="standfirst">Round 2 applies your reactions to round 1 and refines before anything converges on requirements. <strong>One proposal, on the same URL</strong>: the days, the gaps, the compaction and the filters you kept; the header and the rows cut to what you called out as noise; the rose only; the note on the row; the week strip ruled in and given its answer under "Last 30 days"; and delight drawn as a small, finished inventory of motion rather than a wish. The retired options have left the page (git holds them, commit <code>99da7c0</code>); the two alternatives still worth a decision sit in labelled boxes beside the frame they compete with. Two isolated checks ran on the round-2 rules before they were drawn: the Data Scientist with Dr. Chen, and the Motion Designer with the Mobile IA. They broke four things, each fixed on this page, and refused one, kept here as an option.</p>
+  <div class="ledger">
+    <div class="r"><b>Your reaction</b><span><b>What it ruled · what moved on the page</b></span></div>
+    <div class="r"><b>"I like that the days are broken up into their own cards"</b><span><i class="k">kept</i>No change. The day card stays the unit; every frame is days.</span></div>
+    <div class="r"><b>"I like that we call out days where nothing was logged"</b><span><i class="k">kept</i><i class="c">extended</i>The gap line stays. The week strip now repeats the same fact as a hollow cell, and a tap on a hollow cell lands on the gap line (§04).</span></div>
+    <div class="r"><b>"I like that sequential meals can be expanded"</b><span><i class="k">kept</i><i class="c">extended</i>A run now crosses wet and dry of the same product and speaks the counts: Sep 18 is one line, "5 meals · 1 wet · 4 dry". It still never crosses any other fact, and the meal a vomit's "3 min after eating" points at stays its own row (§03, rule B).</span></div>
+    <div class="r"><b>"The meta-data on the day card is right justified and can wrap funky"</b><span><i class="c">changed</i>The header is the date, the total, and only the kinds that are not routine: symptoms in rose, "other" neutral. Meals, doses and weights leave the header, because they are the rows. The date never wraps; a long count line goes left onto its own line, never right-justified (§03, rule C).</span></div>
+    <div class="r"><b>"It does feel like A LOT of data. Visually noisy."</b><span><i class="c">changed</i>The noise cut, §03: the diet in force stated once instead of on every meal; the cross-link lines gone; the chevrons gone from single rows; the calm words gone; the note glyph replaced by the note itself. Before and after, same day, side by side.</span></div>
+    <div class="r"><b>"When filtered we're showing more information (since the trial started, 13 vomits)"</b><span><i class="k">kept</i><i class="c">extended</i>Every lens now does it: the count on the pill, the completeness line, the strip's cells and the gap lines all follow the lens (§02, second phone).</span></div>
+    <div class="r"><b>"LOVE the arrival moment. Aim for design delight."</b><span><i class="c">extended</i>§05 is the delight inventory: the first paint draws each day's thread down once; the strip's cells land when the lens or the week changes; a tapped day draws in when you land on it; a removed row folds shut and the day's count re-speaks. Each has a rule that stops it becoming a loop, and the Motion check's conditions are attached.</span></div>
+    <div class="r"><b>Decision 1 · "I like the rose only approach in Option B"</b><span><i class="d">ruled</i>Rose only is the proposal. The calm word lives on the record. The Data and Dr. Chen check attached one condition: a single standing sentence at the top, under every lens, so a silent photographed row never reads as "checked, fine" beside a rose one (§02; the reasoning in §09; the residual brief R2-5).</span></div>
+    <div class="r"><b>Decision 2 · "Showing a snippet of the note on the row is powerful"</b><span><i class="d">ruled</i>Every noted row carries one line of its note, cut at a word with the ellipsis inside the quotes, on its own line. The glyph is retired. The full note stays on the record; Trust &amp; Safety's condition that the disclosure ships first (CUL-848) becomes a build order, not a redraw (§03, rule G; §12).</span></div>
+    <div class="r"><b>Decision 3 · "I'll defer to the product team. Be consistent throughout the app."</b><span><i class="d">team's answer</i>Morning to night inside a day, newest day first. Home's spine, the recap, the record screen and the month all read down = later; History reads the same way. The sort key is the pair (time, id), so a same-minute wet + dry pair never swaps between renders (rule H).</span></div>
+    <div class="r"><b>Decision 4 · "I LOVE this approach. What happens when I select 'last 30'?"</b><span><i class="d">ruled in</i>The strip is in the proposal. Under any window it is bounded by the date lens: the arrows walk week by week to the window's edge and stop there, saying why; days outside the window are drawn absent; the row's label names the window. "Last 30 days" is five weeks, ending at Aug 23 – 29. The month-style grid is drawn beside it as an option; the Motion check refused it for the fold it costs (§04, brief R2-2).</span></div>
+    <div class="r"><b>"I like the third pill. I like that we're adding search."</b><span><i class="k">kept</i>Unchanged; §07 carries them and the doorway contract, folded.</span></div>
+    <div class="r"><b>"How can we make history non-boring and informative? Delightful to use?"</b><span><i class="c">the two bars</i>§02 and §05 answer them directly: the informative half is a list of what the screen now tells you that the flat list could not; the delightful half is the motion inventory, each gesture demonstrable on this page.</span></div>
+  </div>
+  <div class="howto"><b>How to read this page.</b> §00 is History as built, folded. §01 is the job, in one paragraph. §02 is the proposal, on the real fortnight, with every demo. §03 is the noise cut, before and after. §04 is the strip under a window, and the option beside it. §05 is delight and information, as an inventory. §06 is what a row says now. §07 the filters, folded. §08 the AI and the notes, folded. §09 the two round-2 checks, and where they disagree. §10 every number checked and the rules a build would carry. §11 the briefs. §12 what a go would file (still nothing filed).</div>
+  <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Counts, times, types, whether a row has a photo, a read, a note: pulled from the record on 2026-09-21, and the per-day counts behind the strip on 2026-09-23 (a service-role read scoped to the owner's account and Nyx's id; counts only). Note <em>text</em> was not read; where a note's words appear on this page they are the Designer's and are marked <span class="illus">illustrative</span>. The page carries Sep 4 – 21 row by row and Jun 20 – Sep 21 as per-day counts; earlier days are on the device, and the strip says so at its edge.</div>
 </header>
 
-<!-- ───────────────────────── §00 AS BUILT ───────────────────────── -->
+<!-- ───────────────────────── §00 AS BUILT (folded) ───────────────────────── -->
 <section id="s00">
-  <div class="sec-head"><span class="sec-num">§00</span><h2>History as built — what the six reads found</h2></div>
+  <div class="sec-head"><span class="sec-num">§00</span><h2>History as built — folded, for the record</h2></div>
+  <details class="fold"><summary>The shipped screen and what the six round-1 reads named on it</summary>
   <div class="col">
     <p>The shipped screen, drawn from the code: a title and the two ScopeMenu pills, then one flat, newest-first stream of 68pt rows, each stamping its own date, fifty at a time behind a "Load more". A tap toggles a grey expanded state that reveals the note and three text buttons; a long-press opens the record; nothing on a row says whether it has a photo or what the photo's read said. <strong>The two pills are the only thing every read kept.</strong> Everything else on this frame was named by at least one of them, and most of it by all six.</p>
   </div>
@@ -398,281 +461,288 @@
     </div>
   </div>
 </section>
+  </details>
+</section>
 
 <!-- ───────────────────────── §01 THE JOB ───────────────────────── -->
 <section id="s01">
-  <div class="sec-head"><span class="sec-num">§01</span><h2>What History is for — six reads, one shape</h2></div>
+  <div class="sec-head"><span class="sec-num">§01</span><h2>What History is for — unchanged since round 1</h2></div>
   <div class="col">
     <p class="thesis">Home answers "is she okay, what happened today". History answers "what happened, when, exactly" — the record itself, readable.</p>
-    <p>Every lens said a version of the same sentence. The owners open it the night before the vet ("first vomit Aug 30, seven since"), mid-walk ("did I already give the pill"), a week after a food change ("fussy, or sick"), and with the phone tilted at a partner. Dr. Chen needs the owner to be able to <em>find and say</em> four things in the room. Data called it "the enumeration itself: nothing added, nothing folded away" — so every number on it is a claim about the enumeration. The IA called the job retrieval. <strong>Nobody asked History to judge anything.</strong> The Signal does that, on Home.</p>
-  </div>
-  <h3>What they agreed, before anything was drawn</h3>
-  <div class="rules">
-    <div class="rule"><div class="rid">1 · one door</div><b>A row opens the record.</b>Edit and Remove live there, where Remove already names the photo. The expand state, the three text buttons and the long-press go. No swipe-to-delete: a swipe on a moving bus is how a record loses a vomit (Jordan), and the sliding button is chrome moving (Motion).</div>
-    <div class="rule"><div class="rid">2 · days</div><b>Days at local midnight, in the spine's language.</b>One header per day; rows are the 44pt node Home already draws, so three days fit above the fold instead of one. A day's header counts <em>kinds</em> ("10 logged · 2 vomits · 1 cough · 7 meals") and never intake, never an adjective, never a verdict, never a streak.</div>
-    <div class="rule"><div class="rid">3 · the unlogged day</div><b>Silence is drawn.</b>Sep 20 is a row: "Sat, Sep 20 · nothing logged". A week away collapses to one line, never seven (the owners' nag wall). Under a lens the gap names the lens: "no vomit logged · Sep 13 – 16 · 4 days".</div>
-    <div class="rule"><div class="rid">4 · closed days only</div><b>A count is a record fact, never a page fact.</b>The screen pages by whole local days, so no day is ever split and a header never changes under the thumb when the next page lands. The one line at the top comes from a count over the same query, never from the rows loaded.</div>
-    <div class="rule"><div class="rid">5 · compaction, stricter</div><b>"3 meals · 12:41 – 5:07 PM", and never across a fact.</b>Home's wall (a symptom, a dose, a look, a weight, a photographed meal, treat vs meal) plus History's: a different food or format, any rating below <em>all</em>, a note, a combo vehicle, local midnight. Opens in place, row-scoped.</div>
-    <div class="rule"><div class="rid">6 · the filters, kept</div><b>Two pills, every option visible, the tint, the doorways byte-for-byte.</b>Extended, not replaced: months and "since the trial started" in the date sheet; "All symptoms" in the type sheet; a count on a non-default pill; a third pill only as a fact lens. <em>Never</em> a lens over a read's verdict — its empty result would read as wellness.</div>
-    <div class="rule"><div class="rid">7 · the read, one word</div><b>A photographed row carries a glyph and, when a read landed, its verdict in the record's own words.</b>Never the observations, the sentence, a thumbnail, a server flag as text, or a confidence. A failed or dismissed read shows nothing, never "clear". What the calm word does at list scale is the one thing the reads split on (§04, R1-2).</div>
-    <div class="rule"><div class="rid">8 · notes</div><b>A note is quoted, never counted, never summarised, never a flag input.</b>The glyph on the row; search over the record is the honest first use; the Signal never reads them; the disclosure of where a note goes ships where the note is written, before notes become more visible anywhere (CUL-848).</div>
+    <p>Nobody asked History to judge anything; the Signal does that, on Home. So every number on it is a claim about the enumeration, every row is one door to its record, silence is drawn, a count is a record fact never a page fact, and the filters are kept and extended. Round 2 changes none of that. What it changes is how much of it is on screen at once, and what the screen does while you use it.</p>
   </div>
 </section>
 <!-- ───────────────────────── §02 THE PROPOSAL ───────────────────────── -->
 <section id="s02">
-  <div class="sec-head"><span class="sec-num">§02</span><h2>The proposal — History as days, on Nyx's real fortnight</h2></div>
+  <div class="sec-head"><span class="sec-num">§02</span><h2>The proposal — refined, on Nyx's real fortnight</h2></div>
   <div class="col">
-    <p>The header says whose record (the pet's name, C-9), what lens is on, and how big the record is — <strong>"All time · 1,091 logged since May 14"</strong>, from a count. Then the days, newest first: today with its count line; Sep 20 as one quiet line; Sep 17 with its ten events folded into six nodes because consecutive dry meals with nothing between them share a line, and never across the cough or either vomit. A vomit says how long after eating it was, whether it has a photo, and what the read said, in words. A row opens the record. <strong>Replay the wait, then scroll; open "3 meals"; open a record and come back; tap a pill and pick Vomit.</strong> The second phone is the same screen under the Vomit lens since the trial started, which is the sentence Jordan says to the vet.</p>
+    <p>The same screen as round 1 with the six cuts of §03 applied and the strip in place. Read down the first phone: whose record and the two pills; the standing facts, once (the diet in force, the trial day, the running course), which stay pinned as you scroll so a row that says only "Meal · dry" always has its food in view; the one sentence about reads; the week that holds today, as seven dated cells with counts; then the days. Today is five rows, and only two of them name a food: the rabbit that was picked at, and nothing else, because everything else was the trial food. The vomit says "5 min after eating", carries its photo glyph and its own note, and shows no calm word; the read is on the record. <strong>Press "Replay the first paint" and watch the threads draw down; then "Replay the read" for how a calm read resolves; open "5 meals"; open a record, remove the 6:27 PM meal and put it back.</strong></p>
   </div>
   <div class="frames">
     <div class="frame-slot">
-      <span class="tag prop">Proposal · History, Mon Sep 21 (Central) · All types · All time</span>
-      <div class="phone vp wait" id="p-days" data-mount='{"when":"all","verdict":"every","notes":"glyph","search":"","moreLens":true,"pendingKey":"2026-09-21 16:40"}'>
+      <span class="tag prop">Current · History, Mon Sep 21 (Central) · All types · All time</span>
+      <div class="phone vp wait" id="p-days" data-mount='{"when":"all","rail":true,"search":"","moreLens":true,"pendingKey":"2026-09-21 16:40"}'>
         <div class="notch"></div>
         <div class="wait-skel" aria-hidden="true"></div>
         <div class="vpbody wait-content"></div>
         <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div>
         <div class="fab" role="button" aria-label="Log event" tabindex="0"></div>
       </div>
-      <div class="btnrow"><button class="btn" type="button" data-replay="wait|p-days">Replay the wait</button><button class="btn" type="button" data-replay="arrive|p-days|2026-09-21 16:40">Replay the read</button><button class="btn" type="button" data-replay="open|p-days">Open "3 meals"</button><button class="btn" type="button" data-replay="route|p-days">Open a record · Back</button></div>
-      <p class="frame-cap"><b>Above the fold: whose record, the lens, the size of the record, and today as a day.</b> The read on today's 4:40 PM vomit arrives on the row the way it arrives on Home: the tick that waits becomes the rail, then the word lands. Sep 20 is one line. Three days fit where one did. The FAB keeps its place; the body clears it with a 96pt inset; "Load more" is gone — the list pages by day as you reach the end, and the end cap says where the record starts.</p>
+      <div class="btnrow"><button class="btn" type="button" data-replay="wait|p-days">Replay the first paint</button><button class="btn" type="button" data-replay="arrive|p-days|2026-09-21 16:40">Replay the read (calm)</button><button class="btn" type="button" data-replay="open|p-days">Open "5 meals"</button><button class="btn" type="button" data-replay="route|p-days">Open a record · Back</button><button class="btn" type="button" data-replay="remove|p-days|2026-09-21 18:27">Remove the 6:27 PM meal</button><button class="btn" type="button" data-replay="restore|p-days|2026-09-21 18:27">Put it back</button><button class="btn" type="button" id="rail-demo">Back a week · tap Sep 17</button></div>
+      <p class="frame-cap"><b>What is on the frame now, and what left it.</b> Left: seven "Selected Protein PR" strings, four chevrons, two cross-link lines, five grey "Keep an eye out"s and a right-justified list of meals per day. Arrived: the standing facts, the reads sentence, the strip, and the notes themselves. Sep 20 is still one quiet line, and the strip's hollow "20" says it again. The read on today's 4:40 PM vomit was <em>keep an eye out</em>: the tick waits while the photo is read, then leaves; nothing lands, because under rose only a calm word is the record's to show, and the sentence at the top has already said what one photo can do. A worth-a-call would land in rose, exactly as round 1 drew it (§05 has that specimen).</p>
     </div>
     <div class="frame-slot">
-      <span class="tag prop">Proposal · the Vomit lens, since the trial started</span>
-      <div class="phone vp" id="p-lens" data-mount='{"when":"trial","lens":"vomit","verdict":"every","notes":"glyph","search":"","moreLens":true}'>
+      <span class="tag prop">Current · the Vomit lens, since the trial started</span>
+      <div class="phone vp" id="p-lens" data-mount='{"when":"trial","lens":"vomit","rail":true,"search":"","moreLens":true}'>
         <div class="notch"></div>
         <div class="vpbody"></div>
         <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div>
         <div class="fab" role="button" aria-label="Log event" tabindex="0"></div>
       </div>
-      <div class="btnrow"><button class="btn" type="button" data-replay="lens|p-lens|vomit">Toggle the lens</button></div>
-      <p class="frame-cap"><b>The filters, made visible.</b> Both pills tint; the type pill carries the count from the query ("Vomit · 13" since Jul 26), never from the rows loaded. Each day's header speaks the lens's word ("2 vomits", never "2 logged"); the days with no vomit collapse into one line that names what is absent and for how long; the line at the top says the same count with the window named. This frame carries Sep 4 – 21; the other six are on the device. Under a symptom lens the calm words stack into a column — §04's first decision.</p>
+      <div class="btnrow"><button class="btn" type="button" data-replay="lens|p-lens|vomit">Toggle the lens</button><button class="btn" type="button" data-replay="back|p-lens">Back a week</button></div>
+      <p class="frame-cap"><b>Every count follows the lens, including the strip's.</b> "Vomit · 13" on the pill and "Since the trial started · 13 vomits" on the line come from the query. The strip re-draws for the lens: Sep 21 carries "1" and the rose dot; Sep 20 is hollow because nothing at all was logged; and Sep 13 – 16, where meals were logged but no vomit, are plain cells with no mark, a third state the Data check insisted on ("logged, none of this kind" is not "nothing logged"). The days between vomits collapse into one line that names what is absent and for how long. Press "Back a week" and the cells land again, Sep 17 carrying its "2".</p>
+    </div>
+  </div>
+  <div class="col">
+    <h3>What the screen tells you that the list could not</h3>
+    <div class="facts">
+      <div><b>How much the record holds</b>"All time · 1,091 logged since May 14", from a count over the same query, never from the rows loaded.<small>the completeness line</small></div>
+      <div><b>Which days had a symptom, at a glance</b>The rose in the header and the rose dot in the strip are the same fact in two places; a week with no dot is a week to say so about, not a week to feel good about.<small>the header · the strip</small></div>
+      <div><b>How long after eating</b>"5 min after eating", the number Dr. Chen asks for, computed over the whole day and pointing at a meal that is always its own row.<small>the timing line</small></div>
+      <div><b>What the diet was, and what broke it</b>The standing line names the diet in force; a row names a food only when it was something else. The exceptions are the information.<small>the standing facts · rule A</small></div>
+      <div><b>Where the silence is</b>Sep 20 as one line and as a hollow cell; under a lens, "no vomit logged · Sep 13 – 16 · 4 days".<small>the gap line · the strip</small></div>
+      <div><b>What you wrote, without a tap</b>"Right after the kibble, mostly liquid. She…", one line, on the row, the day you would need it.<small>the note on the row</small></div>
+      <div><b>How the day was fed, in one line</b>"5 meals · 1 wet · 4 dry · 2:15 AM – 10:25 PM": the day's feeding as a sentence, opening to the meals.<small>the compact line</small></div>
+      <div><b>Which rows were photographed, and which were worth a call</b>The glyph on every photographed row; the rose word only where the read escalated; the sentence at the top for what the quiet ones mean.<small>rule F</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §03 THE NOISE CUT ───────────────────────── -->
+<section id="s03">
+  <div class="sec-head"><span class="sec-num">§03</span><h2>The noise cut — the same day, before and after</h2></div>
+  <div class="col">
+    <p>Your one piece of negative feedback, taken apart. Each pair below is the same day from the record, drawn with round 1's renderer on the left and round 2's on the right. Six rules do the cutting; the rule under each pair says what left the frame and, more importantly, what was <em>not</em> allowed to leave. A cut that hides a fact is not a cut, it is a lie by omission, so every rule was checked against the record by the Data Scientist and Dr. Chen before it was drawn (§09).</p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot" style="width:100%;max-width:680px">
+      <div class="pair">
+        <div style="flex:1;min-width:280px"><span class="tag built">Round 1 · Sep 21</span><div class="acard" id="p-noise-a" data-mount='{"bare":true,"only":["2026-09-21"],"headerStyle":"r1","chevrons":true,"crossLinks":true,"dietInForce":null,"crossFormat":false,"verdict":"every","notes":"glyph"}'></div></div>
+        <div style="flex:1;min-width:280px"><span class="tag prop">Current · Sep 21</span><div class="acard" id="p-noise-b" data-mount='{"bare":true,"only":["2026-09-21"]}'></div></div>
+      </div>
+      <p class="frame-cap"><b>Today, both ways.</b> Left, every meal names the trial food, the dose and the meal point at each other in teal, every row has a chevron, the vomit carries a grey verdict and a ❞. Right, the header says "5 logged · 1 vomit" where the left said "5 logged · 1 vomit · 3 meals · 1 dose"; the rabbit is named because it was not the diet, and says it carried Prednisone; the dose says "in the rabbit meal"; the vomit's note is on the row; nothing is teal, nothing is grey. Two facts fewer words, no facts fewer.</p>
+    </div>
+    <div class="frame-slot" style="width:100%;max-width:680px">
+      <div class="pair">
+        <div style="flex:1;min-width:280px"><span class="tag built">Round 1 · Sep 17</span><div class="acard" id="p-noise-c" data-mount='{"bare":true,"only":["2026-09-17"],"headerStyle":"r1","chevrons":true,"crossLinks":true,"dietInForce":null,"crossFormat":false,"verdict":"every","notes":"glyph"}'></div></div>
+        <div style="flex:1;min-width:280px"><span class="tag prop">Current · Sep 17</span><div class="acard" id="p-noise-d" data-mount='{"bare":true,"only":["2026-09-17"]}'></div></div>
+      </div>
+      <p class="frame-cap"><b>The busiest day of the fortnight.</b> Ten events. Left: "10 logged · 2 vomits · 1 cough · 7 meals", wrapping onto a second line. Right: "10 logged · 2 vomits · 1 cough", the meals gone from the header because they are the eight rows below it. The 10:55 AM meal and the 5:07 PM meal stay their own rows on the right for one reason: each is the meal a vomit's "3 min" and "4 min after eating" points at, and the Data check's condition is that the reference of a timing line is never inside a run.</p>
+    </div>
+  </div>
+  <h3>The six rules, and the fact each one is forbidden to hide</h3>
+  <div class="rules">
+    <div class="rule"><div class="rid">A</div><b>The diet in force is stated once; a meal of it is unnamed on its row.</b>The standing line under the header names it and stays pinned while you scroll. A row names its food only when the food was something else, so the exceptions are what you read. <em>Never hidden:</em> a foodless meal says "no food recorded" (it must not wear the unnamed shape); a day with two diets in force names every meal (a format tag is not a food); the line is a span, not a sentence for all time, so at each boundary (Jul 26 here) a marker sits in the stream and rows before it name their food. "Unnamed" comes from a positive match on the trial's dated allowed set, never from ignorance.</div>
+    <div class="rule"><div class="rid">B</div><b>A run may cross wet and dry of one product, and speaks its counts.</b>"5 meals · 1 wet · 4 dry". <em>Never hidden:</em> any other fact still breaks a run (a symptom, a dose, a photo, a note, a rating below <em>most</em>, a different product, midnight), and the meal a symptom's timing line is measured from stays its own row, so "3 min after eating" always has a visible "eating".</div>
+    <div class="rule"><div class="rid">C</div><b>The header is the date, the total, and every kind that is not routine.</b>Symptoms in rose, "other" and a look neutral; meals, doses and weights leave it. <em>Never hidden:</em> the total makes the remainder visible, and the enumeration covers everything that is not a meal, a dose or a weight, so Sep 13 reads "9 logged · 1 itch · 2 other", never "9 logged · 1 itch" over two noted rows. The date never wraps; a long count line goes left onto its own line.</div>
+    <div class="rule"><div class="rid">D</div><b>No chevron on a single row.</b>Every row is a door, so no row needs to say so; the compact row keeps its chevron because it opens in place rather than routing. <em>Never hidden:</em> nothing; a chevron carried no fact.</div>
+    <div class="rule"><div class="rid">E</div><b>No cross-link lines.</b>The dose names its vehicle inline ("in the rabbit meal"); the meal names its dose inline ("with Prednisone"). <em>Never hidden:</em> both halves of the pair, so under the Meal lens the rabbit still says it carried the dose (the Motion check's catch).</div>
+    <div class="rule"><div class="rid">F</div><b>The rose only.</b>A photographed row carries its glyph; a worth-a-call carries the word in rose; a calm read carries nothing, and the calm word lives on the record. <em>Never hidden:</em> the escalation. And one sentence stands at the top under every lens, "A photo's read can raise a flag, never clear one", because once some rows are rose the quiet ones would read as checked-and-fine. The rose derives from the fields as edited and the server's flags, one predicate shared with Home and the month (R2-5).</div>
+    <div class="rule"><div class="rid">G</div><b>The note, one line, on the row.</b>Cut at a word, the ellipsis inside the quotes, on its own line, never sharing a line with a verdict, a badge or a count. <em>Never hidden:</em> the full note, on the record; and never <em>shown</em> on a shared render. The cut is the risk ("Looked fine after, but then…" cannot become "Looked fine after…" without the ellipsis saying so), which is why the marks are the attribution and the ellipsis is inside them.</div>
+  </div>
+</section>
+<!-- ───────────────────────── §04 THE STRIP UNDER A WINDOW ───────────────────────── -->
+<section id="s04">
+  <div class="sec-head"><span class="sec-num">§04</span><h2>The strip — and what happens when you pick "Last 30 days"</h2></div>
+  <div class="col">
+    <p>The strip is one row of the Patterns month's own day marks: seven local days, Sunday first, a count in the corner from a per-day query (never from the rows loaded), hollow where nothing was logged, plain where the day logged things but none of the current lens, a rose dot where a symptom was. It opens on the week that holds today. <strong>It is bounded by the date lens.</strong> Under "Last 7 days" the arrow goes back one week and stops. Under "Last 30 days" it walks five weeks and stops at Aug 23 – 29, with the arrow saying why it is disabled. Under "All time" it walks to the record's first week (on this page, to Jun 20, where the per-day counts end, and the arrow says that instead). Days outside the window are drawn absent, not hollow, so a thin week is honest: "Last 7 days" on a Monday is two live cells and five blank, which the Motion check tried to break and ruled honest over a rolling seven. A tap lands on that day, or on the gap line that holds it, and the landed day draws in once.</p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Current · Last 30 days, one week from its edge</span>
+      <div class="phone vp" style="height:600px" id="p-strip-30" data-mount='{"when":"30d","rail":true,"railStart":"2026-08-30"}'>
+        <div class="notch"></div><div class="vpbody"></div>
+        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
+      </div>
+      <div class="btnrow"><button class="btn" type="button" data-replay="back|p-strip-30">Back a week</button><button class="btn" type="button" data-replay="when|p-strip-30|7d">Pick Last 7 days</button><button class="btn" type="button" data-replay="when|p-strip-30|30d">Pick Last 30 days</button><button class="btn" type="button" data-replay="when|p-strip-30|all">Pick All time</button></div>
+      <p class="frame-cap"><b>Aug 30 – Sep 5, with "Last 30 days" in the row's label.</b> Press "Back a week": Aug 23 – 29 lands, and the arrow dims, its label reading "Earlier week · Last 30 days starts Aug 23". Press "Pick Last 7 days": the strip re-draws to Sep 20 – 26, two live cells; "Sep 3 and earlier" under the list becomes "Last 30 days runs back to Aug 23 on the device" because this page carries Sep 4 – 21 row by row and the rest as counts. The cells count whatever the type pill says; the day list underneath is unchanged by the strip, which only ever moves you.</p>
+    </div>
+    <div class="frame-slot">
+      <div class="optbox">
+        <span class="tag opt">Option · drawn for the decision, not the current proposal</span>
+        <div class="phone vp" style="height:600px" id="p-grid-30" data-mount='{"when":"30d","month":true}'>
+          <div class="notch"></div><div class="vpbody"></div>
+          <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
+        </div>
+        <p class="frame-cap"><b>The window as a grid, for a window of 28 days or more.</b> Every week the window touches, in rows, Aug 23 to Sep 21, the month named on its first cell; the same three marks, the same rose dot. It answers "Last 30" in one look instead of five presses. <b>The Motion check refused it:</b> five rows are 290pt of the fold, the list's first day would sit below the strip on every open, and the date sheet's months already do the long jump. Kept here because it is a real decision (brief R2-2); the recommendation follows the refusal.</p>
+      </div>
     </div>
   </div>
   <div class="col"><div class="conflict">
-    <p><strong>Mobile IA:</strong> the first frame now says four things — whose record, what lens, the newest day as a day, and that the record is bigger than the frame. The as-built frame said one.</p>
-    <p><strong>Sam:</strong> "3 meals · 12:41 – 5:07 PM" is my cat's afternoon. And "Picked" on the rabbit stays its own row, because that was the day's fact.</p>
-    <p><strong>Dr. Chen:</strong> "3 min after eating" beside the vomit, on the day it happened, is the number I ask for and never get. The found one at 6 AM says <em>found</em> and no minutes, because the record can't settle it.</p>
-    <p><strong>Data:</strong> the header's "10 logged" is a whole local day; the top line's "1,091" is a count over the same query; the pill's "13" is the lens over the window. Three numbers, three named populations.</p>
+    <p><strong>Mobile IA:</strong> the strip scrolls with the list; pinned, it is 14% of every frame, and the pinned day header already says where you landed.</p>
+    <p><strong>Dr. Chen:</strong> the standing line is different: at 14pt it is not the strip, and "Meal · dry" with its food scrolled off the screen is "of what?" in a screenshot across an exam table. Pin the line, let the strip scroll.</p>
+    <p><strong>Drawn as:</strong> the line pinned, the strip scrolling. Not a PM decision; recorded because the two lenses reached it from opposite ends.</p>
   </div></div>
 </section>
 
-<!-- ───────────────────────── §03 THE ROW VOCABULARY ───────────────────────── -->
-<section id="s03">
-  <div class="sec-head"><span class="sec-num">§03</span><h2>What a row says — every kind, one language</h2></div>
+<!-- ───────────────────────── §05 DELIGHT ───────────────────────── -->
+<section id="s05">
+  <div class="sec-head"><span class="sec-num">§05</span><h2>Delight — the motion inventory, each with the rule that keeps it honest</h2></div>
   <div class="col">
-    <p>One node language, borrowed whole from Home's spine: the time on the right, the category dot, the type, then the facts the record holds and nothing it does not. The second line exists only for a verdict, a cross-link, a sync state or (option) a note. Each row below is a real row from the fortnight; the last two are the states the record can be in that the fortnight happened not to hold.</p>
+    <p>Home's delight is not decoration; it is a small set of gestures that each answer a fact, and it reads as delight because nothing else moves. History gets the same set, with two additions the Motion check ruled in and one it ruled out. Every gesture below plays on this page; press each twice. Under reduced motion every one of them is a static frame, and the page was checked that way too.</p>
+  </div>
+  <div class="tscroll"><table class="t">
+    <tr><th>The gesture</th><th>Answers the fact</th><th>What moves</th><th>The rule that stops it becoming a loop</th><th>Try it</th></tr>
+    <tr><td><b>The wait, then the first paint</b></td><td>the first read answered</td><td>The skeleton gives way; on every visible day the thread draws down over 370ms and each node lands as the rail passes, the stagger derived from the day's node count; the words land last; 700ms end to end. The days start together, never one after another.</td><td>Once per mount identity (pet · type · window · first day). A sync tick never replays it; page 2 mounts still; midnight re-arms it. Headers, pills, the count line, the strip and the FAB never move.</td><td>§02, "Replay the first paint"</td></tr>
+    <tr><td><b>The strip landing</b></td><td>the lens or the week changed</td><td>The seven cells scale in with a 28ms stagger; the counts are already in them.</td><td>Only on a change the owner made. Never on scroll, never on a sync.</td><td>§02 second phone, "Toggle the lens" · §04, "Back a week"</td></tr>
+    <tr><td><b>The landed day</b></td><td>you pointed at a day and arrived</td><td>The list scrolls to the day; its thread draws once; the neighbours stay still. Past three screens away it jumps first, then draws.</td><td>Identity is the landing, so tapping the same cell twice draws once.</td><td>§02, "Back a week · tap Sep 17"</td></tr>
+    <tr><td><b>Arrive</b></td><td>a read landed while you watched</td><td>The tick that waited becomes the rail; a worth-a-call opens its box in rose (the physics Home and the incident screen share).</td><td>A calm read resolves un-animated: the tick leaves in 150ms and nothing lands (R2-4). Never a haptic.</td><td>below, the specimen</td></tr>
+    <tr><td><b>Open in place</b></td><td>you asked what a run holds</td><td>The compact row's box opens under it, row-scoped; the chevron turns.</td><td>Never shares a layout commit with the scrolling list.</td><td>§02, "Open '5 meals'"</td></tr>
+    <tr><td><b>The route</b></td><td>you opened a record</td><td>The record rises over the list; back drops it.</td><td>The list never re-renders under it.</td><td>§02, "Open a record · Back"</td></tr>
+    <tr><td><b>The row leaving</b></td><td>you removed a row</td><td>The record closes; the row folds shut (180ms out, the box closing over 300ms, the rail trailing); the day's header re-speaks its count.</td><td>Only through the one shared reversal (<code>reverseLoggedEvent</code>); never on a lens change, which re-renders still.</td><td>§02, "Remove the 6:27 PM meal"</td></tr>
+    <tr><td class="no"><b>Refused</b></td><td>—</td><td>A cascade across days (the mount stagger in a costume); a pulse on today's ring or on a rose cell (a loop waiting on nothing, a symptom spotlit); any motion on scroll; a swipe to page the strip.</td><td>—</td><td>—</td></tr>
+  </table></div>
+  <div class="frames">
+    <div class="frame-slot" style="width:100%;max-width:640px">
+      <div class="acard" style="max-width:640px">
+        <div class="seclabel">Arrive — the two ways a read resolves under rose only</div>
+        <div class="spine">
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">by 7:02 AM<span class="conf">found</span></div><div class="arr2" id="spec-arr"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div><div class="dbox"><div class="dtext"><b>Worth a call</b>One photo can raise a flag; it can't clear one.</div></div></div></div></div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 5 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">4:40 PM</div><div class="arr2 calm" id="spec-calm"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div></div></div></div></div>
+        </div>
+        <div class="btnrow"><button class="btn" type="button" id="spec-arr-replay">Replay both</button></div>
+      </div>
+      <p class="frame-cap"><b>The worth-a-call lands; the calm one leaves.</b> Top: Sep 4's found vomit, the one worth-a-call the fortnight holds, arriving as round 1 drew it. Bottom: today's 4:40 PM vomit, whose read was <em>keep an eye out</em>; the tick breathes while the photo is read and then goes, and the row is at rest with its glyph. The Motion check named the asymmetry and ruled it the honest one under rose only (a slot folding shut versus a rose box opening is the Signal fold's own G4); the Data check's sentence at the top of the list is what keeps the quiet row from reading as "fine". The alternative is brief R2-4.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §06 THE ROW VOCABULARY ───────────────────────── -->
+<section id="s06">
+  <div class="sec-head"><span class="sec-num">§06</span><h2>What a row says now — every kind, one language</h2></div>
+  <div class="col">
+    <p>The node language is unchanged; what each row is allowed to carry moved under rules A to G. The specimen below is round 1's, redrawn under round 2. Compare it with §03's left-hand cards for what left.</p>
   </div>
   <div class="frames">
     <div class="frame-slot" style="width:100%;max-width:640px">
       <div class="acard" style="max-width:640px">
-        <div class="seclabel">The specimen — one of each</div>
+        <div class="seclabel">The specimen — one of each, round 2</div>
+        <div class="standing" style="position:static"><i class="stick"></i><span><b>Selected Protein PR</b> · trial day 58 of 84 · <b>Prednisone</b> since Sep 21</span></div>
+        <div class="standing read"><i class="stick"></i><span>A photo's read can raise a flag, never clear one.</span></div>
         <div class="spine">
-          <div class="node1" style="--dot:#00C2A8"><div class="nt">Meal <small>· Selected Protein PR <span class="tagx">wet</span></small></div><div class="ntime">5:47 AM</div></div>
-          <div class="node1 nc" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">3 meals <small>· Selected Protein PR · dry</small></div><div class="ntime">12:41 – 5:07 PM</div></div>
-          <div class="node1" style="--dot:#00C2A8"><div class="nt">Meal <small>· Instinct · LID Real Rabbit <span class="tagx">wet</span></small><span class="chip attn">Picked</span></div><div class="ntime">1:00 PM</div><div class="nv" style="color:#0B7B6C;font-weight:500">↔ Prednisone given in this meal ›</div></div>
-          <div class="node1" style="--dot:#5B7A9E"><div class="nt">Prednisone <small>· in food</small><span class="chip ok">Given</span></div><div class="ntime">1:00 PM</div><div class="nv" style="color:#0B7B6C;font-weight:500">↔ in the Instinct · LID Real Rabbit meal ›</div></div>
-          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 3 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small><span class="qm" aria-label="Has a note">❞</span></div><div class="ntime">10:58 AM</div><div class="nv mon">Keep an eye out</div></div>
+          <div class="node1" style="--dot:#00C2A8"><div class="nt">Meal <small>· <span class="tagx">wet</span></small></div><div class="ntime">5:47 AM</div></div>
+          <div class="node1 nc" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">5 meals <small>· 1 wet · 4 dry</small></div><div class="ntime">2:15 AM – 10:25 PM</div></div>
+          <div class="node1" style="--dot:#00C2A8"><div class="nt">Meal <small>· Instinct · LID Real Rabbit <span class="tagx">wet</span> · with Prednisone</small><span class="chip attn">Picked</span></div><div class="ntime">1:00 PM</div></div>
+          <div class="node1" style="--dot:#5B7A9E"><div class="nt">Prednisone <small>· in the rabbit meal</small><span class="chip ok">Given</span></div><div class="ntime">1:00 PM</div></div>
+          <div class="node1" style="--dot:#00C2A8"><div class="nt">Meal <small>· no food recorded</small></div><div class="ntime">10:55 AM</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 3 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">10:58 AM</div><div class="nq snip">“Hairball, I think.”</div></div>
           <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">by 7:02 AM<span class="conf">found</span></div><div class="nv call">Worth a call</div></div>
-          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small><span class="qm" aria-label="Has a note">❞</span></div><div class="ntime">4:00 PM<span class="conf">estimated</span></div><div class="nv mon">Keep an eye out</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">4:00 PM<span class="conf">estimated</span></div><div class="nq snip">“Found on the landing, dry by the time I saw…”</div></div>
           <div class="node1" style="--dot:#F43F5E"><div class="nt">Cough</div><div class="ntime">5:09 PM</div></div>
-          <div class="node1" style="--dot:#F43F5E"><div class="nt">Itch/Scratch<span class="qm" aria-label="Has a note">❞</span></div><div class="ntime">11:55 AM</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Itch/Scratch</div><div class="ntime">11:55 AM</div><div class="nq snip">“Left ear again.”</div></div>
           <div class="node1" style="--dot:#737373"><div class="nt">Weight <small>· 8.2 lbs</small></div><div class="ntime">5:51 PM</div></div>
           <div class="node1 hollow" style="--dot:#A3A3A3"><div class="nt">Vet visit <small>· opens the visit</small></div><div class="ntime">Sep 16</div></div>
-          <div class="node1" style="--dot:#737373"><div class="nt">Noticed <small>· off, didn't want to play</small><span class="qm" aria-label="Has a note">❞</span></div><div class="ntime">7:12 PM</div></div>
+          <div class="node1" style="--dot:#737373"><div class="nt">Noticed <small>· off, didn't want to play</small></div><div class="ntime">7:12 PM</div><div class="nq snip">“Slept on the stairs all afternoon.”</div></div>
           <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 5 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">4:40 PM</div><div class="nv call">Not saved to your records · Save again ›</div></div>
         </div>
         <div class="gap" style="padding-left:0"><i></i>Sep 20 · nothing logged</div>
         <div class="gap wide"><i></i>no vomit logged · Sep 13 – 16 · 4 days</div>
         <div class="gap" style="padding-left:0"><i></i>Prednisone started · Sep 21</div>
+        <div class="gap" style="padding-left:0"><i></i>Selected Protein PR became the diet · Jul 26</div>
       </div>
-      <p class="frame-cap"><b>Reading down.</b> A wet meal on its own; three dry meals with nothing between them as one line that opens; the rabbit that was picked at, never compacted, cross-linked to the dose it carried; the dose, cross-linked back; a witnessed vomit with the lane's minutes, its photo glyph, its note glyph and its read; a found vomit — <em>by</em> the hour, <em>found</em>, no minutes, and the one worth-a-call the fortnight holds; an estimated one; a cough; an itch with a note; a weight in the unit the owner uses; the vet visit at the foot of its day, hollow because it is not an event and is never counted; a look (not on Nyx's record — drawn for the vocabulary); and a row that failed to sync, which says so and offers the re-save (CUL-944). Under the rows: the three kinds of quiet line.</p>
-    </div>
-    <div class="frame-slot" style="width:100%;max-width:640px">
-      <div class="acard" style="max-width:640px">
-        <div class="seclabel">The read — its five states on a row</div>
-        <div class="spine">
-          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 5 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">4:40 PM</div><div class="arr2" id="spec-arr"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div><div class="dbox"><div class="dtext"><b>Keep an eye out</b>One photo can raise a flag; it can't clear one.</div></div></div></div></div></div>
-          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 3 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">10:58 AM</div><div class="nv mon">Keep an eye out</div></div>
-          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">by 7:02 AM<span class="conf">found</span></div><div class="nv call">Worth a call</div></div>
-          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">6:52 AM</div><div class="nv nes">Not enough to say</div></div>
-          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 12 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">11:40 PM</div></div>
-        </div>
-        <div class="btnrow"><button class="btn" type="button" id="spec-arr-replay">Replay the arrival</button></div>
-      </div>
-      <p class="frame-cap"><b>Pending, then landed; monitor; worth a call; not enough to say; nothing.</b> The last row is a read that failed, or one the owner hid on the record: the glyph stays and the row says nothing about the read, because "nothing was found" is not a thing one photo can say. An escalation survives a failed row. A worth-a-call an owner corrected on the record (a false "blood") must not re-accuse from the list — Dr. Chen's condition: the rose derives from the structured fields and the server's flags, never from the cached word alone. Offline, the screen says once "Reads unavailable offline" and no row pretends.</p>
-    </div>
-  </div>
-</section>
-<!-- ───────────────────────── §04 THE DECISIONS, DRAWN ───────────────────────── -->
-<section id="s04">
-  <div class="sec-head"><span class="sec-num">§04</span><h2>The four decisions the reads split on — each option drawn</h2></div>
-  <div class="col">
-    <p>Each box is one decision, both options on the same real days, the recommendation marked and the dissent named. The briefs are in §10; these are the frames they point at.</p>
-  </div>
-
-  <h3>Decision 1 · The calm word on a list (R1-2)</h3>
-  <div class="col"><p><strong>The owners:</strong> the verdict word on <em>every</em> read row, small and grey, rose for the call — because if it appears only on the bad ones, the quiet ones read as "fine", the lie the app promises not to tell. <strong>Dr. Chen:</strong> at day scale the calm word is legible, but under a symptom lens ten grey "Keep an eye out"s become a texture, and texture reassures — "the app looked ten times and never worried" (S1, at list scale). Her ask: the rose stays, the calm word yields to the count, and Home's own line stands once at the top. Both drawn under the Vomit lens over the last 30 days.</p></div>
-  <div class="frames">
-    <div class="frame-slot">
-      <span class="tag opt">Option A · the word on every read</span>
-      <div class="phone vp" style="height:560px" id="p-calm-a" data-mount='{"when":"30d","lens":"vomit","verdict":"every","notes":"glyph"}'>
-        <div class="notch"></div><div class="vpbody"></div>
-        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
-      </div>
-      <p class="frame-cap"><b>Eight vomits in the window, the seven this page carries: six grey words, one rose.</b> The owners' case: nothing is implied by an absence, because there is no absence. The standing line is kept even here.</p>
-    </div>
-    <div class="frame-slot">
-      <span class="tag prop">Option B · the rose only, under a symptom lens · recommended</span>
-      <div class="phone vp" style="height:560px" id="p-calm-b" data-mount='{"when":"30d","lens":"vomit","verdict":"rose","notes":"glyph"}'>
-        <div class="notch"></div><div class="vpbody"></div>
-        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
-      </div>
-      <p class="frame-cap"><b>The same rows; the rose stands alone; the glyph says "photographed" on every one.</b> Dr. Chen's case, drawn as the reconciliation: at day scale (§02, All types) every read keeps its word, as on Home; the moment a symptom lens stacks the verdicts into a column, the calm words yield to the count and the standing line. The density gate fails toward escalation, as the Signal's does.</p>
-    </div>
-  </div>
-
-  <h3>Decision 2 · The note on the row (R1-3)</h3>
-  <div class="col"><p><strong>Jordan:</strong> the first line under the row — "I wrote 'ate grass on the walk' for exactly the day I'd need it." <strong>Sam and Trust &amp; Safety:</strong> the glyph, the text one tap in — a phone tilted at a partner, a screenshot to a group chat; today the note is one tap away and on a row it is zero. Search (§05) is the finder either way. Drawn on Sep 13, the day with three notes.</p></div>
-  <div class="frames">
-    <div class="frame-slot">
-      <span class="tag prop">Option A · the glyph · recommended</span>
-      <div class="acard" id="p-note-a" data-mount='{"bare":true,"only":["2026-09-13"],"notes":"glyph","verdict":"every"}' style="width:316px;max-width:100%"></div>
-      <p class="frame-cap"><b>❞ beside the type; the words on the record.</b> The row says a note exists and nothing it contains. What the shipped look row already does.</p>
-    </div>
-    <div class="frame-slot">
-      <span class="tag opt">Option B · the first line under the row</span>
-      <div class="acard" id="p-note-b" data-mount='{"bare":true,"only":["2026-09-13"],"notes":"line","verdict":"every"}' style="width:316px;max-width:100%"></div>
-      <p class="frame-cap"><b>The note quoted, in italics, one line, never summarised.</b> Jordan's case. <span class="illus" style="color:var(--ink-3)">note text illustrative</span> — only the three notes' lengths (16, 13 and 38 characters) are the record's.</p>
-    </div>
-  </div>
-
-  <h3>Decision 3 · Inside a day: morning to night, or newest first (Q1)</h3>
-  <div class="col"><p>Every read wants the <em>days</em> newest first. Inside a day, the Motion Designer wants <em>down = later</em> everywhere, as Home's spine reads; the IA wants the newest fact within two rows of the top, because the job is retrieval. Drawn on today.</p></div>
-  <div class="frames">
-    <div class="frame-slot">
-      <span class="tag prop">Option A · morning to night, Home's language · drawn under</span>
-      <div class="acard" id="p-order-a" data-mount='{"bare":true,"only":["2026-09-21"],"order":"chrono","notes":"glyph","verdict":"every"}' style="width:316px;max-width:100%"></div>
-      <p class="frame-cap"><b>The day reads as a story:</b> the rabbit and the dose at 1:00, the kibble at 4:35, the vomit five minutes later. One node language, one reading direction across Home and History.</p>
-    </div>
-    <div class="frame-slot">
-      <span class="tag opt">Option B · newest first inside the day</span>
-      <div class="acard" id="p-order-b" data-mount='{"bare":true,"only":["2026-09-21"],"order":"newest","notes":"glyph","verdict":"every"}' style="width:316px;max-width:100%"></div>
-      <p class="frame-cap"><b>The last thing logged is the first row:</b> "did I already give the pill" is one glance on a busy evening. The timing line still says "5 min after eating", so the story survives the order.</p>
-    </div>
-  </div>
-
-  <h3>Decision 4 · A week you can point at (Q2) — drawn for the decision, not the proposal</h3>
-  <div class="col"><p>Data's honest form of a rail: seven dated cells with a number, hollow for nothing logged, the week named, above the 20pt floor — a chart, not a scrubber. The IA and the Motion Designer say not to draw one: the jump belongs to the date sheet (months, the trial, the last visit), a density rail at 4pt a day is decoration, and a third calendar on a third day key is the wrong tool when the Patterns month already opens a day in place. Engineering sizes it as a later PR. Drawn so the decision is a frame, not a sentence.</p></div>
-  <div class="frames">
-    <div class="frame-slot">
-      <span class="tag opt">Option · the week strip above the days</span>
-      <div class="phone vp" style="height:600px" id="p-rail" data-mount='{"when":"7d","rail":true,"notes":"glyph","verdict":"every"}'>
-        <div class="notch"></div><div class="vpbody"></div>
-        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
-      </div>
-      <div class="btnrow"><button class="btn" type="button" id="rail-demo">Tap Sep 17</button></div>
-      <p class="frame-cap"><b>Sep 20 hollow, Sep 21 with a 5, the week ahead absent.</b> A tap jumps the list to that day. It passes the five-column check (§09) and costs a header row on every screen. Recommendation: not in round 1; months in the date sheet do the jump for two taps and nothing on screen.</p>
-    </div>
-    <div class="frame-slot">
-      <span class="tag opt">Option · the standing facts as a strip, and a course start as a marker</span>
-      <div class="phone vp" style="height:600px" id="p-threads" data-mount='{"when":"7d","threads":true,"notes":"glyph","verdict":"every"}'>
-        <div class="notch"></div><div class="vpbody"></div>
-        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
-      </div>
-      <p class="frame-cap"><b>Dr. Chen's ask, generalising the free-feeding strip:</b> the trial ("day 58 of 84") and the running course as standing context above the days, and "Prednisone started" as a quiet marker at the foot of its day, the way "Started free-feeding" already sits. A trial's day number is a stored fact; a course start is a stored date. Recommendation: the marker yes (it is the shipped marker pattern); the strip only if the Pet tab's trial card is not enough — a question for you (Q3).</p>
+      <p class="frame-cap"><b>Reading down.</b> A wet meal of the diet in force, unnamed; a whole day's feeding as one line that opens; the rabbit, named because it was not the diet, picked at, and carrying the dose inline; the dose, naming its vehicle inline; a meal with no food recorded, which says so rather than wearing the unnamed shape; a witnessed vomit with its minutes, its glyph and its note, and no calm word; the one worth-a-call, in rose; an estimated one with its note cut at a word; a cough; an itch with its note; a weight; the visit at the foot of its day; a look (drawn for the vocabulary; not on Nyx's record), whose note is a named, permitted sink here (T-22); and a row that failed to sync. Under the rows, the four kinds of quiet line, the last one new: the marker that sits where the diet in force began, so that rows before it name their food and rows after it do not. <span class="illus" style="color:var(--ink-3)">note text illustrative</span></p>
     </div>
   </div>
 </section>
 
-<!-- ───────────────────────── §05 THE FILTERS ───────────────────────── -->
-<section id="s05">
-  <div class="sec-head"><span class="sec-num">§05</span><h2>The filters — kept as they are, then given more to reach</h2></div>
+<!-- ───────────────────────── §07 THE FILTERS (kept) ───────────────────────── -->
+<section id="s07">
+  <div class="sec-head"><span class="sec-num">§07</span><h2>The filters — kept, extended, unchanged since round 1</h2></div>
   <div class="col">
-    <p>You called them a work of art. Every read kept them verbatim: two pills, every option a full-width sheet row, the tint when a lens is on, the two lenses composing, and the four doorways other surfaces depend on. What changes is <em>what they can reach</em>: a count on every sheet row from the query, months and the two windows the vet conversation needs, "All symptoms" as one option, a third pill only as a fact lens, and a search that finds a word in a food, a medicine or a note.</p>
+    <p>Nothing here moved in round 2 beyond the defaults every phone now renders under. The two pills, every option visible on a full-width sheet, the tint when a lens is on, a count on every sheet row from the query, months and the two windows the vet conversation needs, "All symptoms", a third pill only as a fact lens, and a search that finds a word in a food, a medicine or a note. Folded; the doorway contract is under it.</p>
   </div>
+  <details class="fold"><summary>The three sheets, search, and the doorway contract</summary>
   <div class="frames">
     <div class="frame-slot">
       <span class="tag prop">The type sheet · every option, its count</span>
-      <div class="phone vp" style="height:600px" id="p-sheet-type" data-mount='{"when":"all","notes":"glyph","verdict":"every","openSheet":"type"}'>
+      <div class="phone vp" style="height:600px" id="p-sheet-type" data-mount='{"when":"all","openSheet":"type"}'>
         <div class="notch"></div><div class="vpbody"></div>
         <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
       </div>
-      <p class="frame-cap"><b>The counts are the record's, per window.</b> "All symptoms" joins the list (Jordan: "the sentence I say to the vet"). Loose stool and Stool show 0 rather than hiding: an option that is absent because it is empty is an option the owner cannot see is empty.</p>
+      <p class="frame-cap"><b>The counts are the record's, per window.</b> "All symptoms" is one option. Loose stool and Stool show 0 rather than hiding.</p>
     </div>
     <div class="frame-slot">
       <span class="tag prop">The date sheet · months, the trial, the last visit</span>
-      <div class="phone vp" style="height:600px" id="p-sheet-when" data-mount='{"when":"all","lens":"vomit","notes":"glyph","verdict":"every","openSheet":"when"}'>
+      <div class="phone vp" style="height:600px" id="p-sheet-when" data-mount='{"when":"all","lens":"vomit","openSheet":"when"}'>
         <div class="notch"></div><div class="vpbody"></div>
         <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
       </div>
-      <p class="frame-cap"><b>The jump to May is two taps and nothing on screen.</b> The count column is the Vomit lens applied to each window: "Since the trial started · 13", "August · 5", "July · 10". "Since the last vet visit · Sep 16" is a record-anchored date, so it is free (C-19); "Last 14 days" is CUL-498's ask.</p>
+      <p class="frame-cap"><b>The jump to May is two taps.</b> The count column is the Vomit lens applied to each window; "Since the last vet visit · Sep 16" is a record-anchored date, so it is free (C-19).</p>
     </div>
     <div class="frame-slot">
       <span class="tag prop">A third pill, only as a fact lens</span>
-      <div class="phone vp" style="height:600px" id="p-sheet-more" data-mount='{"when":"all","moreLens":true,"notes":"glyph","verdict":"every","openSheet":"more"}'>
+      <div class="phone vp" style="height:600px" id="p-sheet-more" data-mount='{"when":"all","moreLens":true,"openSheet":"more"}'>
         <div class="notch"></div><div class="vpbody"></div>
         <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
       </div>
-      <p class="frame-cap"><b>Photographed · With a note · With a read · a medication's doses.</b> Each is a lens over a stored fact, so an empty result means "no rows with this fact". <em>Not on this sheet, ever:</em> "Worth a call" — its empty result would say the record was never worth a call while three photographed vomits have no verdict at all. "With a read" is the honest form, and its empty state names the unread.</p>
+      <p class="frame-cap"><b>Photographed · With a note · With a read · a medication's doses.</b> Never "Worth a call": its empty result would say the record was never worth a call while photographed vomits sit unread.</p>
     </div>
     <div class="frame-slot">
       <span class="tag prop">Search · a finder, never a claim</span>
-      <div class="phone vp" style="height:600px" id="p-search" data-mount='{"when":"all","search":"hairball","searchOpen":true,"notes":"glyph","verdict":"every"}'>
+      <div class="phone vp" style="height:600px" id="p-search" data-mount='{"when":"all","search":"hairball","searchOpen":true}'>
         <div class="notch"></div><div class="vpbody"></div>
         <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
       </div>
       <div class="btnrow"><button class="btn" type="button" data-replay="search|p-search|rabbit">Search "rabbit"</button><button class="btn" type="button" data-replay="search|p-search|hairball">Search "hairball"</button></div>
-      <p class="frame-cap"><b>"When did I write hairball?" is the exam-room question (Dr. Chen).</b> The results are rows, grouped by day, under whatever lenses are on; the match may be in the food's name, the medicine, the type or the note. A local, case-insensitive match over the owner's own text on the device; nothing leaves it; nothing is counted from it. The look's note stays out of it until Trust &amp; Safety rules (T-22). <span class="illus" style="color:var(--ink-3)">note text illustrative</span></p>
+      <p class="frame-cap"><b>"When did I write hairball?"</b> A local, case-insensitive match over the owner's own text on the device; nothing leaves it; nothing is counted from it. With the snippet on the row, a match now shows its own words. <span class="illus" style="color:var(--ink-3)">note text illustrative</span></p>
     </div>
   </div>
   <div class="col">
-    <h3>The doorways — the contract a redesign must keep byte for byte</h3>
-    <p>Four other surfaces open History with a filter already set. Rename a parameter and each of them lands on an unfiltered list with no test going red. A History v2 keeps every one, adds, never renames, and gets one test per doorway.</p>
+    <h3>The doorways — the contract a redesign keeps byte for byte</h3>
   </div>
   <div class="tscroll"><table class="t">
     <tr><th>Door</th><th>Sends</th><th>Lands on</th><th>What changes flag-on</th></tr>
-    <tr><td>Ask's answer provenance ("audit the count at its source")</td><td><code>?type=&amp;window=</code></td><td>The type lens and a rolling window</td><td>The window's count speaks at the top; a day the window cuts prints no count (C-37).</td></tr>
-    <tr><td>The Patterns calendar's day drill-in</td><td><code>?date=YYYY-MM-DD</code></td><td>One day — a UTC day today</td><td>A <em>local</em> day, parsed as an instant, never compared as text (CUL-1073, C-40). The Design v2 month gains its "Open in History" door once this is true.</td></tr>
+    <tr><td>Ask's answer provenance</td><td><code>?type=&amp;window=</code></td><td>The type lens and a rolling window</td><td>The window's count speaks at the top; a day the window cuts prints no count (C-37).</td></tr>
+    <tr><td>The Patterns calendar's day drill-in</td><td><code>?date=YYYY-MM-DD</code></td><td>One day — a UTC day today</td><td>A <em>local</em> day, parsed as an instant (CUL-1073, C-40); the landed day draws in.</td></tr>
     <tr><td>Home's pre-v2 Today zone</td><td><code>?date=today</code></td><td>Today</td><td>Unchanged; retires with the zone at D2-8.</td></tr>
     <tr><td>The home-screen widget</td><td><code>?date=&amp;pet=</code></td><td>A day, for that pet</td><td>The widget's local key finally lands on the right day.</td></tr>
-    <tr><td>Patterns' <em>What you noticed</em></td><td><code>?type=check_in</code></td><td>The Noticed lens</td><td>Unchanged.</td></tr>
+    <tr><td>Patterns' <em>What you noticed</em></td><td><code>?type=check_in</code></td><td>The Noticed lens</td><td>Unchanged; the strip shows an answered-day mark, never a count of looks.</td></tr>
   </table></div>
+  </details>
 </section>
-<!-- ───────────────────────── §06 THE AI ───────────────────────── -->
-<section id="s06">
-  <div class="sec-head"><span class="sec-num">§06</span><h2>What Claude returns, and what each surface shows</h2></div>
+<!-- ───────────────────────── §08 THE AI + THE NOTES (folded) ───────────────────────── -->
+<section id="s08">
+  <div class="sec-head"><span class="sec-num">§08</span><h2>What Claude returns, and where a note may flow — folded, updated where a ruling moved a cell</h2></div>
+  <div class="col"><p>Both tables are round 1's, with the cells your rulings changed marked. What History v2 shows of the read is now one word, in rose, only where the read escalated; what it shows of a note is one line of it. Nothing else moved.</p></div>
+  <details class="fold"><summary>What Claude returns, and what each surface shows</summary>
   <div class="col">
     <p>Your fifth question, answered from the code. Every photographed vomit or stool goes to a per-incident read that returns a verdict, a sentence, a description, six or seven structured observations, two flag lists, and a confidence per field — all stored. <strong>History shows none of it, not even that a photo exists.</strong> The record screen shows most of it; Home's spine and the Signal's screen show the word; Patterns shows a dot. Two things are stored and shown nowhere: the server's own cross-incident flags and the per-field confidence. The reads were unanimous on what may cross to a list and why.</p>
   </div>
   <div class="tscroll"><table class="t">
     <tr><th>Returned and stored</th><th>The record</th><th>Home's spine</th><th>Signal screen</th><th>Patterns</th><th>History today</th><th>History v2 · proposed</th><th>The rule</th></tr>
-    <tr><td>The verdict (worth a call · keep an eye out · not enough to say)</td><td class="ok">label</td><td class="ok">the word</td><td class="ok">the word per tile</td><td>a dot for worth a call</td><td class="no">—</td><td class="ok">the word · rose for the call · at day scale every read, under a symptom lens the rose only (R1-2)</td><td>The record's own word, never a paraphrase. Failed or dismissed shows nothing, never "clear".</td></tr>
+    <tr><td>The verdict (worth a call · keep an eye out · not enough to say)</td><td class="ok">label</td><td class="ok">the word</td><td class="ok">the word per tile</td><td>a dot for worth a call</td><td class="no">—</td><td class="ok">the rose only, everywhere (ruled, round 2); the calm word on the record; one standing sentence at the top under every lens</td><td>The record's own word, never a paraphrase. Failed or dismissed shows nothing, never "clear".</td></tr>
     <tr><td>The photo itself</td><td class="ok">the hero</td><td>a glyph</td><td class="ok">the gallery</td><td>—</td><td class="no">—</td><td class="ok">a glyph, always</td><td>A photo never renders on a list surface (R4-2, and History is more public than Home).</td></tr>
     <tr><td>The read sentence · the description</td><td class="ok">yes</td><td>the sentence only as it lands</td><td>—</td><td>—</td><td class="no">—</td><td class="no">never on a row</td><td>A sentence on a list is a screenshot magnet; the record is one tap in.</td></tr>
     <tr><td>Observations (colour, consistency, contents, blood, bile, foreign material; Bristol for stool)</td><td class="ok">most (bile is stored, never shown)</td><td>—</td><td>—</td><td>—</td><td class="no">—</td><td class="pm">"blood seen" present-only, as the rose line's reason (Dr. Chen); nothing else</td><td>An absence descriptor ("no blood seen") never on a list. The phenotype summary belongs to the report.</td></tr>
     <tr><td>Contextual flags — server-computed from the record (repeated vomiting · reduced intake · concurrent lethargy)</td><td>as a templated sentence, never as a field</td><td>—</td><td>—</td><td>—</td><td class="no">—</td><td class="no">never as text</td><td>A cross-incident claim signed by a per-incident floor; stale on a list with no window named. The day carries the count; the engine signs the pattern.</td></tr>
     <tr><td>Visual flags (blood · suspected foreign material)</td><td>through the observations</td><td>—</td><td>—</td><td>—</td><td class="no">—</td><td class="pm">only through "blood seen"</td><td>Present-only.</td></tr>
     <tr><td>Confidence per field</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">nowhere</td><td>Uncalibrated; a number about a field, not about the pet.</td></tr>
-    <tr><td>Edited · dismissed</td><td class="ok">yes</td><td>dismissed hides</td><td>—</td><td>—</td><td class="no">—</td><td class="ok">dismissed hides the word; the rose derives from the fields ∪ the flags, never the cached verdict alone</td><td>A corrected record must not re-accuse from the list (Dr. Chen's falsification).</td></tr>
+    <tr><td>Edited · dismissed</td><td class="ok">yes</td><td>dismissed hides</td><td>—</td><td>—</td><td class="no">—</td><td class="pm">the rose derives from the fields as edited ∪ the flags, one predicate shared with Home and the month; whether a dismissal hides an escalation is R2-5</td><td>A corrected record must not re-accuse from the list (Dr. Chen's falsification).</td></tr>
     <tr><td>A count of reads ("42 read · 10 worth a call")</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="no">—</td><td class="pm">only under a vomit or stool lens, with the denominator and the unread: "44 photographed of 45 · 42 read · 10 worth a call · 3 photographed without a read"</td><td>The thirty monitors never render as "30 fine".</td></tr>
   </table></div>
   <div class="col">
     <p><strong>Should we lean into the AI here?</strong> The reads say: lean into the <em>facts</em> it produced (the verdict, the photo, the minutes after eating the lane computed) and never into its <em>prose</em> on a list. The lean-in with the most clinical value is not on History at all: the observation aggregate ("blood seen in 1 of 9 read") already on the vet report, and the engine's sentence above the rows it is about. <strong>One sequencing fact from Trust &amp; Safety:</strong> the App Store consent gate for photo analysis (CUL-552) is not shipped; a verdict column on a new surface makes the reads visible before consent exists. The row's read is its own PR, after the gate (§11).</p>
   </div>
-</section>
-
-<!-- ───────────────────────── §07 NOTES ───────────────────────── -->
-<section id="s07">
-  <div class="sec-head"><span class="sec-num">§07</span><h2>Notes — where they flow today, and where they may</h2></div>
+  </details>
+  <details class="fold"><summary>Notes — where they flow today, and where they may</summary>
   <div class="col">
     <p>Your sixth question. On Nyx's record there are 64 notes, 22 characters on average, on symptoms and "Other" rows mostly. What is already true: Ask reads a note only inside the scope of a question (ratified over Trust &amp; Safety's dissent, with no "all my notes" tool by design); the Signal engine never reads one (every select list is note-free); the vet report prints every note verbatim into Appendix A <em>with no consent gate and no disclosure anywhere in the product</em> (CUL-848, waiting on you); the daily look's note is walled from every model by rule T-22; nothing searches notes. The reads drew one line, twice: a note may be <em>found</em> and <em>quoted</em>; it may never be <em>counted</em>, <em>summarised</em>, or made an <em>input</em>.</p>
   </div>
   <div class="tscroll"><table class="t">
     <tr><th>Use</th><th>Today</th><th>Proposed</th><th>Who decides · the rule</th></tr>
-    <tr><td>A glyph on the row, the text on the record</td><td>Looks only</td><td class="ok">every noted row (§02)</td><td>Presence is a fact.</td></tr>
-    <tr><td>Search over the owner's notes, foods and medicines</td><td>none</td><td class="ok">local, on the device (§05)</td><td>A finder, not a claim; honours deletion; nothing leaves the device. The look's note joins only on a T&amp;S ruling (Q4).</td></tr>
-    <tr><td>The note's first line on the row</td><td>—</td><td class="pm">R1-3</td><td>Jordan vs Sam and T&amp;S; never on a shared render either way.</td></tr>
+    <tr><td>A glyph on the row, the text on the record</td><td>Looks only</td><td class="no">retired (round 2): the line replaces the glyph</td><td>Presence is a fact; the words are a better one.</td></tr>
+    <tr><td>Search over the owner's notes, foods and medicines</td><td>none</td><td class="ok">local, on the device (§07)</td><td>A finder, not a claim; honours deletion; nothing leaves the device. The look's note joins only on a T&amp;S ruling (Q4).</td></tr>
+    <tr><td>One line of the note on the row</td><td>—</td><td class="ok">ruled (round 2): cut at a word, the ellipsis inside the quotes, its own line; the look's note is a named sink here (T-22)</td><td>Trust &amp; Safety's condition becomes a build order: CUL-848's cue ships in the log flow before or with it; never on a shared render.</td></tr>
     <tr><td>Ask quoting a note back, inside a question</td><td class="ok">shipped (D2)</td><td>unchanged</td><td>Scoped retrieval; delimited as data; no cross-event note tool.</td></tr>
     <tr><td>The vet report printing notes</td><td>shipped, ungated</td><td class="pm">CUL-848's brief, not this page's</td><td>"Include your notes" exists for the look; the events' notes need the same switch and the same sentence.</td></tr>
     <tr><td>The Signal engine reading notes</td><td>never</td><td class="no">never</td><td>No structure, no denominator, no rate; "off" in a note is not lethargy.</td></tr>
@@ -681,17 +751,48 @@
   </table></div>
   <div class="col">
     <h3>Say where a note goes, where it is written</h3>
-    <p>The daily look's note already carries a cue under its field: <em>Printed on the vet report you make · never on a shared link unless you choose it.</em> Trust &amp; Safety's proposal, and CUL-848's answer in one line, is to give the event's note the same cue, extended by the one fact that is true of it and not of the look's: <strong>"Printed on the vet report you make · Ask can quote it back to you · never on a shared link unless you choose it."</strong> It ships in the log flow and on the record (drawn in §02's record screen), not on History. Until it does, a redesign should not make notes more prominent than the glyph.</p>
+    <p>The daily look's note already carries a cue under its field: <em>Printed on the vet report you make · never on a shared link unless you choose it.</em> Trust &amp; Safety's proposal, and CUL-848's answer in one line, is to give the event's note the same cue, extended by the one fact that is true of it and not of the look's: <strong>"Printed on the vet report you make · Ask can quote it back to you · never on a shared link unless you choose it."</strong> It ships in the log flow and on the record (drawn in §02's record screen), not on History. With the snippet ruled in, it ships before or with the row that shows the note (§12).</p>
     <p><strong>One idea from Jordan, filed rather than drawn:</strong> "Mom gave him cheese" should have been a logged treat. The fix he wants is not a model reading his prose but a way to <em>promote</em> a note into a record — a capture feature, not a History one; it goes to the taxonomy and capture tracks as an issue, never folded in here.</p>
   </div>
+  </details>
 </section>
-<!-- ───────────────────────── §08 THE SIX READS ───────────────────────── -->
-<section id="s08">
-  <div class="sec-head"><span class="sec-num">§08</span><h2>Six reads of the screen — what each said, and what it moved</h2></div>
+<!-- ───────────────────────── §09 THE READS ───────────────────────── -->
+<section id="s09">
+  <div class="sec-head"><span class="sec-num">§09</span><h2>Two round-2 checks — what they broke, what held, where they disagree</h2></div>
   <div class="col">
-    <p>Each lens read the shipped screen, the specs, the record's shape and your six observations in isolation, with no build conversation to be anchored by, and returned a job statement, a keep / change / kill, an answer to the AI and the notes questions, a sketch, a veto list, a lean and one falsification it tried on its own sketch. Every lean was <em>go, with conditions</em>. The conditions are what §02 draws.</p>
+    <p>Before round 2 was drawn, the rules it would draw under (A to J) went to two isolated pairs of lenses with the shipped code, the specs and the record's shape, and no build conversation to be anchored by. Each was asked to break the rules, not bless them. Seven attempts broke; every break is fixed on this page or carried as a brief. The six round-1 reads are folded below for the record.</p>
   </div>
   <div class="stakes">
+    <div class="stake"><div class="who">Data Scientist × Dr. Alex Chen <span class="lean cond">go, with conditions</span></div>
+      <p><b>Tried, and broke</b> A foodless meal on a trial day wore the unnamed trial-food shape (fixed: "no food recorded"). Sep 13's header read "9 logged · 1 itch" over two noted Other rows (fixed: every non-routine kind is enumerated). A dismissed blood read was rose on History and on the month, absent on Home — three surfaces, three predicates (carried: R2-5). "Looked fine after, but then…" cut to "Looked fine after…" flipped the note (fixed as far as a cut can be: at a word, the ellipsis inside the quotes; the residual is the reason the full note is one tap away). Under the Vomit lens, Sep 13 – 16 (meals, no vomit) and Sep 20 (nothing) both rendered hollow (fixed: three marks).</p>
+      <p><b>Tried, and held</b> A refused bowl before a vomit stays its own row. The 6 AM found vomit keys to one day (a window row's time is its latest edge, migration 012), so the header, the cell and the row agree.</p>
+      <p><b>Conditions carried into the rules</b> "Unnamed" only from a positive match on the dated allowed set, never ignorance; a day with two diets in force names every meal; the diet line is a span with a marker at each boundary; the meal a timing line points at is its own row; the standing sentence about reads runs under every lens; the sort key is (time, id); under Noticed the strip carries an answered-day mark, never a count of looks; the rose predicate is one module for History, Home and the month.</p></div>
+    <div class="stake"><div class="who">Motion Designer × Mobile Information Architect <span class="lean cond">go, with conditions</span></div>
+      <p><b>Ruled in</b> The first-paint draw-in, because it is not the mount stagger the round-1 veto was about: it answers the fact "the first read answered", the gesture the chart family already has (<code>drawInMotion.ts</code> is shipped). Conditions: the rail draws over the fold's 370ms; the node stagger is derived (370 ÷ nodes) so each lands as the rail passes; words at 400 over the landing; every first-page day starts at t0 together; identity pet · type · window · first day; a sync tick never replays it; page 2 mounts still; the static frame under reduced motion. The landed day and the row leaving, as §05 draws them.</p>
+      <p><b>Refused</b> The month-style grid under a long window (290pt of the fold); a rolling seven (two definitions of a week); swipe paging; the arrows as the long jump; a pulse on today or a rose cell; any cascade across days.</p>
+      <p><b>Tried</b> "Last 7 days" on a Monday: two live cells and five absent — thin, and ruled honest with the labelled arrow. Sep 3 tapped under All time with one page loaded: a scroll-to-index fails, so the landing is a query through the target day, the cell selecting at once and the scroll waiting for the mount. Sep 18 as one node and Sep 17 as six: the fold moves from the fourth day to the fifth at 390×844 with the strip in place.</p>
+      <p><b>Conditions carried</b> A symptom day carries the month's rose <em>dot</em>, never white digits on rose (3.7:1); the count in ink; the disabled arrow says why (C-7); the strip scrolls with the list; the meal keeps its half of the cross-link inline; a wrapping header goes left; a calm read arriving resolves un-animated.</p></div>
+  </div>
+  <div class="col">
+    <h3>Where the checks disagree with each other, or with a ruling</h3>
+    <div class="conflict">
+      <p><strong>Motion:</strong> Home's shipped spine never draws in (<code>useDrawIn</code> reaches no <code>Spine.tsx</code>); a History that draws in beside a Home that does not is two gestures for one fact. Arm both in one PR, or neither.</p>
+      <p><strong>Product Owner:</strong> a History PR that touches Home's spine changes the binary under the step-3 device pass.</p>
+      <p><strong>PM decision needed:</strong> R2-3, with the sequencing folded into its consequence.</p>
+    </div>
+    <div class="conflict">
+      <p><strong>Data · Dr. Chen:</strong> dismissal hides the sentence, never the escalation; the record says "You hid this read" over the observation; Home and the month follow.</p>
+      <p><strong>The Designer (anticipated, from Home's shipped rule):</strong> an owner who hid a read hid it; a rose that comes back after "I hid this" is the app overruling the person holding the phone.</p>
+      <p><strong>PM decision needed:</strong> R2-5.</p>
+    </div>
+    <div class="conflict">
+      <p><strong>Data · Dr. Chen:</strong> the diet-in-force rule is how a clinician reads an elimination log — but Home names every meal, and the same record must not read two ways on two tabs.</p>
+      <p><strong>The Designer:</strong> Home's spine is a day; the diet line has a place to stand there too. Consistency is your own instruction.</p>
+      <p><strong>PM decision needed:</strong> R2-6.</p>
+    </div>
+  </div>
+  <details class="fold"><summary>The six round-1 reads, for the record</summary>
+<div class="stakes">
     <div class="stake"><div class="who">Jordan and Sam, the owners <span class="lean cond">go, with conditions</span></div>
       <p><b>Said</b> A row is one door; Edit and Remove on the record; no swipe. Days with a count of kinds, never of intake. The word on every read, small and grey, rose for the call — never only on the bad ones. The ❞ on the row. "Since the trial started", "All symptoms", a per-medication lens, months, a count on the pill. A picked-at meal never compacts.</p>
       <p><b>Moved</b> §02 whole; §03's compaction wall; §05's sheets. <b>Split</b> on the note's first line (R1-3). <b>Falsified</b> a week away as seven "nothing logged" lines — hence the one-line gap.</p></div>
@@ -711,147 +812,151 @@
       <p><b>Said</b> Offset paging skips a row per Remove today; the day filter is UTC; refocus snaps to page 1. Page by local day on a keyset; the row's read is one batched read per page, never per row, with one offline disclosure; the photo glyph is a local join; the month aggregate is cheap and unbounded. The open-set lives on the screen. Search is a local LIKE in v1. Four PRs; the read after the consent gate.</p>
       <p><b>Moved</b> §11 entire; §09's checks on the count line. <b>Falsified</b> a header count from a page (broke), open state across appends (holds keyed by first id, broke per mount), Undo from the FAB card into a grouped day (broke: reload today), a filter change mid-scroll (broke: reset the cursor).</p></div>
   </div>
-  <div class="col">
-    <h3>Where they disagree, surfaced rather than settled</h3>
-    <div class="conflict">
-      <p><strong>The owners:</strong> the verdict word on every read row; an absence on the quiet ones implies "fine".</p>
-      <p><strong>Dr. Chen:</strong> under a symptom lens the calm words become a texture that reassures; the rose stays, the calm word yields, the standing line speaks once.</p>
-      <p><strong>PM decision needed:</strong> R1-2 in §10. Drawn both ways in §04; the recommendation is the reconciliation (every word at day scale, the rose only under a symptom lens).</p>
-    </div>
-    <div class="conflict">
-      <p><strong>Jordan:</strong> the note's first line under the row, because the day he needs it is the day he wrote it.</p>
-      <p><strong>Sam and Trust &amp; Safety:</strong> the glyph; a note on a row is zero taps from whoever is holding the phone.</p>
-      <p><strong>PM decision needed:</strong> R1-3 in §10. Both drawn in §04.</p>
-    </div>
-    <div class="conflict">
-      <p><strong>Motion Designer:</strong> down = later everywhere, as on Home; one node language means one reading direction.</p>
-      <p><strong>Mobile IA:</strong> the newest fact within two rows of the top; the job is retrieval.</p>
-      <p><strong>PM decision needed:</strong> Q1 in §10. Both drawn in §04.</p>
-    </div>
-    <div class="conflict">
-      <p><strong>Product Owner:</strong> not a fifth step on the <code>design_v2</code> toggle — a PR on the same flag changes the binary under the device pass, and CUL-1073 must land first; its own flag and project, in the same language.</p>
-      <p><strong>Dir. of Engineering:</strong> behind <code>design_v2</code> with the flag-off guard's conventions — one namespace, the consumer list, the async proof.</p>
-      <p><strong>PM decision needed:</strong> R1-4 in §10.</p>
-    </div>
-  </div>
+    </details>
 </section>
 
-<!-- ───────────────────────── §09 THE CHECKS ───────────────────────── -->
-<section id="s09">
-  <div class="sec-head"><span class="sec-num">§09</span><h2>Every number on the screen, checked — and the rules a build would carry</h2></div>
+<!-- ───────────────────────── §10 THE CHECKS + THE RULES ───────────────────────── -->
+<section id="s10">
+  <div class="sec-head"><span class="sec-num">§10</span><h2>Every number on the screen, checked — and the rules a build would carry</h2></div>
   <div class="col">
-    <p>The five-column check every Design v2 chart meets, applied to every number History would speak. A cell that is not a yes is a defect.</p>
+    <p>The five-column check every Design v2 chart meets, applied to every number History speaks after the cut. A cell that is not a yes is a defect. Two rows are new (the strip is now in the proposal; the standing facts line is new); the header row changed.</p>
   </div>
   <div class="tscroll"><table class="t">
     <tr><th>The number</th><th>A mark per fact</th><th>A count on every mark</th><th>The denominator in view</th><th>The uncounted disclosed</th><th>The window named</th></tr>
-    <tr><td>The day header · "10 logged · 2 vomits · 1 cough · 7 meals"</td><td class="ok">a node per event; a compact node names its count</td><td class="ok">the kinds, counted</td><td class="ok">the whole local day, closed</td><td class="ok">"nothing logged" as a row; the look never counted</td><td class="ok">the date, the weekday</td></tr>
+    <tr><td>The day header · "10 logged · 2 vomits · 1 cough"</td><td class="ok">a node per event; a compact node names its count and its formats</td><td class="ok">the total, then every non-routine kind</td><td class="ok">the whole local day, closed</td><td class="ok">"nothing logged" as a row; the meals are the rows; the look never counted</td><td class="ok">the date, the weekday</td></tr>
+    <tr><td>The standing facts · "Selected Protein PR · trial day 58 of 84 · Prednisone since Sep 21"</td><td class="ok">—</td><td class="ok">the trial's day, from the one predicate (<code>lib/dietTrial</code>)</td><td class="ok">"of 84"</td><td class="ok">a paused or ended trial says so, never "day n"</td><td class="ok">the course's start date</td></tr>
     <tr><td>The completeness line · "All time · 1,091 logged since May 14"</td><td class="ok">—</td><td class="ok">one count, from the query</td><td class="ok">the window; the record's first day</td><td class="ok">"1 day unlogged" when the window is bounded</td><td class="ok">the window's name</td></tr>
     <tr><td>The pill's count · "Vomit · 13"</td><td class="ok">—</td><td class="ok">the lens over the window, from the query</td><td class="ok">the date pill beside it</td><td class="ok">never on "Worth a call" — the lens does not exist</td><td class="ok">the date pill</td></tr>
     <tr><td>The gap line · "no vomit logged · Sep 13 – 16 · 4 days"</td><td class="ok">one line per run of days</td><td class="ok">the days counted</td><td class="ok">between two loaded headers only</td><td class="ok">below the loaded page the gap is unknown and says nothing</td><td class="ok">the dates</td></tr>
-    <tr><td>The count of reads (under a vomit lens only) · "44 photographed of 45 · 42 read · 10 worth a call · 3 photographed without a read"</td><td class="ok">—</td><td class="ok">every part</td><td class="ok">"of 45"</td><td class="ok">"3 photographed without a read"; the monitors never "fine"</td><td class="ok">the date pill</td></tr>
-    <tr><td>The week strip (option)</td><td class="ok">a cell per day</td><td class="ok">the count in the cell</td><td class="ok">seven days</td><td class="ok">hollow days; the future absent</td><td class="ok">the week's dates</td></tr>
+    <tr><td>The strip · a cell per day</td><td class="ok">a cell per local day</td><td class="ok">the count in the corner, from a per-day query</td><td class="ok">the seven days; the window in the row's label</td><td class="ok">hollow for nothing logged; plain for logged-but-not-this-lens; absent outside the window; the arrow says where the window ends</td><td class="ok">the week's dates, the window's name</td></tr>
+    <tr><td>The compact line · "5 meals · 1 wet · 4 dry"</td><td class="ok">one node for the run</td><td class="ok">the count and the formats</td><td class="ok">the run's first and last time</td><td class="ok">the run breaks on any other fact, so nothing inside it is unspoken</td><td class="ok">the times</td></tr>
   </table></div>
-  <h3>The rules a History v2 would carry (its spec's §0)</h3>
+  <h3>The rules a History v2 would carry (its spec's §0) — round 1's nine, then round 2's ten</h3>
   <div class="rules">
-    <div class="rule"><div class="rid">1</div><b>A photo never renders on a list surface.</b>A row carries a glyph; the photo is on the record where the vet will ask to see it.</div>
+    <div class="rule"><div class="rid">1</div><b>A photo never renders on a list surface.</b>A row carries a glyph; the photo is on the record.</div>
     <div class="rule"><div class="rid">2</div><b>A note is quoted, never summarised, never counted, never on a shared render.</b>Its fate is stated where it is written.</div>
-    <div class="rule"><div class="rid">3</div><b>No lens over a read's verdict exists.</b>Its absence would read as wellness. "With a read" is the honest lens, and its empty state names the unread.</div>
+    <div class="rule"><div class="rid">3</div><b>No lens over a read's verdict exists.</b>"With a read" is the honest lens, and its empty state names the unread.</div>
     <div class="rule"><div class="rid">4</div><b>The day key is local midnight; a day link parses instants.</b>Never compared as text (C-29, C-40). CUL-1073 lands first.</div>
-    <div class="rule"><div class="rid">5</div><b>A count is a record fact.</b>Headers count closed days; the completeness line comes from a count over the same query; a compact line's count is computed over a whole day, never a page (C-3, C-42).</div>
-    <div class="rule"><div class="rid">6</div><b>A row not in the record says so.</b>A quarantined row reads "not saved to your records" and offers the re-save; sibling confirms name the same facts (a photo, a note).</div>
-    <div class="rule"><div class="rid">7</div><b>The read on a row is one word, and the rose is derived.</b>Never the sentence, the observations, a flag as text or a confidence; failed and dismissed show nothing; the rose comes from the fields and the flags, never the cached verdict alone.</div>
-    <div class="rule"><div class="rid">8</div><b>Three motions and no more.</b>The wait as the shape of the list; open in place, row-scoped, never sharing a layout commit with the scrolling list; arrive, only for a read landing while the owner watches. The route rises. Nothing moves on scroll; the sticky header never animates on pin; the FAB never hides.</div>
-    <div class="rule"><div class="rid">9</div><b>The doorways are a contract.</b>Every deep-link parameter is kept byte for byte; one test per doorway, per flag state.</div>
+    <div class="rule"><div class="rid">5</div><b>A count is a record fact.</b>Headers count closed days; the completeness line and the strip come from counts over the same query; a compact line's count is computed over a whole day, never a page (C-3, C-42).</div>
+    <div class="rule"><div class="rid">6</div><b>A row not in the record says so.</b>A quarantined row reads "not saved to your records" and offers the re-save.</div>
+    <div class="rule"><div class="rid">7</div><b>The read on a row is one word, and the rose is derived.</b>Never the sentence, the observations, a flag as text or a confidence; failed shows nothing; the rose comes from the fields as edited and the flags, one predicate for History, Home and the month.</div>
+    <div class="rule"><div class="rid">8</div><b>Motion answers a fact, once.</b>The seven gestures of §05 and no others; nothing on scroll; no cascade across days; no pulse; the static frame under reduced motion; the identity rule for the first paint.</div>
+    <div class="rule"><div class="rid">9</div><b>The doorways are a contract.</b>Every deep-link parameter kept byte for byte; one test per doorway, per flag state.</div>
+    <div class="rule"><div class="rid">A</div><b>The diet in force is stated once, pinned; a meal of it is unnamed on its row.</b>From a positive match on the dated allowed set; a foodless meal says so; two diets in force name every meal; a marker at each boundary.</div>
+    <div class="rule"><div class="rid">B</div><b>A run crosses wet and dry of one product and speaks its counts; nothing else.</b>The meal a timing line points at is its own row.</div>
+    <div class="rule"><div class="rid">C</div><b>The header: the date, the total, every non-routine kind.</b>Symptoms in rose; the date never wraps; a long line goes left.</div>
+    <div class="rule"><div class="rid">D</div><b>No chevron on a single row.</b>The compact row keeps its own.</div>
+    <div class="rule"><div class="rid">E</div><b>No cross-link lines; both halves inline.</b>"in the rabbit meal" · "with Prednisone".</div>
+    <div class="rule"><div class="rid">F</div><b>The rose only, plus one standing sentence under every lens.</b>A calm read arriving resolves un-animated.</div>
+    <div class="rule"><div class="rid">G</div><b>One line of the note on the row, cut at a word, the ellipsis inside the quotes.</b>Its own line; never beside a verdict, a badge or a count.</div>
+    <div class="rule"><div class="rid">H</div><b>Morning to night inside a day; days newest first; the sort key is (time, id).</b></div>
+    <div class="rule"><div class="rid">I</div><b>The strip is bounded by the date lens.</b>Seven local days from a per-day query; three marks and the rose dot; arrows stop at the window's edge and say why; absent outside it; scrolls with the list; a mark, never a count, under Noticed.</div>
+    <div class="rule"><div class="rid">J</div><b>The first paint draws each visible day once; the landed day draws once; a removed row folds shut.</b>Home's spine gains the same first paint in the same PR, or neither does (R2-3).</div>
   </div>
 </section>
-<!-- ───────────────────────── §10 QUESTIONS + BRIEFS ───────────────────────── -->
-<section id="s10">
-  <div class="sec-head"><span class="sec-num">§10</span><h2>What I need from you — four questions, five briefs</h2></div>
-  <div class="col"><p>Each question carries the assumption the frames were drawn under, so a "yes" costs nothing and a "no" says what to redraw. Then the briefs, each rulable from its four lines.</p></div>
-  <div class="qs">
-    <div class="q"><b>Q1 · Inside a day.</b> Morning to night, as Home's spine reads, or newest first because the job is retrieval? Days are newest first either way.<span class="as">Drawn under: morning to night (§04, decision 3, option A).</span></div>
-    <div class="q"><b>Q2 · The week strip.</b> Is a dated week of counts above the days worth a header row on every screen, or does the date sheet's jump (months, the trial, the last visit) do the job?<span class="as">Drawn under: no strip; months in the sheet (§04, decision 4).</span></div>
-    <div class="q"><b>Q3 · The standing facts.</b> A course-start marker at the foot of its day is the shipped marker pattern and costs nothing. Should the trial and the running course also stand as a strip above the days, or is the Pet tab's card enough?<span class="as">Drawn under: the marker yes; the strip as an option only.</span></div>
-    <div class="q"><b>Q4 · Search over the look's note.</b> The event's notes, foods and medicines are searchable on the device. The look's note is walled from every model by rule; a local search is not a model, but the rule was written to keep that note out of everything. Include it, or not in v1?<span class="as">Drawn under: not in v1; a Trust &amp; Safety brief when asked.</span></div>
-  </div>
-
-  <div class="brief"><p class="bid">R1-1 · The shape — go / one more round / park</p>
-    <p><strong>Deciding:</strong> whether History becomes days in the spine's language with one door per row, the filters kept and extended, as §02 draws.</p>
-    <ol>
-      <li><strong>Go.</strong> <span class="rec">Recommended</span> — the six reads converged on this shape and split only on the four decisions below; §11 is filed on your rulings, never ahead of them.</li>
-      <li><strong>One more round.</strong> Say what is not right and it is redrawn fresh on this URL; nothing is filed.</li>
-      <li><strong>Park.</strong> The page stays as the record; CUL-1076 closes with it.</li>
-    </ol>
-    <p><strong>Consequence:</strong> (1) is a spec and five or six issues; (2) another page; (3) nothing.</p>
-  </div>
-  <div class="brief"><p class="bid">R1-2 · The calm word on a list</p>
-    <p><strong>Deciding:</strong> what a photographed row says when the read was <em>keep an eye out</em> or <em>not enough to say</em>.</p>
-    <ol>
-      <li><strong>At day scale every read keeps its word; under a symptom lens the rose only, with the standing line once at the top.</strong> <span class="rec">Recommended</span> — the owners' rule where the screen is a day, Dr. Chen's where the verdicts stack into a column; the density gate fails toward escalation.</li>
-      <li>The word on every read, everywhere (§04 option A) — the owners' case as stated.</li>
-      <li>The rose only, everywhere — Dr. Chen's case as stated; the calm word lives on the record.</li>
-    </ol>
-    <p><strong>Consequence:</strong> one rule in the row renderer either way; (1) adds a lens-aware branch and a test that the standing line appears exactly once.</p>
-  </div>
-  <div class="brief"><p class="bid">R1-3 · The note on the row</p>
-    <p><strong>Deciding:</strong> whether a noted row carries only the glyph or also the note's first line.</p>
-    <ol>
-      <li><strong>The glyph; the words on the record; search finds them.</strong> <span class="rec">Recommended</span> — Sam's and Trust &amp; Safety's case; the shipped look row already does this; nothing new is shown before CUL-848's disclosure ships.</li>
-      <li>The first line, quoted, in italics (§04 option B) — Jordan's case.</li>
-      <li>The first line on symptom rows only — a middle Jordan did not ask for; listed because it is buildable.</li>
-    </ol>
-    <p><strong>Consequence:</strong> (2) or (3) makes a note zero taps from whoever holds the phone and should wait for CUL-848's cue in the log flow.</p>
-  </div>
-  <div class="brief"><p class="bid">R1-4 · Where it ships</p>
-    <p><strong>Deciding:</strong> which flag and which project carry History v2.</p>
-    <ol>
-      <li><strong>Its own flag (<code>history_v2</code>, the daily-look shape) and its own project, in the Design v2 language, sequenced after CUL-1073 and off the step-3 device pass.</strong> <span class="rec">Recommended</span> — the Product Owner's case; the toggle's fixture under your device pass does not change under it.</li>
-      <li>Step 5 of <em>Design v2 — the whole day</em> on <code>design_v2</code>, GA'd with the rest — your "design-wise, include it", literally; Engineering's guard conventions apply unchanged.</li>
-      <li>A wave after D2-8's GA on no flag at all — the smallest ceremony, the longest wait.</li>
-    </ol>
-    <p><strong>Consequence:</strong> (1) files a project with a spec resource and a flag-off guard entry; (2) adds five issues to a project mid-pass; (3) blocks on GA.</p>
-  </div>
-  <div class="brief"><p class="bid">R1-5 · The read on the row, and the consent gate</p>
-    <p><strong>Deciding:</strong> whether the verdict word ships on History rows before the App Store photo-analysis consent gate (CUL-552) exists.</p>
-    <ol>
-      <li><strong>Its own PR, sequenced after CUL-552.</strong> <span class="rec">Recommended</span> — Trust &amp; Safety's case: photos already cross at log time with no gate, and a verdict column makes that visible on a new surface before consent exists; the rest of History v2 does not wait on it.</li>
-      <li>Ship it with the screen — the same data one tap earlier than the record already shows.</li>
-    </ol>
-    <p><strong>Consequence:</strong> (1) is a PR order, not a scope change; (2) is a Trust &amp; Safety dissent recorded on the issue.</p>
-  </div>
-</section>
-
-<!-- ───────────────────────── §11 WHAT A GO FILES ───────────────────────── -->
+<!-- ───────────────────────── §11 THE BRIEFS ───────────────────────── -->
 <section id="s11">
-  <div class="sec-head"><span class="sec-num">§11</span><h2>What a go would file — sized, ordered, gated</h2></div>
+  <div class="sec-head"><span class="sec-num">§11</span><h2>What I need from you — seven briefs, each rulable from its lines</h2></div>
+  <div class="col"><p>Round 1's five briefs are ruled or absorbed: R1-1 (the shape) became "refine before converging", which this round is; R1-2 and R1-3 are your Decision 1 and 2 rulings; R1-4 (where it ships) and R1-5 (the read after the consent gate) still stand as drawn and are not re-asked. These seven are new, and every one came out of a check rather than a preference. The last is the only one that decides what happens next.</p></div>
+
+  <div class="brief"><p class="bid">R2-1 · The noise cut — go as drawn, or keep something back</p>
+    <p><strong>Deciding:</strong> whether rules A to G (§03) are the row language a spec would carry.</p>
+    <ol>
+      <li><strong>Go, all six, with the standing sentence about reads under every lens.</strong> <span class="rec">Recommended</span> — the two checks' conditions are already in the drawing; the sentence is the price of the rose only, one line, once.</li>
+      <li>Go, but name every meal (drop rule A) — the smallest change from round 1; Home already reads this way; the trial's exceptions stop standing out.</li>
+      <li>Go, but keep the reads sentence only under a symptom lens (round 1's shape) — the Data check's contrast hazard is accepted as a risk.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) is the spec's §0 as §10 lists it; (2) removes rule A and the boundary marker and drops R2-6; (3) keeps one line off the default screen and records the dissent.</p>
+  </div>
+  <div class="brief"><p class="bid">R2-2 · The strip under a long window</p>
+    <p><strong>Deciding:</strong> what "Last 30 days", "Since the trial started" and the months show above the days.</p>
+    <ol>
+      <li><strong>The bounded week strip for every window; the arrows walk to the edge and say why.</strong> <span class="rec">Recommended</span> — one component, one row of the fold, the Motion check's ruling; the long jump stays in the date sheet.</li>
+      <li>The window grid (§04's option) when the window is 28 days or more — one look instead of five presses; 290pt of the fold; the Motion check's refusal.</li>
+      <li>Both: the strip by default, the grid behind a tap on the row's label — two components, a state the owner has to discover.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) files one strip issue; (2) and (3) add a second layout and its tests, and the fold arithmetic in §09 is redone.</p>
+  </div>
+  <div class="brief"><p class="bid">R2-3 · The first paint — a better-than-the-rule brief</p>
+    <p><strong>The rule:</strong> round 1's rule 8, "three motions and no more", written 2026-09-21 to protect one thing: nothing on History moves that the owner did not cause, and no list animates on mount. <strong>The better thing:</strong> the thread draws down once when the first read answers, the gesture the chart family already has and ships (<code>drawInMotion.ts</code>), with its identity rule so a sync tick, a page 2 or a scroll can never replay it. <strong>Does the protection hold?</strong> Yes under the Motion check's conditions (§09): the owner caused it by opening the screen; it runs once per identity; it is a static frame under reduced motion.</p>
+    <ol>
+      <li><strong>Rule it in, and arm Home's spine with the same first paint in the same PR.</strong> <span class="rec">Recommended</span> — one gesture for one fact on both tabs; the Motion check's "both or neither".</li>
+      <li>Rule it in for History only — the smaller PR; two tabs answer the same fact differently until Home catches up.</li>
+      <li>Keep rule 8 as written — no first paint; the wait alone.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) touches Home's spine under the step-3 device pass, so it sequences after that pass; (2) lands with History's screen PR; (3) removes rule J's first clause.</p>
+  </div>
+  <div class="brief"><p class="bid">R2-4 · A calm read arriving, under rose only</p>
+    <p><strong>Deciding:</strong> what the owner sees when a read lands while they watch and the verdict is <em>keep an eye out</em> or <em>not enough to say</em>.</p>
+    <ol>
+      <li><strong>The tick leaves; nothing lands; the sentence at the top has already spoken.</strong> <span class="rec">Recommended</span> — the Motion check's ruling; the list at rest and the list a second after a read agree.</li>
+      <li>The word lands and stays for the session, then yields to the glyph on the next open — a wait that ends in an answer; a row that reads two ways an hour apart.</li>
+      <li>The word never lands, but a small "Read · on the record ›" does — a second door on a row that is already one.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) is one branch in the arrival; (2) adds session state to the row; (3) adds a control to a row and re-opens the one-door rule.</p>
+  </div>
+  <div class="brief"><p class="bid">R2-5 · The dismissed escalation — one predicate for three surfaces</p>
+    <p><strong>Deciding:</strong> what a worth-a-call the owner dismissed on the record does on History, Home and the month. Today they disagree: the month reads the cached verdict (a dismissed read still dots), Home hides on dismissal, and rule 7 derives from the fields.</p>
+    <ol>
+      <li><strong>Fields as edited ∪ the server's flags; dismissal hides the sentence and never the escalation; the record says "You hid this read"; Home and the month adopt it.</strong> <span class="rec">Recommended</span> — Data's and Dr. Chen's: an escalation the record still holds does not vanish because a person was tired of it; a correction (an edited "blood") does.</li>
+      <li>Dismissal hides everywhere; the month adopts Home's rule — the Designer's: the owner hid it.</li>
+      <li>Leave the three as they are — no PR; the same record reads three ways.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) and (2) are one shared module (<code>incidentReadState</code>) and one PR that touches Home's spine and the month before History uses it; (3) records the inconsistency as a known issue.</p>
+  </div>
+  <div class="brief"><p class="bid">R2-6 · Home's meals — the diet-in-force rule on both tabs</p>
+    <p><strong>Deciding:</strong> whether Home's spine adopts rule A (the diet named once; a meal of it unnamed on its row), given your instruction to be consistent throughout the app.</p>
+    <ol>
+      <li><strong>Yes, in a Home PR after History's, with the same standing line at the top of the spine.</strong> <span class="rec">Recommended</span> — one rule for one record; the exceptions stand out on Home too.</li>
+      <li>History only — the tabs read differently; Home's rows keep their food.</li>
+      <li>Neither: name every meal everywhere (R2-1's option 2).</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) is a Home issue in the Design v2 project after the device pass; (2) is nothing further; (3) redraws §02 and §03.</p>
+  </div>
+  <div class="brief"><p class="bid">R2-7 · What happens next</p>
+    <p><strong>Deciding:</strong> whether round 2 is the shape a spec is written from.</p>
+    <ol>
+      <li><strong>Converge: write the requirements from this page with R2-1 to R2-6 ruled, and file §12.</strong> <span class="rec">Recommended</span> — the checks broke seven things and every one is fixed or briefed; what remains are rulings, not redraws.</li>
+      <li>One more round — say what is not right and it is redrawn on this URL; nothing is filed.</li>
+      <li>Park — the page stays as the record; CUL-1076 closes with it.</li>
+    </ol>
+    <p><strong>Consequence:</strong> (1) is a spec (<code>docs/nyx-history-v2-requirements.md</code>) and a project; (2) another page; (3) nothing.</p>
+  </div>
+</section>
+
+<!-- ───────────────────────── §12 WHAT A GO FILES ───────────────────────── -->
+<section id="s12">
+  <div class="sec-head"><span class="sec-num">§12</span><h2>What a go would file — sized, ordered, gated; still nothing filed</h2></div>
   <div class="col">
-    <p>Engineering's plan, with the Product Owner's sequencing and Trust &amp; Safety's gate. Each row is one session and one PR; the first is the prerequisite every read named. Sizes are the team's: S a morning, M a session, L a session that must not carry a second thing.</p>
+    <p>Round 1's plan, re-sequenced by the rulings. The strip moved from "later" into its own PR; the snippet took Trust &amp; Safety's condition as a gate rather than a redraw; the shared read predicate became a PR of its own because two other surfaces depend on it. Each row is one session and one PR. Sizes: S a morning, M a session, L a session that must not carry a second thing.</p>
   </div>
   <div class="tscroll"><table class="t">
     <tr><th>PR</th><th>What</th><th>Size</th><th>Gate</th><th>Reuses</th></tr>
-    <tr><td>PR 0 · CUL-1073</td><td>History's day link takes a local day, parsed as an instant; the Design v2 month gains "Open in History · Sep 12"; the widget's key lands right.</td><td>M</td><td>none — first</td><td><code>toLocalDayKey</code>, the month's slack-and-parse bounds</td></tr>
-    <tr><td>PR 1 · the day model</td><td><code>lib/historyDays.ts</code> (pure: group by local day, the empty-day rule, lens-aware header words, the stricter compaction wall) + <code>lib/historyDayReads.ts</code> (a day page on a keyset over <code>(occurred_at, id)</code>, the photographed set, the feedings for the timing line, the window count). Property sweep in the non-UTC CI job; the C-40 fixture.</td><td>M</td><td>PR 0</td><td><code>compactSpine</code>, <code>describeDayEvent</code>, <code>classifyEpisodeSet</code></td></tr>
-    <tr><td>PR 2 · the screen</td><td>The day list behind the flag: header (the pet's name, the two pills, the completeness line), day cards on <code>SpineRowFrame</code>, gaps, the sync row, tap → record, the open-set hoisted, refocus re-reads the loaded extent, the 96pt inset, the end cap. Flag-off byte-identical: the consumer list, the async no-read proof.</td><td>L</td><td>PR 1 · R1-1, R1-4</td><td><code>SpineEventRow</code> / <code>SpineCompactRow</code>, <code>ScopeMenu</code>, the flag-off guard</td></tr>
-    <tr><td>PR 3 · the read on the row</td><td>One batched read per loaded page; the five states; the derived rose; the offline disclosure once; the haptics guard's scan entry proven by mutation.</td><td>M</td><td>PR 2 · <strong>CUL-552</strong> · R1-2, R1-5</td><td><code>readAnalysisRows</code>, <code>INCIDENT_REC_LABEL</code>, <code>escalationSurvivesFailure</code></td></tr>
-    <tr><td>PR 4 · the sheets</td><td>Months, "since the trial started", "since the last vet visit", "Last 14 days" (CUL-498); "All symptoms"; the count on every row and on a non-default pill; the third pill's fact lenses (photographed · with a note · with a read · a medication's doses, CUL-488).</td><td>M</td><td>PR 2</td><td><code>ScopeMenu</code>, the window count from PR 1</td></tr>
-    <tr><td>PR 5 · search</td><td>A local, case-insensitive match over the event's notes, foods and medicines, scoped to the pet and honouring deletion; results as days under the lenses; the look's note excluded pending Q4.</td><td>M</td><td>PR 2 · R1-3</td><td>the day model; a pure SQL builder with its own tests</td></tr>
-    <tr><td>Later · the week strip</td><td>Only on a yes to Q2: the seven dated cells, anchor-at-day paging.</td><td>L</td><td>Q2</td><td>the month model's day counts</td></tr>
+    <tr><td>PR 0 · CUL-1073</td><td>History's day link takes a local day, parsed as an instant; the Design v2 month gains "Open in History · Sep 12"; the widget's key lands right.</td><td>M</td><td>none — first</td><td><code>toLocalDayKey</code>, the month's bounds</td></tr>
+    <tr><td>PR 1 · the day model</td><td><code>lib/historyDays.ts</code> (pure: group by local day; the empty-day rule; the header's enumeration, rule C; the compaction wall with rule B's format crossing and the timing-reference wall; the diet-in-force predicate on the dated allowed set, rule A) + <code>lib/historyDayReads.ts</code> (a day page on a keyset over <code>(occurred_at, id)</code>; the photographed set; the feedings for the timing line; the window count; the per-day counts for the strip). Property sweep in the non-UTC CI job; the C-40 fixture; the foodless-meal and two-diets fixtures from §09.</td><td>M</td><td>PR 0</td><td><code>compactSpine</code>, <code>describeDayEvent</code>, <code>allowedFoodsOn</code>, <code>buildCountChips</code></td></tr>
+    <tr><td>PR 2 · the screen</td><td>The day list behind the flag: header, the pinned standing line, the reads sentence, day cards on <code>SpineRowFrame</code>, gaps, the boundary marker, the sync row, tap → record, the open-set hoisted, refocus re-reads the loaded extent, the 96pt inset, the end cap; the note's line (rule G). Flag-off byte-identical: the consumer list, the async no-read proof.</td><td>L</td><td>PR 1 · R1-4 · R2-1 · <strong>CUL-848's cue ships in the log flow first or with it</strong></td><td><code>SpineEventRow</code> / <code>SpineCompactRow</code>, <code>ScopeMenu</code>, the flag-off guard</td></tr>
+    <tr><td>PR 2b · the strip</td><td>Seven <code>DayMark</code>s over the per-day counts; bounded by the window; the three marks and the rose dot; the labelled edge; the landed day; the strip's landing on a change.</td><td>M</td><td>PR 2 · R2-2</td><td><code>DayMark</code>, <code>MonthInstrument</code>'s day counts</td></tr>
+    <tr><td>PR 3a · the read predicate</td><td><code>lib/incidentReadState.ts</code>: one derivation (fields as edited ∪ flags; the dismissal rule per R2-5) adopted by Home's spine and the month, with the "You hid this read" line on the record.</td><td>M</td><td>R2-5 · after the step-3 device pass</td><td><code>escalationSurvivesFailure</code>, <code>readWorthACall</code></td></tr>
+    <tr><td>PR 3b · the read on the row</td><td>One batched read per loaded page; the rose only; the arrival with the calm branch (R2-4); the offline disclosure once; the haptics guard's scan entry proven by mutation.</td><td>M</td><td>PR 2 · PR 3a · <strong>CUL-552</strong> · R1-5</td><td><code>readAnalysisRows</code>, <code>arrivalMotion.ts</code></td></tr>
+    <tr><td>PR 4 · the sheets</td><td>Months, "since the trial started", "since the last vet visit", "Last 14 days" (CUL-498); "All symptoms"; the count on every row and on a non-default pill; the third pill's fact lenses (CUL-488).</td><td>M</td><td>PR 2</td><td><code>ScopeMenu</code>, the window count from PR 1</td></tr>
+    <tr><td>PR 5 · search</td><td>A local, case-insensitive match over the event's notes, foods and medicines, scoped to the pet and honouring deletion; results as days under the lenses; the look's note excluded pending Q4.</td><td>M</td><td>PR 2</td><td>the day model; a pure SQL builder with its own tests</td></tr>
+    <tr><td>PR 6 · the first paint + the row leaving</td><td>A <code>thread</code> kind in <code>drawInMotion.ts</code> with the identity rule; the removal fold through the one shared reversal; Home's spine armed in the same PR per R2-3.</td><td>M</td><td>R2-3 · after the step-3 device pass</td><td><code>drawInMotion.ts</code>, <code>foldMotion.ts</code>, <code>reverseLoggedEvent</code></td></tr>
+    <tr><td>Home · the diet line</td><td>Only on R2-6 (1): the standing line on Home's spine and rule A on its meal rows.</td><td>S</td><td>R2-6 · after PR 2</td><td>the rule-A predicate from PR 1</td></tr>
   </table></div>
   <div class="col">
     <h3>What it absorbs, what it waits for, what stays separate</h3>
     <ul>
-      <li><strong>Absorbs:</strong> CUL-361 (the category tint on medication and meal rows — the node dot is that), CUL-320 (calendar drill-in rows open the record — every row does), CUL-514 (Home's capped strip needs a per-row door — the day card is one).</li>
-      <li><strong>Prerequisite:</strong> CUL-1073. <strong>Sequenced around, never pre-empted:</strong> CUL-552 (the consent gate, gates PR 3) and CUL-848 (the notes disclosure, gates any note beyond the glyph).</li>
-      <li><strong>Separate:</strong> CUL-944's re-save (History shows the state; the re-save is the sync fabric's); CUL-488 and CUL-498 become rows in PR 4 rather than their own issues.</li>
-      <li><strong>Tier-2 edits a go authorises:</strong> the filter spec's inventory row for History and its rule 6 (a count on the pill); the design principles' Navigation section (History's job stated beside Home's); the daily-look spec's History row (N-3, §5.5) for the day card; the incident-screen spec's D2 (a row carries the verdict word).</li>
-      <li><strong>Filed as an idea, elsewhere:</strong> promoting a note into a record (Jordan) — a capture feature for the taxonomy track.</li>
+      <li><strong>Absorbs:</strong> CUL-361 (the category tint on rows), CUL-320 (calendar drill-in rows open the record), CUL-514 (Home's capped strip needs a per-row door), CUL-488 and CUL-498 (rows in PR 4).</li>
+      <li><strong>Prerequisite:</strong> CUL-1073. <strong>Sequenced around, never pre-empted:</strong> CUL-552 (the consent gate, gates PR 3b), CUL-848 (the notes disclosure, gates the snippet in PR 2), the step-3 device pass (gates anything that touches Home's spine: PR 3a, PR 6, the Home diet line).</li>
+      <li><strong>Separate:</strong> CUL-944's re-save; CUL-1078 (the offset-paging bug, filed in round 1, fixed for free by PR 1's keyset); CUL-1079 (promoting a note into a record, filed in round 1).</li>
+      <li><strong>Tier-2 edits a go authorises:</strong> the filter spec's inventory row for History and its rule 6; the design principles' Navigation section (History's job beside Home's); the daily-look spec's History row (N-3, §5.5) for the day card and the strip's answered-day mark; the incident-screen spec's D2 (a row carries the rose word only); the med-strip spec if the standing line names a course on Home (R2-6).</li>
     </ul>
     <h3>The fixtures a build drives first</h3>
-    <p>Nyx's 130 days on device, flung to May; a 14- and an 18-event day; seven meals and no symptom (one node); Sep 20 alone and a week unlogged; a day at a page seam (the count never changes on load); the 6 AM found vomit on its own day with no minutes; a photographed meal inside a run (three singles); a same-minute wet + dry pair across a seam; the read's five states; a read arriving versus already resolved; Undo from the FAB card into today's day; a lens change mid-scroll; the widget's <code>?date&amp;pet</code>, the calendar's <code>?date</code> at 11 PM Central, Ask's <code>?type&amp;window</code>, each per flag state; VoiceOver over headers, compact nodes, the verdict and the full note; reduced motion; largest Dynamic Type in the time column; flag-off equal to the feature's absence.</p>
+    <p>Round 1's list, plus the seven from §09: a foodless meal on a trial day; two diets in force on one day; a day at the diet boundary (Jul 26) with rows either side; a vomit whose reference meal sits inside what would be a run; a dismissed worth-a-call on all three surfaces; a note whose cut falls before "but"; a same-minute wet + dry pair (the sort key); the strip under Vomit across Sep 13 – 20 (three marks); "Last 7 days" on a Monday; Sep 3 tapped with one page loaded; the first paint's identity under a sync tick, page 2, midnight and a lens change; a removal mid-list; reduced motion for every gesture; flag-off equal to the feature's absence.</p>
   </div>
 </section>
 
-<div class="foot">Round 1 of the History v2 discovery (CUL-1076), project Design v2 — the whole day. Every frame is drawn from Nyx's record, Sep 4 – 21 2026, Central time; note text illustrative and marked. Six isolated reads: the owners; Dr. Chen; the Data Scientist with the Data Visualization Designer; the Motion Designer with the Mobile Information Architect; Trust &amp; Safety with the Product Owner; the Dir. of Engineering with QA. Every demo on this page was driven in a headless browser and pressed twice before publishing. Later rounds republish over this URL; the committed source is <code>docs/culprit-history-v2-mockups.html</code>.</div>
+<div class="foot">Round 2 of the History v2 discovery (CUL-1076), project Design v2 — the whole day. Republished over round 1's URL on 2026-09-23; round 1 is commit <code>99da7c0</code>. Every frame is drawn from Nyx's record, Sep 4 – 21 2026 row by row and Jun 20 – Sep 21 as per-day counts, Central time; note text illustrative and marked. Two isolated round-2 checks: the Data Scientist with Dr. Chen; the Motion Designer with the Mobile Information Architect. Every demo on this page was driven in a headless browser and pressed twice before publishing. The committed source is <code>docs/culprit-history-v2-mockups.html</code>.</div>
 </div>
 <script>
 (() => {
@@ -885,6 +990,7 @@ const NOTE = {
   '2026-09-13 11:55': 'Left ear again.',
   '2026-09-13 16:10': 'Scratching at the couch, then hid under it.',
   '2026-09-11 18:26': 'Scratched the same spot on her neck.',
+  '2026-09-05 18:06': 'Ear',
   '2026-09-07 16:00': 'Found on the landing, dry by the time I saw it. Probably from this morning, maybe earlier.',
 };
 const VISITS = { '2026-09-16': 'Vet visit' };
@@ -931,6 +1037,12 @@ function productShort(f) {
   if (f.b === 'Instinct') return 'Instinct · LID Real Rabbit';
   return p;
 }
+function baseProduct(f) { return (f?.p || '').replace(/,\s*(Wet|Dry)$/i, ''); }
+function isDiet(f, opts) { return !!opts.dietInForce && !!f && `${f.b} ${baseProduct(f)}`.includes(opts.dietInForce); }
+function productTiny(f) { if (!f) return ''; if (f.b === 'Instinct') return 'rabbit'; return baseProduct(f); }
+// per-day counts Jun 20 – Sep 21 (a service-role read scoped to the owner + Nyx's id; counts only)
+const PAGE_FLOOR = '2026-06-20';
+let BYDAY = {"2026-06-20":{"t":{"meal":6,"vomit":1},"n":7,"ph":1,"nt":1},"2026-06-21":{"t":{"meal":7,"vomit":1},"n":8,"ph":1,"nt":0},"2026-06-22":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-06-23":{"t":{"meal":11},"n":11,"ph":0,"nt":0},"2026-06-24":{"t":{"meal":4,"vomit":1},"n":5,"ph":1,"nt":0},"2026-06-25":{"t":{"meal":8,"vomit":1},"n":9,"ph":1,"nt":0},"2026-06-26":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-06-27":{"t":{"meal":7,"vomit":1},"n":8,"ph":1,"nt":0},"2026-06-28":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-06-29":{"t":{"meal":5,"vomit":1},"n":6,"ph":1,"nt":0},"2026-06-30":{"t":{"meal":5},"n":5,"ph":0,"nt":0},"2026-07-01":{"t":{"cough":1,"meal":11,"medication":1,"sneeze":1},"n":14,"ph":0,"nt":2},"2026-07-02":{"t":{"meal":11},"n":11,"ph":0,"nt":0},"2026-07-03":{"t":{"cough":1,"meal":9},"n":10,"ph":0,"nt":1},"2026-07-04":{"t":{"meal":13,"vomit":2},"n":15,"ph":2,"nt":0},"2026-07-05":{"t":{"meal":9,"vomit":1},"n":10,"ph":1,"nt":1},"2026-07-06":{"t":{"cough":1,"meal":12},"n":13,"ph":0,"nt":1},"2026-07-07":{"t":{"meal":10,"medication":1,"sneeze":1},"n":12,"ph":0,"nt":1},"2026-07-08":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-07-09":{"t":{"meal":11,"vomit":1},"n":12,"ph":1,"nt":0},"2026-07-10":{"t":{"meal":14,"medication":1,"sneeze":1,"vomit":1},"n":17,"ph":1,"nt":1},"2026-07-11":{"t":{"meal":13,"medication":1},"n":14,"ph":0,"nt":0},"2026-07-12":{"t":{"meal":11,"medication":1},"n":12,"ph":0,"nt":0},"2026-07-13":{"t":{"meal":10},"n":10,"ph":0,"nt":0},"2026-07-14":{"t":{"meal":9,"vomit":1},"n":10,"ph":1,"nt":0},"2026-07-15":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-07-16":{"t":{"cough":1,"itch":2,"meal":10,"medication":1},"n":14,"ph":0,"nt":3},"2026-07-17":{"t":{"cough":1,"meal":15,"medication":2},"n":18,"ph":0,"nt":1},"2026-07-18":{"t":{"cough":1,"meal":11,"medication":2,"vomit":1},"n":15,"ph":1,"nt":2},"2026-07-19":{"t":{"cough":1,"itch":1,"meal":10,"medication":2},"n":14,"ph":0,"nt":2},"2026-07-20":{"t":{"meal":10,"medication":2},"n":12,"ph":0,"nt":0},"2026-07-21":{"t":{"meal":9,"medication":3,"other":1,"sneeze":2},"n":15,"ph":0,"nt":3},"2026-07-22":{"t":{"meal":12,"medication":2},"n":14,"ph":0,"nt":0},"2026-07-23":{"t":{"meal":10,"medication":2,"vomit":1},"n":13,"ph":1,"nt":0},"2026-07-24":{"t":{"meal":12,"medication":2},"n":14,"ph":0,"nt":0},"2026-07-25":{"t":{"meal":8,"medication":2,"vomit":1},"n":11,"ph":1,"nt":2},"2026-07-26":{"t":{"meal":5,"medication":2},"n":7,"ph":0,"nt":0},"2026-07-27":{"t":{"meal":6,"medication":2,"vomit":1},"n":9,"ph":1,"nt":1},"2026-07-28":{"t":{"meal":7,"medication":2},"n":9,"ph":0,"nt":1},"2026-07-29":{"t":{"meal":5,"medication":2},"n":7,"ph":0,"nt":2},"2026-07-30":{"t":{"meal":5,"medication":1},"n":6,"ph":0,"nt":1},"2026-07-31":{"t":{"meal":2},"n":2,"ph":0,"nt":0},"2026-08-01":{"t":{"meal":7,"medication":1,"sneeze":2},"n":10,"ph":0,"nt":2},"2026-08-02":{"t":{"cough":2,"meal":6,"medication":1,"vomit":1},"n":10,"ph":1,"nt":2},"2026-08-03":{"t":{"cough":1,"meal":4},"n":5,"ph":0,"nt":1},"2026-08-04":{"t":{"cough":1,"lethargy":1,"meal":5,"medication":1},"n":8,"ph":0,"nt":3},"2026-08-05":{"t":{"meal":4,"vomit":1},"n":5,"ph":1,"nt":0},"2026-08-06":{"t":{"cough":1,"meal":6},"n":7,"ph":0,"nt":1},"2026-08-07":{"t":{"cough":1,"meal":4},"n":5,"ph":0,"nt":1},"2026-08-08":{"t":{"meal":4,"vomit":1},"n":5,"ph":1,"nt":1},"2026-08-09":{"t":{"cough":1,"meal":3},"n":4,"ph":0,"nt":1},"2026-08-10":{"t":{"meal":3},"n":3,"ph":0,"nt":0},"2026-08-11":{"t":{"meal":3},"n":3,"ph":0,"nt":0},"2026-08-12":{"t":{"meal":6},"n":6,"ph":0,"nt":1},"2026-08-13":{"t":{"cough":2,"meal":5},"n":7,"ph":0,"nt":2},"2026-08-14":{"t":{"cough":2,"meal":7,"medication":1},"n":10,"ph":0,"nt":3},"2026-08-15":{"t":{"meal":4},"n":4,"ph":0,"nt":0},"2026-08-16":{"t":{"cough":1,"meal":7,"sneeze":1},"n":9,"ph":0,"nt":2},"2026-08-17":{"t":{"meal":6,"medication":1},"n":7,"ph":0,"nt":0},"2026-08-18":{"t":{"cough":1,"meal":5,"medication":1},"n":7,"ph":0,"nt":1},"2026-08-19":{"t":{"meal":6,"vomit":1},"n":7,"ph":1,"nt":0},"2026-08-20":{"t":{"meal":7},"n":7,"ph":0,"nt":0},"2026-08-21":{"t":{"cough":1,"meal":6,"medication":1,"sneeze":1},"n":9,"ph":0,"nt":2},"2026-08-22":{"t":{"meal":5},"n":5,"ph":0,"nt":0},"2026-08-23":{"t":{"meal":7,"medication":1,"sneeze":2},"n":10,"ph":0,"nt":2},"2026-08-24":{"t":{"meal":7,"vomit":1},"n":8,"ph":1,"nt":0},"2026-08-25":{"t":{"meal":6},"n":6,"ph":0,"nt":0},"2026-08-26":{"t":{"cough":1,"meal":7},"n":8,"ph":0,"nt":1},"2026-08-27":{"t":{"meal":8},"n":8,"ph":0,"nt":0},"2026-08-28":{"t":{"meal":6,"medication":1},"n":7,"ph":0,"nt":0},"2026-08-29":{"t":{"cough":1,"meal":9,"sneeze":1},"n":11,"ph":0,"nt":0},"2026-08-30":{"t":{"meal":7},"n":7,"ph":0,"nt":0},"2026-08-31":{"t":{"meal":4},"n":4,"ph":0,"nt":0},"2026-09-01":{"t":{"meal":5},"n":5,"ph":0,"nt":0},"2026-09-02":{"t":{"meal":3},"n":3,"ph":0,"nt":0},"2026-09-03":{"t":{"meal":4},"n":4,"ph":0,"nt":0},"2026-09-04":{"t":{"cough":1,"meal":2,"vomit":1},"n":4,"ph":1,"nt":0},"2026-09-05":{"t":{"cough":1,"itch":1,"meal":5,"medication":1},"n":8,"ph":0,"nt":1},"2026-09-06":{"t":{"meal":2},"n":2,"ph":0,"nt":0},"2026-09-07":{"t":{"meal":6,"vomit":2},"n":8,"ph":2,"nt":1},"2026-09-08":{"t":{"cough":1,"meal":6},"n":7,"ph":0,"nt":0},"2026-09-09":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-09-10":{"t":{"meal":6},"n":6,"ph":0,"nt":0},"2026-09-11":{"t":{"cough":1,"itch":1,"meal":7},"n":9,"ph":0,"nt":1},"2026-09-12":{"t":{"meal":7,"vomit":1},"n":8,"ph":1,"nt":0},"2026-09-13":{"t":{"itch":1,"meal":6,"other":2},"n":9,"ph":0,"nt":3},"2026-09-14":{"t":{"cough":1,"meal":3},"n":4,"ph":0,"nt":0},"2026-09-15":{"t":{"meal":7},"n":7,"ph":0,"nt":0},"2026-09-16":{"t":{"meal":8,"weight_check":1},"n":9,"ph":0,"nt":0},"2026-09-17":{"t":{"cough":1,"meal":7,"vomit":2},"n":10,"ph":2,"nt":1},"2026-09-18":{"t":{"meal":5},"n":5,"ph":0,"nt":0},"2026-09-19":{"t":{"meal":1},"n":1,"ph":0,"nt":0},"2026-09-21":{"t":{"meal":5,"medication":2,"vomit":1},"n":8,"ph":1,"nt":2}};
 function fmtTag(f) { return f.ff === 'wet_canned' ? 'wet' : f.ff === 'dry_kibble' ? 'dry' : ''; }
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 const kg2lb = (kg) => (Math.round(kg * 2.20462 * 10) / 10).toFixed(1);
@@ -940,28 +1052,42 @@ const kg2lb = (kg) => (Math.round(kg * 2.20462 * 10) / 10).toFixed(1);
 // row would show — never across a symptom, a dose, a look, a weight, a photographed
 // meal, a different food or format, a rating below all/most, a note, a combo vehicle,
 // or local midnight).
-function timingFor(row, dayRows, prevRows) {
+function timingRef(row, dayRows, prevRows) {
   if (row.ty !== 'vomit' || row.cf !== 'witnessed') return null;
   const t = mins(row.t);
   let best = null;
-  for (const r of dayRows) if (r.ty === 'meal' && mins(r.t) < t) best = Math.max(best ?? -1, mins(r.t));
-  if (best === null && prevRows) for (const r of prevRows) if (r.ty === 'meal') best = Math.max(best ?? -1, mins(r.t) - 1440);
-  if (best === null) return null;
-  const d = t - best;
+  for (const r of dayRows) if (r.ty === 'meal' && mins(r.t) < t && (!best || mins(r.t) > mins(best.t))) best = r;
+  if (!best && prevRows) for (const r of prevRows) if (r.ty === 'meal' && (!best || mins(r.t) > mins(best.t))) best = r;
+  return best;
+}
+function timingFor(row, dayRows, prevRows) {
+  const ref = timingRef(row, dayRows, prevRows);
+  if (!ref) return null;
+  const t = mins(row.t);
+  const sameDay = dayRows.includes(ref);
+  const d = t - (sameDay ? mins(ref.t) : mins(ref.t) - 1440);
   if (d > 6 * 60) return '6 h or more after eating';
   if (d < 60) return `${d} min after eating`;
   const h = Math.floor(d / 60), m = d % 60;
   return m ? `${h} h ${m} min after eating` : `${h} h after eating`;
 }
-function compactable(r) {
-  return r.ty === 'meal' && !r.ph && !r.note && (r.f?.ir == null || r.f.ir === 'all' || r.f.ir === 'most') && !r.vehicle;
+function snip(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max + 1); const at = cut.lastIndexOf(' ');
+  return (at > 12 ? cut.slice(0, at) : cut.slice(0, max)).replace(/[,;:.]+$/, '') + '…';
 }
-function runKey(r) { return `${r.f?.b}|${r.f?.p}`; }
+function compactable(r) {
+  return r.ty === 'meal' && !!r.f && !r.ph && !r.note && !r.timingRef && (r.f?.ir == null || r.f.ir === 'all' || r.f.ir === 'most') && !r.vehicle;
+}
+function runKey(r, opts) { return opts && opts.crossFormat === false ? `${r.f?.b}|${r.f?.p}` : `${r.f?.b}|${baseProduct(r.f)}`; }
 function buildDay(day, rows, prevRows, opts, fullRows) {
   const rs = rows.map((r) => ({ ...r, note: NOTE[`${day} ${r.t}`] || null, hasNote: r.nl > 0 }));
   const whole = fullRows || rows;
   // a dose given "in food" at the same minute as a meal marks that meal the vehicle
-  for (const r of rs) if (r.ty === 'medication' && r.m?.hg === 'in_food') { const v = rs.find((x) => x.ty === 'meal' && x.t === r.t); if (v) { v.vehicle = r.m.d; r.vehicleFood = productShort(v.f); } }
+  for (const r of rs) if (r.ty === 'medication' && r.m?.hg === 'in_food') { const v = rs.find((x) => x.ty === 'meal' && x.t === r.t); if (v) { v.vehicle = r.m.d; r.vehicleFood = opts.crossLinks === false ? productTiny(v.f) : productShort(v.f); } }
+  // the meal a symptom's timing line points at stays its own row (Dr. Chen, round 2)
+  const refs = new Set(); for (const r of rs) { const ref = timingRef(r, rs, prevRows); if (ref) refs.add(`${ref.t}|${ref.ty}`); }
+  for (const r of rs) if (refs.has(`${r.t}|${r.ty}`)) r.timingRef = true;
   const ordered = opts.order === 'newest' ? [...rs].reverse() : rs;
   const nodes = [];
   let run = [];
@@ -972,7 +1098,7 @@ function buildDay(day, rows, prevRows, opts, fullRows) {
   };
   for (const r of ordered) {
     if (compactable(r) && opts.compact !== false) {
-      if (run.length && runKey(run[run.length - 1]) !== runKey(r)) flush();
+      if (run.length && runKey(run[run.length - 1], opts) !== runKey(r, opts)) flush();
       run.push(r); continue;
     }
     flush(); nodes.push({ kind: 'single', row: r });
@@ -1018,22 +1144,27 @@ function nodeHtml(n, day, opts) {
     const t1 = fmt12(rows[0].t), t2 = fmt12(rows[rows.length - 1].t);
     const times = opts.order === 'newest' ? `${t2} – ${t1}` : `${t1} – ${t2}`;
     const id = `${day}-${rows[0].t}`;
-    const members = rows.map((r) => `<div class="ev" role="button" tabindex="0" data-rec="${esc(day)} ${esc(r.t)}"><i style="background:#00C2A8"></i><span>Meal · ${esc(productShort(f))} <span class="tagx">${fmtTag(f)}</span></span><span class="t">${fmt12(r.t)}</span></div>`).join('');
-    return `<div class="node1 nc door" role="button" tabindex="0" aria-expanded="false" data-compact="${esc(id)}" style="--dot:#00C2A8"><div class="nt">${rows.length} meals <small>· ${esc(productShort(f))} · ${fmtTag(f)}</small></div><div class="ntime">${times}</div></div><div class="ncdd"><div class="dd" data-dd="${esc(id)}"><div class="drail"></div><div class="dbox"><div class="dtext">${members}</div></div></div></div>`;
+    const named = !isDiet(f, opts);
+    const wet = rows.filter((r) => fmtTag(r.f) === 'wet').length, dry = rows.filter((r) => fmtTag(r.f) === 'dry').length;
+    const fmtText = wet && dry ? `${wet} wet · ${dry} dry` : (wet ? 'wet' : 'dry');
+    const members = rows.map((r) => `<div class="ev" role="button" tabindex="0" data-rec="${esc(day)} ${esc(r.t)}"><i style="background:#00C2A8"></i><span>Meal${named ? ' · ' + esc(productShort(f)) : ''} <span class="tagx">${fmtTag(r.f)}</span></span><span class="t">${fmt12(r.t)}</span></div>`).join('');
+    return `<div class="node1 nc door" role="button" tabindex="0" aria-expanded="false" data-compact="${esc(id)}" style="--dot:#00C2A8"><div class="nt">${rows.length} meals <small>· ${named ? esc(productShort(f)) + ' · ' : ''}${fmtText}</small></div><div class="ntime">${times}</div></div><div class="ncdd"><div class="dd" data-dd="${esc(id)}"><div class="drail"></div><div class="dbox"><div class="dtext">${members}</div></div></div></div>`;
   }
   const r = n.row; const c = cat(r); const tint = TINT[c];
   let title = LABEL[r.ty], detail = [], conf = '', line = '', chip = '';
   if (r.ty === 'meal') {
     title = r.f?.ft === 'treat' ? 'Treat' : 'Meal';
-    detail.push(`${esc(productShort(r.f))} <span class="tagx">${fmtTag(r.f)}</span>`);
+    if (!r.f) detail.push('no food recorded');
+    else detail.push(isDiet(r.f, opts) ? `<span class="tagx">${fmtTag(r.f)}</span>` : `${esc(productShort(r.f))} <span class="tagx">${fmtTag(r.f)}</span>`);
     if (r.f?.ir === 'picked' || r.f?.ir === 'refused') chip = `<span class="chip attn">${r.f.ir === 'picked' ? 'Picked' : 'Refused'}</span>`;
     else if (r.f?.ir === 'some') chip = `<span class="chip attn">Some</span>`;
     else if (r.f?.ir === 'most') chip = `<span class="chip ok">Most</span>`;
     else if (r.f?.ir === 'all') chip = `<span class="chip ok">All</span>`;
     if (r.vehicle && opts.crossLinks !== false) line = `<div class="nv" style="color:#0B7B6C;font-weight:500">↔ ${esc(r.vehicle)} given in this meal ›</div>`;
+    else if (r.vehicle) detail.push(`with ${esc(r.vehicle)}`);
   } else if (r.ty === 'medication') {
     title = r.m?.d || 'Medication';
-    detail.push(r.m?.hg === 'in_food' ? 'in food' : r.m?.hg === 'treat' ? 'in a treat' : 'by mouth');
+    detail.push(r.m?.hg === 'in_food' ? (r.vehicleFood && opts.crossLinks === false ? `in the ${esc(r.vehicleFood)} meal` : 'in food') : r.m?.hg === 'treat' ? 'in a treat' : 'by mouth');
     if (r.m?.ad === 'given') chip = `<span class="chip ok">Given</span>`;
     else if (r.m?.ad === 'partial') chip = `<span class="chip attn">Partial</span>`;
     else if (!r.m?.ad) chip = `<span class="chip attn">Unconfirmed</span>`;
@@ -1046,7 +1177,7 @@ function nodeHtml(n, day, opts) {
   if (r.ph) detail.push('<span class="pg" role="img" aria-label="photographed"></span>');
   if (r.cf === 'window') conf = '<span class="conf">found</span>';
   else if (r.cf === 'estimated') conf = '<span class="conf">estimated</span>';
-  const noteGlyph = r.hasNote && opts.notes !== 'none' ? '<span class="qm" aria-label="Has a note">❞</span>' : '';
+  const noteGlyph = r.hasNote && opts.notes !== 'none' && (opts.notes === 'glyph' || !r.note) ? '<span class="qm" aria-label="Has a note">❞</span>' : '';
   const timeText = r.cf === 'window' ? `by ${fmt12(r.t)}` : fmt12(r.t);
   // the read
   let verdict = '';
@@ -1057,9 +1188,12 @@ function nodeHtml(n, day, opts) {
   }
   if (opts.pendingKey === `${day} ${r.t}`) {
     const [w] = REC[r.rec] || ['Keep an eye out'];
-    verdict = `<div class="arr2" data-arr="${esc(opts.pendingKey)}" aria-live="polite"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div><div class="dbox"><div class="dtext"><b>${w}</b>One photo can raise a flag; it can't clear one.</div></div></div></div></div>`;
+    const calm = r.rec !== 'worth_a_call' && mode === 'rose';
+    verdict = calm
+      ? `<div class="arr2 calm" data-arr="${esc(opts.pendingKey)}" aria-live="polite"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div></div></div></div>`
+      : `<div class="arr2" data-arr="${esc(opts.pendingKey)}" aria-live="polite"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div><div class="dbox"><div class="dtext"><b>${w}</b>One photo can raise a flag; it can't clear one.</div></div></div></div></div>`;
   }
-  const noteLine = r.note && opts.notes === 'line' ? `<div class="nq">“${esc(r.note)}”</div>` : '';
+  const noteLine = r.note && (opts.notes === 'line' || opts.notes === 'snippet') ? `<div class="nq${opts.notes === 'snippet' ? ' snip' : ''}">“${esc(opts.notes === 'snippet' ? snip(r.note, 44) : r.note)}”</div>` : '';
   const sync = r.quarantined ? `<div class="nv call">Not saved to your records · Save again ›</div>` : '';
   const key = `${day} ${r.t}`;
   return `<div class="node1 door" role="button" tabindex="0" data-rec="${esc(key)}" style="--dot:${tint}"><div class="nt">${esc(title)}${detail.length ? ` <small>· ${detail.join(' · ')}</small>` : ''}${chip}${noteGlyph}</div><div class="ntime">${timeText}${conf}</div>${verdict}${line}${noteLine}${sync}</div>`;
@@ -1072,7 +1206,8 @@ function dayCardHtml(d, opts) {
   else if (opts.lens === 'symptom') hdrRight = wordsHtml(parts);
   else if (['photographed', 'noted', 'read', 'prednisone'].includes(opts.lens)) hdrRight = `<b>${total}</b> ${opts.lens === 'noted' ? 'with a note' : opts.lens === 'photographed' ? 'photographed' : opts.lens === 'read' ? 'with a read' : 'doses'}`;
   else if (opts.search) hdrRight = wordsHtml(parts);
-  else hdrRight = `<b>${total}</b> logged${parts.length ? ' · ' + wordsHtml(parts) : ''}`;
+  else if (opts.headerStyle === 'r1') hdrRight = `<b>${total}</b> logged${parts.length ? ' · ' + wordsHtml(parts) : ''}`;
+  else { const named = parts.filter((p) => p.sym || p.k === 'other' || p.k === 'check_in' || p.k === 'stool_normal'); hdrRight = `<b>${total}</b> logged${named.length ? ' · ' + wordsHtml(named) : ''}`; }
   const todayTag = d.day === opts.today ? '<small>Today</small>' : '';
   const nodes = d.nodes.map((n) => nodeHtml(n, d.day, opts)).join('');
   let extras = '';
@@ -1086,9 +1221,9 @@ function gapHtml(days, opts) {
   const n = days.length;
   if (opts.lens) {
     const what = opts.lens === 'symptom' ? 'no symptom' : opts.lens === 'photographed' ? 'nothing photographed' : opts.lens === 'noted' ? 'no note' : opts.lens === 'read' ? 'no read' : opts.lens === 'prednisone' ? 'no Prednisone' : `no ${SINGULAR[opts.lens]}`;
-    return `<div class="gap${n > 1 ? ' wide' : ''}"><i></i>${what} logged · ${span}${n > 1 ? ` · ${n} days` : ''}</div>`;
+    return `<div class="gap${n > 1 ? ' wide' : ''}" data-gap-from="${b}" data-gap-to="${a}"><i></i>${what} logged · ${span}${n > 1 ? ` · ${n} days` : ''}</div>`;
   }
-  return `<div class="gap${n > 1 ? ' wide' : ''}"><i></i>${span} · nothing logged${n > 1 ? ` · ${n} days` : ''}</div>`;
+  return `<div class="gap${n > 1 ? ' wide' : ''}" data-gap-from="${b}" data-gap-to="${a}"><i></i>${span} · nothing logged${n > 1 ? ` · ${n} days` : ''}</div>`;
 }
 function windowLabelShort(opts) {
   const w = opts.when || 'all';
@@ -1145,13 +1280,13 @@ function listHtml(opts) {
     flushGap(); items.push({ day: d });
   }
   flushGap();
-  const standing = opts.lens && (SYMPTOM.includes(opts.lens) || opts.lens === 'symptom') && opts.verdict !== 'none' && opts.standing !== false
-    ? `<div class="gap" style="padding:2px 2px 6px;font-style:italic">One photo can raise a flag; it can't clear one.</div>` : '';
+  const standing = '';
   const body = items.map((it) => it.gap ? gapHtml(it.gap, opts) : dayCardHtml(it.day, opts)).join('');
   const bounded = ['today', '7d', '14d', 'visit'].includes(opts.when || 'all');
-  const endcap = opts.search || opts.bare ? '' : `<div class="gap" style="justify-content:center;padding-top:10px"><i></i>${bounded ? `${windowLabel(opts)} ends here` : 'Sep 3 and earlier'} · the record starts May 14</div>`;
+  const partial = ['30d', 'trial'].includes(opts.when || 'all');
+  const endcap = opts.search || opts.bare ? '' : `<div class="gap" style="justify-content:center;padding-top:10px"><i></i>${bounded ? `${windowLabel(opts)} ends here · the record starts May 14` : partial ? `${windowLabel(opts)} runs back to ${shortDay(windowBounds(opts).from)} on the device · this page carries Sep 4 – 21` : 'Sep 3 and earlier · the record starts May 14'}</div>`;
   if (!items.length) return `<div class="empty" style="padding:14px 4px"><b>Nothing matches that lens.</b>${opts.search ? 'Try another word, or clear the search.' : 'Try clearing a filter to see more of Nyx’s history.'}</div>`;
-  return standing + `<div class="hist">${body}</div>` + endcap;
+  return standing + `<div class="hist${opts.chevrons ? ' chev' : ''}">${body}</div>` + endcap;
 }
 function headerHtml(opts) {
   const lensOn = !!opts.lens, whenOn = (opts.when || 'all') !== 'all';
@@ -1166,29 +1301,82 @@ function searchBarHtml(opts) {
 function threadsHtml(opts) {
   if (!opts.threads) return '';
   const td = trialDay(opts.today || '2026-09-21');
-  return `<div class="threads"><span class="thread"><i style="background:#00C2A8"></i>Trial · <b>day ${td} of ${TRIAL.target}</b> · ${TRIAL.food}</span><span class="thread"><i style="background:#5B7A9E"></i>Prednisone · <b>since Sep 21</b></span></div>`;
+  if (opts.threads === 'pills') return `<div class="threads"><span class="thread"><i style="background:#00C2A8"></i>Trial · <b>day ${td} of ${TRIAL.target}</b> · ${TRIAL.food}</span><span class="thread"><i style="background:#5B7A9E"></i>Prednisone · <b>since Sep 21</b></span></div>`;
+  const readLine = opts.verdict !== 'none' && opts.standing !== false ? `<div class="standing read"><i class="stick"></i><span>A photo's read can raise a flag, never clear one.</span></div>` : '';
+  return `<div class="standing"><i class="stick"></i><span><b>${TRIAL.food}</b> · trial day ${td} of ${TRIAL.target} · <b>Prednisone</b> since Sep 21</span></div>` + readLine;
+}
+function windowBounds(opts) {
+  const today = opts.today || '2026-09-21';
+  const w = opts.when || 'all';
+  const from = { all: '2026-05-14', today, '7d': addDays(today, -6), '14d': addDays(today, -13), '30d': addDays(today, -29), trial: TRIAL.start, visit: '2026-09-16', sep: '2026-09-01', aug: '2026-08-01', jul: '2026-07-01', jun: '2026-06-01', may: '2026-05-14' }[w];
+  const to = { aug: '2026-08-31', jul: '2026-07-31', jun: '2026-06-30', may: '2026-05-31' }[w] || today;
+  return { from, to };
+}
+function dayCount(iso, lens) {
+  const fx = FIX.find((d) => d.day === iso);
+  if (fx) { const rows = fx.rows.filter((r) => matchesLens(r, lens)); return { n: rows.length, any: fx.rows.length > 0, sym: rows.some((r) => SYMPTOM.includes(r.ty)), known: true }; }
+  const b = BYDAY[iso];
+  if (!b) return { n: 0, any: false, sym: false, known: iso >= PAGE_FLOOR };
+  const t = b.t || {};
+  const symN = SYMPTOM.reduce((a, k) => a + (t[k] || 0), 0);
+  if (!lens) return { n: b.n, any: b.n > 0, sym: symN > 0, known: true };
+  if (lens === 'symptom') return { n: symN, any: b.n > 0, sym: symN > 0, known: true };
+  if (lens === 'photographed') return { n: b.ph, any: b.n > 0, sym: false, known: true };
+  if (lens === 'noted') return { n: b.nt, any: b.n > 0, sym: false, known: true };
+  if (lens === 'read') return { n: b.ph, any: b.n > 0, sym: false, known: true };
+  if (lens === 'prednisone') return { n: 0, any: b.n > 0, sym: false, known: true };
+  return { n: t[lens] || 0, any: b.n > 0, sym: SYMPTOM.includes(lens) && (t[lens] || 0) > 0, known: true };
+}
+function monthHtml(opts) {
+  if (!opts.month) return '';
+  const today = opts.today || '2026-09-21';
+  const { from, to } = windowBounds(opts);
+  const gridStart = addDays(from, -dateOf(from).getDay());
+  const gridEnd = addDays(to, 6 - dateOf(to).getDay());
+  let cells = ''; let i = 0;
+  for (let iso = gridStart; iso <= gridEnd; iso = addDays(iso, 1), i++) {
+    const future = iso > today; const out = iso < from || iso > to;
+    const c = dayCount(iso, opts.lens);
+    const cls = future ? 'future' : out ? 'out' : !c.known ? 'blank' : !c.any ? 'none' : c.n === 0 ? 'quiet' : c.sym ? 'sym' : '';
+    const dn = dateOf(iso).getDate();
+    const mo = dn === 1 || iso === gridStart ? `<em class="mo">${dateOf(iso).toLocaleDateString('en-US', { month: 'short' })}</em>` : '';
+    const aria = future ? `${dayName(iso)}, ahead` : out ? `${dayName(iso)}, outside ${windowLabel(opts)}` : !c.known ? `${dayName(iso)}, not on this page` : !c.any ? `${dayName(iso)}, nothing logged` : `${dayName(iso)}, ${lensWords(opts.lens, c.n)}${c.sym && !opts.lens ? ', a symptom' : ''}`;
+    cells += `<button type="button" class="d ${cls}${iso === today ? ' today' : ''}" data-rail="${iso}" style="--i:${i}" aria-label="${esc(aria)}" ${future || out || !c.known ? 'disabled' : ''}>${out ? '' : mo}${dn}${!future && !out && c.known && c.n ? `<span class="cnt">${c.n}</span>` : ''}</button>`;
+  }
+  const wd = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((w) => `<span class="wd">${w}</span>`).join('');
+  return `<div class="railnav"><button type="button" aria-label="Earlier" disabled>‹</button><b>${shortDay(from)} – ${shortDay(to)}<small> · ${windowLabelShort(opts)}</small></b><button type="button" aria-label="Later" disabled>›</button></div><div class="rail month${st_playing(opts) ? ' arm' : ''}">${wd}${cells}</div>`;
+}
+function lensWords(lens, n) {
+  if (!lens) return n === 0 ? 'nothing logged' : `${n} logged`;
+  const one = { symptom: 'symptom', photographed: 'photographed', noted: 'with a note', read: 'with a read', prednisone: 'Prednisone dose' }[lens] || SINGULAR[lens] || lens;
+  const many = { symptom: 'symptoms', photographed: 'photographed', noted: 'with a note', read: 'with a read', prednisone: 'Prednisone doses' }[lens] || PLURAL[lens] || lens;
+  return n === 0 ? `no ${one} logged` : `${n} ${n === 1 ? one : many}`;
 }
 function railHtml(opts) {
+  if (opts.month) return monthHtml(opts);
   if (!opts.rail) return '';
   // the Sunday-start week holding "today" (Mon Sep 21 → Sun Sep 20 … Sat Sep 26)
   const today = opts.today || '2026-09-21';
-  const dow = dateOf(today).getDay();
-  const thisWeek = addDays(today, -dow);
+  const { from, to } = windowBounds(opts);
+  const anchor = to < today ? to : today;
+  const thisWeek = addDays(anchor, -dateOf(anchor).getDay());
   const start = opts.railStart || thisWeek;
-  const byDay = new Map(FIX.map((d) => [d.day, d]));
   let cells = '';
   for (let i = 0; i < 7; i++) {
-    const iso = addDays(start, i); const d = byDay.get(iso);
-    const rows = d ? d.rows.filter((r) => matchesLens(r, opts.lens)) : [];
+    const iso = addDays(start, i);
     const future = iso > today;
-    const sym = rows.some((r) => SYMPTOM.includes(r.ty));
-    const cls = future ? 'future' : rows.length === 0 ? 'none' : sym ? 'sym' : '';
-    const label = future ? '' : rows.length === 0 ? '' : `<span class="cnt">${rows.length}</span>`;
-    const aria = future ? `${dayName(iso)}, ahead` : rows.length === 0 ? `${dayName(iso)}, nothing logged` : `${dayName(iso)}, ${rows.length} logged${sym ? ', includes a symptom' : ''}`;
-    cells += `<button type="button" class="d ${cls}${iso === today ? ' today' : ''}" data-rail="${iso}" aria-label="${esc(aria)}" ${future ? 'disabled' : ''}>${dateOf(iso).getDate()}${label}</button>`;
+    const out = iso < from || iso > to;
+    const c = dayCount(iso, opts.lens);
+    const cls = future ? 'future' : out ? 'out' : !c.known ? 'blank' : !c.any ? 'none' : c.n === 0 ? 'quiet' : c.sym ? 'sym' : '';
+    const label = future || out || !c.known || c.n === 0 ? '' : `<span class="cnt">${c.n}</span>`;
+    const aria = future ? `${dayName(iso)}, ahead` : out ? `${dayName(iso)}, outside ${windowLabel(opts)}` : !c.known ? `${dayName(iso)}, not on this page` : !c.any ? `${dayName(iso)}, nothing logged` : `${dayName(iso)}, ${lensWords(opts.lens, c.n)}${c.sym && !opts.lens ? ', a symptom' : ''}`;
+    cells += `<button type="button" class="d ${cls}${iso === today ? ' today' : ''}" data-rail="${iso}" style="--i:${i}" aria-label="${esc(aria)}" ${future || out ? 'disabled' : ''}>${dateOf(iso).getDate()}${label}</button>`;
   }
   const wd = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((w) => `<span class="wd">${w}</span>`).join('');
-  return `<div class="railnav"><button type="button" aria-label="Earlier week" data-railnav="-1">‹</button><b>${shortDay(start)} – ${shortDay(addDays(start, 6))}</b><button type="button" aria-label="Later week" data-railnav="1" ${start >= thisWeek ? 'disabled' : ''}>›</button></div><div class="rail">${wd}${cells}</div><div class="railcap">A count on each day · hollow = nothing logged · the week named. Tap a day to jump.</div>`;
+  const floor = from > PAGE_FLOOR ? from : PAGE_FLOOR;
+  const canBack = start > floor, canFwd = addDays(start, 6) < to;
+  const winNote = (opts.when || 'all') === 'all' ? '' : ` · ${windowLabelShort(opts)}`;
+  return `<div class="railnav"><button type="button" aria-label="${canBack ? 'Earlier week' : (opts.when || 'all') === 'all' ? 'Earlier week · this page carries ' + shortDay(PAGE_FLOOR) + ' onward' : 'Earlier week · ' + windowLabel(opts) + ' starts ' + shortDay(from)}" data-railnav="-1" ${canBack ? '' : 'disabled'}>‹</button><b>${shortDay(start)} – ${shortDay(addDays(start, 6))}<small>${winNote}</small></b><button type="button" aria-label="${canFwd ? 'Later week' : 'Later week · ' + (to === today ? 'this week holds today' : windowLabel(opts) + ' ends ' + shortDay(to))}" data-railnav="1" ${canFwd ? '' : 'disabled'}>›</button></div><div class="rail${st_playing(opts) ? ' arm' : ''}">${wd}${cells}</div>`;
 }
 function skelHtml() {
   return `<div class="skel" style="padding:52px 12px 12px"><div class="k hdr"></div><div class="k line"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k hdr" style="margin-top:8px"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div></div>`;
@@ -1208,7 +1396,7 @@ function recordHtml(key) {
   }
   body += `<div class="acard"><div class="seclabel">When</div><div style="font-size:13px">${dayName(day)} · ${r.cf === 'window' ? 'found by ' : ''}${fmt12(t)} <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.08em">${r.cf}</span></div>${r.ty === 'meal' ? `<div class="seclabel" style="margin-top:8px">Food</div><div style="font-size:13px">${esc(r.f.b)} · ${esc(r.f.p)}</div>` : ''}${r.ty === 'medication' ? `<div class="seclabel" style="margin-top:8px">Dose</div><div style="font-size:13px">${esc(r.m.d)} · given in food</div>` : ''}</div>`;
   body += `<div class="acard"><div class="seclabel">Notes</div><div style="font-size:12.5px;line-height:1.45;color:${note ? '#0A0A0A' : '#737373'}">${note ? esc(note) : 'Add a note'}</div>${note ? '<div class="illus" style="margin-top:4px">note text illustrative</div>' : ''}<div style="font-size:10px;color:#737373;margin-top:6px;line-height:1.4">Printed on the vet report you make · Ask can quote it back to you · never on a shared link unless you choose it</div></div>`;
-  body += `<div class="acts"><span class="pri">Edit</span><span class="sec">Remove</span></div>`;
+  body += `<div class="acts"><span class="pri">Edit</span><span class="sec" role="button" tabindex="0" data-remove="${esc(key)}">Remove</span></div>`;
   return `<div class="stackhdr"><button class="back" type="button" data-back aria-label="Back to History">‹</button>${esc(title)}</div><div class="appbody land rec">${body}</div>`;
 }
 function sheetHtml(kind, opts) {
@@ -1233,6 +1421,7 @@ function sheetHtml(kind, opts) {
 
 // ── Mount a phone ─────────────────────────────────────────────────────────────
 const phones = new Map();
+function st_playing(opts) { return !!opts._stripPlay; }
 function render(el) {
   const st = phones.get(el);
   const o = st.opts;
@@ -1240,21 +1429,23 @@ function render(el) {
   const scrollTop = body.scrollTop;
   body.innerHTML = o.bare ? listHtml(o) : headerHtml(o) + searchBarHtml(o) + threadsHtml(o) + completenessLine(o) + railHtml(o) + listHtml(o);
   body.scrollTop = scrollTop;
-  if (st.landed) { const a = body.querySelector('[data-arr]'); if (a) { a.classList.add('snap'); a.classList.add('in'); if (st.landedCall) a.classList.add('call'); void a.offsetWidth; a.classList.remove('snap'); } }
+  if (st.landed) { const a = body.querySelector('[data-arr]'); if (a) { a.classList.add('snap'); a.classList.add('in'); if (st.landedCall) a.classList.add('call'); if (a.classList.contains('calm')) a.classList.add('gone'); void a.offsetWidth; a.classList.remove('snap'); } }
+  if (o._stripPlay) { o._stripPlay = false; const r = body.querySelector('.rail'); if (r && !REDUCED) { twoFrames(() => { r.classList.remove('arm'); r.classList.add('play'); }); } else if (r) r.classList.remove('arm'); }
   // restore open compact groups
   for (const id of st.open) { const b = body.querySelector(`[data-compact="${CSS.escape(id)}"]`); const dd = body.querySelector(`[data-dd="${CSS.escape(id)}"]`); if (b && dd) { b.setAttribute('aria-expanded', 'true'); dd.classList.add('in'); } }
   if (o.searchOpen) { const inp = body.querySelector('input[type=search]'); if (inp && st.focusSearch) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); st.focusSearch = false; } }
 }
 function mount(el, opts) {
-  const st = { opts: { order: 'chrono', verdict: 'every', notes: 'glyph', today: '2026-09-21', ...opts }, open: new Set() };
+  const st = { opts: { order: 'chrono', verdict: 'rose', notes: 'snippet', today: '2026-09-21', dietInForce: 'Selected Protein PR', crossFormat: true, chevrons: false, crossLinks: false, threads: true, headerStyle: 'r2', ...opts }, open: new Set() };
   phones.set(el, st);
   const sk = el.querySelector('.wait-skel'); if (sk && !sk.innerHTML.trim()) sk.innerHTML = skelHtml();
   render(el);
   if (opts.openSheet) { const wrap = document.createElement('div'); wrap.innerHTML = sheetHtml(opts.openSheet, st.opts); el.appendChild(wrap.firstElementChild); }
   el.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-compact],[data-rec],[data-open],[data-pick],[data-rail],[data-railnav],[data-back],[data-visit]');
+    const t = e.target.closest('[data-compact],[data-rec],[data-open],[data-pick],[data-rail],[data-railnav],[data-back],[data-visit],[data-remove]');
     if (!t) return;
-    if (t.dataset.railnav) { const today = st.opts.today || '2026-09-21'; const thisWeek = addDays(today, -dateOf(today).getDay()); st.opts.railStart = addDays(st.opts.railStart || thisWeek, 7 * Number(t.dataset.railnav)); render(el); return; }
+    if (t.dataset.remove) { removeRow(el, t.dataset.remove); return; }
+    if (t.dataset.railnav) { const { to } = windowBounds(st.opts); const today = st.opts.today || '2026-09-21'; const anchor = to < today ? to : today; const thisWeek = addDays(anchor, -dateOf(anchor).getDay()); st.opts.railStart = addDays(st.opts.railStart || thisWeek, 7 * Number(t.dataset.railnav)); st.opts._stripPlay = true; render(el); return; }
     if (t.dataset.compact) { const id = t.dataset.compact; const dd = el.querySelector(`[data-dd="${CSS.escape(id)}"]`); const open = !st.open.has(id); if (open) st.open.add(id); else st.open.delete(id); t.setAttribute('aria-expanded', String(open)); dd.classList.toggle('in', open); e.stopPropagation(); return; }
     if (t.dataset.rec != null) { openRecord(el, t.dataset.rec); e.stopPropagation(); return; }
     if (t.dataset.visit) { openRecordRaw(el, `<div class="stackhdr"><button class="back" type="button" data-back aria-label="Back to History">‹</button>Vet visit</div><div class="appbody land"><div class="acard"><div class="seclabel">Sep 16</div><div style="font-size:13px">The visit's own screen: reason, clinic, notes, the plan. Not an event; never counted.</div></div></div>`); return; }
@@ -1270,16 +1461,30 @@ function mount(el, opts) {
       const sheet = el.querySelector('[data-sheet]'); if (sheet) sheet.remove();
       if (kind === 'close') return;
       if (kind === 'type' || kind === 'more') st.opts.lens = key === 'null' ? null : key;
-      if (kind === 'when') st.opts.when = key;
+      if (kind === 'when') { st.opts.when = key; st.opts.railStart = null; }
+      st.opts._stripPlay = true;
       const body = el.querySelector('.vpbody'); body.scrollTop = 0;
       render(el); return;
     }
-    if (t.dataset.rail) { const card = el.querySelector(`[data-day="${t.dataset.rail}"]`) || el.querySelector('.gap'); if (card) { card.scrollIntoView({ block: 'start', behavior: REDUCED ? 'auto' : 'smooth' }); el.querySelectorAll('.rail .d').forEach((d) => d.classList.remove('sel')); t.classList.add('sel'); } return; }
+    if (t.dataset.rail) { const iso = t.dataset.rail; const card = el.querySelector(`[data-day="${iso}"]`) || Array.from(el.querySelectorAll('.gap[data-gap-from]')).find((g) => g.dataset.gapFrom <= iso && iso <= g.dataset.gapTo); if (card) { card.scrollIntoView({ block: 'start', behavior: REDUCED ? 'auto' : 'smooth' }); el.querySelectorAll('.rail .d').forEach((d) => d.classList.remove('sel')); t.classList.add('sel'); if (card.classList.contains('dayc')) setTimeout(() => drawInCard(card), REDUCED ? 0 : 260); } return; }
   });
   el.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role=button]')) { e.preventDefault(); e.target.click(); } });
   el.addEventListener('input', (e) => { if (e.target.matches('input[type=search]')) { st.opts.search = e.target.value; st.focusSearch = true; render(el); } });
   return st;
 }
+// The row leaving (Motion, round 2): the record closes, the row folds shut with its rail trailing,
+// then the day re-renders and its count re-speaks. On the page the row comes back with "Put it back".
+const REMOVED = new Map();
+function removeRow(el, key) {
+  const st = phones.get(el); closeRecord(el);
+  const [day, t] = key.split(' ');
+  const row = el.querySelector(`.node1[data-rec="${CSS.escape(key)}"]`);
+  const done = () => { const d = FIX.find((x) => x.day === day); if (!d) return; const idx = d.rows.findIndex((x) => x.t === t); if (idx < 0) return; REMOVED.set(key, { day, row: d.rows[idx], idx }); d.rows.splice(idx, 1); render(el); };
+  if (!row || REDUCED) { done(); return; }
+  row.style.maxHeight = row.offsetHeight + 'px'; void row.offsetWidth; row.classList.add('leave');
+  setTimeout(done, 480);
+}
+function restoreRow(el, key) { const r = REMOVED.get(key); if (!r) return; const d = FIX.find((x) => x.day === r.day); d.rows.splice(Math.min(r.idx, d.rows.length), 0, r.row); REMOVED.delete(key); render(el); const row = el.querySelector(`.node1[data-rec="${CSS.escape(key)}"]`); const card = row && row.closest('.dayc'); if (card) drawInCard(card); }
 function openRecordRaw(el, html) {
   let scr = el.querySelector('.screen.detail');
   if (!scr) { scr = document.createElement('div'); scr.className = 'screen detail'; scr.setAttribute('aria-hidden', 'true'); el.appendChild(scr); }
@@ -1293,28 +1498,50 @@ window.__history = { mount, phones, render, FIX, WIN: () => WIN, setWin: (w) => 
 
 // ── Demos ─────────────────────────────────────────────────────────────────────
 function twoFrames(fn) { let done = false; const go = () => { if (!done) { done = true; fn(); } }; requestAnimationFrame(() => requestAnimationFrame(go)); setTimeout(go, 80); }
+function drawInCard(card) {
+  if (REDUCED || !card) return;
+  const nodes = card.querySelectorAll('.node1'); card.style.setProperty('--step', `${Math.round(370 / Math.max(nodes.length, 1))}ms`); nodes.forEach((n, i) => n.style.setProperty('--i', i));
+  card.classList.remove('play'); card.classList.add('arm'); void card.offsetWidth;
+  twoFrames(() => { card.classList.remove('arm'); card.classList.add('play'); });
+  setTimeout(() => card.classList.remove('play'), 1200);
+}
+function drawInDays(el) {
+  const cards = Array.from(el.querySelectorAll('.dayc')).slice(0, 4);
+  if (REDUCED || !cards.length) return;
+  cards.forEach((c) => { const nodes = c.querySelectorAll('.node1'); c.style.setProperty('--step', `${Math.round(370 / Math.max(nodes.length, 1))}ms`); nodes.forEach((n, i) => n.style.setProperty('--i', i)); c.classList.remove('play'); c.classList.add('arm'); });
+  void el.offsetWidth;
+  twoFrames(() => cards.forEach((c) => { c.classList.remove('arm'); c.classList.add('play'); }));
+  setTimeout(() => cards.forEach((c) => c.classList.remove('play')), 1200);
+}
 function replayWait(el) {
   el.classList.remove('in'); el.classList.add('snap'); void el.offsetWidth; el.classList.remove('snap');
-  twoFrames(() => setTimeout(() => el.classList.add('in'), REDUCED ? 0 : 700));
+  twoFrames(() => setTimeout(() => { el.classList.add('in'); drawInDays(el); }, REDUCED ? 0 : 700));
 }
 function replayArrive(el, key) {
   const st = phones.get(el);
   const a = el.querySelector(`[data-arr="${CSS.escape(key)}"]`); if (!a) return;
-  a.classList.remove('in', 'call'); a.classList.add('snap'); void a.offsetWidth; a.classList.remove('snap');
+  a.classList.remove('in', 'call', 'gone'); a.classList.add('snap'); void a.offsetWidth; a.classList.remove('snap');
   const [day, t] = key.split(' '); const d = FIX.find((x) => x.day === day); const r = d && d.rows.find((x) => x.t === t);
   st.landed = false;
   twoFrames(() => setTimeout(() => { if (r?.rec === 'worth_a_call') a.classList.add('call'); a.classList.add('in'); st.landed = true; st.landedCall = r?.rec === 'worth_a_call'; }, REDUCED ? 0 : 1600));
+  if (a.classList.contains('calm')) setTimeout(() => { a.classList.add('gone'); }, REDUCED ? 0 : 1600);
 }
 function replayArriveEl(a, call) {
   a.classList.remove('in', 'call'); a.classList.add('snap'); void a.offsetWidth; a.classList.remove('snap');
   twoFrames(() => setTimeout(() => { if (call) a.classList.add('call'); a.classList.add('in'); }, REDUCED ? 0 : 1600));
 }
 window.__demos = { replayWait, replayArrive, replayArriveEl };
-const specArr = document.getElementById('spec-arr'); if (specArr) { setTimeout(() => replayArriveEl(specArr, false), 600); document.getElementById('spec-arr-replay')?.addEventListener('click', () => replayArriveEl(specArr, false)); }
+function replayCalmEl(a) {
+  a.classList.remove('in', 'gone'); a.classList.add('snap'); void a.offsetWidth; a.classList.remove('snap');
+  twoFrames(() => setTimeout(() => a.classList.add('gone'), REDUCED ? 0 : 1600));
+}
+window.__demos.replayCalmEl = replayCalmEl;
+const specArr = document.getElementById('spec-arr'), specCalm = document.getElementById('spec-calm');
+if (specArr) { setTimeout(() => { replayArriveEl(specArr, true); if (specCalm) replayCalmEl(specCalm); }, 600); document.getElementById('spec-arr-replay')?.addEventListener('click', () => { replayArriveEl(specArr, true); if (specCalm) replayCalmEl(specCalm); }); }
 document.getElementById('rail-demo')?.addEventListener('click', () => {
-  const el = document.getElementById('p-rail'); const st = phones.get(el); if (!st) return;
+  const el = document.getElementById('p-days'); const st = phones.get(el); if (!st) return;
   const today = st.opts.today || '2026-09-21'; const thisWeek = addDays(today, -dateOf(today).getDay());
-  st.opts.railStart = addDays(thisWeek, -7); render(el);
+  st.opts.railStart = addDays(thisWeek, -7); st.opts._stripPlay = true; render(el);
   const cell = el.querySelector('[data-rail="2026-09-17"]'); if (cell) cell.click();
 });
 document.querySelectorAll('[data-mount]').forEach((el) => {
@@ -1329,8 +1556,12 @@ document.querySelectorAll('[data-replay]').forEach((b) => b.addEventListener('cl
   if (what === 'wait') replayWait(el);
   if (what === 'arrive') replayArrive(el, key);
   if (what === 'open') { const n = el.querySelector('[data-compact]'); if (n) n.click(); }
-  if (what === 'lens') { const st = phones.get(el); st.opts.lens = st.opts.lens ? null : (key || 'vomit'); st.opts.searchOpen = false; st.opts.search = ''; render(el); }
+  if (what === 'lens') { const st = phones.get(el); st.opts.lens = st.opts.lens ? null : (key || 'vomit'); st.opts.searchOpen = false; st.opts.search = ''; st.opts._stripPlay = true; render(el); }
+  if (what === 'when') { const st = phones.get(el); st.opts.when = key; st.opts.railStart = null; st.opts._stripPlay = true; render(el); }
+  if (what === 'back') { const b = el.querySelector('[data-railnav="-1"]'); if (b && !b.disabled) b.click(); }
   if (what === 'route') { const n = el.querySelector('[data-rec]'); if (n) { const scr = el.querySelector('.screen.detail.on'); if (scr) closeRecord(el); else n.click(); } }
+  if (what === 'remove') { removeRow(el, key); }
+  if (what === 'restore') { restoreRow(el, key); }
   if (what === 'search') { const st = phones.get(el); st.opts.searchOpen = true; st.opts.search = key || 'hairball'; st.focusSearch = false; render(el); }
 }));
 })();
