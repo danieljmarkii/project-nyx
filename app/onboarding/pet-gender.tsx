@@ -82,7 +82,9 @@ export default function PetGenderScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <OnboardingHeader step={4} onSkip={handleSkip} skipDisabled={saving} />
+      {/* CUL-130 — Skip is the only way to leave sex 'unknown', so for a rescue owner
+          who genuinely doesn't know, it IS the answer. Say so, in the age step's words. */}
+      <OnboardingHeader step={4} onSkip={handleSkip} skipLabel="Not sure? Skip" skipDisabled={saving} />
 
       <View style={styles.body}>
         <ThemedText style={styles.title}>{`What's ${activePet.name}'s gender?`}</ThemedText>
