@@ -219,7 +219,8 @@ export function AppointmentStrip() {
                 //
                 // THE APPOINTMENT RIDES THE ROUTE (CUL-949). This pushed a bare
                 // `/vet-visit` (the old visit form, retired at GA by CUL-905), which
-                // during the beta redirected to `/vet-visits/after` with no param — so the likeliest path through the whole feature arrived
+                // during the beta redirected to `/vet-visits/after` with no param —
+                // so the likeliest path through the whole feature arrived
                 // blank: the notes typed before and during the visit were dropped
                 // (`after.tsx` seeds them from `appt.notes_draft`), clinic and reason
                 // were unfilled, and `logVisitFromAppointment` never ran, leaving the
