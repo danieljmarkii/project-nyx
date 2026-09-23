@@ -197,9 +197,9 @@ export const VET_VISIT_OPTIONS_QUERY =
    ORDER BY visited_at DESC, created_at DESC
    LIMIT 50`;
 
-// `visited_at` is written as a calendar day 'YYYY-MM-DD' by app/vet-visit.tsx
-// (isoToDateOnly), so formatVetDocumentDate's hand-parse is correct for it and no
-// UTC→local conversion applies — there is no time to shift.
+// `visited_at` is written as a calendar day 'YYYY-MM-DD' (every screen that writes a
+// visit passes a `localDateKey` day), so formatVetDocumentDate's hand-parse is
+// correct for it and no UTC→local conversion applies — there is no time to shift.
 //
 // The trailing half degrades through what the visit actually recorded: the clinic
 // is the filing cue an owner scans for, the vet's name is the next best, the reason

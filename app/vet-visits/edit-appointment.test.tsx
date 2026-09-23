@@ -33,8 +33,6 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
 
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => true }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
 jest.mock('../../lib/sync', () => ({
   syncPendingVetAppointments: jest.fn(async () => undefined),
 }));

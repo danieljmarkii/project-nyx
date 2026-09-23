@@ -54,7 +54,7 @@ export type RundownTap =
   | { kind: 'meds' } //                         → /(tabs)/profile?focus=medications (no single med)
   | { kind: 'foods' } //                        → /(tabs)/foods
   | { kind: 'history' } //                      → /(tabs)/history
-  | { kind: 'log-visit' }; //                   → /vet-visit (none logged yet)
+  | { kind: 'log-visit' }; //                   → /vet-visits?add=happened (none logged yet)
 
 export type RundownTileKey =
   | 'symptoms'

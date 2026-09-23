@@ -4,10 +4,10 @@ import { dayKeyToLocalDate, uuid } from './utils';
 // The vet-visit companion's read/write model (CUL-900, VV-2; spec §4.1 A1/E1/E2/E3/D3).
 //
 // Everything the companion's screens compute lives HERE rather than in
-// components/vetvisits/, and that is not a style preference: the AC 0 harness
-// (guards/vetVisitsFlagOff.test.tsx) stubs every export of that namespace into a
-// null-rendering component to prove flag-off equivalence, so a helper placed there
-// would be silently wrapped into a component. The namespace is UI by convention;
+// components/vetvisits/. During the beta that was enforced: the flag-off harness
+// stubbed every export of that namespace into a null-rendering component, so a
+// helper placed there would have been silently wrapped into one. The harness
+// retired with the flag at GA (CUL-905); the split stays — the namespace is UI,
 // this file is the model.
 //
 // Two tables, and the split is load-bearing (G3, migration 066): `vet_appointments`
@@ -932,7 +932,7 @@ export interface BookAppointmentInput {
  * Book an appointment. Local INSERT with `synced = 0`; the queue pushes it.
  *
  * `petId` is the CALLER'S, and every call site passes the record's pet rather than
- * the store's active one (CUL-574 / AC 11): `app/vet-visit.tsx:117` reads
+ * the store's active one (CUL-574 / AC 11): the retired `app/vet-visit.tsx` read
  * `activePet` at save time, which is the bug this whole track must not inherit.
  */
 export async function bookVetAppointment(input: BookAppointmentInput): Promise<string> {
@@ -1814,8 +1814,8 @@ export async function logVisitFromAppointment(input: VisitFromAppointmentInput):
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         id,
-        // FROM THE APPOINTMENT. The shipped screen reads `activePet` at save time
-        // (`app/vet-visit.tsx:117`) and AC 11 is the test that catches it.
+        // FROM THE APPOINTMENT. The retired `app/vet-visit.tsx` read `activePet` at
+        // save time, and AC 11 is the test that catches that shape.
         appt.pet_id,
         input.visitedAt,
         trimOrNull(input.clinicName !== undefined ? input.clinicName : appt.clinic_name),

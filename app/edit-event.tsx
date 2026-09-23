@@ -626,7 +626,7 @@ export default function EditEventModal() {
               // Only mark synced when the row actually landed — supabase-js returns
               // the error rather than throwing, so an unchecked upsert would flag a
               // row synced that never reached Supabase (supabase-sync Pattern 1;
-              // already guarded in log.tsx / event/[id].tsx / vet-visit.tsx).
+              // already guarded in log.tsx / event/[id].tsx).
               if (error) { console.warn('[edit-event] attachment upsert failed:', error.message); return; }
               await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
             })

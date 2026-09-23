@@ -51,10 +51,11 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget + Noticed + vet-visits + Design v2 betas, all client-only (no server cost)', () => {
+  it('ships the widget + Noticed + Design v2 betas, all client-only (no server cost)', () => {
     // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
-    // retired from the shelf (CUL-547 + CUL-548), and the two capture betas (the log
-    // screen redesign, B-745, and more event types, B-756) followed (CUL-962).
+    // retired from the shelf (CUL-547 + CUL-548), the two capture betas (the log
+    // screen redesign, B-745, and more event types, B-756) followed (CUL-962), and
+    // then Vet visits, the appointment companion (CUL-905).
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
     expect(widget).toBeDefined();
     expect((widget as BetaFeature).serverCost).toBe(false);
@@ -65,13 +66,6 @@ describe('BETA_REGISTRY', () => {
     const noticed = BETA_REGISTRY.find((b) => b.key === 'daily_look');
     expect(noticed).toBeDefined();
     expect((noticed as BetaFeature).serverCost).toBe(false);
-
-    // The vet-visit companion (CUL-898 / VV-0) joined the shelf seed-first (spec
-    // §5.5). Client-render only — VV-1's schema is account-agnostic and no Edge
-    // Function reads the key — so no server gate is owed here either.
-    const vetVisits = BETA_REGISTRY.find((b) => b.key === 'vet_visits');
-    expect(vetVisits).toBeDefined();
-    expect((vetVisits as BetaFeature).serverCost).toBe(false);
 
     // Design v2 (CUL-1062 / D2-0) joined the shelf seed-first. Client-render only —
     // the redesign draws the same record differently and no Edge Function reads the
@@ -84,10 +78,10 @@ describe('BETA_REGISTRY', () => {
       'The new Home, the Signal’s own screen and the month on Patterns. Switch it off and the app is exactly as it was.',
     );
 
-    // The four graduated keys are no longer in the AllowlistFlagKey union, so a
+    // The five graduated keys are no longer in the AllowlistFlagKey union, so a
     // `.key === '…'` check for them won't type-check — the length assertion + the
     // missing shelf cards are what pin their removal.
-    expect(BETA_REGISTRY).toHaveLength(4);
+    expect(BETA_REGISTRY).toHaveLength(3);
   });
 });
 
@@ -151,18 +145,17 @@ describe('deriveBetaShelf (B-747)', () => {
 
   it('enabled:true (a GA’d flag) is eligible for everyone, allowlist ignored', () => {
     const shelf = deriveBetaShelf(
-      allow({ vet_visits: { enabled: true, allowlist: [] } }),
+      allow({ design_v2: { enabled: true, allowlist: [] } }),
       'anyone',
       {},
     );
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['vet_visits']);
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['design_v2']);
   });
 
   it('eligible preserves registry order (the shelf renders in registry order)', () => {
     const everything = allow({
       widget_enabled: gatedTo('uid-1'),
       daily_look: gatedTo('uid-1'),
-      vet_visits: gatedTo('uid-1'),
       design_v2: gatedTo('uid-1'),
     });
     expect(deriveBetaShelf(everything, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(

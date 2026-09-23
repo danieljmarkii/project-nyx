@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -15,8 +15,6 @@ import {
 import { VisitSavedMoment } from '../../components/vetvisits/VisitSavedMoment';
 import { AddMedicationModal, type Regimen } from '../../components/profile/AddMedicationModal';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { commitVisit, destructiveConfirm } from '../../lib/haptics';
 import { syncPendingMedications, syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
@@ -85,14 +83,10 @@ type Sheet = { kind: 'med'; editing: Regimen | null } | { kind: 'trial' } | null
 // statement that it did — and if the app dies next, the visit is on the record with
 // what they had entered rather than lost.
 //
-// `pet_id` COMES FROM THE APPOINTMENT (AC 11). The shipped `app/vet-visit.tsx` reads
-// `activePet` at save time (`:117`); a hydration pull can move the active pet under
-// a half-filled screen, and the row would be written under a pet nobody chose.
+// `pet_id` COMES FROM THE APPOINTMENT (AC 11). The retired `app/vet-visit.tsx` read
+// `activePet` at save time; a hydration pull can move the active pet under a
+// half-filled screen, and the row would be written under a pet nobody chose.
 export default function AfterVisitScreen() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const { appointment: appointmentId } = useLocalSearchParams<{ appointment?: string }>();
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
@@ -171,11 +165,6 @@ export default function AfterVisitScreen() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!enabled) {
-      setLoading(false);
-      setLoaded(true);
-      return;
-    }
     try {
       const appt = appointmentId ? await readAppointmentById(appointmentId) : null;
       setAppointment(appt);
@@ -200,7 +189,7 @@ export default function AfterVisitScreen() {
         setFields({
           // The appointment's own day, read as a LOCAL calendar day — the instant is
           // stored UTC and `toISOString().slice(0, 10)` would log an evening visit in
-          // the Americas as tomorrow (CUL-946, live on the screen this replaces).
+          // the Americas as tomorrow (CUL-946, the retired `app/vet-visit.tsx`'s bug).
           //
           // CLAMPED, because this screen is reachable from *Next* — an appointment
           // that has NOT happened yet — and the picker's `maximumDate` constrains a
@@ -221,7 +210,7 @@ export default function AfterVisitScreen() {
     } finally {
       setLoading(false);
     }
-  }, [enabled, appointmentId, screenPetId, loadPlan]);
+  }, [appointmentId, screenPetId, loadPlan]);
 
   useFocusEffect(
     useCallback(() => {
@@ -662,8 +651,6 @@ export default function AfterVisitScreen() {
     });
     if (petId) await loadPlan(petId);
   }
-
-  if (!enabled) return <Redirect href="/(tabs)/profile" />;
 
   const petName = resolveRecordPetName(pets, petId);
   const trialRow: TrialRow | null = trial

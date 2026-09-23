@@ -99,38 +99,6 @@ export const BETA_REGISTRY: BetaFeature[] = [
     serverCost: false,
   },
   {
-    // The vet-visit companion (Vet visits — the appointment companion / CUL-898).
-    // Joins the shelf seed-first (spec §5.5): VV-0 registers the flag + the shelf
-    // card dark; the later companion PRs (VV-2 the Pet-tab home, VV-4 the visit,
-    // VV-5 the Home strip + Get ready) render behind `live = eligible && optedIn`,
-    // so being in the cohort turns nothing on by itself. A rollout gate only (G0)
-    // — GA is every account, and the companion is care, never a Premium gate.
-    key: 'vet_visits',
-    title: 'Vet visits',
-    // nyx-voice: concrete about the four moments the owner will actually notice,
-    // warm, no exclamation, plain language (no "rundown", no "companion"). It
-    // deliberately promises no INSIGHT — Get ready brings what the record already
-    // holds, and a quiet record renders no findings at all (spec §7 AC 5) — so the
-    // blurb names what it carries, not a pattern it finds (the daily_look
-    // discipline). "without typing it twice" names the real saving: the plan the
-    // vet gave you becomes the course/trial rows rather than a second entry.
-    blurb:
-      'Everything around a vet appointment — book it, bring what is already in the record with you, take notes in the room, and turn the plan into records without typing it twice.',
-    owner: 'Vet visits (CUL-898) / Eng',
-    addedDate: '2026-09-11',
-    // ~1 quarter out — a forcing date for the graduate/kill/extend call, not a
-    // timer that disables the companion under the cohort. Note GA additionally
-    // waits on the PM's own dogfood pass at a real appointment (VV-GA), so the
-    // call on this row may legitimately be "extend" until one comes around.
-    reviewBy: '2026-12-11',
-    // Client-render-only (spec §5.5): VV-1's schema (vet_appointments, the three
-    // links, vet_visits.deleted_at) is account-agnostic and lands for everyone,
-    // and no Edge Function reads the key — `ask`, `generate-signal` and
-    // `generate-report` are all unaware of it — so no server resource is spent per
-    // opt-in and no server gate is owed.
-    serverCost: false,
-  },
-  {
     // Design v2 — the whole day (CUL-1062, D2-0). Joins the shelf seed-first:
     // D2-0 registers the flag + the shelf card dark + the flag-off guard; the
     // later lanes (D2-3 the Signal card + route, D2-4 Home on a real day, D2-5
@@ -162,15 +130,16 @@ export const BETA_REGISTRY: BetaFeature[] = [
     // server-side" rule is checked and does not bite.
     serverCost: false,
   },
-  // Four betas graduated to GA and were retired from the shelf. Two Signal betas first
+  // Five betas graduated to GA and were retired from the shelf. Two Signal betas first
   // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
   // uplift, B-721) and `signals_v2` (the "deeper signals" lanes, B-755); `signals_v2`'s
   // SERVER eligibility gate in generate-signal (B-777) is retired separately at GA-3.
   // Then the two capture betas together (CUL-960 / CUL-962): "Log screen redesign"
   // (B-745) and "More event types" (B-756), retired in one PR because the second's
-  // grid was the first's grid expanded. Removing a row removes its shelf card; a
-  // persisted opt-in for any of the four keys self-cleans (parseBetaOptIns keeps only
-  // known keys), so no storage migration is owed.
+  // grid was the first's grid expanded. Then "Vet visits" (the appointment companion,
+  // CUL-898 → CUL-905), whose surfaces now render for every account. Removing a row
+  // removes its shelf card; a persisted opt-in for any of the five keys self-cleans
+  // (parseBetaOptIns keeps only known keys), so no storage migration is owed.
 ];
 
 // ── The shelf derivation (B-747 — the OR over the registry) ───────────────────

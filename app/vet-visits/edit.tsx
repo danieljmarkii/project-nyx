@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { VisitEditBody, type VisitEditFields } from '../../components/vetvisits/VisitEditBody';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetVisits } from '../../lib/sync';
 import { dayKeyToLocalDate } from '../../lib/utils';
@@ -29,10 +27,6 @@ import { visitAnchorsAnything } from '../../lib/vetVisitPlan';
 // read-only screen, and a second dynamic route under it would be two screens with
 // one address.
 export default function EditVisitScreen() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const { visit: visitId } = useLocalSearchParams<{ visit?: string }>();
   const pets = usePetStore((s) => s.pets);
 
@@ -57,7 +51,7 @@ export default function EditVisitScreen() {
   const [anchors, setAnchors] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
-    if (!enabled || !visitId) {
+    if (!visitId) {
       setLoading(false);
       setLoaded(true);
       return;
@@ -91,7 +85,7 @@ export default function EditVisitScreen() {
     } finally {
       setLoading(false);
     }
-  }, [enabled, visitId]);
+  }, [visitId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -155,8 +149,6 @@ export default function EditVisitScreen() {
       setSaving(false);
     }
   }
-
-  if (!enabled) return <Redirect href="/(tabs)/profile" />;
 
   // The RECORD's pet, never the active one (CUL-574 / AC 11).
   const petName = resolveRecordPetName(pets, visit?.pet_id);

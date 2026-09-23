@@ -6,9 +6,9 @@ import type { VetVisitsHome } from '../../lib/vetVisits';
 // CUL-900 VV-2 — the list screen's own wiring.
 //
 // The centrepiece is AC 11, and it is a claim about a BUG THAT SHIPPED: the
-// existing `app/vet-visit.tsx` reads `activePet` at save time (`:117`), so the
-// store moving between opening a screen and saving on it writes the row under the
-// wrong pet. Spec §2 names that shape as the one this track must not inherit, and
+// old `app/vet-visit.tsx` (retired at GA, CUL-905) read `activePet` at save time,
+// so the store moving between opening a screen and saving on it wrote the row under
+// the wrong pet. Spec §2 names that shape as the one this track must not inherit, and
 // this file drives the store mid-flight to prove it did not.
 
 // Typed by their real signatures so `mock.calls[0][0]` is the input object rather
@@ -40,8 +40,6 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
 
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => true }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
 jest.mock('../../lib/sync', () => ({
   syncPendingVetAppointments: jest.fn(async () => undefined),
   syncPendingVetVisits: jest.fn(async () => undefined),

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header, SectionLabel } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -11,8 +11,6 @@ import { AppointmentActions } from '../../components/vetvisits/AppointmentAction
 import { VisitRow } from '../../components/vetvisits/VisitRow';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
 import { BookVisitSheet, type BookVisitSubmit, type VisitMode } from '../../components/vetvisits/BookVisitSheet';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import {
@@ -40,24 +38,19 @@ function listNames(names: string[]): string {
 
 // Vet visits — the list (CUL-900 VV-2; mocks E1, E2, E3).
 //
-// Behind the `vet_visits` rollout flag (G0). The GATE lives here; the DRAWING
-// lives in components/vetvisits/, and that split is enforced rather than
-// conventional: guards/vetVisitsFlagOff.test.tsx proves flag-off equivalence by
-// stubbing that namespace, so UI written inline in this file would be invisible to
-// it. Anything owner-visible added to this screen belongs in a namespace module.
+// The screen holds the reads and the writes; the DRAWING lives in
+// components/vetvisits/. During the beta a flag-off guard enforced that split by
+// stubbing the namespace; since GA (CUL-905) it is a convention, kept because it
+// keeps this file about state rather than pixels.
 export default function VetVisitsScreen() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
 
   // The pet this SCREEN is about, captured once and never re-read from the store
   // (CUL-574 / AC 11).
   //
-  // The shipped `app/vet-visit.tsx` does the opposite — it reads `activePet` at
-  // SAVE time (`:117`) — and the spec names that as the shape this track must not
+  // The retired `app/vet-visit.tsx` did the opposite — it read `activePet` at
+  // SAVE time — and the spec names that as the shape this track must not
   // inherit. It is not hypothetical here: `setPets` resolves the active selection
   // during hydration, so a pull landing while this screen is open can move
   // `activePet` under a half-filled booking sheet, and the row would be written
@@ -106,8 +99,7 @@ export default function VetVisitsScreen() {
   );
 
   const load = useCallback(async () => {
-    // A dark feature reads nothing either: the gate is not only about pixels.
-    if (!enabled || !petId) {
+    if (!petId) {
       setLoading(false);
       setLoaded(true);
       return;
@@ -124,7 +116,7 @@ export default function VetVisitsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [enabled, petId]);
+  }, [petId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -285,13 +277,6 @@ export default function VetVisitsScreen() {
   function openGetReady(appointmentId: string) {
     router.push({ pathname: '/rundown', params: { appointmentId } });
   }
-
-  // A dark feature is dark on every door, including a deep link. No chrome, no
-  // title, nothing that names a feature the account is not in — the owner lands
-  // where the entry point would have been. A `<Redirect>` rather than an effect,
-  // the `(tabs)/_layout.tsx` precedent: it resolves before anything paints, so
-  // there is no frame of the feature to see.
-  if (!enabled) return <Redirect href="/(tabs)/profile" />;
 
   // Empty means the RECORD is empty — no history, nothing booked, and nothing
   // waiting on an answer. `awaiting` counts: a booking whose day has passed is
