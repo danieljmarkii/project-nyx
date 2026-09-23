@@ -431,7 +431,6 @@ export function FAB() {
         captureSurface
         onClose={() => setSwitcherVisible(false)}
       />
-
     </>
   );
 }
