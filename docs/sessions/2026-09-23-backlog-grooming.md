@@ -30,7 +30,7 @@ Seven read-only lenses ran in parallel as subagents: quick-win triage in two bat
 3. **Two live defects had no Linear home.** Both were found in unmerged PR branches and confirmed on `main` and against production: the Signal engine and Ask have read zero medication doses since 2026-06-23 (**CUL-1099**, verified `PGRST201` on the live API), and two B-600 report regressions have been in what a vet reads since the v15 deploy, with the validated fix sitting in draft #519 (**CUL-1100**).
 4. **The `Quick Win` label had decayed.** 46 of the 58 labelled issues no longer met the definition. 24 new ones were added from 134 candidates read in full. 37 are open now.
 5. **The PR queue is 48, and 10 of those PRs would close unfinished issues on merge.** The worst, #687, closes CUL-552 and CUL-54, both Urgent and both gating the 1.2.0 cut.
-6. **Accidental closures continue.** Five issues closed since the last pass via an attachment on a spec, grooming or session-record PR while their work was open. The CLAUDE.md rule that says a mention does nothing is false (CUL-1053 measured it), and four open issues describe the mechanism. That needs one ruling.
+6. **Accidental closures continue.** Five issues closed since the last pass via an attachment on a spec, grooming or session-record PR while their work was open. CLAUDE.md's rule that the attachment closes an issue and a mention does nothing is wrong in both halves: a mention can create the attachment (CUL-1053) and a hand-made attachment has not closed anything (CUL-1035). Four open issues describe the mechanism.
 
 ---
 
@@ -196,45 +196,103 @@ Triaged against `origin/main` @ `8cc96bb` in an isolated clone. The 8 clean PRs 
 
 **Stranded knowledge:** #339 holds the financial model #831's evidence pack says was never written; #572 held CUL-1099; #510 held the `..` finding (now on CUL-228); #519 is CUL-1100; #852 holds the analyze deploy record; `main` already cites files that exist only on #736, #754 and #819.
 
-**Closing is not free for 10.** #360, #415, #455, #457, #510, #519, #572, #578, #630 and #631 add backlog rows whose B-ids `main` later reused, so the 08-15 migration never ported them. Each item needs filing or an explicit drop before its PR closes.
+**Closing is not free for 10.** #360, #415, #455, #457, #510, #519, #572, #578, #630 and #631 add backlog rows whose B-ids `main` later reused, so the 08-15 migration never ported them. Three are now filed (#510 → CUL-228, #519 → CUL-1100, #572 → CUL-1099) and six are the D2e calls, so among the 17 closures only #578 still needs its item filed first.
 
 ---
 
-## Needs PM decision
+## Team review of the open decisions
 
-**D1 · Record the deploys that already happened.**
-- **Deciding:** whether this PR also corrects `supabase/functions/deploy-manifest.json` for the four functions hashed byte-identical today.
-- **Options:** (a) flip `generate-signal`, `ask`, `analyze-vomit` and `analyze-stool` to `deployed` and set `generate-report`'s reason to "v17 = `main` at #861, trial-window side owed". **Recommended:** a hash match is the strongest evidence the runbook asks for. (b) Merge #852 for the analyze pair only, after detaching CUL-557. (c) Leave it for CUL-541.
-- **Consequence:** (a) closes CUL-795 and makes the ledger agree with production. Held for an explicit yes because the permission layer stopped the first ledger edit.
+Three isolated lenses reviewed every decision the pass left open. Each was told to challenge the recommendations first written here, not to endorse them. The lenses were: Dir. of Engineering + QA + Trust & Safety; Product Owner + Designer + Jordan + Sam; and Dr. Chen + Data Scientist + Trust & Safety.
 
-**D2 · Act on the open-PR triage.**
-- **Deciding:** what happens to the 48 open PRs.
-- **Options:** (a) one executor session: merge the 8 clean PRs, file the 10 PR-only items and then close the 17 superseded, strip ids from the 10 trap PRs before any merge, and answer the 7 PM-decide PRs yes or no. **Recommended.** (b) PR by PR over several sessions. (c) Leave.
-- **Consequence:** the queue drops to about 23 and the financial model plus two branches' research land on `main`. Whatever is chosen, never merge #687 as it stands.
+The bar for sending a decision to the PM:
 
-**D3 · Replace the false PR-mention rule.**
-- **Deciding:** what replaces `CLAUDE.md:269` ("a mention on its own does nothing").
-- **Options:** (a) "any `CUL-NNN` in a PR title or body closes it on merge, so a PR names only what it finishes; related work is pointed at from the issue, and `/wrap` re-asserts state after merge" (CUL-1053's model plus CUL-761's option C). **Recommended.** (b) Keep naming advanced issues and repair closures by hand.
-- **Consequence:** (a) is one CLAUDE.md edit and folds CUL-973, 1035, 836 and 761 into CUL-1053. This PR already follows it.
+- only the PM can physically do it;
+- it spends money;
+- it changes product direction or a ratified decision;
+- it changes the PM's own approval authority;
+- it is a clinical ruling reserved for the PM's ratification; or
+- tooling requires explicit approval.
 
-**D4 · Re-open what closed by accident, and home two orphans.**
-- **Deciding:** whether CUL-254, CUL-267 and CUL-719 re-open, and whether CUL-946's residual and CUL-997's running footer get issues.
-- **Options:** (a) re-open all three and file both orphans. **Recommended:** each has open work and no other home, and CUL-946's residual is on the exam-room surface the 1.2.0 cut ships. (b) Re-open CUL-267 only. (c) Leave.
-- **Consequence:** (a) restores five pieces of work the tracker currently shows as finished.
+Everything else belongs to the team. The session also spot-checked three of the review's own claims (the persona, CUL-924's approval, and the engine's unchecked errors) before accepting them.
 
-**D5 · Create the `Needs PM` state (CUL-923).**
-- **Deciding:** whether to add one Linear workflow state.
-- **Options:** (a) create it (a two-minute settings change), then merge #842 and #841. **Recommended.** (b) Drop CUL-923 and keep the label.
-- **Consequence:** the 123-issue label queue becomes a state that empties itself on close, and the 11 `In Progress` issues that mean "waiting on you" stop colliding with the claim protocol.
+### What the review corrected in this record
 
-**D6 · Close the spent parents.**
-- **Deciding:** close CUL-19 (hold cleared at v15; its cold read became CUL-1047/1048), CUL-50 (fix shipped in #503; remainder is CUL-59) and CUL-106 (its own TL;DR asks you to confirm it is covered); re-scope CUL-447 to its one untracked remainder (the diet name copied into the widget's shared storage); keep or drop CUL-48's cloud deploy-token ask.
-- **Options:** (a) yes to the four, drop CUL-48. **Recommended.** (b) Pick individually.
-- **Consequence:** four fewer open parents that read as live work.
+- **The mention mechanism was overstated here.** A `CUL-NNN` in a PR body does not always attach. #861 named CUL-974 and CUL-634 and attached neither; #850 attached two of four; CUL-19 is named in #852, #815, #791 and #704 with no attachment from any of them. What the evidence supports is narrower: whatever the integration links when the PR opens closes on merge, and deleting the attachment does not undo it. `/wrap` also cannot re-assert state after a merge the PM makes the next morning, so the backstop is the next grooming pass.
+- **Only #578 of the 17 close-superseded PRs still holds an unfiled item.** Three of the ten PR-only items are now filed (#510 → CUL-228, #519 → CUL-1100, #572 → CUL-1099), and six are the D2e calls.
+- **#843 is not an open decision.** The PM picked CUL-924 up directly on 09-12, per its claim comment. Merging #843 is the sign-off.
+- **#831 is an eleventh trap.** Its body names CUL-934 and CUL-598.
+- **"The Dr. Chen sitting" is not a meeting with a vet.** Dr. Alex Chen is a persona (`docs/personas.md`), and no real veterinarian has read the report (`docs/culprit-competitive-landscape-2026-07.md:89`). CUL-583's "our consulting vet" is wrong, which likely explains why it has not moved in a month.
+- **The report does have a per-section footer** (`render.ts:6625`). What is missing is the running per-sheet footer with the date, the identifier and "N of M".
+- **CUL-19's remainder is not fully covered.** The CUL-1047/1048 cold read used fixtures whose vomit events carry no phenotype fields, so CUL-19's descriptor bundle has never been read rendered.
+- **CUL-989 is not only a future cap.** No pull in `generate-signal` checks its error: lines 885–951 on `main` read `data ?? []`, so a failed read becomes "nothing logged" today. CUL-1099 is one instance of that class.
+- **D8 as first written would have buried live work.** The untouched legacy rows include three Urgent (CUL-54, 56, 57), five High, App Store Launch rows and security defects.
 
-**D7 · Re-prioritize** the seven rows in §8's table, and add CUL-747, 749, 757 and 758 to the Dr. Chen sitting. Recommended as listed; nothing was changed.
+### Team-owned (applied on the PM's go)
 
-**D8 · CUL-719 call 1: `Todo` is still half archive.** 314 of 611 `Todo` issues are legacy rows (51%, down from 76% only because native issues grew), and 270 of them have not moved since 08-29. Options: (a) move untouched legacy rows to `Backlog` so `Todo` means queued, **recommended**, reversible; (b) leave; (c) bulk-cancel the dead tail.
+| Decision | Team recommendation |
+|---|---|
+| D1 · ledger | Flip the four entries to `deployed` and restate `generate-report`. Hash the extract pair the same way. Move each entry's gate notes to CUL-794 / CUL-556 before deleting them. The guard stays green, because `deployed` needs no reason. This closes CUL-795. |
+| D2 · PR queue | Defuse the 11 traps first by stripping the ids from titles and bodies. For #687, re-land its docs in a fresh PR that names no issue. File #578's item, then close the 17. #852 shrinks to its session file, since D1 carries the ledger. #704 is a rebuild, not a fix. |
+| D2e · #360 staging | File it in `Backlog` with the cost and the trigger "before the first external account", then close the PR. T&S wants it raised again before the public release. |
+| D2e · #415 Ask history | Close. Record the fork (save answers, or save whole conversations) on CUL-176, under the ratified v1 non-goal. |
+| D2e · #455 iPad | File a Low post-launch issue carrying the Designer-vs-Engineering conflict and the open `PhotoCarousel` bug, then close. |
+| D2e · #457 Category Play | Close unmerged. Comment its keyword check onto CUL-173 and its validation program onto CUL-598, and name it as an input on CUL-934. |
+| D2e · #630 onboarding | File one Medium issue that combines R-1…R-6 with CUL-1060's lost R-10 (the first-week arc), as an input to CUL-934. Land the research brief. |
+| D2e · #631 trial Home | Close as superseded: T2 shipped as `app/insights/trial.tsx`, and Design v2 overtook T1. Land the brief, and file D-T6 (the challenge phase) as Low. |
+| D3 · mention rule | Correct CLAUDE.md § Git Workflow, `/wrap` step 4 and the groomer skill to say: whatever the integration links when the PR opens closes on merge, so name only what you finish. Fold CUL-973, 1035, 836 and 761 into CUL-1053. |
+| D4 | Re-open CUL-254 and CUL-267, and restore CUL-267's label. Leave CUL-719 closed and strip its dead label. File the CUL-946 residual, bounded by the device's local day rather than `CURRENT_DATE`, which re-admits tomorrow's rows in the Americas. File the running-footer ruling. |
+| D6 | Close CUL-50 and CUL-106 with evidence. Close CUL-19 only after adding the descriptor bundle to CUL-1002's read list. Set CUL-447 to Low. Close CUL-48 as a duplicate and decline the cloud PAT: an account-wide token in an agent environment bypasses the MCP's per-call permission gate. |
+| D7 | See the priority list below this table. |
+| D8 | Move only the untouched Low legacy rows (about 133). See the filter below this table. |
+| Build-ready, no PM input | CUL-70, built before CUL-559. CUL-1045 and CUL-769: plan, run `rls-privacy-reviewer`, ship in 1.2.0. CUL-1099 with CUL-989's error half: adversarial pass with a shadow diff over live pets that have dose logs. The CUL-946 residual. CUL-894. |
+
+**D7 in full:**
+
+- CUL-381: Urgent → Medium.
+- CUL-989: Urgent → High, with the error checks folded in.
+- CUL-891: close as fixed rather than retitle it, because a rollout issue would duplicate CUL-876. Link CUL-914 and CUL-894 as blockers on CUL-876.
+- CUL-894: Urgent → High, and build it; two ratified rules already decide it.
+- CUL-914: Urgent → High.
+- CUL-40 → Low; CUL-34 → Medium; CUL-47 → Low; CUL-731 → Low.
+- Add CUL-749, 757 and 758 to CUL-583. The team rules CUL-747 itself: keep the count, state its coverage, and never print it as a rate below the floor.
+
+**D8's filter.** Move a row only if every one of these holds:
+
+- it carries the `Legacy` label;
+- its priority is Low;
+- it has not been updated after 08-30;
+- it carries no `Waiting on PM` or `Quick Win` label;
+- it has no relation to an open issue.
+
+Anything naming RLS, privacy, delete, purge, token or spend is read by a human instead of moved.
+
+### What truly needs the PM
+
+**1 · CUL-552 D10: what a "no" to the AI consent sheet turns off.**
+- **Deciding:** the scope of the consent gate that blocks the 1.2.0 cut.
+- **Options:** **whole boundary, recommended.** A "no" drops the Signal to its shipped templates at no clinical cost, and one sheet covers photos, the Signal's phrasing call, Ask, looks and notes. The alternative is photos only, which needs a second sheet later while the phrasing call keeps sending findings and the pet's name without consent.
+- **Consequence:** unblocks PRs 2 and 3. PR 1, the schema, can start today under either option; give the state a scope column. A failed consent read must count as "declined" (templates), never a blank Signal.
+
+**2 · CUL-583: how clinical thresholds get ratified.**
+- **Deciding:** what clears CUL-54, which blocks the 1.2.0 cut, along with five Urgent issues and one High.
+- **Options:**
+  - (a) **Recommended:** the team writes one ruling sheet, giving each item a recommendation, a counterexample and its failure direction. Fixes that move toward firing are adopted provisionally now; the PM ratifies the fixes that fire less in one async pass of about 30 minutes.
+  - (b) Delegate the whole sheet, as was done with B-494.
+  - (c) Wait for a real vet.
+- **Consequence:** under (a), the three lowest-evidence numbers go on the real-vet question sheet without blocking.
+
+**3 · CUL-934: the ten strategy-review intake questions.** Only the PM can answer them. Recommended: answer after #339 and #831 merge, with the team stripping the ids from #831 first, so the panel reads the financial model and the evidence pack instead of rebuilding them. The team corrects the issue's stale facts first.
+
+**4 · CUL-914, the L-17 pairing line: a persona conflict.**
+- **Designer / team:** sharpen the sentence.
+- **Data Scientist (dissent):** a line that prints on up to 77% of pure-noise records stays noise even with a caption, so hold it out of v1.
+- **Consequence:** it gates only widening Noticed, not the cut.
+
+**Actions only the PM can take**
+
+- **Merge, in this order:** #895, #842, #843, then #339, #819, #846, #864 and #871. Merge #831 after its ids are stripped. #754 can go any time; it re-closes CUL-719, which stays closed.
+- **Create the `Needs PM` state** in Linear team settings, after D3 lands. While there, check the Git automations: the integration moves linked issues to `In Progress`, which would silently pull them out of the state.
+- **Later, one Codespace deploy sitting:** `generate-signal` and `ask` once the CUL-1099 fix passes its adversarial pass, plus `generate-report`'s trial-window side, all before R-20's cold read.
 
 ## Blocks the current phase (App Store Launch)
 
@@ -242,7 +300,7 @@ Triaged against `origin/main` @ `8cc96bb` in an isolated clone. The 8 clean PRs 
 - **CUL-70:** the ruled "Early access" rename never shipped; `main` still says "Beta features". One small PR before the A-Native build (the Guideline 2.2 risk).
 - **CUL-1045** (Urgent) and **CUL-769** (High): a privacy leak and a silent data-loss path, both client-side, both belong in the 1.2.0 binary.
 - **CUL-1093, CUL-1090:** gate the 1.2.0 cut (PM, 2026-09-23).
-- **CUL-583:** the Dr. Chen sitting; five Urgent issues wait on it.
+- **CUL-583:** the clinical ruling sheet (a persona, not a vet meeting); five Urgent issues wait on it.
 - **CUL-1002 (R-20):** the report cold read, unblocked now; the trial-window deploy first if it should read the current document.
 - **CUL-219:** the auth email templates, step 1 is one agent session.
 - **CUL-832:** not this phase, but dated: every push is blocked from about 2026-11-13.
