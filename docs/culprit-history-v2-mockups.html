@@ -1,0 +1,1280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>The Record You Can Read</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     History v2 — round 1: "The record you can read".
+     CUL-1076 (discovery), project Design v2 — the whole day. A fresh
+     current-proposal page on its own artifact URL; later rounds republish
+     over it. Six isolated persona reads fed the directions (§02); every
+     frame is drawn from Nyx's REAL fortnight, Sep 8 – 21 (Central), pulled
+     from the record as counts, times and types — note TEXT on this page is
+     illustrative and says so. Frames render the app's real light tokens
+     (constants/theme.ts). Every demo was driven in a headless browser,
+     pressed twice, before publishing.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+    --gold: #FBBF24; --gold-wash: #FDF6E3; --gold-ink: #6B4A0E;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+      --gold-wash: rgba(251,191,36,0.14); --gold-ink: #F5D48A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+    --gold-wash: rgba(251,191,36,0.14); --gold-ink: #F5D48A;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  a { color: var(--teal-ink); }
+  .howto { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .howto b { color: var(--ink); }
+  .ledger { display: grid; gap: 8px; margin: 22px 0 8px; }
+  .ledger div { display: grid; grid-template-columns: 190px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger b { font-size: 13px; color: var(--ink); padding-top: 2px; }
+  .ledger q { font-style: italic; color: var(--ink-2); quotes: "“" "”"; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+  .pill.gold { color: var(--gold-ink); background: var(--gold-wash); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  ul, ol { padding-left: 20px; margin: 0 0 16px; }
+  li { margin-bottom: 6px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+  .thesis { font-family: var(--serif); font-size: clamp(22px, 2.6vw, 30px); line-height: 1.3; color: var(--ink); margin: 26px 0; max-width: 30ch; text-wrap: balance; }
+  .brief { margin: 28px 0 8px; padding: 22px 26px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .brief ol { margin: 4px 0 8px; font-size: 14.5px; color: var(--ink-2); }
+  .brief ol li { margin-bottom: 4px; }
+  .brief ol li strong { color: var(--ink); }
+  table.t { border-collapse: collapse; width: 100%; font-size: 14px; margin: 14px 0 18px; }
+  table.t th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+  table.t td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; color: var(--ink-2); }
+  table.t td:first-child { color: var(--ink); font-weight: 500; }
+  table.t td.ok { color: var(--teal-ink); font-weight: 600; }
+  table.t td.no { color: var(--rose-ink); font-weight: 600; }
+  table.t td.pm { color: var(--gold-ink); font-weight: 600; }
+  .tscroll { overflow-x: auto; }
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 18px; }
+  .rule { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 16px 18px; font-size: 14px; color: var(--ink-2); }
+  .rule b { color: var(--ink); display: block; margin-bottom: 6px; }
+  .rule .rid { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
+  .qs { display: grid; gap: 12px; margin-top: 14px; }
+  .q { border-left: 2px solid var(--gold); padding: 2px 0 2px 18px; font-size: 15px; color: var(--ink-2); }
+  .q b { color: var(--ink); }
+  .q .as { display: block; font-size: 13.5px; color: var(--ink-3); margin-top: 4px; }
+  .stakes { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
+  .stake { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 16px 18px; font-size: 14px; color: var(--ink-2); }
+  .stake .who { font-weight: 600; color: var(--ink); font-size: 14.5px; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .stake .who .lean { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; color: var(--teal-ink); background: var(--teal-wash); }
+  .stake .who .lean.cond { color: var(--gold-ink); background: var(--gold-wash); }
+  .stake .who .lean.no { color: var(--rose-ink); background: var(--rose-wash); }
+  .stake p { margin: 0 0 8px; }
+  .stake p b { color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-right: 6px; font-weight: 600; }
+  .stake a { color: var(--teal-ink); text-decoration: none; }
+  .gogo { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 16px; }
+  .gogo div { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .gogo div b { display: block; color: var(--ink); font-family: var(--serif); font-size: 20px; margin-bottom: 6px; }
+  .voice { border-top: 1px solid var(--rule); padding-top: 12px; font-size: 14px; color: var(--ink-2); }
+  .voice b { color: var(--ink); display: block; margin-bottom: 4px; }
+  .btn { font: inherit; font-size: 13px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border: 0; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  .btn:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .foot { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
+  .snap, .snap * { transition: none !important; animation-duration: 0s !important; }
+  details.fold { border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); padding: 0 18px; margin-top: 18px; }
+  details.fold summary { cursor: pointer; font-weight: 600; font-size: 14.5px; color: var(--ink); padding: 14px 0; }
+  details.fold[open] summary { border-bottom: 1px solid var(--rule-soft); margin-bottom: 8px; }
+  details.fold > *:last-child { margin-bottom: 18px; }
+  .pair { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; margin-top: 18px; }
+  .pair .acard { width: 316px; max-width: 100%; }
+  /* an option, drawn for a decision, never the current proposal */
+  .optbox { border: 1.5px dashed var(--gold); border-radius: 6px; padding: 14px 16px 10px; background: var(--gold-wash); position: relative; }
+  .optbox > .tag.opt { margin-bottom: 10px; }
+  .optbox .frame-cap { color: var(--ink-2); }
+  .ledger .r { display: grid; grid-template-columns: 190px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  .ledger .r i { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: 1px 7px; margin-right: 6px; vertical-align: 1px; }
+  .ledger .r i.k { color: var(--ink-2); background: var(--rule-soft); } .ledger .r i.c { color: var(--teal-ink); background: var(--teal-wash); } .ledger .r i.d { color: var(--gold-ink); background: var(--gold-wash); }
+  @media (max-width: 640px) { .ledger .r { grid-template-columns: 1fr; gap: 4px; } }
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 14px; }
+  .facts div { border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; font-size: 13.5px; color: var(--ink-2); background: var(--paper-2); }
+  .facts div b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 3px; }
+  .facts div small { display: block; color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; margin-top: 5px; letter-spacing: .04em; }
+
+  /* ── Phone frames (fixed app tokens; never themed by the page) ─────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 32px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; margin-bottom: 8px; }
+  .tag.built { color: var(--ink-2); background: var(--rule-soft); }
+  .tag.prop { color: var(--teal-ink); background: var(--teal-wash); }
+  .tag.opt { color: var(--gold-ink); background: var(--gold-wash); }
+  .phone { width: 316px; max-width: 100%; background: #FAFAFA; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 12px 12px 14px; color: #0A0A0A; font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 8px; }
+  .phone.vp { height: 684px; display: flex; flex-direction: column; padding-bottom: 0; position: relative; overflow: hidden; }
+  .phone.vp .vpbody { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: 96px; scrollbar-width: none; scroll-behavior: smooth; }
+  .phone.vp .vpbody::-webkit-scrollbar { display: none; }
+  .tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: 62px; background: rgba(250,250,250,0.97); border-top: 1px solid #EAEAEA; display: flex; justify-content: space-around; align-items: flex-start; padding: 8px 10px 0; border-radius: 0 0 34px 34px; font-size: 9.5px; color: #737373; z-index: 4; }
+  .tabbar span { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 56px; }
+  .tabbar span i { width: 18px; height: 18px; border-radius: 5px; background: #D4D4D4; display: block; }
+  .tabbar span.on { color: #0B7B6C; font-weight: 600; } .tabbar span.on i { background: #00C2A8; }
+  .fab { position: absolute; right: 14px; bottom: 74px; width: 46px; height: 46px; border-radius: 50%; background: #00C2A8; box-shadow: 0 6px 16px rgba(0,194,168,0.35); z-index: 5; }
+  .fab::before, .fab::after { content: ""; position: absolute; left: 50%; top: 50%; background: #FFFFFF; border-radius: 1px; transform: translate(-50%, -50%); }
+  .fab::before { width: 16px; height: 2px; } .fab::after { width: 2px; height: 16px; }
+  .stackhdr { display: flex; align-items: center; gap: 8px; padding: 4px 4px 10px; font-weight: 600; font-size: 16px; color: #0A0A0A; }
+  .stackhdr .back { border: 0; background: none; padding: 0 4px 0 0; font: inherit; color: #0B7B6C; font-size: 18px; cursor: pointer; line-height: 1; }
+  .appbody { display: grid; gap: 10px; }
+  .acard { background: #FFFFFF; border-radius: 16px; padding: 12px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin-bottom: 6px; }
+  .seclabel.row { display: flex; justify-content: space-between; align-items: baseline; }
+  .seclabel .door { text-transform: none; letter-spacing: 0; font-weight: 500; color: #0B7B6C; font-size: 10.5px; }
+  .muted { color: #737373; }
+  .screen.detail { position: absolute; left: 0; right: 0; top: 0; bottom: 0; background: #FAFAFA; border-radius: 34px; padding: 12px 12px 14px; opacity: 0; transform: translateY(18px); pointer-events: none; transition: opacity 240ms ease-out, transform 370ms cubic-bezier(.2,.8,.2,1.05); z-index: 6; overflow: auto; scrollbar-width: none; }
+  .screen.detail::-webkit-scrollbar { display: none; }
+  .screen.detail.on { opacity: 1; transform: none; pointer-events: auto; }
+  .screen.detail .land { opacity: 0; transform: translateY(-8px); transition: opacity 260ms ease-out 200ms, transform 260ms ease-out 200ms; }
+  .screen.detail.on .land { opacity: 1; transform: none; }
+  @keyframes breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+  /* ── History: the header ─────────────────────────────────────────── */
+  .hh { display: flex; align-items: center; justify-content: space-between; gap: 6px 8px; padding: 2px 2px 8px; flex-wrap: wrap; }
+  .hh .ttl { font-size: 20px; font-weight: 500; color: #0A0A0A; letter-spacing: -0.01em; }
+  .hh .pills { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+  .spill { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px 5px 10px; border-radius: 999px; border: 1px solid #D4D4D4; background: #FFFFFF; font-size: 11.5px; font-weight: 500; color: #525252; white-space: nowrap; font-family: inherit; cursor: pointer; flex-shrink: 0; }
+  .spill .chev { font-size: 9px; color: #737373; }
+  .spill.on { border-color: #00C2A8; background: #E0FBF7; color: #0B7B6C; }
+  .spill.on .chev { color: #00C2A8; }
+  .spill.on b { font-weight: 600; color: #0B7B6C; }
+  .spill:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 1px; }
+  .spill.icon { padding: 5px 7px; }
+  .hh .srch { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #D4D4D4; background: #fff; display: grid; place-items: center; cursor: pointer; flex-shrink: 0; }
+  .hh .srch:focus-visible { outline: 2px solid #0B7B6C; }
+  .searchbar { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; padding: 7px 10px; border-radius: 12px; background: #F0F0F0; }
+  .searchbar input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 13px; color: #0A0A0A; outline: none; }
+  .searchbar .x { font-size: 12px; color: #0B7B6C; background: none; border: 0; font: inherit; cursor: pointer; }
+  .lensline { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 0 2px 8px; font-size: 11px; color: #525252; }
+  .lensline .cnt { color: #0A0A0A; font-weight: 600; }
+  /* the ScopeMenu sheet, inside the phone */
+  .sheetwrap { position: absolute; inset: 0; z-index: 8; display: none; border-radius: 34px; overflow: hidden; }
+  .sheetwrap.on { display: block; }
+  .sheetwrap .scrim { position: absolute; inset: 0; background: rgba(10,10,10,0.35); border: 0; padding: 0; cursor: pointer; }
+  .sheetwrap .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 10px 24px 26px; max-height: 75%; overflow: auto; }
+  .sheet .grab { width: 36px; height: 4px; border-radius: 999px; background: #D4D4D4; margin: 0 auto 14px; }
+  .sheet .sl { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin-bottom: 4px; }
+  .sheet .opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 10px 0; border-bottom: 1px solid #EAEAEA; font-size: 15px; color: #0A0A0A; background: none; border-left: 0; border-right: 0; border-top: 0; width: 100%; text-align: left; font-family: inherit; cursor: pointer; }
+  .sheet .opt:last-child { border-bottom: 0; }
+  .sheet .opt.sel { color: #0B7B6C; font-weight: 500; }
+  .sheet .opt .n { font-size: 12px; color: #737373; font-variant-numeric: tabular-nums; }
+  .sheet .opt.sel .n { color: #0B7B6C; }
+  .sheet .opt .ck { color: #00C2A8; font-weight: 700; }
+  .sheet .opt:focus-visible { outline: 2px solid #0B7B6C; outline-offset: -2px; }
+  .sheet .opt.sub { padding-left: 14px; font-size: 14px; }
+  /* the wait — the list's silhouette */
+  .wait { position: relative; }
+  .wait .wait-skel { position: absolute; inset: 0; transition: opacity 320ms ease-out; z-index: 3; border-radius: 34px; background: #FAFAFA; }
+  .wait .wait-content { opacity: 0; transition: opacity 320ms ease-out; }
+  .wait.in .wait-skel { opacity: 0; pointer-events: none; }
+  .wait.in .wait-content { opacity: 1; }
+  .skel { display: grid; gap: 8px; }
+  .skel .k { height: 44px; border-radius: 12px; background: linear-gradient(90deg, #EFEFEF, #F7F7F7, #EFEFEF); }
+  .skel .k.line { height: 12px; border-radius: 6px; width: 46%; margin-top: 6px; }
+  .skel .k.hdr { height: 20px; width: 70%; border-radius: 8px; }
+  /* ── History: the list, drawn as days ──────────────────────────────── */
+  .hist { display: grid; gap: 8px; }
+  .dayc { background: #FFFFFF; border-radius: 16px; padding: 10px 14px 8px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .dayhdr { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 8px; padding: 0 0 2px; flex-wrap: wrap; }
+  .dayhdr .dn { font-size: 13.5px; font-weight: 600; color: #0A0A0A; white-space: nowrap; flex-shrink: 0; }
+  .dayhdr .dn small { font-weight: 400; color: #737373; font-size: 11.5px; margin-left: 4px; }
+  .dayhdr .dc { font-size: 10.5px; color: #525252; text-align: left; line-height: 1.35; }
+  .dayhdr .dc b { color: #0A0A0A; font-weight: 600; }
+  .dayhdr .dc .sym { color: #9F1239; }
+  .countline { font-size: 11px; color: #525252; margin: 0 0 2px; }
+  .countline b { color: #0A0A0A; }
+  .gap { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: 11px; color: #737373; letter-spacing: 0.02em; }
+  .gap i { width: 6px; height: 6px; border-radius: 50%; background: #C9C9C9; display: inline-block; }
+  .gap.wide { border: 1px dashed #DEDEDE; border-radius: 12px; margin: 0 2px; }
+  /* the spine, in daylight — the node language Home has */
+  .spine { position: relative; padding-left: 18px; margin-top: 4px; }
+  .spine::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 2px; border-radius: 1px; background: #EAEAEA; }
+  .node1 { position: relative; padding: 5px 0 5px 6px; display: flex; gap: 8px; align-items: baseline; font-size: 12px; flex-wrap: wrap; border-radius: 6px; }
+  .node1::before { content: ""; position: absolute; left: -18px; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: var(--dot, #00C2A8); box-shadow: 0 0 0 2px #FFFFFF; }
+  .node1.hollow::before { background: #FFFFFF; box-shadow: 0 0 0 2px #FFFFFF, inset 0 0 0 2px #A3A3A3; }
+  .node1 .nt { flex: 1; min-width: 0; color: #0A0A0A; font-weight: 500; }
+  .node1 .nt small { color: #525252; font-weight: 400; }
+  .node1 .nt .tagx { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #737373; font-weight: 500; margin-left: 4px; }
+  .node1 .nv { flex-basis: 100%; font-size: 11px; color: #525252; font-weight: 500; margin-top: -2px; }
+  .node1 .nv.call { color: #B4123B; font-weight: 600; }
+  .node1 .nv.mon { color: #525252; }
+  .node1 .nv.nes { color: #737373; font-weight: 500; }
+  .node1 .nq { flex-basis: 100%; font-size: 11px; color: #525252; font-style: italic; margin-top: -2px; }
+  .node1 .nq.snip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  /* the first paint — the thread draws down once, the nodes land in sequence */
+  .dayc .spine::before { transform-origin: top; }
+  /* the rail draws over the fold's 370; each node lands as the rail passes (stagger = 370 ÷ nodes); the words land last; headers never move */
+  .dayc.arm .spine::before { transform: scaleY(0); transition: none; }
+  .dayc.play .spine::before { transform: scaleY(1); transition: transform 370ms cubic-bezier(.2,.8,.2,1); }
+  .dayc.arm .node1 { opacity: 0; transform: translateY(-4px); transition: none; }
+  .dayc.play .node1 { opacity: 1; transform: none; transition: opacity 300ms ease-out, transform 300ms ease-out; transition-delay: calc(var(--i, 0) * var(--step, 60ms)); }
+  .dayc.arm .node1 .nt, .dayc.arm .node1 .ntime, .dayc.arm .node1 .nq { opacity: 0; transition: none; }
+  .dayc.play .node1 .nt, .dayc.play .node1 .ntime, .dayc.play .node1 .nq { opacity: 1; transition: opacity 300ms ease-out; transition-delay: calc(400ms + var(--i, 0) * 20ms); }
+  /* the row leaving: 180 out, the box closes over 300, the rail trails */
+  .node1.leave { overflow: hidden; transition: max-height 300ms cubic-bezier(.2,.8,.2,1) 180ms, opacity 180ms ease-out, padding 300ms ease-out 180ms, margin 300ms ease-out 180ms; opacity: 0; max-height: 0 !important; padding-top: 0; padding-bottom: 0; margin: 0; }
+  .arr2.calm.gone { transition: opacity 150ms ease-out, max-height 150ms ease-out; opacity: 0; max-height: 0; overflow: hidden; }
+  /* the standing line — the diet in force, stated once */
+  .standing { display: flex; gap: 8px; align-items: center; font-size: 11px; color: #525252; padding: 0 2px 8px; position: sticky; top: 0; background: #FFFFFF; z-index: 3; }
+  .standing.read { font-style: italic; color: #737373; margin-top: -4px; position: static; } .standing.read .stick { background: #F43F5E; opacity: .55; height: 12px; }
+  .standing .stick { width: 3px; height: 14px; border-radius: 2px; background: #00C2A8; flex-shrink: 0; }
+  .standing b { color: #0A0A0A; font-weight: 600; }
+  .node1 .ntime { font-size: 10.5px; color: #737373; white-space: nowrap; }
+  .node1 .ntime .conf { font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-left: 4px; color: #737373; }
+  .node1 .pg { display: inline-block; width: 11px; height: 9px; border: 1.3px solid #737373; border-radius: 2px; vertical-align: -1px; margin: 0 1px; }
+  .node1 .qm { color: #737373; font-size: 12px; margin-left: 2px; }
+  .node1 .chip { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 999px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px; }
+  .node1 .chip.ok { color: #0B7B6C; background: #E0FBF7; font-weight: 500; }
+  .node1 .chip.attn { color: #9F1239; background: #FFE4E6; }
+  .node1.door { cursor: pointer; }
+  .node1.door:focus-visible { outline: 2px solid #0B7B6C; }
+  .hist.chev .node1.door .ntime::after { content: "›"; color: #0B7B6C; margin-left: 5px; display: inline-block; }
+  .node1.nc .ntime::after { content: "▾"; color: #0B7B6C; margin-left: 5px; display: inline-block; font-size: 11px; transition: transform 200ms ease-out; }
+  .node1.nc[aria-expanded="true"] .ntime::after { transform: rotate(180deg); }
+  .ncdd { padding-left: 6px; }
+  .dd { display: flex; gap: 9px; padding: 0 2px; }
+  .dd.in { padding-bottom: 2px; }
+  .dd .drail { width: 3px; border-radius: 2px; background: #00C2A8; flex-shrink: 0; height: 0; opacity: 0; transition: height 160ms ease-out, opacity 120ms ease-out; align-self: flex-start; }
+  .dd .dbox { flex: 1; min-width: 0; overflow: hidden; max-height: 0; transition: max-height 370ms cubic-bezier(.2,.8,.2,1.05); }
+  .dd .dtext { opacity: 0; transform: translateY(-8px); transition: opacity 300ms ease-out 40ms, transform 300ms ease-out 40ms; font-size: 12px; }
+  .dd.in .drail { height: auto; opacity: 1; align-self: stretch; }
+  .dd.in .dbox { max-height: 160px; }
+  .dd.in .dtext { opacity: 1; transform: none; }
+  .ev { display: flex; gap: 8px; align-items: center; padding: 3px 0; color: #525252; font-size: 12px; cursor: pointer; border-radius: 4px; }
+  .ev i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .ev .t { margin-left: auto; color: #737373; font-size: 10.5px; }
+  .ev .t::after { content: "›"; color: #0B7B6C; margin-left: 4px; }
+  /* arrive — the tick IS the rail */
+  .arr2 { margin-top: 3px; flex-basis: 100%; }
+  .arr2 .arow { display: flex; gap: 9px; align-items: flex-start; }
+  .arr2 .tick2 { width: 3px; height: 14px; border-radius: 2px; background: #D4D4D4; flex-shrink: 0; margin-top: 2px; animation: breathe 1.4s ease-in-out infinite; transition: height 160ms ease-out, background-color 160ms ease-out, margin 160ms ease-out; align-self: flex-start; }
+  .arr2.in .tick2 { animation: none; opacity: 1; background: #737373; height: 100%; align-self: stretch; margin-top: 0; }
+  .arr2.in.call .tick2 { background: #F43F5E; }
+  .arr2 .abody { flex: 1; min-width: 0; }
+  .arr2 .pend { font-size: 11.5px; color: #525252; max-height: 20px; overflow: hidden; transition: opacity 160ms ease-out, max-height 200ms ease-out; }
+  .arr2.in .pend { opacity: 0; max-height: 0; }
+  .arr2 .dbox { overflow: hidden; max-height: 0; transition: max-height 370ms cubic-bezier(.2,.8,.2,1.05) 100ms; }
+  .arr2.in .dbox { max-height: 120px; }
+  .arr2 .dtext { opacity: 0; transform: translateY(-8px); transition: opacity 300ms ease-out 180ms, transform 300ms ease-out 180ms; font-size: 11.5px; color: #525252; }
+  .arr2 .dtext b { color: #0A0A0A; display: block; font-size: 12px; margin-bottom: 2px; }
+  .arr2.in .dtext { opacity: 1; transform: none; }
+  /* the as-built row (EventRow, drawn honestly) */
+  .rowb { display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px; border-bottom: 1px solid #EAEAEA; background: #FFFFFF; font-size: 12px; }
+  .rowb.exp { background: #FAFAFA; }
+  .rowb .ic { width: 30px; height: 30px; border-radius: 50%; background: #FAFAFA; display: grid; place-items: center; flex-shrink: 0; margin-top: 1px; }
+  .rowb .ic.sym { background: #FFE4E6; }
+  .rowb .ic i { width: 12px; height: 12px; border-radius: 3px; background: #737373; display: block; }
+  .rowb .ic.sym i { background: #F43F5E; }
+  .rowb .bd { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .rowb .tl { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .rowb .lb { font-weight: 500; color: #0A0A0A; font-size: 13px; }
+  .rowb .tm { font-size: 11px; color: #525252; white-space: nowrap; text-align: right; }
+  .rowb .tm small { display: block; font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #737373; }
+  .rowb .sub { font-size: 11.5px; color: #525252; display: flex; gap: 6px; align-items: center; }
+  .rowb .sub .tagx { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #737373; font-weight: 500; }
+  .rowb .acts { display: flex; gap: 14px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #EAEAEA; font-size: 12px; font-weight: 500; color: #0B7B6C; }
+  .rowb .acts .rm { color: #F43F5E; font-weight: 400; }
+  .rowb .note { font-size: 12px; color: #0A0A0A; padding: 2px 0; }
+  .loadmore { text-align: center; font-size: 12px; font-weight: 500; color: #0B7B6C; padding: 14px; }
+  /* the rail — a week of days you can point at */
+  .rail { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin: 2px 2px 8px; }
+  .wdrow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin: 2px 2px 0; }
+  .wdrow .wd, .rail .wd { text-align: center; font-size: 9px; color: #737373; font-weight: 600; }
+  .railwrap { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; position: relative; margin: 0 0 8px; }
+  .railwrap::-webkit-scrollbar { display: none; }
+  .railwrap .railpage { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; margin: 2px 0 0; box-sizing: border-box; padding: 0 2px; }
+  .rail .d { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #EAEAEA; display: grid; place-items: center; font-size: 11px; color: #525252; cursor: pointer; border: 0; padding: 0; font-family: inherit; }
+  .rail .d::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 4px; height: 2px; border-radius: 1px; background: #86D9CC; }
+  .rail .d.none { background: #F5F5F5; box-shadow: none; color: #A3A3A3; } .rail .d.none::after { display: none; }
+  .rail .d.sym { color: #0A0A0A; font-weight: 600; } .rail .d.sym::after { left: 50%; right: auto; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: #F43F5E; bottom: 3px; }
+  .rail .d.today { box-shadow: inset 0 0 0 1.5px #0A0A0A; }
+  .rail .d.sel { box-shadow: inset 0 0 0 2px #0B7B6C; }
+  .rail .d.future { background: transparent; box-shadow: inset 0 0 0 1px #EAEAEA; color: #C9C9C9; cursor: default; } .rail .d.future::after { display: none; }
+  .rail .d .cnt { position: absolute; top: 2px; right: 3px; font-size: 8.5px; font-weight: 700; color: #0A0A0A; line-height: 1; }
+  .rail .d:focus-visible { outline: 2px solid #0B7B6C; outline-offset: 1px; }
+  .rail .d.out { background: transparent; box-shadow: none; color: transparent; cursor: default; } .rail .d.out::after { display: none; }
+  .rail .d.blank { background: transparent; box-shadow: none; cursor: default; } .rail .d.blank::after { display: none; }
+  .rail .d.quiet { color: #737373; } .rail .d.quiet::after { display: none; }
+  .rail.month .d { font-size: 10px; position: relative; }
+  .rail.month .d .mo { position: absolute; top: 1px; left: 3px; font-size: 7px; font-style: normal; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #737373; line-height: 1; }
+  .rail.arm .d { transform: scale(.6); opacity: 0; transition: none; }
+  .rail.play .d { transform: none; opacity: 1; transition: transform 300ms cubic-bezier(.2,.8,.2,1.05), opacity 200ms ease-out; transition-delay: calc(var(--i, 0) * 28ms); }
+  .railnav b small { font-weight: 400; color: #737373; font-size: 10px; }
+  .railnav { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 4px; font-size: 11.5px; color: #0A0A0A; }
+  .railnav b { font-weight: 600; }
+  .railnav button { font: inherit; font-size: 13px; border: 0; background: #F5F5F5; color: #0B7B6C; border-radius: 999px; width: 26px; height: 26px; cursor: pointer; }
+  .railnav button:disabled { color: #C9C9C9; cursor: default; }
+  .railcap { font-size: 10px; color: #737373; margin: -2px 2px 8px; }
+  /* threads — the standing facts beside the days */
+  .threads { display: flex; gap: 8px; padding: 4px 2px 8px; flex-wrap: wrap; }
+  .thread { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: #525252; background: #FFFFFF; border-radius: 999px; padding: 4px 10px 4px 6px; box-shadow: 0 1px 4px rgba(19,17,46,0.06); }
+  .thread i { width: 3px; height: 14px; border-radius: 2px; display: inline-block; }
+  .thread b { color: #0A0A0A; font-weight: 600; }
+  /* the record screen (route) */
+  .rec .hero { height: 150px; border-radius: 14px; background: linear-gradient(135deg,#C4BBAF,#8E8478); position: relative; margin-bottom: 10px; }
+  .rec .hero small { position: absolute; left: 10px; bottom: 8px; color: #fff; font-size: 10px; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .rec .verdict { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9F1239; background: #FFE4E6; border-radius: 999px; padding: 2px 8px; margin-bottom: 4px; }
+  .rec .verdict.mon { color: #525252; background: #F0F0F0; }
+  .rec .obs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  .rec .obs span { font-size: 10.5px; color: #525252; background: #F5F5F5; border-radius: 999px; padding: 3px 8px; }
+  .rec .acts { display: flex; gap: 8px; margin-top: 10px; }
+  .rec .acts .pri { flex: 1; text-align: center; background: #0A0A0A; color: #fff; border-radius: 12px; padding: 10px; font-weight: 600; font-size: 13px; }
+  .rec .acts .sec { text-align: center; color: #F43F5E; padding: 10px 12px; font-size: 13px; }
+  /* the empty / quiet states */
+  .empty { font-size: 12px; color: #525252; padding: 10px 0 4px; }
+  .empty b { color: #0A0A0A; display: block; font-size: 12.5px; margin-bottom: 2px; }
+  /* note text on this page is illustrative */
+  .illus { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #A3A3A3; }
+  @media (prefers-reduced-motion: reduce) {
+    .dd .drail, .dd .dbox, .dd .dtext, .wait .wait-skel, .wait .wait-content, .screen.detail, .screen.detail .land, .arr2 .tick2, .arr2 .pend, .arr2 .dbox, .arr2 .dtext, .node1.nc .ntime::after, .node1.leave, .arr2.calm.gone { transition: none; }
+    .dayc.arm .node1 .nt, .dayc.play .node1 .nt, .dayc.arm .node1 .ntime, .dayc.play .node1 .ntime, .dayc.arm .node1 .nq, .dayc.play .node1 .nq { transition: none; opacity: 1; }
+    .tick2 { animation: none; opacity: 1; }
+    .phone.vp .vpbody, .railwrap { scroll-behavior: auto; }
+    .dayc.arm .spine::before, .dayc.play .spine::before, .dayc.arm .node1, .dayc.play .node1, .rail.arm .d, .rail.play .d { transition: none; transform: none; opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="mast" id="mast">
+  <p class="eyebrow"><span>Culprit · History v2</span><span>CUL-1076 · discovery</span><span>2026-09-23</span><span class="roundtag">Round 3 · the proposal</span></p>
+  <h1>The record you can read</h1>
+  <p class="standfirst">The proposal, and only the proposal, ready for a design critique. Round 3 applies your round-2 reactions: the two standing lines at the top are gone and the week strip stands there instead, under the one count line you asked to keep; the strip scrolls sideways a week at a time and its cells carry a mark, never a number; the compact meal row lost its stub and gained a chevron that says it opens; the month grid is retired. Every frame is <strong>Nyx's real record</strong> (Sep 4 – 21 row by row, Jun 20 – Sep 21 as per-day counts, Central time). The deliberation behind it (the six round-1 reads, the two round-2 checks, the seven briefs, the file plan) is in git at <code>06be7bd</code> and on CUL-1076, not on this page.</p>
+  <div class="ledger">
+    <div class="r"><b>Your round-2 reaction</b><span><b>What moved</b></span></div>
+    <div class="r"><b>"Let's punt on 'a photo's read can raise a flag'. We have disclaimers everywhere."</b><span><i class="d">ruled</i>Gone. The rose only stands on its own; the calm word lives on the record. The Data and Dr. Chen check's condition (the sentence guards against a quiet photographed row reading as "checked, fine" beside a rose one) is recorded as overruled.</span></div>
+    <div class="r"><b>"Not really digging the information toward the top, like 'Selected Protein'. Ditch it; the calendar up top instead."</b><span><i class="d">ruled</i>The standing facts line is gone and the strip stands directly under the count line. One consequence, stated rather than hidden: that line was what named the diet, so rule A (a meal of the diet in force unnamed on its row) retires with it and every meal names its food again, once per run: "5 meals · Selected Protein PR · 1 wet · 4 dry". It also settles Home's consistency question, since Home names every meal today.</span></div>
+    <div class="r"><b>"Counts might prove helpful. I'd like to keep 'how much the record holds'."</b><span><i class="k">kept</i>The count line stays, first under the pills, and follows the lens: "All time · 1,091 logged since May 14"; under Vomit since the trial, "Since the trial started · 13 vomits". The exam-room answer to "how many in the last X days" is the date pill plus this line.</span></div>
+    <div class="r"><b>"The week calendar: I like it. A really slick and smooth h-scroll as well."</b><span><i class="c">changed</i>The strip is a horizontal scroller that snaps to the week, one week per swipe, bounded by the date lens; the arrows stay as the visible and accessible way to do the same. The Motion check had refused swipe paging in round 2; your ask overrules it, and its conditions are kept: paged and snapping, never a rolling seven, the long jump still in the date sheet.</span></div>
+    <div class="r"><b>"I don't love the '5' on the date. Clutter without much information."</b><span><i class="c">changed</i>The counts leave the cells. A cell is the day number and its mark: hollow for nothing logged, plain for a day that logged things, a rose dot for a day with a symptom. The count lives in the day header the tap lands on, and in the cell's spoken label for a screen reader.</span></div>
+    <div class="r"><b>"LOVE the new noise cut. A MUCH cleaner experience."</b><span><i class="k">kept</i>All of it except rule A, above. The header is the date, the total and the non-routine kinds; no chevrons on single rows; no cross-link lines; the rose only; the note on the row.</span></div>
+    <div class="r"><b>"The line below a multi-meal row looks abandoned. Nothing says it can be expanded."</b><span><i class="c">changed</i>The stub is gone at rest. The compact row ends in a small down chevron that turns when the run is open, and the teal rail appears only alongside the open box. A single row carries no chevron because every row is a door; the compact row carries one because it opens here instead.</span></div>
+    <div class="r"><b>"The full month is intriguing but takes up a lot of space. If anyone on the team feels strongly, let them make the case."</b><span><i class="d">retired</i>No one does. The Data Visualization lens's note: the month already exists on Patterns, with the door into History that PR 0 (CUL-1073) opens, so a long window on History is a week you scroll, and a month you want is one tab away.</span></div>
+    <div class="r"><b>"Produce a third iteration. Clean, only the v3 proposal. Commit it, then a design critique in a new session."</b><span><i class="k">this page</i>Republished over the same URL; committed on #885. The critique prompt is in the session record and in the wrap-up.</span></div>
+  </div>
+  <div class="howto"><b>How to read this page.</b> §01 is the screen, with every demo. §02 is the strip under a window. §03 is what a row says. §04 is the motion inventory. §05 is the rules a build would carry. §06 is the filters and the doorway contract, folded. Nothing here is an option; the alternatives live in the round-2 page in git.</div>
+  <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Counts, times, types, whether a row has a photo, a read, a note: pulled from the record (a service-role read scoped to the owner's account and Nyx's id; counts only). Note <em>text</em> was not read; where a note's words appear they are the Designer's and are marked <span class="illus">illustrative</span>.</div>
+</header>
+<!-- ───────────────────────── §01 THE PROPOSAL ───────────────────────── -->
+<section id="s01">
+  <div class="sec-head"><span class="sec-num">§01</span><h2>The screen — History as days, on Nyx's real fortnight</h2></div>
+  <div class="col">
+    <p>Read down: whose record and the two pills; how much the record holds; the week that holds today, seven dated cells you can swipe or step through; then the days, newest first, each reading morning to night. A day's header is its date, its total and only the kinds that are not routine, symptoms in rose. Rows are Home's node: the time on the right, the category dot, the type, the facts the record holds and nothing it does not. Consecutive meals with nothing between them share one line that opens in place. A vomit says how long after eating it was and carries its photo glyph; the read's word appears only when it was worth a call, in rose. A note is on its row, one line of it. Sep 20 is one quiet line and one hollow cell. <strong>Press "Replay the first paint"; "Replay the read" for how a calm read resolves; open "5 meals"; open a record and come back; remove the 6:27 PM meal and put it back; step back a week and tap Sep 17.</strong></p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">History · Mon Sep 21 (Central) · All types · All time</span>
+      <div class="phone vp wait" id="p-days" data-mount='{"when":"all","rail":true,"search":"","moreLens":true,"pendingKey":"2026-09-21 16:40"}'>
+        <div class="notch"></div>
+        <div class="wait-skel" aria-hidden="true"></div>
+        <div class="vpbody wait-content"></div>
+        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div>
+        <div class="fab" role="button" aria-label="Log event" tabindex="0"></div>
+      </div>
+      <div class="btnrow"><button class="btn" type="button" data-replay="wait|p-days">Replay the first paint</button><button class="btn" type="button" data-replay="arrive|p-days|2026-09-21 16:40">Replay the read (calm)</button><button class="btn" type="button" data-replay="open|p-days">Open "5 meals"</button><button class="btn" type="button" data-replay="route|p-days">Open a record · Back</button><button class="btn" type="button" data-replay="remove|p-days|2026-09-21 18:27">Remove the 6:27 PM meal</button><button class="btn" type="button" data-replay="restore|p-days|2026-09-21 18:27">Put it back</button><button class="btn" type="button" id="rail-demo">Back a week · tap Sep 17</button></div>
+      <p class="frame-cap"><b>Above the fold: whose record, how big it is, the week, today.</b> The count line is a count over the same query as the list, never the rows loaded. The strip's hollow "20" and the quiet line below it are the same fact twice. Today is five rows; the rabbit is named and says it carried Prednisone, the dose says it went in the rabbit meal, and the two dry meals name the trial food because nothing else on the screen does now. The read on the 4:40 PM vomit was <em>keep an eye out</em>: the tick waits while the photo is read, then leaves, and the row is at rest with its glyph. A worth-a-call would land in rose (§04 has the specimen).</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag prop">The Vomit lens, since the trial started</span>
+      <div class="phone vp" id="p-lens" data-mount='{"when":"trial","lens":"vomit","rail":true,"search":"","moreLens":true}'>
+        <div class="notch"></div>
+        <div class="vpbody"></div>
+        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div>
+        <div class="fab" role="button" aria-label="Log event" tabindex="0"></div>
+      </div>
+      <div class="btnrow"><button class="btn" type="button" data-replay="lens|p-lens|vomit">Toggle the lens</button><button class="btn" type="button" data-replay="back|p-lens">Back a week</button></div>
+      <p class="frame-cap"><b>Every count follows the lens.</b> "Vomit · 13" on the pill and "Since the trial started · 13 vomits" on the line come from the query. The strip's marks follow it too: Sep 21 carries the rose dot; Sep 20 is hollow because nothing at all was logged; Sep 13 – 16, where meals were logged but no vomit, are plain cells with no mark. The days between vomits collapse into one line that names what is absent and for how long. Step back a week and the cells land again.</p>
+    </div>
+  </div>
+  <div class="col">
+    <h3>What the screen tells you that the list could not</h3>
+    <div class="facts">
+      <div><b>How much the record holds</b>"All time · 1,091 logged since May 14", and under a lens the lens's own count for the window.<small>the count line</small></div>
+      <div><b>Which days had a symptom, at a glance</b>The rose in a day's header and the rose dot in the strip are one fact in two places.<small>the header · the strip</small></div>
+      <div><b>How long after eating</b>"5 min after eating", computed over the whole day, pointing at a meal that is always its own row.<small>the timing line</small></div>
+      <div><b>Where the silence is</b>Sep 20 as one line and as a hollow cell; under a lens, "no vomit logged · Sep 13 – 16 · 4 days".<small>the gap line · the strip</small></div>
+      <div><b>What you wrote, without a tap</b>"Right after the kibble, mostly liquid. She…", one line, on the row, the day you would need it.<small>the note on the row</small></div>
+      <div><b>How the day was fed, in one line</b>"5 meals · Selected Protein PR · 1 wet · 4 dry", opening to the meals.<small>the compact line</small></div>
+    </div>
+  </div>
+</section>
+<!-- ───────────────────────── §02 THE STRIP ───────────────────────── -->
+<section id="s02">
+  <div class="sec-head"><span class="sec-num">§02</span><h2>The strip — a week you can swipe, bounded by the date lens</h2></div>
+  <div class="col">
+    <p>One row of the Patterns month's day marks, Sunday first, in a scroller that snaps to the week: a swipe moves one week and settles; the arrows do the same for a thumb that prefers them and for a screen reader. The label above follows the page. <strong>It is bounded by the date lens.</strong> Under "Last 7 days" there are two weeks and the earlier one shows Sep 13 – 14 absent, outside the window. Under "Last 30 days" there are five, ending at Aug 23 – 29, where the back arrow disables and says why. Under "All time" the weeks run to the record's start (on this page, to Jun 20, where the per-day counts end; the arrow says that instead). A cell is the day number and a mark: hollow for nothing logged, plain for a day that logged things, a rose dot for a symptom; under a lens the marks follow it. A tap lands on that day, or on the gap line that holds it, and the landed day draws in once.</p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">Last 30 days · one week from its edge</span>
+      <div class="phone vp" style="height:600px" id="p-strip-30" data-mount='{"when":"30d","rail":true,"railPage":1}'>
+        <div class="notch"></div><div class="vpbody"></div>
+        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
+      </div>
+      <div class="btnrow"><button class="btn" type="button" data-replay="back|p-strip-30">Back a week</button><button class="btn" type="button" data-replay="fwd|p-strip-30">Forward a week</button><button class="btn" type="button" data-replay="when|p-strip-30|7d">Pick Last 7 days</button><button class="btn" type="button" data-replay="when|p-strip-30|30d">Pick Last 30 days</button><button class="btn" type="button" data-replay="when|p-strip-30|all">Pick All time</button></div>
+      <p class="frame-cap"><b>Aug 30 – Sep 5, the window in the label.</b> Drag the strip sideways, or press "Back a week": Aug 23 – 29 slides in and settles, the arrow dims and its label reads "Earlier week · Last 30 days starts Aug 23". Press "Pick Last 7 days": two weeks, this one first. The list under the strip does not change with the strip, which only ever moves you; under this window its end cap says "Last 30 days runs back to Aug 23 on the device", because this page carries Sep 4 – 21 row by row and the rest as counts.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §03 THE ROW VOCABULARY ───────────────────────── -->
+<section id="s03">
+  <div class="sec-head"><span class="sec-num">§03</span><h2>What a row says — every kind, one language</h2></div>
+  <div class="col">
+    <p>One node language, borrowed whole from Home's spine. A row carries the facts the record holds and nothing it does not; the second line exists only for a rose word, a note, or a sync state. Each row below is a real row from the fortnight, except the look and the failed sync, which are the states the record can be in that the fortnight happened not to hold.</p>
+  </div>
+  <div class="frames">
+    <div class="frame-slot" style="width:100%;max-width:640px">
+      <div class="acard" style="max-width:640px">
+        <div class="seclabel">The specimen — one of each</div>
+        <div class="spine">
+          <div class="node1" style="--dot:#00C2A8"><div class="nt">Meal <small>· Selected Protein PR <span class="tagx">wet</span></small></div><div class="ntime">5:47 AM</div></div>
+          <div class="node1 nc" aria-expanded="false" style="--dot:#00C2A8"><div class="nt">5 meals <small>· Selected Protein PR · 1 wet · 4 dry</small></div><div class="ntime">2:15 AM – 10:25 PM</div></div>
+          <div class="node1" style="--dot:#00C2A8"><div class="nt">Meal <small>· Instinct · LID Real Rabbit <span class="tagx">wet</span> · with Prednisone</small><span class="chip attn">Picked</span></div><div class="ntime">1:00 PM</div></div>
+          <div class="node1" style="--dot:#5B7A9E"><div class="nt">Prednisone <small>· in the rabbit meal</small><span class="chip ok">Given</span></div><div class="ntime">1:00 PM</div></div>
+          <div class="node1" style="--dot:#00C2A8"><div class="nt">Meal <small>· no food recorded</small></div><div class="ntime">10:55 AM</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 3 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">10:58 AM</div><div class="nq snip">“Hairball, I think.”</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">by 7:02 AM<span class="conf">found</span></div><div class="nv call">Worth a call</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">4:00 PM<span class="conf">estimated</span></div><div class="nq snip">“Found on the landing, dry by the time I saw…”</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Cough</div><div class="ntime">5:09 PM</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Itch/Scratch</div><div class="ntime">11:55 AM</div><div class="nq snip">“Left ear again.”</div></div>
+          <div class="node1" style="--dot:#737373"><div class="nt">Weight <small>· 8.2 lbs</small></div><div class="ntime">5:51 PM</div></div>
+          <div class="node1 hollow" style="--dot:#A3A3A3"><div class="nt">Vet visit <small>· opens the visit</small></div><div class="ntime">Sep 16</div></div>
+          <div class="node1" style="--dot:#737373"><div class="nt">Noticed <small>· off, didn't want to play</small></div><div class="ntime">7:12 PM</div><div class="nq snip">“Slept on the stairs all afternoon.”</div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 5 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">4:40 PM</div><div class="nv call">Not saved to your records · Save again ›</div></div>
+        </div>
+        <div class="gap" style="padding-left:0"><i></i>Sep 20 · nothing logged</div>
+        <div class="gap wide"><i></i>no vomit logged · Sep 13 – 16 · 4 days</div>
+        <div class="gap" style="padding-left:0"><i></i>Prednisone started · Sep 21</div>
+        <div class="gap" style="padding-left:0"><i></i>Diet trial started · Selected Protein PR · Jul 26</div>
+      </div>
+      <p class="frame-cap"><b>Reading down.</b> A wet meal, named; a whole day's feeding as one line that opens, the chevron saying so; the rabbit, picked at, carrying the dose inline; the dose, naming its vehicle inline; a meal with no food recorded, which says so; a witnessed vomit with its minutes, its glyph and its note, and no calm word; the one worth-a-call the fortnight holds, in rose; an estimated one with its note cut at a word, the ellipsis inside the quotes; a cough; an itch with its note; a weight in the owner's unit; the visit at the foot of its day, hollow because it is not an event and is never counted; a look (drawn for the vocabulary; not on Nyx's record); and a row that failed to sync, which says so and offers the re-save. Under the rows, the four quiet lines: a silent day, a lens gap, and the two course markers the record already draws. <span class="illus" style="color:var(--ink-3)">note text illustrative</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── §04 MOTION ───────────────────────── -->
+<section id="s04">
+  <div class="sec-head"><span class="sec-num">§04</span><h2>Motion — the inventory, each with the rule that keeps it honest</h2></div>
+  <div class="col">
+    <p>Eight gestures, each answering a fact, each once. Every one plays on this page; every one is a static frame under reduced motion.</p>
+  </div>
+  <div class="tscroll"><table class="t">
+    <tr><th>The gesture</th><th>Answers the fact</th><th>What moves</th><th>The rule</th><th>Try it</th></tr>
+    <tr><td><b>The wait, then the first paint</b></td><td>the first read answered</td><td>The skeleton gives way; on every visible day the thread draws down over 370ms and each node lands as the rail passes, the stagger derived from the day's node count; the words land last; 700ms end to end. The days start together.</td><td>Once per mount identity (pet · type · window · first day). A sync tick never replays it; page 2 mounts still. Headers, pills, the count line, the strip and the FAB never move.</td><td>§01, "Replay the first paint"</td></tr>
+    <tr><td><b>The strip, swiped</b></td><td>you asked for another week</td><td>The strip slides one week and snaps; the label follows once it settles.</td><td>One week per swipe, never a rolling seven; the arrows do the same; the long jump stays in the date sheet.</td><td>§02, drag the strip or "Back a week"</td></tr>
+    <tr><td><b>The strip landing</b></td><td>the lens or the window changed</td><td>The visible week's cells scale in with a 28ms stagger.</td><td>Only on a change the owner made. Never on scroll, never on a sync.</td><td>§01 second phone, "Toggle the lens"</td></tr>
+    <tr><td><b>The landed day</b></td><td>you pointed at a day and arrived</td><td>The list scrolls to the day; its thread draws once; the neighbours stay still.</td><td>Identity is the landing, so tapping the same cell twice draws once.</td><td>§01, "Back a week · tap Sep 17"</td></tr>
+    <tr><td><b>Arrive</b></td><td>a read landed while you watched</td><td>The tick that waited becomes the rail; a worth-a-call opens its box in rose (the physics Home and the incident screen share).</td><td>A calm read resolves un-animated: the tick leaves in 150ms and nothing lands. Never a haptic.</td><td>below, the specimen</td></tr>
+    <tr><td><b>Open in place</b></td><td>you asked what a run holds</td><td>The compact row's box opens under it with its rail; the chevron turns.</td><td>Row-scoped; never shares a layout commit with the scrolling list.</td><td>§01, "Open '5 meals'"</td></tr>
+    <tr><td><b>The route</b></td><td>you opened a record</td><td>The record rises over the list; back drops it.</td><td>The list never re-renders under it.</td><td>§01, "Open a record · Back"</td></tr>
+    <tr><td><b>The row leaving</b></td><td>you removed a row</td><td>The record closes; the row folds shut (180ms out, the box closing over 300ms); the day's header re-speaks its count.</td><td>Only through the one shared reversal (<code>reverseLoggedEvent</code>); never on a lens change.</td><td>§01, "Remove the 6:27 PM meal"</td></tr>
+    <tr><td class="no"><b>Never</b></td><td>—</td><td>A cascade across days; a pulse on today's ring or a rose cell; any motion on scroll; a chevron on a single row.</td><td>—</td><td>—</td></tr>
+  </table></div>
+  <div class="frames">
+    <div class="frame-slot" style="width:100%;max-width:640px">
+      <div class="acard" style="max-width:640px">
+        <div class="seclabel">Arrive — the two ways a read resolves</div>
+        <div class="spine">
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">by 7:02 AM<span class="conf">found</span></div><div class="arr2" id="spec-arr"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div><div class="dbox"><div class="dtext"><b>Worth a call</b>One photo can raise a flag; it can't clear one.</div></div></div></div></div></div>
+          <div class="node1" style="--dot:#F43F5E"><div class="nt">Vomit <small>· 5 min after eating · <span class="pg" role="img" aria-label="photographed"></span></small></div><div class="ntime">4:40 PM</div><div class="arr2 calm" id="spec-calm"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div></div></div></div></div>
+        </div>
+        <div class="btnrow"><button class="btn" type="button" id="spec-arr-replay">Replay both</button></div>
+      </div>
+      <p class="frame-cap"><b>The worth-a-call lands; the calm one leaves.</b> Top: Sep 4's found vomit, the one worth-a-call the fortnight holds. Bottom: today's 4:40 PM vomit, whose read was <em>keep an eye out</em>; the tick breathes while the photo is read and then goes. The word "One photo can raise a flag; it can't clear one" stays inside the landed box, where the record already says it; it no longer stands at the top of the list.</p>
+    </div>
+  </div>
+</section>
+<!-- ───────────────────────── §05 THE RULES ───────────────────────── -->
+<section id="s05">
+  <div class="sec-head"><span class="sec-num">§05</span><h2>The rules a History v2 would carry — its spec's §0</h2></div>
+  <div class="col">
+    <p>Nineteen rules, every one enforced somewhere on the frames above. Rule A from round 2 (the diet in force stated once; a meal of it unnamed) is retired with the standing line that anchored it; every meal names its food, once per run.</p>
+  </div>
+  <div class="rules">
+    <div class="rule"><div class="rid">1</div><b>A photo never renders on a list surface.</b>A row carries a glyph; the photo is on the record where the vet will ask to see it.</div>
+    <div class="rule"><div class="rid">2</div><b>A note is quoted, never summarised, never counted, never on a shared render.</b>Its fate is stated where it is written (CUL-848 ships its cue before or with the row that shows the note).</div>
+    <div class="rule"><div class="rid">3</div><b>No lens over a read's verdict exists.</b>"With a read" is the honest lens, and its empty state names the unread.</div>
+    <div class="rule"><div class="rid">4</div><b>The day key is local midnight; a day link parses instants.</b>Never compared as text (C-29, C-40). CUL-1073 lands first.</div>
+    <div class="rule"><div class="rid">5</div><b>A count is a record fact.</b>Headers count closed days; the count line and the strip come from counts over the same query; a compact line's count is computed over a whole day, never a page (C-3, C-42).</div>
+    <div class="rule"><div class="rid">6</div><b>A row not in the record says so.</b>A quarantined row reads "not saved to your records" and offers the re-save.</div>
+    <div class="rule"><div class="rid">7</div><b>The read on a row is one word, in rose, only when it was worth a call; the rose is derived.</b>Never the sentence, the observations, a flag as text or a confidence; a calm or failed read shows nothing; the rose comes from the fields as edited and the server's flags, one predicate for History, Home and the month (the dismissal rule is open: round 2's R2-5).</div>
+    <div class="rule"><div class="rid">8</div><b>Motion answers a fact, once.</b>The eight gestures of §04 and no others; nothing on scroll; no cascade across days; no pulse; the static frame under reduced motion; the identity rule for the first paint.</div>
+    <div class="rule"><div class="rid">9</div><b>The doorways are a contract.</b>Every deep-link parameter kept byte for byte; one test per doorway, per flag state.</div>
+    <div class="rule"><div class="rid">B</div><b>A run crosses wet and dry of one product and speaks its counts; nothing else.</b>Any other fact breaks it: a symptom, a dose, a photo, a note, a rating below <em>most</em>, a different product, midnight. The meal a timing line points at is its own row.</div>
+    <div class="rule"><div class="rid">C</div><b>The header is the date, the total, and every non-routine kind.</b>Symptoms in rose, "other" and a look neutral; meals, doses and weights leave it. The date never wraps; a long count line goes left onto its own line.</div>
+    <div class="rule"><div class="rid">D</div><b>No chevron on a single row; a down chevron on a compact row.</b>Every row is a door, so no row says so; the compact row opens here instead, so it does. No stub at rest: the rail appears with the open box.</div>
+    <div class="rule"><div class="rid">E</div><b>No cross-link lines; both halves inline.</b>"in the rabbit meal" on the dose; "with Prednisone" on the meal.</div>
+    <div class="rule"><div class="rid">F</div><b>The rose only, and nothing standing at the top.</b>The calm word lives on the record. A calm read arriving resolves un-animated.</div>
+    <div class="rule"><div class="rid">G</div><b>One line of the note on the row, cut at a word, the ellipsis inside the quotes.</b>Its own line; never beside a verdict, a badge or a count; the full note on the record.</div>
+    <div class="rule"><div class="rid">H</div><b>Morning to night inside a day; days newest first; the sort key is (time, id).</b>A same-minute pair never swaps between renders.</div>
+    <div class="rule"><div class="rid">I</div><b>The strip is bounded by the date lens and paged by the week.</b>Seven local days from a per-day query; a mark per cell (hollow · plain · a rose dot), never a number; a swipe or an arrow moves one week and snaps; the arrows disable at the window's edge and say why; days outside the window are absent; the count is in the header the tap lands on and in the cell's spoken label; under Noticed a mark, never a count of looks.</div>
+    <div class="rule"><div class="rid">J</div><b>The first paint draws each visible day once; the landed day draws once; a removed row folds shut.</b>Home's spine gains the same first paint in the same PR, or neither does (round 2's R2-3).</div>
+    <div class="rule"><div class="rid">K</div><b>Every meal names its food; a foodless meal says so.</b>"Meal · Selected Protein PR · dry"; "5 meals · Selected Protein PR · 1 wet · 4 dry"; "Meal · no food recorded". The same rule Home follows.</div>
+  </div>
+</section>
+<!-- ───────────────────────── §06 THE FILTERS (kept, folded) ───────────────────────── -->
+<section id="s06">
+  <div class="sec-head"><span class="sec-num">§06</span><h2>The filters — kept as they are, extended, folded</h2></div>
+  <div class="col">
+    <p>Two pills, every option visible on a full-width sheet, the tint when a lens is on, a count on every sheet row from the query, months and the two windows the vet conversation needs, "All symptoms" as one option, a third pill only as a fact lens, and a search that finds a word in a food, a medicine or a note. Unchanged since round 1; folded so the proposal above stays the page.</p>
+  </div>
+  <details class="fold"><summary>The three sheets, search, and the doorway contract</summary>
+  <div class="frames">
+    <div class="frame-slot">
+      <span class="tag prop">The type sheet · every option, its count</span>
+      <div class="phone vp" style="height:600px" id="p-sheet-type" data-mount='{"when":"all","openSheet":"type"}'>
+        <div class="notch"></div><div class="vpbody"></div>
+        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
+      </div>
+      <p class="frame-cap"><b>The counts are the record's, per window.</b> "All symptoms" is one option. Loose stool and Stool show 0 rather than hiding.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag prop">The date sheet · months, the trial, the last visit</span>
+      <div class="phone vp" style="height:600px" id="p-sheet-when" data-mount='{"when":"all","lens":"vomit","openSheet":"when"}'>
+        <div class="notch"></div><div class="vpbody"></div>
+        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
+      </div>
+      <p class="frame-cap"><b>The jump to May is two taps.</b> The count column is the Vomit lens applied to each window; "Since the last vet visit · Sep 16" is a record-anchored date, so it is free (C-19).</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag prop">A third pill, only as a fact lens</span>
+      <div class="phone vp" style="height:600px" id="p-sheet-more" data-mount='{"when":"all","moreLens":true,"openSheet":"more"}'>
+        <div class="notch"></div><div class="vpbody"></div>
+        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
+      </div>
+      <p class="frame-cap"><b>Photographed · With a note · With a read · a medication's doses.</b> Never "Worth a call": its empty result would say the record was never worth a call while photographed vomits sit unread.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag prop">Search · a finder, never a claim</span>
+      <div class="phone vp" style="height:600px" id="p-search" data-mount='{"when":"all","search":"hairball","searchOpen":true}'>
+        <div class="notch"></div><div class="vpbody"></div>
+        <div class="tabbar" aria-hidden="true"><span><i></i>Home</span><span class="on"><i></i>History</span><span><i></i>Foods</span><span><i></i>Nyx</span></div><div class="fab" aria-hidden="true"></div>
+      </div>
+      <div class="btnrow"><button class="btn" type="button" data-replay="search|p-search|rabbit">Search "rabbit"</button><button class="btn" type="button" data-replay="search|p-search|hairball">Search "hairball"</button></div>
+      <p class="frame-cap"><b>"When did I write hairball?"</b> A local, case-insensitive match over the owner's own text on the device; nothing leaves it; nothing is counted from it. <span class="illus" style="color:var(--ink-3)">note text illustrative</span></p>
+    </div>
+  </div>
+  <div class="col">
+    <h3>The doorways — the contract a redesign keeps byte for byte</h3>
+  </div>
+  <div class="tscroll"><table class="t">
+    <tr><th>Door</th><th>Sends</th><th>Lands on</th><th>What changes flag-on</th></tr>
+    <tr><td>Ask's answer provenance</td><td><code>?type=&amp;window=</code></td><td>The type lens and a rolling window</td><td>The window's count speaks at the top; a day the window cuts prints no count (C-37).</td></tr>
+    <tr><td>The Patterns calendar's day drill-in</td><td><code>?date=YYYY-MM-DD</code></td><td>One day — a UTC day today</td><td>A <em>local</em> day, parsed as an instant (CUL-1073, C-40); the landed day draws in.</td></tr>
+    <tr><td>Home's pre-v2 Today zone</td><td><code>?date=today</code></td><td>Today</td><td>Unchanged; retires with the zone at D2-8.</td></tr>
+    <tr><td>The home-screen widget</td><td><code>?date=&amp;pet=</code></td><td>A day, for that pet</td><td>The widget's local key finally lands on the right day.</td></tr>
+    <tr><td>Patterns' <em>What you noticed</em></td><td><code>?type=check_in</code></td><td>The Noticed lens</td><td>Unchanged; the strip shows a mark, never a count of looks.</td></tr>
+  </table></div>
+  </details>
+</section>
+<!-- ───────────────────────── FOR THE CRITIQUE ───────────────────────── -->
+<section id="s07">
+  <div class="sec-head"><span class="sec-num">§07</span><h2>For the critique — what this page decided, and what it left open</h2></div>
+  <div class="col">
+    <p>The next session is a design critique of this proposal. It should know what is settled and what is not, so neither gets re-argued by accident.</p>
+    <ul>
+      <li><strong>Settled by the PM across rounds 1 to 3:</strong> days at local midnight, newest first, morning to night inside; one door per row; the filters kept and extended; the rose only with nothing standing at the top; the note on the row; the strip at the top, paged by the week, bounded by the window, marks not numbers; the noise cut (rules B to G); every meal named; the month grid retired.</li>
+      <li><strong>Overruled dissents, recorded:</strong> the Data Scientist and Dr. Chen's standing sentence about reads (the contrast hazard beside a rose row); the Motion Designer's refusal of swipe paging (kept paged and snapping, its conditions intact).</li>
+      <li><strong>Open, for requirements rather than this page:</strong> R2-5, one read predicate for History, Home and the month, and what a dismissal hides; R2-3's condition that Home's spine gains the first paint in the same PR; R1-4 where it ships (its own flag and project, sequenced after CUL-1073) and R1-5 (the read on the row after the consent gate, CUL-552); CUL-848's cue before the note shows on a row.</li>
+      <li><strong>Where the deliberation lives:</strong> round 1 (the six reads, the four decisions) at <code>99da7c0</code>; round 2 (the two checks, the seven briefs, the file plan) at <code>06be7bd</code>; the reactions and rulings as comments on CUL-1076.</li>
+    </ul>
+  </div>
+</section>
+
+<div class="foot">Round 3 of the History v2 discovery (CUL-1076), project Design v2 — the whole day. Republished over the round-1 URL on 2026-09-23. Every frame is drawn from Nyx's record, Sep 4 – 21 2026 row by row and Jun 20 – Sep 21 as per-day counts, Central time; note text illustrative and marked. Every demo on this page was driven in a headless browser and pressed twice before publishing. The committed source is <code>docs/culprit-history-v2-mockups.html</code>.</div>
+</div>
+<script>
+(() => {
+'use strict';
+const FIX = [{"day":"2026-09-04","rows":[{"t":"03:13","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"06:22","ty":"cough","cf":"witnessed","nl":0},{"t":"07:02","ty":"vomit","cf":"window","nl":0,"ph":true,"rec":"worth_a_call","st":"completed"},{"t":"12:26","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-05","rows":[{"t":"07:35","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"10:22","ty":"cough","cf":"witnessed","nl":0},{"t":"14:04","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"15:23","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Instinct","p":"Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy","ff":"wet_canned","ft":"meal","ir":null}},{"t":"15:23","ty":"medication","cf":"witnessed","nl":0,"m":{"d":null,"ad":"partial","hg":"in_food"}},{"t":"17:51","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"18:06","ty":"itch","cf":"witnessed","nl":3},{"t":"18:15","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-06","rows":[{"t":"08:26","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"08:27","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-07","rows":[{"t":"01:18","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"06:00","ty":"vomit","cf":"window","nl":0,"ph":true,"rec":"monitor","st":"completed"},{"t":"07:28","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"15:46","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"16:00","ty":"vomit","cf":"estimated","nl":88,"ph":true,"rec":"monitor","st":"completed"},{"t":"17:38","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"19:34","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"22:48","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-08","rows":[{"t":"01:24","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"05:30","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"06:15","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"12:31","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"17:15","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"18:13","ty":"cough","cf":"witnessed","nl":0},{"t":"22:47","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-09","rows":[{"t":"02:38","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"05:25","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"06:51","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"17:40","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"17:58","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"18:25","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"20:38","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"20:38","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"21:10","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-10","rows":[{"t":"02:59","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"06:47","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"17:17","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"18:32","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"20:23","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"20:50","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Instinct","p":"Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy","ff":"wet_canned","ft":"meal","ir":null}}]},
+{"day":"2026-09-11","rows":[{"t":"01:56","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"04:57","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"04:57","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"11:06","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"11:46","ty":"cough","cf":"witnessed","nl":0},{"t":"14:03","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"18:26","ty":"itch","cf":"witnessed","nl":27},{"t":"20:51","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"21:10","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-12","rows":[{"t":"07:00","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"07:00","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"08:30","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"12:13","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"12:18","ty":"vomit","cf":"witnessed","nl":0,"ph":true,"rec":"monitor","st":"completed"},{"t":"19:19","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"19:50","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"21:17","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-13","rows":[{"t":"08:30","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"11:41","ty":"other","cf":"witnessed","nl":16},{"t":"11:42","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"11:55","ty":"itch","cf":"witnessed","nl":13},{"t":"14:31","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"16:04","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"16:10","ty":"other","cf":"witnessed","nl":38},{"t":"17:11","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"20:52","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-14","rows":[{"t":"07:59","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"08:13","ty":"cough","cf":"witnessed","nl":0},{"t":"20:00","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"20:00","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-15","rows":[{"t":"01:20","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"05:03","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"12:08","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"14:25","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"18:16","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"20:16","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"23:00","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-16","rows":[{"t":"04:42","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"06:30","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"12:56","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"15:49","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"17:51","ty":"weight_check","cf":"witnessed","nl":0,"kg":3.73},{"t":"18:23","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"20:27","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"21:42","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"22:48","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-17","rows":[{"t":"05:47","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"10:55","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"10:58","ty":"vomit","cf":"witnessed","nl":18,"ph":true,"rec":"monitor","st":"completed"},{"t":"12:41","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"15:02","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"17:07","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"17:09","ty":"cough","cf":"witnessed","nl":0},{"t":"17:11","ty":"vomit","cf":"witnessed","nl":0,"ph":true,"rec":"monitor","st":"completed"},{"t":"17:39","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"22:39","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-18","rows":[{"t":"02:15","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"07:11","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}},{"t":"08:59","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"19:42","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"22:25","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]},
+{"day":"2026-09-19","rows":[{"t":"08:25","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Wet","ff":"wet_canned","ft":"meal","ir":null}}]},
+{"day":"2026-09-21","rows":[{"t":"13:00","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Instinct","p":"Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy","ff":"wet_canned","ft":"meal","ir":"picked"}},{"t":"13:00","ty":"medication","cf":"witnessed","nl":0,"m":{"d":"Prednisone","ad":"given","hg":"in_food"}},{"t":"16:35","ty":"meal","cf":"witnessed","nl":0,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}},{"t":"16:40","ty":"vomit","cf":"witnessed","nl":110,"ph":true,"rec":"monitor","st":"completed"},{"t":"18:27","ty":"meal","cf":"witnessed","nl":29,"f":{"b":"Royal Canin","p":"Selected Protein PR, Dry","ff":"dry_kibble","ft":"meal","ir":null}}]}]
+;
+// ── Illustrative note TEXT. The record was read as counts, times and types only;
+//    only each note's LENGTH is real. The words below are the Designer's, and the
+//    page says so wherever they appear. ─────────────────────────────────────────
+const NOTE = {
+  '2026-09-21 16:40': 'Right after the kibble, mostly liquid. She went straight back to the bowl afterwards and ate the rest.',
+  '2026-09-21 18:27': 'New bag opened, same formula.',
+  '2026-09-17 10:58': 'Hairball, I think.',
+  '2026-09-13 11:41': 'Hairball on the rug.',
+  '2026-09-13 11:55': 'Left ear again.',
+  '2026-09-13 16:10': 'Scratching at the couch, then hid under it.',
+  '2026-09-11 18:26': 'Scratched the same spot on her neck.',
+  '2026-09-05 18:06': 'Ear',
+  '2026-09-07 16:00': 'Found on the landing, dry by the time I saw it. Probably from this morning, maybe earlier.',
+};
+const VISITS = { '2026-09-16': 'Vet visit' };
+const COURSE_START = { '2026-09-21': 'Prednisone started' };
+const TRIAL = { start: '2026-07-26', target: 84, food: 'Selected Protein PR' };
+// Counts from the record (the CTE-scoped read on 2026-09-21), per window. Filled from
+// a second query; `all` is the whole record. A window absent here shows no count.
+let WIN = {
+  all:   { n: 1091, meal: 949, vomit: 45, diarrhea: 0, stool: 0, cough: 29, sneeze: 12, lethargy: 1, itch: 6, medication: 45, weight: 1, other: 3, photo: 44, note: 64, read: 42, call: 10, unread: 3, days_logged: 130, first_day: '2026-05-14', span: 131 },
+  today: { n: 5, meal: 3, vomit: 1, diarrhea: 0, stool: 0, cough: 0, sneeze: 0, lethargy: 0, itch: 0, medication: 1, weight: 0, other: 0, photo: 1, note: 2, read: 1, call: 0, unread: 0, days_logged: 1, first_day: '2026-09-21', span: 1 },
+  '7d':  { n: 37, meal: 31, vomit: 3, diarrhea: 0, stool: 0, cough: 1, sneeze: 0, lethargy: 0, itch: 0, medication: 1, weight: 1, other: 0, photo: 3, note: 3, read: 3, call: 0, unread: 0, days_logged: 6, first_day: '2026-09-15', span: 7 },
+  '14d': { n: 89, meal: 75, vomit: 4, diarrhea: 0, stool: 0, cough: 4, sneeze: 0, lethargy: 0, itch: 2, medication: 1, weight: 1, other: 2, photo: 4, note: 7, read: 4, call: 0, unread: 0, days_logged: 13, first_day: '2026-09-08', span: 14 },
+  '30d': { n: 192, meal: 163, vomit: 8, diarrhea: 0, stool: 0, cough: 8, sneeze: 3, lethargy: 0, itch: 3, medication: 4, weight: 1, other: 2, photo: 8, note: 12, read: 8, call: 1, unread: 0, days_logged: 29, first_day: '2026-08-23', span: 30 },
+  trial: { n: 375, meal: 306, vomit: 13, diarrhea: 0, stool: 0, cough: 22, sneeze: 7, lethargy: 1, itch: 3, medication: 20, weight: 1, other: 2, photo: 13, note: 40, read: 13, call: 4, unread: 0, days_logged: 57, first_day: '2026-07-26', span: 58 },
+  visit: { n: 30, meal: 24, vomit: 3, diarrhea: 0, stool: 0, cough: 1, sneeze: 0, lethargy: 0, itch: 0, medication: 1, weight: 1, other: 0, photo: 3, note: 3, read: 3, call: 0, unread: 0, days_logged: 5, first_day: '2026-09-16', span: 6 },
+  sep:   { n: 123, meal: 102, vomit: 7, diarrhea: 0, stool: 0, cough: 6, sneeze: 0, lethargy: 0, itch: 3, medication: 2, weight: 1, other: 2, photo: 7, note: 9, read: 7, call: 1, unread: 0, days_logged: 20, first_day: '2026-09-01', span: 21 },
+  aug:   { n: 212, meal: 174, vomit: 5, diarrhea: 0, stool: 0, cough: 16, sneeze: 7, lethargy: 1, itch: 0, medication: 9, weight: 0, other: 0, photo: 5, note: 26, read: 5, call: 2, unread: 0, days_logged: 31, first_day: '2026-08-01', span: 31 },
+  jul:   { n: 358, meal: 298, vomit: 10, diarrhea: 0, stool: 0, cough: 7, sneeze: 5, lethargy: 0, itch: 3, medication: 34, weight: 0, other: 1, photo: 10, note: 25, read: 10, call: 5, unread: 0, days_logged: 31, first_day: '2026-07-01', span: 31 },
+  jun:   { n: 255, meal: 243, vomit: 12, diarrhea: 0, stool: 0, cough: 0, sneeze: 0, lethargy: 0, itch: 0, medication: 0, weight: 0, other: 0, photo: 12, note: 2, read: 10, call: 0, unread: 2, days_logged: 30, first_day: '2026-06-01', span: 30 },
+  may:   { n: 143, meal: 132, vomit: 11, diarrhea: 0, stool: 0, cough: 0, sneeze: 0, lethargy: 0, itch: 0, medication: 0, weight: 0, other: 0, photo: 10, note: 2, read: 10, call: 2, unread: 1, days_logged: 18, first_day: '2026-05-14', span: 18 },
+};
+const LABEL = { meal: 'Meal', vomit: 'Vomit', diarrhea: 'Loose stool', stool_normal: 'Stool', cough: 'Cough', sneeze: 'Sneeze', lethargy: 'Lethargy', itch: 'Itch/Scratch', medication: 'Medication', weight_check: 'Weight', other: 'Other', check_in: 'Noticed' };
+const PLURAL = { meal: 'meals', vomit: 'vomits', diarrhea: 'loose stools', stool_normal: 'stools', cough: 'coughs', sneeze: 'sneezes', lethargy: 'lethargy', itch: 'itches', medication: 'doses', weight_check: 'weights', other: 'other' };
+const SINGULAR = { meal: 'meal', vomit: 'vomit', diarrhea: 'loose stool', stool_normal: 'stool', cough: 'cough', sneeze: 'sneeze', lethargy: 'lethargy', itch: 'itch', medication: 'dose', weight_check: 'weight', other: 'other' };
+const SYMPTOM = ['vomit', 'diarrhea', 'cough', 'sneeze', 'lethargy', 'itch'];
+const ORDER = ['vomit', 'diarrhea', 'stool_normal', 'cough', 'sneeze', 'lethargy', 'itch', 'meal', 'medication', 'weight_check', 'other'];
+const TINT = { symptom: '#F43F5E', meal: '#00C2A8', medication: '#5B7A9E', other: '#737373' };
+const REC = { worth_a_call: ['Worth a call', 'call'], monitor: ['Keep an eye out', 'mon'], not_enough_to_say: ['Not enough to say', 'nes'] };
+const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const cat = (r) => SYMPTOM.includes(r.ty) ? 'symptom' : r.ty === 'meal' ? 'meal' : r.ty === 'medication' ? 'medication' : 'other';
+const mins = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+function fmt12(t) { const [h, m] = t.split(':').map(Number); const ap = h >= 12 ? 'PM' : 'AM'; const hh = h % 12 || 12; return `${hh}:${String(m).padStart(2, '0')} ${ap}`; }
+function dateOf(iso) { return new Date(iso + 'T12:00:00'); }
+function dayName(iso) { return dateOf(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
+function shortDay(iso) { return dateOf(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+function weekdayLetter(iso) { return dateOf(iso).toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1); }
+function addDays(iso, n) { const d = dateOf(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function daysBetween(a, b) { return Math.round((dateOf(b) - dateOf(a)) / 86400000); }
+function trialDay(iso) { return daysBetween(TRIAL.start, iso) + 1; }
+function productShort(f) {
+  if (!f) return '';
+  const p = f.p.replace(/,\s*(Wet|Dry)$/i, '');
+  if (f.b === 'Instinct') return 'Instinct · LID Real Rabbit';
+  return p;
+}
+function baseProduct(f) { return (f?.p || '').replace(/,\s*(Wet|Dry)$/i, ''); }
+function isDiet(f, opts) { return !!opts.dietInForce && !!f && `${f.b} ${baseProduct(f)}`.includes(opts.dietInForce); }
+function productTiny(f) { if (!f) return ''; if (f.b === 'Instinct') return 'rabbit'; return baseProduct(f); }
+// per-day counts Jun 20 – Sep 21 (a service-role read scoped to the owner + Nyx's id; counts only)
+const PAGE_FLOOR = '2026-06-20';
+let BYDAY = {"2026-06-20":{"t":{"meal":6,"vomit":1},"n":7,"ph":1,"nt":1},"2026-06-21":{"t":{"meal":7,"vomit":1},"n":8,"ph":1,"nt":0},"2026-06-22":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-06-23":{"t":{"meal":11},"n":11,"ph":0,"nt":0},"2026-06-24":{"t":{"meal":4,"vomit":1},"n":5,"ph":1,"nt":0},"2026-06-25":{"t":{"meal":8,"vomit":1},"n":9,"ph":1,"nt":0},"2026-06-26":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-06-27":{"t":{"meal":7,"vomit":1},"n":8,"ph":1,"nt":0},"2026-06-28":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-06-29":{"t":{"meal":5,"vomit":1},"n":6,"ph":1,"nt":0},"2026-06-30":{"t":{"meal":5},"n":5,"ph":0,"nt":0},"2026-07-01":{"t":{"cough":1,"meal":11,"medication":1,"sneeze":1},"n":14,"ph":0,"nt":2},"2026-07-02":{"t":{"meal":11},"n":11,"ph":0,"nt":0},"2026-07-03":{"t":{"cough":1,"meal":9},"n":10,"ph":0,"nt":1},"2026-07-04":{"t":{"meal":13,"vomit":2},"n":15,"ph":2,"nt":0},"2026-07-05":{"t":{"meal":9,"vomit":1},"n":10,"ph":1,"nt":1},"2026-07-06":{"t":{"cough":1,"meal":12},"n":13,"ph":0,"nt":1},"2026-07-07":{"t":{"meal":10,"medication":1,"sneeze":1},"n":12,"ph":0,"nt":1},"2026-07-08":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-07-09":{"t":{"meal":11,"vomit":1},"n":12,"ph":1,"nt":0},"2026-07-10":{"t":{"meal":14,"medication":1,"sneeze":1,"vomit":1},"n":17,"ph":1,"nt":1},"2026-07-11":{"t":{"meal":13,"medication":1},"n":14,"ph":0,"nt":0},"2026-07-12":{"t":{"meal":11,"medication":1},"n":12,"ph":0,"nt":0},"2026-07-13":{"t":{"meal":10},"n":10,"ph":0,"nt":0},"2026-07-14":{"t":{"meal":9,"vomit":1},"n":10,"ph":1,"nt":0},"2026-07-15":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-07-16":{"t":{"cough":1,"itch":2,"meal":10,"medication":1},"n":14,"ph":0,"nt":3},"2026-07-17":{"t":{"cough":1,"meal":15,"medication":2},"n":18,"ph":0,"nt":1},"2026-07-18":{"t":{"cough":1,"meal":11,"medication":2,"vomit":1},"n":15,"ph":1,"nt":2},"2026-07-19":{"t":{"cough":1,"itch":1,"meal":10,"medication":2},"n":14,"ph":0,"nt":2},"2026-07-20":{"t":{"meal":10,"medication":2},"n":12,"ph":0,"nt":0},"2026-07-21":{"t":{"meal":9,"medication":3,"other":1,"sneeze":2},"n":15,"ph":0,"nt":3},"2026-07-22":{"t":{"meal":12,"medication":2},"n":14,"ph":0,"nt":0},"2026-07-23":{"t":{"meal":10,"medication":2,"vomit":1},"n":13,"ph":1,"nt":0},"2026-07-24":{"t":{"meal":12,"medication":2},"n":14,"ph":0,"nt":0},"2026-07-25":{"t":{"meal":8,"medication":2,"vomit":1},"n":11,"ph":1,"nt":2},"2026-07-26":{"t":{"meal":5,"medication":2},"n":7,"ph":0,"nt":0},"2026-07-27":{"t":{"meal":6,"medication":2,"vomit":1},"n":9,"ph":1,"nt":1},"2026-07-28":{"t":{"meal":7,"medication":2},"n":9,"ph":0,"nt":1},"2026-07-29":{"t":{"meal":5,"medication":2},"n":7,"ph":0,"nt":2},"2026-07-30":{"t":{"meal":5,"medication":1},"n":6,"ph":0,"nt":1},"2026-07-31":{"t":{"meal":2},"n":2,"ph":0,"nt":0},"2026-08-01":{"t":{"meal":7,"medication":1,"sneeze":2},"n":10,"ph":0,"nt":2},"2026-08-02":{"t":{"cough":2,"meal":6,"medication":1,"vomit":1},"n":10,"ph":1,"nt":2},"2026-08-03":{"t":{"cough":1,"meal":4},"n":5,"ph":0,"nt":1},"2026-08-04":{"t":{"cough":1,"lethargy":1,"meal":5,"medication":1},"n":8,"ph":0,"nt":3},"2026-08-05":{"t":{"meal":4,"vomit":1},"n":5,"ph":1,"nt":0},"2026-08-06":{"t":{"cough":1,"meal":6},"n":7,"ph":0,"nt":1},"2026-08-07":{"t":{"cough":1,"meal":4},"n":5,"ph":0,"nt":1},"2026-08-08":{"t":{"meal":4,"vomit":1},"n":5,"ph":1,"nt":1},"2026-08-09":{"t":{"cough":1,"meal":3},"n":4,"ph":0,"nt":1},"2026-08-10":{"t":{"meal":3},"n":3,"ph":0,"nt":0},"2026-08-11":{"t":{"meal":3},"n":3,"ph":0,"nt":0},"2026-08-12":{"t":{"meal":6},"n":6,"ph":0,"nt":1},"2026-08-13":{"t":{"cough":2,"meal":5},"n":7,"ph":0,"nt":2},"2026-08-14":{"t":{"cough":2,"meal":7,"medication":1},"n":10,"ph":0,"nt":3},"2026-08-15":{"t":{"meal":4},"n":4,"ph":0,"nt":0},"2026-08-16":{"t":{"cough":1,"meal":7,"sneeze":1},"n":9,"ph":0,"nt":2},"2026-08-17":{"t":{"meal":6,"medication":1},"n":7,"ph":0,"nt":0},"2026-08-18":{"t":{"cough":1,"meal":5,"medication":1},"n":7,"ph":0,"nt":1},"2026-08-19":{"t":{"meal":6,"vomit":1},"n":7,"ph":1,"nt":0},"2026-08-20":{"t":{"meal":7},"n":7,"ph":0,"nt":0},"2026-08-21":{"t":{"cough":1,"meal":6,"medication":1,"sneeze":1},"n":9,"ph":0,"nt":2},"2026-08-22":{"t":{"meal":5},"n":5,"ph":0,"nt":0},"2026-08-23":{"t":{"meal":7,"medication":1,"sneeze":2},"n":10,"ph":0,"nt":2},"2026-08-24":{"t":{"meal":7,"vomit":1},"n":8,"ph":1,"nt":0},"2026-08-25":{"t":{"meal":6},"n":6,"ph":0,"nt":0},"2026-08-26":{"t":{"cough":1,"meal":7},"n":8,"ph":0,"nt":1},"2026-08-27":{"t":{"meal":8},"n":8,"ph":0,"nt":0},"2026-08-28":{"t":{"meal":6,"medication":1},"n":7,"ph":0,"nt":0},"2026-08-29":{"t":{"cough":1,"meal":9,"sneeze":1},"n":11,"ph":0,"nt":0},"2026-08-30":{"t":{"meal":7},"n":7,"ph":0,"nt":0},"2026-08-31":{"t":{"meal":4},"n":4,"ph":0,"nt":0},"2026-09-01":{"t":{"meal":5},"n":5,"ph":0,"nt":0},"2026-09-02":{"t":{"meal":3},"n":3,"ph":0,"nt":0},"2026-09-03":{"t":{"meal":4},"n":4,"ph":0,"nt":0},"2026-09-04":{"t":{"cough":1,"meal":2,"vomit":1},"n":4,"ph":1,"nt":0},"2026-09-05":{"t":{"cough":1,"itch":1,"meal":5,"medication":1},"n":8,"ph":0,"nt":1},"2026-09-06":{"t":{"meal":2},"n":2,"ph":0,"nt":0},"2026-09-07":{"t":{"meal":6,"vomit":2},"n":8,"ph":2,"nt":1},"2026-09-08":{"t":{"cough":1,"meal":6},"n":7,"ph":0,"nt":0},"2026-09-09":{"t":{"meal":9},"n":9,"ph":0,"nt":0},"2026-09-10":{"t":{"meal":6},"n":6,"ph":0,"nt":0},"2026-09-11":{"t":{"cough":1,"itch":1,"meal":7},"n":9,"ph":0,"nt":1},"2026-09-12":{"t":{"meal":7,"vomit":1},"n":8,"ph":1,"nt":0},"2026-09-13":{"t":{"itch":1,"meal":6,"other":2},"n":9,"ph":0,"nt":3},"2026-09-14":{"t":{"cough":1,"meal":3},"n":4,"ph":0,"nt":0},"2026-09-15":{"t":{"meal":7},"n":7,"ph":0,"nt":0},"2026-09-16":{"t":{"meal":8,"weight_check":1},"n":9,"ph":0,"nt":0},"2026-09-17":{"t":{"cough":1,"meal":7,"vomit":2},"n":10,"ph":2,"nt":1},"2026-09-18":{"t":{"meal":5},"n":5,"ph":0,"nt":0},"2026-09-19":{"t":{"meal":1},"n":1,"ph":0,"nt":0},"2026-09-21":{"t":{"meal":5,"medication":2,"vomit":1},"n":8,"ph":1,"nt":2}};
+function fmtTag(f) { return f.ff === 'wet_canned' ? 'wet' : f.ff === 'dry_kibble' ? 'dry' : ''; }
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+const kg2lb = (kg) => (Math.round(kg * 2.20462 * 10) / 10).toFixed(1);
+
+// ── The day model ────────────────────────────────────────────────────────────
+// rows → nodes (with the stricter compaction wall: a compact line may hide no fact a
+// row would show — never across a symptom, a dose, a look, a weight, a photographed
+// meal, a different food or format, a rating below all/most, a note, a combo vehicle,
+// or local midnight).
+function timingRef(row, dayRows, prevRows) {
+  if (row.ty !== 'vomit' || row.cf !== 'witnessed') return null;
+  const t = mins(row.t);
+  let best = null;
+  for (const r of dayRows) if (r.ty === 'meal' && mins(r.t) < t && (!best || mins(r.t) > mins(best.t))) best = r;
+  if (!best && prevRows) for (const r of prevRows) if (r.ty === 'meal' && (!best || mins(r.t) > mins(best.t))) best = r;
+  return best;
+}
+function timingFor(row, dayRows, prevRows) {
+  const ref = timingRef(row, dayRows, prevRows);
+  if (!ref) return null;
+  const t = mins(row.t);
+  const sameDay = dayRows.includes(ref);
+  const d = t - (sameDay ? mins(ref.t) : mins(ref.t) - 1440);
+  if (d > 6 * 60) return '6 h or more after eating';
+  if (d < 60) return `${d} min after eating`;
+  const h = Math.floor(d / 60), m = d % 60;
+  return m ? `${h} h ${m} min after eating` : `${h} h after eating`;
+}
+function snip(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max + 1); const at = cut.lastIndexOf(' ');
+  return (at > 12 ? cut.slice(0, at) : cut.slice(0, max)).replace(/[,;:.]+$/, '') + '…';
+}
+function compactable(r) {
+  return r.ty === 'meal' && !!r.f && !r.ph && !r.note && !r.timingRef && (r.f?.ir == null || r.f.ir === 'all' || r.f.ir === 'most') && !r.vehicle;
+}
+function runKey(r, opts) { return opts && opts.crossFormat === false ? `${r.f?.b}|${r.f?.p}` : `${r.f?.b}|${baseProduct(r.f)}`; }
+function buildDay(day, rows, prevRows, opts, fullRows) {
+  const rs = rows.map((r) => ({ ...r, note: NOTE[`${day} ${r.t}`] || null, hasNote: r.nl > 0 }));
+  const whole = fullRows || rows;
+  // a dose given "in food" at the same minute as a meal marks that meal the vehicle
+  for (const r of rs) if (r.ty === 'medication' && r.m?.hg === 'in_food') { const v = rs.find((x) => x.ty === 'meal' && x.t === r.t); if (v) { v.vehicle = r.m.d; r.vehicleFood = opts.crossLinks === false ? productTiny(v.f) : productShort(v.f); } }
+  // the meal a symptom's timing line points at stays its own row (Dr. Chen, round 2)
+  const refs = new Set(); for (const r of rs) { const ref = timingRef(r, rs, prevRows); if (ref) refs.add(`${ref.t}|${ref.ty}`); }
+  for (const r of rs) if (refs.has(`${r.t}|${r.ty}`)) r.timingRef = true;
+  const ordered = opts.order === 'newest' ? [...rs].reverse() : rs;
+  const nodes = [];
+  let run = [];
+  const flush = () => {
+    if (run.length >= 2) nodes.push({ kind: 'compact', rows: run });
+    else for (const r of run) nodes.push({ kind: 'single', row: r });
+    run = [];
+  };
+  for (const r of ordered) {
+    if (compactable(r) && opts.compact !== false) {
+      if (run.length && runKey(run[run.length - 1], opts) !== runKey(r, opts)) flush();
+      run.push(r); continue;
+    }
+    flush(); nodes.push({ kind: 'single', row: r });
+  }
+  flush();
+  for (const n of nodes) if (n.kind === 'single') n.timing = timingFor(n.row, whole, prevRows);
+  return { day, rows: rs, nodes };
+}
+function countWords(rows, lens) {
+  const c = {};
+  for (const r of rows) c[r.ty] = (c[r.ty] || 0) + 1;
+  const parts = [];
+  for (const k of ORDER) if (c[k]) parts.push({ k, n: c[k], sym: SYMPTOM.includes(k) });
+  if (lens) return parts.filter((p) => p.k === lens || (lens === 'symptom' && p.sym));
+  return parts;
+}
+function wordsHtml(parts) {
+  return parts.map((p) => {
+    const w = `${p.n} ${p.n === 1 ? SINGULAR[p.k] : PLURAL[p.k]}`;
+    return p.sym ? `<span class="sym">${w}</span>` : w;
+  }).join(' · ');
+}
+function matchesLens(r, lens) {
+  if (!lens) return true;
+  if (lens === 'symptom') return SYMPTOM.includes(r.ty);
+  if (lens === 'photographed') return !!r.ph;
+  if (lens === 'noted') return r.nl > 0;
+  if (lens === 'read') return !!r.rec;
+  if (lens === 'prednisone') return r.ty === 'medication' && r.m?.d === 'Prednisone';
+  return r.ty === lens;
+}
+function matchesSearch(r, day, q) {
+  if (!q) return true;
+  const s = q.toLowerCase();
+  const hay = [LABEL[r.ty], r.f ? `${r.f.b} ${r.f.p}` : '', r.m ? r.m.d : '', NOTE[`${day} ${r.t}`] || ''].join(' ').toLowerCase();
+  return hay.includes(s);
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+function nodeHtml(n, day, opts) {
+  if (n.kind === 'compact') {
+    const rows = n.rows; const f = rows[0].f;
+    const t1 = fmt12(rows[0].t), t2 = fmt12(rows[rows.length - 1].t);
+    const times = opts.order === 'newest' ? `${t2} – ${t1}` : `${t1} – ${t2}`;
+    const id = `${day}-${rows[0].t}`;
+    const named = !isDiet(f, opts);
+    const wet = rows.filter((r) => fmtTag(r.f) === 'wet').length, dry = rows.filter((r) => fmtTag(r.f) === 'dry').length;
+    const fmtText = wet && dry ? `${wet} wet · ${dry} dry` : (wet ? 'wet' : 'dry');
+    const members = rows.map((r) => `<div class="ev" role="button" tabindex="0" data-rec="${esc(day)} ${esc(r.t)}"><i style="background:#00C2A8"></i><span>Meal${named ? ' · ' + esc(productShort(f)) : ''} <span class="tagx">${fmtTag(r.f)}</span></span><span class="t">${fmt12(r.t)}</span></div>`).join('');
+    return `<div class="node1 nc door" role="button" tabindex="0" aria-expanded="false" data-compact="${esc(id)}" style="--dot:#00C2A8"><div class="nt">${rows.length} meals <small>· ${named ? esc(productShort(f)) + ' · ' : ''}${fmtText}</small></div><div class="ntime">${times}</div></div><div class="ncdd"><div class="dd" data-dd="${esc(id)}"><div class="drail"></div><div class="dbox"><div class="dtext">${members}</div></div></div></div>`;
+  }
+  const r = n.row; const c = cat(r); const tint = TINT[c];
+  let title = LABEL[r.ty], detail = [], conf = '', line = '', chip = '';
+  if (r.ty === 'meal') {
+    title = r.f?.ft === 'treat' ? 'Treat' : 'Meal';
+    if (!r.f) detail.push('no food recorded');
+    else detail.push(isDiet(r.f, opts) ? `<span class="tagx">${fmtTag(r.f)}</span>` : `${esc(productShort(r.f))} <span class="tagx">${fmtTag(r.f)}</span>`);
+    if (r.f?.ir === 'picked' || r.f?.ir === 'refused') chip = `<span class="chip attn">${r.f.ir === 'picked' ? 'Picked' : 'Refused'}</span>`;
+    else if (r.f?.ir === 'some') chip = `<span class="chip attn">Some</span>`;
+    else if (r.f?.ir === 'most') chip = `<span class="chip ok">Most</span>`;
+    else if (r.f?.ir === 'all') chip = `<span class="chip ok">All</span>`;
+    if (r.vehicle && opts.crossLinks !== false) line = `<div class="nv" style="color:#0B7B6C;font-weight:500">↔ ${esc(r.vehicle)} given in this meal ›</div>`;
+    else if (r.vehicle) detail.push(`with ${esc(r.vehicle)}`);
+  } else if (r.ty === 'medication') {
+    title = r.m?.d || 'Medication';
+    detail.push(r.m?.hg === 'in_food' ? (r.vehicleFood && opts.crossLinks === false ? `in the ${esc(r.vehicleFood)} meal` : 'in food') : r.m?.hg === 'treat' ? 'in a treat' : 'by mouth');
+    if (r.m?.ad === 'given') chip = `<span class="chip ok">Given</span>`;
+    else if (r.m?.ad === 'partial') chip = `<span class="chip attn">Partial</span>`;
+    else if (!r.m?.ad) chip = `<span class="chip attn">Unconfirmed</span>`;
+    if (r.vehicleFood && opts.crossLinks !== false) line = `<div class="nv" style="color:#0B7B6C;font-weight:500">↔ in the ${esc(r.vehicleFood)} meal ›</div>`;
+  } else if (r.ty === 'weight_check') {
+    detail.push(`${kg2lb(r.kg)} lbs`);
+  } else if (r.ty === 'vomit') {
+    if (n.timing) detail.push(esc(n.timing));
+  }
+  if (r.ph) detail.push('<span class="pg" role="img" aria-label="photographed"></span>');
+  if (r.cf === 'window') conf = '<span class="conf">found</span>';
+  else if (r.cf === 'estimated') conf = '<span class="conf">estimated</span>';
+  const noteGlyph = r.hasNote && opts.notes !== 'none' && (opts.notes === 'glyph' || !r.note) ? '<span class="qm" aria-label="Has a note">❞</span>' : '';
+  const timeText = r.cf === 'window' ? `by ${fmt12(r.t)}` : fmt12(r.t);
+  // the read
+  let verdict = '';
+  const mode = opts.verdict || 'every';
+  if (r.rec && !r.dis && mode !== 'none') {
+    const [w, k] = REC[r.rec] || ['Worth a call', 'call'];
+    if (mode === 'every' || (mode === 'rose' && k === 'call')) verdict = `<div class="nv ${k}">${w}</div>`;
+  }
+  if (opts.pendingKey === `${day} ${r.t}`) {
+    const [w] = REC[r.rec] || ['Keep an eye out'];
+    const calm = r.rec !== 'worth_a_call' && mode === 'rose';
+    verdict = calm
+      ? `<div class="arr2 calm" data-arr="${esc(opts.pendingKey)}" aria-live="polite"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div></div></div></div>`
+      : `<div class="arr2" data-arr="${esc(opts.pendingKey)}" aria-live="polite"><div class="arow"><span class="tick2"></span><div class="abody"><div class="pend">Reading the photo…</div><div class="dbox"><div class="dtext"><b>${w}</b>One photo can raise a flag; it can't clear one.</div></div></div></div></div>`;
+  }
+  const noteLine = r.note && (opts.notes === 'line' || opts.notes === 'snippet') ? `<div class="nq${opts.notes === 'snippet' ? ' snip' : ''}">“${esc(opts.notes === 'snippet' ? snip(r.note, 44) : r.note)}”</div>` : '';
+  const sync = r.quarantined ? `<div class="nv call">Not saved to your records · Save again ›</div>` : '';
+  const key = `${day} ${r.t}`;
+  return `<div class="node1 door" role="button" tabindex="0" data-rec="${esc(key)}" style="--dot:${tint}"><div class="nt">${esc(title)}${detail.length ? ` <small>· ${detail.join(' · ')}</small>` : ''}${chip}${noteGlyph}</div><div class="ntime">${timeText}${conf}</div>${verdict}${line}${noteLine}${sync}</div>`;
+}
+function dayCardHtml(d, opts) {
+  const parts = countWords(d.rows, opts.lens && opts.lens !== 'photographed' && opts.lens !== 'noted' && opts.lens !== 'read' && opts.lens !== 'prednisone' ? opts.lens : null);
+  const total = d.rows.length;
+  let hdrRight;
+  if (opts.lens && opts.lens !== 'symptom' && !['photographed', 'noted', 'read', 'prednisone'].includes(opts.lens)) hdrRight = wordsHtml(parts);
+  else if (opts.lens === 'symptom') hdrRight = wordsHtml(parts);
+  else if (['photographed', 'noted', 'read', 'prednisone'].includes(opts.lens)) hdrRight = `<b>${total}</b> ${opts.lens === 'noted' ? 'with a note' : opts.lens === 'photographed' ? 'photographed' : opts.lens === 'read' ? 'with a read' : 'doses'}`;
+  else if (opts.search) hdrRight = wordsHtml(parts);
+  else if (opts.headerStyle === 'r1') hdrRight = `<b>${total}</b> logged${parts.length ? ' · ' + wordsHtml(parts) : ''}`;
+  else { const named = parts.filter((p) => p.sym || p.k === 'other' || p.k === 'check_in' || p.k === 'stool_normal'); hdrRight = `<b>${total}</b> logged${named.length ? ' · ' + wordsHtml(named) : ''}`; }
+  const todayTag = d.day === opts.today ? '<small>Today</small>' : '';
+  const nodes = d.nodes.map((n) => nodeHtml(n, d.day, opts)).join('');
+  let extras = '';
+  if (VISITS[d.day] && opts.visits !== false && !opts.lens) extras += `<div class="node1 door hollow" role="button" tabindex="0" data-visit="${d.day}" style="--dot:#A3A3A3"><div class="nt">Vet visit <small>· opens the visit</small></div><div class="ntime">${shortDay(d.day)}</div></div>`;
+  if (opts.threads && COURSE_START[d.day] && !opts.lens) extras += `<div class="gap" style="padding:4px 0 0"><i></i>${COURSE_START[d.day]} · ${shortDay(d.day)}</div>`;
+  return `<div class="dayc" data-day="${d.day}"><div class="dayhdr"><span class="dn">${dayName(d.day)}${todayTag}</span><span class="dc">${hdrRight}</span></div><div class="spine">${nodes}${extras}</div></div>`;
+}
+function gapHtml(days, opts) {
+  const a = days[0], b = days[days.length - 1];
+  const span = days.length === 1 ? dayName(a) : `${shortDay(b)} – ${shortDay(a)}`;
+  const n = days.length;
+  if (opts.lens) {
+    const what = opts.lens === 'symptom' ? 'no symptom' : opts.lens === 'photographed' ? 'nothing photographed' : opts.lens === 'noted' ? 'no note' : opts.lens === 'read' ? 'no read' : opts.lens === 'prednisone' ? 'no Prednisone' : `no ${SINGULAR[opts.lens]}`;
+    return `<div class="gap${n > 1 ? ' wide' : ''}" data-gap-from="${b}" data-gap-to="${a}"><i></i>${what} logged · ${span}${n > 1 ? ` · ${n} days` : ''}</div>`;
+  }
+  return `<div class="gap${n > 1 ? ' wide' : ''}" data-gap-from="${b}" data-gap-to="${a}"><i></i>${span} · nothing logged${n > 1 ? ` · ${n} days` : ''}</div>`;
+}
+function windowLabelShort(opts) {
+  const w = opts.when || 'all';
+  return { all: 'All time', today: 'Today', '7d': 'Last 7 days', '14d': 'Last 14 days', '30d': 'Last 30 days', trial: 'Since the trial', visit: 'Since the visit', sep: 'September', aug: 'August', jul: 'July', jun: 'June', may: 'May' }[w];
+}
+function windowLabel(opts) {
+  const w = opts.when || 'all';
+  return { all: 'All time', today: 'Today', '7d': 'Last 7 days', '14d': 'Last 14 days', '30d': 'Last 30 days', trial: 'Since the trial started', visit: 'Since the last visit', sep: 'September', aug: 'August', jul: 'July', jun: 'June', may: 'May' }[w];
+}
+function lensLabel(lens) {
+  if (!lens) return 'All types';
+  return { symptom: 'All symptoms', photographed: 'Photographed', noted: 'With a note', read: 'With a read', prednisone: 'Prednisone' }[lens] || LABEL[lens];
+}
+function winCount(opts) {
+  const w = WIN[opts.when || 'all'];
+  if (!w) return null;
+  const l = opts.lens;
+  if (!l) return w.n;
+  if (l === 'symptom') return (w.vomit || 0) + (w.diarrhea || 0) + (w.cough || 0) + (w.sneeze || 0) + (w.lethargy || 0) + (w.itch || 0);
+  if (l === 'photographed') return w.photo; if (l === 'noted') return w.note; if (l === 'read') return w.read;
+  if (l === 'prednisone') return ['all', 'today', '7d', '14d', '30d', 'trial', 'visit', 'sep'].includes(opts.when || 'all') ? 1 : 0;
+  return w[l === 'weight_check' ? 'weight' : l === 'stool_normal' ? 'stool' : l] ?? 0;
+}
+function completenessLine(opts) {
+  const n = winCount(opts);
+  const lensWord = opts.lens ? (n === 1 ? SINGULAR[opts.lens] || 'match' : (PLURAL[opts.lens] || (opts.lens === 'symptom' ? 'symptoms' : opts.lens === 'photographed' ? 'photographed' : opts.lens === 'noted' ? 'with a note' : opts.lens === 'read' ? 'with a read' : 'doses'))) : 'logged';
+  const w = WIN[opts.when || 'all'];
+  if (n == null) return '';
+  const since = (opts.when || 'all') === 'all' ? ` since ${shortDay(w.first_day)}` : '';
+  const unl = w && w.days_logged != null && (opts.when || 'all') !== 'all' && !opts.lens ? ` · ${w.span - w.days_logged === 0 ? 'no day unlogged' : `${w.span - w.days_logged} day${w.span - w.days_logged === 1 ? '' : 's'} unlogged`}` : '';
+  return `<div class="lensline"><span>${windowLabel(opts)} · <span class="cnt">${n.toLocaleString()}</span> ${lensWord}${since}${unl}</span></div>`;
+}
+function daysInWindow(opts) {
+  if (opts.only) return FIX.filter((d) => opts.only.includes(d.day));
+  const w = opts.when || 'all';
+  const from = { all: '2026-09-04', today: '2026-09-21', '7d': '2026-09-15', '14d': '2026-09-08', '30d': '2026-09-04', trial: '2026-09-04', visit: '2026-09-16', sep: '2026-09-04' }[w];
+  if (!from) return [];
+  return FIX.filter((d) => d.day >= from && d.day <= (opts.today || '2026-09-21'));
+}
+function listHtml(opts) {
+  const days = daysInWindow(opts);
+  if (!days.length) return `<div class="empty" style="padding:14px 4px"><b>${windowLabel(opts)} is on the device, not on this page.</b>This page carries Sep 4 – 21 of the record; the app would draw ${windowLabel(opts)}'s ${(WIN[opts.when] || {}).n?.toLocaleString() || ''} rows the same way.</div>`;
+  const byDay = new Map(days.map((d) => [d.day, d]));
+  const last = opts.only ? days[days.length - 1].day : (opts.today || '2026-09-21'), first = days[0].day;
+  // walk every calendar day newest → oldest; group missing days into gaps
+  const items = []; let gap = [];
+  const flushGap = () => { if (gap.length) { items.push({ gap }); gap = []; } };
+  let prevRows = null;
+  const built = new Map();
+  for (const d of days) { built.set(d.day, buildDay(d.day, d.rows.filter((r) => matchesLens(r, opts.lens) && matchesSearch(r, d.day, opts.search)), prevRows, opts, d.rows)); prevRows = d.rows; }
+  for (let iso = last; iso >= first; iso = addDays(iso, -1)) {
+    const d = built.get(iso);
+    if (!d || d.rows.length === 0) { if (!opts.search) gap.push(iso); continue; }
+    flushGap(); items.push({ day: d });
+  }
+  flushGap();
+  const standing = '';
+  const body = items.map((it) => it.gap ? gapHtml(it.gap, opts) : dayCardHtml(it.day, opts)).join('');
+  const bounded = ['today', '7d', '14d', 'visit'].includes(opts.when || 'all');
+  const partial = ['30d', 'trial'].includes(opts.when || 'all');
+  const endcap = opts.search || opts.bare ? '' : `<div class="gap endcap" style="justify-content:center;padding-top:10px"><i></i>${bounded ? `${windowLabel(opts)} ends here · the record starts May 14` : partial ? `${windowLabel(opts)} runs back to ${shortDay(windowBounds(opts).from)} on the device · this page carries Sep 4 – 21` : 'Sep 3 and earlier · the record starts May 14'}</div>`;
+  if (!items.length) return `<div class="empty" style="padding:14px 4px"><b>Nothing matches that lens.</b>${opts.search ? 'Try another word, or clear the search.' : 'Try clearing a filter to see more of Nyx’s history.'}</div>`;
+  return standing + `<div class="hist${opts.chevrons ? ' chev' : ''}">${body}</div>` + endcap;
+}
+function headerHtml(opts) {
+  const lensOn = !!opts.lens, whenOn = (opts.when || 'all') !== 'all';
+  const n = winCount(opts);
+  const lensCount = lensOn && n != null ? ` <b>· ${n.toLocaleString()}</b>` : '';
+  return `<div class="hh"><span class="ttl">${opts.title || 'Nyx'}</span><div class="pills"><button type="button" class="spill${lensOn ? ' on' : ''}" data-open="type">${esc(lensLabel(opts.lens))}${lensCount} <span class="chev">▼</span></button><button type="button" class="spill${whenOn ? ' on' : ''}" data-open="when">${windowLabelShort(opts)} <span class="chev">▼</span></button>${opts.moreLens ? `<button type="button" class="spill icon" data-open="more" aria-label="More lenses">⋯</button>` : ''}${opts.search != null ? `<button type="button" class="srch" data-open="search" aria-label="Search the record"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>` : ''}</div></div>`;
+}
+function searchBarHtml(opts) {
+  if (opts.search == null || !opts.searchOpen) return '';
+  return `<div class="searchbar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#737373" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="${opts.id}-search" type="search" placeholder="Search foods, medicines, notes" value="${esc(opts.search)}" aria-label="Search the record" /><button type="button" class="x" data-open="search-close">Done</button></div>`;
+}
+function threadsHtml(opts) {
+  if (!opts.threads || !opts.standingLine) return '';
+  const td = trialDay(opts.today || '2026-09-21');
+  if (opts.threads === 'pills') return `<div class="threads"><span class="thread"><i style="background:#00C2A8"></i>Trial · <b>day ${td} of ${TRIAL.target}</b> · ${TRIAL.food}</span><span class="thread"><i style="background:#5B7A9E"></i>Prednisone · <b>since Sep 21</b></span></div>`;
+  const readLine = opts.verdict !== 'none' && opts.standing !== false ? `<div class="standing read"><i class="stick"></i><span>A photo's read can raise a flag, never clear one.</span></div>` : '';
+  return `<div class="standing"><i class="stick"></i><span><b>${TRIAL.food}</b> · trial day ${td} of ${TRIAL.target} · <b>Prednisone</b> since Sep 21</span></div>` + readLine;
+}
+function windowBounds(opts) {
+  const today = opts.today || '2026-09-21';
+  const w = opts.when || 'all';
+  const from = { all: '2026-05-14', today, '7d': addDays(today, -6), '14d': addDays(today, -13), '30d': addDays(today, -29), trial: TRIAL.start, visit: '2026-09-16', sep: '2026-09-01', aug: '2026-08-01', jul: '2026-07-01', jun: '2026-06-01', may: '2026-05-14' }[w];
+  const to = { aug: '2026-08-31', jul: '2026-07-31', jun: '2026-06-30', may: '2026-05-31' }[w] || today;
+  return { from, to };
+}
+function dayCount(iso, lens) {
+  const fx = FIX.find((d) => d.day === iso);
+  if (fx) { const rows = fx.rows.filter((r) => matchesLens(r, lens)); return { n: rows.length, any: fx.rows.length > 0, sym: rows.some((r) => SYMPTOM.includes(r.ty)), known: true }; }
+  const b = BYDAY[iso];
+  if (!b) return { n: 0, any: false, sym: false, known: iso >= PAGE_FLOOR };
+  const t = b.t || {};
+  const symN = SYMPTOM.reduce((a, k) => a + (t[k] || 0), 0);
+  if (!lens) return { n: b.n, any: b.n > 0, sym: symN > 0, known: true };
+  if (lens === 'symptom') return { n: symN, any: b.n > 0, sym: symN > 0, known: true };
+  if (lens === 'photographed') return { n: b.ph, any: b.n > 0, sym: false, known: true };
+  if (lens === 'noted') return { n: b.nt, any: b.n > 0, sym: false, known: true };
+  if (lens === 'read') return { n: b.ph, any: b.n > 0, sym: false, known: true };
+  if (lens === 'prednisone') return { n: 0, any: b.n > 0, sym: false, known: true };
+  return { n: t[lens] || 0, any: b.n > 0, sym: SYMPTOM.includes(lens) && (t[lens] || 0) > 0, known: true };
+}
+function lensWords(lens, n) {
+  if (!lens) return n === 0 ? 'nothing logged' : `${n} logged`;
+  const one = { symptom: 'symptom', photographed: 'photographed', noted: 'with a note', read: 'with a read', prednisone: 'Prednisone dose' }[lens] || SINGULAR[lens] || lens;
+  const many = { symptom: 'symptoms', photographed: 'photographed', noted: 'with a note', read: 'with a read', prednisone: 'Prednisone doses' }[lens] || PLURAL[lens] || lens;
+  return n === 0 ? `no ${one} logged` : `${n} ${n === 1 ? one : many}`;
+}
+function weekLabel(start) {
+  const end = addDays(start, 6); const a = dateOf(start), b = dateOf(end);
+  return a.getMonth() === b.getMonth() ? `${shortDay(start)} – ${b.getDate()}` : `${shortDay(start)} – ${shortDay(end)}`;
+}
+// every Sunday-start week the window touches, oldest first, bounded below by the page's data floor
+function railPages(opts) {
+  const today = opts.today || '2026-09-21';
+  const { from, to } = windowBounds(opts);
+  const floor = from > PAGE_FLOOR ? from : PAGE_FLOOR;
+  const first = addDays(floor, -dateOf(floor).getDay());
+  const anchor = to < today ? to : today;
+  const last = addDays(anchor, -dateOf(anchor).getDay());
+  const pages = []; for (let st = first; st <= last; st = addDays(st, 7)) pages.push(st);
+  return { pages, from, to, today, floor };
+}
+function railIndex(opts, pages) { return opts.railPage != null ? Math.max(0, Math.min(pages.length - 1, opts.railPage)) : pages.length - 1; }
+function railNavLabels(opts, pages, idx) {
+  const { from, to, today } = railPages(opts);
+  const canBack = idx > 0, canFwd = idx < pages.length - 1;
+  const back = canBack ? 'Earlier week' : (opts.when || 'all') === 'all' ? `Earlier weeks are on the device · this page carries ${shortDay(PAGE_FLOOR)} onward` : `Earlier week · ${windowLabel(opts)} starts ${shortDay(from)}`;
+  const fwd = canFwd ? 'Later week' : `Later week · ${to === today ? 'this week holds today' : windowLabel(opts) + ' ends ' + shortDay(to)}`;
+  return { canBack, canFwd, back, fwd };
+}
+function railHtml(opts) {
+  if (!opts.rail) return '';
+  const { pages, from, to, today } = railPages(opts);
+  const idx = railIndex(opts, pages);
+  const pageHtml = pages.map((start, p) => {
+    let cells = '';
+    for (let i = 0; i < 7; i++) {
+      const iso = addDays(start, i);
+      const future = iso > today;
+      const out = iso < from || iso > to;
+      const c = dayCount(iso, opts.lens);
+      const cls = future ? 'future' : out ? 'out' : !c.known ? 'blank' : !c.any ? 'none' : c.n === 0 ? 'quiet' : c.sym ? 'sym' : '';
+      const aria = future ? `${dayName(iso)}, ahead` : out ? `${dayName(iso)}, outside ${windowLabel(opts)}` : !c.known ? `${dayName(iso)}, not on this page` : !c.any ? `${dayName(iso)}, nothing logged` : `${dayName(iso)}, ${lensWords(opts.lens, c.n)}${c.sym && !opts.lens ? ', a symptom' : ''}`;
+      cells += `<button type="button" class="d ${cls}${iso === today ? ' today' : ''}" data-rail="${iso}" style="--i:${i}" aria-label="${esc(aria)}" ${future || out || !c.known ? 'disabled' : ''} ${p === idx ? '' : 'tabindex="-1"'}>${dateOf(iso).getDate()}</button>`;
+    }
+    return `<div class="rail railpage${p === idx && st_playing(opts) ? ' arm' : ''}" data-page="${p}" data-start="${start}" aria-hidden="${p === idx ? 'false' : 'true'}">${cells}</div>`;
+  }).join('');
+  const wd = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((w) => `<span class="wd">${w}</span>`).join('');
+  const nav = railNavLabels(opts, pages, idx);
+  const winNote = (opts.when || 'all') === 'all' ? '' : ` · ${windowLabelShort(opts)}`;
+  return `<div class="railnav"><button type="button" aria-label="${esc(nav.back)}" data-railnav="-1" ${nav.canBack ? '' : 'disabled'}>‹</button><b><span class="rlabel">${weekLabel(pages[idx])}</span><small>${winNote}</small></b><button type="button" aria-label="${esc(nav.fwd)}" data-railnav="1" ${nav.canFwd ? '' : 'disabled'}>›</button></div><div class="wdrow">${wd}</div><div class="railwrap" data-idx="${idx}" data-pages="${pages.length}">${pageHtml}</div>`;
+}
+// keep the scroller on its page and the label on the scroller (called after every render and on scroll end)
+function syncRail(el, opts) {
+  const wrap = el.querySelector('.railwrap'); if (!wrap) return;
+  const { pages } = railPages(opts);
+  const idx = railIndex(opts, pages);
+  const page = wrap.querySelector(`.railpage[data-page="${idx}"]`);
+  if (page && Math.abs(wrap.scrollLeft - page.offsetLeft) > 1) wrap.scrollLeft = page.offsetLeft;
+  wrap.dataset.idx = String(idx);
+  const nav = railNavLabels(opts, pages, idx);
+  const lab = el.querySelector('.rlabel'); if (lab) lab.textContent = weekLabel(pages[idx]);
+  const back = el.querySelector('[data-railnav="-1"]'), fwd = el.querySelector('[data-railnav="1"]');
+  if (back) { back.disabled = !nav.canBack; back.setAttribute('aria-label', nav.back); }
+  if (fwd) { fwd.disabled = !nav.canFwd; fwd.setAttribute('aria-label', nav.fwd); }
+  wrap.querySelectorAll('.railpage').forEach((pg) => { const on = Number(pg.dataset.page) === idx; pg.setAttribute('aria-hidden', on ? 'false' : 'true'); pg.querySelectorAll('.d').forEach((d) => { if (on) d.removeAttribute('tabindex'); else d.setAttribute('tabindex', '-1'); }); });
+}
+// a scroll the owner did not cause (a re-snap after a resize, a layout pass) never changes the page; it is put back
+function railScrolled(el) {
+  const st = phones.get(el); const wrap = el.querySelector('.railwrap'); if (!st || !wrap || !wrap.clientWidth) return;
+  if (!(st.userScrollUntil > Date.now())) { syncRail(el, st.opts); return; }
+  const idx = Math.round(wrap.scrollLeft / wrap.clientWidth);
+  if (idx !== Number(wrap.dataset.idx)) { st.opts.railPage = idx; syncRail(el, st.opts); }
+}
+function skelHtml() {
+  return `<div class="skel" style="padding:52px 12px 12px"><div class="k hdr"></div><div class="k line"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k hdr" style="margin-top:8px"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div></div>`;
+}
+// The record screen the route lands on (one vomit, one meal), reached from any row.
+function recordHtml(key) {
+  const [day, t] = key.split(' ');
+  const d = FIX.find((x) => x.day === day); const r = d && d.rows.find((x) => x.t === t);
+  if (!r) return '';
+  const title = r.ty === 'meal' ? (r.f?.ft === 'treat' ? 'Treat' : 'Meal') : r.ty === 'medication' ? r.m?.d : LABEL[r.ty];
+  const note = NOTE[key];
+  let body = '';
+  if (r.ty === 'vomit' && r.ph) {
+    const [w, k] = REC[r.rec] || ['Keep an eye out', 'mon'];
+    body += `<div class="hero" role="img" aria-label="The photo, ${dayName(day)} ${fmt12(t)}"><small>${dayName(day)} · ${fmt12(t)}</small></div>`;
+    body += `<div class="acard"><div class="seclabel">What the photo read</div><span class="verdict ${k === 'call' ? '' : 'mon'}">${w}</span><div style="font-size:12px;color:#525252;line-height:1.45">One photo can raise a flag; it can't clear one. ${r.rec === 'worth_a_call' ? 'Something in this one is worth a call today.' : 'Nothing in this one changes that.'}</div><div class="obs"><span>yellow</span><span>liquid</span><span>no blood seen</span><span>no foreign material seen</span></div><div style="font-size:10px;color:#A3A3A3">observations illustrative on this page</div></div>`;
+  }
+  body += `<div class="acard"><div class="seclabel">When</div><div style="font-size:13px">${dayName(day)} · ${r.cf === 'window' ? 'found by ' : ''}${fmt12(t)} <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.08em">${r.cf}</span></div>${r.ty === 'meal' ? `<div class="seclabel" style="margin-top:8px">Food</div><div style="font-size:13px">${esc(r.f.b)} · ${esc(r.f.p)}</div>` : ''}${r.ty === 'medication' ? `<div class="seclabel" style="margin-top:8px">Dose</div><div style="font-size:13px">${esc(r.m.d)} · given in food</div>` : ''}</div>`;
+  body += `<div class="acard"><div class="seclabel">Notes</div><div style="font-size:12.5px;line-height:1.45;color:${note ? '#0A0A0A' : '#737373'}">${note ? esc(note) : 'Add a note'}</div>${note ? '<div class="illus" style="margin-top:4px">note text illustrative</div>' : ''}<div style="font-size:10px;color:#737373;margin-top:6px;line-height:1.4">Printed on the vet report you make · Ask can quote it back to you · never on a shared link unless you choose it</div></div>`;
+  body += `<div class="acts"><span class="pri">Edit</span><span class="sec" role="button" tabindex="0" data-remove="${esc(key)}">Remove</span></div>`;
+  return `<div class="stackhdr"><button class="back" type="button" data-back aria-label="Back to History">‹</button>${esc(title)}</div><div class="appbody land rec">${body}</div>`;
+}
+function sheetHtml(kind, opts) {
+  const w = WIN[opts.when || 'all'] || {};
+  const row = (label, key, sel, n, sub) => `<button type="button" class="opt${sel ? ' sel' : ''}${sub ? ' sub' : ''}" data-pick="${kind}:${key}"><span>${esc(label)}</span><span>${n != null ? `<span class="n">${Number(n).toLocaleString()}</span>` : ''}${sel ? ' <span class="ck">✓</span>' : ''}</span></button>`;
+  let rows = '', label = '';
+  if (kind === 'type') {
+    label = 'Show only';
+    const opt = (l, k) => row(l, k, (opts.lens || null) === k, winCount({ ...opts, lens: k }));
+    rows = opt('All types', null) + opt('All symptoms', 'symptom') + ['meal', 'vomit', 'diarrhea', 'stool_normal', 'cough', 'sneeze', 'lethargy', 'itch', 'medication', 'weight_check', 'other'].map((k) => opt(LABEL[k], k)).join('');
+  } else if (kind === 'when') {
+    label = 'Show events from';
+    const opt = (l, k) => row(l, k, (opts.when || 'all') === k, WIN[k] ? winCount({ ...opts, when: k }) : null);
+    rows = opt('All time', 'all') + opt('Today', 'today') + opt('Last 7 days', '7d') + opt('Last 14 days', '14d') + opt('Last 30 days', '30d') + opt('Since the trial started · Jul 26', 'trial') + opt('Since the last vet visit · Sep 16', 'visit') + `<div class="sl" style="margin-top:10px">Months</div>` + opt('September', 'sep') + opt('August', 'aug') + opt('July', 'jul') + opt('June', 'jun') + opt('May', 'may');
+  } else if (kind === 'more') {
+    label = 'Also only';
+    const opt = (l, k) => row(l, k, opts.lens === k, winCount({ ...opts, lens: k }));
+    rows = opt('Photographed', 'photographed') + opt('With a note', 'noted') + opt('With a read', 'read') + opt('Prednisone doses', 'prednisone');
+  }
+  return `<div class="sheetwrap on" data-sheet><button type="button" class="scrim" aria-label="Close" data-pick="close"></button><div class="sheet" role="dialog" aria-label="${esc(label)}"><div class="grab"></div><div class="sl">${esc(label)}</div>${rows}</div></div>`;
+}
+
+// ── Mount a phone ─────────────────────────────────────────────────────────────
+const phones = new Map();
+function st_playing(opts) { return !!opts._stripPlay; }
+function render(el) {
+  const st = phones.get(el);
+  const o = st.opts;
+  const body = el.querySelector('.vpbody') || el;
+  const scrollTop = body.scrollTop;
+  body.innerHTML = o.bare ? listHtml(o) : headerHtml(o) + searchBarHtml(o) + threadsHtml(o) + completenessLine(o) + railHtml(o) + listHtml(o);
+  body.scrollTop = scrollTop;
+  if (st.landed) { const a = body.querySelector('[data-arr]'); if (a) { a.classList.add('snap'); a.classList.add('in'); if (st.landedCall) a.classList.add('call'); if (a.classList.contains('calm')) a.classList.add('gone'); void a.offsetWidth; a.classList.remove('snap'); } }
+  syncRail(el, o);
+  if (o._stripPlay) { o._stripPlay = false; const r = body.querySelector('.railpage.arm'); if (r && !REDUCED) { twoFrames(() => { r.classList.remove('arm'); r.classList.add('play'); }); } else if (r) r.classList.remove('arm'); }
+  // restore open compact groups
+  for (const id of st.open) { const b = body.querySelector(`[data-compact="${CSS.escape(id)}"]`); const dd = body.querySelector(`[data-dd="${CSS.escape(id)}"]`); if (b && dd) { b.setAttribute('aria-expanded', 'true'); dd.classList.add('in'); } }
+  if (o.searchOpen) { const inp = body.querySelector('input[type=search]'); if (inp && st.focusSearch) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); st.focusSearch = false; } }
+}
+function mount(el, opts) {
+  const st = { opts: { order: 'chrono', verdict: 'rose', notes: 'snippet', today: '2026-09-21', dietInForce: null, crossFormat: true, chevrons: false, crossLinks: false, threads: true, headerStyle: 'r2', ...opts }, open: new Set() };
+  phones.set(el, st);
+  const sk = el.querySelector('.wait-skel'); if (sk && !sk.innerHTML.trim()) sk.innerHTML = skelHtml();
+  render(el);
+  if (opts.openSheet) { const wrap = document.createElement('div'); wrap.innerHTML = sheetHtml(opts.openSheet, st.opts); el.appendChild(wrap.firstElementChild); }
+  el.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-compact],[data-rec],[data-open],[data-pick],[data-rail],[data-railnav],[data-back],[data-visit],[data-remove]');
+    if (!t) return;
+    if (t.dataset.remove) { removeRow(el, t.dataset.remove); return; }
+    if (t.dataset.railnav) { const wrap = el.querySelector('.railwrap'); if (!wrap) return; const { pages } = railPages(st.opts); const idx = Math.max(0, Math.min(pages.length - 1, railIndex(st.opts, pages) + Number(t.dataset.railnav))); st.opts.railPage = idx; st.userScrollUntil = Date.now() + 1500; const page = wrap.querySelector(`.railpage[data-page="${idx}"]`); if (page) wrap.scrollTo({ left: page.offsetLeft, behavior: REDUCED ? 'auto' : 'smooth' }); syncRail(el, st.opts); return; }
+    if (t.dataset.compact) { const id = t.dataset.compact; const dd = el.querySelector(`[data-dd="${CSS.escape(id)}"]`); const open = !st.open.has(id); if (open) st.open.add(id); else st.open.delete(id); t.setAttribute('aria-expanded', String(open)); dd.classList.toggle('in', open); e.stopPropagation(); return; }
+    if (t.dataset.rec != null) { openRecord(el, t.dataset.rec); e.stopPropagation(); return; }
+    if (t.dataset.visit) { openRecordRaw(el, `<div class="stackhdr"><button class="back" type="button" data-back aria-label="Back to History">‹</button>Vet visit</div><div class="appbody land"><div class="acard"><div class="seclabel">Sep 16</div><div style="font-size:13px">The visit's own screen: reason, clinic, notes, the plan. Not an event; never counted.</div></div></div>`); return; }
+    if (t.dataset.back != null) { closeRecord(el); return; }
+    if (t.dataset.open) {
+      const k = t.dataset.open;
+      if (k === 'search') { st.opts.searchOpen = true; st.focusSearch = true; render(el); return; }
+      if (k === 'search-close') { st.opts.searchOpen = false; st.opts.search = ''; render(el); return; }
+      const wrap = document.createElement('div'); wrap.innerHTML = sheetHtml(k, st.opts); el.appendChild(wrap.firstElementChild); return;
+    }
+    if (t.dataset.pick) {
+      const [kind, key] = t.dataset.pick.split(':');
+      const sheet = el.querySelector('[data-sheet]'); if (sheet) sheet.remove();
+      if (kind === 'close') return;
+      if (kind === 'type' || kind === 'more') st.opts.lens = key === 'null' ? null : key;
+      if (kind === 'when') { st.opts.when = key; st.opts.railPage = null; }
+      st.opts._stripPlay = true;
+      const body = el.querySelector('.vpbody'); body.scrollTop = 0;
+      render(el); return;
+    }
+    if (t.dataset.rail) { const iso = t.dataset.rail; const card = el.querySelector(`[data-day="${iso}"]`) || Array.from(el.querySelectorAll('.gap[data-gap-from]')).find((g) => g.dataset.gapFrom <= iso && iso <= g.dataset.gapTo) || el.querySelector('.endcap'); if (card) { card.scrollIntoView({ block: 'start', behavior: REDUCED ? 'auto' : 'smooth' }); el.querySelectorAll('.rail .d').forEach((d) => d.classList.remove('sel')); t.classList.add('sel'); if (card.classList.contains('dayc')) setTimeout(() => drawInCard(card), REDUCED ? 0 : 260); } return; }
+  });
+  const gesture = (e) => { if (e.target && e.target.closest && e.target.closest('.railwrap')) st.userScrollUntil = Date.now() + 1200; };
+  el.addEventListener('pointerdown', gesture, true); el.addEventListener('touchstart', gesture, { capture: true, passive: true }); el.addEventListener('wheel', gesture, { capture: true, passive: true });
+  let scrollTimer = null;
+  el.addEventListener('scroll', (e) => { if (!e.target.classList || !e.target.classList.contains('railwrap')) return; clearTimeout(scrollTimer); scrollTimer = setTimeout(() => railScrolled(el), 90); }, true);
+  // a resize re-snaps a paged scroller onto whatever page its old pixel offset now falls in; keep it on the page the owner was on
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => { const cur = phones.get(el); if (cur) syncRail(el, cur.opts); }); ro.observe(el); }
+  el.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role=button]')) { e.preventDefault(); e.target.click(); } });
+  el.addEventListener('input', (e) => { if (e.target.matches('input[type=search]')) { st.opts.search = e.target.value; st.focusSearch = true; render(el); } });
+  return st;
+}
+// The row leaving (Motion, round 2): the record closes, the row folds shut with its rail trailing,
+// then the day re-renders and its count re-speaks. On the page the row comes back with "Put it back".
+const REMOVED = new Map();
+function removeRow(el, key) {
+  const st = phones.get(el); closeRecord(el);
+  const [day, t] = key.split(' ');
+  const row = el.querySelector(`.node1[data-rec="${CSS.escape(key)}"]`);
+  const done = () => { const d = FIX.find((x) => x.day === day); if (!d) return; const idx = d.rows.findIndex((x) => x.t === t); if (idx < 0) return; REMOVED.set(key, { day, row: d.rows[idx], idx }); d.rows.splice(idx, 1); render(el); };
+  if (!row || REDUCED) { done(); return; }
+  row.style.maxHeight = row.offsetHeight + 'px'; void row.offsetWidth; row.classList.add('leave');
+  setTimeout(done, 480);
+}
+function restoreRow(el, key) { const r = REMOVED.get(key); if (!r) return; const d = FIX.find((x) => x.day === r.day); d.rows.splice(Math.min(r.idx, d.rows.length), 0, r.row); REMOVED.delete(key); render(el); const row = el.querySelector(`.node1[data-rec="${CSS.escape(key)}"]`); const card = row && row.closest('.dayc'); if (card) drawInCard(card); }
+function openRecordRaw(el, html) {
+  let scr = el.querySelector('.screen.detail');
+  if (!scr) { scr = document.createElement('div'); scr.className = 'screen detail'; scr.setAttribute('aria-hidden', 'true'); el.appendChild(scr); }
+  scr.innerHTML = '<div class="notch"></div>' + html;
+  scr.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => requestAnimationFrame(() => scr.classList.add('on')));
+}
+function openRecord(el, key) { openRecordRaw(el, recordHtml(key)); }
+function closeRecord(el) { const scr = el.querySelector('.screen.detail'); if (scr) { scr.classList.remove('on'); scr.setAttribute('aria-hidden', 'true'); } }
+window.__history = { mount, phones, render, FIX, WIN: () => WIN, setWin: (w) => { WIN = w; } };
+
+// ── Demos ─────────────────────────────────────────────────────────────────────
+function twoFrames(fn) { let done = false; const go = () => { if (!done) { done = true; fn(); } }; requestAnimationFrame(() => requestAnimationFrame(go)); setTimeout(go, 80); }
+function drawInCard(card) {
+  if (REDUCED || !card) return;
+  const nodes = card.querySelectorAll('.node1'); card.style.setProperty('--step', `${Math.round(370 / Math.max(nodes.length, 1))}ms`); nodes.forEach((n, i) => n.style.setProperty('--i', i));
+  card.classList.remove('play'); card.classList.add('arm'); void card.offsetWidth;
+  twoFrames(() => { card.classList.remove('arm'); card.classList.add('play'); });
+  setTimeout(() => card.classList.remove('play'), 1200);
+}
+function drawInDays(el) {
+  const cards = Array.from(el.querySelectorAll('.dayc')).slice(0, 4);
+  if (REDUCED || !cards.length) return;
+  cards.forEach((c) => { const nodes = c.querySelectorAll('.node1'); c.style.setProperty('--step', `${Math.round(370 / Math.max(nodes.length, 1))}ms`); nodes.forEach((n, i) => n.style.setProperty('--i', i)); c.classList.remove('play'); c.classList.add('arm'); });
+  void el.offsetWidth;
+  twoFrames(() => cards.forEach((c) => { c.classList.remove('arm'); c.classList.add('play'); }));
+  setTimeout(() => cards.forEach((c) => c.classList.remove('play')), 1200);
+}
+function replayWait(el) {
+  el.classList.remove('in'); el.classList.add('snap'); void el.offsetWidth; el.classList.remove('snap');
+  twoFrames(() => setTimeout(() => { el.classList.add('in'); const st = phones.get(el); if (st) syncRail(el, st.opts); drawInDays(el); }, REDUCED ? 0 : 700));
+}
+function replayArrive(el, key) {
+  const st = phones.get(el);
+  const a = el.querySelector(`[data-arr="${CSS.escape(key)}"]`); if (!a) return;
+  a.classList.remove('in', 'call', 'gone'); a.classList.add('snap'); void a.offsetWidth; a.classList.remove('snap');
+  const [day, t] = key.split(' '); const d = FIX.find((x) => x.day === day); const r = d && d.rows.find((x) => x.t === t);
+  st.landed = false;
+  twoFrames(() => setTimeout(() => { if (r?.rec === 'worth_a_call') a.classList.add('call'); a.classList.add('in'); st.landed = true; st.landedCall = r?.rec === 'worth_a_call'; }, REDUCED ? 0 : 1600));
+  if (a.classList.contains('calm')) setTimeout(() => { a.classList.add('gone'); }, REDUCED ? 0 : 1600);
+}
+function replayArriveEl(a, call) {
+  a.classList.remove('in', 'call'); a.classList.add('snap'); void a.offsetWidth; a.classList.remove('snap');
+  twoFrames(() => setTimeout(() => { if (call) a.classList.add('call'); a.classList.add('in'); }, REDUCED ? 0 : 1600));
+}
+window.__demos = { replayWait, replayArrive, replayArriveEl };
+function replayCalmEl(a) {
+  a.classList.remove('in', 'gone'); a.classList.add('snap'); void a.offsetWidth; a.classList.remove('snap');
+  twoFrames(() => setTimeout(() => a.classList.add('gone'), REDUCED ? 0 : 1600));
+}
+window.__demos.replayCalmEl = replayCalmEl;
+const specArr = document.getElementById('spec-arr'), specCalm = document.getElementById('spec-calm');
+if (specArr) { setTimeout(() => { replayArriveEl(specArr, true); if (specCalm) replayCalmEl(specCalm); }, 600); document.getElementById('spec-arr-replay')?.addEventListener('click', () => { replayArriveEl(specArr, true); if (specCalm) replayCalmEl(specCalm); }); }
+document.getElementById('rail-demo')?.addEventListener('click', () => {
+  const el = document.getElementById('p-days'); const st = phones.get(el); if (!st) return;
+  const back = el.querySelector('[data-railnav="-1"]'); if (back && !back.disabled) back.click();
+  setTimeout(() => { const cell = el.querySelector('[data-rail="2026-09-17"]'); if (cell) cell.click(); }, REDUCED ? 0 : 520);
+});
+document.querySelectorAll('[data-mount]').forEach((el) => {
+  const opts = JSON.parse(el.getAttribute('data-mount') || '{}');
+  const st = mount(el, opts);
+  if (el.classList.contains('wait')) replayWait(el);
+  if (opts.pendingKey) setTimeout(() => replayArrive(el, opts.pendingKey), 400);
+});
+document.querySelectorAll('[data-replay]').forEach((b) => b.addEventListener('click', () => {
+  const [what, id, key] = b.dataset.replay.split('|');
+  const el = document.getElementById(id);
+  if (what === 'wait') replayWait(el);
+  if (what === 'arrive') replayArrive(el, key);
+  if (what === 'open') { const n = el.querySelector('[data-compact]'); if (n) n.click(); }
+  if (what === 'lens') { const st = phones.get(el); st.opts.lens = st.opts.lens ? null : (key || 'vomit'); st.opts.searchOpen = false; st.opts.search = ''; st.opts._stripPlay = true; render(el); }
+  if (what === 'when') { const st = phones.get(el); st.opts.when = key; st.opts.railPage = null; st.opts._stripPlay = true; render(el); }
+  if (what === 'back') { const b = el.querySelector('[data-railnav="-1"]'); if (b && !b.disabled) b.click(); }
+  if (what === 'fwd') { const b = el.querySelector('[data-railnav="1"]'); if (b && !b.disabled) b.click(); }
+  if (what === 'route') { const n = el.querySelector('[data-rec]'); if (n) { const scr = el.querySelector('.screen.detail.on'); if (scr) closeRecord(el); else n.click(); } }
+  if (what === 'remove') { removeRow(el, key); }
+  if (what === 'restore') { restoreRow(el, key); }
+  if (what === 'search') { const st = phones.get(el); st.opts.searchOpen = true; st.opts.search = key || 'hairball'; st.focusSearch = false; render(el); }
+}));
+})();
+</script>
+</body>
+</html>
