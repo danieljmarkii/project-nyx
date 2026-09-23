@@ -239,7 +239,8 @@
   <header class="mast">
     <p class="eyebrow"><span>Culprit · per incident AI reads</span><span>CUL-1101</span><span>2026-09-23</span><span class="roundtag">Round 1 · discovery</span></p>
     <h1>When the app flags a photo, let the owner answer it</h1>
-    <p class="standfirst">PLACEHOLDER</p>
+    <p class="standfirst">The PM has disagreed with three or four of the photo read's red flags, and the only way to say so today is an edit form two screens from the warning. This round asks where an owner should answer a flag, what <em>yes</em>, <em>no</em> and <em>not sure</em> should each do, and what the answers may be used for. <strong>Seven isolated persona interviews converged on one shape:</strong> answer on the record with the photo in view, treat the owner as a second witness rather than an editor of the AI, and never let a No or a Not sure be what quietly takes a warning away.</p>
+    <div class="revnew"><b>Round 1 · discovery, nothing ruled.</b> §1 is today, verified in code. §2 to §4 are the proposal, with every live alternative drawn beside the frame it competes with in a labelled box. §6 carries the eight decision briefs (FR-1 to FR-8) and §7 the panel's verdicts and the one open conflict. Spec: <code>docs/nyx-flag-review-requirements.md</code> v0.1. Evidence: <code>docs/research/2026-09-owner-answers-to-automated-reads.md</code>. Issues: CUL-1101 (discovery), CUL-1107 (the rulings).</div>
   </header>
 
   <!-- ───────────────────────── §1 · Today ───────────────────────── -->
@@ -341,5 +342,581 @@
     <div class="callout warn"><strong>Three defects, not one.</strong> There is no door from the warning to the photo; the answer is an edit form rather than an answer; and once given, the answer is honoured by Home (late) and by the vet report (silently) while the record's own verdict, the Design v2 day spine and a <em>Re-run analysis</em> all keep contradicting it. Replacing the photo is the sharpest case: the old correction silently applies to the new photo on Home and the report.</div>
   </section>
 
-  <!-- SECTIONS -->
+  <!-- ───────────────────────── §2 · The spine ───────────────────────── -->
+  <section id="spine">
+    <div class="sec-head"><span class="sec-num">§2</span><h2>The spine: ten rules that hold whichever way the briefs go</h2></div>
+    <div class="tablewrap"><table class="spec">
+      <tr><th>#</th><th>Rule</th><th>Came from</th></tr>
+      <tr><td>G1</td><td><strong>Two witnesses.</strong> The photo read and the owner's answer are two observations of one sample. The answer may stand down the <em>ask</em>; it never erases the <em>observation</em>, which stays for the vet.</td><td>Dr. Chen; Sam; Jordan ("show my vet both sides instead of quietly deleting its mistake")</td></tr>
+      <tr><td>G2</td><td><strong>Asked with the evidence in view.</strong> Answered only where the photo is on screen. Home carries a door, never the control.</td><td>Every lens that was asked</td></tr>
+      <tr><td>G3</td><td><strong>Per photo, per flag.</strong> A replaced photo, or a re-read that raises the flag again, asks again. Presence carries across photos; absence does not.</td><td>Designer; Data Scientist; Dr. Chen</td></tr>
+      <tr><td>G4</td><td><strong>Not sure is never No.</strong> It keeps the flag and closes the question. Silence is never an answer. (Today the edit form's <em>Unclear</em> clears the flag: CUL-1104.)</td><td>Sam; Dr. Chen; Data Scientist</td></tr>
+      <tr><td>G5</td><td><strong>A No is never an all-clear.</strong> No calm verdict, no <em>Keep an eye out</em>, no thanks. A No stands down only the photo flag it answers; a contextual escalation stands and is restated.</td><td>Dr. Chen; Designer; Sam ("no answer clears Pixel's not-eating warning")</td></tr>
+      <tr><td>G6</td><td><strong>Ask what the owner knows.</strong> A treat, a medicine, something beside it, hair, grass. A reason that puts an object <em>in</em> the sample converts, never clears.</td><td>Jordan; Sam; Dr. Chen</td></tr>
+      <tr><td>G7</td><td><strong>One answer, every surface, at once.</strong> Record, Home (by the time the owner is back), report, Ask, Get ready.</td><td>Jordan ("change it everywhere at once, including what my vet sees")</td></tr>
+      <tr><td>G8</td><td><strong>The owner's words never reach a model; nothing trains on answers.</strong> No "help improve our AI" copy anywhere.</td><td>Trust &amp; Safety; Data Scientist; both owners</td></tr>
+      <tr><td>G9</td><td><strong>Offered, never demanded.</strong> Never blocks the log, the read's arrival or Back. No re-ask, no badge, no notification, no haptic.</td><td>Designer; Principles 1 and 4</td></tr>
+      <tr><td>G10</td><td><strong>One way back.</strong> A persistent <em>Change</em> on every answer, restoring the exact prior value.</td><td>Designer (C-21); Jordan and Sam asked for Undo</td></tr>
+    </table></div>
+  </section>
+
+  <!-- ───────────────────────── §3 · The question on the record ───────────────────────── -->
+  <section id="question">
+    <div class="sec-head"><span class="sec-num">§3</span><h2>The question, on the record <span class="roundtag">FR-1 · FR-2 · FR-3</span></h2></div>
+    <div class="col">
+      <p>The owner lands on this screen right after logging a photographed vomit or stool, often still standing over it, which is the best evidence anyone will have. The question arrives with the read and waits there. It names the read's claim, asks the owner as a witness, and gives three equal answers.</p>
+    </div>
+
+    <div class="optgrid">
+      <div class="opt recd">
+        <p class="otag"><span class="roundtag">Current proposal</span><span>FR-3 · B</span></p>
+        <h4>Name the claim, ask as a witness, allow Not sure</h4>
+        <p>The owner is asked what they saw, not for a clinical call. <em>Not sure</em> is a real answer that keeps the flag.</p>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="dhead"><span class="bk">‹</span>Vomit</div>
+                <div class="dscroll">
+                  <div class="hero" style="height:118px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span><span class="spot" style="left:38%;top:52%;width:14px;height:10px;background:rgba(190,60,60,0.45)"></span></div>
+                  <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div><div class="who">Mochi's record</div></div>
+                  <div><div class="seclabel">AI read</div>
+                    <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Mochi.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div>
+                      <div class="ask"><div class="q">The read saw what looks like blood. Do you see it too?</div>
+                        <div class="ans"><span class="abtn">Yes, I see it</span><span class="abtn">No, it's something else</span><span class="abtn ghost">Not sure</span></div></div>
+                      <div class="hide">Hide this note</div></div></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>Q1 · Unanswered, one flag</b>Offered, never demanded. Leaving it is a legitimate state and changes nothing.</p>
+          </div>
+        </div>
+      </div>
+      <div class="opt">
+        <p class="otag"><span class="roundtag amber">Option, drawn for the decision</span><span>FR-3 · A</span></p>
+        <h4>Ask the clinical question directly</h4>
+        <p>The Designer's draft. Short and exact, but it asks the owner to diagnose blood, and has no way to say "I can't tell" except silence.</p>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="dhead"><span class="bk">‹</span>Vomit</div>
+                <div class="dscroll">
+                  <div class="hero" style="height:118px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span><span class="spot" style="left:38%;top:52%;width:14px;height:10px;background:rgba(190,60,60,0.45)"></span></div>
+                  <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div><div class="who">Mochi's record</div></div>
+                  <div><div class="seclabel">AI read</div>
+                    <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Mochi.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div>
+                      <div class="ask"><div class="q">Is it blood?</div>
+                        <div class="ans"><span class="abtn">Yes, it's blood</span><span class="abtn">No, it isn't blood</span></div></div>
+                      <div class="hide">Hide this note</div></div></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>Q1-A · The direct question</b>Sam: "half the time I can't honestly answer 'is that blood?' I found it on the rug hours later."</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>After a No: what is it? <span class="roundtag">G6</span></h3>
+    <div class="col"><p>One tap of reasons, because the reason is clinical history the vet will read (a treat, a medicine) and an accountable reason is the one kind of override justification the evidence says works. The chips speak what the owner knows. There is no "I didn't see them eat anything", and a reason that puts an object <em>in</em> the vomit turns the question toward foreign material instead of standing anything down.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:100px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Mochi.</div>
+                  <div class="ask"><div class="q">What is it instead?</div>
+                    <div class="reasons"><div class="chips"><span class="chip">Food or a treat</span><span class="chip">A medicine</span><span class="chip">Something beside it</span><span class="chip">The light in the photo</span><span class="chip">Something else</span></div></div>
+                    <div class="qsub" style="margin-top:9px">If it's pieces of something (a toy, a sock), that's worth a call too.</div>
+                    <div class="hide">Back</div></div>
+                </div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>Q2 · The reason, one tap</b>Required after a No, never after a Yes or Not sure. Proposed chips, to settle with Dr. Chen at build: <em>A medicine</em> earns its place alone ("black stool, I gave her Pepto" is a salicylate exposure in a cat).</p>
+        <span class="annot">Jordan's rope toy: "his toy" beside the vomit clears; shredded into it is foreign material.</span>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:100px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see something that doesn't look like food in this photo. That's worth a call to your vet about Mochi.</div>
+                  <div class="ask"><div class="q">What is it instead?</div>
+                    <div class="reasons"><div class="chips"><span class="chip">Beside it, not in it</span><span class="chip">Food</span><span class="chip">Hair</span><span class="chip">Grass or a plant</span><span class="chip">Something else</span></div></div>
+                    <div class="hide">Back</div></div>
+                </div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>Q2-F · The same, for foreign material</b><em>Beside it, not in it</em> is CUL-403's scene-object case (the blue ball across the room). <em>Food</em> is its deli-meat case. <em>Hair</em> is Sam's hairball.</p>
+      </div>
+    </div>
+
+    <h3>After a No: what the record says <span class="roundtag">G1 · G5 · ends CUL-409</span></h3>
+    <div class="col"><p>This is the state that contradicts itself today. Three ways to draw it; the first is the proposal. None of them is an all-clear: the read's claim stays on screen in the secondary ink, and the vet stays the call.</p></div>
+    <div class="optgrid">
+      <div class="opt recd">
+        <p class="otag"><span class="roundtag">Current proposal</span><span>set aside</span></p>
+        <h4>The read's call is set aside, not reversed</h4>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="dhead"><span class="bk">‹</span>Vomit</div>
+                <div class="dscroll">
+                  <div class="hero" style="height:100px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span></div>
+                  <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div></div>
+                  <div><div class="seclabel">AI read</div>
+                    <div class="readcard neutral" style="border-style:dashed"><div class="rrow"><div class="rail quiet"></div><div class="ibody"><div class="verdict">You said it isn't blood</div><div class="readtext">Food or a treat. The read's call is set aside. If you're worried about Mochi, your vet is still the best call.</div>
+                      <div class="readtext" style="color:#737373">The read said: "I can see what looks like blood in this photo."</div>
+                      <div class="answered" style="border-top-color:#EAEAEA"><span class="note" style="margin:0">Say more ›</span><span class="chg">Change</span></div></div></div></div>
+                  </div>
+                  <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                    <div class="ogrid"><div class="okv"><small>Colour</small>Pink / red</div><div class="okv"><small>Blood</small>Not blood, you said<span class="ed">the read saw fresh red</span></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>Q3 · Set aside</b>The dashed register <em>Not enough to say yet</em> already uses, never <em>Keep an eye out</em>'s. The grid shows both witnesses.</p>
+          </div>
+        </div>
+      </div>
+      <div class="opt">
+        <p class="otag"><span class="roundtag amber">Option, drawn for the decision</span><span>verdict kept</span></p>
+        <h4>Keep the verdict, add the answer under it</h4>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone short">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="dhead"><span class="bk">‹</span>Vomit</div>
+                <div class="dscroll">
+                  <div class="hero" style="height:100px"></div>
+                  <div><div class="seclabel">AI read</div>
+                    <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Mochi.</div>
+                      <div class="answered">You said it isn't blood: food or a treat.<span class="chg">Change</span></div></div></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>Q3-K · Verdict kept</b>Simplest to build. Jordan: "like a support bot saying 'I understand' and changing nothing." The contradiction survives, softened.</p>
+          </div>
+        </div>
+      </div>
+      <div class="opt">
+        <p class="otag"><span class="roundtag amber">Option, drawn for the decision</span><span>one line</span></p>
+        <h4>Replace the card with the owner's line</h4>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone short">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="dhead"><span class="bk">‹</span>Vomit</div>
+                <div class="dscroll">
+                  <div class="hero" style="height:100px"></div>
+                  <div><div class="seclabel">AI read</div>
+                    <div class="answered" style="border-top:0;padding-top:0;font-size:12px">You said this photo doesn't show blood: food or a treat.<span class="chg">Change</span></div>
+                    <div class="kick" style="margin-top:6px">What the read said ›</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>Q3-L · One line</b>Quietest. It hides the read behind a tap, which fails G1: the observation stops being on the record the owner shows a vet.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>The other answers</h3>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:100px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Mochi.</div>
+                  <div class="answered"><b>You saw it too.</b><span class="chg">Change</span></div>
+                  <div class="note">I've talked to my vet</div></div></div></div>
+              </div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Pink / red</div><div class="okv flag"><small>Blood</small>Fresh red<span class="ed">Checked</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>Q4 · Yes</b>Nothing gets louder. The flag now stands until an action (FR-4): <em>I've talked to my vet</em> is a control the owner can tap, never a question the app asks.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:100px"><span class="spot" style="left:52%;top:40%;width:22px;height:14px;background:rgba(80,50,40,0.5)"></span></div>
+              <div class="rec"><div class="typ">Vomit · found</div><div class="date">Sat, Sep 20</div><div class="time">Found 7:10 AM</div><div class="who">Pixel's record</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Pixel.</div>
+                  <div class="answered"><b>You weren't sure.</b> The flag stays for your vet.<span class="chg">Change</span></div></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>Q5 · Not sure</b>Sam's found-later vomit on a patterned rug. It closes the question and changes nothing else: never a No (G4).</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:100px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">Mochi has thrown up more than once in a short window. Repeated vomiting like that is worth a call to your vet.</div>
+                  <div class="answered">You said it isn't blood: food or a treat.<span class="chg">Change</span></div></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>Q6 · No, but another reason stands</b>The third vomit in a day. The photo flag stands down; the repeat does not, and its own sentence takes the card (G5).</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:100px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span><span class="spot" style="left:24%;top:30%;width:18px;height:18px;background:rgba(60,110,200,0.6)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood, and something that doesn't look like food, in this photo. That's worth a call to your vet about Mochi.</div>
+                  <div class="answered"><b>Blood:</b> you saw it too.<span class="chg">Change</span></div>
+                  <div class="answered" style="border-top-style:dotted"><b>Not food:</b> you said it's beside it, not in it.<span class="chg">Change</span></div></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>Q7 · Two flags, split answers</b>One question per flag, blood first. The card relaxes only when every photo flag is answered No and nothing else escalates.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:100px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard neutral" style="border-style:dashed"><div class="rrow"><div class="rail quiet"></div><div class="ibody"><div class="verdict">You said it isn't blood</div><div class="readtext">Food or a treat. The read's call is set aside. If you're worried about Mochi, your vet is still the best call.</div>
+                  <div class="quoted">"Partner gave him a red dental chew after dinner."</div>
+                  <div class="qsub" style="margin-top:4px;font-size:10px;color:#737373">Printed on the vet report you make · never on a shared link unless you choose it</div>
+                  <div class="answered" style="border-top-color:#EAEAEA">The read said: "I can see what looks like blood…"<span class="chg">Change</span></div></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>Q8 · The note, after the answer</b>Optional, after the reason, never on the way in. Its own column, never read by a model, printed only behind <em>Include your notes</em> (the daily look's rules).</p>
+        <span class="annot opt">Jordan: on a diet trial, "red kibble means he got into something". The note carries it.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── §4 · Home ───────────────────────── -->
+  <section id="home">
+    <div class="sec-head"><span class="sec-num">§4</span><h2>Home: a door to the photo, never the answer <span class="roundtag">FR-1 · FR-4</span></h2></div>
+    <div class="col">
+      <p>Every lens that was asked put the answer beside the photo. Home shows no photo (Design v2 R4-2: "words on Home, the photo one tap in"), the card pools every flagged photo of a family over fourteen days, and a yes or no there would be Home's fourth write class and its widest reaching one. So the card gains the one thing it lacks today: a way to the photo.</p>
+    </div>
+    <div class="optgrid">
+      <div class="opt recd">
+        <p class="otag"><span class="roundtag">Current proposal</span><span>FR-1 · A</span></p>
+        <h4>The card gains a door</h4>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone short">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="hhead"><div class="pet">Mochi <span>Tue, Sep 23</span></div></div>
+                <div class="acard">
+                  <div class="seclabel">Signal</div>
+                  <div class="irow"><div class="rail safety"></div><div class="ibody"><p class="lead">A photo you logged of Mochi's vomiting showed possible blood, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis.</p><div class="samp">From an AI read of 1 logged photo</div>
+                    <div class="door"><span>See the photo<span class="dsub">Mon, Sep 22 · not answered yet</span></span><span class="dchev">›</span></div></div></div>
+                </div>
+                <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Mochi</span></div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>H1 · One flagged photo</b>The door goes straight to the record, where Q1 waits. The card's words, rank and rail are unchanged.</p>
+          </div>
+        </div>
+      </div>
+      <div class="opt">
+        <p class="otag"><span class="roundtag amber">Option, drawn for the decision</span><span>FR-1 · B</span></p>
+        <h4>Answer on the card</h4>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone short">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="hhead"><div class="pet">Mochi <span>Tue, Sep 23</span></div></div>
+                <div class="acard">
+                  <div class="seclabel">Signal</div>
+                  <div class="irow"><div class="rail safety"></div><div class="ibody"><p class="lead">A photo you logged of Mochi's vomiting showed possible blood, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis.</p><div class="samp">From an AI read of 1 logged photo</div>
+                    <div class="ask" style="border-top-color:#EAEAEA"><div class="q">Do you see it too?</div><div class="ans"><span class="abtn">Yes</span><span class="abtn">No</span><span class="abtn ghost">Not sure</span></div></div></div></div>
+                </div>
+                <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Mochi</span></div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>H1-B · Inline</b>One tap fewer, answered blind. A fourth Home write class (a Tier-2 amendment to §0.1). Jordan: "I'll tap it to make the red go away, not because I looked."</p>
+            <span class="annot">On a pooled card (H2) a No here has no single target.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>When the card pools several photos</h3>
+    <div class="col"><p>The Designer's falsification: the Sep 20 flag is a toy beside the vomit; the Sep 14 flag is real blood the owner never opened. One control on this card clears both. The door instead opens the flagged photos, each with its own answer state.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone short">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Mochi <span>Tue, Sep 23</span></div></div>
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow"><div class="rail safety"></div><div class="ibody"><p class="lead">Photos you logged of Mochi's vomiting have shown possible blood and possible foreign material, most recently on September 20 — worth a call to your vet. This is a read of your logs, not a diagnosis.</p><div class="samp">From an AI read of 2 logged photos</div>
+                <div class="door"><span>See the 2 photos<span class="dsub">Neither answered yet</span></span><span class="dchev">›</span></div></div></div>
+            </div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Mochi</span></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>H2 · A pooled card</b>The count on the door is the count on the card: one population, one number (C-3).</p>
+      </div>
+      <div class="frame-slot">
+        <div class="phone short">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Flagged photos</div>
+            <div class="dscroll">
+              <div class="col" style="font-size:11.5px;color:#525252;padding:0 2px">Mochi's vomiting, last 14 days. Answer each one with the photo in front of you.</div>
+              <div class="acard" style="display:flex;gap:10px;align-items:center;padding:10px 12px"><div class="hero thumb"><span class="spot" style="left:30%;top:30%;width:14px;height:14px;background:rgba(60,110,200,0.6)"></span></div><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">Sat, Sep 20</div><div style="font-size:11.5px;color:#9F1239">Something that isn't food</div><div style="font-size:10.5px;color:#737373">Not answered yet</div></div><span class="dchev" style="color:#A3A3A3">›</span></div>
+              <div class="acard" style="display:flex;gap:10px;align-items:center;padding:10px 12px"><div class="hero thumb"><span class="spot" style="left:40%;top:40%;width:16px;height:10px;background:rgba(190,60,60,0.6)"></span></div><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">Sun, Sep 14</div><div style="font-size:11.5px;color:#9F1239">Possible blood</div><div style="font-size:10.5px;color:#737373">Not answered yet</div></div><span class="dchev" style="color:#A3A3A3">›</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>H2 · The photos behind it</b>Each row opens its record. Design v2's Signal screen for this card gains the same tiles.</p>
+      </div>
+    </div>
+
+    <h3>Home, after the answer <span class="roundtag">G5 · G7</span></h3>
+    <div class="col"><p>A No takes the card down by the time the owner is back, not at the next Signal rebuild. The open question is what sits in its slot. A card that vanishes is read as an all-clear by the owner it was escalating to (Dr. Chen's rule for the chronicity stand-down, CUL-786, shipped), so the proposal leaves one line.</p></div>
+    <div class="optgrid">
+      <div class="opt recd">
+        <p class="otag"><span class="roundtag">Current proposal</span><span>one line</span></p>
+        <h4>A stand-down line in the card's slot</h4>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone short">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="hhead"><div class="pet">Mochi <span>Tue, Sep 23</span></div></div>
+                <div class="acard">
+                  <div class="seclabel">Signal</div>
+                  <div class="irow"><div class="rail quiet"></div><div class="ibody"><div style="font-size:12.5px;line-height:1.45;color:#525252">You said Monday's photo didn't show blood. It stays on the record for your vet.</div><div class="why">See the photo</div></div></div>
+                </div>
+                <div class="acard"><div class="seclabel">Today</div><div class="today"><div class="trow"><span class="glyph meal">●</span>Breakfast · Hill's z/d<span class="t">7:10 AM</span></div></div></div>
+                <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Mochi</span></div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>H3 · After a No</b>Dr. Chen, Jordan and Sam asked for this line ("says why", "one line saying what changed"). It goes at the next rebuild.</p>
+          </div>
+        </div>
+      </div>
+      <div class="opt">
+        <p class="otag"><span class="roundtag amber">Option, drawn for the decision</span><span>gone</span></p>
+        <h4>The card is simply gone</h4>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone short">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="hhead"><div class="pet">Mochi <span>Tue, Sep 23</span></div></div>
+                <div class="acard"><div class="seclabel">Today</div><div class="today"><div class="trow"><span class="glyph meal">●</span>Breakfast · Hill's z/d<span class="t">7:10 AM</span></div></div></div>
+                <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Mochi</span></div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>H3-G · Gone</b>The Designer's draft: calmest, and the answer already showed its effect on the record. The risk is the silent vanish CUL-786 was built to stop.</p>
+          </div>
+        </div>
+      </div>
+      <div class="opt">
+        <p class="otag"><span class="roundtag">Current proposal</span><span>FR-4 · B</span></p>
+        <h4>After a Yes: same words, a longer life</h4>
+        <div class="frames">
+          <div class="frame-slot">
+            <div class="phone short">
+              <div class="notch"></div>
+              <div class="screen">
+                <div class="hhead"><div class="pet">Mochi <span>Tue, Sep 23</span></div></div>
+                <div class="acard">
+                  <div class="seclabel">Signal</div>
+                  <div class="irow"><div class="rail safety"></div><div class="ibody"><p class="lead">A photo you logged of Mochi's vomiting showed possible blood, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis.</p><div class="samp">From an AI read of 1 logged photo · you saw it too</div>
+                    <div class="door"><span>See the photo<span class="dsub">Mon, Sep 22 · you saw it too</span></span><span class="dchev">›</span></div></div></div>
+                </div>
+                <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Mochi</span></div>
+              </div>
+            </div>
+            <p class="frame-cap"><b>H4 · After a Yes</b>Never louder. It stands until the owner taps <em>I've talked to my vet</em> on the record (Q4), or a vet visit is logged after it (CUL-208), and it can fold meanwhile. The control is on the record, not here: on Home it would be a fourth write class.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── §5 · The vet report ───────────────────────── -->
+  <section id="report">
+    <div class="sec-head"><span class="sec-num">§5</span><h2>What the vet reads <span class="roundtag">FR-6</span></h2></div>
+    <div class="col">
+      <p>Today a flag the owner cleared vanishes from the report, and every other finding (including blood the owner <em>added</em>) prints as "AI read · unconfirmed". Dr. Chen's rule: a disputed safety flag is never omitted and never printed as a finding. It is counted on page 1 and shown in the appendix with both witnesses, the photo and the owner's reason. The labels say who saw what; none of them says "confirmed" (the Data Scientist's condition).</p>
+    </div>
+    <div class="optgrid">
+      <div class="opt">
+        <p class="otag"><span class="roundtag rose">Today</span></p>
+        <div class="paper">
+          <div class="ph">Safety flags</div>
+          <div class="pr">2 vomiting incidents (Sep 14, Sep 22): fresh red blood on automated photo analysis.<span class="bdg">AI read · unconfirmed</span> <span class="muted">Shown because it is present; a photo cannot exclude bleeding.</span></div>
+          <div class="ph" style="margin-top:14px">Appendix E · Incident photos</div>
+          <div class="pr">Sep 22 · vomit · blood none visible <span class="muted">(owner cleared the read's fresh red: not stated anywhere)</span></div>
+          <div class="pr">Sep 20 · vomit · foreign material possible (AI, unconfirmed) — blue ball</div>
+        </div>
+      </div>
+      <div class="opt recd">
+        <p class="otag"><span class="roundtag">Current proposal</span><span>FR-6 · B</span></p>
+        <div class="paper">
+          <div class="ph">Safety flags</div>
+          <div class="pr">1 vomiting incident (Sep 14): fresh red blood on photo read.<span class="bdg">photo read · not reviewed</span></div>
+          <div class="pr">1 photo flag disputed by the owner (Sep 22). See Appendix E.</div>
+          <div class="ph" style="margin-top:14px">Appendix E · Incident photos</div>
+          <div class="pr">Sep 22 · vomit · <b>photo read:</b> possible fresh red blood. <b>Owner:</b> not blood (food or a treat). <span class="bdg own">owner disputed</span><br><span class="muted">Owner's note: "Partner gave him a red dental chew after dinner."</span></div>
+          <div class="pr">Sep 20 · vomit · <b>photo read:</b> possible foreign material. <b>Owner:</b> beside it, not in it. <span class="bdg own">owner disputed</span></div>
+          <div class="pr">Sep 9 · vomit · fresh red blood. <span class="bdg own">owner agreed</span> · Sep 3 · stool · blood. <span class="bdg own">added by the owner</span></div>
+        </div>
+        <p class="frame-cap" style="max-width:640px">Four provenance labels: <em>owner agreed</em>, <em>owner disputed</em>, <em>not reviewed</em>, <em>added by the owner</em>. The note prints only when <em>Include your notes</em> is on, never on a shared link. A Tier-2 edit to the report spec, and a cold read once rendered.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── §6 · Decision briefs ───────────────────────── -->
+  <section id="briefs">
+    <div class="sec-head"><span class="sec-num">§6</span><h2>Eight decisions for the PM</h2></div>
+    <div class="col"><p>Each brief can be ruled from the brief alone; the frames above show every visual choice side by side. Rule by number (FR-1 A, FR-3 B, FR-5 C, …) on CUL-1107, the ruling issue.</p></div>
+
+    <div class="brief"><p class="bid">FR-1 · Where the owner answers</p>
+      <p><strong>Deciding:</strong> whether the yes/no lives beside the photo or on the Home card.</p>
+      <p><strong>Options:</strong> A, on the record with a door from Home (§3, H1) · B, on the Home card (H1-B) · C, both.</p>
+      <p class="rec">Recommend A: every lens that was asked chose it. The photo is the evidence, and the Home card pools photos, so a No there has no single target.</p>
+      <p><strong>Consequence:</strong> A keeps Home at three write classes and needs the Signal finding to carry incident ids. B needs a Tier-2 amendment and one card per incident.</p></div>
+
+    <div class="brief"><p class="bid">FR-2 · What a No does to the AI's finding</p>
+      <p><strong>Deciding:</strong> whether an owner's No erases the read's observation or stands beside it.</p>
+      <p><strong>Options:</strong> A, overwrite, as today · B, two witnesses: the No stands down the ask; the observation stays and prints beside the answer · C, a No clears nothing.</p>
+      <p class="rec">Recommend B: Dr. Chen, both owners, the Data Scientist and Trust &amp; Safety converge. A silently drops true positives; C breeds alarm fatigue.</p>
+      <p><strong>Consequence:</strong> an answer store keyed to the photo, and a report change (FR-6). Absorbs CUL-409 and fixes CUL-1104.</p></div>
+
+    <div class="brief"><p class="bid">FR-3 · What is asked</p>
+      <p><strong>Deciding:</strong> the question's wording and its answers (Q1 against Q1-A).</p>
+      <p><strong>Options:</strong> A, "Is it blood?" Yes / No · B, name the read's claim, "Do you see it too?" Yes, I see it / No, it's something else / Not sure.</p>
+      <p class="rec">Recommend B: the owners asked to be asked what they know; four of five lenses require a Not sure that keeps the flag. The Designer drew A.</p>
+      <p><strong>Consequence:</strong> B adds one reason tap after a No (Q2). A leaves "I can't tell" with nowhere to go but silence.</p></div>
+
+    <div class="brief"><p class="bid">FR-4 · How long a flag the owner saw stands (CUL-208)</p>
+      <p><strong>Deciding:</strong> what ends a flag the owner agreed with.</p>
+      <p><strong>Options:</strong> A, 14 days, as today · B, an action: <em>I've talked to my vet</em> on the record, or a vet visit logged after it; folds meanwhile, never louder · C, until the owner hides it.</p>
+      <p class="rec">Recommend B: Dr. Chen and Sam. The app never asks whether they called (Jordan: "feels like being graded"); it is a control the owner can tap.</p>
+      <p><strong>Consequence:</strong> a lifetime rule in <code>generate-signal</code>, tied to the vet-visit record. Closes CUL-208's open question.</p></div>
+
+    <div class="brief"><p class="bid">FR-5 · A repeated dispute <span class="roundtag rose">persona conflict</span></p>
+      <div class="conflict" style="margin:6px 0 10px">
+        <p><strong>Dr. Chen:</strong> a second No on the same kind of flag within 14 days should become <em>Show your vet these photos</em>, closed only by a vet visit. The Lab on carprofen whose owner disputes coffee-ground vomit twice is the ulcer that perforates.</p>
+        <p><strong>Jordan:</strong> "His red chew getting flagged every week because the app never remembers. After three false alarms the red card is wallpaper, and then I miss the real one."</p>
+      </div>
+      <p><strong>Options:</strong> A, each answer stands alone · B, Dr. Chen's rule for every kind · C, his rule for the high-stakes kinds only (dark or older blood, black tarry stool, foreign material), shown in Get ready and the report, never as a louder Home card.</p>
+      <p><strong>PM decision needed:</strong> no recommendation. C separates the two concerns (Home stays quiet; the vet still sees the pattern) but was not put to either lens.</p></div>
+
+    <div class="brief"><p class="bid">FR-6 · What the vet report prints</p>
+      <p><strong>Deciding:</strong> whether the report says who saw what (§5).</p>
+      <p><strong>Options:</strong> A, as today (a disputed flag vanishes; everything is "AI read · unconfirmed") · B, four provenance labels and a disputed flag never omitted: counted on page 1, both witnesses in the appendix.</p>
+      <p class="rec">Recommend B: Dr. Chen, both owners, the Designer. The labels say who saw it, never "confirmed", which meets the Data Scientist's condition.</p>
+      <p><strong>Consequence:</strong> a Tier-2 edit to the report spec, a <code>generate-report</code> change and a cold read.</p></div>
+
+    <div class="brief"><p class="bid">FR-7 · "Improve our model"</p>
+      <p><strong>Deciding:</strong> what answers and notes may be used for beyond the owner's own record.</p>
+      <p><strong>Options:</strong> A, Tier 0: nothing leaves the record; tune on the PM's own photos and a committed test set · B, Tier 1: aggregate counts at launch · C, the team reviews disputed photos.</p>
+      <p class="rec">Recommend A, stamping the photo and model version on every read now so B stays possible after launch. We train no model; C ends "no one here looks at your photos".</p>
+      <p><strong>Consequence:</strong> A is one privacy-policy sentence. B puts a label change, policy and terms edits and a consent toggle on the submission path.</p></div>
+
+    <div class="brief"><p class="bid">FR-8 · When it ships</p>
+      <p><strong>Deciding:</strong> the track's timing against the App Store submission.</p>
+      <p><strong>Options:</strong> A, its own project after the 1.2.0 cut, with the two live safety fixes landing first · B, the whole run now · C, fold it into App Store Launch.</p>
+      <p class="rec">Recommend A: it blocks no review requirement, and the two defects that hurt today (CUL-1105, CUL-1104) are small and separable. Nothing is deploy-held.</p>
+      <p><strong>Consequence:</strong> a <em>Flag review</em> project with the spec's §8 run order: seven PRs after the two fixes.</p></div>
+  </section>
+
+  <!-- ───────────────────────── §7 · The panel ───────────────────────── -->
+  <section id="panel">
+    <div class="sec-head"><span class="sec-num">§7</span><h2>The panel: seven isolated interviews, one fact sheet</h2></div>
+    <div class="col"><p>Each lens read the same verified fact sheet in its own context and answered without seeing the others. <strong>Five built with conditions, both owners said "only if", none said don't build.</strong> The placement question converged without prompting.</p></div>
+    <div class="tablewrap"><table class="spec">
+      <tr><th>Lens</th><th>Verdict</th><th>In their words</th></tr>
+      <tr><td><strong>Dr. Chen</strong></td><td>Build, with conditions</td><td>"Treat the owner as a second witness, not as someone correcting the AI." Tried the Lab on carprofen disputing coffee-ground vomit twice: the naive build loses both reads and the ulcer perforates.</td></tr>
+      <tr><td><strong>Jordan</strong> (dog, diet trial)</td><td>Only if</td><td>"Ask me what I know about Mochi's day, not whether it's blood, and when I answer, change it everywhere at once, including what my vet sees."</td></tr>
+      <tr><td><strong>Sam</strong> (two cats)</td><td>Only if</td><td>"Never let my No or my Not sure be what quietly takes a warning off Pixel's record." Found that the edit form's <em>Unclear</em> already does (CUL-1104).</td></tr>
+      <tr><td><strong>Sr. Product Designer</strong></td><td>Build, with conditions</td><td>The pooled card: a Home No meant for a toy clears the blood the owner never opened. "A door, never a write."</td></tr>
+      <tr><td><strong>Sr. Data Scientist</strong></td><td>Build, with conditions</td><td>"This loop hears about false alarms and almost never about misses, so optimising against it lowers sensitivity by construction." At four flags, four of four disputes has a 95% interval of 40 to 100%.</td></tr>
+      <tr><td><strong>Trust &amp; Safety</strong></td><td>Build, with conditions</td><td>"We have no model, and Anthropic trains on none of our data." Tier 0 at launch; nobody, person or agent, views another owner's photo or note.</td></tr>
+      <tr><td><strong>Dir. of Engineering + QA</strong></td><td>Build, with conditions</td><td>"Most of the PM's pain is plumbing." Nothing refreshes the Signal when a read lands (CUL-1105); corrected the deploy premise (nothing is held).</td></tr>
+    </table></div>
+    <div class="callout"><strong>The evidence behind it</strong> (<code>docs/research/2026-09-owner-answers-to-automated-reads.md</code>): no pet stool or vomit product documents an owner dispute of a health flag; no diagnostic-style consumer notification offers an in-app "this is wrong"; Google Photos' <em>Same / Different / Not sure</em> is the nearest shipped three-way; mandatory free-text override reasons get gamed, but an accountable reason recorded where peers read it cut inappropriate prescribing from 23.2% to 5.2% in an RCT.</div>
+  </section>
+
+  <!-- ───────────────────────── §8 · Filed along the way ───────────────────────── -->
+  <section id="filed">
+    <div class="sec-head"><span class="sec-num">§8</span><h2>Found along the way, and what is out</h2></div>
+    <div class="tablewrap"><table class="spec ledger">
+      <tr><th>Issue</th><th>What</th></tr>
+      <tr><td>CUL-1104</td><td><strong>Live, High.</strong> Setting a flagged field to <em>Unclear</em> in today's edit form clears the Home warning and the report line, exactly as <em>None visible</em> does.</td></tr>
+      <tr><td>CUL-1105</td><td><strong>Live, High.</strong> A flagged photo reaches Home only at the next Signal rebuild: the regen fires five seconds after the log, before the read lands, and nothing fires when it does.</td></tr>
+      <tr><td>CUL-1102</td><td>The vet report never prints foreign material found in a stool photo, though Home's card fires on it.</td></tr>
+      <tr><td>CUL-1106</td><td>The Home write guard cannot see a direct database write, only named helpers and raw SQL.</td></tr>
+      <tr><td>CUL-1103</td><td>Doc drift: CLAUDE.md says the red flag card never folds (it does); two clinical-guardrails patterns cite code that moved or never existed.</td></tr>
+      <tr><td>CUL-848 (comment)</td><td>Two owner-typeable fields on the read (<em>What was it?</em>, the description) reach Ask and print on the report under the AI label.</td></tr>
+    </table></div>
+    <div class="col"><p><strong>Out of scope:</strong> telling one pet's vomit from another's (Sam's "could've been Juniper"; the attribution layer is its own track); answering a contextual escalation (it is computed from the owner's own logs, so a wrong one is fixed by editing the log); per-pet learning of benign objects (it is the path that stops flagging the day the chew is shredded into the vomit); notifications (a body may never assert record contents); anyone reviewing owners' photos.</p></div>
+  </section>
 </div>
