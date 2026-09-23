@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-23
 **Mode:** DISCOVERY (Product Owner / Backlog Steward lens), plus one state-file fix (CUL-1034)
-**Outcome:** shipped via #PRNUM
+**Outcome:** shipped via #895
 **Branch:** `claude/sleepy-gauss-96rh6c`
 **Predecessor:** `docs/sessions/2026-09-06-backlog-grooming.md`. The 2026-08-29 pass's calls live on CUL-719; this pass's outcome is commented there rather than on a second grooming issue.
 
