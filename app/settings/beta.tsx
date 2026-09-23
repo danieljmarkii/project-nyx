@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, FlaskConical, Info, LayoutGrid, Palette, Stethoscope } from 'lucide-react-native';
+import { Eye, FlaskConical, Info, LayoutGrid, Palette } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -65,29 +65,6 @@ function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?:
       // consumer renders behind it yet. An "eye" glyph reads as noticing/looking,
       // distinct from the widget grid, the picker pen and the taxonomy shapes.
       return { Icon: Eye };
-    case 'vet_visits':
-      // An on-state hint, like the widget's and unlike the rest: this is the one
-      // beta whose surfaces stay invisible until there is an appointment on file,
-      // so an owner who flips it on and sees no change would reasonably think it
-      // broke. A stethoscope reads as the vet, distinct from the widget grid, the
-      // picker pen, the taxonomy shapes and Noticed's eye.
-      //
-      // Rewritten by CUL-900 (VV-2), which is the PR that made it true: the
-      // Pet-tab card now exists, so the hint names where to go. VV-0's version
-      // said "there is nothing to see yet", which was accurate the day it shipped
-      // and false the moment the card landed — the tripwire in
-      // guards/vetVisitsFlagOff.test.tsx named this string as one of the three
-      // things the first consumer owed, and this is that debt paid.
-      //
-      // It names the CARD, not the screens behind it: what an owner can act on
-      // today is one card on the pet's profile, and everything else in the track
-      // (the Home strip, Get ready, the after-visit capture) is still being built.
-      // A hint that promised those would be the same dead end in a new place.
-      return {
-        Icon: Stethoscope,
-        onHint:
-          'It’s on. Open your pet’s profile and look for Vet visits, under the vet report — book the next appointment there, or log one that already happened.',
-      };
     case 'design_v2':
       // The on-state hint. Three lanes landed the same day, each writing it for the
       // surface it shipped (D2-4 / CUL-1066 Home's Today; D2-5 / CUL-1067 the month on

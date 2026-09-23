@@ -26,8 +26,6 @@ import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm, pullThreshold } from '../../lib/haptics';
 import { formatUtcDayShort } from '../../lib/utils';
 import { isLookRow } from '../../lib/lookDisplay';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { readVisitsForHistory, HistoryVisitRow } from '../../lib/vetVisits';
 import { VisitTimelineRow } from '../../components/vetvisits/VisitTimelineRow';
 import { ListItem, mergeTimelineItems } from '../../lib/historyTimeline';
@@ -132,11 +130,6 @@ export default function HistoryScreen() {
   const initialDay: string | null =
     !hasFilterLink && params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
   const { removeFromToday, restoreToToday, todayEvents } = useEventStore();
-  // The `vet_visits` rollout flag (G0). Dark means dark: it gates the READ as well
-  // as the row, so flag-off this screen issues no query against the table and
-  // `visits` stays empty — which is what makes the rendered tree identical to an
-  // app without the companion (AC 0, guards/vetVisitsFlagOff.test.tsx).
-  const vetVisitsEnabled = useAllowlistFlag('vet_visits') && useBetaOptIn('vet_visits');
   // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
   // cycle finishes while this tab is open, so another device's writes appear
   // without a manual pull-to-refresh.
@@ -147,8 +140,8 @@ export default function HistoryScreen() {
   // (currently-active arrangements) + the inline lifecycle boundary markers.
   const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
   const [markers, setMarkers] = useState<BoundaryMarker[]>([]);
-  // Vet visits on the timeline (CUL-904 VV-6), behind the rollout flag. Held as its
-  // own list rather than mapped into `events`: see the ListItem union above.
+  // Vet visits on the timeline (CUL-904 VV-6). Held as its own list rather than
+  // mapped into `events`: see the ListItem union above.
   const [visits, setVisits] = useState<HistoryVisitRow[]>([]);
   // C-12 for the SECOND source. `loaded` / `loadError` below are driven by
   // `loadEvents` alone, which was complete while every row in the stream came from
@@ -301,10 +294,10 @@ export default function HistoryScreen() {
 
   const loadVisits = useCallback(async () => {
     const myId = ++visitLoadIdRef.current;
-    if (!vetVisitsEnabled || !activePet) {
+    if (!activePet) {
       setVisits([]);
       // Nothing to wait for, so the empty state must not be held behind a read that
-      // is never going to happen — flag-off this screen would skeleton forever.
+      // is never going to happen, or this screen would skeleton forever.
       setVisitsAnswered(true);
       setVisitsError(false);
       return;
@@ -335,18 +328,11 @@ export default function HistoryScreen() {
     } finally {
       if (myId === visitLoadIdRef.current) setVisitsAnswered(true);
     }
-  }, [vetVisitsEnabled, activePet?.id]);
+  }, [activePet?.id]);
 
-  // Its own effect, keyed on the loader's identity, because the FLAG is the thing
-  // that changes after mount: `useAllowlistFlag` re-resolves on foreground and on
-  // sign-in, so an owner allowlisted mid-session would otherwise wait for a
-  // re-focus to see their visits — and one dropped from the allowlist would keep
-  // seeing them. The `!enabled` branch above is what makes the second half true.
-  useEffect(() => { void loadVisits(); }, [loadVisits]);
-
-  // Reached from the hydration effect below, whose deps are deliberately narrow —
-  // the loadEventsRef precedent. Adding `loadVisits` to those deps would re-fire a
-  // full timeline reload every time the flag resolved.
+  // Reached from the focus and hydration effects below, whose deps are deliberately
+  // narrow — the loadEventsRef precedent: adding `loadVisits` to them would re-run a
+  // full timeline reload whenever the loader's identity changed.
   const loadVisitsRef = useRef(loadVisits);
   loadVisitsRef.current = loadVisits;
 
@@ -384,16 +370,15 @@ export default function HistoryScreen() {
       setExpandedId(null);
       loadEvents(0, typeFilter, datePreset, dayFilter, true);
       loadFreeFeeding();
-      // Through the ref, and the flag is deliberately NOT in the deps below — the
-      // same rule the hydration effect follows, which this first got wrong.
-      // `useFocusEffect` re-runs its outer effect whenever the memoized callback's
-      // identity changes and calls it IMMEDIATELY when the screen is focused
-      // (expo-router/build/useFocusEffect.js: `if (navigation.isFocused())`, deps
-      // `[effect, navigation, optionalNavigation]`) — it is not gated on a real
-      // focus event. So a flag resolving on foreground or sign-in, with History on
-      // screen, would run this whole body: offset reset to 0, the expanded card
+      // Through the ref, so the loader is NOT in the deps below — the same rule the
+      // hydration effect follows. `useFocusEffect` re-runs its outer effect whenever
+      // the memoized callback's identity changes and calls it IMMEDIATELY when the
+      // screen is focused (expo-router/build/useFocusEffect.js: `if
+      // (navigation.isFocused())`, deps `[effect, navigation, optionalNavigation]`) —
+      // it is not gated on a real focus event. So any extra dep that moved with History
+      // on screen would run this whole body: offset reset to 0, the expanded card
       // collapsed under the owner's finger, and the entire timeline re-queried.
-      // The standalone effect above already re-runs `loadVisits` on a flag change.
+      // `activePet` is already a dep, so a pet switch reaches the new pet's visits here.
       void loadVisitsRef.current();
     }, [activePet, typeFilter, datePreset, dayFilter]),
   );

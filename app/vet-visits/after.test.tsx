@@ -13,9 +13,9 @@ import type { ActiveCourse, AppointmentDetail } from '../../lib/vetVisits';
 //     present another one on iOS — it wedged the log sheet for every multi-pet
 //     account. This screen hosts the medication setup AND the trial setup, so the
 //     count of `Modal` nodes in its tree is asserted, open and closed.
-//   • AC 11. `app/vet-visit.tsx:117` reads `activePet` at SAVE time, so the store
-//     moving between opening the screen and saving writes the row under the wrong
-//     pet. Here the pet comes from the appointment, and the store is driven
+//   • AC 11. The retired `app/vet-visit.tsx` read `activePet` at SAVE time, so the
+//     store moving between opening the screen and saving wrote the row under the
+//     wrong pet. Here the pet comes from the appointment, and the store is driven
 //     mid-flight to prove it.
 
 type LogArgs = { appointment: Pick<AppointmentDetail, 'id' | 'pet_id'>; visitedAt: string };
@@ -42,8 +42,6 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
 
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => true }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
 jest.mock('../../lib/sync', () => ({
   syncPendingMedications: jest.fn(async () => undefined),
   syncPendingVetAppointments: jest.fn(async () => undefined),

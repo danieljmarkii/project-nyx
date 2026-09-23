@@ -5,8 +5,6 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
 import { AppointmentBlock } from './AppointmentBlock';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import {
@@ -56,10 +54,6 @@ import { hasAskedAboutAppointment, markAppointmentAsked } from '../../lib/appoin
 // adds to it.
 
 export function AppointmentStrip() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const activePet = usePetStore((s) => s.activePet);
   const petId = activePet?.id ?? null;
 
@@ -83,7 +77,7 @@ export function AppointmentStrip() {
 
   const load = useCallback(async () => {
     const myId = ++loadIdRef.current;
-    if (!enabled || !petId) {
+    if (!petId) {
       setAppointment(null);
       setLoadedFor(petId);
       return;
@@ -111,7 +105,7 @@ export function AppointmentStrip() {
       setAppointment(null);
       setLoadedFor(petId);
     }
-  }, [enabled, petId]);
+  }, [petId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -119,7 +113,7 @@ export function AppointmentStrip() {
     }, [load]),
   );
 
-  if (!enabled || !appointment || loadedFor !== petId) return null;
+  if (!appointment || loadedFor !== petId) return null;
 
   const { view, phase, id } = appointment;
 
@@ -224,8 +218,9 @@ export function AppointmentStrip() {
                 // asked once. The visit is still bookable from the Pet tab.
                 //
                 // THE APPOINTMENT RIDES THE ROUTE (CUL-949). This pushed a bare
-                // `/vet-visit`, which flag-on redirects to `/vet-visits/after` with no
-                // param — so the likeliest path through the whole feature arrived
+                // `/vet-visit` (the old visit form, retired at GA by CUL-905), which
+                // during the beta redirected to `/vet-visits/after` with no param —
+                // so the likeliest path through the whole feature arrived
                 // blank: the notes typed before and during the visit were dropped
                 // (`after.tsx` seeds them from `appt.notes_draft`), clinic and reason
                 // were unfilled, and `logVisitFromAppointment` never ran, leaving the

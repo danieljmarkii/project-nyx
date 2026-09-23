@@ -119,10 +119,10 @@ describe('BetaFeaturesScreen — eligible account', () => {
   });
 
   it('a non-eligible beta’s card still self-gates away while others render', () => {
-    setAllowlist({ vet_visits: gatedToPm });
+    setAllowlist({ design_v2: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('Vet visits')).toBeTruthy();
+    expect(getByText('Design v2')).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
     expect(queryByText('Noticed')).toBeNull();
   });
@@ -139,22 +139,7 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(getByText('Noticed')).toBeTruthy();
     expect(getByText(/once-a-day note of how they seemed/)).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
-    expect(queryByText('Vet visits')).toBeNull();
-  });
-
-  it('renders the Vet visits card for an allowlisted account, self-gated otherwise (CUL-898)', () => {
-    // VV-0 AC: app/settings/beta.tsx renders the Vet visits row ONLY for an
-    // allowlisted account. Allowlisted for vet_visits → the card renders (title +
-    // blurb); the betas this account isn't allowlisted for stay gated away. The
-    // zero-eligible case (dark seed reaches nobody → no Vet visits card, empty
-    // state) is the B-729 test above.
-    setAllowlist({ vet_visits: gatedToPm });
-    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
-
-    expect(getByText('Vet visits')).toBeTruthy();
-    expect(getByText(/Everything around a vet appointment/)).toBeTruthy();
-    expect(queryByText('Home screen widget')).toBeNull();
-    expect(queryByText('Noticed')).toBeNull();
+    expect(queryByText('Design v2')).toBeNull();
   });
 
   it('renders the Design v2 card for an allowlisted account, opt-in default off (CUL-1062)', () => {
@@ -171,6 +156,6 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(getByText(/Switch it off and the app is exactly as it was/)).toBeTruthy();
     expect(getByRole('switch').props.value).toBe(false);
     expect(queryByText('Home screen widget')).toBeNull();
-    expect(queryByText('Vet visits')).toBeNull();
+    expect(queryByText('Noticed')).toBeNull();
   });
 });

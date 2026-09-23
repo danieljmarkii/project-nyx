@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { AtTheVetBody } from '../../components/vetvisits/AtTheVetBody';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import { captureVisitPaperwork, readPaperworkFor, rememberPaperwork } from '../../lib/visitPaperwork';
@@ -54,14 +52,10 @@ const DRAFT_DEBOUNCE_MS = 600;
 // different entities under one dynamic name is a route that reads wrong from the
 // URL up. The spec's §4.1 names the screen, not its file path.
 //
-// The GATE is here; the DRAWING is in components/vetvisits/ — the split
-// guards/vetVisitsFlagOff.test.tsx enforces by stubbing that namespace to prove
-// flag-off equivalence.
+// The screen holds the reads and the writes; the DRAWING is in
+// components/vetvisits/ (the split the beta's flag-off guard enforced; a convention
+// since GA, CUL-905).
 export default function AtTheVetScreen() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const { appointment: appointmentId } = useLocalSearchParams<{ appointment?: string }>();
   const pets = usePetStore((s) => s.pets);
 
@@ -103,7 +97,7 @@ export default function AtTheVetScreen() {
   }, [appointmentId]);
 
   const load = useCallback(async () => {
-    if (!enabled || !appointmentId) {
+    if (!appointmentId) {
       setLoading(false);
       setLoaded(true);
       return;
@@ -129,7 +123,7 @@ export default function AtTheVetScreen() {
     } finally {
       setLoading(false);
     }
-  }, [enabled, appointmentId]);
+  }, [appointmentId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -199,8 +193,6 @@ export default function AtTheVetScreen() {
       setCapturing(false);
     }
   }
-
-  if (!enabled) return <Redirect href="/(tabs)/profile" />;
 
   const petName = resolveRecordPetName(pets, appointment?.pet_id);
 

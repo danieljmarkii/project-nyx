@@ -12,9 +12,6 @@ jest.mock('expo-router', () => ({
   },
 }));
 
-const flags = { eligible: true, optedIn: true };
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => flags.eligible }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => flags.optedIn }));
 const activePet: { current: { id: string; name: string; species: string } } = {
   current: { id: 'p1', name: 'Mochi', species: 'cat' },
 };
@@ -72,7 +69,7 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { AppointmentStrip } from './AppointmentStrip';
-import { cancelVetAppointment, readHomeAppointment, type HomeAppointment } from '../../lib/vetVisits';
+import { cancelVetAppointment, type HomeAppointment } from '../../lib/vetVisits';
 import { markAppointmentAsked } from '../../lib/appointmentAsked';
 
 function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
@@ -104,8 +101,6 @@ function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  flags.eligible = true;
-  flags.optedIn = true;
   mockHome.current = null;
   mockAsked.value = false;
   mockGate.holdNext = false;
@@ -116,26 +111,7 @@ beforeEach(() => {
   mockDetail.fail = false;
 });
 
-describe('the flag gates the strip AND the read', () => {
-  it('renders nothing and reads nothing when the account is not allowlisted', async () => {
-    flags.eligible = false;
-    mockHome.current = homeAppointment('upcoming');
-    const r = render(<AppointmentStrip />);
-    await act(async () => {});
-    expect(r.toJSON()).toBeNull();
-    // A dark feature reads nothing either: the gate is not only about pixels.
-    expect(readHomeAppointment).not.toHaveBeenCalled();
-  });
-
-  it('renders nothing when the owner has not opted in', async () => {
-    flags.optedIn = false;
-    mockHome.current = homeAppointment('upcoming');
-    const r = render(<AppointmentStrip />);
-    await act(async () => {});
-    expect(r.toJSON()).toBeNull();
-    expect(readHomeAppointment).not.toHaveBeenCalled();
-  });
-
+describe('outside the window', () => {
   it('renders nothing when there is no booking in the window', async () => {
     const r = render(<AppointmentStrip />);
     await act(async () => {});

@@ -61,17 +61,6 @@ export type AppConfigKey = keyof AppConfigValues;
 // and a look never enters the engine or any coverage line, so there is no
 // server-side registration of this key. Nothing consumes it yet (N-0).
 //
-// `vet_visits` is the vet-visit companion rollout flag (Vet visits — the
-// appointment companion, migration 065 — VV-0) — same shape, same fail-closed
-// resolution. It gates the companion's CLIENT surfaces (the Pet-tab home VV-2,
-// the visit VV-4, the Home strip + Get ready VV-5) AND-ed with the beta-shelf
-// opt-in. A ROLLOUT gate only (G0): GA is every account — the companion is care,
-// not convenience, so it is never a Premium gate. Client-render-only: VV-1's
-// schema (vet_appointments, the three links, vet_visits.deleted_at) is
-// account-agnostic and lands for everyone, and no Edge Function reads the key,
-// so there is no server-side registration of it. Nothing consumes it yet (VV-0
-// — pinned by guards/vetVisitsFlagOff.test.tsx).
-//
 // `design_v2` is the Design v2 rollout flag (Design v2 — the whole day,
 // migration 070 — D2-0 / CUL-1062) — same shape, same fail-closed resolution.
 // It gates the redesign's CLIENT surfaces (the Signal card + route D2-3, Home on
@@ -88,7 +77,7 @@ export type AppConfigKey = keyof AppConfigValues;
 // 2026-08 Signal/Home uplift, GA'd and gone from this union; this is the 2026-09
 // whole-day redesign.
 //
-// Four keys that once lived here have GRADUATED to GA and been retired client-side.
+// Five keys that once lived here have GRADUATED to GA and been retired client-side.
 // `signal_design_v2` (the Signal/Home design uplift, migration 055) and `signals_v2`
 // (the Signals-v2 lanes, migration 057) went first (CUL-546 Phase 1 / CUL-547 +
 // CUL-548): the uplift + the v2 lanes now render unconditionally. Their `app_config`
@@ -98,14 +87,18 @@ export type AppConfigKey = keyof AppConfigValues;
 // 061) followed (CUL-960 / CUL-962): the grouped event grid with the Breathing family
 // is the only picker, on the sheet and on `/log`. Their rows were flipped to
 // `{"enabled": true}` for installed builds (CUL-961) and are deleted by CUL-963 once
-// the GA build is installed — neither was ever read server-side. None of the four
-// belongs in this client-side union any more.
+// the GA build is installed — neither was ever read server-side. The vet-visit
+// companion's rollout flag (Vet visits — the appointment companion, VV-0, migration
+// 065) went last (CUL-905): the Pet-tab card, the visit screens, the Home strip, Get
+// ready and the History row render for every account, and the old write-only visit
+// form went with it. Its row was flipped to `{"enabled": true}` (CUL-1081) and is
+// deleted by CUL-1082 once the GA build is installed — it too was never read
+// server-side. None of the five belongs in this client-side union any more.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
   'daily_look',
-  'vet_visits',
   'design_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
@@ -123,7 +116,6 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_general_enabled: undefined,
   widget_enabled: undefined,
   daily_look: undefined,
-  vet_visits: undefined,
   design_v2: undefined,
 };
 

@@ -9,10 +9,11 @@
 // screen, the route D2-3 (CUL-1065) landed, and the three waits — the cold start,
 // the report and the event screen — D2-7 (CUL-1068) landed.
 //
-// ── THE SHAPE, INHERITED FROM guards/vetVisitsFlagOff.test.tsx (C-36) ──────────
+// ── THE SHAPE, INHERITED FROM THE VET-VISITS GUARD (C-36) ────────────────────────
 //
-// This file is the vet-visits guard's sibling and deliberately keeps its shape,
-// because the two traps that guard documents apply here unchanged:
+// This file was the sibling of guards/vetVisitsFlagOff.test.tsx (CUL-898, retired
+// with its flag at GA by CUL-905) and deliberately keeps its shape, because the two
+// traps that guard documented apply here unchanged:
 //   • A flag-on / flag-off DIFF is backwards in both directions — GREEN on the
 //     exact defect (an ungated node is in both trees), RED on correct code (a
 //     gated node is present on one side).
@@ -41,8 +42,8 @@
 //
 // ── ONE HOOK, ONE CALL SHAPE ────────────────────────────────────────────────────
 //
-// Unlike vet_visits (read at each site as `useAllowlistFlag('vet_visits')` +
-// `useBetaOptIn('vet_visits')`), Design v2 has ONE gate, `hooks/useDesignV2.ts`,
+// Unlike the vet-visits flag (read at each site through the two gate hooks until it
+// retired), Design v2 has ONE gate, `hooks/useDesignV2.ts`,
 // and this file is the reason: a consumer is found by its call shape, and one
 // name is one shape. So the scans below assert two things the vet-visits guard
 // cannot: the KEY is read directly in exactly one file (the hook), and every

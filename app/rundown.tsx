@@ -13,8 +13,6 @@ import {
   GetReadyTitle,
 } from '../components/vetvisits/GetReadyHeader';
 import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
-import { useAllowlistFlag } from '../hooks/useAppConfig';
-import { useBetaOptIn } from '../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
 import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
@@ -101,7 +99,10 @@ function navigateTo(tap: RundownTap): void {
       router.push('/(tabs)/history');
       return;
     case 'log-visit':
-      router.push('/vet-visit');
+      // The booking sheet's *Already happened* arm — the same door as the Pet tab's
+      // *Log a past visit*, so there is one way to log a visit (CUL-942). This
+      // pushed `/vet-visit`, the old write-only form, until GA (CUL-905).
+      router.push('/vet-visits?add=happened');
       return;
   }
 }
@@ -123,13 +124,10 @@ export default function RundownScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const companionOn = eligible && optedIn;
   const { appointmentId, ask } = useLocalSearchParams<{ appointmentId?: string; ask?: string }>();
-  // Off the flag the param is inert and this is the shipped rundown, unchanged —
-  // which is what AC 0 asserts about `/rundown`.
-  const wantsGetReady = companionOn && typeof appointmentId === 'string' && appointmentId.length > 0;
+  // An appointment on the route makes this Get ready; without one it is the plain
+  // rundown Ask opens.
+  const wantsGetReady = typeof appointmentId === 'string' && appointmentId.length > 0;
 
   // The strip's *Add a question* opens this screen with the sheet up. A ONE-SHOT held
   // in a ref and armed from the ref's initialiser, never in the render body: the

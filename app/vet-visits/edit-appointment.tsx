@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -10,8 +10,6 @@ import {
   AppointmentEditBody,
   type AppointmentEditFields,
 } from '../../components/vetvisits/AppointmentEditBody';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import {
@@ -39,10 +37,6 @@ import {
 // `app/vet-visits/[id].tsx` owns that segment for the visit's own screen, and a
 // second dynamic route under it would be two screens with one address.
 export default function EditAppointmentScreen() {
-  const eligible = useAllowlistFlag('vet_visits');
-  const optedIn = useBetaOptIn('vet_visits');
-  const enabled = eligible && optedIn;
-
   const { appointment: appointmentId } = useLocalSearchParams<{ appointment?: string }>();
   const pets = usePetStore((s) => s.pets);
 
@@ -57,7 +51,7 @@ export default function EditAppointmentScreen() {
   const seeded = useRef(false);
 
   const load = useCallback(async () => {
-    if (!enabled || !appointmentId) {
+    if (!appointmentId) {
       setLoading(false);
       setLoaded(true);
       return;
@@ -96,7 +90,7 @@ export default function EditAppointmentScreen() {
     } finally {
       setLoading(false);
     }
-  }, [enabled, appointmentId]);
+  }, [appointmentId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -178,8 +172,6 @@ export default function EditAppointmentScreen() {
       ],
     );
   }
-
-  if (!enabled) return <Redirect href="/(tabs)/profile" />;
 
   // The RECORD's pet, never the active one (CUL-574 / AC 11).
   const petName = resolveRecordPetName(pets, appointment?.pet_id);

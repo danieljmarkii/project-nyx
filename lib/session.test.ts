@@ -126,9 +126,6 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
         widget_enabled: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
         // daily_look (Noticed, N-0 / CUL-866) — same allowlist shape, account UUIDs wiped too.
         daily_look: { enabled: false, allowlist: ['13131313-4545-6767-8989-010101010101'] },
-        // vet_visits (the vet-visit companion, VV-0 / CUL-898) — same allowlist shape,
-        // account UUIDs wiped too.
-        vet_visits: { enabled: false, allowlist: ['14141414-5656-7878-9090-121212121212'] },
         // design_v2 (Design v2 — the whole day, D2-0 / CUL-1062) — same allowlist
         // shape, account UUIDs wiped too.
         design_v2: { enabled: false, allowlist: ['15151515-6767-8989-0101-232323232323'] },

@@ -33,8 +33,6 @@ jest.mock('expo-router', () => ({
 }));
 const focusCb: { current: null | (() => void | (() => void))} = { current: null };
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
-jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => true }));
-jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
 jest.mock('../store/petStore', () => {
   const pet = { id: 'p1', name: 'Mochi', species: 'cat', sex: 'female' };
   const state = { activePet: pet, pets: [pet] };

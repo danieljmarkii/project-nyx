@@ -23,15 +23,11 @@ jest.mock('expo-router', () => ({
   },
 }));
 const focusCb: { current: null | (() => void | (() => void))} = { current: null };
-// CUL-903 — this screen is now the rundown AND Get ready, so it reads the companion
-// flag. Mocked OFF here on purpose: this suite's subject is the shipped rundown's
-// tap→route mapping, which must keep working with the companion dark.
-jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
-jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 // The env boundary. `lib/supabase` throws at IMPORT when the anon key is unset, and
 // this screen now reaches it (the Signal cache read Get ready quotes, and the trial
-// facts). Nothing here calls it — the flag is off above — so a bare stub is enough.
+// facts). Nothing here calls it — no appointment rides the route, so this is the
+// plain rundown — so a bare stub is enough.
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../store/petStore', () => {
   const state = { activePet: { id: 'p1', name: 'Mochi' } };
@@ -91,5 +87,26 @@ describe('the Pet-tab doors (CUL-753)', () => {
       pathname: PROFILE_ROUTE,
       params: { focus: 'medications', ts: expect.any(String) },
     });
+  });
+});
+
+describe('the log-a-visit door (CUL-942, CUL-905)', () => {
+  it('opens the booking sheet on its Already-happened arm, never the retired form', async () => {
+    // One way to log a visit: the Pet tab's *Log a past visit* lands on this same
+    // route. Until GA this pushed `/vet-visit`, the old write-only form, which was
+    // deleted with the flag — a push to it now would land on no screen at all.
+    (buildRundown as jest.Mock).mockResolvedValue({
+      petName: 'Mochi',
+      generatedAtMs: 0,
+      pastMedications: [],
+      facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [] },
+      tiles: [
+        { key: 'since_visit', label: 'Since last visit', value: 'No prior visit logged', tap: { kind: 'log-visit' }, empty: true },
+      ],
+    });
+    const { findByLabelText } = render(<RundownScreen />);
+    fireEvent.press(await findByLabelText(/^Since last visit:/));
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/vet-visits?add=happened');
   });
 });

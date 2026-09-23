@@ -253,8 +253,8 @@ describe('parseQuestions — the column is owner-controlled free text', () => {
 
 describe('logVisitFromAppointment', () => {
   it('takes pet_id from the APPOINTMENT ROW (AC 11)', async () => {
-    // The shape of the bug it catches: the shipped `app/vet-visit.tsx` reads
-    // `activePet` at save time (`:117`). Here the pet travels INSIDE the appointment
+    // The shape of the bug it catches: the retired `app/vet-visit.tsx` read
+    // `activePet` at save time. Here the pet travels INSIDE the appointment
     // the caller passes, so a caller cannot supply a pet and an appointment that
     // disagree — the store is not reachable from this function at all.
     seedAppointment();
