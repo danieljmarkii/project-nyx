@@ -1,6 +1,8 @@
 import { Alert, Modal, type AlertButton } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import AfterVisitScreen from './after';
+import { router } from 'expo-router';
+import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import type { ActiveCourse, AppointmentDetail } from '../../lib/vetVisits';
 
 // CUL-902 VV-4 — the after-visit screen's own wiring (§7 AC 7 and AC 11).
@@ -293,6 +295,31 @@ describe('AC 7 — exactly one Modal (the CUL-662 pin)', () => {
     fireEvent.press(screen.getByLabelText('Add — Started something new?'));
     await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(modals()).toHaveLength(1));
+  });
+});
+
+describe('CUL-503 — the trial sheet’s “Log a meal” lands on the meal logger', () => {
+  // The button inside `StartTrialModal` reads "Log a meal for {pet}", so its door is the
+  // meal logger — the same target its twin on the Pet tab has always had
+  // (app/(tabs)/profile.tsx). This screen pushed the bare /log type picker instead, so an
+  // owner who asked to log a meal met a grid of every event type (PM-ruled 2026-09-23).
+  //
+  // The prop is called directly rather than reached through the modal: the button sits
+  // past a completed trial start, and what this screen owns is the WIRING it hands in.
+  // The modal's own button → prop path is StartTrialModal's to pin.
+  it('closes the trial sheet and pushes /log?type=meal, never the bare picker', async () => {
+    render(<AfterVisitScreen />);
+    await screen.findByText('A new food to try?');
+    fireEvent.press(screen.getByLabelText('Start a trial — A new food to try?'));
+    await waitFor(() => expect(modals()).toHaveLength(1));
+
+    await act(async () => {
+      screen.UNSAFE_getByType(StartTrialModal).props.onLogFirstMeal();
+    });
+
+    expect(router.push).toHaveBeenCalledWith('/log?type=meal');
+    expect(router.push).not.toHaveBeenCalledWith('/log');
+    expect(screen.UNSAFE_queryAllByType(StartTrialModal)).toHaveLength(0);
   });
 });
 

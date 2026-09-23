@@ -784,7 +784,10 @@ export default function AfterVisitScreen() {
               }}
               onLogFirstMeal={() => {
                 setSheet(null);
-                router.push('/log');
+                // The button says "Log a meal for {pet}", so it lands on the meal
+                // logger, as its twin on the Pet tab does (CUL-503, PM-ruled
+                // 2026-09-23). It used to push the bare type picker.
+                router.push('/log?type=meal');
               }}
             />
           ) : null}

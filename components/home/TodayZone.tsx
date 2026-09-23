@@ -14,6 +14,7 @@ import { NyxEvent } from '../../store/eventStore';
 import { buildTodayLane, type DayCountChip } from '../../lib/todayLane';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
+import { useUiStore } from '../../store/uiStore';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import { isLookRow } from '../../lib/lookDisplay';
@@ -36,6 +37,10 @@ function openFullDay() {
 
 export function TodayZone() {
   const { activePet } = usePetStore();
+  // The nudge opens the log sheet through the store rather than importing it (CUL-503):
+  // the sheet writes rows, and this card is inside Home's import closure, which carries
+  // exactly three write classes (`guards/homeWrites.test.ts`).
+  const openLogSheet = useUiStore((s) => s.openLogSheet);
   const { todayEvents } = useEvents();
   const petName = activePet?.name ?? 'your pet';
 
@@ -121,7 +126,7 @@ export function TodayZone() {
           exactly when `isEmpty` was true, so this renders what it always did. */}
       {nudge !== 'none' && (
         <TouchableOpacity
-          onPress={() => router.push('/log')}
+          onPress={() => openLogSheet()}
           activeOpacity={0.7}
           style={styles.nudgeRow}
         >

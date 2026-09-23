@@ -12,7 +12,6 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
-import { EventTypeSheet } from './EventTypeSheet';
 import { useUiStore } from '../../store/uiStore';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
@@ -30,10 +29,12 @@ export function FAB() {
   const { prependEvent } = useEventStore();
   const { pets, activePet } = usePetStore();
   const showMealMoment = useMomentStore((s) => s.showMeal);
+  // The log sheet is not this component's any more (CUL-503): one root mount serves
+  // every door, and the FAB is three of them — More events, and the two quick taps.
+  const openLogSheet = useUiStore((s) => s.openLogSheet);
 
   const [open, setOpen] = useState(false);
   const [switcherVisible, setSwitcherVisible] = useState(false);
-  const [eventSheetVisible, setEventSheetVisible] = useState(false);
   // CUL-723 — the recent-food rows are keyed by the pet they were loaded FOR, and
   // render only on a match. `null` is "this pet's foods have not answered yet",
   // which is not the same fact as "this pet has no foods" (C-12).
@@ -348,17 +349,19 @@ export function FAB() {
 
                 <View style={styles.divider} />
 
-                {/* Quick GI symptom taps — route into the full log flow (the `simple`
-                    step) rather than logging silently. That flow already carries the
-                    optional photo step (a vomit photo auto-triggers the AI read) and
-                    the B-010 "Saw it / Found it" time affordance, which vomit/loose
-                    stool need because they're discovery-prone. The photo is optional,
-                    so this stays fast — one tap to the screen, one tap to save — while
-                    closing the old no-photo gap (was FAB.tsx handleQuickSymptom TODO). */}
+                {/* Quick GI symptom taps — open the log sheet straight at the confirm
+                    for that event (CUL-504) rather than logging silently. They used to
+                    push the full-screen /log flow, which put a second confirm design
+                    one tap away from the sheet's own, in the same menu. The sheet's
+                    confirm carries everything that flow did: the optional photo (a
+                    vomit or stool photo still triggers the per-incident read and lands
+                    on its record) and the B-010 "Saw it / Found it" time affordance,
+                    which vomit and loose stool need because they're discovery-prone.
+                    Still one tap to the confirm, one tap to save. */}
                 <View style={styles.symptomRow}>
                   <TouchableOpacity
                     style={styles.symptomBtn}
-                    onPress={() => { closeMenu(); router.push('/log?type=vomit'); }}
+                    onPress={() => { closeMenu(); openLogSheet('vomit'); }}
                     activeOpacity={0.7}
                   >
                     <EventIcon type="vomit" size={20} color={theme.colorEventSymptom} />
@@ -366,7 +369,7 @@ export function FAB() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.symptomBtn}
-                    onPress={() => { closeMenu(); router.push('/log?type=diarrhea'); }}
+                    onPress={() => { closeMenu(); openLogSheet('diarrhea'); }}
                     activeOpacity={0.7}
                   >
                     <EventIcon type="diarrhea" size={20} color={theme.colorEventSymptom} />
@@ -378,7 +381,7 @@ export function FAB() {
 
                 {/* More events → the type grid, as a bottom sheet over the current tab
                     (B-745 PR 2; out of beta with CUL-962, so it never pushes /log any
-                    more). The photo-first "Attach photo" entry it used to carry was
+                    more; one root-mounted sheet since CUL-503). The photo-first "Attach photo" entry it used to carry was
                     retired in B-745 PR 1 (R4: every log starts from the event; photos
                     still attach inside each event flow), as was the older "Log with
                     photo" row before it — both were redundant second pathways to this
@@ -387,7 +390,7 @@ export function FAB() {
                   style={styles.menuAction}
                   onPress={() => {
                     closeMenu();
-                    setEventSheetVisible(true);
+                    openLogSheet();
                   }}
                   activeOpacity={0.7}
                 >
@@ -427,14 +430,6 @@ export function FAB() {
         visible={switcherVisible}
         captureSurface
         onClose={() => setSwitcherVisible(false)}
-      />
-
-      {/* B-745 PR 2 — the More-events destination as a bottom sheet. Always mounted
-          with the FAB so it renders over whichever tab is active; inert until
-          setEventSheetVisible(true). Owns its own pet switcher internally. */}
-      <EventTypeSheet
-        visible={eventSheetVisible}
-        onClose={() => setEventSheetVisible(false)}
       />
     </>
   );

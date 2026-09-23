@@ -35,6 +35,7 @@ import { useDailyRecapOffer } from '../hooks/useDailyRecapOffer';
 import { isNotificationArrival } from '../lib/dailyRecapOffer';
 import { profileFocusHref } from '../lib/profileFocus';
 import { useSyncStore } from '../store/syncStore';
+import { useUiStore } from '../store/uiStore';
 import {
   DAY_SUMMARY_ZERO_LOG,
   daySummaryEmptyTitle,
@@ -103,7 +104,10 @@ export default function DaySummaryScreen() {
   // state's own invitation needs a door (the quick-log), and the strips door to the
   // Pet tab's cards (which own every trial/med reading) — the same targets the Home
   // strips use. None of these is the §4.2 "second door": the recap writes nothing.
-  const logEvent = useCallback(() => router.push('/log'), []);
+  // The quick-log is the app's one log sheet (CUL-503), mounted at the root so it
+  // presents over this pushed screen; the sheet writes, this screen still does not.
+  const openLogSheet = useUiStore((s) => s.openLogSheet);
+  const logEvent = useCallback(() => openLogSheet(), [openLogSheet]);
   // CUL-170 — each strip opens ON its own card, not at the top of the Pet tab.
   // Same doorway the Home strips use, from the same builder, so the two surfaces
   // cannot drift into naming different targets for the same strip.
