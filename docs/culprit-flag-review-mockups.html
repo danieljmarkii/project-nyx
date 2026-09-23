@@ -1,0 +1,345 @@
+<title>Flag review</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap">
+<style>
+  /* ============================================================
+     Flag review: the owner's answer to a photo red flag (CUL-1101).
+     Mock ROUND 1 (discovery). Current-proposal page: later rounds
+     republish to the SAME artifact URL; git is the history.
+
+     Document chrome is theme-aware. DEVICE FRAMES stay light in both
+     themes: they render the app's shipping light surfaces (the record
+     stays in daylight, Signal/Home D8). Frame values are the real tokens
+     from constants/theme.ts: teal #00C2A8 (interactive accent only),
+     accent ink #0B7B6C, symptom rose #F43F5E, ink #9F1239, light #FFE4E6,
+     border #FBCFD6; text #0A0A0A / #525252 / #737373 / #A3A3A3.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --amber-ink: #8A5A00; --amber-wash: #FFF4DB;
+    --serif: "Fraunces", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --amber-ink: #F5C451; --amber-wash: rgba(245,196,81,0.13);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --amber-ink: #F5C451; --amber-wash: rgba(245,196,81,0.13);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 36px 72px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .revnew { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); max-width: 86ch; }
+  .revnew b { color: var(--ink); }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .roundtag.rose { color: var(--rose-ink); background: var(--rose-wash); }
+  .roundtag.amber { color: var(--amber-ink); background: var(--amber-wash); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h2 .roundtag { vertical-align: middle; margin-left: 10px; }
+  h3 { font-weight: 600; font-size: 15.5px; margin: 34px 0 8px; }
+  h3 .roundtag { margin-left: 8px; vertical-align: middle; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 24px 0; color: var(--ink-2); font-size: 15.5px; max-width: 72ch; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 20px; margin: 24px 0; font-size: 15px; color: var(--ink-2); max-width: 76ch; }
+  .conflict p { margin: 0 0 10px; }
+  .conflict strong { color: var(--ink); }
+  .brief { margin: 22px 0 8px; padding: 20px 24px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; max-width: 86ch; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p:last-child { margin-bottom: 0; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  table.spec { border-collapse: collapse; width: 100%; font-size: 14px; margin: 18px 0 8px; }
+  table.spec th, table.spec td { text-align: left; vertical-align: top; padding: 9px 10px; border-top: 1px solid var(--rule); }
+  table.spec th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  table.spec td strong { color: var(--ink); }
+  .tablewrap { overflow-x: auto; }
+  ul.tight, ol.tight { margin: 0 0 16px; padding-left: 20px; max-width: 72ch; }
+  ul.tight li, ol.tight li { margin-bottom: 6px; }
+  .quote { font-family: var(--serif); font-size: 17px; line-height: 1.45; color: var(--ink); margin: 0 0 6px; }
+  .who { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+
+  /* ── Option boxes (a round-1 decision drawn side by side) ── */
+  .optgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; margin-top: 28px; }
+  .opt { border: 1px solid var(--rule); border-radius: 4px; padding: 18px 18px 20px; background: var(--paper-2); }
+  .opt.recd { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal) inset; }
+  .opt .otag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 6px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .opt h4 { font-family: var(--serif); font-size: 19px; font-weight: 600; margin: 0 0 8px; line-height: 1.25; }
+  .opt p { font-size: 14px; color: var(--ink-2); margin: 0 0 10px; }
+  .opt .frames { margin-top: 14px; justify-content: center; }
+  .opt .pc { font-size: 13.5px; color: var(--ink-2); margin: 12px 0 0; padding: 0; list-style: none; }
+  .opt .pc li { padding: 4px 0 4px 20px; position: relative; }
+  .opt .pc li::before { position: absolute; left: 0; top: 4px; font-family: var(--mono); font-size: 12px; }
+  .opt .pc li.p::before { content: "+"; color: var(--teal-ink); }
+  .opt .pc li.c::before { content: "\2212"; color: var(--rose-ink); }
+
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 30px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .phone { position: relative; width: 316px; max-width: 100%; height: 640px; background: #F5F5F5; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 12px 12px 0; color: #0A0A0A; font-family: var(--sans); overflow: hidden; display: flex; flex-direction: column; }
+  .phone.short { height: 560px; }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 10px; flex-shrink: 0; }
+  .screen { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin-bottom: 8px; }
+
+  /* Home pieces */
+  .hhead { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; }
+  .hhead .pet { font-weight: 600; font-size: 17px; }
+  .hhead .pet span { color: #737373; font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .acard { background: #FFFFFF; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .irow { display: flex; gap: 9px; padding: 6px 0 2px; }
+  .rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.9; align-self: stretch; }
+  .rail.safety { background: #F43F5E; }
+  .rail.insight { background: #00C2A8; }
+  .rail.quiet { background: #C9C9C9; }
+  .ibody { flex: 1; min-width: 0; }
+  .lead { font-family: var(--serif); font-size: 16px; line-height: 1.34; letter-spacing: -0.01em; color: #0A0A0A; margin: 0 0 4px; }
+  .samp { font-size: 10.5px; color: #737373; margin-top: 4px; }
+  .why { font-size: 11.5px; color: #0B7B6C; font-weight: 600; margin-top: 8px; }
+  .door { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; padding: 9px 11px; border-radius: 11px; background: #FFF5F6; border: 1px solid #FBCFD6; font-size: 12px; color: #9F1239; font-weight: 600; min-height: 40px; }
+  .door .dsub { font-weight: 400; color: #525252; font-size: 11px; display: block; margin-top: 1px; }
+  .door .dchev { font-size: 15px; font-weight: 400; }
+  .today { display: grid; gap: 8px; }
+  .trow { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: #0A0A0A; padding: 6px 0; }
+  .trow + .trow { border-top: 1px solid #EAEAEA; }
+  .trow .t { color: #737373; font-size: 11px; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .glyph { width: 22px; height: 22px; border-radius: 50%; background: #F5F5F5; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .glyph.sym { background: #FFE4E6; color: #9F1239; }
+  .glyph.meal { background: #E0FBF7; color: #0B7B6C; }
+  .tabbar { margin-top: auto; height: 54px; border-top: 1px solid #EAEAEA; background: #FFFFFF; display: flex; align-items: center; justify-content: space-around; font-size: 9.5px; color: #A3A3A3; margin-left: -12px; margin-right: -12px; flex-shrink: 0; }
+  .tabbar .on { color: #0A0A0A; font-weight: 600; }
+  .fab { position: absolute; right: 22px; bottom: 70px; width: 44px; height: 44px; border-radius: 50%; background: #00C2A8; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 6px 16px rgba(0,194,168,0.35); }
+
+  /* Record (event detail) pieces */
+  .dhead { display: flex; align-items: center; gap: 10px; padding: 2px 2px 4px; font-size: 15px; font-weight: 600; }
+  .dhead .bk { color: #0B7B6C; font-size: 18px; font-weight: 400; }
+  .dscroll { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 11px; overflow: hidden; }
+  .hero { height: 132px; border-radius: 14px; background: linear-gradient(135deg, #D9D2CB 0%, #C4BCB3 55%, #B7ADA2 100%); position: relative; flex-shrink: 0; overflow: hidden; }
+  .hero::after { content: "photo"; position: absolute; right: 10px; bottom: 8px; font-family: var(--mono); font-size: 9.5px; color: rgba(0,0,0,0.45); letter-spacing: 0.08em; text-transform: uppercase; }
+  .hero .spot { position: absolute; border-radius: 50%; }
+  .hero .ring { position: absolute; border: 2px solid #F43F5E; border-radius: 50%; box-shadow: 0 0 0 3px rgba(244,63,94,0.18); }
+  .hero.thumb { height: 64px; width: 64px; border-radius: 12px; }
+  .hero.thumb::after { content: ""; }
+  .rec { padding: 0 2px; }
+  .rec .typ { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #9F1239; }
+  .rec .date { font-family: var(--serif); font-size: 21px; line-height: 1.15; margin: 3px 0 2px; }
+  .rec .time { font-size: 12.5px; color: #525252; }
+  .rec .who { font-size: 11px; color: #737373; margin-top: 3px; }
+  .readcard { border-radius: 14px; padding: 11px 12px 10px; background: #FFFFFF; border: 1px solid #EAEAEA; }
+  .readcard.attn { background: #FFE4E6; border-color: #FBCFD6; }
+  .readcard.neutral { background: #F5F5F5; }
+  .readcard .rrow { display: flex; gap: 10px; }
+  .readcard .verdict { font-size: 14px; font-weight: 600; color: #0A0A0A; line-height: 1.25; }
+  .readcard .verdict.attn { color: #9F1239; }
+  .readcard .readtext { font-size: 12px; line-height: 1.45; color: #525252; margin-top: 5px; }
+  .readcard .disc { font-size: 10px; color: #737373; margin-top: 7px; }
+  .readcard .hide { font-size: 10.5px; color: #737373; font-weight: 500; margin-top: 7px; }
+  .obs { border-radius: 14px; padding: 10px 12px; background: #FFFFFF; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
+  .obs .ohead { display: flex; align-items: center; justify-content: space-between; }
+  .obs .ohead .seclabel { margin: 0; }
+  .obs .ohead .edit { font-size: 11px; color: #0B7B6C; font-weight: 600; }
+  .ogrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 8px; }
+  .okv { font-size: 12px; color: #0A0A0A; line-height: 1.3; }
+  .okv small { display: block; font-size: 9.5px; color: #737373; letter-spacing: 0.08em; text-transform: uppercase; }
+  .okv .ed { font-size: 9px; color: #0B7B6C; font-weight: 600; margin-left: 4px; }
+  .okv.flag { color: #9F1239; font-weight: 600; }
+  .edline { font-size: 10.5px; color: #737373; margin-top: 8px; }
+  .kick { font-size: 11px; color: #0B7B6C; font-weight: 600; padding: 2px; }
+
+  /* The editor as shipped */
+  .editor { border-radius: 14px; padding: 10px 12px; background: #FFFFFF; box-shadow: 0 2px 10px rgba(19,17,46,0.05); display: grid; gap: 8px; }
+  .editor .intro { font-size: 11.5px; color: #525252; }
+  .editor .flabel { font-size: 9.5px; color: #737373; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11px; padding: 5px 10px; border-radius: 999px; background: #F5F5F5; color: #525252; border: 1px solid #EAEAEA; }
+  .chip.on { background: #CDF5EC; color: #08685B; border-color: rgba(8,104,91,0.35); font-weight: 600; }
+  .editor .acts { display: flex; justify-content: flex-end; gap: 14px; font-size: 12px; font-weight: 600; color: #737373; }
+  .editor .acts .save { color: #0B7B6C; }
+
+  /* The question (new) */
+  .ask { border-top: 1px solid #FBCFD6; margin-top: 10px; padding-top: 10px; }
+  .ask .q { font-size: 12.5px; font-weight: 600; color: #0A0A0A; line-height: 1.35; }
+  .ask .qsub { font-size: 11px; color: #525252; margin-top: 2px; }
+  .ans { display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+  .abtn { font-size: 12px; font-weight: 600; padding: 8px 13px; border-radius: 999px; background: #FFFFFF; color: #0A0A0A; border: 1px solid #D4D4D4; min-height: 34px; display: inline-flex; align-items: center; }
+  .abtn.ghost { background: transparent; border-color: transparent; color: #737373; font-weight: 500; padding-left: 4px; padding-right: 4px; }
+  .reasons { margin-top: 9px; }
+  .reasons .rl { font-size: 11px; color: #525252; margin-bottom: 6px; }
+  .answered { margin-top: 10px; padding-top: 9px; border-top: 1px solid #FBCFD6; font-size: 11.5px; color: #525252; line-height: 1.45; }
+  .answered b { color: #0A0A0A; font-weight: 600; }
+  .answered .chg { color: #0B7B6C; font-weight: 600; margin-left: 6px; }
+  .note { margin-top: 7px; font-size: 11.5px; color: #0B7B6C; font-weight: 600; }
+  .quoted { margin-top: 6px; font-size: 11.5px; color: #0A0A0A; }
+  .tag { display: inline-block; font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; }
+  .tag.you { background: #F5F5F5; color: #525252; border: 1px solid #EAEAEA; }
+  .tag.conf { background: #FFE4E6; color: #9F1239; }
+
+  /* Completion beat (R1 register) */
+  .ncard { position: absolute; left: 14px; right: 14px; bottom: 22px; background: #101312; border-radius: 16px; padding: 13px 14px 12px; color: #FFFFFF; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+  .ncard.over-tabs { bottom: 70px; }
+  .ncard .row { display: flex; gap: 10px; align-items: flex-start; }
+  .ncard .chk { width: 26px; height: 26px; border-radius: 50%; background: rgba(0,194,168,0.18); color: #86D9CC; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  .ncard .ttl { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+  .ncard .sub { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 2px; }
+  .ncard .acts { display: flex; gap: 22px; margin-top: 10px; font-size: 12.5px; font-weight: 600; color: #86D9CC; }
+
+  /* Report excerpt */
+  .paper { background: #FFFFFF; color: #111; border: 1px solid #D9D9D9; border-radius: 2px; padding: 18px 20px; font-family: var(--sans); font-size: 12.5px; line-height: 1.5; box-shadow: 0 8px 22px rgba(19,17,46,0.08); max-width: 640px; }
+  .paper .ph { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #555; font-weight: 600; border-bottom: 1px solid #111; padding-bottom: 4px; margin-bottom: 8px; }
+  .paper .pr { padding: 6px 0; border-bottom: 1px solid #E5E5E5; }
+  .paper .pr:last-child { border-bottom: 0; }
+  .paper .bdg { font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase; border: 1px solid #999; border-radius: 3px; padding: 0 5px; margin-left: 6px; color: #444; white-space: nowrap; }
+  .paper .bdg.own { border-color: #111; color: #111; font-weight: 600; }
+  .paper .muted { color: #666; }
+
+  .annot { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.04em; color: #B4123B; background: #FFF1F2; border: 1px dashed rgba(180,18,59,0.4); border-radius: 6px; padding: 3px 7px; margin-top: 8px; display: inline-block; line-height: 1.4; }
+  .annot.ok { color: #0B7B6C; background: #ECFDF9; border-color: rgba(11,123,108,0.35); }
+  .annot.opt { color: #6B4E00; background: #FFF8E6; border-color: rgba(138,90,0,0.35); }
+
+  .ledger td:first-child { white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+  a { color: var(--teal-ink); }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span>Culprit · per incident AI reads</span><span>CUL-1101</span><span>2026-09-23</span><span class="roundtag">Round 1 · discovery</span></p>
+    <h1>When the app flags a photo, let the owner answer it</h1>
+    <p class="standfirst">PLACEHOLDER</p>
+  </header>
+
+  <!-- ───────────────────────── §1 · Today ───────────────────────── -->
+  <section id="today">
+    <div class="sec-head"><span class="sec-num">§1</span><h2>Today: a flag is easy to raise and hard to answer</h2></div>
+    <div class="col">
+      <p>The Home red flag card (B-340) fires on a <strong>single</strong> flagged photo, and its design record gives the reason: <em>"false positives are cheap for the owner to clear by editing the structured field, which clears the card by construction."</em> That holds in the database. On the phone, clearing one costs the four frames below. And nothing anywhere records the opposite answer: an owner who looks and agrees has no way to say so.</p>
+    </div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Mochi <span>Tue, Sep 23</span></div></div>
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow"><div class="rail safety"></div><div class="ibody"><p class="lead">A photo you logged of Mochi's vomiting showed possible blood, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis.</p><div class="samp">From an AI read of 1 logged photo</div><div class="why">Why we're showing this</div></div></div>
+            </div>
+            <div class="acard">
+              <div class="seclabel">Today</div>
+              <div class="today">
+                <div class="trow"><span class="glyph meal">●</span>Breakfast · Hill's z/d<span class="t">7:10 AM</span></div>
+              </div>
+            </div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Mochi</span></div>
+          </div>
+          <div class="fab">+</div>
+        </div>
+        <p class="frame-cap"><b>T1 · The warning, on Home</b>It leads the safety band and says <em>not a confirmed finding</em> when expanded. Tapping it expands the evidence in place (or, in the Design v2 beta, opens a Signal screen with no photo).</p>
+        <span class="annot">No way from here to the photo. The finding does not even carry the incident's id.</span>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span><span class="spot" style="left:38%;top:52%;width:14px;height:10px;background:rgba(190,60,60,0.45)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div><div class="who">Mochi's record</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Mochi.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div><div class="hide">Hide this note</div></div></div></div>
+              </div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Pink / red</div><div class="okv"><small>Consistency</small>Chunky</div><div class="okv"><small>Contents</small>Undigested food</div><div class="okv flag"><small>Blood</small>Fresh red</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>T2 · The record, found through History</b>The card's only control is <em>Hide this note</em>, which does not touch Home. The correction lives under <em>Edit</em>, in the grid below the card.</p>
+        <span class="annot">Mochi's kibble has a red coating. The owner knows; the photo can't.</span>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:70px"></div>
+              <div class="editor">
+                <div class="intro">Correct anything that doesn't look right.</div>
+                <div><div class="flabel">Colour</div><div class="chips"><span class="chip">Yellow</span><span class="chip">Brown</span><span class="chip on">Pink / red</span><span class="chip">Dark red</span><span class="chip">…</span></div></div>
+                <div><div class="flabel">Consistency</div><div class="chips"><span class="chip">Watery</span><span class="chip">Foamy</span><span class="chip on">Chunky</span><span class="chip">…</span></div></div>
+                <div><div class="flabel">Contents</div><div class="chips"><span class="chip on">Undigested food</span><span class="chip">Bile</span><span class="chip">Foam</span><span class="chip">…</span></div></div>
+                <div><div class="flabel">Blood</div><div class="chips"><span class="chip on">None visible</span><span class="chip">Fresh red</span><span class="chip">Dark / older blood</span><span class="chip">Unclear</span></div></div>
+                <div><div class="flabel">Foreign material</div><div class="chips"><span class="chip">Yes</span><span class="chip on">No</span><span class="chip">Unclear</span></div></div>
+                <div class="acts"><span>Cancel</span><span class="save">Save</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>T3 · Edit, the only way to answer</b>Every field at once, as a data correction. Nothing on the form names the warning, says this is how to disagree with it, or offers a way to agree.</p>
+        <span class="annot">Nowhere to say why. Nowhere to say "yes, that's right".</span>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span><span class="spot" style="left:38%;top:52%;width:14px;height:10px;background:rgba(190,60,60,0.45)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div><div class="who">Mochi's record</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Mochi.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div><div class="hide">Hide this note</div></div></div></div>
+              </div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Pink / red</div><div class="okv"><small>Consistency</small>Chunky</div><div class="okv"><small>Contents</small>Undigested food</div><div class="okv"><small>Blood</small>None visible<span class="ed">Edited</span></div></div>
+                <div class="edline">Edited Sep 23</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>T4 · After Save</b>The grid takes the owner's word. The verdict above it does not (the read is "dismissible, never editable"), and Home keeps its card until the Signal next rebuilds: a pull to refresh, the next log, or up to 24 hours.</p>
+        <span class="annot">One screen, two answers: "Worth a call" over "Blood: None visible" (CUL-409).</span>
+      </div>
+    </div>
+    <div class="callout warn"><strong>Three defects, not one.</strong> There is no door from the warning to the photo; the answer is an edit form rather than an answer; and once given, the answer is honoured by Home (late) and by the vet report (silently) while the record's own verdict, the Design v2 day spine and a <em>Re-run analysis</em> all keep contradicting it. Replacing the photo is the sharpest case: the old correction silently applies to the new photo on Home and the report.</div>
+  </section>
+
+  <!-- SECTIONS -->
+</div>
