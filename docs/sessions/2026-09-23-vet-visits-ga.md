@@ -95,7 +95,8 @@ reads the key, re-verified by grep. CUL-1081 → Done.
 - The touched suites are green under `TZ=Pacific/Kiritimati` and `Pacific/Honolulu`
   (30 suites, 577 tests).
 - After merging `main` (#892, CUL-503/504, which also edits `after.tsx`, `_layout.tsx` and
-  the log doors) the merge was clean, `tsc` is clean, and the 25 shared suites are green.
+  the log doors) the merge was clean, `tsc` is clean, the 25 shared suites are green, and
+  the full suite on the merged tree (the pre-push hook) is 441 suites, 9,656 tests, green.
 - Closing grep: no `useAllowlistFlag('vet_visits')`, `useBetaOptIn('vet_visits')`,
   `'/vet-visit'` or `vetVisitsFlagOff` reader remains. `'vet_visits'` remains only as the
   table, plus the detector fixture kept on purpose.
@@ -116,6 +117,6 @@ reads the key, re-verified by grep. CUL-1081 → Done.
 ## What is left for the project
 
 Step 7, the one A-Native build carrying #891, #892 and #893. It is the 1.2.0 cut
-(CUL-559), which is also held by CUL-965, CUL-1093 and CUL-1090. Then step 8, the
+(CUL-559), which is also held by CUL-1093 and CUL-1090. Then step 8, the
 closeout: CUL-963 + CUL-1082, the data-only migration deleting all three rows, the doc
 records and the CLAUDE.md rows.
