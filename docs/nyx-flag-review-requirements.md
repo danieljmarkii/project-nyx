@@ -1,6 +1,6 @@
 # Culprit: Flag review, the owner's answer to a photo red flag (CUL-1101)
 
-**Version:** 0.1 · **DISCOVERY DRAFT, round 1: not build-ready** (decisions FR-1 to FR-8 are open; §0) · **Date:** 2026-09-23 · **Owners:** Sr. Product Designer (design authority), Dr. Alex Chen (clinical conditions), Sr. Data Scientist (the data model and the learning limits), Trust & Safety (the note and the learning tiers), Dir. of Engineering (the write path and the deploy order) · **Track:** CUL-1101 (discovery); rulings on CUL-1107 · **Design authority:** `docs/culprit-flag-review-mockups.html` round 1 (the artifact republishes to the same URL) · **Evidence:** `docs/research/2026-09-owner-answers-to-automated-reads.md` 🧊
+**Version:** 0.2 · **PARKED beyond S1** (the same-day sanity check, §00: build only S1 plus the report's provenance line; the question and the rest of this spec wait on named triggers) · v0.1 was the round 1 discovery draft · **Date:** 2026-09-23 · **Owners:** Sr. Product Designer (design authority), Dr. Alex Chen (clinical conditions), Sr. Data Scientist (the data model and the learning limits), Trust & Safety (the note and the learning tiers), Dir. of Engineering (the write path and the deploy order) · **Track:** CUL-1101 (discovery); rulings on CUL-1107 · **Design authority:** `docs/culprit-flag-review-mockups.html` round 1 (the artifact republishes to the same URL) · **Evidence:** `docs/research/2026-09-owner-answers-to-automated-reads.md` 🧊
 
 **Read this when:** touching the per incident read's owner answer, `event_ai_analysis`'s owner edits, the Home `incident_red_flag` card and its door, any surface that prints or relays a photo red flag (the vet report, Ask, Get ready), or any use of owner answers beyond the owner's own record.
 
@@ -8,7 +8,29 @@
 
 ---
 
-## §0 Decision record (open; the PM rules round 1 on CUL-1107)
+## §00 The sanity check: is it worth building? (2026-09-23, PM-requested)
+
+Round 1's panel was asked how to build this and assumed it would be built. The PM asked the question it skipped. Eight fresh, isolated lenses (Dr. Chen, Jordan, Sam, the Designer, the Data Scientist, the Dir. of Engineering with QA, the Product Owner, Trust & Safety) were told so and asked to argue both sides against four scopes, from the PM's own record (counts only, owner-scoped): **47 readable photo reads since May 14, 4 photo flags, 3 cleared by the owner, 1 blood finding the owner added that the read missed; 9 of the household's 12 "worth a call" verdicts are contextual**, which no answer can touch. A typical owner meets a photo flag a few times a year.
+
+| Scope | What | Lenses who picked it |
+|---|---|---|
+| S0 | Nothing | none: "those bugs are where I'd quit" (Jordan); two of them fail toward reassurance |
+| **S1** | **Make today's correction honest:** a door from the Home warning to the photo (CUL-1112); the record honours the owner's correction (CUL-409); Home refreshes when a read lands (CUL-1105, with the cap fix CUL-1109); *Unclear* never clears a flag (CUL-1104); a replaced photo's findings get through, one-sided (CUL-1110); hiding the note keeps Edit (CUL-1111) | **all eight** |
+| + | **The report's provenance line** from data already stored (CUL-1113): a disputed flag prints with both views, never vanishes; an owner-added finding is labelled the owner's | Dr. Chen, the Data Scientist; the Designer and Engineering defend it as report remediation |
+| S2 | S1 + the Yes / No / Not sure question | none |
+| S3 | This spec, whole | none |
+
+**Why not S2** (the lines that decided it): "At this volume, the question makes dismissing a flag cheaper faster than it adds care" (Dr. Chen). "When a false alarm is the safe error, dismissing a warning should not be the fastest path on the screen" (the Designer). "Once S1 lands, S2's Not sure does exactly what leaving the flag alone does" (Sam). S2 adds a second store of owner truth for about 0.7 rows a month, and "code paths that run a few times a year are where divergence hides" (the Data Scientist); it "is the first half of S3, not a place to stop" (Engineering); the one reason to store answers, improving the model, is the one thing we can't do (Trust & Safety).
+
+**What stays true from round 1:** the spine (§2) governs S1 wherever it applies (G1 the observation never vanishes, which is exactly what CUL-1113 fixes; G3 presence carries, absence does not; G4 not sure is never no; G5 no calm verdict after a correction; G7 one truth on every surface). The post-correction record state is mock frame Q3 without the question's parts (S1 is drawn in the mock's §0).
+
+**Revisit S2 or S3 only if:** after the door ships, the PM's next flags still end "I had to open Edit", or an owner who didn't build the app can't find it; flags stop being rare (stool reads, new read kinds, a rug that reads as blood every month); a vet cold read shows the owner's *reason* changes what the vet does (then the reason chip, alone, and only after CUL-1113); a disputed flag later proves real; or CUL-208 is ruled "the flag stands until acknowledged", which needs a control anyway.
+
+**Timing:** CUL-1104 and CUL-1105 before the 1.2.0 cut if they take no session from CUL-552; CUL-1110 before the cut too if it fits (it fails toward reassurance); the rest right after, before Design v2's GA (CUL-1071) so the door and the verdict are built once. About four to five sessions (Engineering). No migration.
+
+---
+
+## §0 Decision record (round 1; superseded for now by §00 and FR-0 on CUL-1107)
 
 Each brief: what the answer changes, the options, the team's recommendation and why, the consequence. The frames for every visual choice are in the mock, side by side.
 
@@ -233,3 +255,4 @@ Before any of it is BUILD-READY: the PM's rulings on §0, a mock round 2 applyin
 | Version | Date | Summary |
 |---|---|---|
 | 0.1 | 2026-09-23 | Discovery draft, round 1. The verified map of today's path, seven isolated persona interviews, one research sweep, eight decision briefs. Not build-ready. |
+| 0.2 | 2026-09-23 | The PM-requested sanity check (§00): eight fresh lenses, all S1. The spec is parked beyond S1 plus the report's provenance line; FR-1 to FR-8 stay as the record. |

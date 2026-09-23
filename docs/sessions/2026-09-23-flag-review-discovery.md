@@ -52,13 +52,22 @@ None. Every product question is open on CUL-1107 as a decision brief; FR-5 carri
 
 ## PM action items
 
-- **CUL-1107** — rule FR-1 to FR-8 (and the two vetoable visual calls in the mock).
+- **CUL-1107** — rule FR-0: approve S1 plus the report line and park the rest (the eight FR briefs stay as the record).
+
+## The sanity check (same day, PM-requested): S1 only
+
+The PM asked, before going further, whether this is worth building at all. Round 1's panel had been asked how, and had assumed it would be built. Eight fresh, isolated lenses (Dr. Chen, Jordan, Sam, the Designer, the Data Scientist, the Dir. of Engineering with QA, the Product Owner, Trust & Safety) were told so and asked to argue both sides against four scopes (S0 nothing; S1 make today's correction honest; S2 S1 plus the question; S3 the full spec), from the PM's own record: **47 readable photo reads since May 14, 4 photo flags, 3 cleared by the owner, 1 owner-added blood finding the read missed; 9 of 12 "worth a call" verdicts contextual.** The query was owner-scoped, counts only (C-27's shape).
+
+**All eight picked S1.** Dr. Chen and the Data Scientist added one report line from data already stored (a disputed flag prints with both views; an owner-added finding is labelled the owner's), which the Designer and Engineering defend as report remediation. The decisive lines: "At this volume, the question makes dismissing a flag cheaper faster than it adds care" (Dr. Chen); "When a false alarm is the safe error, dismissing a warning should not be the fastest path on the screen" (the Designer); "Twenty seconds in the Edit form twice a year is fine, as long as the app believes me afterwards" (Jordan); the question "is the first half of S3, not a place to stop" (Engineering).
+
+**The lesson worth keeping:** the same product team, asked *how*, converged on a nine-PR feature; asked *whether*, it converged unanimously on four to five sessions of fixes. The framing of the brief decided the answer more than the evidence did. A discovery that designs before it asks whether should say so, as this one's §00 now does.
+
+**Filed from the sanity check:** CUL-1109 (the Signal's daily cap skips detection outright, freezing safety cards past 12 rebuilds; High), CUL-1110 (after any owner edit, a replaced photo's findings never reach Home or the report; High, live), CUL-1111 (hiding the note hides Edit), CUL-1112 (the Home door), CUL-1113 (the report line, in the cold-read remediation project). Conditions posted on CUL-409, CUL-1104 and CUL-1105. CUL-1107 now leads with a single ruling, FR-0 (approve S1 plus the report line; park the rest). The spec went to v0.2, parked beyond S1 (§00), and the mock gained §0, S1 drawn in four frames plus the report line.
 
 ## What's next
 
-1. The PM rules CUL-1107.
-2. Mock round 2 on the same URL, applying the rulings as one proposal (the reaction-round rule).
-3. The Tier-2 edit to `docs/nyx-vet-report-requirements.md` drafted (FR-6), an `adversarial-reviewer` pass on the spec, then v1.0 BUILD-READY and a CLAUDE.md Read-These row (owed then, not now: the file has a size budget and a v0.1 draft is not yet build-critical).
-4. Independent of the rulings, and ready now: **CUL-1105** (a client-only regen fix) and a **CUL-1104** stopgap (the edit form never writes *Unclear* over an AI positive). Both are live safety-direction gaps.
+1. The PM rules FR-0 on CUL-1107.
+2. If S1 is approved: CUL-1104 and CUL-1105 (with CUL-1109) before the 1.2.0 cut if they take no session from CUL-552, CUL-1110 too if it fits; then CUL-1110 → CUL-409 → CUL-1112 → CUL-1113 (report, after the photo fix), CUL-1111 anywhere; before Design v2's GA.
+3. The question (S2) and the rest of S3 wait on the triggers in spec §00. No mock round 2 and no spec work until one fires.
 
 **Persona sign-off (discovery):** Designer ✓ (the placement, the post-answer states, the 14 frames it asked for are drawn) · Dr. Chen ✓ (two witnesses; the falsification set: the carprofen Lab, coffee-ground blood, Pepto-black stool) · Data Scientist ✓ (the data model, the metrics with denominators, the direction constraint) · Trust & Safety ✓ (the note's seven rules; Tier 0) · Dir. of Engineering + QA ✓ (the QA matrix, the deploy order) · Jordan ✓ / Sam ✓ (only if: every condition is a rule) · PO ✓ (CUL-208 answered by FR-4; CUL-403's affordance absorbed; six issues filed, none folded in) · tests: N/A (no code) · adversarial review: **not yet run on the spec** (owed before BUILD-READY; the panel's four falsification attempts are recorded above but are not the formal pass).

@@ -240,8 +240,123 @@
     <p class="eyebrow"><span>Culprit · per incident AI reads</span><span>CUL-1101</span><span>2026-09-23</span><span class="roundtag">Round 1 · discovery</span></p>
     <h1>When the app flags a photo, let the owner answer it</h1>
     <p class="standfirst">The PM has disagreed with three or four of the photo read's red flags, and the only way to say so today is an edit form two screens from the warning. This round asks where an owner should answer a flag, what <em>yes</em>, <em>no</em> and <em>not sure</em> should each do, and what the answers may be used for. <strong>Seven isolated persona interviews converged on one shape:</strong> answer on the record with the photo in view, treat the owner as a second witness rather than an editor of the AI, and never let a No or a Not sure be what quietly takes a warning away.</p>
+    <div class="revnew" style="border-color:var(--teal)"><b>Sanity check, same day: build the small version.</b> Asked whether this is worth building, eight fresh, isolated lenses all picked <b>S1</b>: make today's correction honest, without adding the question. The owner still corrects through <em>Edit</em>, now one tap from the warning. The app stops contradicting the correction, Home refreshes, <em>Unclear</em> can never clear a flag, a replaced photo's findings get through, and the vet report shows a disputed flag instead of dropping it. §0 draws S1. <b>§2 to §6 (the question and its eight briefs) are parked</b> and come back only on the triggers in §0. One ruling on CUL-1107 replaces eight.</div>
     <div class="revnew"><b>Round 1 · discovery, nothing ruled.</b> §1 is today, verified in code. §2 to §4 are the proposal, with every live alternative drawn beside the frame it competes with in a labelled box. §6 carries the eight decision briefs (FR-1 to FR-8) and §7 the panel's verdicts and the one open conflict. Spec: <code>docs/nyx-flag-review-requirements.md</code> v0.1. Evidence: <code>docs/research/2026-09-owner-answers-to-automated-reads.md</code>. Issues: CUL-1101 (discovery), CUL-1107 (the rulings).</div>
   </header>
+
+  <!-- ───────────────────────── §0 · The sanity check ───────────────────────── -->
+  <section id="sanity" style="margin-top:40px">
+    <div class="sec-head"><span class="sec-num">§0</span><h2>The sanity check: S1, drawn <span class="roundtag">Recommended scope · FR-0</span></h2></div>
+    <div class="col">
+      <p>Your own record set the scale. Since May 14: <strong>47 readable photo reads, 4 photo flags, and you cleared 3 of them</strong>. In one more read, you added blood the photo read had missed. Nine of the household's twelve "worth a call" verdicts come from context (repeated vomiting, a cat not eating), which no answer can touch. A typical owner meets a photo flag a few times a year.</p>
+      <p>At that rate, every lens concluded the same thing. The defect is the app contradicting and ignoring a correction the owner can already make. A faster way to dismiss a safety card is not the fix. So S1 adds no question. It adds one door, one hint line and one message, and removes four ways today's path fails.</p>
+    </div>
+    <div class="tablewrap"><table class="spec">
+      <tr><th>Lens</th><th>Pick</th><th>The line that decided it</th></tr>
+      <tr><td><strong>Dr. Chen</strong></td><td>S1 + the report line</td><td>"At this volume, the question makes dismissing a flag cheaper faster than it adds care."</td></tr>
+      <tr><td><strong>Jordan</strong></td><td>S1 + a hint line</td><td>"Twenty seconds in the Edit form twice a year is fine, as long as the app believes me afterwards."</td></tr>
+      <tr><td><strong>Sam</strong></td><td>S1</td><td>"Once S1 lands, S2's Not sure does exactly what leaving the flag alone does."</td></tr>
+      <tr><td><strong>Designer</strong></td><td>S1</td><td>"When a false alarm is the safe error, dismissing a warning should not be the fastest path on the screen."</td></tr>
+      <tr><td><strong>Data Scientist</strong></td><td>S1 + the report labels</td><td>"Code paths that run a few times a year are where divergence hides."</td></tr>
+      <tr><td><strong>Dir. of Eng + QA</strong></td><td>S1, about 4 to 5 sessions</td><td>The question "is the first half of S3, not a place to stop."</td></tr>
+      <tr><td><strong>Product Owner</strong></td><td>S1</td><td>One ruling instead of eight; spend the attention on the launch.</td></tr>
+      <tr><td><strong>Trust &amp; Safety</strong></td><td>S1</td><td>The one reason to store answers, improving the model, is the one thing we can't do.</td></tr>
+    </table></div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:108px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span><span class="spot" style="left:38%;top:52%;width:14px;height:10px;background:rgba(190,60,60,0.45)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div><div class="who">Mochi's record</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">I can see what looks like blood in this photo. That's worth a call to your vet about Mochi.</div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div>
+                  <div class="answered" style="font-size:11px">If it's something else (a treat, the rug), correct it with <b>Edit</b> below.</div>
+                  <div class="hide">Hide this note</div></div></div></div>
+              </div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Pink / red</div><div class="okv flag"><small>Blood</small>Fresh red</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>S1-a · The flagged record, reached from Home's door</b>One new line (Jordan's: "I'd never guess it"). No new control. <em>Hide this note</em> now hides the words only and keeps the grid and <em>Edit</em> (CUL-1111).</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:70px"></div>
+              <div class="editor">
+                <div class="intro">Correct anything that doesn't look right.</div>
+                <div><div class="flabel">Colour</div><div class="chips"><span class="chip">Brown</span><span class="chip on">Pink / red</span><span class="chip">Dark red</span><span class="chip">…</span></div></div>
+                <div><div class="flabel">Blood</div><div class="chips"><span class="chip">None visible</span><span class="chip">Fresh red</span><span class="chip">Dark / older blood</span><span class="chip on">Unclear</span></div>
+                  <div style="font-size:11px;color:#525252;margin-top:6px;line-height:1.4">The flag stays while you're not sure, so your vet can look at the photo.</div></div>
+                <div><div class="flabel">Foreign material</div><div class="chips"><span class="chip">Yes</span><span class="chip on">No</span><span class="chip">Unclear</span></div></div>
+                <div class="acts"><span>Cancel</span><span class="save">Save</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>S1-b · Unclear, said honestly</b><em>Unclear</em> over a flag the read raised keeps the flag everywhere (CUL-1104). The form says so in words, so an honest "I can't tell" never feels like a wrong answer (Sam).</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero" style="height:108px"><span class="spot" style="left:58%;top:34%;width:26px;height:18px;background:rgba(190,60,60,0.55)"></span><span class="spot" style="left:38%;top:52%;width:14px;height:10px;background:rgba(190,60,60,0.45)"></span></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Mon, Sep 22</div><div class="time">7:48 PM</div><div class="who">Mochi's record</div></div>
+              <div><div class="seclabel">AI read</div>
+                <div class="readcard neutral" style="border-style:dashed"><div class="rrow"><div class="rail quiet"></div><div class="ibody"><div class="verdict">You said there's no blood</div><div class="readtext">The read's call is set aside. If you're worried about Mochi, your vet is still the best call.</div>
+                  <div class="readtext" style="color:#737373">The read said: "I can see what looks like blood in this photo."</div></div></div></div>
+              </div>
+              <div class="obs"><div class="ohead"><div class="seclabel">What's visible</div><span class="edit">Edit</span></div>
+                <div class="ogrid"><div class="okv"><small>Colour</small>Pink / red</div><div class="okv"><small>Blood</small>None visible<span class="ed">Edited</span></div></div>
+                <div class="edline">Edited Sep 23 · the read saw fresh red</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>S1-c · After the correction</b>The record stops contradicting the owner (CUL-409) without ever reading calm. The read's words stay for the vet. If another reason still escalates (Q6), the card stays rose.</p>
+        <span class="annot ok">Home clears by the time the owner is back (CUL-1105), not tomorrow.</span>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone short">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="hhead"><div class="pet">Mochi <span>Tue, Sep 23</span></div></div>
+            <div class="acard">
+              <div class="seclabel">Signal</div>
+              <div class="irow"><div class="rail safety"></div><div class="ibody"><p class="lead">A photo you logged of Mochi's vomiting showed possible blood, on September 22 — worth a call to your vet. This is a read of your logs, not a diagnosis.</p><div class="samp">From an AI read of 1 logged photo</div>
+                <div class="door"><span>See the photo<span class="dsub">Mon, Sep 22</span></span><span class="dchev">›</span></div></div></div>
+            </div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Mochi</span></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>S1-d · The door</b>The one addition to Home (CUL-1112). It applies the redesign's ruling, "words on Home, the photo one tap in". A pooled card opens the flagged photos (§4, H2).</p>
+      </div>
+    </div>
+
+    <div class="paper" style="margin-top:30px">
+      <div class="ph">Appendix E · Incident photos (S1's report line, CUL-1113)</div>
+      <div class="pr">Sep 22 · vomit · <b>photo read:</b> possible fresh red blood. <b>Owner:</b> none visible. <span class="bdg own">owner disputed</span></div>
+      <div class="pr">Sep 9 · vomit · fresh red blood. <span class="bdg own">added by the owner</span></div>
+      <div class="pr muted">Page 1: "1 photo flag disputed by the owner (Sep 22). See Appendix E."</div>
+    </div>
+    <p class="frame-cap" style="max-width:640px">Built from data already stored (the read's original values against the owner's). No question, no migration. Dr. Chen: without it, "I lose the disputed flag, the one thing I can't recover by asking because I don't know to ask." It ships after the replaced-photo fix.</p>
+
+    <div class="callout"><strong>Revisit the question (§2 to §6) only if:</strong> after the door ships, your next flags still end with "I had to open Edit", or an owner who didn't build the app can't find it; flags stop being rare (stool reads, new read kinds, a rug that reads as blood every month); a vet cold read shows the owner's reason changes what the vet does; a disputed flag later proves real; or CUL-208 is ruled "the flag stands until acknowledged".</div>
+  </section>
 
   <!-- ───────────────────────── §1 · Today ───────────────────────── -->
   <section id="today">
@@ -362,7 +477,7 @@
 
   <!-- ───────────────────────── §3 · The question on the record ───────────────────────── -->
   <section id="question">
-    <div class="sec-head"><span class="sec-num">§3</span><h2>The question, on the record <span class="roundtag">FR-1 · FR-2 · FR-3</span></h2></div>
+    <div class="sec-head"><span class="sec-num">§3</span><h2>The question, on the record <span class="roundtag amber">Parked · S2</span></h2></div>
     <div class="col">
       <p>The owner lands on this screen right after logging a photographed vomit or stool, often still standing over it, which is the best evidence anyone will have. The question arrives with the read and waits there. It names the read's claim, asks the owner as a witness, and gives three equal answers.</p>
     </div>
@@ -650,7 +765,7 @@
 
   <!-- ───────────────────────── §4 · Home ───────────────────────── -->
   <section id="home">
-    <div class="sec-head"><span class="sec-num">§4</span><h2>Home: a door to the photo, never the answer <span class="roundtag">FR-1 · FR-4</span></h2></div>
+    <div class="sec-head"><span class="sec-num">§4</span><h2>Home: a door to the photo, never the answer <span class="roundtag">H1, H2 are S1</span> <span class="roundtag amber">H3, H4 parked</span></h2></div>
     <div class="col">
       <p>Every lens that was asked put the answer beside the photo. Home shows no photo (Design v2 R4-2: "words on Home, the photo one tap in"), the card pools every flagged photo of a family over fourteen days, and a yes or no there would be Home's fourth write class and its widest reaching one. So the card gains the one thing it lacks today: a way to the photo.</p>
     </div>
@@ -801,7 +916,7 @@
 
   <!-- ───────────────────────── §5 · The vet report ───────────────────────── -->
   <section id="report">
-    <div class="sec-head"><span class="sec-num">§5</span><h2>What the vet reads <span class="roundtag">FR-6</span></h2></div>
+    <div class="sec-head"><span class="sec-num">§5</span><h2>What the vet reads <span class="roundtag amber">Full labels parked · S1's line is in §0</span></h2></div>
     <div class="col">
       <p>Today a flag the owner cleared vanishes from the report, and every other finding (including blood the owner <em>added</em>) prints as "AI read · unconfirmed". Dr. Chen's rule: a disputed safety flag is never omitted and never printed as a finding. It is counted on page 1 and shown in the appendix with both witnesses, the photo and the owner's reason. The labels say who saw what; none of them says "confirmed" (the Data Scientist's condition).</p>
     </div>
@@ -834,7 +949,7 @@
 
   <!-- ───────────────────────── §6 · Decision briefs ───────────────────────── -->
   <section id="briefs">
-    <div class="sec-head"><span class="sec-num">§6</span><h2>Eight decisions for the PM</h2></div>
+    <div class="sec-head"><span class="sec-num">§6</span><h2>Eight decisions for the PM <span class="roundtag amber">Parked · replaced by FR-0</span></h2></div>
     <div class="col"><p>Each brief can be ruled from the brief alone; the frames above show every visual choice side by side. Rule by number (FR-1 A, FR-3 B, FR-5 C, …) on CUL-1107, the ruling issue.</p></div>
 
     <div class="brief"><p class="bid">FR-1 · Where the owner answers</p>
